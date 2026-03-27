@@ -23,6 +23,7 @@ Usage::
     # Or register directly:
     registry.register(ToolEvent.DENIED, my_alert_handler)
 """
+
 from __future__ import annotations
 
 import logging
@@ -37,18 +38,21 @@ logger = logging.getLogger("navig.tools.hooks")
 # ToolEvent — lifecycle point
 # =============================================================================
 
+
 class ToolEvent(str, Enum):
     """Lifecycle stages emitted by ToolRouter."""
+
     BEFORE_EXECUTE = "before_execute"
-    AFTER_EXECUTE  = "after_execute"
-    DENIED         = "denied"
-    ERROR          = "error"
-    NOT_FOUND      = "not_found"
+    AFTER_EXECUTE = "after_execute"
+    DENIED = "denied"
+    ERROR = "error"
+    NOT_FOUND = "not_found"
 
 
 # =============================================================================
 # ToolExecutionEvent — payload carried by each hook fire
 # =============================================================================
+
 
 @dataclass
 class ToolExecutionEvent:
@@ -58,6 +62,7 @@ class ToolExecutionEvent:
     All fields are always present; fields that are not meaningful for a
     particular lifecycle point are set to their default (None / 0 / "").
     """
+
     event: ToolEvent
     tool: str
     parameters: Dict[str, Any] = field(default_factory=dict)
@@ -75,6 +80,7 @@ HookCallback = Callable[[ToolExecutionEvent], None]
 # =============================================================================
 # HookRegistry — stores and fires callbacks per event
 # =============================================================================
+
 
 class HookRegistry:
     """
@@ -98,15 +104,21 @@ class HookRegistry:
             def my_hook(ev):
                 ...
         """
+
         def _decorator(fn: HookCallback) -> HookCallback:
             self.register(event, fn)
             return fn
+
         return _decorator
 
     def register(self, event: ToolEvent, callback: HookCallback) -> None:
         """Register *callback* to be called when *event* fires."""
         self._hooks[event].append(callback)
-        logger.debug("Hook registered: %s → %s", event.value, getattr(callback, "__name__", repr(callback)))
+        logger.debug(
+            "Hook registered: %s → %s",
+            event.value,
+            getattr(callback, "__name__", repr(callback)),
+        )
 
     def unregister(self, event: ToolEvent, callback: HookCallback) -> bool:
         """Remove *callback* from *event*.  Returns True if it was present."""
@@ -125,7 +137,15 @@ class HookRegistry:
         Always safe to call — never raises, never awaits.
         Unrecognised kwargs are folded into ``metadata``.
         """
-        known_fields = {"tool", "parameters", "status", "output", "error", "elapsed_ms", "metadata"}
+        known_fields = {
+            "tool",
+            "parameters",
+            "status",
+            "output",
+            "error",
+            "elapsed_ms",
+            "metadata",
+        }
         ev_kwargs: Dict[str, Any] = {"event": event}
         extra: Dict[str, Any] = {}
 

@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 class Heart(Component):
     """
     The Heart orchestrates all agent components.
-    
+
     Responsibilities:
     - Start/stop components in correct order
     - Monitor component health via heartbeats
@@ -38,7 +38,7 @@ class Heart(Component):
     """
 
     # Startup order (dependencies)
-    STARTUP_ORDER = ['nervous_system', 'eyes', 'ears', 'hands', 'brain', 'soul']
+    STARTUP_ORDER = ["nervous_system", "eyes", "ears", "hands", "brain", "soul"]
 
     def __init__(
         self,
@@ -92,7 +92,9 @@ class Heart(Component):
         self._start_time = datetime.now()
 
         # Emit starting event
-        await self.emit(EventType.AGENT_STARTING, {'components': list(self._components.keys())})
+        await self.emit(
+            EventType.AGENT_STARTING, {"components": list(self._components.keys())}
+        )
 
         # Start remediation engine first
         self._remediation._heart = self  # Give remediation access to Heart
@@ -107,8 +109,8 @@ class Heart(Component):
                 except Exception as e:
                     await self.emit(
                         EventType.COMPONENT_ERROR,
-                        {'component': name, 'error': str(e)},
-                        priority=EventPriority.CRITICAL
+                        {"component": name, "error": str(e)},
+                        priority=EventPriority.CRITICAL,
                     )
                     # Continue with other components
 
@@ -119,8 +121,7 @@ class Heart(Component):
                     await component.start()
                 except Exception as e:
                     await self.emit(
-                        EventType.COMPONENT_ERROR,
-                        {'component': name, 'error': str(e)}
+                        EventType.COMPONENT_ERROR, {"component": name, "error": str(e)}
                     )
 
         # Start background tasks
@@ -129,10 +130,14 @@ class Heart(Component):
 
         # Start goal processing if planner is attached
         if self._goal_planner:
-            self._goal_processing_task = asyncio.create_task(self._goal_processing_loop())
+            self._goal_processing_task = asyncio.create_task(
+                self._goal_processing_loop()
+            )
 
         # Emit started event
-        await self.emit(EventType.AGENT_STARTED, {'components': list(self._components.keys())})
+        await self.emit(
+            EventType.AGENT_STARTED, {"components": list(self._components.keys())}
+        )
 
     async def _on_stop(self) -> None:
         """Stop all components gracefully."""
@@ -174,17 +179,17 @@ class Heart(Component):
                     try:
                         await asyncio.wait_for(
                             component.stop(),
-                            timeout=10.0  # 10 second timeout per component
+                            timeout=10.0,  # 10 second timeout per component
                         )
                     except asyncio.TimeoutError:
                         await self.emit(
                             EventType.SYSTEM_WARNING,
-                            {'message': f'Component {name} stop timed out'}
+                            {"message": f"Component {name} stop timed out"},
                         )
                     except Exception as e:
                         await self.emit(
                             EventType.COMPONENT_ERROR,
-                            {'component': name, 'error': str(e)}
+                            {"component": name, "error": str(e)},
                         )
 
         # Stop remaining components
@@ -201,11 +206,11 @@ class Heart(Component):
     async def _on_health_check(self) -> Dict[str, Any]:
         """Check heart health."""
         return {
-            'beat_count': self._beat_count,
-            'last_beat': self._last_beat.isoformat() if self._last_beat else None,
-            'uptime': self.uptime_seconds,
-            'components': len(self._components),
-            'running_components': sum(
+            "beat_count": self._beat_count,
+            "last_beat": self._last_beat.isoformat() if self._last_beat else None,
+            "uptime": self.uptime_seconds,
+            "components": len(self._components),
+            "running_components": sum(
                 1 for c in self._components.values() if c.is_running
             ),
         }
@@ -227,10 +232,10 @@ class Heart(Component):
                 await self.emit(
                     EventType.HEARTBEAT,
                     {
-                        'beat': self._beat_count,
-                        'uptime': self.uptime_seconds,
-                        'components': statuses,
-                    }
+                        "beat": self._beat_count,
+                        "uptime": self.uptime_seconds,
+                        "components": statuses,
+                    },
                 )
 
             except asyncio.CancelledError:
@@ -241,7 +246,7 @@ class Heart(Component):
 
     async def _goal_processing_loop(self) -> None:
         """Periodic goal processing loop.
-        
+
         Checks for in-progress goals with pending subtasks, executes the
         next subtask whose dependencies are met, and routes execution
         through the Hands component for safety/approval integration.
@@ -259,7 +264,7 @@ class Heart(Component):
 
     async def _process_goals(self) -> None:
         """Execute the next ready subtask for each in-progress goal.
-        
+
         For each IN_PROGRESS goal:
         1. Find the next subtask with all dependencies met
         2. If the subtask has a command, execute it via Hands
@@ -269,7 +274,7 @@ class Heart(Component):
         if not self._goal_planner:
             return
 
-        hands = self.get_component('hands')
+        hands = self.get_component("hands")
         active_goals = self._goal_planner.list_goals(GoalState.IN_PROGRESS)
 
         for goal in active_goals:
@@ -282,12 +287,15 @@ class Heart(Component):
             subtask.started_at = datetime.now()
             self._goal_planner._save_goals()
 
-            await self.emit(EventType.SYSTEM_INFO, {
-                'message': f'Executing subtask: {subtask.description}',
-                'goal_id': goal.id,
-                'subtask_id': subtask.id,
-                'command': subtask.command,
-            })
+            await self.emit(
+                EventType.SYSTEM_INFO,
+                {
+                    "message": f"Executing subtask: {subtask.description}",
+                    "goal_id": goal.id,
+                    "subtask_id": subtask.id,
+                    "command": subtask.command,
+                },
+            )
 
             if not subtask.command:
                 # No command — mark as completed (manual/descriptive subtask)
@@ -312,13 +320,12 @@ class Heart(Component):
                     )
                 else:
                     self._goal_planner.fail_subtask(
-                        goal.id, subtask.id,
-                        error=result.stderr or f"Exit code: {result.exit_code}"
+                        goal.id,
+                        subtask.id,
+                        error=result.stderr or f"Exit code: {result.exit_code}",
                     )
             except Exception as e:
-                self._goal_planner.fail_subtask(
-                    goal.id, subtask.id, error=str(e)
-                )
+                self._goal_planner.fail_subtask(goal.id, subtask.id, error=str(e))
 
     async def _health_check_loop(self) -> None:
         """Periodic health check loop."""
@@ -341,9 +348,9 @@ class Heart(Component):
                 await self.emit(
                     EventType.HEALTH_CHECK,
                     {
-                        'results': {n: h.to_dict() for n, h in results.items()},
-                        'failed': failed,
-                    }
+                        "results": {n: h.to_dict() for n, h in results.items()},
+                        "failed": failed,
+                    },
                 )
 
                 # Attempt to restart failed components
@@ -354,16 +361,16 @@ class Heart(Component):
                         action_id = await self._remediation.schedule_restart(
                             component=name,
                             reason=results[name].message,
-                            metadata={'health': results[name].to_dict()}
+                            metadata={"health": results[name].to_dict()},
                         )
 
                         await self.emit(
                             EventType.SYSTEM_INFO,
                             {
-                                'message': f'Scheduled restart for {name}',
-                                'action_id': action_id,
-                                'attempt': component._restart_count + 1
-                            }
+                                "message": f"Scheduled restart for {name}",
+                                "action_id": action_id,
+                                "attempt": component._restart_count + 1,
+                            },
                         )
 
             except asyncio.CancelledError:
@@ -371,14 +378,16 @@ class Heart(Component):
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
-    async def restart_component(self, name: str, reason: str = "Manual restart") -> bool:
+    async def restart_component(
+        self, name: str, reason: str = "Manual restart"
+    ) -> bool:
         """
         Restart a specific component with remediation tracking.
-        
+
         Args:
             name: Component name to restart
             reason: Reason for restart (for logging)
-            
+
         Returns:
             True if restart succeeded, False otherwise
         """
@@ -390,18 +399,16 @@ class Heart(Component):
         try:
             # Schedule restart through remediation engine
             action_id = await self._remediation.schedule_restart(
-                component=name,
-                reason=reason,
-                metadata={'manual': True}
+                component=name, reason=reason, metadata={"manual": True}
             )
 
             await self.emit(
                 EventType.SYSTEM_INFO,
                 {
-                    'message': f'Scheduled restart for {name}',
-                    'action_id': action_id,
-                    'reason': reason
-                }
+                    "message": f"Scheduled restart for {name}",
+                    "action_id": action_id,
+                    "reason": reason,
+                },
             )
 
             # Wait for remediation to attempt restart
@@ -412,22 +419,21 @@ class Heart(Component):
 
         except Exception as e:
             await self.emit(
-                EventType.COMPONENT_ERROR,
-                {'component': name, 'error': str(e)}
+                EventType.COMPONENT_ERROR, {"component": name, "error": str(e)}
             )
             return False
 
     def get_status(self) -> Dict[str, Any]:
         """Get comprehensive agent status."""
         return {
-            'heart': super().get_status(),
-            'agent': {
-                'mode': self.agent_config.mode,
-                'uptime': self.uptime_seconds,
-                'beat_count': self._beat_count,
-                'last_beat': self._last_beat.isoformat() if self._last_beat else None,
+            "heart": super().get_status(),
+            "agent": {
+                "mode": self.agent_config.mode,
+                "uptime": self.uptime_seconds,
+                "beat_count": self._beat_count,
+                "last_beat": self._last_beat.isoformat() if self._last_beat else None,
             },
-            'components': {
+            "components": {
                 name: component.get_status()
                 for name, component in self._components.items()
             },
@@ -436,6 +442,5 @@ class Heart(Component):
     def get_component_states(self) -> Dict[str, str]:
         """Get state of all components."""
         return {
-            name: component.state.name
-            for name, component in self._components.items()
+            name: component.state.name for name, component in self._components.items()
         }

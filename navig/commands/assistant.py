@@ -33,28 +33,28 @@ def status_cmd(ctx_obj: Dict[str, Any]):
     ch.info("\n📊 Statistics:")
 
     # Command history
-    history_file = assistant.ai_context_dir / 'command_history.json'
+    history_file = assistant.ai_context_dir / "command_history.json"
     if history_file.exists():
-        with open(history_file, 'r') as f:
+        with open(history_file, "r") as f:
             history = json.load(f)
         ch.dim(f"  Commands Logged: {len(history)}")
 
     # Error statistics
-    if hasattr(assistant, 'error_resolution'):
+    if hasattr(assistant, "error_resolution"):
         stats = assistant.error_resolution.get_error_statistics(hours=24)
         ch.dim(f"  Errors (24h): {stats.get('total_errors', 0)}")
 
-        if stats.get('by_category'):
+        if stats.get("by_category"):
             ch.dim("  Error Categories:")
-            for cat, count in stats['by_category'].items():
+            for cat, count in stats["by_category"].items():
                 ch.dim(f"    - {cat}: {count}")
 
     # Active issues
-    issues_file = assistant.ai_context_dir / 'detected_issues.json'
+    issues_file = assistant.ai_context_dir / "detected_issues.json"
     if issues_file.exists():
-        with open(issues_file, 'r') as f:
+        with open(issues_file, "r") as f:
             issues = json.load(f)
-        active_issues = [i for i in issues if i.get('status') == 'active']
+        active_issues = [i for i in issues if i.get("status") == "active"]
         ch.dim(f"  Active Issues: {len(active_issues)}")
 
     ch.success("\n✓ Assistant is operational")
@@ -92,40 +92,41 @@ def analyze_cmd(ctx_obj: Dict[str, Any]):
         # Collect performance metrics
         ch.info("\n📊 Collecting performance metrics...")
         try:
-            metrics = assistant.auto_detection.collect_performance_metrics(remote_ops, server_config)
+            metrics = assistant.auto_detection.collect_performance_metrics(
+                remote_ops, server_config
+            )
 
             ch.dim(f"  CPU: {metrics.get('cpu_percent', 0):.1f}%")
             ch.dim(f"  Memory: {metrics.get('memory_percent', 0):.1f}%")
             ch.dim(f"  Disk: {metrics.get('disk_percent', 0):.1f}%")
             ch.dim(f"  Status: {metrics.get('status', 'unknown')}")
 
-            if metrics.get('alerts'):
+            if metrics.get("alerts"):
                 ch.warning("\n⚠️  Alerts:")
-                for alert in metrics['alerts']:
+                for alert in metrics["alerts"]:
                     ch.warning(f"  - {alert}")
 
             # Update baseline
             ch.info("\n💾 Updating performance baseline...")
-            assistant.auto_detection.update_performance_baseline(
-                server_name,
-                metrics
-            )
+            assistant.auto_detection.update_performance_baseline(server_name, metrics)
         except Exception as e:
             ch.warning(f"Could not collect metrics: {e}")
 
         # Check for active issues
         ch.info("\n🔎 Checking for active issues...")
         try:
-            issues_file = assistant.ai_context_dir / 'detected_issues.json'
+            issues_file = assistant.ai_context_dir / "detected_issues.json"
             if issues_file.exists():
-                with open(issues_file, 'r') as f:
+                with open(issues_file, "r") as f:
                     issues = json.load(f)
-                active_issues = [i for i in issues if i.get('status') == 'active']
+                active_issues = [i for i in issues if i.get("status") == "active"]
 
                 if active_issues:
                     ch.warning(f"\n⚠️  Found {len(active_issues)} active issue(s):")
                     for issue in active_issues[:5]:
-                        ch.warning(f"  - [{issue.get('severity')}] {issue.get('description')}")
+                        ch.warning(
+                            f"  - [{issue.get('severity')}] {issue.get('description')}"
+                        )
                 else:
                     ch.success("\n✓ No active issues detected")
         except Exception as e:
@@ -138,9 +139,7 @@ def analyze_cmd(ctx_obj: Dict[str, Any]):
 
 
 def context_cmd(
-    ctx_obj: Dict[str, Any],
-    clipboard: bool = False,
-    file_path: Optional[str] = None
+    ctx_obj: Dict[str, Any], clipboard: bool = False, file_path: Optional[str] = None
 ):
     """Generate AI copilot context summary."""
     config = get_config_manager()
@@ -162,8 +161,7 @@ def context_cmd(
         # Generate context (works even without server connection)
         try:
             context = assistant.context_generator.generate_context_summary(
-                config,
-                remote_ops
+                config, remote_ops
             )
         except Exception as e:
             ch.error(f"Failed to generate context: {e}")
@@ -184,7 +182,7 @@ def context_cmd(
                 print(context_json)
         elif file_path:
             try:
-                with open(file_path, 'w') as f:
+                with open(file_path, "w") as f:
                     f.write(context_json)
                 ch.success(f"✓ Context saved to {file_path}")
             except Exception as e:
@@ -208,7 +206,7 @@ def reset_cmd(ctx_obj: Dict[str, Any]):
     assistant = ProactiveAssistant(config)
 
     # Require confirmation
-    if not ctx_obj.get('yes'):
+    if not ctx_obj.get("yes"):
         ch.warning("⚠️  This will delete all assistant learning data:")
         ch.warning("  - Command history")
         ch.warning("  - Error logs")
@@ -217,30 +215,30 @@ def reset_cmd(ctx_obj: Dict[str, Any]):
         ch.warning("  - Solution feedback")
 
         confirm = input("\nType 'yes' to confirm: ")
-        if confirm.lower() != 'yes':
+        if confirm.lower() != "yes":
             ch.info("Reset cancelled")
             return
 
     try:
         # Clear JSON files
         files_to_clear = [
-            'command_history.json',
-            'error_log.json',
-            'detected_issues.json',
-            'performance_baselines.json',
-            'workflow_patterns.json'
+            "command_history.json",
+            "error_log.json",
+            "detected_issues.json",
+            "performance_baselines.json",
+            "workflow_patterns.json",
         ]
 
         for filename in files_to_clear:
             file_path = assistant.ai_context_dir / filename
             if file_path.exists():
-                with open(file_path, 'w') as f:
+                with open(file_path, "w") as f:
                     json.dump([], f)
 
         # Clear baselines directory
-        baselines_dir = assistant.navig_dir / 'baselines'
+        baselines_dir = assistant.navig_dir / "baselines"
         if baselines_dir.exists():
-            for baseline_file in baselines_dir.glob('*.json'):
+            for baseline_file in baselines_dir.glob("*.json"):
                 baseline_file.unlink()
 
         ch.success("✓ Assistant data reset successfully")
@@ -255,5 +253,3 @@ def config_cmd(ctx_obj: Dict[str, Any]):
     ch.info("\nCurrent configuration is stored in ~/.navig/config.yaml")
     ch.info("under the 'proactive_assistant' section")
     ch.info("\nRefer to documentation for available settings")
-
-

@@ -3,12 +3,13 @@
 Type Text - Type text at current cursor position
 Usage: py type_text.py "Hello world"
 """
-import pyautogui
 import sys
 import time
 
+import pyautogui
+
 if len(sys.argv) < 2:
-    print("Usage: py type_text.py \"text to type\"")
+    print('Usage: py type_text.py "text to type"')
     sys.exit(1)
 
 text = sys.argv[1]

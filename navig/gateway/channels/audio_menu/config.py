@@ -1,4 +1,5 @@
 """Seed data for the /audio deep menu: providers, models, speeds, formats."""
+
 from __future__ import annotations
 
 PROVIDERS: dict[str, dict] = {
@@ -7,15 +8,45 @@ PROVIDERS: dict[str, dict] = {
         "models": {
             "tts-1": {
                 "label": "TTS-1 (fast, multilingual)",
-                "voices": ["alloy", "echo", "fable", "onyx", "nova", "shimmer", "ash", "coral", "sage"],
+                "voices": [
+                    "alloy",
+                    "echo",
+                    "fable",
+                    "onyx",
+                    "nova",
+                    "shimmer",
+                    "ash",
+                    "coral",
+                    "sage",
+                ],
             },
             "tts-1-hd": {
                 "label": "TTS-1 HD (quality, multilingual)",
-                "voices": ["alloy", "echo", "fable", "onyx", "nova", "shimmer", "ash", "coral", "sage"],
+                "voices": [
+                    "alloy",
+                    "echo",
+                    "fable",
+                    "onyx",
+                    "nova",
+                    "shimmer",
+                    "ash",
+                    "coral",
+                    "sage",
+                ],
             },
             "gpt-4o-mini-tts": {
                 "label": "GPT-4o Mini TTS (expressive)",
-                "voices": ["alloy", "echo", "fable", "onyx", "nova", "shimmer", "ash", "coral", "sage"],
+                "voices": [
+                    "alloy",
+                    "echo",
+                    "fable",
+                    "onyx",
+                    "nova",
+                    "shimmer",
+                    "ash",
+                    "coral",
+                    "sage",
+                ],
             },
         },
     },
@@ -51,18 +82,18 @@ PROVIDERS: dict[str, dict] = {
     "deepgram": {
         "label": "Deepgram",
         "models": {
-            "aura-asteria-en":  {"label": "Asteria EN (F)",  "voices": []},
-            "aura-luna-en":     {"label": "Luna EN (F)",     "voices": []},
-            "aura-stella-en":   {"label": "Stella EN (F)",   "voices": []},
-            "aura-athena-en":   {"label": "Athena EN (F)",   "voices": []},
-            "aura-hera-en":     {"label": "Hera EN (F)",     "voices": []},
-            "aura-zeus-en":     {"label": "Zeus EN (M)",     "voices": []},
-            "aura-orion-en":    {"label": "Orion EN (M)",    "voices": []},
-            "aura-arcas-en":    {"label": "Arcas EN (M)",    "voices": []},
-            "aura-perseus-en":  {"label": "Perseus EN (M)",  "voices": []},
-            "aura-orpheus-en":  {"label": "Orpheus EN (M)",  "voices": []},
-            "aura-helios-en":   {"label": "Helios EN-GB (M)","voices": []},
-            "aura-angus-en":    {"label": "Angus EN-IE (M)", "voices": []},
+            "aura-asteria-en": {"label": "Asteria EN (F)", "voices": []},
+            "aura-luna-en": {"label": "Luna EN (F)", "voices": []},
+            "aura-stella-en": {"label": "Stella EN (F)", "voices": []},
+            "aura-athena-en": {"label": "Athena EN (F)", "voices": []},
+            "aura-hera-en": {"label": "Hera EN (F)", "voices": []},
+            "aura-zeus-en": {"label": "Zeus EN (M)", "voices": []},
+            "aura-orion-en": {"label": "Orion EN (M)", "voices": []},
+            "aura-arcas-en": {"label": "Arcas EN (M)", "voices": []},
+            "aura-perseus-en": {"label": "Perseus EN (M)", "voices": []},
+            "aura-orpheus-en": {"label": "Orpheus EN (M)", "voices": []},
+            "aura-helios-en": {"label": "Helios EN-GB (M)", "voices": []},
+            "aura-angus-en": {"label": "Angus EN-IE (M)", "voices": []},
         },
     },
     "google_cloud": {

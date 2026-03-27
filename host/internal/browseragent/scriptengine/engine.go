@@ -267,13 +267,13 @@ func (e *Engine) runStep(index int, step Step, creds *pageintel.Credentials) Ste
 	case step.CognitiveFill != nil:
 		sr.Type = "cognitive_fill"
 		s := step.CognitiveFill
-		
+
 		// 1. Analyze page to find the most appropriate text area or input
 		analysis, err := e.intel.Analyze()
 		if err != nil {
 			return e.fail(sr, fmt.Errorf("cognitive analysis failed: %w", err))
 		}
-		
+
 		var bestInputSelector string
 		for _, inp := range analysis.Inputs {
 			if inp.Type == "text" || inp.Type == "textarea" || inp.Name == "text" {
@@ -284,12 +284,12 @@ func (e *Engine) runStep(index int, step Step, creds *pageintel.Credentials) Ste
 		if bestInputSelector == "" {
 			return e.fail(sr, fmt.Errorf("cognitive fill: could not find any text inputs for payload"))
 		}
-		
+
 		ok, evolved, err := e.smartFill(bestInputSelector, s.Payload, "message")
 		if err != nil {
 			return e.fail(sr, err)
 		}
-		
+
 		if s.Submit {
 			// Find submit button
 			var submitSelector string

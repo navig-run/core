@@ -41,32 +41,41 @@ if platform.system() != "Darwin":
 
 try:
     from ApplicationServices import (  # type: ignore
-        AXUIElementCreateSystemWide,
-        AXUIElementCreateApplication,
+        AXObserver,
         AXUIElementCopyAttributeValue,
+        AXUIElementCreateApplication,
+        AXUIElementCreateSystemWide,
         AXUIElementPerformAction,
         AXUIElementSetAttributeValue,
-        kAXFocusedUIElementAttribute,
-        kAXValueAttribute,
-        kAXRoleAttribute,
-        kAXTitleAttribute,
         kAXChildrenAttribute,
-        kAXPositionAttribute,
-        kAXSizeAttribute,
-        kAXPressAction,
         kAXFocusedAttribute,
-        AXObserver,
+        kAXFocusedUIElementAttribute,
+        kAXPositionAttribute,
+        kAXPressAction,
+        kAXRoleAttribute,
+        kAXSizeAttribute,
+        kAXTitleAttribute,
+        kAXValueAttribute,
     )
     from CoreFoundation import (  # type: ignore
         CFStringCreateWithCString,
         kCFStringEncodingUTF8,
     )
+
     _has_ax = True
 except ImportError:
     _has_ax = False
 
 try:
-    from Quartz import CGEventCreateMouseEvent, CGEventPost, kCGEventLeftMouseDown, kCGEventLeftMouseUp, kCGHIDEventTap, CGPoint  # type: ignore
+    from Quartz import (  # type: ignore
+        CGEventCreateMouseEvent,
+        CGEventPost,
+        CGPoint,
+        kCGEventLeftMouseDown,
+        kCGEventLeftMouseUp,
+        kCGHIDEventTap,
+    )
+
     _has_quartz = True
 except ImportError:
     _has_quartz = False
@@ -89,6 +98,7 @@ def _register(elem: Any) -> str:
 
 def _resolve(handle: str) -> Optional[Any]:
     return _handle_registry.get(handle)
+
 
 # ─────────────────────────── AX helpers ──────────────────────────────────────
 
@@ -167,6 +177,7 @@ def _walk_tree(elem: Any, depth: int, index: Optional[list] = None) -> Dict[str,
 
     return node
 
+
 # ─────────────────────────── method implementations ──────────────────────────
 
 
@@ -237,7 +248,9 @@ def _method_click(params: _Params) -> _Result:
         CGEventPost(kCGHIDEventTap, up)
         return {"clicked": True, "method": "cgevent", "x": cx, "y": cy}
 
-    raise RuntimeError("click failed: no usable mechanism (ax_press failed, quartz not available)")
+    raise RuntimeError(
+        "click failed: no usable mechanism (ax_press failed, quartz not available)"
+    )
 
 
 def _method_set_value(params: _Params) -> _Result:
@@ -268,7 +281,9 @@ def _method_set_value(params: _Params) -> _Result:
     script = f'tell application "System Events" to keystroke "{value}"'
     result = subprocess.run(
         ["osascript", "-e", script],
-        capture_output=True, text=True, timeout=10,
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
     if result.returncode != 0:
         raise RuntimeError(f"osascript keystroke failed: {result.stderr}")
@@ -294,7 +309,9 @@ def _method_run_script(params: _Params) -> _Result:
     try:
         proc = subprocess.run(
             ["osascript", "-e", script],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
         return {
             "stdout": proc.stdout,
@@ -317,9 +334,19 @@ def _method_get_action_tree(params: _Params) -> _Result:
     window_filter: Optional[str] = params.get("window")
 
     INTERACTIVE_ROLES = {
-        "AXButton", "AXRadioButton", "AXCheckBox", "AXTextField",
-        "AXTextArea", "AXComboBox", "AXPopUpButton", "AXMenuItem",
-        "AXMenu", "AXLink", "AXCell", "AXSlider", "AXStaticText",
+        "AXButton",
+        "AXRadioButton",
+        "AXCheckBox",
+        "AXTextField",
+        "AXTextArea",
+        "AXComboBox",
+        "AXPopUpButton",
+        "AXMenuItem",
+        "AXMenu",
+        "AXLink",
+        "AXCell",
+        "AXSlider",
+        "AXStaticText",
     }
 
     system = AXUIElementCreateSystemWide()
@@ -336,14 +363,16 @@ def _method_get_action_tree(params: _Params) -> _Result:
             if role in ("AXWindow", "AXDialog", "AXSheet"):
                 if window_filter and window_filter.lower() not in title.lower():
                     return
-                lines.append(f"\n# Window: \"{title}\"")
+                lines.append(f'\n# Window: "{title}"')
             elif role in INTERACTIVE_ROLES:
                 rect = _ax_bounds(elem)
                 handle = _register(elem)
                 value = _ax_value(elem)[:40] if _ax_value(elem) else ""
-                detail = f" value=\"{value}\"" if value else ""
+                detail = f' value="{value}"' if value else ""
                 detail += f" (rect: {rect['left']},{rect['top']} - {rect['right']},{rect['bottom']})"
-                lines.append(f"[{idx[0]}] {role} \"{title}\"{detail}  <!-- handle:{handle} -->")
+                lines.append(
+                    f'[{idx[0]}] {role} "{title}"{detail}  <!-- handle:{handle} -->'
+                )
                 idx[0] += 1
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
@@ -357,6 +386,7 @@ def _method_get_action_tree(params: _Params) -> _Result:
         "markdown": "\n".join(lines),
         "element_count": idx[0] - 1,
     }
+
 
 # ─────────────────────────── dispatch table ──────────────────────────────────
 

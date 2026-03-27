@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 @dataclass
 class WikiDocument:
     """Represents a wiki document for indexing."""
+
     path: str
     title: str
     content: str
@@ -51,9 +52,9 @@ class WikiDocument:
 
             # Try to break at sentence boundary
             if end < len(self.content):
-                last_period = chunk.rfind('. ')
+                last_period = chunk.rfind(". ")
                 if last_period > chunk_size // 2:
-                    chunk = chunk[:last_period + 1]
+                    chunk = chunk[: last_period + 1]
                     end = start + last_period + 1
 
             chunks.append(chunk.strip())
@@ -67,36 +68,104 @@ class TextTokenizer:
 
     # Common stop words to filter
     STOP_WORDS = {
-        'a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-        'of', 'with', 'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been',
-        'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
-        'could', 'should', 'may', 'might', 'must', 'shall', 'can', 'need',
-        'this', 'that', 'these', 'those', 'it', 'its', 'as', 'if', 'when',
-        'than', 'so', 'no', 'not', 'only', 'own', 'same', 'such', 'too',
-        'very', 'just', 'also', 'now', 'here', 'there', 'where', 'how',
-        'all', 'each', 'every', 'both', 'few', 'more', 'most', 'other',
-        'some', 'any', 'nor', 'over', 'under',
+        "a",
+        "an",
+        "the",
+        "and",
+        "or",
+        "but",
+        "in",
+        "on",
+        "at",
+        "to",
+        "for",
+        "of",
+        "with",
+        "by",
+        "from",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "could",
+        "should",
+        "may",
+        "might",
+        "must",
+        "shall",
+        "can",
+        "need",
+        "this",
+        "that",
+        "these",
+        "those",
+        "it",
+        "its",
+        "as",
+        "if",
+        "when",
+        "than",
+        "so",
+        "no",
+        "not",
+        "only",
+        "own",
+        "same",
+        "such",
+        "too",
+        "very",
+        "just",
+        "also",
+        "now",
+        "here",
+        "there",
+        "where",
+        "how",
+        "all",
+        "each",
+        "every",
+        "both",
+        "few",
+        "more",
+        "most",
+        "other",
+        "some",
+        "any",
+        "nor",
+        "over",
+        "under",
     }
 
     @staticmethod
     def tokenize(text: str) -> List[str]:
         """Tokenize text into words."""
         # Convert to lowercase and split on non-alphanumeric
-        words = re.findall(r'\b[a-z0-9]+\b', text.lower())
+        words = re.findall(r"\b[a-z0-9]+\b", text.lower())
         # Filter stop words and short words
         return [w for w in words if w not in TextTokenizer.STOP_WORDS and len(w) > 2]
 
 
 class BM25Index:
     """BM25 index for text search.
-    
+
     BM25 is a bag-of-words retrieval function that ranks documents
     based on query terms appearing in each document.
     """
 
     def __init__(self, k1: float = 1.5, b: float = 0.75):
         """Initialize BM25 index.
-        
+
         Args:
             k1: Term frequency saturation parameter (1.2-2.0)
             b: Length normalization parameter (0-1)
@@ -144,11 +213,11 @@ class BM25Index:
 
     def search(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
         """Search the index.
-        
+
         Args:
             query: Search query
             top_k: Number of results to return
-            
+
         Returns:
             List of search results with scores
         """
@@ -173,7 +242,9 @@ class BM25Index:
 
                 # BM25 formula
                 numerator = tf * (self.k1 + 1)
-                denominator = tf + self.k1 * (1 - self.b + self.b * doc_len / self.avg_doc_len)
+                denominator = tf + self.k1 * (
+                    1 - self.b + self.b * doc_len / self.avg_doc_len
+                )
                 score += idf * numerator / denominator
 
             if score > 0:
@@ -191,15 +262,21 @@ class BM25Index:
                 continue
             seen_paths.add(doc.path)
 
-            results.append({
-                'path': doc.path,
-                'title': doc.title,
-                'folder': doc.folder,
-                'score': round(score, 4),
-                'chunk': doc.chunks[chunk_idx][:300] + '...' if len(doc.chunks[chunk_idx]) > 300 else doc.chunks[chunk_idx],
-                'chunk_index': chunk_idx,
-                'total_chunks': len(doc.chunks)
-            })
+            results.append(
+                {
+                    "path": doc.path,
+                    "title": doc.title,
+                    "folder": doc.folder,
+                    "score": round(score, 4),
+                    "chunk": (
+                        doc.chunks[chunk_idx][:300] + "..."
+                        if len(doc.chunks[chunk_idx]) > 300
+                        else doc.chunks[chunk_idx]
+                    ),
+                    "chunk_index": chunk_idx,
+                    "total_chunks": len(doc.chunks),
+                }
+            )
 
             if len(results) >= top_k:
                 break
@@ -240,12 +317,12 @@ class WikiRAG:
             # Unified path — no in-memory index needed
             self.index = None
             self.documents = []
-            self.index_file = self.wiki_path / '.meta' / 'rag_index.json'
+            self.index_file = self.wiki_path / ".meta" / "rag_index.json"
             return
 
         self.index = BM25Index()
         self.documents: List[WikiDocument] = []
-        self.index_file = self.wiki_path / '.meta' / 'rag_index.json'
+        self.index_file = self.wiki_path / ".meta" / "rag_index.json"
 
         self._load_or_build_index()
 
@@ -262,18 +339,18 @@ class WikiRAG:
 
     def _load_index(self):
         """Load index from file."""
-        with open(self.index_file, 'r', encoding='utf-8') as f:
+        with open(self.index_file, "r", encoding="utf-8") as f:
             data = json.load(f)
 
         self.documents = [
             WikiDocument(
-                path=d['path'],
-                title=d['title'],
-                content=d['content'],
-                folder=d['folder'],
-                chunks=d['chunks']
+                path=d["path"],
+                title=d["title"],
+                content=d["content"],
+                folder=d["folder"],
+                chunks=d["chunks"],
             )
-            for d in data.get('documents', [])
+            for d in data.get("documents", [])
         ]
 
         self.index.index(self.documents)
@@ -283,19 +360,19 @@ class WikiRAG:
         self.index_file.parent.mkdir(parents=True, exist_ok=True)
 
         data = {
-            'documents': [
+            "documents": [
                 {
-                    'path': d.path,
-                    'title': d.title,
-                    'content': d.content,
-                    'folder': d.folder,
-                    'chunks': d.chunks
+                    "path": d.path,
+                    "title": d.title,
+                    "content": d.content,
+                    "folder": d.folder,
+                    "chunks": d.chunks,
                 }
                 for d in self.documents
             ]
         }
 
-        with open(self.index_file, 'w', encoding='utf-8') as f:
+        with open(self.index_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
     def rebuild_index(self):
@@ -312,30 +389,30 @@ class WikiRAG:
         if not self.wiki_path.exists():
             return
 
-        for md_file in self.wiki_path.glob('**/*.md'):
+        for md_file in self.wiki_path.glob("**/*.md"):
             rel_path = md_file.relative_to(self.wiki_path)
 
             # Skip hidden folders
-            if any(part.startswith('.') for part in rel_path.parts):
+            if any(part.startswith(".") for part in rel_path.parts):
                 continue
 
             try:
-                content = md_file.read_text(encoding='utf-8')
+                content = md_file.read_text(encoding="utf-8")
 
                 # Extract title from first heading
                 title = md_file.stem
-                for line in content.split('\n'):
-                    if line.startswith('# '):
+                for line in content.split("\n"):
+                    if line.startswith("# "):
                         title = line[2:].strip()
                         break
 
-                folder = str(rel_path.parent).replace('\\', '/')
+                folder = str(rel_path.parent).replace("\\", "/")
 
                 doc = WikiDocument(
-                    path=str(rel_path).replace('\\', '/'),
+                    path=str(rel_path).replace("\\", "/"),
                     title=title,
                     content=content,
-                    folder=folder
+                    folder=folder,
                 )
                 self.documents.append(doc)
 
@@ -365,7 +442,9 @@ class WikiRAG:
                     "title": r.section_title or Path(r.file_path).stem,
                     "folder": str(Path(r.file_path).parent).replace("\\", "/"),
                     "score": r.score,
-                    "chunk": r.content[:300] + "..." if len(r.content) > 300 else r.content,
+                    "chunk": (
+                        r.content[:300] + "..." if len(r.content) > 300 else r.content
+                    ),
                     "chunk_index": 0,
                     "total_chunks": 1,
                 }
@@ -409,14 +488,14 @@ class WikiRAG:
                 break
 
             # Find full document
-            doc = next((d for d in self.documents if d.path == result['path']), None)
+            doc = next((d for d in self.documents if d.path == result["path"]), None)
             if not doc:
                 continue
 
             # Add document content
             content = doc.content
             if total_chars + len(content) > char_limit:
-                content = content[:char_limit - total_chars]
+                content = content[: char_limit - total_chars]
 
             context_parts.append(f"## {doc.title}\n*Source: {doc.path}*\n\n{content}")
             total_chars += len(content)
@@ -425,28 +504,23 @@ class WikiRAG:
 
     def add_document(self, path: str, content: str, title: Optional[str] = None):
         """Add a new document to the index.
-        
+
         Args:
             path: Document path relative to wiki root
             content: Document content
             title: Optional title (extracted from content if not provided)
         """
         if not title:
-            for line in content.split('\n'):
-                if line.startswith('# '):
+            for line in content.split("\n"):
+                if line.startswith("# "):
                     title = line[2:].strip()
                     break
             if not title:
                 title = Path(path).stem
 
-        folder = str(Path(path).parent).replace('\\', '/')
+        folder = str(Path(path).parent).replace("\\", "/")
 
-        doc = WikiDocument(
-            path=path,
-            title=title,
-            content=content,
-            folder=folder
-        )
+        doc = WikiDocument(path=path, title=title, content=content, folder=folder)
 
         # Remove existing document with same path
         self.documents = [d for d in self.documents if d.path != path]
@@ -458,7 +532,7 @@ class WikiRAG:
 
     def remove_document(self, path: str):
         """Remove a document from the index.
-        
+
         Args:
             path: Document path to remove
         """
@@ -471,24 +545,28 @@ class WikiRAG:
         if self._project_indexer is not None:
             s = self._project_indexer.stats()
             return {
-                'backend': 'unified',
-                'total_documents': s.get('file_count', 0),
-                'total_chunks': s.get('chunk_count', 0),
-                'total_words': 0,  # not tracked in FTS5 path
-                'unique_terms': 0,
-                'avg_doc_length': 0,
-                'db_path': s.get('db_path', ''),
+                "backend": "unified",
+                "total_documents": s.get("file_count", 0),
+                "total_chunks": s.get("chunk_count", 0),
+                "total_words": 0,  # not tracked in FTS5 path
+                "unique_terms": 0,
+                "avg_doc_length": 0,
+                "db_path": s.get("db_path", ""),
             }
         total_chunks = sum(len(d.chunks) for d in self.documents)
-        total_words = sum(len(TextTokenizer.tokenize(d.content)) for d in self.documents)
+        total_words = sum(
+            len(TextTokenizer.tokenize(d.content)) for d in self.documents
+        )
 
         return {
-            'backend': 'in_memory',
-            'total_documents': len(self.documents),
-            'total_chunks': total_chunks,
-            'total_words': total_words,
-            'unique_terms': len(self.index.doc_freqs),
-            'avg_doc_length': round(self.index.avg_doc_len, 2) if self.index.avg_doc_len else 0,
+            "backend": "in_memory",
+            "total_documents": len(self.documents),
+            "total_chunks": total_chunks,
+            "total_words": total_words,
+            "unique_terms": len(self.index.doc_freqs),
+            "avg_doc_length": (
+                round(self.index.avg_doc_len, 2) if self.index.avg_doc_len else 0
+            ),
         }
 
 
@@ -512,8 +590,11 @@ def get_wiki_rag(
     if use_unified and project_root is not None:
         try:
             from navig.memory.project_indexer import ProjectIndexer
+
             indexer = ProjectIndexer(Path(project_root))
             return WikiRAG(wiki_path, project_indexer=indexer)
         except Exception as e:
-            ch.dim(f"[WikiRAG] Unified indexer unavailable ({e}), falling back to in-memory.")
+            ch.dim(
+                f"[WikiRAG] Unified indexer unavailable ({e}), falling back to in-memory."
+            )
     return WikiRAG(wiki_path)

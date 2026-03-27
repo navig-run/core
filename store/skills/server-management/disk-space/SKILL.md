@@ -69,7 +69,7 @@ If user asks "what's using space?":
 **Example 3:**
 - **User:** "Check disk on all servers"
 - **Action:** Loop through configured hosts
-- **Response:** 
+- **Response:**
   ```
   📊 Disk Space Summary:
   • example-vps: 45GB free (55% used) ✅
@@ -82,5 +82,3 @@ If user asks "what's using space?":
 - **Host not found**: "I don't have a server configured with that name. Available hosts: example-vps, production, staging"
 - **Connection failed**: "Can't connect to {host}. Check if the server is online and SSH keys are configured."
 - **Command failed**: "Error running disk check: {error_message}"
-
-

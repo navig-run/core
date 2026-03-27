@@ -131,5 +131,3 @@ Instructions for the AI agent...
 |-------|------|-------------|
 | `os` | list | Limit to OS: `[linux]`, `[darwin]`, `[linux, darwin]` |
 | `requires` | list | External tools needed (e.g., `gh`, `tmux`) |
-
-

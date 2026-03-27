@@ -25,20 +25,23 @@ migrate_app = typer.Typer(
 # ── Ordered pipeline ─────────────────────────────────────────────────────────
 
 MIGRATION_STEPS: list[tuple[str, str]] = [
-    ("config",  "Migrate Documents/.navig → ~/.navig layout"),
-    ("addons",  "Migrate addons/ → templates/ architecture"),
+    ("config", "Migrate Documents/.navig → ~/.navig layout"),
+    ("addons", "Migrate addons/ → templates/ architecture"),
 ]
 
 
 def _done_file():
     from navig.config import get_config_manager
+
     cm = get_config_manager()
     return cm.global_config_dir / ".migrations_done"
 
 
 def _mark_done(name: str) -> None:
     path = _done_file()
-    done = set(path.read_text(encoding="utf-8").splitlines()) if path.exists() else set()
+    done = (
+        set(path.read_text(encoding="utf-8").splitlines()) if path.exists() else set()
+    )
     done.add(name)
     path.write_text("\n".join(sorted(done)) + "\n", encoding="utf-8")
 
@@ -52,10 +55,15 @@ def _is_done(name: str) -> bool:
 
 # ── migrate config ────────────────────────────────────────────────────────────
 
+
 @migrate_app.command("config")
 def migrate_config_cmd(
-    dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes without saving."),
-    force: bool = typer.Option(False, "--force", help="Re-run even if already marked complete."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview changes without saving."
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Re-run even if already marked complete."
+    ),
 ) -> None:
     """
     Migrate Documents\\.navig → ~/.navig config layout.
@@ -73,10 +81,12 @@ def migrate_config_cmd(
     try:
         import sys
         from pathlib import Path
+
         scripts_dir = Path(__file__).parent.parent.parent / "scripts"
         if str(scripts_dir) not in sys.path:
             sys.path.insert(0, str(scripts_dir))
         from migrate_navig_config import migrate_config  # type: ignore[import]
+
         migrate_config(dry_run=dry_run, force=force)
     except ImportError:
         ch.warning("migrate_navig_config script not found — running built-in fallback.")
@@ -120,10 +130,15 @@ def _builtin_config_migration(dry_run: bool) -> None:
 
 # ── migrate addons ────────────────────────────────────────────────────────────
 
+
 @migrate_app.command("addons")
 def migrate_addons_cmd(
-    dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes without saving."),
-    force: bool = typer.Option(False, "--force", help="Re-run even if already marked complete."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview changes without saving."
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Re-run even if already marked complete."
+    ),
 ) -> None:
     """
     Migrate legacy addons/ → templates/ architecture.
@@ -137,9 +152,10 @@ def migrate_addons_cmd(
         return
 
     try:
-        from navig.migrations.migrate_addons_to_templates import (
-            AddonToTemplateMigration,  # noqa: PLC0415
+        from navig.migrations.migrate_addons_to_templates import (  # noqa: PLC0415
+            AddonToTemplateMigration,
         )
+
         ok = AddonToTemplateMigration(dry_run=dry_run, force=force).run()
     except Exception as exc:
         ch.error(f"Migration '{step}' failed: {exc}")
@@ -155,10 +171,15 @@ def migrate_addons_cmd(
 
 # ── migrate all ───────────────────────────────────────────────────────────────
 
+
 @migrate_app.command("all")
 def migrate_all_cmd(
-    dry_run: bool = typer.Option(False, "--dry-run", help="Preview all steps without saving."),
-    force: bool = typer.Option(False, "--force", help="Re-run all steps even if already done."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview all steps without saving."
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Re-run all steps even if already done."
+    ),
 ) -> None:
     """
     Run all migration steps in dependency order.
@@ -193,14 +214,18 @@ def migrate_all_cmd(
 
 # ── migrate status ────────────────────────────────────────────────────────────
 
+
 @migrate_app.command("status")
 def migrate_status_cmd() -> None:
     """Show which migration steps have been completed."""
     path = _done_file()
-    done = set(path.read_text(encoding="utf-8").splitlines()) if path.exists() else set()
+    done = (
+        set(path.read_text(encoding="utf-8").splitlines()) if path.exists() else set()
+    )
 
     ch.heading("Migration Status")
     for name, description in MIGRATION_STEPS:
         mark = "[green]✓[/green]" if name in done else "[yellow]○[/yellow]"
         from rich.console import Console  # noqa: PLC0415
+
         Console().print(f"  {mark} {name:<16} {description}")

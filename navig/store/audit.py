@@ -54,7 +54,8 @@ class AuditStore(BaseStore):
     # ── Schema ────────────────────────────────────────────────
 
     def _create_schema(self, conn: sqlite3.Connection) -> None:
-        conn.executescript("""
+        conn.executescript(
+            """
             CREATE TABLE IF NOT EXISTS audit_events (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -87,7 +88,8 @@ class AuditStore(BaseStore):
             -- Covering index for common dashboard query
             CREATE INDEX IF NOT EXISTS idx_audit_covering
                 ON audit_events (action, timestamp DESC, status, actor);
-        """)
+        """
+        )
 
     def _migrate(
         self, conn: sqlite3.Connection, from_version: int, to_version: int
@@ -287,9 +289,7 @@ class AuditStore(BaseStore):
             params.append(str(-hours))
 
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
-        row = self._read_one(
-            f"SELECT COUNT(*) FROM audit_events{where}", tuple(params)
-        )
+        row = self._read_one(f"SELECT COUNT(*) FROM audit_events{where}", tuple(params))
         return row[0] if row else 0
 
     def get_stats(self) -> Dict[str, Any]:

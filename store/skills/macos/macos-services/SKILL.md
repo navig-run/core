@@ -194,5 +194,3 @@ sudo mdutil -E /
 - **Permission denied**: "This requires sudo. Try with admin privileges."
 - **Service not found**: "Service '{name}' not found. Check with `launchctl list | grep {name}`"
 - **SIP restriction**: "System Integrity Protection prevents this action. Some system services can't be modified."
-
-

@@ -67,7 +67,9 @@ Constraints:
 """
         self._workflows_dir = Path(__file__).parent.parent.parent.parent / "workflows"
 
-    def _generate(self, goal: str, previous_artifact: Any, error_msg: str, context: Any) -> Any:
+    def _generate(
+        self, goal: str, previous_artifact: Any, error_msg: str, context: Any
+    ) -> Any:
 
         prompt = f"Goal: {goal}\n\n"
 
@@ -97,7 +99,7 @@ steps:
         if match:
             return match.group(1).strip()
 
-        return response # Fallback if no block
+        return response  # Fallback if no block
 
     def _validate(self, artifact: str, context: Any) -> Optional[str]:
         """Validate YAML structure."""
@@ -105,53 +107,69 @@ steps:
             data = yaml.safe_load(artifact)
             if not isinstance(data, dict):
                 return "Root must be a dictionary"
-            if 'steps' not in data:
+            if "steps" not in data:
                 return "Missing 'steps' list"
-            if not isinstance(data['steps'], list):
+            if not isinstance(data["steps"], list):
                 return "'steps' must be a list"
 
             # Check for known actions (optional, but good for validation)
             # This list should stay in sync with ActionRegistry or similar
             known_actions = {
-                'open_app', 'click', 'type', 'send', 'move_window',
-                'resize_window', 'maximize_window', 'minimize_window',
-                'activate_window', 'close_window', 'snap_window',
-                'wait', 'wait_for', 'get_focused_window',
-                'run_command', 'read_text', 'scroll', 'double_click'
+                "open_app",
+                "click",
+                "type",
+                "send",
+                "move_window",
+                "resize_window",
+                "maximize_window",
+                "minimize_window",
+                "activate_window",
+                "close_window",
+                "snap_window",
+                "wait",
+                "wait_for",
+                "get_focused_window",
+                "run_command",
+                "read_text",
+                "scroll",
+                "double_click",
             }
 
-            for i, step in enumerate(data['steps']):
+            for i, step in enumerate(data["steps"]):
                 if not isinstance(step, dict):
                     return f"Step {i+1} must be a dictionary"
 
-                if 'action' not in step:
+                if "action" not in step:
                     return f"Step {i+1} missing 'action'"
 
-                action = step['action']
-                if action not in known_actions and not action.startswith('custom_'):
+                action = step["action"]
+                if action not in known_actions and not action.startswith("custom_"):
                     # Warning only? Or strict?
                     # Let's be strict for core actions to prevent hallucinations
                     return f"Step {i+1}: Unknown action '{action}'"
 
-                if 'args' in step and not isinstance(step['args'], dict):
-                     return f"Step {i+1}: 'args' must be a dictionary"
+                if "args" in step and not isinstance(step["args"], dict):
+                    return f"Step {i+1}: 'args' must be a dictionary"
 
                 # Validate platform constraints
-                if 'platform' in step:
-                    if not isinstance(step['platform'], dict):
+                if "platform" in step:
+                    if not isinstance(step["platform"], dict):
                         return f"Step {i+1}: 'platform' must be a dictionary"
 
-                    for plat, override in step['platform'].items():
-                        if plat not in ['windows', 'linux', 'macos']:
+                    for plat, override in step["platform"].items():
+                        if plat not in ["windows", "linux", "macos"]:
                             return f"Step {i+1}: Unknown platform '{plat}'"
 
                         if not isinstance(override, dict):
                             return f"Step {i+1}: Platform override for '{plat}' must be a dictionary"
 
-                        if 'action' in override and override['action'] not in known_actions:
-                             return f"Step {i+1} ({plat}): Unknown action '{override['action']}'"
+                        if (
+                            "action" in override
+                            and override["action"] not in known_actions
+                        ):
+                            return f"Step {i+1} ({plat}): Unknown action '{override['action']}'"
 
-            return None # Valid
+            return None  # Valid
         except yaml.YAMLError as e:
             return f"YAML Syntax Error: {e}"
         except Exception as e:
@@ -161,12 +179,12 @@ steps:
         """Save to workflows dir."""
         try:
             data = yaml.safe_load(artifact)
-            name = data.get('name', 'unnamed_workflow')
+            name = data.get("name", "unnamed_workflow")
             # Sanitize name
             name = "".join([c if c.isalnum() else "_" for c in name])
 
             path = self._workflows_dir / f"{name}.yaml"
-            with open(path, 'w', encoding='utf-8') as f:
+            with open(path, "w", encoding="utf-8") as f:
                 f.write(artifact)
 
             success(f"Workflow saved to {path}")

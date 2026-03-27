@@ -9,5 +9,3 @@ Examples:
 
 Tip:
 - If the user asks to read/edit files, prefer `navig file show/edit` instead of `run cat/...`.
-
-

@@ -127,7 +127,10 @@ def _get_console():
         return Console(stderr=True)
     except Exception as e:
         import logging as _logging
-        _logging.getLogger(__name__).warning("Failed to initialize rich console: %s", e, exc_info=True)
+
+        _logging.getLogger(__name__).warning(
+            "Failed to initialize rich console: %s", e, exc_info=True
+        )
         return None
 
 
@@ -157,7 +160,9 @@ def _check_first_run() -> None:
         return
 
     # Shell-completion probes — must never block or print
-    if any(v in os.environ for v in ("_NAVIG_COMPLETE", "COMP_WORDS", "_TYPER_COMPLETE")):
+    if any(
+        v in os.environ for v in ("_NAVIG_COMPLETE", "COMP_WORDS", "_TYPER_COMPLETE")
+    ):
         return
 
     navig_dir = Path.home() / ".navig"
@@ -197,6 +202,7 @@ def _check_first_run() -> None:
     except Exception as exc:  # never crash main on onboarding failure
         _eprint(f"[dim]First-run setup skipped: {exc}[/dim]")
 
+
 # Track plugin state for status command
 _loaded_plugins: List[str] = []
 _failed_plugins: List[Dict[str, str]] = []
@@ -205,7 +211,7 @@ _failed_plugins: List[Dict[str, str]] = []
 def load_plugins_into_app(app) -> None:
     """
     Discover and load all available plugins into the Typer app.
-    
+
     Args:
         app: Main Typer app instance to register plugins into
     """
@@ -227,10 +233,9 @@ def load_plugins_into_app(app) -> None:
             try:
                 app.add_typer(plugin_app, name=name)
             except Exception as e:
-                _failed_plugins.append({
-                    'name': name,
-                    'reason': f"Failed to register: {e}"
-                })
+                _failed_plugins.append(
+                    {"name": name, "reason": f"Failed to register: {e}"}
+                )
 
     except Exception as e:
         # Plugin system failure should not break NAVIG
@@ -264,12 +269,41 @@ def _should_skip_plugin_loading(argv: List[str]) -> bool:
     # Core built-in commands that never use plugins.
     # Skipping plugins saves ~110ms on these hot paths.
     _PLUGIN_FREE = {
-        "host", "h", "app", "a", "run", "r", "db", "database",
-        "file", "f", "docker", "tunnel", "t", "web", "backup",
-        "config", "status", "version", "log", "local", "mcp",
-        "profile", "security", "monitor", "index", "skills", "skill",
-        "flow", "workflow", "wiki", "scaffold", "migrate",
-        "server-template", "template", "hestia",
+        "host",
+        "h",
+        "app",
+        "a",
+        "run",
+        "r",
+        "db",
+        "database",
+        "file",
+        "f",
+        "docker",
+        "tunnel",
+        "t",
+        "web",
+        "backup",
+        "config",
+        "status",
+        "version",
+        "log",
+        "local",
+        "mcp",
+        "profile",
+        "security",
+        "monitor",
+        "index",
+        "skills",
+        "skill",
+        "flow",
+        "workflow",
+        "wiki",
+        "scaffold",
+        "migrate",
+        "server-template",
+        "template",
+        "hestia",
     }
     if args[0] in _PLUGIN_FREE:
         return True
@@ -281,10 +315,11 @@ def _should_skip_plugin_loading(argv: List[str]) -> bool:
     try:
         import json
         from pathlib import Path
+
         # We can't easily import Config here without overhead, so we construct the default path
         cache_file = Path.home() / ".navig" / "data" / "plugins_cache.json"
         if cache_file.exists():
-            with open(cache_file, 'r', encoding='utf-8') as f:
+            with open(cache_file, "r", encoding="utf-8") as f:
                 cached_data = json.load(f)
             plugins = cached_data.get("plugins", {})
             if args[0] not in plugins:
@@ -292,13 +327,17 @@ def _should_skip_plugin_loading(argv: List[str]) -> bool:
     except json.JSONDecodeError:
         # P1-6: Corrupted plugin cache — log a warning instead of silently ignoring
         import logging as _logging
+
         _logging.getLogger(__name__).warning(
             "Plugin cache corrupted at %s — skipping cache check",
             Path.home() / ".navig" / "data" / "plugins_cache.json",
         )
     except Exception as e:
         import logging as _logging
-        _logging.getLogger(__name__).debug("Plugin check exception: %s", e, exc_info=True)
+
+        _logging.getLogger(__name__).debug(
+            "Plugin check exception: %s", e, exc_info=True
+        )
         pass
 
     return False
@@ -307,7 +346,7 @@ def _should_skip_plugin_loading(argv: List[str]) -> bool:
 def add_plugin_commands(app) -> None:
     """
     Add plugin management commands to the main app.
-    
+
     Commands:
     - navig plugin list: Show all plugins and their status
     - navig plugin enable <name>: Enable a plugin
@@ -326,7 +365,9 @@ def add_plugin_commands(app) -> None:
 
     @plugin_app.command("list")
     def plugin_list(
-        all_plugins: bool = typer.Option(False, "--all", "-a", help="Include disabled plugins"),
+        all_plugins: bool = typer.Option(
+            False, "--all", "-a", help="Include disabled plugins"
+        ),
     ):
         """List all installed plugins."""
         from rich.table import Table
@@ -358,11 +399,15 @@ def add_plugin_commands(app) -> None:
             elif not info.enabled:
                 status = "[dim]o Disabled[/dim]"
             elif info.error:
-                status = f"[red]x {info.error[:30]}...[/red]" if len(info.error) > 30 else f"[red]x {info.error}[/red]"
+                status = (
+                    f"[red]x {info.error[:30]}...[/red]"
+                    if len(info.error) > 30
+                    else f"[red]x {info.error}[/red]"
+                )
             else:
                 status = "[yellow]? Not loaded[/yellow]"
 
-            source_icons = {'builtin': 'builtin', 'user': 'user', 'project': 'project'}
+            source_icons = {"builtin": "builtin", "user": "user", "project": "project"}
             source = f"{source_icons.get(info.source, '?')}"
 
             table.add_row(
@@ -370,14 +415,20 @@ def add_plugin_commands(app) -> None:
                 info.version,
                 source,
                 status,
-                info.description[:50] + "..." if len(info.description) > 50 else info.description
+                (
+                    info.description[:50] + "..."
+                    if len(info.description) > 50
+                    else info.description
+                ),
             )
 
         ch.console.print(table)
 
         if _failed_plugins:
             ch.dim("")
-            ch.warning(f"{len(_failed_plugins)} plugin(s) failed to load. Use 'navig plugin info <name>' for details.")
+            ch.warning(
+                f"{len(_failed_plugins)} plugin(s) failed to load. Use 'navig plugin info <name>' for details."
+            )
 
     @plugin_app.command("info")
     def plugin_info(
@@ -479,7 +530,8 @@ def add_plugin_commands(app) -> None:
 
             # P1-9: Validate plugin name — prevent path traversal via crafted names
             import re as _re
-            if not _re.match(r'^[a-zA-Z0-9_-]+$', plugin_name):
+
+            if not _re.match(r"^[a-zA-Z0-9_-]+$", plugin_name):
                 ch.error(
                     f"Invalid plugin name: '{plugin_name}'",
                     "Plugin names must contain only letters, digits, underscores, or hyphens.",
@@ -501,7 +553,9 @@ def add_plugin_commands(app) -> None:
         elif path.startswith(("http://", "https://", "git@")):
             # Git URL installation
             ch.error("Git URL installation not yet implemented")
-            ch.dim("Clone the repository manually and use: navig plugin install ./path/to/plugin")
+            ch.dim(
+                "Clone the repository manually and use: navig plugin install ./path/to/plugin"
+            )
             raise typer.Exit(1)
 
         else:
@@ -528,7 +582,7 @@ def add_plugin_commands(app) -> None:
             ch.error(f"Plugin '{name}' not found")
             raise typer.Exit(1)
 
-        if info.source == 'builtin':
+        if info.source == "builtin":
             ch.error("Cannot uninstall built-in plugins")
             ch.dim("You can disable it instead: navig plugin disable " + name)
             raise typer.Exit(1)
@@ -548,7 +602,7 @@ def add_plugin_commands(app) -> None:
 def main() -> None:
     """
     NAVIG CLI entry point.
-    
+
     1. Import and use the existing CLI app from navig.cli
     2. Discover and load plugins
     3. Add plugin management commands
@@ -580,10 +634,14 @@ def main() -> None:
         # Register operating profile command (node/builder/operator/architect)
         try:
             from navig.commands.profile import profile_app
+
             app.add_typer(profile_app, name="profile")
         except Exception as e:  # never break startup
             import logging as _logging
-            _logging.getLogger(__name__).warning("Failed to load profile sub-app: %s", e, exc_info=True)
+
+            _logging.getLogger(__name__).warning(
+                "Failed to load profile sub-app: %s", e, exc_info=True
+            )
             pass
 
         skip_plugins = _should_skip_plugin_loading(sys.argv)
@@ -609,43 +667,46 @@ def main() -> None:
     except Exception as e:
         # Use our robust crash handler
         from navig.core.crash_handler import crash_handler
+
         crash_handler.handle_exception(e)
 
 
 def _handle_powershell_parsing_error(argv: List[str]) -> None:
     """Detect if PowerShell mangled the command and provide helpful guidance.
-    
+
     This catches errors BEFORE navig even parses the command, when PowerShell
     breaks the arguments due to special characters.
     """
     import os
 
     # Only help if this looks like a 'navig run' command
-    if len(argv) < 2 or argv[1] not in ['run', 'r']:
+    if len(argv) < 2 or argv[1] not in ["run", "r"]:
         return
 
     # Detect PowerShell environment
     is_powershell = False
-    if sys.platform == 'win32':
+    if sys.platform == "win32":
         is_powershell = True
-        if os.environ.get('PROMPT'):
+        if os.environ.get("PROMPT"):
             is_powershell = False
-    elif 'powershell' in os.environ.get('TERM_PROGRAM', '').lower():
+    elif "powershell" in os.environ.get("TERM_PROGRAM", "").lower():
         is_powershell = True
 
     if not is_powershell:
         return
 
     # Join all args to see the original attempted command
-    attempted_cmd = ' '.join(argv[2:]) if len(argv) > 2 else ''
+    attempted_cmd = " ".join(argv[2:]) if len(argv) > 2 else ""
 
     # Check for signs PowerShell mangled it (backslash-escaped quotes, broken strings)
-    powershell_mangled = any([
-        '\\"' in attempted_cmd,
-        "\\'" in attempted_cmd,
-        attempted_cmd.count('"') % 2 != 0,  # Odd number of quotes
-        attempted_cmd.count("'") % 2 != 0,
-    ])
+    powershell_mangled = any(
+        [
+            '\\"' in attempted_cmd,
+            "\\'" in attempted_cmd,
+            attempted_cmd.count('"') % 2 != 0,  # Odd number of quotes
+            attempted_cmd.count("'") % 2 != 0,
+        ]
+    )
 
     if not powershell_mangled:
         return
@@ -655,7 +716,9 @@ def _handle_powershell_parsing_error(argv: List[str]) -> None:
     sys.stderr.write("[!] PowerShell Quoting Error Detected\n")
     sys.stderr.write("-" * 70 + "\n\n")
     sys.stderr.write("PowerShell broke your command before it reached navig.\n")
-    sys.stderr.write("Special characters like quotes, parentheses, and braces cause this.\n\n")
+    sys.stderr.write(
+        "Special characters like quotes, parentheses, and braces cause this.\n\n"
+    )
     sys.stderr.write("Solution 1: Use stdin (recommended)\n\n")
     sys.stderr.write("  @'\n")
     sys.stderr.write("  your complex command here\n")
@@ -667,7 +730,9 @@ def _handle_powershell_parsing_error(argv: List[str]) -> None:
     sys.stderr.write("  navig run --b64 --file cmd.txt\n\n")
     sys.stderr.write("Solution 3: Interactive editor\n\n")
     sys.stderr.write("  navig run -i\n\n")
-    sys.stderr.write("Tip: PowerShell here-strings @'...'@ preserve everything exactly.\n")
+    sys.stderr.write(
+        "Tip: PowerShell here-strings @'...'@ preserve everything exactly.\n"
+    )
     sys.stderr.write("-" * 70 + "\n\n")
 
 

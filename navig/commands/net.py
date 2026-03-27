@@ -5,6 +5,7 @@ CLI surface:
   navig net speedtest --skip-iperf3          (speedtest-cli only)
   navig net speedtest --skip-speedtest       (iperf3 only)
 """
+
 from __future__ import annotations
 
 import json
@@ -24,6 +25,7 @@ net_app = typer.Typer(
 # Lazy import of measurement backend
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def _backend():
     """Lazy-import speedtest worker to keep CLI startup fast."""
     import importlib.util
@@ -31,8 +33,8 @@ def _backend():
 
     worker_path = Path(__file__).parents[2] / "scripts" / "speedtest" / "worker.py"
     spec = importlib.util.spec_from_file_location("navig_speedtest_worker", worker_path)
-    mod = importlib.util.module_from_spec(spec)    # type: ignore[arg-type]
-    spec.loader.exec_module(mod)                   # type: ignore[union-attr]
+    mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
     return mod
 
 
@@ -40,11 +42,16 @@ def _backend():
 # navig net speedtest
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @net_app.command("speedtest")
 def speedtest_cmd(
     iperf3_server: Annotated[
         Optional[str],
-        typer.Option("--iperf3-server", "-s", help="iperf3 server hostname or IP (e.g. iperf.he.net)"),
+        typer.Option(
+            "--iperf3-server",
+            "-s",
+            help="iperf3 server hostname or IP (e.g. iperf.he.net)",
+        ),
     ] = None,
     iperf3_port: Annotated[
         int,

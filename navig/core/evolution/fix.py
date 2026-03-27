@@ -1,4 +1,3 @@
-
 import os
 from pathlib import Path
 from typing import Any, Optional
@@ -32,10 +31,12 @@ Constraints:
 - Output valid code in markdown block.
 """
 
-    def _generate(self, goal: str, previous_artifact: Any, error_msg: str, context: Any) -> Any:
+    def _generate(
+        self, goal: str, previous_artifact: Any, error_msg: str, context: Any
+    ) -> Any:
         # specific context for fix
         try:
-            current_code = self.target_file.read_text(encoding='utf-8')
+            current_code = self.target_file.read_text(encoding="utf-8")
         except Exception as e:
             return f"Error reading file: {e}"
 
@@ -44,7 +45,7 @@ Constraints:
         prompt += f"Current Code:\n```\n{current_code}\n```\n\n"
 
         if previous_artifact:
-             prompt += f"Previous fix failed:\nError: {error_msg}\n\nRefine this code:\n{previous_artifact}\n"
+            prompt += f"Previous fix failed:\nError: {error_msg}\n\nRefine this code:\n{previous_artifact}\n"
 
         if os.environ.get("NAVIG_MOCK_AI"):
             return f"```python\n# Fixed version of {self.target_file.name}\n{current_code}\n# Fix applied\n```"
@@ -54,11 +55,12 @@ Constraints:
     def _validate(self, artifact: str, context: Any) -> Optional[str]:
         # 1. Basic syntax check if python
         import re
+
         # Extract code to temp file for checking
         match = re.search(r"```\w*\n(.*?)\n```", artifact, re.DOTALL)
         code = match.group(1).strip() if match else artifact
 
-        if self.target_file.suffix == '.py':
+        if self.target_file.suffix == ".py":
             try:
                 compile(code, "<string>", "exec")
             except SyntaxError as e:
@@ -71,7 +73,9 @@ Constraints:
 
             # Write to temp file
             suffix = self.target_file.suffix
-            with tempfile.NamedTemporaryFile(mode='w', suffix=suffix, delete=False, encoding='utf-8') as tmp:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=suffix, delete=False, encoding="utf-8"
+            ) as tmp:
                 tmp.write(code)
                 tmp_path = tmp.name
 
@@ -100,8 +104,9 @@ Constraints:
     def _save(self, goal: str, artifact: str):
         try:
             import re
+
             # Try to find code block matching extension
-            ext = self.target_file.suffix.strip('.')
+            ext = self.target_file.suffix.strip(".")
             pattern = re.compile(rf"```{ext}\n(.*?)\n```", re.DOTALL)
             match = pattern.search(artifact)
             if not match:
@@ -114,7 +119,7 @@ Constraints:
             backup_path = self.target_file.with_suffix(f"{self.target_file.suffix}.bak")
             self.target_file.rename(backup_path)
 
-            with open(self.target_file, 'w', encoding='utf-8') as f:
+            with open(self.target_file, "w", encoding="utf-8") as f:
                 f.write(code)
 
             success(f"Fixed code saved to {self.target_file}")

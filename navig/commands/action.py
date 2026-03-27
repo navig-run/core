@@ -11,6 +11,7 @@ Scan roots (in priority order):
 
 New actions are written to ~/.navig/store/actions/user.yaml.
 """
+
 from __future__ import annotations
 
 import sys
@@ -31,13 +32,16 @@ action_app = typer.Typer(
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 def _get_user_actions_file() -> Path:
     """Path to the user's writable actions file."""
     try:
         from navig.platform.paths import store_dir
+
         actions_dir = store_dir() / "actions"
     except Exception:
         from navig.platform.paths import config_dir
+
         actions_dir = config_dir() / "store" / "actions"
     actions_dir.mkdir(parents=True, exist_ok=True)
     return actions_dir / "user.yaml"
@@ -83,6 +87,7 @@ def _load_all_actions() -> list[Dict[str, Any]]:
             packages_dir,
             store_dir,
         )
+
         _absorb_dir(builtin_store_dir() / "actions")
         _absorb_dir(store_dir() / "actions")
         for root in (builtin_packages_dir(), packages_dir()):
@@ -95,6 +100,7 @@ def _load_all_actions() -> list[Dict[str, Any]]:
     # Legacy: ~/.navig/quick_actions.yaml
     try:
         from navig.config import get_config_manager
+
         config_dir = Path(get_config_manager().global_config_dir)
         _absorb_file(config_dir / "quick_actions.yaml")
     except Exception:  # noqa: BLE001
@@ -104,6 +110,7 @@ def _load_all_actions() -> list[Dict[str, Any]]:
 
 
 # ── Commands ──────────────────────────────────────────────────────────────────
+
 
 @action_app.command("list")
 def action_list(
@@ -120,6 +127,7 @@ def action_list(
 
     if json_out:
         import json
+
         sys.stdout.write(json.dumps(actions, indent=2) + "\n")
         return
 
@@ -130,6 +138,7 @@ def action_list(
 
     from rich.console import Console
     from rich.table import Table
+
     console = Console()
     table = Table(show_header=True, header_style="bold cyan")
     table.add_column("Name", style="cyan", no_wrap=True)
@@ -153,7 +162,9 @@ def action_show(
     actions = _load_all_actions()
     action = next((a for a in actions if a.get("name") == name), None)
     if action is None:
-        ch.error(f"Action '{name}' not found. Use 'navig action list' to see available actions.")
+        ch.error(
+            f"Action '{name}' not found. Use 'navig action list' to see available actions."
+        )
         raise typer.Exit(1)
     ch.header(f"Action: {name}")
     ch.kv("Command", action.get("command", "—"))
@@ -194,7 +205,10 @@ def action_add(
         "created": datetime.now().isoformat(timespec="seconds"),
     }
 
-    user_file.write_text(yaml.safe_dump(data, default_flow_style=False, allow_unicode=True), encoding="utf-8")
+    user_file.write_text(
+        yaml.safe_dump(data, default_flow_style=False, allow_unicode=True),
+        encoding="utf-8",
+    )
     ch.success(f"Action '{name}' added → {user_file}")
 
 
@@ -227,14 +241,19 @@ def action_remove(
             raise typer.Abort()
 
     del data[name]
-    user_file.write_text(yaml.safe_dump(data, default_flow_style=False, allow_unicode=True), encoding="utf-8")
+    user_file.write_text(
+        yaml.safe_dump(data, default_flow_style=False, allow_unicode=True),
+        encoding="utf-8",
+    )
     ch.success(f"Action '{name}' removed.")
 
 
 @action_app.command("run")
 def action_run(
     name: str = typer.Argument(..., help="Action name to execute"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Print command without executing"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Print command without executing"
+    ),
 ):
     """Run a quick action by name."""
     actions = _load_all_actions()
@@ -255,6 +274,7 @@ def action_run(
         return
 
     import subprocess
+
     try:
         result = subprocess.run(
             command,

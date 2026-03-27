@@ -10,7 +10,7 @@ navig-commands:
   - name: "git-status"
     syntax: "navig git status"
     description: "Show working tree status."
-    
+
   - name: "git-log"
     syntax: "navig git log"
     description: "Show commit logs."
@@ -33,5 +33,3 @@ examples:
 # Git Basics
 
 Simple wrap around git CLI.
-
-

@@ -1,7 +1,7 @@
-
 """
 Cross-Platform Automation Workflow Engine
 """
+
 import os
 import subprocess
 import sys
@@ -29,12 +29,14 @@ class WorkflowStep:
     capture: Optional[str] = None
     if_condition: Optional[str] = None
 
+
 @dataclass
 class Workflow:
     name: str
     steps: List[WorkflowStep]
     description: str = ""
     variables: Dict[str, str] = None
+
 
 class WorkflowEngine:
     def __init__(self):
@@ -50,33 +52,36 @@ class WorkflowEngine:
 
     @property
     def ahk(self):
-        if not self._ahk and sys.platform == 'win32':
+        if not self._ahk and sys.platform == "win32":
             from navig.adapters.automation.ahk import AHKAdapter
+
             self._ahk = AHKAdapter()
         return self._ahk
 
     @property
     def linux(self):
-        if not self._linux and sys.platform == 'linux':
+        if not self._linux and sys.platform == "linux":
             from navig.adapters.automation.linux import LinuxAdapter
+
             self._linux = LinuxAdapter()
         return self._linux
 
     @property
     def macos(self):
-        if not self._macos and sys.platform == 'darwin':
+        if not self._macos and sys.platform == "darwin":
             from navig.adapters.automation.macos import MacOSAdapter
+
             self._macos = MacOSAdapter()
         return self._macos
 
     @property
     def adapter(self):
         """Get the appropriate adapter for current platform."""
-        if sys.platform == 'win32':
+        if sys.platform == "win32":
             return self.ahk
-        elif sys.platform == 'linux':
+        elif sys.platform == "linux":
             return self.linux
-        elif sys.platform == 'darwin':
+        elif sys.platform == "darwin":
             return self.macos
         return None
 
@@ -86,7 +91,7 @@ class WorkflowEngine:
         possible_paths = [
             self._workflows_dir / f"{name}.yaml",
             self._workflows_dir / f"{name}.yml",
-            Path.home() / ".navig" / "workflows" / f"{name}.yaml"
+            Path.home() / ".navig" / "workflows" / f"{name}.yaml",
         ]
 
         target_path = None
@@ -105,24 +110,26 @@ class WorkflowEngine:
                 if mtime == cached_mtime:
                     return cached_wf
 
-            with open(target_path, 'r', encoding='utf-8') as f:
+            with open(target_path, "r", encoding="utf-8") as f:
                 data = yaml.load(f, Loader=SafeLoader)
 
             steps = []
-            for s in data.get('steps', []):
-                steps.append(WorkflowStep(
-                    action=s.get('action'),
-                    args=s.get('args', {}),
-                    platform_override=s.get('platform', None),
-                    capture=s.get('capture', None),
-                    if_condition=s.get('if', None)
-                ))
+            for s in data.get("steps", []):
+                steps.append(
+                    WorkflowStep(
+                        action=s.get("action"),
+                        args=s.get("args", {}),
+                        platform_override=s.get("platform", None),
+                        capture=s.get("capture", None),
+                        if_condition=s.get("if", None),
+                    )
+                )
 
             wf = Workflow(
-                name=data.get('name',name),
-                description=data.get('description', ''),
-                variables=data.get('variables', {}),
-                steps=steps
+                name=data.get("name", name),
+                description=data.get("description", ""),
+                variables=data.get("variables", {}),
+                steps=steps,
             )
             self._workflow_cache[name] = (mtime, wf)
             return wf
@@ -169,20 +176,22 @@ class WorkflowEngine:
                         info(f"Skipping step {i+1} (condition false): {cond}")
                         continue
                 except Exception as e:
-                    warning(f"Condition evaluation failed '{cond}': {e}. Skipping step.")
+                    warning(
+                        f"Condition evaluation failed '{cond}': {e}. Skipping step."
+                    )
                     continue
 
             # Platform overrides
             if step.platform_override:
-                platform_key = "windows" if sys.platform == 'win32' else sys.platform
+                platform_key = "windows" if sys.platform == "win32" else sys.platform
                 if platform_key in step.platform_override:
                     override = step.platform_override[platform_key]
-                    if 'action' in override:
-                        action = override['action']
-                    if 'args' in override:
-                        override_args = override['args'].copy()
+                    if "action" in override:
+                        action = override["action"]
+                    if "args" in override:
+                        override_args = override["args"].copy()
                         for k, v in override_args.items():
-                             if isinstance(v, str) and "{{" in v:
+                            if isinstance(v, str) and "{{" in v:
                                 for var_k, var_v in current_vars.items():
                                     v = v.replace(f"{{{{{var_k}}}}}", str(var_v))
                                 override_args[k] = v
@@ -202,11 +211,11 @@ class WorkflowEngine:
         """Dispatch action to appropriate adapter."""
         # Platform-independent actions
         if action == "wait":
-            time.sleep(float(args.get('seconds', 1.0)))
+            time.sleep(float(args.get("seconds", 1.0)))
             return True
 
         if action == "run_command":
-            cmd = args.get('command')
+            cmd = args.get("command")
             if cmd:
                 res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
                 if res.returncode == 0:
@@ -221,55 +230,63 @@ class WorkflowEngine:
 
         # Dispatch to adapter methods
         if action == "open_app":
-            return adapter.open_app(args.get('target', ''))
+            return adapter.open_app(args.get("target", ""))
         elif action == "click":
-            return adapter.click(args.get('x'), args.get('y'), args.get('button', 'left'))
+            return adapter.click(
+                args.get("x"), args.get("y"), args.get("button", "left")
+            )
         elif action == "type":
-            return adapter.type_text(args.get('text'), args.get('delay', 50))
+            return adapter.type_text(args.get("text"), args.get("delay", 50))
         elif action == "send":
-            return adapter.send_keys(args.get('keys'))
+            return adapter.send_keys(args.get("keys"))
         elif action == "mouse_move":
-            return adapter.mouse_move(args.get('x'), args.get('y'), args.get('speed', 2))
+            return adapter.mouse_move(
+                args.get("x"), args.get("y"), args.get("speed", 2)
+            )
         elif action == "get_focused_window":
             info_obj = adapter.get_focused_window()
             return info_obj.to_dict() if info_obj else None
         elif action == "activate_window":
-            return adapter.activate_window(args.get('selector'))
+            return adapter.activate_window(args.get("selector"))
         elif action == "close_window":
-            return adapter.close_window(args.get('selector'))
+            return adapter.close_window(args.get("selector"))
         elif action == "move_window":
             return adapter.move_window(
-                args.get('selector'),
-                args.get('x'),
-                args.get('y'),
-                args.get('width'),
-                args.get('height')
+                args.get("selector"),
+                args.get("x"),
+                args.get("y"),
+                args.get("width"),
+                args.get("height"),
             )
         elif action == "resize_window":
             # Some adapters may not have resize_window, use move_window with current pos
-            if hasattr(adapter, 'resize_window'):
-                return adapter.resize_window(args.get('selector'), args.get('width'), args.get('height'))
+            if hasattr(adapter, "resize_window"):
+                return adapter.resize_window(
+                    args.get("selector"), args.get("width"), args.get("height")
+                )
             else:
                 # Get current window location and resize
-                return adapter.move_window(args.get('selector'), 0, 0, args.get('width'), args.get('height'))
+                return adapter.move_window(
+                    args.get("selector"), 0, 0, args.get("width"), args.get("height")
+                )
         elif action == "maximize_window":
-            return adapter.maximize_window(args.get('selector'))
+            return adapter.maximize_window(args.get("selector"))
         elif action == "minimize_window":
-            return adapter.minimize_window(args.get('selector'))
+            return adapter.minimize_window(args.get("selector"))
         elif action == "snap_window":
-            return adapter.snap_window(args.get('selector'), args.get('position'))
+            return adapter.snap_window(args.get("selector"), args.get("position"))
         elif action == "get_clipboard":
             return adapter.get_clipboard()
         elif action == "set_clipboard":
-            return adapter.set_clipboard(args.get('text', ''))
+            return adapter.set_clipboard(args.get("text", ""))
         elif action == "wait_for":
             # Wait for condition
-            check_type = args.get('type', 'window')
-            target = args.get('target', '')
-            timeout = float(args.get('timeout', 30.0))
+            check_type = args.get("type", "window")
+            target = args.get("target", "")
+            timeout = float(args.get("timeout", 30.0))
             start = time.time()
 
-            if check_type == 'window':
+            if check_type == "window":
                 # Poll for window existence
                 while time.time() - start < timeout:
                     # Try to activate to check existence
@@ -281,8 +298,10 @@ class WorkflowEngine:
             return False
         elif action == "read_text":
             # This is AHK-specific, not all platforms support it
-            if hasattr(adapter, 'read_text'):
-                text = adapter.read_text(args.get('selector'), control_id=args.get('control', ''))
+            if hasattr(adapter, "read_text"):
+                text = adapter.read_text(
+                    args.get("selector"), control_id=args.get("control", "")
+                )
                 if text:
                     info(f"Read text: {text}")
                 return text

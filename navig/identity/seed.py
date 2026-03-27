@@ -9,6 +9,7 @@ Fallback chain:
   2. Partial: whatever attributes are available       (degraded but stable)
   3. Random:  uuid4                                   (containerized environments)
 """
+
 from __future__ import annotations
 
 import hashlib

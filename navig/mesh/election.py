@@ -60,11 +60,11 @@ logger = get_debug_logger()
 
 # ─── Tuning constants ─────────────────────────────────────────────────────────
 # How long to collect competing ELECT_PROPOSE packets before declaring winner.
-PROPOSAL_WINDOW_S = 5          # seconds — 1/3 of default 15s TTL
+PROPOSAL_WINDOW_S = 5  # seconds — 1/3 of default 15s TTL
 # How long to wait for the takeover node to confirm ELECT_PROMOTE after YIELD.
-YIELD_ACK_TIMEOUT_S = 10       # seconds
+YIELD_ACK_TIMEOUT_S = 10  # seconds
 # Safety guard: if we think we lost but nobody promoted for this long, re-propose.
-RE_PROPOSE_BACKOFF_S = 20      # seconds
+RE_PROPOSE_BACKOFF_S = 20  # seconds
 
 
 class ElectionManager:
@@ -100,12 +100,16 @@ class ElectionManager:
 
         # Proposal tracking — resets each election cycle
         self._current_epoch: int = 0
-        self._proposed_this_epoch: bool = False   # dedupe: one proposal per node per epoch
+        self._proposed_this_epoch: bool = (
+            False  # dedupe: one proposal per node per epoch
+        )
         self._received_proposals: Dict[str, int] = {}  # node_id → tiebreaker_score
         self._proposal_window_task: Optional[asyncio.Task] = None
 
         # Yield tracking
-        self._yield_event: Optional[asyncio.Event] = None  # set when ELECT_PROMOTE arrives after our YIELD
+        self._yield_event: Optional[asyncio.Event] = (
+            None  # set when ELECT_PROMOTE arrives after our YIELD
+        )
 
         # Wire the election packet callback into MeshDiscovery
         self._discovery.set_election_callback(self._on_election_packet)
@@ -121,7 +125,11 @@ class ElectionManager:
 
         # If a leader is already healthy, enter standby silently
         leader = self._registry.get_leader()
-        if leader and not leader.is_self and leader.last_heartbeat_age_s() < self._ttl_seconds:
+        if (
+            leader
+            and not leader.is_self
+            and leader.last_heartbeat_age_s() < self._ttl_seconds
+        ):
             self._registry.set_my_role("standby", self._current_epoch)
             logger.info(
                 f"[election] Leader {leader.node_id} is healthy — entering standby"
@@ -161,9 +169,7 @@ class ElectionManager:
         thread (psutil monitor thread in supervisor.py).
         """
         if self._loop and self._running:
-            asyncio.run_coroutine_threadsafe(
-                self._graceful_yield(), self._loop
-            )
+            asyncio.run_coroutine_threadsafe(self._graceful_yield(), self._loop)
 
     # ─────────────────────────── Watchdog ────────────────────────────────────
 
@@ -228,9 +234,7 @@ class ElectionManager:
         self._proposed_this_epoch = True
         self._received_proposals.clear()
 
-        my_tiebreaker = NodeRegistry.get_tiebreaker(
-            self._registry.self_record.hostname
-        )
+        my_tiebreaker = NodeRegistry.get_tiebreaker(self._registry.self_record.hostname)
         my_node_id = self._registry.self_record.node_id
 
         # Record own proposal
@@ -242,10 +246,13 @@ class ElectionManager:
             f"epoch={self._current_epoch}, tiebreaker={my_tiebreaker})"
         )
 
-        await self._discovery.send_election_packet(ELECT_PROPOSE, extra={
-            "epoch": self._current_epoch,
-            "tiebreaker_score": my_tiebreaker,
-        })
+        await self._discovery.send_election_packet(
+            ELECT_PROPOSE,
+            extra={
+                "epoch": self._current_epoch,
+                "tiebreaker_score": my_tiebreaker,
+            },
+        )
 
         # Collect competing proposals for PROPOSAL_WINDOW_S seconds
         await asyncio.sleep(PROPOSAL_WINDOW_S)
@@ -263,10 +270,13 @@ class ElectionManager:
                 f"[election] Won election "
                 f"(epoch={self._current_epoch}, score={winner_score}) — role: LEADER"
             )
-            await self._discovery.send_election_packet(ELECT_PROMOTE, extra={
-                "epoch": self._current_epoch,
-                "tiebreaker_score": winner_score,
-            })
+            await self._discovery.send_election_packet(
+                ELECT_PROMOTE,
+                extra={
+                    "epoch": self._current_epoch,
+                    "tiebreaker_score": winner_score,
+                },
+            )
         else:
             # Another node won or tied
             self._registry.set_my_role("standby", self._current_epoch)
@@ -301,14 +311,19 @@ class ElectionManager:
             f"(target={target_node_id or 'auto'})"
         )
 
-        await self._discovery.send_election_packet(ELECT_YIELD, extra={
-            "epoch": self._current_epoch,
-            "target_node_id": target_node_id or "",
-        })
+        await self._discovery.send_election_packet(
+            ELECT_YIELD,
+            extra={
+                "epoch": self._current_epoch,
+                "target_node_id": target_node_id or "",
+            },
+        )
 
         # Wait for a new leader's ELECT_PROMOTE to arrive
         try:
-            await asyncio.wait_for(self._yield_event.wait(), timeout=YIELD_ACK_TIMEOUT_S)
+            await asyncio.wait_for(
+                self._yield_event.wait(), timeout=YIELD_ACK_TIMEOUT_S
+            )
             logger.info("[election] Yield ACK received — new leader confirmed")
         except asyncio.TimeoutError:
             logger.warning(
@@ -322,9 +337,7 @@ class ElectionManager:
 
     # ──────────────────────────── Packet handlers ────────────────────────────
 
-    def _on_election_packet(
-        self, ptype: str, record: NodeRecord, raw: dict
-    ) -> None:
+    def _on_election_packet(self, ptype: str, record: NodeRecord, raw: dict) -> None:
         """
         Synchronous callback invoked by MeshDiscovery._handle_packet for
         ELECTION_TYPES packets.
@@ -384,8 +397,7 @@ class ElectionManager:
             self._proposed_this_epoch = False
 
         logger.info(
-            f"[election] New leader: {record.node_id} "
-            f"(epoch={incoming_epoch})"
+            f"[election] New leader: {record.node_id} " f"(epoch={incoming_epoch})"
         )
 
     async def _on_yield(self, record: NodeRecord, raw: dict) -> None:

@@ -8,6 +8,7 @@ Coverage:
   - ApprovalManager.request_approval() — auto-evolve short-circuit
   - GET/POST /approval/auto-evolve HTTP routes
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -24,18 +25,18 @@ import pytest
 # ── path setup ──────────────────────────────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from navig.approval.manager import ApprovalManager
 from navig.approval.policies import (
+    DEFAULT_AUTO_EVOLVE_WHITELIST,
     ApprovalLevel,
     ApprovalPolicy,
-    DEFAULT_AUTO_EVOLVE_WHITELIST,
 )
-from navig.approval.manager import ApprovalManager
 from navig.gateway.audit_log import AuditLog
-
 
 # ════════════════════════════════════════════════════════════════════════════
 # ApprovalPolicy — is_auto_evolve_allowed()
 # ════════════════════════════════════════════════════════════════════════════
+
 
 class TestAutoEvolvePolicy:
 
@@ -59,25 +60,36 @@ class TestAutoEvolvePolicy:
 
     def test_non_whitelisted_command_denied(self):
         policy = self._policy(enabled=True)
-        assert policy.is_auto_evolve_allowed("db drop production", audit_log_live=True) is False
+        assert (
+            policy.is_auto_evolve_allowed("db drop production", audit_log_live=True)
+            is False
+        )
 
     def test_dangerous_command_never_auto_approved(self):
         """run rm -rf * is DANGEROUS — must not be auto-approved regardless of whitelist."""
         policy = self._policy(enabled=True)
         # Force it onto whitelist to prove the level check blocks it
         policy.auto_evolve_whitelist = ["run rm *"]
-        assert policy.is_auto_evolve_allowed("run rm -rf *", audit_log_live=True) is False
+        assert (
+            policy.is_auto_evolve_allowed("run rm -rf *", audit_log_live=True) is False
+        )
 
     def test_never_command_never_auto_approved(self):
         policy = self._policy(enabled=True)
         policy.auto_evolve_whitelist = ["run rm -rf /"]
-        assert policy.is_auto_evolve_allowed("run rm -rf /", audit_log_live=True) is False
+        assert (
+            policy.is_auto_evolve_allowed("run rm -rf /", audit_log_live=True) is False
+        )
 
     def test_custom_whitelist(self):
         policy = self._policy(enabled=True)
         policy.auto_evolve_whitelist = ["custom.*"]
-        assert policy.is_auto_evolve_allowed("custom.deploy", audit_log_live=True) is True
-        assert policy.is_auto_evolve_allowed("fix", audit_log_live=True) is False  # not in custom list
+        assert (
+            policy.is_auto_evolve_allowed("custom.deploy", audit_log_live=True) is True
+        )
+        assert (
+            policy.is_auto_evolve_allowed("fix", audit_log_live=True) is False
+        )  # not in custom list
 
     def test_case_insensitive_match(self):
         policy = self._policy(enabled=True)
@@ -88,6 +100,7 @@ class TestAutoEvolvePolicy:
 # ════════════════════════════════════════════════════════════════════════════
 # ApprovalPolicy — from_config() auto_evolve section
 # ════════════════════════════════════════════════════════════════════════════
+
 
 class TestAutoEvolvePolicyFromConfig:
 
@@ -110,6 +123,7 @@ class TestAutoEvolvePolicyFromConfig:
 # ════════════════════════════════════════════════════════════════════════════
 # ApprovalManager — set_auto_evolve() + guard
 # ════════════════════════════════════════════════════════════════════════════
+
 
 class TestApprovalManagerSetAutoEvolve:
 
@@ -164,6 +178,7 @@ class TestApprovalManagerSetAutoEvolve:
 # ApprovalManager — request_approval() auto-evolve short-circuit
 # ════════════════════════════════════════════════════════════════════════════
 
+
 class TestApprovalManagerAutoEvolveApproval:
 
     def _manager_auto_evolve_on(self) -> ApprovalManager:
@@ -176,7 +191,9 @@ class TestApprovalManagerAutoEvolveApproval:
     @pytest.mark.asyncio
     async def test_whitelisted_command_approved_silently(self):
         mgr = self._manager_auto_evolve_on()
-        result = await mgr.request_approval(command="fix", user_id="agent", channel="api")
+        result = await mgr.request_approval(
+            command="fix", user_id="agent", channel="api"
+        )
         assert result is True
 
     @pytest.mark.asyncio
@@ -211,7 +228,9 @@ class TestApprovalManagerAutoEvolveApproval:
             mgr.set_auto_evolve(True)
             await mgr.request_approval(command="skill.patch", user_id="agent")
             records = audit.tail(10)
-            auto_records = [r for r in records if r.get("action") == "approval.auto_evolve"]
+            auto_records = [
+                r for r in records if r.get("action") == "approval.auto_evolve"
+            ]
             assert len(auto_records) == 1
             assert auto_records[0]["metadata"]["auto_evolve"] is True
 
@@ -243,15 +262,18 @@ class TestApprovalManagerAutoEvolveApproval:
 # HTTP routes: GET/POST /approval/auto-evolve
 # ════════════════════════════════════════════════════════════════════════════
 
+
 def _build_auto_evolve_app(mgr: ApprovalManager):
     pytest.importorskip("aiohttp")
     from aiohttp import web
+
     from navig.gateway.routes.approval import register
 
     gw = MagicMock()
     gw.approval_manager = mgr
     # No auth token → require_bearer_auth passes through
     from types import SimpleNamespace
+
     gw.config = SimpleNamespace(auth_token=None)
 
     app = web.Application()
@@ -265,6 +287,7 @@ class TestAutoEvolveRoutes:
     async def test_get_status_disabled(self):
         pytest.importorskip("aiohttp")
         from aiohttp.test_utils import TestClient, TestServer
+
         with tempfile.TemporaryDirectory() as tmp:
             audit = AuditLog(path=Path(tmp) / "audit.jsonl")
             mgr = ApprovalManager(audit_log=audit)
@@ -282,12 +305,15 @@ class TestAutoEvolveRoutes:
     async def test_post_toggle_enable(self):
         pytest.importorskip("aiohttp")
         from aiohttp.test_utils import TestClient, TestServer
+
         with tempfile.TemporaryDirectory() as tmp:
             audit = AuditLog(path=Path(tmp) / "audit.jsonl")
             mgr = ApprovalManager(audit_log=audit)
             app = _build_auto_evolve_app(mgr)
             async with TestClient(TestServer(app)) as client:
-                resp = await client.post("/approval/auto-evolve", json={"enabled": True})
+                resp = await client.post(
+                    "/approval/auto-evolve", json={"enabled": True}
+                )
                 assert resp.status == 200
                 body = await resp.json()
                 data = body["data"]
@@ -298,6 +324,7 @@ class TestAutoEvolveRoutes:
     async def test_post_toggle_enable_without_audit_returns_409(self):
         pytest.importorskip("aiohttp")
         from aiohttp.test_utils import TestClient, TestServer
+
         mgr = ApprovalManager()  # no audit log
         app = _build_auto_evolve_app(mgr)
         async with TestClient(TestServer(app)) as client:
@@ -310,6 +337,7 @@ class TestAutoEvolveRoutes:
     async def test_post_toggle_disable_always_succeeds(self):
         pytest.importorskip("aiohttp")
         from aiohttp.test_utils import TestClient, TestServer
+
         mgr = ApprovalManager()  # no audit log — disabling should always work
         app = _build_auto_evolve_app(mgr)
         async with TestClient(TestServer(app)) as client:

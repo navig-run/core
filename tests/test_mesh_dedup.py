@@ -7,14 +7,17 @@ from __future__ import annotations
 import asyncio
 import time
 from unittest.mock import AsyncMock
+
 import pytest
 
 # ---------------------------------------------------------------------------
 # Import guard
 # ---------------------------------------------------------------------------
 
+
 def test_dedup_import():
     from navig.mesh.dedup import DeduplicationFilter, HandoffQueue
+
     assert DeduplicationFilter is not None
     assert HandoffQueue is not None
 
@@ -23,9 +26,11 @@ def test_dedup_import():
 # DeduplicationFilter
 # ===========================================================================
 
+
 class TestDeduplicationFilter:
     def _filter(self, window=300):
         from navig.mesh.dedup import DeduplicationFilter
+
         return DeduplicationFilter(window_seconds=window)
 
     def test_first_message_not_duplicate(self):
@@ -88,9 +93,11 @@ class TestDeduplicationFilter:
 # HandoffQueue
 # ===========================================================================
 
+
 class TestHandoffQueue:
     def _queue(self, ttl=60):
         from navig.mesh.dedup import HandoffQueue
+
         return HandoffQueue(default_ttl_s=ttl)
 
     def test_empty_on_creation(self):

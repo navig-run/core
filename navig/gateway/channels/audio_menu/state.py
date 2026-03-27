@@ -1,4 +1,5 @@
 """AudioConfig dataclass and JSON persistence for the /audio deep menu."""
+
 from __future__ import annotations
 
 import json

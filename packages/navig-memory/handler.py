@@ -5,6 +5,7 @@ Lifecycle + command registration for the Memory pack.
 Tries navig.agent.memory.MemoryStore first; falls back to a JSON file store
 so the pack works even without the full agent stack.
 """
+
 from __future__ import annotations
 
 import json
@@ -12,13 +13,14 @@ import pathlib
 import time
 from typing import Any
 
-
 # ── Lifecycle ──────────────────────────────────────────────────────────────────
+
 
 def on_load(ctx: dict) -> None:
     """Register commands on pack activation."""
     try:
         from navig.commands._registry import CommandRegistry
+
         CommandRegistry.register("memory_store", cmd_memory_store)
         CommandRegistry.register("memory_search", cmd_memory_search)
         CommandRegistry.register("memory_clear", cmd_memory_clear)
@@ -30,6 +32,7 @@ def on_unload(ctx: dict) -> None:
     """Deregister commands on pack deactivation."""
     try:
         from navig.commands._registry import CommandRegistry
+
         for name in ("memory_store", "memory_search", "memory_clear"):
             CommandRegistry.deregister(name)
     except ImportError:
@@ -42,10 +45,12 @@ def on_event(event: str, ctx: dict) -> dict | None:
 
 # ── Backend selection ──────────────────────────────────────────────────────────
 
+
 def _get_store(ctx: Any = None):
     """Return a MemoryStore-compatible object. Prefers native; falls back to JSON."""
     try:
         from navig.agent.memory import MemoryStore  # type: ignore
+
         return MemoryStore()
     except ImportError:
         return _JsonMemoryStore(_store_path(ctx))
@@ -59,6 +64,7 @@ def _store_path(ctx: Any = None) -> pathlib.Path:
         pass  # best-effort; failure is non-critical
     try:
         from navig.space.paths import get_global_root
+
         return get_global_root() / "store" / "memory" / "memories.json"
     except Exception:
         return pathlib.Path.home() / ".navig" / "store" / "memory" / "memories.json"
@@ -80,12 +86,18 @@ class _JsonMemoryStore:
             return []
 
     def _save(self, data: list[dict]) -> None:
-        self._path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        self._path.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
 
     def store(self, content: str, tags: list[str] | None = None) -> str:
         memories = self._load()
-        entry = {"id": str(len(memories) + 1), "content": content,
-                 "tags": tags or [], "ts": time.time()}
+        entry = {
+            "id": str(len(memories) + 1),
+            "content": content,
+            "tags": tags or [],
+            "ts": time.time(),
+        }
         memories.append(entry)
         self._save(memories)
         return entry["id"]
@@ -93,8 +105,12 @@ class _JsonMemoryStore:
     def search(self, query: str, limit: int = 10) -> list[dict]:
         memories = self._load()
         q = query.lower()
-        results = [m for m in memories if q in m.get("content", "").lower()
-                   or any(q in t.lower() for t in m.get("tags", []))]
+        results = [
+            m
+            for m in memories
+            if q in m.get("content", "").lower()
+            or any(q in t.lower() for t in m.get("tags", []))
+        ]
         return results[-limit:]
 
     def clear(self, confirm: bool = False) -> int:
@@ -107,6 +123,7 @@ class _JsonMemoryStore:
 
 
 # ── Commands ───────────────────────────────────────────────────────────────────
+
 
 def cmd_memory_store(args: dict, ctx: Any = None) -> dict:
     """

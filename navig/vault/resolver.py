@@ -18,6 +18,7 @@ RuntimeError
 KeyError
     If a referenced label cannot be found in the vault.
 """
+
 from __future__ import annotations
 
 import os
@@ -38,8 +39,16 @@ __all__ = [
 
 ENV_VAULT_LABELS: dict[str, list[str]] = {
     "OPENAI_API_KEY": ["openai/api_key", "openai/api-key", "openai_api_key"],
-    "OPENROUTER_API_KEY": ["openrouter/api_key", "openrouter/api-key", "openrouter_api_key"],
-    "ANTHROPIC_API_KEY": ["anthropic/api_key", "anthropic/api-key", "anthropic_api_key"],
+    "OPENROUTER_API_KEY": [
+        "openrouter/api_key",
+        "openrouter/api-key",
+        "openrouter_api_key",
+    ],
+    "ANTHROPIC_API_KEY": [
+        "anthropic/api_key",
+        "anthropic/api-key",
+        "anthropic_api_key",
+    ],
     "CLAUDE_API_KEY": ["anthropic/api_key", "anthropic/api-key", "anthropic_api_key"],
     "GROQ_API_KEY": ["groq/api_key", "groq/api-key", "groq_api_key"],
     "GEMINI_API_KEY": ["google/api_key", "google/api-key", "google_api_key"],
@@ -50,23 +59,50 @@ ENV_VAULT_LABELS: dict[str, list[str]] = {
     "GROK_KEY": ["xai/api_key", "xai/api-key", "xai_api_key"],
     "MISTRAL_API_KEY": ["mistral/api_key", "mistral/api-key", "mistral_api_key"],
     "GITHUB_TOKEN": ["github/token", "github_models/token", "github_models", "github"],
-    "NAVIG_BRIDGE_LLM_TOKEN": ["bridge/llm_token", "bridge/llm-token", "navig_bridge/llm_token"],
+    "NAVIG_BRIDGE_LLM_TOKEN": [
+        "bridge/llm_token",
+        "bridge/llm-token",
+        "navig_bridge/llm_token",
+    ],
     "DEEPGRAM_KEY": ["deepgram/api_key", "deepgram/api-key", "deepgram_api_key"],
     "DEEPGRAM_API_KEY": ["deepgram/api_key", "deepgram/api-key", "deepgram_api_key"],
-    "ELEVENLABS_API_KEY": ["elevenlabs/api_key", "elevenlabs/api-key", "elevenlabs_api_key"],
+    "ELEVENLABS_API_KEY": [
+        "elevenlabs/api_key",
+        "elevenlabs/api-key",
+        "elevenlabs_api_key",
+    ],
     "XI_API_KEY": ["elevenlabs/api_key", "elevenlabs/api-key", "elevenlabs_api_key"],
     "GOOGLE_CLOUD_API_KEY": ["google/api_key", "google/api-key", "google_api_key"],
     "GOOGLE_TTS_API_KEY": ["google/api_key", "google/api-key", "google_api_key"],
     "AUDD_API_KEY": ["audd/api_key", "audd/api-key", "audd_api_key"],
-    "SPOTIFY_CLIENT_ID": ["spotify/client_id", "spotify/client-id", "spotify_client_id"],
-    "SPOTIFY_CLIENT_SECRET": ["spotify/client_secret", "spotify/client-secret", "spotify_client_secret"],
+    "SPOTIFY_CLIENT_ID": [
+        "spotify/client_id",
+        "spotify/client-id",
+        "spotify_client_id",
+    ],
+    "SPOTIFY_CLIENT_SECRET": [
+        "spotify/client_secret",
+        "spotify/client-secret",
+        "spotify_client_secret",
+    ],
     "LASTFM_API_KEY": ["lastfm/api_key", "lastfm/api-key", "lastfm_api_key"],
     "SERPAPI_KEY": ["serpapi/api_key", "serpapi/api-key", "serpapi_api_key"],
     "SERPAPI_API_KEY": ["serpapi/api_key", "serpapi/api-key", "serpapi_api_key"],
-    "GOOGLE_APPLICATION_CREDENTIALS": ["google/vision-service-account", "google/tts-service-account"],
-    "GOOGLE_TTS_SERVICE_ACCOUNT": ["google/tts-service-account", "google/vision-service-account"],
+    "GOOGLE_APPLICATION_CREDENTIALS": [
+        "google/vision-service-account",
+        "google/tts-service-account",
+    ],
+    "GOOGLE_TTS_SERVICE_ACCOUNT": [
+        "google/tts-service-account",
+        "google/vision-service-account",
+    ],
     "DISCORD_BOT_TOKEN": ["discord/bot_token", "discord/token"],
-    "TELEGRAM_BOT_TOKEN": ["telegram/bot_token", "telegram/token", "telegram/bot-token", "telegram_bot_token"],
+    "TELEGRAM_BOT_TOKEN": [
+        "telegram/bot_token",
+        "telegram/token",
+        "telegram/bot-token",
+        "telegram_bot_token",
+    ],
     "WHATSAPP_BRIDGE_API_KEY": ["whatsapp/bridge_api_key", "whatsapp/api_key"],
 }
 
@@ -101,7 +137,7 @@ def resolve_refs(text: str, strict: bool = True) -> str:
 
     def _replace(match: re.Match) -> str:  # type: ignore[type-arg]
         namespace = match.group(1)  # VAULT | BLACKBOX | CRED
-        label     = match.group(2)
+        label = match.group(2)
 
         # Normalize legacy namespaces to VAULT
         if namespace in ("BLACKBOX", "CRED"):
@@ -229,6 +265,7 @@ def resolve_json_str(
 
 
 # ── Convenience: resolve a dict recursively ──────────────────────────────────
+
 
 def resolve_dict(obj: object, strict: bool = True) -> object:
     """Recursively resolve vault refs in dicts, lists, and strings."""

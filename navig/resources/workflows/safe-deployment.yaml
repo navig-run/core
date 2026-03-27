@@ -37,7 +37,7 @@ steps:
   - name: Validate configuration
     command: run "${service} -t"
     description: Test configuration before restart
-    
+
   - name: Restart service
     command: run "systemctl restart ${service}"
     description: Apply changes by restarting the service

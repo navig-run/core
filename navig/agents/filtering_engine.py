@@ -15,6 +15,7 @@ Usage
     # Or start a long-lived watch loop (blocking, run in a thread):
     engine.start_watch(interval_secs=5)
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -59,10 +60,10 @@ class FilterResult:
     """Result of filtering a single file."""
 
     path: Path
-    changed: bool = False           # File was actually written
-    would_change: bool = False      # Dry-run detected a potential change
-    skipped: bool = False           # File is not eligible (not .md, etc.)
-    error: Optional[str] = None     # Non-None if processing failed
+    changed: bool = False  # File was actually written
+    would_change: bool = False  # Dry-run detected a potential change
+    skipped: bool = False  # File is not eligible (not .md, etc.)
+    error: Optional[str] = None  # Non-None if processing failed
     rules_applied: List[str] = field(default_factory=list)
 
 
@@ -107,7 +108,7 @@ def normalize_headings(content: str) -> str:
     fm_match = _FRONTMATTER_RE.match(content)
     if fm_match:
         frontmatter = fm_match.group(0)
-        body = content[fm_match.end():]
+        body = content[fm_match.end() :]
     else:
         frontmatter = ""
         body = content
@@ -286,7 +287,12 @@ class FilteringEngine:
                 result = self.filter_file(md_path, dry_run=dry_run)
 
                 # Only collect actionable results
-                if result.changed or result.would_change or result.skipped or result.error:
+                if (
+                    result.changed
+                    or result.would_change
+                    or result.skipped
+                    or result.error
+                ):
                     results.append(result)
 
         return results

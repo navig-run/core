@@ -6,8 +6,12 @@ def get_env(name: str, default: str = "") -> str:
     return value if value is not None else default
 
 
-DATABASE_URL = get_env("DATABASE_URL", "postgresql+psycopg2://navig:navig@postgres:5432/navig_factory")
-REDIS_URL = get_env("REDIS_URL", "redis://:navig@redis:6379/0")
+DATABASE_URL = get_env(
+    "DATABASE_URL", "postgresql+psycopg2://navig:navig@postgres:5432/navig_factory"
+)
+REDIS_URL = get_env(
+    "REDIS_URL", "redis://:navig@redis:6379/0"
+)  # pragma: allowlist secret
 OLLAMA_BASE_URL = get_env("OLLAMA_BASE_URL", "http://ollama:11434")
 TOOL_GATEWAY_URL = get_env("TOOL_GATEWAY_URL", "http://tool-gateway:8090")
 RUNTIME_URL = get_env("RUNTIME_URL", "http://navig-runtime:8091")

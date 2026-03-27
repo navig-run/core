@@ -47,12 +47,14 @@ logger = logging.getLogger(__name__)
 # Data structures
 # ═══════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class RoutingDecision:
     """Output of the routing logic — tells the caller which model to use."""
-    tier: str                  # "small" | "big" | "coder_big"
-    model: str                 # e.g. "qwen2.5:3b-instruct"
-    provider: str = ""         # e.g. "ollama", "openrouter"
+
+    tier: str  # "small" | "big" | "coder_big"
+    model: str  # e.g. "qwen2.5:3b-instruct"
+    provider: str = ""  # e.g. "ollama", "openrouter"
     max_tokens: int = 512
     temperature: float = 0.7
     reason: str = ""
@@ -62,6 +64,7 @@ class RoutingDecision:
 @dataclass
 class RoutingTelemetry:
     """Telemetry blob logged after every routed request."""
+
     selected_tier: str = ""
     routing_reason: str = ""
     max_tokens_used: int = 0
@@ -70,23 +73,25 @@ class RoutingTelemetry:
     fallback_reason: str = ""
     provider: str = ""
     model: str = ""
-    user_override: str = ""     # "big", "small", "" if none
+    user_override: str = ""  # "big", "small", "" if none
 
 
 # ═══════════════════════════════════════════════════════════════════
 # Model slot configuration
 # ═══════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class ModelSlot:
     """One model tier slot (small / big / coder_big)."""
-    provider: str = ""          # "ollama", "openrouter", "openai", "llamacpp"
-    model: str = ""             # Model identifier
+
+    provider: str = ""  # "ollama", "openrouter", "openai", "llamacpp"
+    model: str = ""  # Model identifier
     max_tokens: int = 512
     temperature: float = 0.7
     num_ctx: int = 4096
-    base_url: str = ""          # Override per-slot
-    api_key: str = ""           # Override per-slot
+    base_url: str = ""  # Override per-slot
+    api_key: str = ""  # Override per-slot
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "ModelSlot":
@@ -105,8 +110,9 @@ class ModelSlot:
 @dataclass
 class RoutingConfig:
     """Full routing configuration."""
+
     enabled: bool = False
-    mode: str = "rules_then_fallback"   # single | rules_then_fallback | router_llm_json
+    mode: str = "rules_then_fallback"  # single | rules_then_fallback | router_llm_json
     prefer_local: bool = True
     fallback_enabled: bool = True
 
@@ -118,13 +124,18 @@ class RoutingConfig:
     @property
     def small_model(self) -> str:
         return self.small.model
+
     @property
     def big_model(self) -> str:
         return self.big.model
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], default_model: str = "",
-                  global_cfg: Dict[str, Any] = None) -> "RoutingConfig":
+    def from_dict(
+        cls,
+        data: Dict[str, Any],
+        default_model: str = "",
+        global_cfg: Dict[str, Any] = None,
+    ) -> "RoutingConfig":
         """
         Build from config dict.  Accepts both the new ``models`` schema
         and the legacy flat ``ai.routing`` keys.
@@ -142,9 +153,8 @@ class RoutingConfig:
         cfg.fallback_enabled = bool(data.get("fallback_enabled", True))
 
         # Resolve API key: per-slot → env → global config
-        default_api_key = (
-            global_cfg.get("openrouter_api_key", "")
-            or os.environ.get("OPENROUTER_API_KEY", "")
+        default_api_key = global_cfg.get("openrouter_api_key", "") or os.environ.get(
+            "OPENROUTER_API_KEY", ""
         )
 
         # ── New schema (models.small / models.big / models.coder_big) ──
@@ -185,7 +195,9 @@ class RoutingConfig:
                 if slot.provider == "openrouter":
                     slot.api_key = default_api_key
                 elif slot.provider == "openai":
-                    slot.api_key = os.environ.get("OPENAI_API_KEY", "") or default_api_key
+                    slot.api_key = (
+                        os.environ.get("OPENAI_API_KEY", "") or default_api_key
+                    )
 
             # GitHub Models — resolve token from vault → config → env
             if slot.provider == "github_models" and not slot.api_key:
@@ -193,8 +205,11 @@ class RoutingConfig:
                 # 1. Vault
                 try:
                     from navig.vault import get_vault
+
                     vault = get_vault()
-                    secret = vault.get_secret("github_models", "token", caller="model_router")
+                    secret = vault.get_secret(
+                        "github_models", "token", caller="model_router"
+                    )
                     if secret:
                         gh_token = secret
                 except Exception:  # noqa: BLE001
@@ -221,7 +236,9 @@ class RoutingConfig:
         return self.enabled and self.mode != "single"
 
     def slot_for_tier(self, tier: str) -> ModelSlot:
-        return {"small": self.small, "big": self.big, "coder_big": self.coder_big}.get(tier, self.big)
+        return {"small": self.small, "big": self.big, "coder_big": self.coder_big}.get(
+            tier, self.big
+        )
 
 
 def _normalize_mode(raw: str) -> str:
@@ -478,14 +495,13 @@ def pick_fallback_tier(original_tier: str, message: str) -> str:
     return "big"
 
 
-FALLBACK_NOTE = (
-    "Previous attempt was insufficient. Answer fully and completely now."
-)
+FALLBACK_NOTE = "Previous attempt was insufficient. Answer fully and completely now."
 
 
 # ═══════════════════════════════════════════════════════════════════
 # Main hybrid router class
 # ═══════════════════════════════════════════════════════════════════
+
 
 class HybridRouter:
     """
@@ -520,7 +536,9 @@ class HybridRouter:
         if "models" in ai_cfg:
             merged["models"] = ai_cfg["models"]
 
-        cfg = RoutingConfig.from_dict(merged, default_model=default_model, global_cfg=global_config)
+        cfg = RoutingConfig.from_dict(
+            merged, default_model=default_model, global_cfg=global_config
+        )
         return cls(cfg)
 
     # ── Provider pool ──
@@ -604,7 +622,9 @@ class HybridRouter:
         slot = self.cfg.slot_for_tier(decision.tier)
         provider = self._get_provider(slot)
         if provider is None:
-            raise RuntimeError(f"No provider available for tier={decision.tier} provider={slot.provider}")
+            raise RuntimeError(
+                f"No provider available for tier={decision.tier} provider={slot.provider}"
+            )
 
         kwargs = {}
         if slot.provider == "ollama" and slot.num_ctx:
@@ -624,7 +644,9 @@ class HybridRouter:
             return False
         return needs_fallback(response_text, decision.tier)
 
-    def fallback_decision(self, original: RoutingDecision, user_message: str = "") -> RoutingDecision:
+    def fallback_decision(
+        self, original: RoutingDecision, user_message: str = ""
+    ) -> RoutingDecision:
         """Create a fallback decision (small → big or coder_big)."""
         fb_tier = pick_fallback_tier(original.tier, user_message)
         slot = self.cfg.slot_for_tier(fb_tier)
@@ -670,9 +692,15 @@ class HybridRouter:
             "prefer_local": self.cfg.prefer_local,
             "fallback_enabled": self.cfg.fallback_enabled,
             "models": {
-                "small": {"provider": self.cfg.small.provider, "model": self.cfg.small.model},
+                "small": {
+                    "provider": self.cfg.small.provider,
+                    "model": self.cfg.small.model,
+                },
                 "big": {"provider": self.cfg.big.provider, "model": self.cfg.big.model},
-                "coder_big": {"provider": self.cfg.coder_big.provider, "model": self.cfg.coder_big.model},
+                "coder_big": {
+                    "provider": self.cfg.coder_big.provider,
+                    "model": self.cfg.coder_big.model,
+                },
             },
         }
 
@@ -686,12 +714,18 @@ class HybridRouter:
             "│  Tier   │  Provider  │  Model                          │ Tokens │",
             "├─────────┼────────────┼─────────────────────────────────┼────────┤",
         ]
-        for tier, slot in [("small", self.cfg.small), ("big", self.cfg.big), ("coder", self.cfg.coder_big)]:
+        for tier, slot in [
+            ("small", self.cfg.small),
+            ("big", self.cfg.big),
+            ("coder", self.cfg.coder_big),
+        ]:
             prov = (slot.provider or "—")[:10].ljust(10)
             mdl = (slot.model or "—")[:33].ljust(33)
             tok = str(slot.max_tokens).rjust(6)
             lines.append(f"│ {tier:<7} │ {prov} │ {mdl} │ {tok} │")
-        lines.append("└─────────┴────────────┴─────────────────────────────────┴────────┘")
+        lines.append(
+            "└─────────┴────────────┴─────────────────────────────────┴────────┘"
+        )
         return "\n".join(lines)
 
 

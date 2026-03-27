@@ -3,6 +3,7 @@
 Extracted from `navig.cli.__init__` to preserve legacy command surfaces while
 reducing root module size.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -29,6 +30,7 @@ def register_assistant_hestia_commands(app: typer.Typer) -> None:
         deprecation_warning("navig assistant", "navig ai")
         if ctx.invoked_subcommand is None:
             from navig.commands.interactive import launch_assistant_menu
+
             launch_assistant_menu()
             raise typer.Exit()
 
@@ -37,6 +39,7 @@ def register_assistant_hestia_commands(app: typer.Typer) -> None:
         """[DEPRECATED: Use 'navig ai show --status']"""
         deprecation_warning("navig assistant status", "navig ai show --status")
         from navig.commands.assistant import status_cmd
+
         status_cmd(ctx.obj)
 
     @assistant_app.command("analyze")
@@ -44,17 +47,21 @@ def register_assistant_hestia_commands(app: typer.Typer) -> None:
         """[DEPRECATED: Use 'navig ai diagnose']"""
         deprecation_warning("navig assistant analyze", "navig ai diagnose")
         from navig.commands.assistant import analyze_cmd
+
         analyze_cmd(ctx.obj)
 
     @assistant_app.command("context")
     def assistant_context(
         ctx: typer.Context,
-        clipboard: bool = typer.Option(False, "--clipboard", help="Copy context to clipboard"),
+        clipboard: bool = typer.Option(
+            False, "--clipboard", help="Copy context to clipboard"
+        ),
         file: Optional[str] = typer.Option(None, "--file", help="Save context to file"),
     ):
         """[DEPRECATED: Use 'navig ai show --context']"""
         deprecation_warning("navig assistant context", "navig ai show --context")
         from navig.commands.assistant import context_cmd
+
         context_cmd(ctx.obj, clipboard, file)
 
     @assistant_app.command("reset")
@@ -62,6 +69,7 @@ def register_assistant_hestia_commands(app: typer.Typer) -> None:
         """[DEPRECATED: Use 'navig ai run --reset']"""
         deprecation_warning("navig assistant reset", "navig ai run --reset")
         from navig.commands.assistant import reset_cmd
+
         reset_cmd(ctx.obj)
 
     @assistant_app.command("config")
@@ -69,6 +77,7 @@ def register_assistant_hestia_commands(app: typer.Typer) -> None:
         """[DEPRECATED: Use 'navig ai edit']"""
         deprecation_warning("navig assistant config", "navig ai edit")
         from navig.commands.assistant import config_cmd
+
         config_cmd(ctx.obj)
 
     hestia_app = typer.Typer(
@@ -84,28 +93,39 @@ def register_assistant_hestia_commands(app: typer.Typer) -> None:
         deprecation_warning("navig hestia", "navig web hestia")
         if ctx.invoked_subcommand is None:
             from navig.commands.interactive import launch_hestia_menu
+
             launch_hestia_menu()
             raise typer.Exit()
 
     @hestia_app.command("users")
     def hestia_list_users(
         ctx: typer.Context,
-        plain: bool = typer.Option(False, "--plain", help="Output plain text (one user per line) for scripting"),
+        plain: bool = typer.Option(
+            False, "--plain", help="Output plain text (one user per line) for scripting"
+        ),
     ):
         """List HestiaCP users."""
         from navig.commands.hestia import list_users_cmd
-        ctx.obj['plain'] = plain
+
+        ctx.obj["plain"] = plain
         list_users_cmd(ctx.obj)
 
     @hestia_app.command("domains")
     def hestia_list_domains(
         ctx: typer.Context,
-        user: Optional[str] = typer.Option(None, "--user", "-u", help="Filter by username"),
-        plain: bool = typer.Option(False, "--plain", help="Output plain text (one domain per line) for scripting"),
+        user: Optional[str] = typer.Option(
+            None, "--user", "-u", help="Filter by username"
+        ),
+        plain: bool = typer.Option(
+            False,
+            "--plain",
+            help="Output plain text (one domain per line) for scripting",
+        ),
     ):
         """List HestiaCP domains."""
         from navig.commands.hestia import list_domains_cmd
-        ctx.obj['plain'] = plain
+
+        ctx.obj["plain"] = plain
         list_domains_cmd(user, ctx.obj)
 
     @hestia_app.command("add-user")
@@ -117,17 +137,21 @@ def register_assistant_hestia_commands(app: typer.Typer) -> None:
     ):
         """Add new HestiaCP user."""
         from navig.commands.hestia import add_user_cmd
+
         add_user_cmd(username, password, email, ctx.obj)
 
     @hestia_app.command("delete-user")
     def hestia_delete_user(
         ctx: typer.Context,
         username: str = typer.Argument(..., help="Username to delete"),
-        force: bool = typer.Option(False, "--force", "-f", help="Force deletion without confirmation"),
+        force: bool = typer.Option(
+            False, "--force", "-f", help="Force deletion without confirmation"
+        ),
     ):
         """Delete HestiaCP user."""
-        ctx.obj['force'] = force
+        ctx.obj["force"] = force
         from navig.commands.hestia import delete_user_cmd
+
         delete_user_cmd(username, ctx.obj)
 
     @hestia_app.command("add-domain")
@@ -138,6 +162,7 @@ def register_assistant_hestia_commands(app: typer.Typer) -> None:
     ):
         """Add domain to HestiaCP user."""
         from navig.commands.hestia import add_domain_cmd
+
         add_domain_cmd(user, domain, ctx.obj)
 
     @hestia_app.command("delete-domain")
@@ -145,11 +170,14 @@ def register_assistant_hestia_commands(app: typer.Typer) -> None:
         ctx: typer.Context,
         user: str = typer.Argument(..., help="Username"),
         domain: str = typer.Argument(..., help="Domain name to delete"),
-        force: bool = typer.Option(False, "--force", "-f", help="Force deletion without confirmation"),
+        force: bool = typer.Option(
+            False, "--force", "-f", help="Force deletion without confirmation"
+        ),
     ):
         """Delete domain from HestiaCP."""
-        ctx.obj['force'] = force
+        ctx.obj["force"] = force
         from navig.commands.hestia import delete_domain_cmd
+
         delete_domain_cmd(user, domain, ctx.obj)
 
     @hestia_app.command("renew-ssl")
@@ -160,6 +188,7 @@ def register_assistant_hestia_commands(app: typer.Typer) -> None:
     ):
         """Renew SSL certificate for domain."""
         from navig.commands.hestia import renew_ssl_cmd
+
         renew_ssl_cmd(user, domain, ctx.obj)
 
     @hestia_app.command("rebuild-web")
@@ -169,6 +198,7 @@ def register_assistant_hestia_commands(app: typer.Typer) -> None:
     ):
         """Rebuild web configuration for user."""
         from navig.commands.hestia import rebuild_web_cmd
+
         rebuild_web_cmd(user, ctx.obj)
 
     @hestia_app.command("backup-user")
@@ -178,4 +208,5 @@ def register_assistant_hestia_commands(app: typer.Typer) -> None:
     ):
         """Backup HestiaCP user."""
         from navig.commands.hestia import backup_user_cmd
+
         backup_user_cmd(user, ctx.obj)

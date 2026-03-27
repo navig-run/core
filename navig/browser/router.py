@@ -46,6 +46,7 @@ def get_browser(
     """
     if cdp_port is not None:
         from navig.browser.cdp_bridge import CDPBridge
+
         logger.info("[BrowserRouter] CDP attach tier selected (port=%d)", cdp_port)
         return CDPBridge(debug_port=cdp_port)
 
@@ -84,7 +85,9 @@ async def get_browser_auto(
         logger.info("[BrowserRouter] Tier-1 succeeded for %s (HTTP %s)", url, status)
         return tier1
     except Exception as e:
-        logger.warning("[BrowserRouter] Tier-1 failed (%s), escalating to stealth tier", e)
+        logger.warning(
+            "[BrowserRouter] Tier-1 failed (%s), escalating to stealth tier", e
+        )
         try:
             await tier1.stop()
         except Exception:  # noqa: BLE001
@@ -99,6 +102,7 @@ async def get_browser_auto(
 
 # ── Convenience aliases ────────────────────────────────────────────────────────
 
+
 def fast_browser(config: Optional[BrowserConfig] = None) -> BrowserController:
     """Return a Tier-1 BrowserController (vanilla Playwright)."""
     return BrowserController(config)
@@ -112,4 +116,5 @@ def stealth_browser(config: Optional[StealthConfig] = None) -> StealthController
 def cdp_browser(port: int = 9222) -> "CDPBridge":
     """Return a Tier-3 CDPBridge (attach to existing Chrome/NaviBrowser)."""
     from navig.browser.cdp_bridge import CDPBridge
+
     return CDPBridge(debug_port=port)

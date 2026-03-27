@@ -23,6 +23,7 @@ Usage::
     ctx = SkillEligibilityContext.default()
     active_ids = filter_skills(list(skills), skills, ctx)
 """
+
 from __future__ import annotations
 
 import sys
@@ -38,9 +39,9 @@ if TYPE_CHECKING:
 # =============================================================================
 
 _PLATFORM_MAP: Dict[str, str] = {
-    "linux":  "linux",
+    "linux": "linux",
     "darwin": "darwin",
-    "win32":  "windows",
+    "win32": "windows",
     "cygwin": "windows",
 }
 
@@ -51,6 +52,7 @@ _SAFETY_ORDER = ["safe", "elevated", "destructive"]
 # =============================================================================
 # SkillEligibilityContext
 # =============================================================================
+
 
 @dataclass
 class SkillEligibilityContext:
@@ -68,6 +70,7 @@ class SkillEligibilityContext:
         required_tags:      All listed tags must appear in skill.tags (AND logic).
         excluded_tags:      Any listed tag disqualifies the skill (OR logic).
     """
+
     platform: str = "all"
     safety_max: str = "elevated"
     user_invocable_only: bool = False
@@ -119,6 +122,7 @@ class SkillEligibilityContext:
 # =============================================================================
 # Single-skill gate
 # =============================================================================
+
 
 def is_eligible(skill: "Skill", ctx: SkillEligibilityContext) -> bool:
     """Return True if *skill* meets all criteria in *ctx*.
@@ -182,6 +186,7 @@ def is_eligible(skill: "Skill", ctx: SkillEligibilityContext) -> bool:
 # =============================================================================
 # Bulk filter
 # =============================================================================
+
 
 def filter_skills(
     skill_ids: List[str],

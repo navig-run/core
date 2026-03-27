@@ -17,6 +17,7 @@ def _debug_log(message: str) -> None:
     """Simple debug logging wrapper."""
     try:
         from navig.debug_logger import DebugLogger
+
         logger = DebugLogger()
         logger.log_operation("memory", {"message": message})
     except Exception:
@@ -66,44 +67,44 @@ class RetrievalResult:
 
     def to_dict(self) -> dict:
         return {
-            'context': self.context,
-            'sources': self.sources,
-            'history_messages': self.history_messages,
-            'knowledge_entries': self.knowledge_entries,
-            'file_snippets': self.file_snippets,
-            'token_estimate': self.token_estimate,
+            "context": self.context,
+            "sources": self.sources,
+            "history_messages": self.history_messages,
+            "knowledge_entries": self.knowledge_entries,
+            "file_snippets": self.file_snippets,
+            "token_estimate": self.token_estimate,
         }
 
 
 class RAGPipeline:
     """
     Retrieval-Augmented Generation pipeline.
-    
+
     Builds rich context by combining:
     1. Recent conversation history
     2. Semantically relevant knowledge
     3. Referenced file content
-    
+
     Usage:
         rag = RAGPipeline(
             conversation_store=store,
             knowledge_base=kb,
             embedding_provider=embeddings,
         )
-        
+
         result = rag.retrieve(
             query="How do I configure SSH?",
             session_key="task-123",
         )
-        
+
         prompt = f"Context:\\n{result.context}\\n\\nQuestion: {query}"
     """
 
     def __init__(
         self,
-        conversation_store: Optional['ConversationStore'] = None,
-        knowledge_base: Optional['KnowledgeBase'] = None,
-        embedding_provider: Optional['EmbeddingProvider'] = None,
+        conversation_store: Optional["ConversationStore"] = None,
+        knowledge_base: Optional["KnowledgeBase"] = None,
+        embedding_provider: Optional["EmbeddingProvider"] = None,
         config: Optional[RAGConfig] = None,
     ):
         self.conversation_store = conversation_store
@@ -120,13 +121,13 @@ class RAGPipeline:
     ) -> RetrievalResult:
         """
         Retrieve relevant context for a query.
-        
+
         Args:
             query: The user's query or current task
             session_key: Session for conversation history
             include_files: Additional files to include
             tags: Knowledge base tag filter
-            
+
         Returns:
             RetrievalResult with combined context
         """
@@ -140,14 +141,14 @@ class RAGPipeline:
             if history_context:
                 parts.append(history_context)
                 sources.append(f"conversation:{session_key}")
-                result.history_messages = history_context.count('\n')
+                result.history_messages = history_context.count("\n")
 
         # 2. Knowledge base search
         if self.config.include_knowledge and self.knowledge_base:
             kb_context = self._get_knowledge_context(query, tags)
             if kb_context:
                 parts.append(kb_context)
-                result.knowledge_entries = kb_context.count('### ')
+                result.knowledge_entries = kb_context.count("### ")
 
         # 3. File content
         if self.config.include_files and include_files:
@@ -189,7 +190,7 @@ class RAGPipeline:
         else:
             return self._format_history_json(messages)
 
-    def _format_history_chat(self, messages: list['Message']) -> str:
+    def _format_history_chat(self, messages: list["Message"]) -> str:
         """Format history as chat transcript."""
         lines = ["## Conversation History"]
 
@@ -200,7 +201,7 @@ class RAGPipeline:
 
         return "\n".join(lines)
 
-    def _format_history_markdown(self, messages: list['Message']) -> str:
+    def _format_history_markdown(self, messages: list["Message"]) -> str:
         """Format history as markdown."""
         lines = ["## Conversation History"]
 
@@ -212,15 +213,15 @@ class RAGPipeline:
 
         return "\n".join(lines)
 
-    def _format_history_json(self, messages: list['Message']) -> str:
+    def _format_history_json(self, messages: list["Message"]) -> str:
         """Format history as JSON."""
         import json
 
         data = [
             {
-                'role': msg.role,
-                'content': self._truncate(msg.content, 500),
-                'timestamp': msg.timestamp.isoformat(),
+                "role": msg.role,
+                "content": self._truncate(msg.content, 500),
+                "timestamp": msg.timestamp.isoformat(),
             }
             for msg in messages
         ]
@@ -274,7 +275,7 @@ class RAGPipeline:
                 if not file_path.exists():
                     continue
 
-                content = file_path.read_text(encoding='utf-8', errors='replace')
+                content = file_path.read_text(encoding="utf-8", errors="replace")
                 content = self._truncate(content, min(char_budget, 2000))
                 char_budget -= len(content)
 
@@ -294,27 +295,27 @@ class RAGPipeline:
     def _detect_language(self, path: Path) -> str:
         """Detect language from file extension."""
         ext_map = {
-            '.py': 'python',
-            '.js': 'javascript',
-            '.ts': 'typescript',
-            '.json': 'json',
-            '.yaml': 'yaml',
-            '.yml': 'yaml',
-            '.md': 'markdown',
-            '.sh': 'bash',
-            '.ps1': 'powershell',
-            '.sql': 'sql',
-            '.html': 'html',
-            '.css': 'css',
-            '.xml': 'xml',
+            ".py": "python",
+            ".js": "javascript",
+            ".ts": "typescript",
+            ".json": "json",
+            ".yaml": "yaml",
+            ".yml": "yaml",
+            ".md": "markdown",
+            ".sh": "bash",
+            ".ps1": "powershell",
+            ".sql": "sql",
+            ".html": "html",
+            ".css": "css",
+            ".xml": "xml",
         }
-        return ext_map.get(path.suffix.lower(), '')
+        return ext_map.get(path.suffix.lower(), "")
 
     def _truncate(self, text: str, max_chars: int) -> str:
         """Truncate text to max characters."""
         if len(text) <= max_chars:
             return text
-        return text[:max_chars - 3] + "..."
+        return text[: max_chars - 3] + "..."
 
     def _estimate_tokens(self, text: str) -> int:
         """Estimate token count (rough approximation)."""
@@ -331,14 +332,14 @@ class RAGPipeline:
     ) -> str:
         """
         Build a complete prompt with context.
-        
+
         Args:
             query: User's query
             session_key: Session for history
             system_prompt: Optional system prompt
             include_files: Files to include
             tags: Knowledge tag filter
-            
+
         Returns:
             Complete prompt string
         """
@@ -364,7 +365,7 @@ class RAGPipeline:
     def extract_file_references(self, text: str) -> list[Path]:
         """
         Extract file paths mentioned in text.
-        
+
         Looks for patterns like:
         - `path/to/file.py`
         - "path/to/file.py"
@@ -373,7 +374,7 @@ class RAGPipeline:
         paths = []
 
         # Match backtick paths
-        backtick_pattern = r'`([^`]+\.\w+)`'
+        backtick_pattern = r"`([^`]+\.\w+)`"
         for match in re.finditer(backtick_pattern, text):
             path = Path(match.group(1))
             if path.exists():
@@ -395,11 +396,11 @@ class RAGPipeline:
     ) -> str:
         """
         Generate a summary of a conversation session.
-        
+
         Args:
             session_key: Session to summarize
             max_length: Maximum summary length
-            
+
         Returns:
             Summary string
         """
@@ -421,7 +422,7 @@ class RAGPipeline:
         topics = set()
         for msg in user_messages[:10]:
             # Extract first sentence as topic indicator
-            first_line = msg.content.split('\n')[0][:100]
+            first_line = msg.content.split("\n")[0][:100]
             topics.add(first_line)
 
         summary_parts = [
@@ -440,7 +441,7 @@ class RAGPipeline:
 class ContextWindow:
     """
     Manages context window budget for token-limited models.
-    
+
     Helps balance between history, knowledge, and current content.
     """
 
@@ -461,21 +462,21 @@ class ContextWindow:
     ) -> dict[str, int]:
         """
         Allocate token budget across content types.
-        
+
         Args:
             history_priority: Weight for conversation history
             knowledge_priority: Weight for knowledge base
             files_priority: Weight for file content
-            
+
         Returns:
             Token budget per content type
         """
         total = history_priority + knowledge_priority + files_priority
 
         return {
-            'history': int(self.available * (history_priority / total)),
-            'knowledge': int(self.available * (knowledge_priority / total)),
-            'files': int(self.available * (files_priority / total)),
+            "history": int(self.available * (history_priority / total)),
+            "knowledge": int(self.available * (knowledge_priority / total)),
+            "files": int(self.available * (files_priority / total)),
         }
 
     def fits(self, content: str) -> bool:

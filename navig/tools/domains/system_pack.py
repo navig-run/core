@@ -3,6 +3,7 @@ System Tool Pack - system_info, file_read.
 
 Lightweight system inspection tools (safe, read-only).
 """
+
 from __future__ import annotations
 
 import platform
@@ -25,6 +26,7 @@ def _system_info(**kwargs):
 def _file_read(path: str, max_lines: int = 200, **kwargs):
     """Read a local file (capped at max_lines)."""
     from pathlib import Path
+
     p = Path(path).expanduser()
     if not p.is_file():
         return {"error": f"File not found: {path}"}
@@ -60,8 +62,16 @@ def register_tools(registry: "ToolRegistry") -> None:
             description="Read a local file (capped output).",
             safety=SafetyLevel.MODERATE,
             parameters_schema={
-                "path": {"type": "string", "required": True, "description": "File path"},
-                "max_lines": {"type": "integer", "default": 200, "description": "Max lines to return"},
+                "path": {
+                    "type": "string",
+                    "required": True,
+                    "description": "File path",
+                },
+                "max_lines": {
+                    "type": "integer",
+                    "default": 200,
+                    "description": "Max lines to return",
+                },
             },
             tags=["file", "read", "system"],
         ),

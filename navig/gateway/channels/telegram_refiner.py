@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 # State machine
 # ─────────────────────────────────────────────────────────────────
 
+
 class ClarifyState(str, Enum):
     ASKING = "asking"
     CONFIRMING = "confirming"
@@ -56,12 +57,12 @@ class ClarifySession:
     Incoming text replies are matched by user_id + chat_id.
     """
 
-    state: str                 # ClarifyState value
+    state: str  # ClarifyState value
     original_text: str
     topic: str
-    questions: list[str]       # 3 clarifying questions from LLM
-    answers: dict[str, str]    # {str(q_index): answer}
-    current_q: int             # 0-based question index
+    questions: list[str]  # 3 clarifying questions from LLM
+    answers: dict[str, str]  # {str(q_index): answer}
+    current_q: int  # 0-based question index
     refined_text: Optional[str]
     session_key: str
     chat_id: int
@@ -104,6 +105,7 @@ class ClarifySession:
 # Keyboard builders
 # ─────────────────────────────────────────────────────────────────
 
+
 def build_confirmation_keyboard(session: ClarifySession) -> list[list[dict]]:
     """Keyboard shown before triggering the LLM refinement call."""
     key = session.session_key
@@ -120,9 +122,9 @@ def build_accept_keyboard(session: ClarifySession) -> list[list[dict]]:
     key = session.session_key
     return [
         [
-            {"text": "✅ Accept",      "callback_data": f"rfn:accept:{key}"},
+            {"text": "✅ Accept", "callback_data": f"rfn:accept:{key}"},
             {"text": "♻️ Refine more", "callback_data": f"rfn:rerefine:{key}"},
-            {"text": "⏪ Revert",       "callback_data": f"rfn:revert:{key}"},
+            {"text": "⏪ Revert", "callback_data": f"rfn:revert:{key}"},
         ]
     ]
 
@@ -130,9 +132,7 @@ def build_accept_keyboard(session: ClarifySession) -> list[list[dict]]:
 def build_skip_keyboard(session: ClarifySession) -> list[list[dict]]:
     """Shown with each question so users can skip."""
     key = session.session_key
-    return [
-        [{"text": "⏭ Skip this question", "callback_data": f"rfn:skip:{key}"}]
-    ]
+    return [[{"text": "⏭ Skip this question", "callback_data": f"rfn:skip:{key}"}]]
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -194,6 +194,7 @@ def _build_qa_block(session: ClarifySession) -> str:
 # RefinementEngine
 # ─────────────────────────────────────────────────────────────────
 
+
 class RefinementEngine:
     """
     Orchestrates the clarification → refinement state machine.
@@ -208,7 +209,7 @@ class RefinementEngine:
         ``telegram_keyboards.get_callback_store()``.
     """
 
-    _SESSION_TTL = 3600 * 4   # 4 hours
+    _SESSION_TTL = 3600 * 4  # 4 hours
 
     def __init__(self, channel: Any, cb_store: Any = None):
         self.channel = channel
@@ -219,6 +220,7 @@ class RefinementEngine:
             return self._store
         try:
             from navig.gateway.channels.telegram_keyboards import get_callback_store
+
             return get_callback_store()
         except Exception as exc:
             logger.error("RefinementEngine: cannot get CallbackStore: %s", exc)
@@ -228,10 +230,12 @@ class RefinementEngine:
         """Return navig LLM router (lazy)."""
         try:
             from navig.agent.router import get_router
+
             return get_router()
         except Exception:
             try:
                 from navig.agent import get_llm
+
                 return get_llm()
             except Exception as exc:
                 logger.error("RefinementEngine: cannot get LLM: %s", exc)
@@ -323,10 +327,14 @@ class RefinementEngine:
         if session.all_answered or session.current_q >= len(session.questions):
             # Move to confirmation
             session.state = ClarifyState.CONFIRMING.value
-            store.put(session_key, {"session": session.serialise()}, ttl=self._SESSION_TTL)
+            store.put(
+                session_key, {"session": session.serialise()}, ttl=self._SESSION_TTL
+            )
             await self._send_confirmation(session)
         else:
-            store.put(session_key, {"session": session.serialise()}, ttl=self._SESSION_TTL)
+            store.put(
+                session_key, {"session": session.serialise()}, ttl=self._SESSION_TTL
+            )
             await self._ask_question(session)
 
         return True
@@ -335,7 +343,9 @@ class RefinementEngine:
         """Run the LLM refinement call and send the result."""
         session.state = ClarifyState.REFINING.value
         store = self._get_store()
-        store.put(session.session_key, {"session": session.serialise()}, ttl=self._SESSION_TTL)
+        store.put(
+            session.session_key, {"session": session.serialise()}, ttl=self._SESSION_TTL
+        )
 
         thinking = await self.channel.send_message(
             session.chat_id,
@@ -358,7 +368,9 @@ class RefinementEngine:
 
         session.refined_text = refined
         session.state = ClarifyState.DONE.value
-        store.put(session.session_key, {"session": session.serialise()}, ttl=self._SESSION_TTL)
+        store.put(
+            session.session_key, {"session": session.serialise()}, ttl=self._SESSION_TTL
+        )
         # Clear pending text listener
         store.remove(f"rfn_pending:{session.user_id}:{session.chat_id}")
 
@@ -394,6 +406,7 @@ class RefinementEngine:
             raw = await self._call_llm(llm, prompt)
             # Parse JSON array from response
             import re
+
             match = re.search(r"\[.*?\]", raw, re.DOTALL)
             if match:
                 questions = json.loads(match.group(0))
@@ -417,6 +430,7 @@ class RefinementEngine:
                 return str(result)
             if hasattr(llm, "complete"):
                 import asyncio
+
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(None, llm.complete, prompt)
                 return str(result)
@@ -473,6 +487,7 @@ class RefinementEngine:
 # Callback handler
 # ─────────────────────────────────────────────────────────────────
 
+
 async def handle_rfn_callback(
     channel: Any,
     callback_query: Any,
@@ -526,7 +541,9 @@ async def handle_rfn_callback(
             key_str = str(session.current_q)
             session.answers.pop(key_str, None)
             session.state = ClarifyState.ASKING.value
-            cb_store.put(session_key, {"session": session.serialise()}, ttl=engine._SESSION_TTL)
+            cb_store.put(
+                session_key, {"session": session.serialise()}, ttl=engine._SESSION_TTL
+            )
             # Re-register pending text listener
             cb_store.put(
                 f"rfn_pending:{session.user_id}:{session.chat_id}",
@@ -542,17 +559,23 @@ async def handle_rfn_callback(
         session.current_q += 1
         if session.all_answered or session.current_q >= len(session.questions):
             session.state = ClarifyState.CONFIRMING.value
-            cb_store.put(session_key, {"session": session.serialise()}, ttl=engine._SESSION_TTL)
+            cb_store.put(
+                session_key, {"session": session.serialise()}, ttl=engine._SESSION_TTL
+            )
             await engine._send_confirmation(session)
         else:
-            cb_store.put(session_key, {"session": session.serialise()}, ttl=engine._SESSION_TTL)
+            cb_store.put(
+                session_key, {"session": session.serialise()}, ttl=engine._SESSION_TTL
+            )
             await engine._ask_question(session)
         await channel.answer_callback_query(cb_id, "⏭ Skipped")
 
     elif action == "accept":
         refined = session.refined_text or session.original_text
         try:
-            await channel.send_message(session.chat_id, f"✅ *Accepted:*\n\n{refined}", parse_mode="Markdown")
+            await channel.send_message(
+                session.chat_id, f"✅ *Accepted:*\n\n{refined}", parse_mode="Markdown"
+            )
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
         cb_store.remove(session_key)

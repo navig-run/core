@@ -10,6 +10,7 @@ Adding a new provider:
   2. Add a factory entry in ``navig.agent.llm_providers._PROVIDER_MAP``.
   3. Run ``verify_all_providers()`` and confirm zero failures.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -83,7 +84,11 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         tier="cloud",
         env_vars=["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
         vault_keys=["anthropic/api-key", "anthropic/api_key"],
-        models=["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
+        models=[
+            "claude-3-5-sonnet-20241022",
+            "claude-3-5-haiku-20241022",
+            "claude-3-opus-20240229",
+        ],
         emoji="🟣",
     ),
     # ── Cloud: Google / Gemini ────────────────────────────────────────────────
@@ -105,8 +110,13 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         tier="cloud",
         env_vars=["OPENROUTER_API_KEY"],
         vault_keys=["openrouter/api-key", "openrouter/api_key"],
-        models=["anthropic/claude-3.5-sonnet", "openai/gpt-4o", "google/gemini-pro-1.5",
-                "meta-llama/llama-3.3-70b-instruct", "deepseek/deepseek-chat"],
+        models=[
+            "anthropic/claude-3.5-sonnet",
+            "openai/gpt-4o",
+            "google/gemini-pro-1.5",
+            "meta-llama/llama-3.3-70b-instruct",
+            "deepseek/deepseek-chat",
+        ],
         emoji="🌐",
     ),
     # ── Cloud: Groq ───────────────────────────────────────────────────────────
@@ -225,12 +235,18 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         id="blockrun",
         display_name="BlockRun",
         description="Smart-routing AI proxy with x402 micropayments (Solana/USDC). "
-                    "Access 30+ models via one USDC wallet — no per-model API keys.",
+        "Access 30+ models via one USDC wallet — no per-model API keys.",
         tier="proxy",
         env_vars=["BLOCKRUN_WALLET_KEY"],
         vault_keys=["blockrun/wallet-key"],
         requires_key=False,  # Proxy auto-generates wallet on first run
-        models=["claude-3.5-sonnet", "gpt-4o", "gpt-4o-mini", "deepseek-chat", "gemini-2.0-flash"],
+        models=[
+            "claude-3.5-sonnet",
+            "gpt-4o",
+            "gpt-4o-mini",
+            "deepseek-chat",
+            "gemini-2.0-flash",
+        ],
         emoji="⛓",
         enabled=False,  # Lab-derived — enable after x402 proxy integration is complete
     ),
@@ -271,9 +287,11 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         env_vars=["AIRLLM_MODEL_PATH"],
         vault_keys=[],
         requires_key=False,
-        models=["meta-llama/Llama-3.3-70B-Instruct",
-                "Qwen/Qwen2.5-72B-Instruct",
-                "deepseek-ai/deepseek-coder-33b-instruct"],
+        models=[
+            "meta-llama/Llama-3.3-70B-Instruct",
+            "Qwen/Qwen2.5-72B-Instruct",
+            "deepseek-ai/deepseek-coder-33b-instruct",
+        ],
         emoji="🌬",
         auth_mode="none",
     ),

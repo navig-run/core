@@ -1,4 +1,5 @@
 """Identity data models."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -9,8 +10,9 @@ from typing import Any, Dict, List, Optional
 @dataclass
 class SocialLink:
     """A linked social account."""
-    platform: str          # "github", "twitter", "discord", etc.
-    handle: str            # username / ID on that platform
+
+    platform: str  # "github", "twitter", "discord", etc.
+    handle: str  # username / ID on that platform
     verified: bool = False
     linked_at: datetime = field(default_factory=datetime.utcnow)
 
@@ -25,7 +27,7 @@ class UserProfile:
     """
 
     telegram_id: int
-    username: Optional[str] = None      # Telegram @handle
+    username: Optional[str] = None  # Telegram @handle
     display_name: Optional[str] = None
 
     # TON identity
@@ -70,7 +72,11 @@ class UserProfile:
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "UserProfile":
         socials = [
-            SocialLink(platform=s["platform"], handle=s["handle"], verified=s.get("verified", False))
+            SocialLink(
+                platform=s["platform"],
+                handle=s["handle"],
+                verified=s.get("verified", False),
+            )
             for s in d.get("socials", [])
         ]
         return cls(
@@ -84,7 +90,15 @@ class UserProfile:
             matrix_user_id=d.get("matrix_user_id"),
             language=d.get("language", "en"),
             timezone=d.get("timezone"),
-            created_at=datetime.fromisoformat(d["created_at"]) if "created_at" in d else datetime.utcnow(),
-            updated_at=datetime.fromisoformat(d["updated_at"]) if "updated_at" in d else datetime.utcnow(),
+            created_at=(
+                datetime.fromisoformat(d["created_at"])
+                if "created_at" in d
+                else datetime.utcnow()
+            ),
+            updated_at=(
+                datetime.fromisoformat(d["updated_at"])
+                if "updated_at" in d
+                else datetime.utcnow()
+            ),
             metadata=d.get("metadata", {}),
         )

@@ -178,11 +178,11 @@ The engine auto-detects:
 
 ## Security
 
-✅ Safe evaluation (no eval/exec)  
-✅ Whitelisted operations  
-✅ No function calls  
-✅ No imports  
-✅ Sandboxed scope  
+✅ Safe evaluation (no eval/exec)
+✅ Whitelisted operations
+✅ No function calls
+✅ No imports
+✅ Sandboxed scope
 
 ## Examples
 
@@ -204,7 +204,7 @@ name: clipboard_demo
 steps:
   - action: get_clipboard
     capture: original
-  
+
   - action: set_clipboard
     args:
       text: "Processed: {{original}}"
@@ -216,7 +216,7 @@ name: conditional_demo
 steps:
   - action: get_focused_window
     capture: window
-  
+
   - action: type
     args:
       text: "VS Code is active!"
@@ -327,5 +327,3 @@ navig workflow test <name>
    ```
 
 4. Share it with your team! 🚀
-
-

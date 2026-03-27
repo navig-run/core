@@ -40,15 +40,16 @@ import numpy as np
 logger = logging.getLogger("navig.voice.wake_word")
 
 # Audio constants — must match openWakeWord's expectations
-SAMPLE_RATE  = 16_000      # Hz
-CHUNK_FRAMES = 1_280       # ~80ms at 16kHz (openWakeWord frame size)
-CHANNELS     = 1
-DTYPE        = "int16"
+SAMPLE_RATE = 16_000  # Hz
+CHUNK_FRAMES = 1_280  # ~80ms at 16kHz (openWakeWord frame size)
+CHANNELS = 1
+DTYPE = "int16"
 
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class WakeWordConfig:
@@ -89,13 +90,15 @@ class WakeWordConfig:
 # Detection Result
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class WakeWordDetection:
     """Information about a wake-word detection event."""
-    keyword:   str
-    score:     float
+
+    keyword: str
+    score: float
     timestamp: float = field(default_factory=time.time)
-    model:     Optional[str] = None
+    model: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -125,19 +128,19 @@ class WakeWordEngine:
         on_detected: Optional[OnDetectedCallback] = None,
         session_manager: Optional[Any] = None,  # VoiceSessionManager
     ):
-        self.config          = config or WakeWordConfig()
-        self._on_detected    = on_detected
-        self._session_mgr    = session_manager
+        self.config = config or WakeWordConfig()
+        self._on_detected = on_detected
+        self._session_mgr = session_manager
 
-        self._loop:          Optional[asyncio.AbstractEventLoop] = None
-        self._task:          Optional[asyncio.Task] = None
-        self._stop_event:    asyncio.Event = asyncio.Event()
-        self._last_trigger:  float = 0.0
-        self._running        = False
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._task: Optional[asyncio.Task] = None
+        self._stop_event: asyncio.Event = asyncio.Event()
+        self._last_trigger: float = 0.0
+        self._running = False
 
         # Lazily loaded components
-        self._oww_model:     Optional[Any] = None
-        self._vad_model:     Optional[Any] = None
+        self._oww_model: Optional[Any] = None
+        self._vad_model: Optional[Any] = None
         self._mic_available: bool = True
 
     # ------------------------------------------------------------------ #
@@ -225,7 +228,9 @@ class WakeWordEngine:
         # Use an asyncio.Queue to bridge the sounddevice callback thread → event loop
         audio_queue: asyncio.Queue = asyncio.Queue(maxsize=64)
 
-        def _audio_callback(indata: np.ndarray, frames: int, t: Any, status: Any) -> None:
+        def _audio_callback(
+            indata: np.ndarray, frames: int, t: Any, status: Any
+        ) -> None:
             if status:
                 logger.debug("Mic stream status: %s", status)
             # Copy to avoid data race (sounddevice reuses buffer)
@@ -243,7 +248,11 @@ class WakeWordEngine:
                 blocksize=CHUNK_FRAMES,
                 callback=_audio_callback,
             ):
-                logger.debug("Microphone stream opened (%d Hz, %d frames/block)", SAMPLE_RATE, CHUNK_FRAMES)
+                logger.debug(
+                    "Microphone stream opened (%d Hz, %d frames/block)",
+                    SAMPLE_RATE,
+                    CHUNK_FRAMES,
+                )
                 while not self._stop_event.is_set():
                     try:
                         chunk = await asyncio.wait_for(audio_queue.get(), timeout=0.5)
@@ -252,7 +261,9 @@ class WakeWordEngine:
 
                     # Score in thread executor to keep event loop free
                     if self.config.use_thread_executor:
-                        score = await loop.run_in_executor(None, self._score_chunk, chunk)
+                        score = await loop.run_in_executor(
+                            None, self._score_chunk, chunk
+                        )
                     else:
                         score = self._score_chunk(chunk)
 
@@ -268,7 +279,8 @@ class WakeWordEngine:
                             )
                             logger.info(
                                 "🔔 Wake word detected! keyword=%r score=%.3f",
-                                self.config.keyword, score,
+                                self.config.keyword,
+                                score,
                             )
                             # Fire callback in event loop
                             asyncio.create_task(self._on_wake(detection))
@@ -290,6 +302,7 @@ class WakeWordEngine:
                 # Silero VAD expects float32 in [-1, 1] at 16kHz
                 float_chunk = chunk.astype(np.float32) / 32768.0
                 import torch
+
                 tensor = torch.from_numpy(float_chunk).unsqueeze(0)
                 speech_prob = self._vad_model(tensor, SAMPLE_RATE).item()
                 if speech_prob < self.config.vad_threshold:
@@ -327,20 +340,24 @@ class WakeWordEngine:
         try:
             import openwakeword
             from openwakeword.model import Model as OWWModel
+
             self._oww_model = OWWModel(
-                wakeword_models=[self.config.keyword]
-                if not self.config.keyword.endswith(".tflite")
-                else None,
-                custom_verifier_models={} if not self.config.keyword.endswith(".tflite") else {
-                    self.config.keyword: self.config.keyword
-                },
+                wakeword_models=(
+                    [self.config.keyword]
+                    if not self.config.keyword.endswith(".tflite")
+                    else None
+                ),
+                custom_verifier_models=(
+                    {}
+                    if not self.config.keyword.endswith(".tflite")
+                    else {self.config.keyword: self.config.keyword}
+                ),
                 inference_framework="tflite",
             )
             logger.info("openWakeWord model loaded: %s", self.config.keyword)
         except ImportError:
             logger.error(
-                "openWakeWord not installed. Install with: "
-                "pip install openwakeword"
+                "openWakeWord not installed. Install with: " "pip install openwakeword"
             )
         except Exception as exc:
             logger.error("openWakeWord model load failed: %s", exc)
@@ -349,6 +366,7 @@ class WakeWordEngine:
         if self.config.use_vad:
             try:
                 import torch
+
                 vad_model, _ = torch.hub.load(
                     "snakers4/silero-vad",
                     "silero_vad",
@@ -359,7 +377,9 @@ class WakeWordEngine:
                 self._vad_model = vad_model
                 logger.info("Silero VAD pre-filter loaded")
             except Exception as vad_exc:
-                logger.warning("Silero VAD unavailable (%s) — scoring all frames", vad_exc)
+                logger.warning(
+                    "Silero VAD unavailable (%s) — scoring all frames", vad_exc
+                )
                 self._vad_model = None
 
     # ------------------------------------------------------------------ #
@@ -392,6 +412,7 @@ class WakeWordEngine:
         """Push wake event to the polling queue for navig-echo to consume."""
         try:
             from navig.gateway.routes.voice import PENDING_WAKES
+
             PENDING_WAKES.append(detection)
         except ImportError:
             pass  # API not running
@@ -402,13 +423,14 @@ class WakeWordEngine:
             return
         try:
             import aiohttp
+
             async with aiohttp.ClientSession() as client:
                 await asyncio.wait_for(
                     client.post(
                         f"{url}/api/voice/wake",
                         json={
-                            "keyword":   detection.keyword,
-                            "score":     detection.score,
+                            "keyword": detection.keyword,
+                            "score": detection.score,
                             "timestamp": detection.timestamp,
                         },
                     ),
@@ -425,6 +447,7 @@ class WakeWordEngine:
         """Return True if at least one audio input device is available."""
         try:
             import sounddevice as sd
+
             devices = sd.query_devices()
             has_input = any(d.get("max_input_channels", 0) > 0 for d in devices)
             return has_input

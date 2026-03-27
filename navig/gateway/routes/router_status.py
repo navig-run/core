@@ -24,6 +24,7 @@ async def _router_status(request: "web.Request") -> "web.Response":
 
     try:
         from navig.routing.router import get_router
+
         router = get_router()
         status = await router.status()
         return _web.json_response(status.to_dict())
@@ -41,6 +42,7 @@ async def _router_traces(request: "web.Request") -> "web.Response":
 
     try:
         from navig.routing.trace import recent_traces
+
         limit = int(request.query.get("limit", "50"))
         traces = recent_traces(limit=limit)
         return _web.json_response({"traces": traces, "count": len(traces)})
@@ -60,22 +62,26 @@ async def _router_detect(request: "web.Request") -> "web.Response":
             return _web.json_response({"error": "text required"}, status=400)
 
         from navig.routing.detect import detect_mode
+
         mode, confidence, reasons = detect_mode(text)
 
         from navig.routing.capabilities import MODE_CAPABILITIES
+
         caps = MODE_CAPABILITIES.get(mode)
 
-        return _web.json_response({
-            "mode": mode,
-            "confidence": confidence,
-            "reasons": reasons,
-            "capabilities": {
-                "required": list(caps.required) if caps else [],
-                "preferred": list(caps.preferred) if caps else [],
-                "cost_target": caps.cost_target if caps else "",
-                "latency_target": caps.latency_target if caps else "",
-            },
-        })
+        return _web.json_response(
+            {
+                "mode": mode,
+                "confidence": confidence,
+                "reasons": reasons,
+                "capabilities": {
+                    "required": list(caps.required) if caps else [],
+                    "preferred": list(caps.preferred) if caps else [],
+                    "cost_target": caps.cost_target if caps else "",
+                    "latency_target": caps.latency_target if caps else "",
+                },
+            }
+        )
     except Exception as e:
         return _web.json_response({"error": str(e)}, status=500)
 

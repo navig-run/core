@@ -23,9 +23,7 @@ from typing import Optional
 # ---------------------------------------------------------------------------
 
 _PLAIN_MODE: bool = (
-    "--plain" in sys.argv
-    or "--raw" in sys.argv
-    or os.getenv("NAVIG_PLAIN", "0") == "1"
+    "--plain" in sys.argv or "--raw" in sys.argv or os.getenv("NAVIG_PLAIN", "0") == "1"
 )
 
 
@@ -33,83 +31,83 @@ _PLAIN_MODE: bool = (
 # ANSI colour constants
 # ---------------------------------------------------------------------------
 
+
 class _C:  # noqa: N801
-    RESET   = "" if _PLAIN_MODE else "\033[0m"
-    BOLD    = "" if _PLAIN_MODE else "\033[1m"
-    DIM     = "" if _PLAIN_MODE else "\033[2m"
+    RESET = "" if _PLAIN_MODE else "\033[0m"
+    BOLD = "" if _PLAIN_MODE else "\033[1m"
+    DIM = "" if _PLAIN_MODE else "\033[2m"
 
     # Foreground
-    WHITE   = "" if _PLAIN_MODE else "\033[97m"
-    GREY    = "" if _PLAIN_MODE else "\033[37m"
-    CYAN    = "" if _PLAIN_MODE else "\033[36m"
-    BLUE    = "" if _PLAIN_MODE else "\033[34m"
-    GREEN   = "" if _PLAIN_MODE else "\033[32m"
-    YELLOW  = "" if _PLAIN_MODE else "\033[33m"
-    RED     = "" if _PLAIN_MODE else "\033[31m"
+    WHITE = "" if _PLAIN_MODE else "\033[97m"
+    GREY = "" if _PLAIN_MODE else "\033[37m"
+    CYAN = "" if _PLAIN_MODE else "\033[36m"
+    BLUE = "" if _PLAIN_MODE else "\033[34m"
+    GREEN = "" if _PLAIN_MODE else "\033[32m"
+    YELLOW = "" if _PLAIN_MODE else "\033[33m"
+    RED = "" if _PLAIN_MODE else "\033[31m"
     MAGENTA = "" if _PLAIN_MODE else "\033[35m"
 
     # Background (used for progress bar fill)
-    BG_GREEN  = "" if _PLAIN_MODE else "\033[42m"
+    BG_GREEN = "" if _PLAIN_MODE else "\033[42m"
     BG_YELLOW = "" if _PLAIN_MODE else "\033[43m"
-    BG_RED    = "" if _PLAIN_MODE else "\033[41m"
-    BG_BLUE   = "" if _PLAIN_MODE else "\033[44m"
-    BG_GREY   = "" if _PLAIN_MODE else "\033[100m"
+    BG_RED = "" if _PLAIN_MODE else "\033[41m"
+    BG_BLUE = "" if _PLAIN_MODE else "\033[44m"
+    BG_GREY = "" if _PLAIN_MODE else "\033[100m"
 
 
 # ---------------------------------------------------------------------------
 # Block type catalogue
 # ---------------------------------------------------------------------------
 
+
 class BlockType(str, Enum):
-    CONNECT   = "CONNECT"
-    FETCH     = "FETCH"
-    METRICS   = "METRICS"
+    CONNECT = "CONNECT"
+    FETCH = "FETCH"
+    METRICS = "METRICS"
     ROOT_CAUSE = "ROOT_CAUSE"
-    FIX       = "FIX"
-    ACTION    = "ACTION"
-    CONFIRM   = "CONFIRM"
-    INFO      = "INFO"
-    WARNING   = "WARNING"
-    ERROR     = "ERROR"
-    SUCCESS   = "SUCCESS"
+    FIX = "FIX"
+    ACTION = "ACTION"
+    CONFIRM = "CONFIRM"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    SUCCESS = "SUCCESS"
 
 
 # ---------------------------------------------------------------------------
 # Per-block style: accent colour + label text
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class _BlockStyle:
     label: str
-    accent: str   # ANSI escape sequence (empty in plain mode)
-    icon: str     # single char / emoji — omitted in plain mode
+    accent: str  # ANSI escape sequence (empty in plain mode)
+    icon: str  # single char / emoji — omitted in plain mode
 
 
 _STYLES: dict[BlockType, _BlockStyle] = {
-    BlockType.CONNECT:    _BlockStyle("CONNECT",    _C.CYAN,    "○"),
-    BlockType.FETCH:      _BlockStyle("FETCH",      _C.BLUE,    "↓"),
-    BlockType.METRICS:    _BlockStyle("METRICS",    _C.CYAN,    "▤"),
-    BlockType.ROOT_CAUSE: _BlockStyle("ROOT_CAUSE", _C.YELLOW,  "⊕"),
-    BlockType.FIX:        _BlockStyle("FIX",        _C.GREEN,   "✦"),
-    BlockType.ACTION:     _BlockStyle("ACTION",     _C.MAGENTA, "▶"),
-    BlockType.CONFIRM:    _BlockStyle("CONFIRM",    _C.GREEN,   "✓"),
-    BlockType.INFO:       _BlockStyle("INFO",       _C.CYAN,    "ℹ"),
-    BlockType.WARNING:    _BlockStyle("WARNING",    _C.YELLOW,  "⚠"),
-    BlockType.ERROR:      _BlockStyle("ERROR",      _C.RED,     "✗"),
-    BlockType.SUCCESS:    _BlockStyle("SUCCESS",    _C.GREEN,   "✓"),
+    BlockType.CONNECT: _BlockStyle("CONNECT", _C.CYAN, "○"),
+    BlockType.FETCH: _BlockStyle("FETCH", _C.BLUE, "↓"),
+    BlockType.METRICS: _BlockStyle("METRICS", _C.CYAN, "▤"),
+    BlockType.ROOT_CAUSE: _BlockStyle("ROOT_CAUSE", _C.YELLOW, "⊕"),
+    BlockType.FIX: _BlockStyle("FIX", _C.GREEN, "✦"),
+    BlockType.ACTION: _BlockStyle("ACTION", _C.MAGENTA, "▶"),
+    BlockType.CONFIRM: _BlockStyle("CONFIRM", _C.GREEN, "✓"),
+    BlockType.INFO: _BlockStyle("INFO", _C.CYAN, "ℹ"),
+    BlockType.WARNING: _BlockStyle("WARNING", _C.YELLOW, "⚠"),
+    BlockType.ERROR: _BlockStyle("ERROR", _C.RED, "✗"),
+    BlockType.SUCCESS: _BlockStyle("SUCCESS", _C.GREEN, "✓"),
 }
 
 # A reusable horizontal rule
-DIVIDER: str = (
-    f"{_C.DIM}{'─' * 60}{_C.RESET}"
-    if not _PLAIN_MODE
-    else "-" * 60
-)
+DIVIDER: str = f"{_C.DIM}{'─' * 60}{_C.RESET}" if not _PLAIN_MODE else "-" * 60
 
 
 # ---------------------------------------------------------------------------
 # Progress / metric bar
 # ---------------------------------------------------------------------------
+
 
 def progress_bar(
     value: float,
@@ -137,7 +135,7 @@ def progress_bar(
         pct = min(value / total * 100, 100.0)
 
     filled = int(width * pct / 100)
-    empty  = width - filled
+    empty = width - filled
 
     if _PLAIN_MODE:
         bar = "[" + "#" * filled + "." * empty + "]"
@@ -150,9 +148,7 @@ def progress_bar(
     else:
         colour = _C.BG_GREEN
 
-    bar = (
-        f"{colour}{' ' * filled}{_C.BG_GREY}{' ' * empty}{_C.RESET}"
-    )
+    bar = f"{colour}{' ' * filled}{_C.BG_GREY}{' ' * empty}{_C.RESET}"
     pct_str = f"{pct:.1f}%"
     return f"[{bar}] {_C.BOLD}{pct_str}{_C.RESET}"
 
@@ -160,6 +156,7 @@ def progress_bar(
 # ---------------------------------------------------------------------------
 # Core render primitives
 # ---------------------------------------------------------------------------
+
 
 def renderBlock(
     block_type: BlockType,
@@ -231,7 +228,7 @@ def renderMetric(
     else:
         name_colour = _C.GREY
 
-    label   = f"{name_colour}{name:<24}{_C.RESET}"
+    label = f"{name_colour}{name:<24}{_C.RESET}"
     val_str = f"{_C.DIM}{value:.0f}/{total:.0f}{unit}{_C.RESET}"
     print(f"{pad}{label}  {val_str}  {bar}")
 
@@ -239,6 +236,7 @@ def renderMetric(
 # ---------------------------------------------------------------------------
 # Session envelope
 # ---------------------------------------------------------------------------
+
 
 def sessionOpen(host: str, command: str) -> None:
     """Print the session header banner.
@@ -254,7 +252,7 @@ def sessionOpen(host: str, command: str) -> None:
 
     width = 62
     title = f" NAVIG {command} "
-    pad   = "─" * ((width - len(title)) // 2)
+    pad = "─" * ((width - len(title)) // 2)
     print()
     print(f"{_C.CYAN}{_C.BOLD}{pad}{title}{pad}{_C.RESET}")
     print(f"{_C.DIM}  host: {host}{_C.RESET}")
@@ -283,6 +281,7 @@ def sessionClose(summary: Optional[str] = None) -> None:
 # ---------------------------------------------------------------------------
 # Abort helper
 # ---------------------------------------------------------------------------
+
 
 def abortOnFailure(message: str, *, exit_code: int = 1) -> None:  # noqa: N802
     """Print an ERROR block and exit with *exit_code*.

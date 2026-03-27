@@ -28,8 +28,8 @@ Take screenshots of the full desktop, individual monitors, or specific regions. 
 
 ## Prerequisites
 
-**Windows:** `pip install mss pillow` (auto-selected in order: mss → PIL → fallback)  
-**macOS:** Uses system `screencapture -x` — no extra deps  
+**Windows:** `pip install mss pillow` (auto-selected in order: mss → PIL → fallback)
+**macOS:** Uses system `screencapture -x` — no extra deps
 **Linux:** Uses first available: `scrot`, `gnome-screenshot`, `import` (ImageMagick)
 
 ## Common Tasks

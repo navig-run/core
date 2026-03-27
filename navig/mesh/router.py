@@ -48,15 +48,17 @@ if TYPE_CHECKING:
 
 logger = get_debug_logger()
 
-PROXY_TIMEOUT_S = 10           # seconds before giving up on a peer
-MAX_FALLBACK_PEERS = 3         # maximum peers to try in route_with_fallback
+PROXY_TIMEOUT_S = 10  # seconds before giving up on a peer
+MAX_FALLBACK_PEERS = 3  # maximum peers to try in route_with_fallback
 
 
 # ──────────────────────────── Routing metrics ─────────────────────────────────
 
+
 @dataclass
 class _RoutingMetrics:
     """Per-peer rolling stats tracked in this process lifetime."""
+
     success_count: int = 0
     failure_count: int = 0
     _rtt_sum_ms: float = 0.0
@@ -102,6 +104,7 @@ def get_routing_metrics() -> dict:
 
 # ──────────────────────────── Public API ──────────────────────────────────────
 
+
 async def route_to_best_peer(
     request_body: dict,
     capability: Optional[str] = None,
@@ -117,9 +120,13 @@ async def route_to_best_peer(
     registry = get_registry()
 
     if target_node_id:
-        peer = next((r for r in registry.get_peers() if r.node_id == target_node_id), None)
+        peer = next(
+            (r for r in registry.get_peers() if r.node_id == target_node_id), None
+        )
         if peer is None:
-            logger.warning(f"[mesh.router] Target node {target_node_id!r} not in registry")
+            logger.warning(
+                f"[mesh.router] Target node {target_node_id!r} not in registry"
+            )
             return None
     else:
         peer = registry.get_best_peer(capability)
@@ -229,9 +236,8 @@ def get_topology_report() -> dict:
         peer_details.append(d)
 
     # Evaluate success criteria
-    avg_rtt = (
-        sum(m.avg_rtt_ms for m in _metrics.values() if m.success_count > 0) /
-        max(sum(1 for m in _metrics.values() if m.success_count > 0), 1)
+    avg_rtt = sum(m.avg_rtt_ms for m in _metrics.values() if m.success_count > 0) / max(
+        sum(1 for m in _metrics.values() if m.success_count > 0), 1
     )
 
     criteria = {
@@ -264,6 +270,7 @@ def get_topology_report() -> dict:
 
 # ──────────────────────────── Internal ────────────────────────────────────────
 
+
 async def _forward(peer: NodeRecord, body: dict) -> Optional[dict]:
     """HTTP POST body to peer's /llm/chat with mesh_token auth."""
     try:
@@ -290,7 +297,9 @@ async def _forward(peer: NodeRecord, body: dict) -> Optional[dict]:
             ) as resp:
                 rtt_ms = (time.monotonic() - t0) * 1000
                 if resp.status != 200:
-                    logger.warning(f"[mesh.router] Peer {peer.node_id} returned HTTP {resp.status}")
+                    logger.warning(
+                        f"[mesh.router] Peer {peer.node_id} returned HTTP {resp.status}"
+                    )
                     _get_metrics(peer.node_id).record_failure()
                     get_registry().record_probe_failure(peer.node_id)
                     return None
@@ -318,6 +327,7 @@ async def _forward(peer: NodeRecord, body: dict) -> Optional[dict]:
 def _get_mesh_token() -> Optional[str]:
     try:
         from navig.config import get_config_manager
+
         raw = get_config_manager().global_config
         return raw.get("gateway", {}).get("mesh_token")
     except Exception:

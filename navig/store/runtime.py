@@ -64,7 +64,8 @@ class RuntimeStore(BaseStore):
     # ── Schema ────────────────────────────────────────────────
 
     def _create_schema(self, conn: sqlite3.Connection) -> None:
-        conn.executescript("""
+        conn.executescript(
+            """
             -- Command usage statistics
             CREATE TABLE IF NOT EXISTS command_stats (
                 command         TEXT PRIMARY KEY,
@@ -164,7 +165,8 @@ class RuntimeStore(BaseStore):
             );
             CREATE INDEX IF NOT EXISTS idx_notes_user
                 ON notes (user_id);
-        """)
+        """
+        )
 
     def _migrate(
         self, conn: sqlite3.Connection, from_version: int, to_version: int
@@ -214,7 +216,10 @@ class RuntimeStore(BaseStore):
             except Exception as exc:
                 logger.warning("Legacy bot_data.db migration failed: %s", exc)
 
-        if legacy_daily.exists() and not legacy_daily.with_suffix(".db.migrated").exists():
+        if (
+            legacy_daily.exists()
+            and not legacy_daily.with_suffix(".db.migrated").exists()
+        ):
             try:
                 self._copy_tables_from(
                     legacy_daily,
@@ -225,9 +230,7 @@ class RuntimeStore(BaseStore):
             except Exception as exc:
                 logger.warning("Legacy daily_log.db migration failed: %s", exc)
 
-    def _copy_tables_from(
-        self, source_db: Path, tables: List[str]
-    ) -> None:
+    def _copy_tables_from(self, source_db: Path, tables: List[str]) -> None:
         """Copy rows from *source_db* into this store's matching tables."""
         src = sqlite3.connect(str(source_db))
         src.row_factory = sqlite3.Row
@@ -249,9 +252,7 @@ class RuntimeStore(BaseStore):
 
                 columns = rows[0].keys()
                 # Filter to columns that exist in our schema
-                our_cols_row = conn.execute(
-                    f"PRAGMA table_info({table})"
-                ).fetchall()
+                our_cols_row = conn.execute(f"PRAGMA table_info({table})").fetchall()
                 our_cols = {r["name"] for r in our_cols_row}
                 shared_cols = [c for c in columns if c in our_cols]
 
@@ -296,7 +297,15 @@ class RuntimeStore(BaseStore):
                         (command, user_id, chat_id, duration_ms, success, error_message, executed_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (command, user_id, chat_id, duration_ms, 1 if success else 0, error_message, now),
+                    (
+                        command,
+                        user_id,
+                        chat_id,
+                        duration_ms,
+                        1 if success else 0,
+                        error_message,
+                        now,
+                    ),
                 )
                 conn.execute(
                     """
@@ -314,18 +323,16 @@ class RuntimeStore(BaseStore):
     def get_stats_summary(self) -> Dict[str, Any]:
         """Aggregate command statistics."""
         conn = self._get_conn()
-        today_start = _utc_now_dt().replace(
-            hour=0, minute=0, second=0, microsecond=0
-        ).isoformat()
+        today_start = (
+            _utc_now_dt().replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        )
 
         commands_today = conn.execute(
             "SELECT COUNT(*) FROM command_log WHERE executed_at >= ?",
             (today_start,),
         ).fetchone()[0]
 
-        total_row = conn.execute(
-            "SELECT SUM(count) FROM command_stats"
-        ).fetchone()
+        total_row = conn.execute("SELECT SUM(count) FROM command_stats").fetchone()
         total_commands = total_row[0] or 0
 
         errors_today = conn.execute(
@@ -407,9 +414,7 @@ class RuntimeStore(BaseStore):
         self, hours: int = 24, limit: int = 50
     ) -> List[Dict[str, Any]]:
         """Recent interaction entries."""
-        cutoff = (
-            _utc_now_dt() - timedelta(hours=hours)
-        ).isoformat()
+        cutoff = (_utc_now_dt() - timedelta(hours=hours)).isoformat()
         rows = self._read_all(
             """
             SELECT * FROM interactions
@@ -485,9 +490,7 @@ class RuntimeStore(BaseStore):
         return [dict(r) for r in rows]
 
     def complete_reminder(self, reminder_id: int) -> None:
-        self._write(
-            "UPDATE reminders SET completed = 1 WHERE id = ?", (reminder_id,)
-        )
+        self._write("UPDATE reminders SET completed = 1 WHERE id = ?", (reminder_id,))
 
     def cancel_reminder(self, reminder_id: int, user_id: int) -> bool:
         cursor = self._write(
@@ -499,9 +502,7 @@ class RuntimeStore(BaseStore):
     # ── AI State ──────────────────────────────────────────────
 
     def get_ai_state(self, user_id: int) -> Optional[Dict[str, Any]]:
-        row = self._read_one(
-            "SELECT * FROM ai_state WHERE user_id = ?", (user_id,)
-        )
+        row = self._read_one("SELECT * FROM ai_state WHERE user_id = ?", (user_id,))
         if not row:
             return None
         return {
@@ -578,9 +579,7 @@ class RuntimeStore(BaseStore):
         return value
 
     def cache_set(self, key: str, value: Any, ttl_seconds: int = 60) -> None:
-        expires_at = (
-            _utc_now_dt() + timedelta(seconds=ttl_seconds)
-        ).isoformat()
+        expires_at = (_utc_now_dt() + timedelta(seconds=ttl_seconds)).isoformat()
         value_json = json.dumps(value)
         self._mem_cache[key] = {"value": value, "expires_at": expires_at}
         self._write(
@@ -601,9 +600,7 @@ class RuntimeStore(BaseStore):
         self._mem_cache = {
             k: v for k, v in self._mem_cache.items() if v["expires_at"] > now
         }
-        cursor = self._write(
-            "DELETE FROM cache WHERE expires_at <= ?", (now,)
-        )
+        cursor = self._write("DELETE FROM cache WHERE expires_at <= ?", (now,))
         return cursor.rowcount
 
     # ── Notes ─────────────────────────────────────────────────
@@ -631,7 +628,9 @@ class RuntimeStore(BaseStore):
 
     # ── Retention / Maintenance ───────────────────────────────
 
-    def prune(self, command_log_days: int = 30, interaction_days: int = 30) -> Dict[str, int]:
+    def prune(
+        self, command_log_days: int = 30, interaction_days: int = 30
+    ) -> Dict[str, int]:
         """Purge old data. Returns counts deleted."""
         deleted = {}
         deleted["command_log"] = self._write(
@@ -651,8 +650,14 @@ class RuntimeStore(BaseStore):
         stats: Dict[str, Any] = {}
 
         for table in [
-            "command_stats", "command_log", "interactions",
-            "daily_summaries", "reminders", "ai_state", "cache", "notes",
+            "command_stats",
+            "command_log",
+            "interactions",
+            "daily_summaries",
+            "reminders",
+            "ai_state",
+            "cache",
+            "notes",
         ]:
             row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()  # noqa: S608
             stats[f"{table}_count"] = row[0] if row else 0

@@ -16,6 +16,7 @@ from navig import console_helper as ch
 @dataclass(frozen=True)
 class SkillCommand:
     """A single command declared by a skill."""
+
     name: str
     syntax: str
     description: str
@@ -33,8 +34,8 @@ class SkillInfo:
     version: str = "0.0.1"
     risk_level: str = "safe"
     user_invocable: bool = True
-    commands: tuple = ()          # tuple[SkillCommand, ...]
-    examples: tuple = ()          # tuple[dict, ...]
+    commands: tuple = ()  # tuple[SkillCommand, ...]
+    examples: tuple = ()  # tuple[dict, ...]
     entrypoint: Optional[str] = None  # e.g. "index.js", "main.py"
     raw_frontmatter: Dict[str, Any] = field(default_factory=dict)
 
@@ -50,8 +51,8 @@ def _resolve_skills_dirs(explicit_dir: Optional[str]) -> List[Path]:
     candidates = [
         base_dir.parent / "skills",
         base_dir.parent.parent / "skills",
-        base_dir.parent.parent.parent / "store" / "skills",   # canonical store
-        base_dir.parent.parent.parent / "skills",             # legacy fallback
+        base_dir.parent.parent.parent / "store" / "skills",  # canonical store
+        base_dir.parent.parent.parent / "skills",  # legacy fallback
     ]
 
     unique: List[Path] = []
@@ -108,27 +109,30 @@ def _collect_skills(skills_dirs: Iterable[Path]) -> List[SkillInfo]:
             parsed_commands: List[SkillCommand] = []
             for c in raw_cmds:
                 if isinstance(c, dict):
-                    parsed_commands.append(SkillCommand(
-                        name=c.get("name", ""),
-                        syntax=c.get("syntax", ""),
-                        description=c.get("description", ""),
-                        risk=c.get("risk", "safe"),
-                        confirmation_msg=c.get("confirmation_msg"),
-                    ))
+                    parsed_commands.append(
+                        SkillCommand(
+                            name=c.get("name", ""),
+                            syntax=c.get("syntax", ""),
+                            description=c.get("description", ""),
+                            risk=c.get("risk", "safe"),
+                            confirmation_msg=c.get("confirmation_msg"),
+                        )
+                    )
                 elif isinstance(c, str):
                     # Simple form: "navig docker ps"
-                    parsed_commands.append(SkillCommand(
-                        name=c.split()[-1] if c.strip() else c,
-                        syntax=c,
-                        description="",
-                        risk="safe",
-                    ))
+                    parsed_commands.append(
+                        SkillCommand(
+                            name=c.split()[-1] if c.strip() else c,
+                            syntax=c,
+                            description="",
+                            risk="safe",
+                        )
+                    )
 
             # Parse examples
             raw_examples = frontmatter.get("examples", [])
             parsed_examples = tuple(
-                e if isinstance(e, dict) else {"user": str(e)}
-                for e in raw_examples
+                e if isinstance(e, dict) else {"user": str(e)} for e in raw_examples
             )
 
             # Detect entrypoint (script files in same dir)
@@ -274,6 +278,7 @@ def tree_skills_cmd(options: Dict[str, Any]) -> Dict[str, List[str]]:
 # SKILL SHOW
 # ============================================================================
 
+
 def _find_skill(name: str, options: Dict[str, Any]) -> Optional[SkillInfo]:
     """Find a skill by name (case-insensitive, partial match)."""
     skills_dirs = _resolve_skills_dirs(options.get("skills_dir"))
@@ -361,7 +366,9 @@ def show_skill_cmd(name: str, options: Dict[str, Any]) -> Optional[SkillInfo]:
     header.append(f"  [{skill.category}]", style="yellow")
 
     lines = [f"[white]{skill.description}[/white]"]
-    lines.append(f"[dim]Risk: {skill.risk_level} | Invocable: {'yes' if skill.user_invocable else 'no'}[/dim]")
+    lines.append(
+        f"[dim]Risk: {skill.risk_level} | Invocable: {'yes' if skill.user_invocable else 'no'}[/dim]"
+    )
     lines.append(f"[dim]Path: {skill.rel_path}[/dim]")
     if skill.entrypoint:
         lines.append(f"[dim]Entrypoint: {skill.entrypoint}[/dim]")
@@ -397,6 +404,7 @@ def show_skill_cmd(name: str, options: Dict[str, Any]) -> Optional[SkillInfo]:
 # ============================================================================
 # SKILL RUN
 # ============================================================================
+
 
 def run_skill_cmd(spec: str, extra_args: List[str], options: Dict[str, Any]) -> int:
     """
@@ -440,7 +448,10 @@ def run_skill_cmd(spec: str, extra_args: List[str], options: Dict[str, Any]) -> 
 
         # Confirmation for risky commands
         if target_cmd.risk in ("destructive", "moderate"):
-            msg = target_cmd.confirmation_msg or f"Run {target_cmd.risk} command: {syntax}?"
+            msg = (
+                target_cmd.confirmation_msg
+                or f"Run {target_cmd.risk} command: {syntax}?"
+            )
             if not options.get("yes", False):
                 if not ch.confirm(msg):
                     ch.dim("  Cancelled.")
@@ -454,7 +465,8 @@ def run_skill_cmd(spec: str, extra_args: List[str], options: Dict[str, Any]) -> 
             for i, arg in enumerate(extra_args):
                 # Replace first <placeholder> or {placeholder}
                 import re
-                cli_args = re.sub(r'[<{][^>}]+[>}]', arg, cli_args, count=1)
+
+                cli_args = re.sub(r"[<{][^>}]+[>}]", arg, cli_args, count=1)
 
             ch.dim(f"  > navig {cli_args}")
             return _invoke_navig(cli_args, options)
@@ -518,6 +530,7 @@ def run_skill_cmd(spec: str, extra_args: List[str], options: Dict[str, Any]) -> 
 def _invoke_navig(cli_args: str, options: Dict[str, Any]) -> int:
     """Invoke a navig subcommand by re-entering the CLI."""
     import shlex as _shlex
+
     try:
         # Re-invoke via subprocess to avoid re-entrant Typer issues
         cmd = [sys.executable, "-m", "navig"] + _shlex.split(cli_args)

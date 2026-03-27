@@ -28,6 +28,7 @@ class TestSettingsResolver:
 
     def _make_resolver(self, layer=None, resolve_secrets=False):
         from navig.settings.resolver import SettingsResolver
+
         resolver = SettingsResolver(
             project_root=self.project_root,
             layer=layer,
@@ -35,6 +36,7 @@ class TestSettingsResolver:
         )
         # Point to temp global dir
         import navig.settings.resolver as m
+
         orig = m._global_settings_dir
         m._global_settings_dir = lambda: self.global_dir
         self._restore_global = lambda: setattr(m, "_global_settings_dir", orig)
@@ -52,29 +54,50 @@ class TestSettingsResolver:
         assert settings["navig.ai.provider"] == "openai"
 
     def test_global_overrides_defaults(self):
-        _write_json(self.global_dir / "settings.json", {"navig": {"ai": {"provider": "anthropic"}}})
+        _write_json(
+            self.global_dir / "settings.json",
+            {"navig": {"ai": {"provider": "anthropic"}}},
+        )
         resolver = self._make_resolver()
         settings = resolver.resolve()
         assert settings["navig.ai.provider"] == "anthropic"
 
     def test_project_overrides_global(self):
-        _write_json(self.global_dir / "settings.json", {"navig": {"ai": {"provider": "anthropic"}}})
-        _write_json(self.project_root / ".navig" / "settings.json", {"navig": {"ai": {"provider": "openai"}}})
+        _write_json(
+            self.global_dir / "settings.json",
+            {"navig": {"ai": {"provider": "anthropic"}}},
+        )
+        _write_json(
+            self.project_root / ".navig" / "settings.json",
+            {"navig": {"ai": {"provider": "openai"}}},
+        )
         resolver = self._make_resolver()
         settings = resolver.resolve()
         assert settings["navig.ai.provider"] == "openai"
 
     def test_local_overrides_project(self):
-        _write_json(self.project_root / ".navig" / "settings.json", {"navig": {"inbox": {"mode": "move"}}})
-        _write_json(self.project_root / ".navig" / "settings.local.json", {"navig": {"inbox": {"mode": "link"}}})
+        _write_json(
+            self.project_root / ".navig" / "settings.json",
+            {"navig": {"inbox": {"mode": "move"}}},
+        )
+        _write_json(
+            self.project_root / ".navig" / "settings.local.json",
+            {"navig": {"inbox": {"mode": "link"}}},
+        )
         resolver = self._make_resolver()
         settings = resolver.resolve()
         assert settings["navig.inbox.mode"] == "link"
 
     def test_nested_deep_merge(self):
         """Non-overlapping nested keys are merged, not replaced."""
-        _write_json(self.global_dir / "settings.json", {"navig": {"ai": {"provider": "openai", "temperature": 0.5}}})
-        _write_json(self.project_root / ".navig" / "settings.json", {"navig": {"ai": {"model": "gpt-4"}}})
+        _write_json(
+            self.global_dir / "settings.json",
+            {"navig": {"ai": {"provider": "openai", "temperature": 0.5}}},
+        )
+        _write_json(
+            self.project_root / ".navig" / "settings.json",
+            {"navig": {"ai": {"model": "gpt-4"}}},
+        )
         resolver = self._make_resolver()
         settings = resolver.resolve()
         # Both provider (from global) and model (from project) should be present
@@ -82,7 +105,10 @@ class TestSettingsResolver:
         assert settings["navig.ai.model"] == "gpt-4"
 
     def test_get_method(self):
-        _write_json(self.project_root / ".navig" / "settings.json", {"navig": {"mesh": {"enabled": True}}})
+        _write_json(
+            self.project_root / ".navig" / "settings.json",
+            {"navig": {"mesh": {"enabled": True}}},
+        )
         resolver = self._make_resolver()
         assert resolver.get("navig.mesh.enabled") is True
         assert resolver.get("navig.nonexistent", default="fallback") == "fallback"
@@ -113,7 +139,10 @@ class TestSettingsResolver:
         resolver = self._make_resolver()
         _ = resolver.resolve()  # warm cache
         # Write a new project settings file
-        _write_json(self.project_root / ".navig" / "settings.json", {"navig": {"isolation": True}})
+        _write_json(
+            self.project_root / ".navig" / "settings.json",
+            {"navig": {"isolation": True}},
+        )
         # Without refresh — stale cache
         stale = resolver.get("navig.isolation")
         # With refresh
@@ -131,13 +160,17 @@ class TestSettingsResolver:
             assert isinstance(exists, bool)
 
     def test_layer_settings_loaded(self):
-        from navig.settings.resolver import SettingsResolver
         import navig.settings.resolver as m
+        from navig.settings.resolver import SettingsResolver
+
         orig = m._global_settings_dir
         m._global_settings_dir = lambda: self.global_dir
 
         layers_dir = self.global_dir / "layers"
-        _write_json(layers_dir / "production" / "settings.json", {"navig": {"safety": {"mode": "strict"}}})
+        _write_json(
+            layers_dir / "production" / "settings.json",
+            {"navig": {"safety": {"mode": "strict"}}},
+        )
 
         resolver = SettingsResolver(
             project_root=self.project_root,
@@ -172,6 +205,7 @@ class TestSettingsResolver:
     def test_module_level_get_function(self):
         """Module-level get() should work without crashing."""
         import navig.settings
+
         # Should return the default without error
         val = navig.settings.get("navig.ai.provider", default="openai")
         assert val is not None
@@ -180,6 +214,7 @@ class TestSettingsResolver:
 class TestFlattenUnflatten:
     def test_flatten_nested(self):
         from navig.settings.resolver import _flatten
+
         d = {"navig": {"ai": {"provider": "openai", "model": "gpt-4"}}}
         flat = _flatten(d)
         assert flat["navig.ai.provider"] == "openai"
@@ -187,6 +222,7 @@ class TestFlattenUnflatten:
 
     def test_unflatten(self):
         from navig.settings.resolver import _unflatten
+
         flat = {"navig.ai.provider": "openai", "navig.inbox.mode": "copy"}
         nested = _unflatten(flat)
         assert nested["navig"]["ai"]["provider"] == "openai"
@@ -194,12 +230,14 @@ class TestFlattenUnflatten:
 
     def test_flatten_already_flat(self):
         from navig.settings.resolver import _flatten
+
         d = {"key": "value", "other": 42}
         flat = _flatten(d)
         assert flat == {"key": "value", "other": 42}
 
     def test_deep_merge_overrides(self):
         from navig.settings.resolver import _deep_merge
+
         base = {"a": {"b": 1, "c": 2}}
         override = {"a": {"b": 99}}
         result = _deep_merge(base, override)
@@ -208,6 +246,7 @@ class TestFlattenUnflatten:
 
     def test_deep_merge_does_not_mutate(self):
         from navig.settings.resolver import _deep_merge
+
         base = {"x": {"y": 1}}
         override = {"x": {"z": 2}}
         _deep_merge(base, override)

@@ -29,11 +29,11 @@ logger = logging.getLogger("navig.agents.inbox_router")
 CONTENT_TYPES = ("task_roadmap", "brief", "wiki_knowledge", "memory_log", "other")
 
 TARGET_FOLDERS: Dict[str, Optional[str]] = {
-    "task_roadmap":    ".navig/plans",
-    "brief":           ".navig/plans/briefs",
-    "wiki_knowledge":  ".navig/wiki",
-    "memory_log":      ".navig/memory",
-    "other":           None,
+    "task_roadmap": ".navig/plans",
+    "brief": ".navig/plans/briefs",
+    "wiki_knowledge": ".navig/wiki",
+    "memory_log": ".navig/memory",
+    "other": None,
 }
 
 # ── System Prompt ───────────────────────────────────────────
@@ -134,9 +134,7 @@ _HINT_PATTERNS: Dict[str, re.Pattern] = {
     "task_roadmap": re.compile(
         r"(?:roadmap|plan|todo|task|sprint|phase)", re.IGNORECASE
     ),
-    "brief": re.compile(
-        r"(?:brief|spec|prd|proposal|rfc|feature)", re.IGNORECASE
-    ),
+    "brief": re.compile(r"(?:brief|spec|prd|proposal|rfc|feature)", re.IGNORECASE),
     "wiki_knowledge": re.compile(
         r"(?:guide|howto|tutorial|reference|wiki|doc|setup)", re.IGNORECASE
     ),
@@ -254,7 +252,9 @@ def _get_tfidf_data() -> Dict[str, Any]:
     for doc in docs:
         for term in set(doc["tokens"]):
             doc_freq[term] = doc_freq.get(term, 0) + 1
-    idf = {term: math.log((doc_count + 1) / (df + 1)) + 1 for term, df in doc_freq.items()}
+    idf = {
+        term: math.log((doc_count + 1) / (df + 1)) + 1 for term, df in doc_freq.items()
+    }
 
     # Aggregate TF-IDF vector per category (mean of exemplars)
     cat_vectors: Dict[str, Dict[str, float]] = {}
@@ -341,9 +341,13 @@ def heuristic_classify(content: str, filename: str = "") -> Tuple[str, float]:
     checkboxes = sum(1 for l in lines if re.match(r"^\s*-\s*\[[ x]\]", l))
     if checkboxes >= 3:
         sims["task_roadmap"] = sims.get("task_roadmap", 0.0) + 0.1
-    if re.search(r"^#{1,2}\s*(?:problem|solution|scope|requirements)", content, re.I | re.M):
+    if re.search(
+        r"^#{1,2}\s*(?:problem|solution|scope|requirements)", content, re.I | re.M
+    ):
         sims["brief"] = sims.get("brief", 0.0) + 0.1
-    if re.search(r"^#{1,2}\s*(?:step|prerequisites|troubleshoot)", content, re.I | re.M):
+    if re.search(
+        r"^#{1,2}\s*(?:step|prerequisites|troubleshoot)", content, re.I | re.M
+    ):
         sims["wiki_knowledge"] = sims.get("wiki_knowledge", 0.0) + 0.08
     if re.search(r"^\d{4}-\d{2}-\d{2}", content, re.M):
         sims["memory_log"] = sims.get("memory_log", 0.0) + 0.08
@@ -372,6 +376,7 @@ def heuristic_classify(content: str, filename: str = "") -> Tuple[str, float]:
 
 
 # ── Filename Utilities ──────────────────────────────────────
+
 
 def extract_title(content: str, filename: str) -> str:
     """Extract title from first H1 heading, or fall back to filename stem."""
@@ -408,6 +413,7 @@ def make_target_filename(title: str, content_type: str, target_folder: Path) -> 
 
 # ── Workspace Metadata ─────────────────────────────────────
 
+
 def collect_workspace_metadata(project_root: Path) -> Dict[str, Any]:
     """Scan .navig/ directories for existing docs to inform classification."""
     meta: Dict[str, List[str]] = {
@@ -420,29 +426,25 @@ def collect_workspace_metadata(project_root: Path) -> Dict[str, Any]:
     plans_dir = project_root / ".navig" / "plans"
     if plans_dir.exists():
         meta["existing_plans"] = [
-            f.name for f in plans_dir.iterdir()
-            if f.is_file() and f.suffix == ".md"
+            f.name for f in plans_dir.iterdir() if f.is_file() and f.suffix == ".md"
         ]
 
     briefs_dir = plans_dir / "briefs"
     if briefs_dir.exists():
         meta["existing_briefs"] = [
-            f.name for f in briefs_dir.iterdir()
-            if f.is_file() and f.suffix == ".md"
+            f.name for f in briefs_dir.iterdir() if f.is_file() and f.suffix == ".md"
         ]
 
     wiki_dir = project_root / ".navig" / "wiki"
     if wiki_dir.exists():
         meta["existing_wiki"] = [
-            f.name for f in wiki_dir.iterdir()
-            if f.is_file() and f.suffix == ".md"
+            f.name for f in wiki_dir.iterdir() if f.is_file() and f.suffix == ".md"
         ]
 
     memory_dir = project_root / ".navig" / "memory"
     if memory_dir.exists():
         meta["existing_memory"] = [
-            f.name for f in memory_dir.iterdir()
-            if f.is_file() and f.suffix == ".md"
+            f.name for f in memory_dir.iterdir() if f.is_file() and f.suffix == ".md"
         ]
 
     return meta
@@ -453,13 +455,11 @@ def list_inbox_files(project_root: Path) -> List[Path]:
     inbox_dir = project_root / ".navig" / "plans" / "inbox"
     if not inbox_dir.exists():
         return []
-    return sorted(
-        f for f in inbox_dir.iterdir()
-        if f.is_file() and f.suffix == ".md"
-    )
+    return sorted(f for f in inbox_dir.iterdir() if f.is_file() and f.suffix == ".md")
 
 
 # ── Agent Class ─────────────────────────────────────────────
+
 
 class InboxRouterAgent:
     """
@@ -532,11 +532,14 @@ class InboxRouterAgent:
         """Classify via LLM with strict JSON contract."""
         from navig.llm_generate import llm_generate
 
-        user_payload = json.dumps({
-            "filename": filename,
-            "content": content,
-            "workspace_metadata": metadata,
-        }, indent=2)
+        user_payload = json.dumps(
+            {
+                "filename": filename,
+                "content": content,
+                "workspace_metadata": metadata,
+            },
+            indent=2,
+        )
 
         messages = [
             {"role": "system", "content": INBOX_ROUTER_SYSTEM_PROMPT},
@@ -609,6 +612,7 @@ class InboxRouterAgent:
 
 
 # ── File I/O Executor ──────────────────────────────────────
+
 
 def execute_plan(
     project_root: Path,

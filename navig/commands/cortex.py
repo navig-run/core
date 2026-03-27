@@ -57,10 +57,20 @@ def run_cortex(
     no_template: bool = typer.Option(
         False, "--no-template", help="Skip template auto-detection; always use AI loop"
     ),
-    email: Optional[str] = typer.Option(None, "--email", help="Email/username for template login flow"),
-    password: Optional[str] = typer.Option(None, "--password", help="Password for template login flow"),
-    post_text: Optional[str] = typer.Option(None, "--post", help="Text to post for template post flow"),
-    cdp_port: Optional[int] = typer.Option(None, "--cdp-port", help="Attach to existing Chrome at this CDP port instead of launching a new browser"),
+    email: Optional[str] = typer.Option(
+        None, "--email", help="Email/username for template login flow"
+    ),
+    password: Optional[str] = typer.Option(
+        None, "--password", help="Password for template login flow"
+    ),
+    post_text: Optional[str] = typer.Option(
+        None, "--post", help="Text to post for template post flow"
+    ),
+    cdp_port: Optional[int] = typer.Option(
+        None,
+        "--cdp-port",
+        help="Attach to existing Chrome at this CDP port instead of launching a new browser",
+    ),
 ):
     """Start the Cortex Hybrid Brain Loop on a specific goal."""
     ch.header(f"🧠 NAVIG Cortex\nGoal: {goal}")
@@ -82,12 +92,16 @@ def run_cortex(
             if template_name:
                 tmpl = runner.get_template_by_name(template_name)
                 if not tmpl:
-                    ch.warning(f"Template '{template_name}' not found. Falling back to AI loop.")
+                    ch.warning(
+                        f"Template '{template_name}' not found. Falling back to AI loop."
+                    )
             else:
                 tmpl = runner.find_template(start_url)
 
             if tmpl:
-                ch.success(f"📋 Template match: {tmpl.get('site')} ({tmpl.get('_file')})")
+                ch.success(
+                    f"📋 Template match: {tmpl.get('site')} ({tmpl.get('_file')})"
+                )
                 ch.info(f"Navigating to {start_url} ...")
                 await driver.navigate(start_url)
                 await driver.wait_for_stable(timeout_ms=3000)
@@ -109,7 +123,9 @@ def run_cortex(
                     results = await runner.run_flow(tmpl, "login", variables)
                     for r in results:
                         icon = "✓" if r["ok"] else "✗"
-                        ch.success(f"  {icon} {r['action']} → {r.get('selector', {}).get('value', '')[:50]}")
+                        ch.success(
+                            f"  {icon} {r['action']} → {r.get('selector', {}).get('value', '')[:50]}"
+                        )
                         if not r["ok"]:
                             ch.warning(f"    Error: {r.get('error')}")
 
@@ -182,9 +198,14 @@ def run_cortex(
                 # ── Execute action with fallback chain ───────────────────
                 prev_url = current_url
                 ok, err_msg = await _execute_action(
-                    driver, orchestrator,
-                    action_type, selector_obj, selector_kind, selector_val,
-                    input_val, fallbacks,
+                    driver,
+                    orchestrator,
+                    action_type,
+                    selector_obj,
+                    selector_kind,
+                    selector_val,
+                    input_val,
+                    fallbacks,
                 )
 
                 url_after = await driver.get_url()
@@ -216,6 +237,7 @@ def run_cortex(
 
 # ── Action executor with fallback selector chain ──────────────────────────────
 
+
 def _parse_coords(val: str):
     """Extract (x, y) from strings like '753,230' or '100 200' or bounding boxes."""
     nums = re.findall(r"-?\d+\.?\d*", str(val))
@@ -230,7 +252,8 @@ def _parse_coords(val: str):
 
 
 async def _execute_action(
-    driver, orchestrator: CortexOrchestrator,
+    driver,
+    orchestrator: CortexOrchestrator,
     action_type: str,
     selector_obj: dict,
     selector_kind: str,
@@ -248,9 +271,11 @@ async def _execute_action(
     last_err = None
     for candidate in candidates:
         kind = candidate.get("kind", "")
-        val  = candidate.get("value", "")
+        val = candidate.get("value", "")
 
-        ok, err = await _dispatch(driver, orchestrator, action_type, kind, val, input_val)
+        ok, err = await _dispatch(
+            driver, orchestrator, action_type, kind, val, input_val
+        )
         if ok:
             return True, None
         last_err = err
@@ -260,9 +285,11 @@ async def _execute_action(
 
 
 async def _dispatch(
-    driver, orchestrator: CortexOrchestrator,
+    driver,
+    orchestrator: CortexOrchestrator,
     action_type: str,
-    kind: str, val: str,
+    kind: str,
+    val: str,
     input_val,
 ) -> tuple:
     """Dispatch a single action to the driver. Returns (ok, error_str)."""

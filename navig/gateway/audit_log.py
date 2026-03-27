@@ -67,13 +67,13 @@ class AuditLog:
     def record(
         self,
         *,
-        actor:     str,
-        action:    str,
-        policy:    str           = "allow",
-        status:    str           = "success",
+        actor: str,
+        action: str,
+        policy: str = "allow",
+        status: str = "success",
         raw_input: Optional[str] = None,
         raw_output: Optional[str] = None,
-        metadata:  Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Append one audit record.
@@ -128,24 +128,26 @@ class AuditLog:
     @staticmethod
     def _build_record(
         *,
-        actor:      str,
-        action:     str,
-        policy:     str,
-        status:     str,
-        raw_input:  Optional[str],
+        actor: str,
+        action: str,
+        policy: str,
+        status: str,
+        raw_input: Optional[str],
         raw_output: Optional[str],
-        metadata:   Dict[str, Any],
+        metadata: Dict[str, Any],
     ) -> Dict[str, Any]:
         record: Dict[str, Any] = {
-            "ts":     datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
-            "actor":  actor,
+            "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+            "actor": actor,
             "action": action,
             "policy": policy,
             "status": status,
         }
 
         if raw_input is not None:
-            digest = hashlib.sha256(raw_input.encode("utf-8", errors="replace")).hexdigest()[:16]
+            digest = hashlib.sha256(
+                raw_input.encode("utf-8", errors="replace")
+            ).hexdigest()[:16]
             record["input_hash"] = f"sha256:{digest}"
 
         if raw_output is not None:

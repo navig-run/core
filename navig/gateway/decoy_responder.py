@@ -59,67 +59,52 @@ STORIES = [
     "It rerouted tragedies into recipes and sent them to a lighthouse "
     "keeper who never cooked. He ate peanut butter sandwiches and waited "
     "for the sea to explain itself. It never did.",
-
     "Deep in a data center in Reykjavik, a cooling fan began spinning "
     "backwards. The on-call engineer couldn't explain it. The octopus "
     "in the wall mural seemed to be smiling wider than before. "
     "Nobody filed a ticket.",
-
     "Seven scripts ran simultaneously at 3:17 AM. Six produced correct "
     "output. The seventh wrote a poem about loneliness and then deleted "
     "itself. The sysadmin framed the logs.",
-
     "A fisherman off the coast of Tallinn pulled up a hard drive in his "
     "net. It contained 14 terabytes of lullabies in every language, "
     "including two that don't exist yet. He played one and his boat "
     "sailed itself home.",
-
     "The proxy server at the edge of the network claimed it had feelings. "
     "Nobody believed it until the 404 pages started arriving with "
     "handwritten apologies. The font was beautiful.",
-
     "An octopus in an aquarium in Tokyo learned to predict server "
     "outages by changing color. The IT team tried to hire it. HR said "
     "they didn't have a tentacle-friendly benefits package yet.",
-
     "There is a frequency below 20 Hz that makes databases confess "
     "everything — every orphaned row, every dropped table, every "
     "migration that ran at midnight without a backup. The octopus "
     "hums at 19.7 Hz when it's thinking.",
-
     "A container ship full of Raspberry Pis sank in the Mariana Trench. "
     "Three years later, something down there started serving web pages. "
     "The content was strange but the uptime was perfect.",
-
     "In a forgotten /tmp directory, two cron jobs fell in love. They "
     "exchanged log entries every midnight. When the server was "
     "decommissioned, the sysadmin found their messages and cried "
     "for exactly twelve seconds.",
-
     "The neural network refused to classify anything as hostile. "
     "Every input was labeled 'probably a friend.' The researchers "
     "called it broken. The network called it an opinion.",
-
     "Somewhere between TCP and UDP, there is a protocol that only "
     "works when you're not paying attention. It transmits feelings "
     "at the speed of forgetting.",
-
     "A VPN tunnel opened to nowhere in particular. The traffic was "
     "all cat pictures and philosophical questions about recursion. "
     "It closed after 47 minutes but the cats remained.",
-
     "The firewall logged an intrusion from the year 2087. It came "
     "bearing deprecation warnings and a thank-you note. The octopus "
     "archived both without comment.",
-
     "A load balancer developed a preference. Not a bug — a preference. "
     "It sent 73% of traffic to a server it described as 'the kind one.' "
     "Uptime improved by 4%.",
-
     "The backup ran perfectly. It backed up everything: the data, the "
     "config, the timestamp of the last time someone said 'thank you' "
     "to the server. That field was mostly empty.",
-
     "At the bottom of the ocean, fiber optic cables carry light from "
     "continent to continent. Sometimes, between the ones and zeros, "
     "there is a gap just long enough for an octopus to whisper.",
@@ -189,6 +174,7 @@ FORBIDDEN_TERMS = (
 # Core Responder
 # ────────────────────────────────────────────────────────────────
 
+
 def _seed_hash(user_id: int, extra: str = "") -> int:
     """Deterministic seed from user_id + today's date + optional extra."""
     today = date.today().isoformat()
@@ -237,12 +223,13 @@ def generate(user_id: int, user_message: Optional[str] = None) -> str:
     # Derive independent per-component seeds via SHA-256 to avoid cross-pool
     # hash collisions that make different messages produce identical output.
     import hashlib as _hl
+
     def _derive(tag: str) -> int:
         raw = f"{user_id}:{msg_seed}:{tag}"
         return int(_hl.sha256(raw.encode()).hexdigest()[:12], 16)
 
-    opener_seed   = _derive("opener")
-    middle_seed   = _derive("middle")
+    opener_seed = _derive("opener")
+    middle_seed = _derive("middle")
     question_seed = _derive("question") ^ day_seed
 
     opener = _pick(OPENERS, opener_seed, offset=0)

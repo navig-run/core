@@ -4,19 +4,20 @@
 List Windows - Show all open windows
 Usage: py list_windows.py
 """
-import sys
 import io
+import sys
+
 from pywinauto import Desktop
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 try:
     desktop = Desktop(backend="uia")
     windows = desktop.windows()
-    
+
     print("Open Windows:")
     print("-" * 60)
-    
+
     for i, window in enumerate(windows, 1):
         try:
             title = window.window_text()
@@ -28,8 +29,9 @@ try:
         except Exception:
             # Skip windows we can't query
             continue
-    
+
 except Exception as e:
     import traceback
+
     traceback.print_exc()
     sys.exit(1)

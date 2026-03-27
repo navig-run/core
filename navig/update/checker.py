@@ -3,6 +3,7 @@
 VersionChecker probes local and SSH nodes to determine current and
 latest available versions, producing VersionInfo records.
 """
+
 from __future__ import annotations
 
 import json
@@ -36,6 +37,7 @@ class VersionChecker:
 
         try:
             import navig as _navig
+
             current = str(getattr(_navig, "__version__", "unknown"))
         except Exception:
             current = "unknown"
@@ -58,6 +60,7 @@ class VersionChecker:
         """Check version on a remote SSH node."""
         if self._remote_ops is None:
             from navig.remote import RemoteOperations
+
             self._remote_ops = RemoteOperations()
 
         current = "unknown"

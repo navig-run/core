@@ -1,4 +1,5 @@
 """NAVIG Blackbox Export — write .navbox archives, optionally encrypted."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -39,10 +40,10 @@ def export_bundle(
         from navig.vault.core_v2 import get_vault_v2
         from navig.vault.crypto import CryptoEngine
 
-        v2      = get_vault_v2()
-        master  = v2.engine().derive_key()  # machine fingerprint
-        raw     = zip_path.read_bytes()
-        sealed  = CryptoEngine.seal(master, raw, b"navbox")
+        v2 = get_vault_v2()
+        master = v2.engine().derive_key()  # machine fingerprint
+        raw = zip_path.read_bytes()
+        sealed = CryptoEngine.seal(master, raw, b"navbox")
 
         enc_path = zip_path.with_suffix(".navbox.enc")
         enc_path.write_bytes(sealed)
@@ -53,6 +54,7 @@ def export_bundle(
         # If encryption fails for any reason, return the unencrypted archive
         # with a warning — never silently lose the data
         from rich.console import Console
+
         Console().print(
             f"[yellow]Warning:[/yellow] Encryption failed ({exc}). "
             "Bundle saved as unencrypted .navbox."

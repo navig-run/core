@@ -142,13 +142,16 @@ class QueryTimer:
             def get_stats(self):
                 ...
         """
+
         def decorator(fn):
             def wrapper(*args, **kwargs):
                 with self.track(label):
                     return fn(*args, **kwargs)
+
             wrapper.__name__ = fn.__name__
             wrapper.__doc__ = fn.__doc__
             return wrapper
+
         return decorator
 
     # ── Recording ─────────────────────────────────────────────
@@ -196,7 +199,9 @@ class QueryTimer:
                 return qs.to_dict() if qs else {}
             return {k: v.to_dict() for k, v in self._stats.items()}
 
-    def get_slow_queries(self, threshold_ms: Optional[float] = None) -> List[Dict[str, Any]]:
+    def get_slow_queries(
+        self, threshold_ms: Optional[float] = None
+    ) -> List[Dict[str, Any]]:
         """Return stats for queries whose p95 exceeds *threshold_ms*."""
         threshold = threshold_ms or self.slow_threshold_ms
         with self._lock:

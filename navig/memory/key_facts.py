@@ -32,6 +32,7 @@ logger = logging.getLogger("navig.memory.key_facts")
 
 # ── Helpers ───────────────────────────────────────────────────
 
+
 def _utcnow() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
@@ -46,6 +47,7 @@ def _estimate_tokens(text: str) -> int:
 
 
 # ── Data Model ────────────────────────────────────────────────
+
 
 @dataclass
 class KeyFact:
@@ -69,6 +71,7 @@ class KeyFact:
         embedding:       Optional vector embedding for semantic search
         metadata:        Arbitrary JSON metadata
     """
+
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     content: str = ""
     category: str = "context"  # preference, decision, context, identity, technical
@@ -133,16 +136,28 @@ class KeyFact:
         )
 
     def __repr__(self) -> str:
-        status = "active" if self.is_active else ("superseded" if self.superseded_by else "deleted")
+        status = (
+            "active"
+            if self.is_active
+            else ("superseded" if self.superseded_by else "deleted")
+        )
         return f"<KeyFact [{status}] {self.content[:60]}…>"
 
 
 # ── Valid categories ──────────────────────────────────────────
 
-VALID_CATEGORIES = {"preference", "decision", "context", "identity", "technical", "problem_solution"}
+VALID_CATEGORIES = {
+    "preference",
+    "decision",
+    "context",
+    "identity",
+    "technical",
+    "problem_solution",
+}
 
 
 # ── Key Facts Store ───────────────────────────────────────────
+
 
 class KeyFactStore:
     """
@@ -175,7 +190,9 @@ class KeyFactStore:
 
     def _conn(self) -> sqlite3.Connection:
         if not hasattr(self._local, "conn") or self._local.conn is None:
-            self._local.conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+            self._local.conn = sqlite3.connect(
+                str(self.db_path), check_same_thread=False
+            )
             self._local.conn.row_factory = sqlite3.Row
             self._local.conn.execute("PRAGMA journal_mode=WAL")
             self._local.conn.execute("PRAGMA synchronous=NORMAL")
@@ -185,7 +202,8 @@ class KeyFactStore:
 
     def _init_schema(self) -> None:
         conn = self._conn()
-        conn.executescript("""
+        conn.executescript(
+            """
             CREATE TABLE IF NOT EXISTS key_facts (
                 id                      TEXT PRIMARY KEY,
                 content                 TEXT NOT NULL,
@@ -210,30 +228,35 @@ class KeyFactStore:
             CREATE INDEX IF NOT EXISTS idx_kf_confidence ON key_facts(confidence DESC);
             CREATE INDEX IF NOT EXISTS idx_kf_updated ON key_facts(updated_at DESC);
             CREATE INDEX IF NOT EXISTS idx_kf_source ON key_facts(source_conversation_id);
-        """)
+        """
+        )
 
         # FTS5 for full-text keyword search (standalone, not external content)
         self._fts_available = False
         try:
-            conn.execute("""
+            conn.execute(
+                """
                 CREATE VIRTUAL TABLE IF NOT EXISTS key_facts_fts USING fts5(
                     fact_id,
                     content,
                     tags,
                     category
                 )
-            """)
+            """
+            )
             self._fts_available = True
         except sqlite3.OperationalError:
             logger.warning("FTS5 not available — keyword search will use LIKE fallback")
 
         # Schema version tracking
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS kf_meta (
                 key   TEXT PRIMARY KEY,
                 value TEXT
             )
-        """)
+        """
+        )
         conn.execute(
             "INSERT OR IGNORE INTO kf_meta (key, value) VALUES ('schema_version', ?)",
             (str(self.SCHEMA_VERSION),),
@@ -265,7 +288,9 @@ class KeyFactStore:
             existing = self._find_duplicate(fact.content)
             if existing and existing.id != fact.id:
                 # Merge: bump confidence, update metadata, keep original ID
-                existing.confidence = min(1.0, max(existing.confidence, fact.confidence) + 0.05)
+                existing.confidence = min(
+                    1.0, max(existing.confidence, fact.confidence) + 0.05
+                )
                 existing.updated_at = _utcnow()
                 existing.metadata.update(fact.metadata)
                 if fact.tags:
@@ -276,7 +301,8 @@ class KeyFactStore:
 
             fact.updated_at = _utcnow()
             d = fact.to_dict()
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT OR REPLACE INTO key_facts
                 (id, content, category, tags, confidence,
                  source_conversation_id, source_platform,
@@ -287,7 +313,9 @@ class KeyFactStore:
                  :source_conversation_id, :source_platform,
                  :created_at, :updated_at, :superseded_by, :deleted,
                  :access_count, :last_accessed, :embedding, :metadata)
-            """, d)
+            """,
+                d,
+            )
 
             # Update FTS
             self._update_fts(fact)
@@ -297,9 +325,11 @@ class KeyFactStore:
 
     def get(self, fact_id: str) -> Optional[KeyFact]:
         """Get a single fact by ID."""
-        row = self._conn().execute(
-            "SELECT * FROM key_facts WHERE id = ?", (fact_id,)
-        ).fetchone()
+        row = (
+            self._conn()
+            .execute("SELECT * FROM key_facts WHERE id = ?", (fact_id,))
+            .fetchone()
+        )
         return KeyFact.from_row(row) if row else None
 
     def get_active(
@@ -325,7 +355,9 @@ class KeyFactStore:
         rows = self._conn().execute(query, params).fetchall()
         return [KeyFact.from_row(r) for r in rows]
 
-    def search_keyword(self, query: str, limit: int = 20) -> List[Tuple[KeyFact, float]]:
+    def search_keyword(
+        self, query: str, limit: int = 20
+    ) -> List[Tuple[KeyFact, float]]:
         """
         Keyword search via FTS5.  Returns (fact, rank) pairs.
         Falls back to LIKE if FTS5 is unavailable.
@@ -333,7 +365,8 @@ class KeyFactStore:
         conn = self._conn()
         if self._fts_available:
             try:
-                rows = conn.execute("""
+                rows = conn.execute(
+                    """
                     SELECT kf.*, fts.rank
                     FROM key_facts_fts fts
                     JOIN key_facts kf ON kf.id = fts.fact_id
@@ -342,13 +375,16 @@ class KeyFactStore:
                       AND kf.superseded_by IS NULL
                     ORDER BY fts.rank
                     LIMIT ?
-                """, (query, limit)).fetchall()
+                """,
+                    (query, limit),
+                ).fetchall()
                 return [(KeyFact.from_row(r), abs(r["rank"])) for r in rows]
             except sqlite3.OperationalError:
                 pass  # fall through to LIKE fallback
         # LIKE fallback
         like = f"%{query}%"
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT *, 1.0 as rank
             FROM key_facts
             WHERE deleted = 0
@@ -356,7 +392,9 @@ class KeyFactStore:
               AND (content LIKE ? OR tags LIKE ?)
             ORDER BY confidence DESC
             LIMIT ?
-        """, (like, like, limit)).fetchall()
+        """,
+            (like, like, limit),
+        ).fetchall()
         return [(KeyFact.from_row(r), 1.0) for r in rows]
 
     def search_vector(
@@ -371,12 +409,14 @@ class KeyFactStore:
         """
         # For key facts (typically <1000 entries), in-memory cosine is fast enough
         conn = self._conn()
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
             SELECT * FROM key_facts
             WHERE deleted = 0
               AND superseded_by IS NULL
               AND embedding IS NOT NULL
-        """).fetchall()
+        """
+        ).fetchall()
 
         if not rows:
             return []
@@ -475,13 +515,17 @@ class KeyFactStore:
         active = conn.execute(
             "SELECT COUNT(*) FROM key_facts WHERE deleted = 0 AND superseded_by IS NULL"
         ).fetchone()[0]
-        deleted = conn.execute("SELECT COUNT(*) FROM key_facts WHERE deleted = 1").fetchone()[0]
+        deleted = conn.execute(
+            "SELECT COUNT(*) FROM key_facts WHERE deleted = 1"
+        ).fetchone()[0]
         superseded = conn.execute(
             "SELECT COUNT(*) FROM key_facts WHERE superseded_by IS NOT NULL"
         ).fetchone()[0]
-        by_category = dict(conn.execute(
-            "SELECT category, COUNT(*) FROM key_facts WHERE deleted = 0 AND superseded_by IS NULL GROUP BY category"
-        ).fetchall())
+        by_category = dict(
+            conn.execute(
+                "SELECT category, COUNT(*) FROM key_facts WHERE deleted = 0 AND superseded_by IS NULL GROUP BY category"
+            ).fetchall()
+        )
         return {
             "total": total,
             "active": active,
@@ -501,18 +545,26 @@ class KeyFactStore:
     def _find_duplicate(self, content: str) -> Optional[KeyFact]:
         """Find an active fact with very similar content (exact or near-match)."""
         # Exact match first
-        row = self._conn().execute(
-            "SELECT * FROM key_facts WHERE content = ? AND deleted = 0 AND superseded_by IS NULL",
-            (content,),
-        ).fetchone()
+        row = (
+            self._conn()
+            .execute(
+                "SELECT * FROM key_facts WHERE content = ? AND deleted = 0 AND superseded_by IS NULL",
+                (content,),
+            )
+            .fetchone()
+        )
         if row:
             return KeyFact.from_row(row)
 
         # Normalized match (strip whitespace + lowercase)
         normalized = " ".join(content.lower().split())
-        rows = self._conn().execute(
-            "SELECT * FROM key_facts WHERE deleted = 0 AND superseded_by IS NULL"
-        ).fetchall()
+        rows = (
+            self._conn()
+            .execute(
+                "SELECT * FROM key_facts WHERE deleted = 0 AND superseded_by IS NULL"
+            )
+            .fetchall()
+        )
         for r in rows:
             existing_norm = " ".join(r["content"].lower().split())
             if existing_norm == normalized:
@@ -525,7 +577,8 @@ class KeyFactStore:
 
     def _update_row(self, fact: KeyFact) -> None:
         d = fact.to_dict()
-        self._conn().execute("""
+        self._conn().execute(
+            """
             UPDATE key_facts SET
                 content = :content,
                 category = :category,
@@ -539,7 +592,9 @@ class KeyFactStore:
                 embedding = :embedding,
                 metadata = :metadata
             WHERE id = :id
-        """, d)
+        """,
+            d,
+        )
 
     def _update_fts(self, fact: KeyFact) -> None:
         if not self._fts_available:

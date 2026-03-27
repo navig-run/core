@@ -1,4 +1,5 @@
 """ConversationHistory: rolling message buffer with token-budget enforcement."""
+
 from __future__ import annotations
 
 import json
@@ -38,7 +39,9 @@ class ConversationHistory:
         summarizer: Optional[Callable[[List[Dict[str, str]]], str]] = None,
     ) -> None:
         if max_tokens <= 0:
-            raise ValueError(f"max_tokens must be a positive integer, got {max_tokens!r}")
+            raise ValueError(
+                f"max_tokens must be a positive integer, got {max_tokens!r}"
+            )
         # Sanitize user_id so it is safe to use as a filename (no path traversal).
         safe_id = re.sub(r"[^\w\-]", "_", user_id) or "_"
         self._user_id = safe_id
@@ -56,7 +59,9 @@ class ConversationHistory:
         self._messages.append({"role": role, "content": content})
         self._jsonl_path.parent.mkdir(parents=True, exist_ok=True)
         with self._jsonl_path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"role": role, "content": content, "ts": time.time()}) + "\n")
+            fh.write(
+                json.dumps({"role": role, "content": content, "ts": time.time()}) + "\n"
+            )
         if self.token_count() > self._max_tokens:
             self._truncate()
 

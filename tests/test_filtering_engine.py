@@ -4,6 +4,7 @@ TDD tests for FilteringEngine.
 Written BEFORE implementation — defines expected contract.
 Run: pytest tests/test_filtering_engine.py -v
 """
+
 from __future__ import annotations
 
 import textwrap
@@ -21,10 +22,10 @@ from navig.agents.filtering_engine import (
     normalize_headings,
 )
 
-
 # ─────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────
+
 
 def make_navig_tree(tmp_path: Path) -> Path:
     """Create a minimal .navig/ directory tree under tmp_path."""
@@ -39,6 +40,7 @@ def make_navig_tree(tmp_path: Path) -> Path:
 # ─────────────────────────────────────────────────────────────
 # Unit tests — normalization helpers
 # ─────────────────────────────────────────────────────────────
+
 
 class TestApplyFrontmatter:
     """apply_frontmatter() should inject YAML frontmatter when missing."""
@@ -93,6 +95,7 @@ class TestNormalizeHeadings:
 # ─────────────────────────────────────────────────────────────
 # Unit tests — filter_file
 # ─────────────────────────────────────────────────────────────
+
 
 class TestFilterFile:
     def test_filter_file_adds_frontmatter(self, tmp_path):
@@ -156,6 +159,7 @@ class TestFilterFile:
 # Integration tests — scan_and_filter
 # ─────────────────────────────────────────────────────────────
 
+
 class TestScanAndFilter:
     def test_empty_directories_return_zero_results(self, tmp_path):
         root = make_navig_tree(tmp_path)
@@ -204,6 +208,7 @@ class TestScanAndFilter:
 # Watch loop test
 # ─────────────────────────────────────────────────────────────
 
+
 class TestWatchLoop:
     def test_watch_fires_on_new_file(self, tmp_path):
         root = make_navig_tree(tmp_path)
@@ -229,6 +234,6 @@ class TestWatchLoop:
         # Wait for watcher to pick it up
         watcher_thread.join(timeout=2.0)
 
-        assert any(p.name == "new-plan.md" for p in fired), (
-            "Watch loop did not fire on_change for new file"
-        )
+        assert any(
+            p.name == "new-plan.md" for p in fired
+        ), "Watch loop did not fire on_change for new file"

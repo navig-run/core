@@ -37,9 +37,13 @@ def ts_status(
         console.print(f"[red]Tailscale not available:[/red] {status.error}")
         raise typer.Exit(1)
     if not status.running:
-        console.print(f"[yellow]Tailscale not running.[/yellow] Backend: {status.backend_state}")
+        console.print(
+            f"[yellow]Tailscale not running.[/yellow] Backend: {status.backend_state}"
+        )
         raise typer.Exit(1)
-    console.print(f"[green]Tailscale running[/green] — {status.self_hostname} ({status.self_ip})")
+    console.print(
+        f"[green]Tailscale running[/green] — {status.self_hostname} ({status.self_ip})"
+    )
     console.print(f"Backend: {status.backend_state}")
     if status.peers:
         table = Table(title="Peers")

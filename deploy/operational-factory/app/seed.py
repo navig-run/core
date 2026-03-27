@@ -1,12 +1,16 @@
-from datetime import datetime, timezone
 import json
+from datetime import datetime, timezone
 
 from app.db import db_session, fetch_one_dict
 
 
 def seed_agents():
     contracts = [
-        ("executive_assistant", "Executive Assistant", "contracts/executive_assistant.yaml"),
+        (
+            "executive_assistant",
+            "Executive Assistant",
+            "contracts/executive_assistant.yaml",
+        ),
         ("email_support", "Email Support Agent", "contracts/email_support_agent.yaml"),
         ("sales_bd", "Sales/BD Agent", "contracts/sales_bd_agent.yaml"),
         ("dev_agent", "Dev Agent", "contracts/dev_agent.yaml"),
@@ -15,7 +19,9 @@ def seed_agents():
     ]
 
     with db_session() as session:
-        tenant = fetch_one_dict(session, "SELECT id FROM tenants WHERE slug='solo-company'")
+        tenant = fetch_one_dict(
+            session, "SELECT id FROM tenants WHERE slug='solo-company'"
+        )
         if not tenant:
             raise RuntimeError("tenant solo-company missing")
         tenant_id = tenant["id"]
@@ -45,6 +51,6 @@ def seed_agents():
             )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     seed_agents()
-    print('Seed complete')
+    print("Seed complete")

@@ -37,9 +37,11 @@ logger = logging.getLogger("navig.memory.snapshot")
 # Snapshot Policy
 # ─────────────────────────────────────────────────────────────
 
+
 @dataclass
 class SnapshotPolicy:
     """Per-tool storage policy."""
+
     store: bool = False
     retention: str = "7d"  # e.g. "24h", "7d", "30d"
 
@@ -103,6 +105,7 @@ def _load_policies_from_yaml() -> Dict[str, Any]:
     """Read memory.api_snapshot_policies from the NAVIG global config."""
     try:
         from navig.core.config_loader import load_config
+
         cfg = load_config()
         mem = getattr(cfg, "memory", None)
         if mem and hasattr(mem, "api_snapshot_policies"):
@@ -139,6 +142,7 @@ def should_store(
 # Snapshot Writer
 # ─────────────────────────────────────────────────────────────
 
+
 def _get_snapshot_dir() -> Path:
     """Resolve the api_state snapshot directory."""
     # Check project-local .navig first, then global
@@ -152,6 +156,7 @@ def _get_snapshot_dir() -> Path:
 @dataclass
 class SnapshotEntry:
     """A single snapshot record stored in JSONL."""
+
     tool: str
     normalized: Any
     source_endpoint: str = ""
@@ -162,15 +167,19 @@ class SnapshotEntry:
 
     def to_line(self) -> str:
         """Serialize to a single JSON line."""
-        return json.dumps({
-            "tool": self.tool,
-            "normalized": self.normalized,
-            "source_endpoint": self.source_endpoint,
-            "timestamp": self.timestamp or datetime.now(timezone.utc).isoformat(),
-            "workspace": self.workspace,
-            "lane": self.lane,
-            "host": self.host,
-        }, default=str, ensure_ascii=False)
+        return json.dumps(
+            {
+                "tool": self.tool,
+                "normalized": self.normalized,
+                "source_endpoint": self.source_endpoint,
+                "timestamp": self.timestamp or datetime.now(timezone.utc).isoformat(),
+                "workspace": self.workspace,
+                "lane": self.lane,
+                "host": self.host,
+            },
+            default=str,
+            ensure_ascii=False,
+        )
 
     @classmethod
     def from_line(cls, line: str) -> "SnapshotEntry":
@@ -238,6 +247,7 @@ class SnapshotWriter:
 
         # Redact sensitive fields before writing
         from navig.tools.api_schema import redact_sensitive
+
         normalized = redact_sensitive(tool_result.get("normalized", {}))
 
         entry = SnapshotEntry(
@@ -274,13 +284,17 @@ class SnapshotWriter:
         """Write directly from an ApiToolResult object."""
         return self.write(
             tool_result=api_result.to_dict(),
-            workspace=workspace, lane=lane, host=host, force=force,
+            workspace=workspace,
+            lane=lane,
+            host=host,
+            force=force,
         )
 
 
 # ─────────────────────────────────────────────────────────────
 # Snapshot Reader
 # ─────────────────────────────────────────────────────────────
+
 
 def load_snapshots(
     workspace: str = "default",
@@ -366,6 +380,7 @@ def is_stale(
 # ─────────────────────────────────────────────────────────────
 # Retention / Pruning
 # ─────────────────────────────────────────────────────────────
+
 
 def prune_snapshots(
     workspace: str = "default",

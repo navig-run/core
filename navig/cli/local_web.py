@@ -3,6 +3,7 @@
 Extracted from `navig.cli.__init__` to keep the root CLI module focused on
 bootstrap and routing while preserving command names and legacy aliases.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -36,12 +37,14 @@ def register_local_web_commands(app: typer.Typer) -> None:
     def hosts_view_cmd(ctx: typer.Context):
         """View the system hosts file with syntax highlighting."""
         from navig.commands.local import hosts_view
+
         hosts_view(ctx.obj)
 
     @hosts_app.command("edit")
     def hosts_edit_cmd(ctx: typer.Context):
         """Open hosts file in editor (requires admin)."""
         from navig.commands.local import hosts_edit
+
         hosts_edit(ctx.obj)
 
     @hosts_app.command("add")
@@ -52,6 +55,7 @@ def register_local_web_commands(app: typer.Typer) -> None:
     ):
         """Add an entry to the hosts file (requires admin)."""
         from navig.commands.local import hosts_add
+
         hosts_add(ip, hostname, ctx.obj)
 
     software_app = typer.Typer(
@@ -66,17 +70,21 @@ def register_local_web_commands(app: typer.Typer) -> None:
         """Software management - run without subcommand to list packages."""
         if ctx.invoked_subcommand is None:
             from navig.commands.local import software_list
+
             software_list(ctx.obj)
             raise typer.Exit()
 
     @software_app.command("list")
     def software_list_cmd(
         ctx: typer.Context,
-        limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Limit number of results"),
+        limit: Optional[int] = typer.Option(
+            None, "--limit", "-l", help="Limit number of results"
+        ),
     ):
         """List installed software packages."""
         from navig.commands.local import software_list
-        ctx.obj['limit'] = limit
+
+        ctx.obj["limit"] = limit
         software_list(ctx.obj)
 
     @software_app.command("search")
@@ -86,6 +94,7 @@ def register_local_web_commands(app: typer.Typer) -> None:
     ):
         """Search installed packages by name."""
         from navig.commands.local import software_search
+
         software_search(query, ctx.obj)
 
     local_app = typer.Typer(
@@ -106,38 +115,47 @@ def register_local_web_commands(app: typer.Typer) -> None:
     def local_show_cmd(
         ctx: typer.Context,
         info: bool = typer.Option(True, "--info", "-i", help="Show system information"),
-        resources: bool = typer.Option(False, "--resources", "-r", help="Show resource usage"),
+        resources: bool = typer.Option(
+            False, "--resources", "-r", help="Show resource usage"
+        ),
     ):
         """Show local system information."""
         if resources:
             from navig.commands.local import resource_usage
+
             resource_usage(ctx.obj)
         else:
             from navig.commands.local import system_info
+
             system_info(ctx.obj)
 
     @local_app.command("audit")
     def local_audit_cmd(
         ctx: typer.Context,
         ai: bool = typer.Option(False, "--ai", "-a", help="Include AI analysis"),
-        verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed information"),
+        verbose: bool = typer.Option(
+            False, "--verbose", "-v", help="Show detailed information"
+        ),
     ):
         """Run local security audit."""
         from navig.commands.local import security_audit
-        ctx.obj['ai'] = ai
-        ctx.obj['verbose'] = verbose
+
+        ctx.obj["ai"] = ai
+        ctx.obj["verbose"] = verbose
         security_audit(ctx.obj)
 
     @local_app.command("ports")
     def local_ports_cmd(ctx: typer.Context):
         """Show open/listening ports on local machine."""
         from navig.commands.local import security_ports
+
         security_ports(ctx.obj)
 
     @local_app.command("firewall")
     def local_firewall_cmd(ctx: typer.Context):
         """Show local firewall status."""
         from navig.commands.local import security_firewall
+
         security_firewall(ctx.obj)
 
     @local_app.command("ping")
@@ -148,6 +166,7 @@ def register_local_web_commands(app: typer.Typer) -> None:
     ):
         """Ping a host from local machine."""
         from navig.commands.local import network_ping
+
         network_ping(host, count, ctx.obj)
 
     @local_app.command("dns")
@@ -157,12 +176,14 @@ def register_local_web_commands(app: typer.Typer) -> None:
     ):
         """Perform DNS lookup."""
         from navig.commands.local import network_dns
+
         network_dns(hostname, ctx.obj)
 
     @local_app.command("interfaces")
     def local_interfaces_cmd(ctx: typer.Context):
         """Show network interfaces."""
         from navig.commands.local import network_interfaces
+
         network_interfaces(ctx.obj)
 
     web_app = typer.Typer(
@@ -183,12 +204,14 @@ def register_local_web_commands(app: typer.Typer) -> None:
     def web_vhosts_new(ctx: typer.Context):
         """List virtual hosts (enabled and available)."""
         from navig.commands.webserver import list_vhosts
+
         list_vhosts(ctx.obj)
 
     @web_app.command("test")
     def web_test_new(ctx: typer.Context):
         """Test web server configuration syntax."""
         from navig.commands.webserver import test_config
+
         test_config(ctx.obj)
 
     @web_app.command("enable")
@@ -198,7 +221,8 @@ def register_local_web_commands(app: typer.Typer) -> None:
     ):
         """Enable a web server site."""
         from navig.commands.webserver import enable_site
-        ctx.obj['site_name'] = site_name
+
+        ctx.obj["site_name"] = site_name
         enable_site(ctx.obj)
 
     @web_app.command("disable")
@@ -208,7 +232,8 @@ def register_local_web_commands(app: typer.Typer) -> None:
     ):
         """Disable a web server site."""
         from navig.commands.webserver import disable_site
-        ctx.obj['site_name'] = site_name
+
+        ctx.obj["site_name"] = site_name
         disable_site(ctx.obj)
 
     @web_app.command("module-enable")
@@ -218,7 +243,8 @@ def register_local_web_commands(app: typer.Typer) -> None:
     ):
         """Enable Apache module (Apache only)."""
         from navig.commands.webserver import enable_module
-        ctx.obj['module_name'] = module_name
+
+        ctx.obj["module_name"] = module_name
         enable_module(ctx.obj)
 
     @web_app.command("module-disable")
@@ -228,19 +254,22 @@ def register_local_web_commands(app: typer.Typer) -> None:
     ):
         """Disable Apache module (Apache only)."""
         from navig.commands.webserver import disable_module
-        ctx.obj['module_name'] = module_name
+
+        ctx.obj["module_name"] = module_name
         disable_module(ctx.obj)
 
     @web_app.command("reload")
     def web_reload_new(ctx: typer.Context):
         """Safely reload web server (tests config first)."""
         from navig.commands.webserver import reload_server
+
         reload_server(ctx.obj)
 
     @web_app.command("recommend")
     def web_recommend_new(ctx: typer.Context):
         """Display performance tuning recommendations."""
         from navig.commands.webserver import get_recommendations
+
         get_recommendations(ctx.obj)
 
     web_hestia_app = typer.Typer(
@@ -255,6 +284,7 @@ def register_local_web_commands(app: typer.Typer) -> None:
         """HestiaCP management - run without subcommand for interactive menu."""
         if ctx.invoked_subcommand is None:
             from navig.commands.interactive import launch_hestia_menu
+
             launch_hestia_menu()
             raise typer.Exit()
 
@@ -262,16 +292,21 @@ def register_local_web_commands(app: typer.Typer) -> None:
     def web_hestia_list(
         ctx: typer.Context,
         users: bool = typer.Option(False, "--users", "-u", help="List HestiaCP users"),
-        domains: bool = typer.Option(False, "--domains", "-d", help="List HestiaCP domains"),
-        user_filter: Optional[str] = typer.Option(None, "--user", help="Filter domains by username"),
+        domains: bool = typer.Option(
+            False, "--domains", "-d", help="List HestiaCP domains"
+        ),
+        user_filter: Optional[str] = typer.Option(
+            None, "--user", help="Filter domains by username"
+        ),
         plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
     ):
         """List HestiaCP resources (users, domains)."""
-        ctx.obj['plain'] = plain
+        ctx.obj["plain"] = plain
         if users:
             list_domains_cmd(user_filter, ctx.obj)
         else:
             from navig.commands.hestia import list_users_cmd
+
             list_users_cmd(ctx.obj)
 
     @web_hestia_app.command("add")
@@ -279,9 +314,15 @@ def register_local_web_commands(app: typer.Typer) -> None:
         ctx: typer.Context,
         resource: str = typer.Argument(..., help="Resource type: user or domain"),
         name: str = typer.Argument(..., help="Username or domain name"),
-        password: Optional[str] = typer.Option(None, "--password", "-p", help="Password (for user)"),
-        email: Optional[str] = typer.Option(None, "--email", "-e", help="Email (for user)"),
-        user: Optional[str] = typer.Option(None, "--user", "-u", help="Username (for domain)"),
+        password: Optional[str] = typer.Option(
+            None, "--password", "-p", help="Password (for user)"
+        ),
+        email: Optional[str] = typer.Option(
+            None, "--email", "-e", help="Email (for user)"
+        ),
+        user: Optional[str] = typer.Option(
+            None, "--user", "-u", help="Username (for domain)"
+        ),
     ):
         """Add HestiaCP user or domain."""
         if resource == "user":
@@ -289,12 +330,14 @@ def register_local_web_commands(app: typer.Typer) -> None:
                 ch.error("Password and email required for user creation")
                 raise typer.Exit(1)
             from navig.commands.hestia import add_user_cmd
+
             add_user_cmd(name, password, email, ctx.obj)
         elif resource == "domain":
             if not user:
                 ch.error("Username required for domain creation (--user)")
                 raise typer.Exit(1)
             from navig.commands.hestia import add_domain_cmd
+
             add_domain_cmd(user, name, ctx.obj)
         else:
             ch.error(f"Unknown resource type: {resource}. Use 'user' or 'domain'.")
@@ -305,19 +348,25 @@ def register_local_web_commands(app: typer.Typer) -> None:
         ctx: typer.Context,
         resource: str = typer.Argument(..., help="Resource type: user or domain"),
         name: str = typer.Argument(..., help="Username or domain name"),
-        user: Optional[str] = typer.Option(None, "--user", "-u", help="Username (for domain)"),
-        force: bool = typer.Option(False, "--force", "-f", help="Force deletion without confirmation"),
+        user: Optional[str] = typer.Option(
+            None, "--user", "-u", help="Username (for domain)"
+        ),
+        force: bool = typer.Option(
+            False, "--force", "-f", help="Force deletion without confirmation"
+        ),
     ):
         """Remove HestiaCP user or domain."""
-        ctx.obj['force'] = force
+        ctx.obj["force"] = force
         if resource == "user":
             from navig.commands.hestia import delete_user_cmd
+
             delete_user_cmd(name, ctx.obj)
         elif resource == "domain":
             if not user:
                 ch.error("Username required for domain deletion (--user)")
                 raise typer.Exit(1)
             from navig.commands.hestia import delete_domain_cmd
+
             delete_domain_cmd(user, name, ctx.obj)
         else:
             ch.error(f"Unknown resource type: {resource}. Use 'user' or 'domain'.")
@@ -326,20 +375,29 @@ def register_local_web_commands(app: typer.Typer) -> None:
     @app.command("webserver-list-vhosts", hidden=True)
     def webserver_list_vhosts_cmd(ctx: typer.Context):
         """[DEPRECATED: Use 'navig web vhosts']"""
-        ch.warning("'navig webserver-list-vhosts' is deprecated. Use 'navig web vhosts' instead.")
+        ch.warning(
+            "'navig webserver-list-vhosts' is deprecated. Use 'navig web vhosts' instead."
+        )
         from navig.commands.webserver import list_vhosts
+
         list_vhosts(ctx.obj)
 
     @app.command("webserver-test-config", hidden=True)
     def webserver_test_config_cmd(ctx: typer.Context):
         """[DEPRECATED: Use 'navig web test']"""
-        ch.warning("'navig webserver-test-config' is deprecated. Use 'navig web test' instead.")
+        ch.warning(
+            "'navig webserver-test-config' is deprecated. Use 'navig web test' instead."
+        )
         from navig.commands.webserver import test_config
+
         test_config(ctx.obj)
 
     @app.command("webserver-reload", hidden=True)
     def webserver_reload_cmd(ctx: typer.Context):
         """[DEPRECATED: Use 'navig web reload']"""
-        ch.warning("'navig webserver-reload' is deprecated. Use 'navig web reload' instead.")
+        ch.warning(
+            "'navig webserver-reload' is deprecated. Use 'navig web reload' instead."
+        )
         from navig.commands.webserver import reload_server
+
         reload_server(ctx.obj)

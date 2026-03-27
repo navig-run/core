@@ -33,7 +33,7 @@ def show_history(
 ) -> None:
     """
     Show command history with filtering.
-    
+
     Args:
         limit: Maximum number of entries to show
         host: Filter by host
@@ -44,9 +44,9 @@ def show_history(
         opts: CLI options
     """
     opts = opts or {}
-    want_json = opts.get('json', False)
-    want_plain = opts.get('plain', False)
-    verbose = opts.get('verbose', False)
+    want_json = opts.get("json", False)
+    want_plain = opts.get("plain", False)
+    verbose = opts.get("verbose", False)
 
     recorder = get_operation_recorder()
 
@@ -76,14 +76,16 @@ def show_history(
             return
 
     # Get operations
-    operations = list(recorder.iter_operations(
-        limit=limit,
-        host=host,
-        operation_type=op_type,
-        status=op_status,
-        search=search,
-        since=since_timestamp,
-    ))
+    operations = list(
+        recorder.iter_operations(
+            limit=limit,
+            host=host,
+            operation_type=op_type,
+            status=op_status,
+            search=search,
+            since=since_timestamp,
+        )
+    )
 
     if not operations:
         ch.info("No operations found matching criteria")
@@ -126,7 +128,7 @@ def show_history(
             status_str = "[dim]?[/dim]"
 
         # Format timestamp
-        time_str = op.timestamp[:19].replace('T', ' ')
+        time_str = op.timestamp[:19].replace("T", " ")
 
         # Truncate command if needed
         cmd = op.command[:60] + "..." if len(op.command) > 60 else op.command
@@ -150,13 +152,13 @@ def show_history(
 def show_operation_details(op_id: str, opts: Dict[str, Any] = None) -> None:
     """
     Show detailed information about a specific operation.
-    
+
     Args:
         op_id: Operation ID or index (e.g., "1" for last, "2" for second-last)
         opts: CLI options
     """
     opts = opts or {}
-    want_json = opts.get('json', False)
+    want_json = opts.get("json", False)
 
     recorder = get_operation_recorder()
 
@@ -236,7 +238,7 @@ def replay_operation(
 ) -> None:
     """
     Replay a previous operation.
-    
+
     Args:
         op_id: Operation ID or index
         dry_run: If True, show what would be done without executing
@@ -276,8 +278,9 @@ def replay_operation(
         return
 
     # Confirm before execution
-    if not opts.get('yes', False):
+    if not opts.get("yes", False):
         from rich.prompt import Confirm
+
         if not Confirm.ask("Execute this command?", default=True):
             ch.info("Cancelled")
             return
@@ -288,11 +291,11 @@ def replay_operation(
 
     # Re-run through navig
     cmd_parts = command.split()
-    if cmd_parts[0] == 'navig':
+    if cmd_parts[0] == "navig":
         cmd_parts = cmd_parts[1:]  # Remove 'navig' prefix
 
     # Build full command
-    full_cmd = [sys.executable, '-m', 'navig'] + cmd_parts
+    full_cmd = [sys.executable, "-m", "navig"] + cmd_parts
 
     try:
         result = subprocess.run(
@@ -314,7 +317,7 @@ def replay_operation(
 def undo_operation(op_id: str, opts: Dict[str, Any] = None) -> None:
     """
     Undo a reversible operation.
-    
+
     Args:
         op_id: Operation ID or index
         opts: CLI options
@@ -377,7 +380,7 @@ def export_history(
 ) -> None:
     """
     Export operation history to file.
-    
+
     Args:
         output_file: Output file path
         format: Export format (json, csv)
@@ -408,8 +411,9 @@ def clear_history(opts: Dict[str, Any] = None) -> None:
     """Clear all operation history."""
     opts = opts or {}
 
-    if not opts.get('yes', False):
+    if not opts.get("yes", False):
         from rich.prompt import Confirm
+
         if not Confirm.ask("Clear all operation history?", default=False):
             ch.info("Cancelled")
             return
@@ -422,7 +426,7 @@ def clear_history(opts: Dict[str, Any] = None) -> None:
 def history_stats(opts: Dict[str, Any] = None) -> None:
     """Show history statistics."""
     opts = opts or {}
-    want_json = opts.get('json', False)
+    want_json = opts.get("json", False)
 
     recorder = get_operation_recorder()
 
@@ -446,11 +450,11 @@ def history_stats(opts: Dict[str, Any] = None) -> None:
 
     if want_json:
         result = {
-            'total': total_count,
-            'success': success_count,
-            'failed': failed_count,
-            'by_type': type_counts,
-            'by_host': host_counts,
+            "total": total_count,
+            "success": success_count,
+            "failed": failed_count,
+            "by_type": type_counts,
+            "by_host": host_counts,
         }
         print(json.dumps(result, indent=2))
         return
@@ -465,7 +469,9 @@ def history_stats(opts: Dict[str, Any] = None) -> None:
     # Summary
     success_rate = (success_count / total_count * 100) if total_count > 0 else 0
     console.print(f"Total operations: [bold]{total_count}[/bold]")
-    console.print(f"Success rate: [green]{success_rate:.1f}%[/green] ({success_count} success, {failed_count} failed)")
+    console.print(
+        f"Success rate: [green]{success_rate:.1f}%[/green] ({success_count} success, {failed_count} failed)"
+    )
     console.print()
 
     # By type
@@ -494,24 +500,25 @@ def history_stats(opts: Dict[str, Any] = None) -> None:
 
 # Helper functions
 
+
 def _parse_since(since: str) -> Optional[str]:
     """Parse a 'since' parameter like '1h', '24h', '7d' into ISO timestamp."""
     import re
 
-    match = re.match(r'^(\d+)([hdwm])$', since.lower())
+    match = re.match(r"^(\d+)([hdwm])$", since.lower())
     if not match:
         return None
 
     value = int(match.group(1))
     unit = match.group(2)
 
-    if unit == 'h':
+    if unit == "h":
         delta = timedelta(hours=value)
-    elif unit == 'd':
+    elif unit == "d":
         delta = timedelta(days=value)
-    elif unit == 'w':
+    elif unit == "w":
         delta = timedelta(weeks=value)
-    elif unit == 'm':
+    elif unit == "m":
         delta = timedelta(days=value * 30)
     else:
         return None
@@ -528,7 +535,7 @@ def _apply_modifications(command: str, modify: str) -> str:
 
 def _undo_file_create(op: OperationRecord) -> None:
     """Undo a file creation by deleting the file."""
-    file_path = op.undo_data.get('file_path')
+    file_path = op.undo_data.get("file_path")
     if not file_path:
         raise ValueError("No file path in undo data")
 
@@ -540,8 +547,8 @@ def _undo_file_create(op: OperationRecord) -> None:
 
 def _undo_file_delete(op: OperationRecord) -> None:
     """Undo a file deletion by restoring from backup."""
-    backup_path = op.undo_data.get('backup_path')
-    original_path = op.undo_data.get('original_path')
+    backup_path = op.undo_data.get("backup_path")
+    original_path = op.undo_data.get("original_path")
 
     if not backup_path or not original_path:
         raise ValueError("Missing backup or original path in undo data")
@@ -559,14 +566,15 @@ def _undo_file_delete(op: OperationRecord) -> None:
 def _undo_config_change(op: OperationRecord) -> None:
     """Undo a config change by restoring previous value."""
 
-    config_key = op.undo_data.get('key')
-    previous_value = op.undo_data.get('previous_value')
-    config_file = op.undo_data.get('config_file')
+    config_key = op.undo_data.get("key")
+    previous_value = op.undo_data.get("previous_value")
+    config_file = op.undo_data.get("config_file")
 
     if not config_key or config_file is None:
         raise ValueError("Missing config key or file in undo data")
 
     from navig.config import get_config_manager
+
     config = get_config_manager()
 
     # Restore the previous value
@@ -576,12 +584,13 @@ def _undo_config_change(op: OperationRecord) -> None:
 
 def _undo_host_switch(op: OperationRecord) -> None:
     """Undo a host switch by switching back to previous host."""
-    previous_host = op.undo_data.get('previous_host')
+    previous_host = op.undo_data.get("previous_host")
 
     if not previous_host:
         raise ValueError("No previous host in undo data")
 
     from navig.config import get_config_manager
+
     config = get_config_manager()
     config.set_active_host(previous_host)
     ch.info(f"Switched back to host: {previous_host}")

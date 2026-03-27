@@ -17,6 +17,7 @@ Schema:
         updated_at TEXT
     )
 """
+
 from __future__ import annotations
 
 import json
@@ -79,6 +80,7 @@ def get_user_preferred_channel(user_id: str) -> Optional[str]:
 
 # ── Store class ─────────────────────────────────────────────────────────
 
+
 class IdentityStore:
     """SQLite-backed identity CRUD."""
 
@@ -111,18 +113,27 @@ class IdentityStore:
                (telegram_id, username, display_name, preferred_channel,
                 language, socials, metadata, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, '[]', '{}', ?, ?)""",
-            (telegram_id, profile.username, profile.display_name,
-             profile.preferred_channel, profile.language, now, now),
+            (
+                telegram_id,
+                profile.username,
+                profile.display_name,
+                profile.preferred_channel,
+                profile.language,
+                now,
+                now,
+            ),
         )
         self._conn.commit()
         return self.get(telegram_id)
 
     def save(self, profile: UserProfile) -> None:
         now = datetime.utcnow().isoformat()
-        socials_json = json.dumps([
-            {"platform": s.platform, "handle": s.handle, "verified": s.verified}
-            for s in profile.socials
-        ])
+        socials_json = json.dumps(
+            [
+                {"platform": s.platform, "handle": s.handle, "verified": s.verified}
+                for s in profile.socials
+            ]
+        )
         metadata_json = json.dumps(profile.metadata)
         self._conn.execute(
             """INSERT OR REPLACE INTO navig_identities
@@ -130,12 +141,21 @@ class IdentityStore:
                 ton_verified, preferred_channel, matrix_user_id, language,
                 timezone, socials, metadata, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (profile.telegram_id, profile.username, profile.display_name,
-             profile.ton_wallet_address, int(profile.ton_verified),
-             profile.preferred_channel, profile.matrix_user_id,
-             profile.language, profile.timezone,
-             socials_json, metadata_json,
-             profile.created_at.isoformat(), now),
+            (
+                profile.telegram_id,
+                profile.username,
+                profile.display_name,
+                profile.ton_wallet_address,
+                int(profile.ton_verified),
+                profile.preferred_channel,
+                profile.matrix_user_id,
+                profile.language,
+                profile.timezone,
+                socials_json,
+                metadata_json,
+                profile.created_at.isoformat(),
+                now,
+            ),
         )
         self._conn.commit()
 
@@ -169,7 +189,11 @@ class IdentityStore:
     def _row_to_profile(self, row) -> UserProfile:
         socials_raw = json.loads(row["socials"] or "[]")
         socials = [
-            SocialLink(platform=s["platform"], handle=s["handle"], verified=s.get("verified", False))
+            SocialLink(
+                platform=s["platform"],
+                handle=s["handle"],
+                verified=s.get("verified", False),
+            )
             for s in socials_raw
         ]
         return UserProfile(
@@ -184,8 +208,16 @@ class IdentityStore:
             language=row["language"] or "en",
             timezone=row["timezone"],
             metadata=json.loads(row["metadata"] or "{}"),
-            created_at=datetime.fromisoformat(row["created_at"]) if row["created_at"] else datetime.utcnow(),
-            updated_at=datetime.fromisoformat(row["updated_at"]) if row["updated_at"] else datetime.utcnow(),
+            created_at=(
+                datetime.fromisoformat(row["created_at"])
+                if row["created_at"]
+                else datetime.utcnow()
+            ),
+            updated_at=(
+                datetime.fromisoformat(row["updated_at"])
+                if row["updated_at"]
+                else datetime.utcnow()
+            ),
         )
 
     def close(self):

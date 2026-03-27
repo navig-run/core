@@ -6,6 +6,7 @@ Run from the telegram-bot-navig root:
 
 No Telegram token needed — all PTB objects are mocked.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -25,10 +26,10 @@ sys.path.insert(0, str(ROOT))
 from plugin_base import BotPlugin, PluginContext, PluginEvent, PluginMeta
 from plugin_loader import PluginLoader
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_app() -> MagicMock:
     """Minimal PTB Application mock."""
@@ -62,6 +63,7 @@ def _write_plugin(tmp_path: Path, filename: str, body: str) -> Path:
 # ---------------------------------------------------------------------------
 # Minimal concrete plugin for testing
 # ---------------------------------------------------------------------------
+
 
 class _PingPlugin(BotPlugin):
     @property
@@ -98,6 +100,7 @@ class _PassivePlugin(BotPlugin):
 
 class _BrokenPlugin(BotPlugin):
     """Plugin whose handle() always raises."""
+
     @property
     def meta(self) -> PluginMeta:
         return PluginMeta("broken", "Always raises")
@@ -114,6 +117,7 @@ class _BrokenPlugin(BotPlugin):
 # 1. PluginMeta + PluginContext + PluginEvent types
 # ===========================================================================
 
+
 class TestTypes:
     def test_plugin_meta_str(self):
         meta = PluginMeta(name="foo", description="bar", version="2.0.0")
@@ -126,6 +130,7 @@ class TestTypes:
 
     def test_plugin_event_fields(self):
         import dataclasses
+
         fields = {f.name for f in dataclasses.fields(PluginEvent)}
         assert fields == {"name", "source", "data"}
 
@@ -137,6 +142,7 @@ class TestTypes:
 # ===========================================================================
 # 2. BotPlugin base behaviour
 # ===========================================================================
+
 
 class TestBotPlugin:
     def setup_method(self):
@@ -190,9 +196,13 @@ class TestBotPlugin:
 # 3. PluginLoader — discovery
 # ===========================================================================
 
+
 class TestPluginLoaderDiscovery:
     def test_load_all_discovers_plugins(self, tmp_path):
-        _write_plugin(tmp_path, "myplugin.py", """
+        _write_plugin(
+            tmp_path,
+            "myplugin.py",
+            """
             from plugin_base import BotPlugin, PluginMeta
             class P(BotPlugin):
                 @property
@@ -201,7 +211,8 @@ class TestPluginLoaderDiscovery:
                 def command(self): return "myplugin"
                 async def handle(self, u, c): pass
             def create(): return P()
-        """)
+        """,
+        )
         loader = PluginLoader(_make_app(), plugins_dir=tmp_path)
         loader.load_all()
         assert "myplugin" in loader._plugins
@@ -243,7 +254,10 @@ class TestPluginLoaderDiscovery:
         assert len([n for n in loader._plugins if n == "same"]) == 1
 
     def test_command_handler_stored(self, tmp_path):
-        _write_plugin(tmp_path, "cmdplugin.py", """
+        _write_plugin(
+            tmp_path,
+            "cmdplugin.py",
+            """
             from plugin_base import BotPlugin, PluginMeta
             class P(BotPlugin):
                 @property
@@ -252,7 +266,8 @@ class TestPluginLoaderDiscovery:
                 def command(self): return "cmdplugin"
                 async def handle(self, u, c): pass
             def create(): return P()
-        """)
+        """,
+        )
         loader = PluginLoader(_make_app(), plugins_dir=tmp_path)
         loader.load_all()
         assert "cmdplugin" in loader._cmd_handlers
@@ -261,6 +276,7 @@ class TestPluginLoaderDiscovery:
 # ===========================================================================
 # 4. PluginLoader — pip dep installation
 # ===========================================================================
+
 
 class TestPipDeps:
     def test_pip_deps_installed_from_manifest(self, tmp_path):
@@ -323,6 +339,7 @@ class TestPipDeps:
 # 5. PluginLoader — activate / deactivate commands
 # ===========================================================================
 
+
 class TestActivateDeactivate:
     def _loader_with_plugin(self):
         app = _make_app()
@@ -371,6 +388,7 @@ class TestActivateDeactivate:
 # 6. PluginLoader — passive dispatch
 # ===========================================================================
 
+
 class TestPassiveDispatch:
     def _loader_with_passive(self):
         loader = PluginLoader(_make_app())
@@ -400,6 +418,7 @@ class TestPassiveDispatch:
 # ===========================================================================
 # 7. PluginLoader — /plugins shows errors
 # ===========================================================================
+
 
 class TestPluginsCommand:
     def test_plugins_lists_loaded(self):
@@ -438,9 +457,13 @@ class TestPluginsCommand:
 # 8. Hot-reload
 # ===========================================================================
 
+
 class TestHotReload:
     def test_hot_load_adds_new_plugin(self, tmp_path):
-        _write_plugin(tmp_path, "dynplugin.py", """
+        _write_plugin(
+            tmp_path,
+            "dynplugin.py",
+            """
             from plugin_base import BotPlugin, PluginMeta
             class P(BotPlugin):
                 @property
@@ -449,7 +472,8 @@ class TestHotReload:
                 def command(self): return "dynplugin"
                 async def handle(self, u, c): pass
             def create(): return P()
-        """)
+        """,
+        )
         loader = PluginLoader(_make_app(), plugins_dir=tmp_path)
         loader._hot_load(tmp_path / "dynplugin.py")
         assert "dynplugin" in loader._plugins
@@ -481,7 +505,10 @@ class TestHotReload:
         assert second is not first  # new instance loaded
 
     def test_hot_load_populates_stem_map(self, tmp_path):
-        _write_plugin(tmp_path, "mapped.py", """
+        _write_plugin(
+            tmp_path,
+            "mapped.py",
+            """
             from plugin_base import BotPlugin, PluginMeta
             class P(BotPlugin):
                 @property
@@ -490,7 +517,8 @@ class TestHotReload:
                 def command(self): return "mapped"
                 async def handle(self, u, c): pass
             def create(): return P()
-        """)
+        """,
+        )
         loader = PluginLoader(_make_app(), plugins_dir=tmp_path)
         loader._hot_load(tmp_path / "mapped.py")
         assert loader._stem_to_name_map.get("mapped") == "mapped"
@@ -515,6 +543,7 @@ class TestHotReload:
 
     def test_start_watcher_no_crash_without_watchdog(self):
         import plugin_loader as _pl
+
         orig = _pl._WATCHDOG_AVAILABLE
         _pl._WATCHDOG_AVAILABLE = False
         try:
@@ -528,10 +557,17 @@ class TestHotReload:
 # 9. provides conflict detection
 # ===========================================================================
 
+
 class TestProvidesConflict:
-    def _make_provides_plugin_file(self, tmp_path: Path, name: str, provides: list) -> Path:
+    def _make_provides_plugin_file(
+        self, tmp_path: Path, name: str, provides: list
+    ) -> Path:
         import json as _json
-        py = _write_plugin(tmp_path, f"{name}.py", f"""
+
+        py = _write_plugin(
+            tmp_path,
+            f"{name}.py",
+            f"""
             from plugin_base import BotPlugin, PluginMeta
             class P(BotPlugin):
                 @property
@@ -540,10 +576,18 @@ class TestProvidesConflict:
                 def command(self): return "{name}"
                 async def handle(self, u, c): pass
             def create(): return P()
-        """)
+        """,
+        )
         sidecar = tmp_path / f"{name}.json"
         sidecar.write_text(
-            _json.dumps({"id": name, "version": "1.0.0", "provides": provides, "depends": {"pip": []}}),
+            _json.dumps(
+                {
+                    "id": name,
+                    "version": "1.0.0",
+                    "provides": provides,
+                    "depends": {"pip": []},
+                }
+            ),
             encoding="utf-8",
         )
         return py
@@ -560,11 +604,9 @@ class TestProvidesConflict:
         loader = PluginLoader(_make_app(), plugins_dir=tmp_path)
         loader.load_all()
         # Only one provider allowed — one should be in errors
-        assert (
-            "provider_a" in loader._plugins) ^ ("provider_b" in loader._plugins
-        ) or (
-            "provider_a" in loader._plugins and "provider_b" not in loader._plugins
-        )
+        assert ("provider_a" in loader._plugins) ^ (
+            "provider_b" in loader._plugins
+        ) or ("provider_a" in loader._plugins and "provider_b" not in loader._plugins)
         conflict_stems = [s for s, e in loader._errors.items() if "conflict" in e]
         assert len(conflict_stems) == 1
 
@@ -585,9 +627,7 @@ class TestProvidesConflict:
         loader = PluginLoader(_make_app(), plugins_dir=tmp_path)
         loader.load_all()
         # The conflicting plugin's module must not remain in sys.modules
-        conflicting_stem = next(
-            s for s, e in loader._errors.items() if "conflict" in e
-        )
+        conflicting_stem = next(s for s, e in loader._errors.items() if "conflict" in e)
         assert f"_navig_plugin_{conflicting_stem}" not in sys.modules
 
     def test_hot_unload_releases_capability(self, tmp_path):

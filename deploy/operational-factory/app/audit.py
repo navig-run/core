@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+
 from sqlalchemy import text
 
 
@@ -21,9 +22,20 @@ def sanitize(payload):
     return str(payload)
 
 
-def write_audit(session, *, tenant_id=None, actor_type="agent", actor_id=None, service=None,
-                action: str, reason=None, input_payload=None, output_payload=None,
-                status="ok", error_message=None):
+def write_audit(
+    session,
+    *,
+    tenant_id=None,
+    actor_type="agent",
+    actor_id=None,
+    service=None,
+    action: str,
+    reason=None,
+    input_payload=None,
+    output_payload=None,
+    status="ok",
+    error_message=None,
+):
     session.execute(
         text(
             """

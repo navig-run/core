@@ -75,5 +75,3 @@ navig suggest --plain | fzf | xargs navig
 - `navig quick` — Quick action shortcuts
 - `navig history` — Command history
 - `navig dashboard` — Operations dashboard
-
-

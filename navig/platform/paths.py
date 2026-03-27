@@ -77,6 +77,7 @@ def is_unix() -> bool:
 
 # ── Path Resolution ──────────────────────────────────────────
 
+
 def home_dir() -> Path:
     """User home directory."""
     return Path.home()
@@ -289,6 +290,7 @@ def ssh_key_dir() -> Path:
 def temp_dir() -> Path:
     """Temporary directory for NAVIG operations."""
     import tempfile
+
     return Path(tempfile.gettempdir()) / "navig"
 
 
@@ -317,6 +319,7 @@ def stack_dir() -> Path:
 
 
 # ── Shell helpers ─────────────────────────────────────────────
+
 
 def shell_name() -> str:
     """Detect the user's shell."""
@@ -351,6 +354,7 @@ def shell_rc_path() -> Optional[Path]:
 
 # ── System service detection ──────────────────────────────────
 
+
 def _is_system_service() -> bool:
     """
     Check if NAVIG is running as a system service (not as a user CLI).
@@ -364,6 +368,7 @@ def _is_system_service() -> bool:
     if is_unix():
         try:
             import pwd
+
             user = pwd.getpwuid(os.getuid()).pw_name
             if user == "navig":
                 return True
@@ -378,6 +383,7 @@ def _is_system_service() -> bool:
 
 
 # ── Platform info bundle ──────────────────────────────────────
+
 
 def platform_info() -> Dict[str, Any]:
     """
@@ -417,6 +423,7 @@ def platform_info() -> Dict[str, Any]:
 
 # ── Ensure directories exist ─────────────────────────────────
 
+
 def ensure_dirs() -> None:
     """Create all NAVIG directories if they don't exist."""
     for d in [config_dir(), data_dir(), log_dir(), cache_dir(), workspace_dir()]:
@@ -424,6 +431,7 @@ def ensure_dirs() -> None:
 
 
 # ── Dependency checks ────────────────────────────────────────
+
 
 def check_docker() -> Dict[str, Any]:
     """
@@ -440,7 +448,9 @@ def check_docker() -> Dict[str, Any]:
     }
 
     try:
-        proc = _sp.run(["docker", "--version"], capture_output=True, text=True, timeout=5)
+        proc = _sp.run(
+            ["docker", "--version"], capture_output=True, text=True, timeout=5
+        )
         if proc.returncode == 0:
             result["available"] = True
             # "Docker version 29.2.1, build a5c7197"
@@ -452,7 +462,12 @@ def check_docker() -> Dict[str, Any]:
 
     if result["available"]:
         try:
-            proc = _sp.run(["docker", "compose", "version"], capture_output=True, text=True, timeout=5)
+            proc = _sp.run(
+                ["docker", "compose", "version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
             if proc.returncode == 0:
                 result["compose"] = True
                 result["compose_version"] = proc.stdout.strip()

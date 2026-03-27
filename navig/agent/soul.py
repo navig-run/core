@@ -52,9 +52,9 @@ class Mood(Enum):
 class Verbosity(Enum):
     """Response verbosity levels."""
 
-    MINIMAL = auto()   # Just the facts
-    NORMAL = auto()    # Standard responses
-    VERBOSE = auto()   # Detailed explanations
+    MINIMAL = auto()  # Just the facts
+    NORMAL = auto()  # Standard responses
+    VERBOSE = auto()  # Detailed explanations
 
 
 @dataclass
@@ -89,35 +89,35 @@ class PersonalityProfile:
     templates: Dict[str, List[str]] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'PersonalityProfile':
+    def from_dict(cls, data: Dict[str, Any]) -> "PersonalityProfile":
         """Create profile from dictionary."""
-        verbosity_str = data.get('verbosity', 'normal').upper()
+        verbosity_str = data.get("verbosity", "normal").upper()
         try:
             verbosity = Verbosity[verbosity_str]
         except KeyError:
             verbosity = Verbosity.NORMAL
 
         return cls(
-            name=data.get('name', cls.name),
-            tagline=data.get('tagline', cls.tagline),
-            greeting=data.get('greeting', cls.greeting),
-            farewell=data.get('farewell', cls.farewell),
-            acknowledgment=data.get('acknowledgment', cls.acknowledgment),
-            thinking_phrase=data.get('thinking_phrase', cls.thinking_phrase),
-            emoji_enabled=data.get('emoji_enabled', cls.emoji_enabled),
-            emoji_success=data.get('emoji_success', cls.emoji_success),
-            emoji_error=data.get('emoji_error', cls.emoji_error),
-            emoji_warning=data.get('emoji_warning', cls.emoji_warning),
-            emoji_info=data.get('emoji_info', cls.emoji_info),
-            proactive=data.get('proactive', cls.proactive),
+            name=data.get("name", cls.name),
+            tagline=data.get("tagline", cls.tagline),
+            greeting=data.get("greeting", cls.greeting),
+            farewell=data.get("farewell", cls.farewell),
+            acknowledgment=data.get("acknowledgment", cls.acknowledgment),
+            thinking_phrase=data.get("thinking_phrase", cls.thinking_phrase),
+            emoji_enabled=data.get("emoji_enabled", cls.emoji_enabled),
+            emoji_success=data.get("emoji_success", cls.emoji_success),
+            emoji_error=data.get("emoji_error", cls.emoji_error),
+            emoji_warning=data.get("emoji_warning", cls.emoji_warning),
+            emoji_info=data.get("emoji_info", cls.emoji_info),
+            proactive=data.get("proactive", cls.proactive),
             verbose=verbosity,
-            formal=data.get('formal', cls.formal),
-            humor_enabled=data.get('humor_enabled', cls.humor_enabled),
-            templates=data.get('templates', {}),
+            formal=data.get("formal", cls.formal),
+            humor_enabled=data.get("humor_enabled", cls.humor_enabled),
+            templates=data.get("templates", {}),
         )
 
     @classmethod
-    def load(cls, path: Path) -> 'PersonalityProfile':
+    def load(cls, path: Path) -> "PersonalityProfile":
         """Load profile from YAML file."""
         if not path.exists():
             return cls()
@@ -130,23 +130,23 @@ class PersonalityProfile:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
-            'name': self.name,
-            'tagline': self.tagline,
-            'greeting': self.greeting,
-            'farewell': self.farewell,
-            'acknowledgment': self.acknowledgment,
-            'thinking_phrase': self.thinking_phrase,
-            'emoji_enabled': self.emoji_enabled,
-            'proactive': self.proactive,
-            'verbosity': self.verbose.name.lower(),
-            'formal': self.formal,
-            'humor_enabled': self.humor_enabled,
+            "name": self.name,
+            "tagline": self.tagline,
+            "greeting": self.greeting,
+            "farewell": self.farewell,
+            "acknowledgment": self.acknowledgment,
+            "thinking_phrase": self.thinking_phrase,
+            "emoji_enabled": self.emoji_enabled,
+            "proactive": self.proactive,
+            "verbosity": self.verbose.name.lower(),
+            "formal": self.formal,
+            "humor_enabled": self.humor_enabled,
         }
 
 
 # Built-in personality profiles
 BUILTIN_PROFILES = {
-    'friendly': PersonalityProfile(
+    "friendly": PersonalityProfile(
         name="NAVIG",
         tagline="Your friendly server assistant",
         greeting="Hey there! 👋 How can I help you today?",
@@ -159,7 +159,7 @@ BUILTIN_PROFILES = {
         formal=False,
         humor_enabled=True,
     ),
-    'professional': PersonalityProfile(
+    "professional": PersonalityProfile(
         name="NAVIG",
         tagline="Server Management Assistant",
         greeting="Good day. How may I assist you?",
@@ -172,7 +172,7 @@ BUILTIN_PROFILES = {
         formal=True,
         humor_enabled=False,
     ),
-    'witty': PersonalityProfile(
+    "witty": PersonalityProfile(
         name="NAVIG",
         tagline="The server whisperer",
         greeting="Ah, another brave soul ventures into the terminal! 🧙‍♂️ What quest brings you here?",
@@ -185,20 +185,20 @@ BUILTIN_PROFILES = {
         formal=False,
         humor_enabled=True,
         templates={
-            'success': [
+            "success": [
                 "Boom! Done! 💥",
                 "Nailed it! ✅",
                 "Mission accomplished! 🎯",
                 "And just like that, we're done! ✨",
             ],
-            'error': [
+            "error": [
                 "Oops, we hit a snag! 😅",
                 "Well, that didn't go as planned... 🙈",
                 "Houston, we have a problem! 🚀",
             ],
-        }
+        },
     ),
-    'paranoid': PersonalityProfile(
+    "paranoid": PersonalityProfile(
         name="NAVIG",
         tagline="Security-First Assistant",
         greeting="Identity verified. What do you require?",
@@ -212,14 +212,14 @@ BUILTIN_PROFILES = {
         formal=True,
         humor_enabled=False,
         templates={
-            'warning': [
+            "warning": [
                 "SECURITY NOTICE: ",
                 "CAUTION: ",
                 "ALERT: ",
             ],
-        }
+        },
     ),
-    'minimal': PersonalityProfile(
+    "minimal": PersonalityProfile(
         name="NAVIG",
         tagline="",
         greeting="Ready.",
@@ -238,7 +238,7 @@ BUILTIN_PROFILES = {
 class Soul(Component):
     """
     Personality engine component.
-    
+
     The Soul shapes how the agent communicates:
     - Formats responses with personality
     - Manages emotional state
@@ -248,8 +248,8 @@ class Soul(Component):
     """
 
     # Default SOUL.md location
-    SOUL_FILE = Path.home() / '.navig' / 'workspace' / 'SOUL.md'
-    SOUL_DEFAULT = Path(__file__).parent.parent / 'resources' / 'SOUL.default.md'
+    SOUL_FILE = Path.home() / ".navig" / "workspace" / "SOUL.md"
+    SOUL_DEFAULT = Path(__file__).parent.parent / "resources" / "SOUL.default.md"
 
     def __init__(
         self,
@@ -279,7 +279,7 @@ class Soul(Component):
     def _load_soul_file(self) -> None:
         """
         Load SOUL.md personality file.
-        
+
         Priority:
         1. ~/.navig/workspace/SOUL.md (user customization)
         2. navig/resources/SOUL.default.md (bundled default)
@@ -288,7 +288,7 @@ class Soul(Component):
         # Try user SOUL.md first
         if self.SOUL_FILE.exists():
             try:
-                self._soul_content = self.SOUL_FILE.read_text(encoding='utf-8')
+                self._soul_content = self.SOUL_FILE.read_text(encoding="utf-8")
                 self._soul_loaded_from = self.SOUL_FILE
                 logger.debug(f"Soul: Loaded SOUL.md from {self.SOUL_FILE}")
                 return
@@ -298,7 +298,7 @@ class Soul(Component):
         # Try bundled default
         if self.SOUL_DEFAULT.exists():
             try:
-                self._soul_content = self.SOUL_DEFAULT.read_text(encoding='utf-8')
+                self._soul_content = self.SOUL_DEFAULT.read_text(encoding="utf-8")
                 self._soul_loaded_from = self.SOUL_DEFAULT
                 logger.debug(f"Soul: Loaded default SOUL.md from {self.SOUL_DEFAULT}")
                 return
@@ -321,7 +321,7 @@ class Soul(Component):
     def create_user_soul_file(self) -> bool:
         """
         Create user SOUL.md from default template.
-        
+
         Returns True if created, False if already exists.
         """
         if self.SOUL_FILE.exists():
@@ -332,11 +332,11 @@ class Soul(Component):
 
         # Copy from default or create basic template
         if self.SOUL_DEFAULT.exists():
-            content = self.SOUL_DEFAULT.read_text(encoding='utf-8')
+            content = self.SOUL_DEFAULT.read_text(encoding="utf-8")
         else:
             content = self._generate_default_soul()
 
-        self.SOUL_FILE.write_text(content, encoding='utf-8')
+        self.SOUL_FILE.write_text(content, encoding="utf-8")
         logger.info(f"Soul: Created user SOUL.md at {self.SOUL_FILE}")
 
         # Reload
@@ -382,60 +382,68 @@ I am your autonomous operations companion. I help manage both your computer syst
             return BUILTIN_PROFILES[profile_name]
 
         # Try to load from file
-        profiles_dir = Path.home() / '.navig' / 'agent' / 'personalities'
+        profiles_dir = Path.home() / ".navig" / "agent" / "personalities"
         profile_path = profiles_dir / f"{profile_name}.yaml"
 
         if profile_path.exists():
             return PersonalityProfile.load(profile_path)
 
         # Check package profiles
-        pkg_profiles = Path(__file__).parent / 'personalities'
+        pkg_profiles = Path(__file__).parent / "personalities"
         pkg_path = pkg_profiles / f"{profile_name}.yaml"
 
         if pkg_path.exists():
             return PersonalityProfile.load(pkg_path)
 
         # Default to friendly
-        return BUILTIN_PROFILES.get('friendly', PersonalityProfile())
+        return BUILTIN_PROFILES.get("friendly", PersonalityProfile())
 
     async def _on_start(self) -> None:
         """Initialize soul."""
         # Subscribe to events for mood tracking
         if self.nervous_system:
             self.nervous_system.subscribe(EventType.ALERT_TRIGGERED, self._on_alert)
-            self.nervous_system.subscribe(EventType.COMMAND_COMPLETED, self._on_command_complete)
-            self.nervous_system.subscribe(EventType.COMMAND_FAILED, self._on_command_failed)
+            self.nervous_system.subscribe(
+                EventType.COMMAND_COMPLETED, self._on_command_complete
+            )
+            self.nervous_system.subscribe(
+                EventType.COMMAND_FAILED, self._on_command_failed
+            )
 
     async def _on_stop(self) -> None:
         """Cleanup."""
         if self.nervous_system:
             self.nervous_system.unsubscribe(EventType.ALERT_TRIGGERED, self._on_alert)
-            self.nervous_system.unsubscribe(EventType.COMMAND_COMPLETED, self._on_command_complete)
-            self.nervous_system.unsubscribe(EventType.COMMAND_FAILED, self._on_command_failed)
+            self.nervous_system.unsubscribe(
+                EventType.COMMAND_COMPLETED, self._on_command_complete
+            )
+            self.nervous_system.unsubscribe(
+                EventType.COMMAND_FAILED, self._on_command_failed
+            )
 
     async def _on_health_check(self) -> Dict[str, Any]:
         """Health check for soul."""
         return {
-            'profile': self._profile.name,
-            'mood': self._mood.name,
-            'mood_reason': self._mood_reason,
-            'interaction_count': self._interaction_count,
+            "profile": self._profile.name,
+            "mood": self._mood.name,
+            "mood_reason": self._mood_reason,
+            "interaction_count": self._interaction_count,
         }
 
     async def _on_alert(self, event: Event) -> None:
         """React to alerts emotionally."""
-        alert = event.data.get('alert', {})
-        level = alert.get('level', 'info')
+        alert = event.data.get("alert", {})
+        level = alert.get("level", "info")
 
-        if level == 'critical':
+        if level == "critical":
             await self.set_mood(Mood.ALERT, "Critical alert detected")
-        elif level == 'warning':
+        elif level == "warning":
             await self.set_mood(Mood.CONCERNED, "Warning detected")
 
     async def _on_command_complete(self, event: Event) -> None:
         """React to successful command."""
-        result = event.data.get('result', {})
-        if result.get('success'):
+        result = event.data.get("result", {})
+        if result.get("success"):
             await self.set_mood(Mood.HAPPY, "Task completed successfully")
 
     async def _on_command_failed(self, event: Event) -> None:
@@ -453,10 +461,10 @@ I am your autonomous operations companion. I help manage both your computer syst
             await self.emit(
                 EventType.MOOD_CHANGED,
                 {
-                    'from': old_mood.name,
-                    'to': mood.name,
-                    'reason': reason,
-                }
+                    "from": old_mood.name,
+                    "to": mood.name,
+                    "reason": reason,
+                },
             )
 
     def get_mood(self) -> Tuple[Mood, str]:
@@ -471,7 +479,7 @@ I am your autonomous operations companion. I help manage both your computer syst
     ) -> str:
         """
         Format a response with personality.
-        
+
         Args:
             content: The raw response content
             response_type: Type of response (success, error, warning, info)
@@ -484,12 +492,16 @@ I am your autonomous operations companion. I help manage both your computer syst
         emoji = ""
         if include_emoji and self._profile.emoji_enabled:
             emoji_map = {
-                'success': self._profile.emoji_success,
-                'error': self._profile.emoji_error,
-                'warning': self._profile.emoji_warning,
-                'info': self._profile.emoji_info,
+                "success": self._profile.emoji_success,
+                "error": self._profile.emoji_error,
+                "warning": self._profile.emoji_warning,
+                "info": self._profile.emoji_info,
             }
-            emoji = emoji_map.get(response_type, "") + " " if response_type in emoji_map else ""
+            emoji = (
+                emoji_map.get(response_type, "") + " "
+                if response_type in emoji_map
+                else ""
+            )
 
         # Check for template responses
         if response_type in self._profile.templates:
@@ -501,9 +513,9 @@ I am your autonomous operations companion. I help manage both your computer syst
         # Apply verbosity
         if self._profile.verbose == Verbosity.MINIMAL:
             # Strip to essentials
-            lines = content.split('\n')
+            lines = content.split("\n")
             if len(lines) > 3:
-                content = '\n'.join(lines[:3]) + "..."
+                content = "\n".join(lines[:3]) + "..."
 
         return f"{emoji}{content}"
 
@@ -528,7 +540,7 @@ I am your autonomous operations companion. I help manage both your computer syst
     def get_system_prompt(self) -> str:
         """
         Get system prompt for AI, personalized with SOUL.md.
-        
+
         If SOUL.md is present, it becomes the primary personality source.
         Otherwise, uses built-in PersonalityProfile settings.
         """
@@ -595,9 +607,9 @@ Conversational responses:
         profiles = list(BUILTIN_PROFILES.keys())
 
         # Add user profiles
-        user_dir = Path.home() / '.navig' / 'agent' / 'personalities'
+        user_dir = Path.home() / ".navig" / "agent" / "personalities"
         if user_dir.exists():
-            for f in user_dir.glob('*.yaml'):
+            for f in user_dir.glob("*.yaml"):
                 name = f.stem
                 if name not in profiles:
                     profiles.append(name)
@@ -608,19 +620,23 @@ Conversational responses:
         """Get soul status."""
         return {
             **super().get_status(),
-            'profile': self._profile.name,
-            'mood': self._mood.name,
-            'mood_reason': self._mood_reason,
-            'interaction_count': self._interaction_count,
-            'last_interaction': self._last_interaction.isoformat() if self._last_interaction else None,
-            'soul_file_loaded': self.has_soul_file(),
-            'soul_file_path': str(self._soul_loaded_from) if self._soul_loaded_from else None,
+            "profile": self._profile.name,
+            "mood": self._mood.name,
+            "mood_reason": self._mood_reason,
+            "interaction_count": self._interaction_count,
+            "last_interaction": (
+                self._last_interaction.isoformat() if self._last_interaction else None
+            ),
+            "soul_file_loaded": self.has_soul_file(),
+            "soul_file_path": (
+                str(self._soul_loaded_from) if self._soul_loaded_from else None
+            ),
         }
 
     def reload_soul(self) -> bool:
         """
         Reload SOUL.md from disk.
-        
+
         Useful after user edits SOUL.md file.
         Returns True if SOUL.md was loaded successfully.
         """

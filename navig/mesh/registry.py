@@ -52,16 +52,16 @@ MESH_PEERS_FILENAME = "mesh_peers.json"
 class NodeRecord:
     """Full descriptor for one Navig node on the mesh."""
 
-    node_id: str                   # "navig-linux-srv01-a3f2" — stable
-    hostname: str                  # machine hostname
-    os: str                        # "windows" | "linux" | "macos"
-    gateway_url: str               # "http://10.0.0.x:8789"
-    capabilities: List[str]        # ["llm", "shell", "docker", "ssh", "gpu"]
-    formation: str                 # active formation name (may be "")
-    load: float                    # 0.0–1.0 composite (CPU * 0.6 + MEM * 0.4)
-    version: str                   # navig-core semver
+    node_id: str  # "navig-linux-srv01-a3f2" — stable
+    hostname: str  # machine hostname
+    os: str  # "windows" | "linux" | "macos"
+    gateway_url: str  # "http://10.0.0.x:8789"
+    capabilities: List[str]  # ["llm", "shell", "docker", "ssh", "gpu"]
+    formation: str  # active formation name (may be "")
+    load: float  # 0.0–1.0 composite (CPU * 0.6 + MEM * 0.4)
+    version: str  # navig-core semver
     last_seen: float = field(default_factory=time.time)
-    is_self: bool = False          # True only for the local node record
+    is_self: bool = False  # True only for the local node record
 
     # ── Probe / circuit-breaker state (not persisted, never serialised) ──────
     consecutive_failures: int = field(default=0, compare=False, repr=False)
@@ -95,7 +95,11 @@ class NodeRecord:
         resort if all others are worse).
         """
         rtt_norm = min(self.last_rtt_ms, 500.0) / 500.0
-        health_pen = 0.0 if self.health == "online" else (0.5 if self.health == "degraded" else 1.0)
+        health_pen = (
+            0.0
+            if self.health == "online"
+            else (0.5 if self.health == "degraded" else 1.0)
+        )
         score = self.load * 0.5 + rtt_norm * 0.3 + health_pen * 0.2
         return score + (10.0 if self.circuit_open else 0.0)
 
@@ -118,15 +122,28 @@ class NodeRecord:
         d["circuit_open"] = self.circuit_open
         d["composite_score"] = round(self.composite_score, 4)
         # Strip internal counters from the serialised form
-        for k in ("consecutive_failures", "last_rtt_ms", "total_probes", "total_probe_failures"):
+        for k in (
+            "consecutive_failures",
+            "last_rtt_ms",
+            "total_probes",
+            "total_probe_failures",
+        ):
             d.pop(k, None)
         return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "NodeRecord":
         # Strip derived / internal fields before handing to the dataclass constructor
-        for k in ("health", "is_self", "circuit_open", "composite_score",
-                  "consecutive_failures", "last_rtt_ms", "total_probes", "total_probe_failures"):
+        for k in (
+            "health",
+            "is_self",
+            "circuit_open",
+            "composite_score",
+            "consecutive_failures",
+            "last_rtt_ms",
+            "total_probes",
+            "total_probe_failures",
+        ):
             d.pop(k, None)
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
@@ -143,7 +160,7 @@ def _derive_node_id() -> str:
     # Try to get MAC for stability; fall back to seeded UUID
     try:
         mac_int = uuid.getnode()
-        if mac_int >> 40 & 1:   # multicast bit → randomly generated, not stable
+        if mac_int >> 40 & 1:  # multicast bit → randomly generated, not stable
             raise ValueError("random MAC")
         fingerprint = format(mac_int & 0xFFFF, "04x")
     except Exception:
@@ -166,6 +183,7 @@ def _measure_load() -> float:
     """0.0–1.0 composite load. Gracefully degrades if psutil is absent."""
     try:
         import psutil
+
         cpu = psutil.cpu_percent(interval=0) / 100.0
         mem = psutil.virtual_memory().percent / 100.0
         return round(cpu * 0.6 + mem * 0.4, 3)
@@ -183,7 +201,7 @@ class NodeRegistry:
 
     def __init__(self, storage_dir: Path):
         self._storage_dir = storage_dir
-        self._peers: Dict[str, NodeRecord] = {}   # keyed by node_id
+        self._peers: Dict[str, NodeRecord] = {}  # keyed by node_id
         self._self: Optional[NodeRecord] = None
         self._target_node_id: Optional[str] = None  # active routing target (in-memory)
 
@@ -200,6 +218,7 @@ class NodeRegistry:
 
     def _build_self_record(self) -> NodeRecord:
         from navig.config import get_config_manager
+
         config = get_config_manager()
         raw = config.global_config
 
@@ -232,16 +251,19 @@ class NodeRegistry:
         caps = ["llm", "shell"]
         try:
             import docker  # noqa: F401
+
             caps.append("docker")
         except ImportError:
             pass  # optional dependency not installed; feature disabled
         try:
             import paramiko  # noqa: F401
+
             caps.append("ssh")
         except ImportError:
             pass  # optional dependency not installed; feature disabled
         try:
             import torch  # noqa: F401
+
             caps.append("gpu")
         except ImportError:
             pass  # optional dependency not installed; feature disabled
@@ -356,11 +378,13 @@ class NodeRegistry:
                 circuit_open += 1
 
         # Nodes with < 2 healthy alternatives are single-path-dependent
-        healthy_peers = [p for p in peers if p.health == "online" and not p.circuit_open]
+        healthy_peers = [
+            p for p in peers if p.health == "online" and not p.circuit_open
+        ]
         spof_nodes = [p.node_id for p in peers if len(healthy_peers) < 2]
 
         return {
-            "node_count": len(peers) + 1,   # +1 for self
+            "node_count": len(peers) + 1,  # +1 for self
             "peer_count": len(peers),
             "healthy_peer_count": health_counts["online"],
             "degraded_peer_count": health_counts["degraded"],
@@ -392,14 +416,14 @@ class NodeRegistry:
         peers_out = []
         for r in self.get_peers():
             d = r.to_dict()
-            d["is_current_target"] = (r.node_id == self._target_node_id)
+            d["is_current_target"] = r.node_id == self._target_node_id
             d["health"] = r.health  # include computed property
             d["score"] = round(r.composite_score, 4)
             d["rtt_ms"] = round(r.last_rtt_ms, 1)
             d["load_pct"] = round(r.load * 100, 1)
             peers_out.append(d)
         self_d = self.self_record.to_dict()
-        self_d["is_current_target"] = (self.self_record.node_id == self._target_node_id)
+        self_d["is_current_target"] = self.self_record.node_id == self._target_node_id
         self_d["health"] = self.self_record.health
         return {"self": self_d, "peers": peers_out}
 
@@ -437,14 +461,16 @@ class NodeRegistry:
         consistent across all nodes that know the same hostname.
         """
         import hashlib
-        return int(hashlib.sha256(hostname.encode("utf-8")).hexdigest(), 16) % (10 ** 9)
+
+        return int(hashlib.sha256(hostname.encode("utf-8")).hexdigest(), 16) % (10**9)
 
     # ─────────────────────────── Persistence ─────────────────────────
 
     def _evict_stale(self) -> None:
         now = time.time()
         stale = [
-            nid for nid, r in self._peers.items()
+            nid
+            for nid, r in self._peers.items()
             if not r.is_self and (now - r.last_seen) > EVICT_AFTER_S
         ]
         for nid in stale:

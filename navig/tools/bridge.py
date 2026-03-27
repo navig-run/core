@@ -23,6 +23,7 @@ Usage::
     n = bridge_all(base_reg, get_tool_registry())
     print(f"Bridged {n} tools")
 """
+
 from __future__ import annotations
 
 import logging
@@ -40,6 +41,7 @@ logger = logging.getLogger("navig.tools.bridge")
 # Adapters
 # =============================================================================
 
+
 def _make_handler(base_tool: "BaseTool"):
     """
     Produce an async handler function wrapping *base_tool*.run().
@@ -49,8 +51,10 @@ def _make_handler(base_tool: "BaseTool"):
     - Calls base_tool.run(args=kwargs) with no on_status callback.
     - Returns the output on success, raises RuntimeError on failure.
     """
+
     async def _handler(**kwargs: Any) -> Any:
         from navig.tools.registry import ToolResult as BaseResult
+
         result: BaseResult = await base_tool.run(kwargs)
         if result.success:
             return result.output
@@ -128,7 +132,12 @@ def register_base_tool(
 
     meta, handler = adapt_base_tool(base_tool)
     router_registry.register(meta, handler=handler)
-    logger.debug("bridge: registered %s (domain=%s, safety=%s)", meta.name, meta.domain.value, meta.safety.value)
+    logger.debug(
+        "bridge: registered %s (domain=%s, safety=%s)",
+        meta.name,
+        meta.domain.value,
+        meta.safety.value,
+    )
     return True
 
 
@@ -156,13 +165,16 @@ def bridge_all(
         if register_base_tool(router_registry, tool, overwrite=overwrite):
             count += 1
     if count:
-        logger.info("bridge_all: bridged %d tools from BaseRegistry → RouterRegistry", count)
+        logger.info(
+            "bridge_all: bridged %d tools from BaseRegistry → RouterRegistry", count
+        )
     return count
 
 
 # =============================================================================
 # Graceful degradation helpers
 # =============================================================================
+
 
 def try_get_handler(
     router_registry: "RouterRegistry",
@@ -184,8 +196,14 @@ def try_get_handler(
     try:
         handler = router_registry.get_handler(name)
         if handler is None:
-            logger.warning("bridge: tool '%s' not found in registry — degrading gracefully", name)
+            logger.warning(
+                "bridge: tool '%s' not found in registry — degrading gracefully", name
+            )
         return handler
     except Exception:
-        logger.warning("bridge: error resolving tool '%s' — degrading gracefully", name, exc_info=True)
+        logger.warning(
+            "bridge: error resolving tool '%s' — degrading gracefully",
+            name,
+            exc_info=True,
+        )
         return None

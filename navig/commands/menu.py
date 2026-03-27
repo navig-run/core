@@ -22,10 +22,7 @@ from typing import Any, Dict, List
 # ---------------------------------------------------------------------------
 # Capability detection — single source of truth lives in onboard.py
 # ---------------------------------------------------------------------------
-from navig.commands.onboard import (
-    _auto_install_textual,
-    _terminal_supports_tui,
-)
+from navig.commands.onboard import _auto_install_textual, _terminal_supports_tui
 
 # ---------------------------------------------------------------------------
 # Menu catalogue — mirrors the three-pillar + DEV INTEL + SYSTEM structure
@@ -33,70 +30,163 @@ from navig.commands.onboard import (
 # ---------------------------------------------------------------------------
 MENU_ITEMS: List[Dict[str, str]] = [
     # ── SYSOPS ──────────────────────────────────────────────────────────────
-    {"id": "host",        "label": "  Hosts",          "group": "SYSOPS",
-     "desc": "Servers, SSH keys, discovery, connectivity"},
-    {"id": "files",       "label": "  Files",          "group": "SYSOPS",
-     "desc": "Upload, download, browse remote file systems"},
-    {"id": "db",          "label": "  Database",       "group": "SYSOPS",
-     "desc": "SQL queries, dump/restore, table inspection"},
-    {"id": "web",         "label": "  Webserver",      "group": "SYSOPS",
-     "desc": "nginx / apache, virtual hosts, SSL"},
-    {"id": "docker",      "label": "  Docker",         "group": "SYSOPS",
-     "desc": "Containers, images, compose, logs, exec"},
-    {"id": "maintenance", "label": "  Maintenance",    "group": "SYSOPS",
-     "desc": "System updates, health checks, service control"},
-    {"id": "monitoring",  "label": "  Monitoring",     "group": "SYSOPS",
-     "desc": "Resources, firewall rules, security audit"},
+    {
+        "id": "host",
+        "label": "  Hosts",
+        "group": "SYSOPS",
+        "desc": "Servers, SSH keys, discovery, connectivity",
+    },
+    {
+        "id": "files",
+        "label": "  Files",
+        "group": "SYSOPS",
+        "desc": "Upload, download, browse remote file systems",
+    },
+    {
+        "id": "db",
+        "label": "  Database",
+        "group": "SYSOPS",
+        "desc": "SQL queries, dump/restore, table inspection",
+    },
+    {
+        "id": "web",
+        "label": "  Webserver",
+        "group": "SYSOPS",
+        "desc": "nginx / apache, virtual hosts, SSL",
+    },
+    {
+        "id": "docker",
+        "label": "  Docker",
+        "group": "SYSOPS",
+        "desc": "Containers, images, compose, logs, exec",
+    },
+    {
+        "id": "maintenance",
+        "label": "  Maintenance",
+        "group": "SYSOPS",
+        "desc": "System updates, health checks, service control",
+    },
+    {
+        "id": "monitoring",
+        "label": "  Monitoring",
+        "group": "SYSOPS",
+        "desc": "Resources, firewall rules, security audit",
+    },
     # ── DEVOPS ──────────────────────────────────────────────────────────────
-    {"id": "apps",        "label": "  Apps",           "group": "DEVOPS",
-     "desc": "Application management, deploy, configurations"},
-    {"id": "run",         "label": "  Remote Exec",    "group": "DEVOPS",
-     "desc": "Run commands on remote hosts via SSH"},
-    {"id": "tunnel",      "label": "  Tunnels",        "group": "DEVOPS",
-     "desc": "SSH tunnels, port forwarding, SOCKS proxy"},
-    {"id": "flow",        "label": "  Flows",          "group": "DEVOPS",
-     "desc": "Workflow automation, templates, scheduling"},
-    {"id": "local",       "label": "  Local",          "group": "DEVOPS",
-     "desc": "Local system info, network, path operations"},
+    {
+        "id": "apps",
+        "label": "  Apps",
+        "group": "DEVOPS",
+        "desc": "Application management, deploy, configurations",
+    },
+    {
+        "id": "run",
+        "label": "  Remote Exec",
+        "group": "DEVOPS",
+        "desc": "Run commands on remote hosts via SSH",
+    },
+    {
+        "id": "tunnel",
+        "label": "  Tunnels",
+        "group": "DEVOPS",
+        "desc": "SSH tunnels, port forwarding, SOCKS proxy",
+    },
+    {
+        "id": "flow",
+        "label": "  Flows",
+        "group": "DEVOPS",
+        "desc": "Workflow automation, templates, scheduling",
+    },
+    {
+        "id": "local",
+        "label": "  Local",
+        "group": "DEVOPS",
+        "desc": "Local system info, network, path operations",
+    },
     # ── LIFEOPS ─────────────────────────────────────────────────────────────
-    {"id": "agent",       "label": "  Agent",          "group": "LIFEOPS",
-     "desc": "Autonomous agent mode, 24/7 gateway, task queues"},
-    {"id": "mcp",         "label": "  MCP",            "group": "LIFEOPS",
-     "desc": "MCP server management, AI tool integrations"},
-    {"id": "ai",          "label": "  AI Assistant",   "group": "LIFEOPS",
-     "desc": "Insights, recommendations, ask anything"},
-    {"id": "wiki",        "label": "  Wiki",           "group": "LIFEOPS",
-     "desc": "Documentation, full-text search, knowledge base"},
-    {"id": "backup",      "label": "  Backup",         "group": "LIFEOPS",
-     "desc": "Export, import, configuration snapshots"},
+    {
+        "id": "agent",
+        "label": "  Agent",
+        "group": "LIFEOPS",
+        "desc": "Autonomous agent mode, 24/7 gateway, task queues",
+    },
+    {
+        "id": "mcp",
+        "label": "  MCP",
+        "group": "LIFEOPS",
+        "desc": "MCP server management, AI tool integrations",
+    },
+    {
+        "id": "ai",
+        "label": "  AI Assistant",
+        "group": "LIFEOPS",
+        "desc": "Insights, recommendations, ask anything",
+    },
+    {
+        "id": "wiki",
+        "label": "  Wiki",
+        "group": "LIFEOPS",
+        "desc": "Documentation, full-text search, knowledge base",
+    },
+    {
+        "id": "backup",
+        "label": "  Backup",
+        "group": "LIFEOPS",
+        "desc": "Export, import, configuration snapshots",
+    },
     # ── DEV INTEL ───────────────────────────────────────────────────────────
-    {"id": "copilot",     "label": "  Copilot",        "group": "DEV INTEL",
-     "desc": "Browse, search, export VS Code Copilot sessions"},
-    {"id": "memory",      "label": "  Memory",         "group": "DEV INTEL",
-     "desc": "Key facts, user profile, AI memory management"},
+    {
+        "id": "copilot",
+        "label": "  Copilot",
+        "group": "DEV INTEL",
+        "desc": "Browse, search, export VS Code Copilot sessions",
+    },
+    {
+        "id": "memory",
+        "label": "  Memory",
+        "group": "DEV INTEL",
+        "desc": "Key facts, user profile, AI memory management",
+    },
     # ── SYSTEM ──────────────────────────────────────────────────────────────
-    {"id": "config",      "label": "  Config",         "group": "SYSTEM",
-     "desc": "Global and project settings, context switching"},
-    {"id": "history",     "label": "  History",        "group": "SYSTEM",
-     "desc": "Recent commands executed through the menu"},
-    {"id": "help",        "label": "  Help",           "group": "SYSTEM",
-     "desc": "Keyboard shortcuts and quick reference guide"},
-    {"id": "quit",        "label": "  Quit",           "group": "SYSTEM",
-     "desc": "Exit navig mission control"},
+    {
+        "id": "config",
+        "label": "  Config",
+        "group": "SYSTEM",
+        "desc": "Global and project settings, context switching",
+    },
+    {
+        "id": "history",
+        "label": "  History",
+        "group": "SYSTEM",
+        "desc": "Recent commands executed through the menu",
+    },
+    {
+        "id": "help",
+        "label": "  Help",
+        "group": "SYSTEM",
+        "desc": "Keyboard shortcuts and quick reference guide",
+    },
+    {
+        "id": "quit",
+        "label": "  Quit",
+        "group": "SYSTEM",
+        "desc": "Exit navig mission control",
+    },
 ]
 
 _GROUP_COLORS: Dict[str, str] = {
-    "SYSOPS":    "#0ea5e9",
-    "DEVOPS":    "#10b981",
-    "LIFEOPS":   "#a855f7",
+    "SYSOPS": "#0ea5e9",
+    "DEVOPS": "#10b981",
+    "LIFEOPS": "#a855f7",
     "DEV INTEL": "#f59e0b",
-    "SYSTEM":    "#475569",
+    "SYSTEM": "#475569",
 }
 
 
 # ---------------------------------------------------------------------------
 # Skill / description preview loader
 # ---------------------------------------------------------------------------
+
 
 def _load_skill_preview(item_id: str) -> str:
     """
@@ -135,6 +225,7 @@ def _load_skill_preview(item_id: str) -> str:
 # Public entry point
 # ---------------------------------------------------------------------------
 
+
 def run_menu(non_interactive: bool = False) -> None:
     """
     Entry point for ``navig menu``.
@@ -151,6 +242,7 @@ def run_menu(non_interactive: bool = False) -> None:
             _auto_install_textual()  # idempotent no-op if already installed
         except Exception as exc:
             from rich.console import Console
+
             Console().print(
                 f"[yellow]TUI unavailable — falling back to plain menu[/yellow]  "
                 f"[dim]({exc})[/dim]"
@@ -160,6 +252,7 @@ def run_menu(non_interactive: bool = False) -> None:
 
         try:
             import importlib
+
             importlib.import_module("textual")
         except ImportError:
             _run_plain_menu()
@@ -174,6 +267,7 @@ def run_menu(non_interactive: bool = False) -> None:
 # ---------------------------------------------------------------------------
 # TUI implementation (only reached on cols≥80 TTY with Textual available)
 # ---------------------------------------------------------------------------
+
 
 def _run_tui_menu() -> None:  # noqa: C901
     try:
@@ -195,6 +289,7 @@ def _run_tui_menu() -> None:  # noqa: C901
 
     class _SectionHeader(Static):
         """Coloured group label injected between sidebar list items."""
+
         DEFAULT_CSS = """
         _SectionHeader {
             color: #334155;
@@ -264,14 +359,14 @@ def _run_tui_menu() -> None:  # noqa: C901
         """
 
         BINDINGS = [
-            Binding("j",      "cursor_down",  "Down",   show=True),
-            Binding("k",      "cursor_up",    "Up",     show=True),
-            Binding("enter",  "select_item",  "Select", show=True),
-            Binding("q",      "quit_menu",    "Quit",   show=True),
-            Binding("/",      "search",       "Search", show=True),
-            Binding("escape", "clear_search", "Clear",  show=False),
-            Binding("up",     "cursor_up",    "",       show=False),
-            Binding("down",   "cursor_down",  "",       show=False),
+            Binding("j", "cursor_down", "Down", show=True),
+            Binding("k", "cursor_up", "Up", show=True),
+            Binding("enter", "select_item", "Select", show=True),
+            Binding("q", "quit_menu", "Quit", show=True),
+            Binding("/", "search", "Search", show=True),
+            Binding("escape", "clear_search", "Clear", show=False),
+            Binding("up", "cursor_up", "", show=False),
+            Binding("down", "cursor_down", "", show=False),
         ]
 
         def __init__(self) -> None:
@@ -310,9 +405,7 @@ def _run_tui_menu() -> None:  # noqa: C901
                     seen.add(grp)
                     col = _GROUP_COLORS.get(grp, "#334155")
                     widgets.append(_SectionHeader(f"[{col}]{grp}[/{col}]"))
-                widgets.append(
-                    ListItem(Label(item["label"]), id=f"mi-{item['id']}")
-                )
+                widgets.append(ListItem(Label(item["label"]), id=f"mi-{item['id']}"))
             return widgets
 
         # ── preview ───────────────────────────────────────────────────────
@@ -361,11 +454,15 @@ def _run_tui_menu() -> None:  # noqa: C901
                 return
             q = event.value.lower()
             filtered = (
-                [m for m in MENU_ITEMS
-                 if q in m["label"].lower()
-                 or q in m["desc"].lower()
-                 or q in m.get("group", "").lower()]
-                if q else MENU_ITEMS
+                [
+                    m
+                    for m in MENU_ITEMS
+                    if q in m["label"].lower()
+                    or q in m["desc"].lower()
+                    or q in m.get("group", "").lower()
+                ]
+                if q
+                else MENU_ITEMS
             )
             self._rebuild_list(filtered)
 
@@ -442,6 +539,7 @@ def _run_tui_menu() -> None:  # noqa: C901
 # Plain-text fallback — delegates entirely to existing interactive.py
 # ---------------------------------------------------------------------------
 
+
 def _run_plain_menu() -> None:
     """
     Delegate to the existing Rich+questionary menu in interactive.py.
@@ -449,15 +547,18 @@ def _run_plain_menu() -> None:
     """
     try:
         from navig.commands.interactive import launch_menu
+
         launch_menu({})
     except ImportError as exc:
         from rich.console import Console
+
         con = Console()
         con.print(f"[red]Interactive menu unavailable:[/red] {exc}")
         con.print("[dim]Install Rich:  pip install rich[/dim]")
         sys.exit(1)
     except Exception as exc:
         from rich.console import Console
+
         Console().print(f"[red]Menu error:[/red] {exc}")
         sys.exit(1)
 
@@ -465,6 +566,7 @@ def _run_plain_menu() -> None:
 # ---------------------------------------------------------------------------
 # Dispatch — maps TUI id strings → interactive.py submenu functions
 # ---------------------------------------------------------------------------
+
 
 def _dispatch(command: str) -> None:  # noqa: C901
     """
@@ -503,40 +605,43 @@ def _dispatch(command: str) -> None:  # noqa: C901
             show_webserver_menu,
         )
         from navig.config import get_config_manager
+
         state = MenuState(get_config_manager())
     except Exception as exc:
         from rich.console import Console
+
         Console().print(f"[red]Failed to load menu state:[/red] {exc}")
         return
 
     routes: Dict[str, Any] = {
-        "host":        show_host_management_menu,
-        "files":       show_file_operations_menu,
-        "db":          show_database_menu,
-        "web":         show_webserver_menu,
-        "docker":      show_docker_menu,
+        "host": show_host_management_menu,
+        "files": show_file_operations_menu,
+        "db": show_database_menu,
+        "web": show_webserver_menu,
+        "docker": show_docker_menu,
         "maintenance": show_maintenance_menu,
-        "monitoring":  show_monitoring_security_menu,
-        "apps":        show_app_management_menu,
-        "run":         execute_remote_command_menu,
-        "tunnel":      show_tunnel_menu,
-        "flow":        show_flow_menu,
-        "local":       show_local_menu,
-        "agent":       show_agent_gateway_menu,
-        "mcp":         show_mcp_menu,
-        "ai":          show_assistant_menu,
-        "wiki":        execute_wiki_menu,
-        "backup":      show_backup_menu,
-        "config":      show_configuration_menu,
-        "history":     show_command_history,
-        "help":        show_quick_help,
-        "copilot":     _launch_copilot_sessions,
-        "memory":      _launch_memory_menu,
+        "monitoring": show_monitoring_security_menu,
+        "apps": show_app_management_menu,
+        "run": execute_remote_command_menu,
+        "tunnel": show_tunnel_menu,
+        "flow": show_flow_menu,
+        "local": show_local_menu,
+        "agent": show_agent_gateway_menu,
+        "mcp": show_mcp_menu,
+        "ai": show_assistant_menu,
+        "wiki": execute_wiki_menu,
+        "backup": show_backup_menu,
+        "config": show_configuration_menu,
+        "history": show_command_history,
+        "help": show_quick_help,
+        "copilot": _launch_copilot_sessions,
+        "memory": _launch_memory_menu,
     }
 
     handler = routes.get(command)
     if handler is None:
         from rich.console import Console
+
         Console().print(f"[red]Unknown command:[/red] {command}")
         return
 
@@ -546,4 +651,5 @@ def _dispatch(command: str) -> None:  # noqa: C901
         pass  # Ctrl-C from submenu returns cleanly to caller
     except Exception as exc:
         from rich.console import Console
+
         Console().print(f"[red]Error in '{command}':[/red] {exc}")

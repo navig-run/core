@@ -23,18 +23,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from navig.agent.goals import (
-    Goal,
-    GoalPlanner,
-    GoalState,
-    Subtask,
-    SubtaskState,
-)
-
+from navig.agent.goals import Goal, GoalPlanner, GoalState, Subtask, SubtaskState
 
 # ═══════════════════════════════════════════════════════════════
 # 1. GoalPlanner — CRUD lifecycle
 # ═══════════════════════════════════════════════════════════════
+
 
 class TestGoalPlannerLifecycle:
     """Tests for GoalPlanner add/get/list/cancel operations."""
@@ -89,6 +83,7 @@ class TestGoalPlannerLifecycle:
 # 2. GoalPlanner — Decomposition
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestGoalPlannerDecomposition:
     """Tests for goal decomposition into subtasks."""
 
@@ -98,11 +93,21 @@ class TestGoalPlannerDecomposition:
 
     def test_decompose_goal(self, planner):
         goal_id = planner.add_goal("Deploy app")
-        result = planner.decompose_goal(goal_id, [
-            {"description": "Backup database", "command": "navig db dump mydb -o backup.sql"},
-            {"description": "Run migrations", "command": "php artisan migrate", "dependencies": []},
-            {"description": "Restart services", "command": "systemctl restart app"},
-        ])
+        result = planner.decompose_goal(
+            goal_id,
+            [
+                {
+                    "description": "Backup database",
+                    "command": "navig db dump mydb -o backup.sql",
+                },
+                {
+                    "description": "Run migrations",
+                    "command": "php artisan migrate",
+                    "dependencies": [],
+                },
+                {"description": "Restart services", "command": "systemctl restart app"},
+            ],
+        )
         assert result is True
         goal = planner.get_goal(goal_id)
         assert len(goal.subtasks) == 3
@@ -114,21 +119,35 @@ class TestGoalPlannerDecomposition:
 
     def test_decompose_with_dependencies(self, planner):
         goal_id = planner.add_goal("Migrate DB")
-        planner.decompose_goal(goal_id, [
-            {"description": "Backup", "command": "backup"},
-            {"description": "Migrate", "command": "migrate", "dependencies": [f"{goal_id}-1"]},
-            {"description": "Verify", "command": "verify", "dependencies": [f"{goal_id}-2"]},
-        ])
+        planner.decompose_goal(
+            goal_id,
+            [
+                {"description": "Backup", "command": "backup"},
+                {
+                    "description": "Migrate",
+                    "command": "migrate",
+                    "dependencies": [f"{goal_id}-1"],
+                },
+                {
+                    "description": "Verify",
+                    "command": "verify",
+                    "dependencies": [f"{goal_id}-2"],
+                },
+            ],
+        )
         goal = planner.get_goal(goal_id)
         assert goal.subtasks[1].dependencies == [f"{goal_id}-1"]
         assert goal.subtasks[2].dependencies == [f"{goal_id}-2"]
 
     def test_subtask_ids_sequential(self, planner):
         goal_id = planner.add_goal("Test")
-        planner.decompose_goal(goal_id, [
-            {"description": "Step 1"},
-            {"description": "Step 2"},
-        ])
+        planner.decompose_goal(
+            goal_id,
+            [
+                {"description": "Step 1"},
+                {"description": "Step 2"},
+            ],
+        )
         goal = planner.get_goal(goal_id)
         assert goal.subtasks[0].id == f"{goal_id}-1"
         assert goal.subtasks[1].id == f"{goal_id}-2"
@@ -138,6 +157,7 @@ class TestGoalPlannerDecomposition:
 # 3. GoalPlanner — Execution tracking
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestGoalPlannerExecution:
     """Tests for goal start/complete/fail/get_next_subtask."""
 
@@ -145,10 +165,17 @@ class TestGoalPlannerExecution:
     def planner_with_goal(self, tmp_path):
         planner = GoalPlanner(storage_dir=tmp_path)
         goal_id = planner.add_goal("Test execution")
-        planner.decompose_goal(goal_id, [
-            {"description": "Step 1", "command": "echo step1"},
-            {"description": "Step 2", "command": "echo step2", "dependencies": [f"{goal_id}-1"]},
-        ])
+        planner.decompose_goal(
+            goal_id,
+            [
+                {"description": "Step 1", "command": "echo step1"},
+                {
+                    "description": "Step 2",
+                    "command": "echo step2",
+                    "dependencies": [f"{goal_id}-1"],
+                },
+            ],
+        )
         return planner, goal_id
 
     def test_start_goal(self, planner_with_goal):
@@ -235,6 +262,7 @@ class TestGoalPlannerExecution:
 # 4. Goal/Subtask serialization
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestGoalSerialization:
     """Tests for Goal/Subtask to_dict/from_dict round-trips."""
 
@@ -283,15 +311,19 @@ class TestGoalSerialization:
 # 5. Persistence
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestGoalPlannerPersistence:
     """Tests for GoalPlanner save/load persistence."""
 
     def test_save_and_load(self, tmp_path):
         planner = GoalPlanner(storage_dir=tmp_path)
         goal_id = planner.add_goal("Persist me")
-        planner.decompose_goal(goal_id, [
-            {"description": "Step 1", "command": "cmd1"},
-        ])
+        planner.decompose_goal(
+            goal_id,
+            [
+                {"description": "Step 1", "command": "cmd1"},
+            ],
+        )
         planner.start_goal(goal_id)
 
         # Create new planner instance from same dir
@@ -305,7 +337,7 @@ class TestGoalPlannerPersistence:
     def test_persistence_file_format(self, tmp_path):
         planner = GoalPlanner(storage_dir=tmp_path)
         planner.add_goal("Test")
-        
+
         goals_file = tmp_path / "goals.json"
         assert goals_file.exists()
         data = json.loads(goals_file.read_text())
@@ -317,6 +349,7 @@ class TestGoalPlannerPersistence:
 # ═══════════════════════════════════════════════════════════════
 # 6. Heart + GoalPlanner wiring
 # ═══════════════════════════════════════════════════════════════
+
 
 class TestHeartGoalPlannerWiring:
     """Tests for Heart's GoalPlanner integration."""
@@ -370,9 +403,12 @@ class TestHeartGoalPlannerWiring:
         # Setup planner with a goal
         planner = GoalPlanner(storage_dir=tmp_path)
         goal_id = planner.add_goal("Test goal")
-        planner.decompose_goal(goal_id, [
-            {"description": "Echo hello", "command": "echo hello"},
-        ])
+        planner.decompose_goal(
+            goal_id,
+            [
+                {"description": "Echo hello", "command": "echo hello"},
+            ],
+        )
         planner.start_goal(goal_id)
         heart.set_goal_planner(planner)
 
@@ -382,7 +418,7 @@ class TestHeartGoalPlannerWiring:
         mock_result.success = True
         mock_result.stdout = "hello"
         mock_hands.execute = AsyncMock(return_value=mock_result)
-        heart.register_component('hands', mock_hands)
+        heart.register_component("hands", mock_hands)
         # Override is_running for the mock
         mock_hands.is_running = True
         mock_hands.state = MagicMock()
@@ -412,9 +448,12 @@ class TestHeartGoalPlannerWiring:
 
         planner = GoalPlanner(storage_dir=tmp_path)
         goal_id = planner.add_goal("Fail goal")
-        planner.decompose_goal(goal_id, [
-            {"description": "Bad cmd", "command": "false"},
-        ])
+        planner.decompose_goal(
+            goal_id,
+            [
+                {"description": "Bad cmd", "command": "false"},
+            ],
+        )
         planner.start_goal(goal_id)
         heart.set_goal_planner(planner)
 
@@ -424,7 +463,7 @@ class TestHeartGoalPlannerWiring:
         mock_result.stderr = "command not found"
         mock_result.exit_code = 1
         mock_hands.execute = AsyncMock(return_value=mock_result)
-        heart.register_component('hands', mock_hands)
+        heart.register_component("hands", mock_hands)
         mock_hands.is_running = True
         mock_hands.state = MagicMock()
         mock_hands.state.name = "RUNNING"
@@ -449,9 +488,12 @@ class TestHeartGoalPlannerWiring:
 
         planner = GoalPlanner(storage_dir=tmp_path)
         goal_id = planner.add_goal("No hands")
-        planner.decompose_goal(goal_id, [
-            {"description": "Step", "command": "echo test"},
-        ])
+        planner.decompose_goal(
+            goal_id,
+            [
+                {"description": "Step", "command": "echo test"},
+            ],
+        )
         planner.start_goal(goal_id)
         heart.set_goal_planner(planner)
         # Don't register hands
@@ -475,9 +517,12 @@ class TestHeartGoalPlannerWiring:
 
         planner = GoalPlanner(storage_dir=tmp_path)
         goal_id = planner.add_goal("Descriptive goal")
-        planner.decompose_goal(goal_id, [
-            {"description": "A manual step"},  # No command
-        ])
+        planner.decompose_goal(
+            goal_id,
+            [
+                {"description": "A manual step"},  # No command
+            ],
+        )
         planner.start_goal(goal_id)
         heart.set_goal_planner(planner)
 
@@ -500,15 +545,18 @@ class TestHeartGoalPlannerWiring:
 
         planner = GoalPlanner(storage_dir=tmp_path)
         goal_id = planner.add_goal("Exception goal")
-        planner.decompose_goal(goal_id, [
-            {"description": "Explode", "command": "boom"},
-        ])
+        planner.decompose_goal(
+            goal_id,
+            [
+                {"description": "Explode", "command": "boom"},
+            ],
+        )
         planner.start_goal(goal_id)
         heart.set_goal_planner(planner)
 
         mock_hands = MagicMock()
         mock_hands.execute = AsyncMock(side_effect=RuntimeError("connection lost"))
-        heart.register_component('hands', mock_hands)
+        heart.register_component("hands", mock_hands)
         mock_hands.is_running = True
         mock_hands.state = MagicMock()
         mock_hands.state.name = "RUNNING"
@@ -524,19 +572,20 @@ class TestHeartGoalPlannerWiring:
 # 7. Agent runner — GoalPlanner integration
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestAgentRunnerGoalPlanner:
     """Tests for Agent runner GoalPlanner wiring."""
 
     def test_agent_has_goal_planner(self):
         """Agent.__init__ creates and attaches GoalPlanner to Heart."""
-        from navig.agent.runner import Agent
         from navig.agent.config import AgentConfig
+        from navig.agent.runner import Agent
 
         config = AgentConfig()
         config.workspace = Path(tempfile.mkdtemp())
 
         agent = Agent(config=config)
-        assert hasattr(agent, 'goal_planner')
+        assert hasattr(agent, "goal_planner")
         assert isinstance(agent.goal_planner, GoalPlanner)
         assert agent.heart.goal_planner is agent.goal_planner
 
@@ -545,27 +594,34 @@ class TestAgentRunnerGoalPlanner:
 # 8. Bug fix regressions
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestBugFixRegressions:
     """Regression tests for Section 20 bug fixes."""
 
     def test_soul_tuple_import(self):
         """B1: soul.py should use typing.Tuple, not a shadow function."""
         import inspect
+
         from navig.agent.soul import Soul
+
         src = inspect.getsource(Soul.get_mood)
         # The annotation should reference Tuple properly
         assert "Tuple" in src
         # The shadow function should NOT exist
-        import navig.agent.soul as soul_mod
         # Check that 'Tuple' at module level is from typing (not a function)
         from typing import Tuple
+
+        import navig.agent.soul as soul_mod
+
         # The module should NOT define a Tuple function
-        assert not hasattr(soul_mod, 'Tuple') or soul_mod.Tuple is Tuple
+        assert not hasattr(soul_mod, "Tuple") or soul_mod.Tuple is Tuple
 
     def test_ai_client_no_duplicate_except(self):
         """B2: ai_client.py should not have duplicate except blocks."""
         import inspect
+
         import navig.agent.ai_client as mod
+
         src = inspect.getsource(mod.AIClient._init_model_router)
         # Count 'except Exception' occurrences — should be exactly 1
         count = src.count("except Exception")
@@ -574,12 +630,14 @@ class TestBugFixRegressions:
     def test_heart_startup_order_no_memory(self):
         """G2: Heart.STARTUP_ORDER should not include 'memory'."""
         from navig.agent.heart import Heart
-        assert 'memory' not in Heart.STARTUP_ORDER
+
+        assert "memory" not in Heart.STARTUP_ORDER
 
     def test_heart_startup_order_valid(self):
         """Heart.STARTUP_ORDER should list real component names."""
         from navig.agent.heart import Heart
-        expected = ['nervous_system', 'eyes', 'ears', 'hands', 'brain', 'soul']
+
+        expected = ["nervous_system", "eyes", "ears", "hands", "brain", "soul"]
         assert Heart.STARTUP_ORDER == expected
 
 
@@ -587,11 +645,20 @@ class TestBugFixRegressions:
 # 9. GoalState / SubtaskState enums
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestGoalStateEnums:
     """Verify enum completeness."""
 
     def test_goal_states(self):
-        expected = {"pending", "decomposing", "in_progress", "blocked", "completed", "failed", "cancelled"}
+        expected = {
+            "pending",
+            "decomposing",
+            "in_progress",
+            "blocked",
+            "completed",
+            "failed",
+            "cancelled",
+        }
         actual = {s.value for s in GoalState}
         assert actual == expected
 
@@ -605,11 +672,13 @@ class TestGoalStateEnums:
 # 10. __init__.py exports
 # ═══════════════════════════════════════════════════════════════
 
+
 class TestAgentExports:
     """Verify GoalPlanner is properly exported from agent package."""
 
     def test_goal_planner_exported(self):
-        from navig.agent import GoalPlanner, Goal, GoalState, Subtask, SubtaskState
+        from navig.agent import Goal, GoalPlanner, GoalState, Subtask, SubtaskState
+
         assert GoalPlanner is not None
         assert Goal is not None
         assert GoalState is not None
@@ -618,5 +687,6 @@ class TestAgentExports:
 
     def test_all_list_includes_goals(self):
         import navig.agent as agent_mod
-        for name in ('GoalPlanner', 'Goal', 'GoalState', 'Subtask', 'SubtaskState'):
+
+        for name in ("GoalPlanner", "Goal", "GoalState", "Subtask", "SubtaskState"):
             assert name in agent_mod.__all__

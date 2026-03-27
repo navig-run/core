@@ -280,5 +280,3 @@ cd ~/dotfiles && git add . && git commit -m "Update NAVIG config"
 - Check if hosts with same names already exist (merge mode skips)
 - Use `--overwrite` to replace existing
 - Verify the backup contains expected data with `navig backup inspect`
-
-

@@ -1,7 +1,9 @@
 """Tests for navig.gateway.session_store."""
+
 from __future__ import annotations
 
 import time
+
 import pytest
 
 from navig.gateway.session_store import (
@@ -12,10 +14,10 @@ from navig.gateway.session_store import (
     reset_session_store,
 )
 
-
 # ---------------------------------------------------------------------------
 # SessionKey
 # ---------------------------------------------------------------------------
+
 
 class TestSessionKey:
     def test_hashable(self):
@@ -36,6 +38,7 @@ class TestSessionKey:
 # ---------------------------------------------------------------------------
 # OperatorContext
 # ---------------------------------------------------------------------------
+
 
 class TestOperatorContext:
     def test_get_set(self):
@@ -79,6 +82,7 @@ class TestOperatorContext:
 # ---------------------------------------------------------------------------
 # SessionStore
 # ---------------------------------------------------------------------------
+
 
 class TestSessionStore:
     def test_get_or_create(self):
@@ -144,6 +148,7 @@ class TestSessionStore:
 # JSON persistence round-trip
 # ---------------------------------------------------------------------------
 
+
 class TestSessionStorePersistence:
     def test_save_and_load(self, tmp_path):
         path = tmp_path / "sessions.json"
@@ -162,6 +167,7 @@ class TestSessionStorePersistence:
 # ---------------------------------------------------------------------------
 # Singleton
 # ---------------------------------------------------------------------------
+
 
 class TestGetSessionStore:
     def setup_method(self):

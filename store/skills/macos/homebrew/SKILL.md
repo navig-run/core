@@ -185,5 +185,3 @@ brew services restart {service}
 - **Brew not installed**: "Install Homebrew: `/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"`"
 - **Package not found**: "Package '{name}' not found. Try `brew search {name}`"
 - **Permission issues**: "Permission denied. Don't use sudo with brew. Fix ownership: `sudo chown -R $(whoami) /opt/homebrew`"
-
-

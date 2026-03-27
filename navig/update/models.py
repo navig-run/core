@@ -1,4 +1,5 @@
 """Data models for the navig update system."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -9,11 +10,15 @@ def _version_lt(a: str, b: str) -> bool:
     """Return True if version *a* is strictly less than *b* (semver-ish)."""
     try:
         from packaging.version import Version  # type: ignore
+
         return Version(str(a)) < Version(str(b))
     except Exception:
         # Fallback: lexicographic tuple comparison on numeric parts
         def _parts(v: str):
-            return tuple(int(x) for x in str(v).lstrip("v").split(".")[:3] if x.isdigit())
+            return tuple(
+                int(x) for x in str(v).lstrip("v").split(".")[:3] if x.isdigit()
+            )
+
         try:
             return _parts(a) < _parts(b)
         except Exception:
@@ -27,7 +32,7 @@ class VersionInfo:
     node_id: str
     current: str = "unknown"
     latest: Optional[str] = None
-    install_type: str = "unknown"   # "git" | "pip" | "unknown"
+    install_type: str = "unknown"  # "git" | "pip" | "unknown"
     source_name: str = "unknown"
     error: Optional[str] = None
 
@@ -89,9 +94,9 @@ class UpdatePlan:
 
     targets: List = field(default_factory=list)
     version_infos: Dict[str, VersionInfo] = field(default_factory=dict)
-    to_update: List = field(default_factory=list)       # UpdateTarget list
-    up_to_date: List = field(default_factory=list)      # UpdateTarget list
-    unreachable: List = field(default_factory=list)     # UpdateTarget list
+    to_update: List = field(default_factory=list)  # UpdateTarget list
+    up_to_date: List = field(default_factory=list)  # UpdateTarget list
+    unreachable: List = field(default_factory=list)  # UpdateTarget list
     dry_run: bool = False
 
     def summary(self) -> str:

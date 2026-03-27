@@ -2,4 +2,4 @@
 
 from .receiver import WebhookEvent, WebhookReceiver, WebhookSourceConfig
 
-__all__ = ['WebhookReceiver', 'WebhookEvent', 'WebhookSourceConfig']
+__all__ = ["WebhookReceiver", "WebhookEvent", "WebhookSourceConfig"]

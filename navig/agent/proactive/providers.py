@@ -36,11 +36,7 @@ class CalendarProvider(ABC):
     """Abstract interface for Calendar integration."""
 
     @abstractmethod
-    async def list_events(
-        self,
-        start: datetime,
-        end: datetime
-    ) -> List[CalendarEvent]:
+    async def list_events(self, start: datetime, end: datetime) -> List[CalendarEvent]:
         """List events in range."""
         pass
 
@@ -59,12 +55,7 @@ class EmailProvider(ABC):
         pass
 
     @abstractmethod
-    async def draft_email(
-        self,
-        to: List[str],
-        subject: str,
-        body: str
-    ) -> str:
+    async def draft_email(self, to: List[str], subject: str, body: str) -> str:
         """Create draft email, return ID."""
         pass
 
@@ -80,7 +71,7 @@ class MockCalendar(CalendarProvider):
                 title="Weekly Sync",
                 start=datetime.now().replace(hour=10, minute=0),
                 end=datetime.now().replace(hour=11, minute=0),
-                attendees=["alice@example.com", "bob@example.com"]
+                attendees=["alice@example.com", "bob@example.com"],
             )
         ]
 
@@ -99,7 +90,7 @@ class MockEmail(EmailProvider):
                 subject="Project Update",
                 sender="boss@company.com",
                 snippet="Can we deploy today?",
-                received_at=datetime.now()
+                received_at=datetime.now(),
             )
         ]
 

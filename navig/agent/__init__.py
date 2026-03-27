@@ -22,13 +22,13 @@ Capabilities:
 Usage:
     # Install agent mode
     navig agent install --personality friendly
-    
+
     # Start the agent
     navig agent start
-    
+
     # Check status
     navig agent status
-    
+
     # Stop the agent
     navig agent stop
 """
@@ -47,41 +47,41 @@ from navig.agent.soul import Mood, PersonalityProfile, Soul
 
 __all__ = [
     # Main Entry
-    'Agent',
-    'run_agent',
+    "Agent",
+    "run_agent",
     # Configuration
-    'AgentConfig',
-    'PersonalityConfig',
+    "AgentConfig",
+    "PersonalityConfig",
     # Components
-    'Component',
-    'ComponentState',
-    'HealthStatus',
+    "Component",
+    "ComponentState",
+    "HealthStatus",
     # Event System
-    'NervousSystem',
-    'Event',
-    'EventType',
-    'EventPriority',
+    "NervousSystem",
+    "Event",
+    "EventType",
+    "EventPriority",
     # Goal Planning
-    'GoalPlanner',
-    'Goal',
-    'GoalState',
-    'Subtask',
-    'SubtaskState',
+    "GoalPlanner",
+    "Goal",
+    "GoalState",
+    "Subtask",
+    "SubtaskState",
     # Body Parts
-    'Heart',
-    'Eyes',
-    'SystemMetrics',
-    'Alert',
-    'Ears',
-    'InputMessage',
-    'Hands',
-    'CommandResult',
-    'CommandStatus',
-    'Brain',
-    'Thought',
-    'Plan',
-    'Decision',
-    'Soul',
-    'PersonalityProfile',
-    'Mood',
+    "Heart",
+    "Eyes",
+    "SystemMetrics",
+    "Alert",
+    "Ears",
+    "InputMessage",
+    "Hands",
+    "CommandResult",
+    "CommandStatus",
+    "Brain",
+    "Thought",
+    "Plan",
+    "Decision",
+    "Soul",
+    "PersonalityProfile",
+    "Mood",
 ]

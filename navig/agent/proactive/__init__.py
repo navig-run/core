@@ -11,7 +11,12 @@ Engagement subsystem (inspired by OpenClaw patterns):
 """
 
 from .capability_promo import CapabilityPromoter
-from .engagement import EngagementAction, EngagementConfig, EngagementCoordinator, EngagementResult
+from .engagement import (
+    EngagementAction,
+    EngagementConfig,
+    EngagementCoordinator,
+    EngagementResult,
+)
 from .engine import ProactiveEngine
 from .providers import (
     CalendarEvent,
@@ -38,7 +43,12 @@ except ImportError:
 
 # Optional: IMAP Email (needs imaplib - stdlib)
 try:
-    from .imap_email import FastmailProvider, GmailProvider, IMAPEmailProvider, OutlookProvider
+    from .imap_email import (
+        FastmailProvider,
+        GmailProvider,
+        IMAPEmailProvider,
+        OutlookProvider,
+    )
 except ImportError:
     IMAPEmailProvider = None
     GmailProvider = None
@@ -75,4 +85,3 @@ __all__ = [
     "EngagementResult",
     "CapabilityPromoter",
 ]
-

@@ -64,7 +64,7 @@ func DOMDistillerScript() string {
 
     var rect = el.getBoundingClientRect();
     var text = (el.innerText || el.textContent || el.getAttribute('aria-label') || el.getAttribute('title') || '').trim().substring(0, 60);
-    
+
     results.push({
       index: idx + 1,
       tag: el.tagName.toLowerCase(),

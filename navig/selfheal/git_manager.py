@@ -12,6 +12,7 @@ Implements the automated Git flow for the Self-Heal contribution pipeline:
 Uses stdlib ``subprocess`` only (no gitpython — avoids ~20 MB overhead).
 GitHub REST calls use ``httpx`` (already a project dependency).
 """
+
 from __future__ import annotations
 
 import secrets
@@ -132,7 +133,9 @@ def _github_request(
     import httpx  # noqa: PLC0415 — lazy import intentional
 
     url = f"{_GITHUB_API}{path}"
-    response = httpx.request(method, url, headers=_github_headers(token), json=json, timeout=timeout)
+    response = httpx.request(
+        method, url, headers=_github_headers(token), json=json, timeout=timeout
+    )
     if not response.is_success:
         raise ValueError(
             f"GitHub API {method} {path} → {response.status_code}: {response.text[:200]}"
@@ -231,7 +234,9 @@ def sync_fork(repo_path: Path) -> None:
     # ignore_errors=True is intentional here: the remote may already exist
     # from a previous scan run.  All other git calls in this function must
     # NOT use ignore_errors so failures surface immediately.
-    _run_git("remote", "add", "upstream", UPSTREAM_URL, cwd=repo_path, ignore_errors=True)
+    _run_git(
+        "remote", "add", "upstream", UPSTREAM_URL, cwd=repo_path, ignore_errors=True
+    )
     _run_git("fetch", "upstream", cwd=repo_path)
     _run_git("checkout", "main", cwd=repo_path)
     _run_git("rebase", "upstream/main", cwd=repo_path)

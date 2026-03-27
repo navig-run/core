@@ -28,7 +28,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ── Helpers ───────────────────────────────────────────────────
 
 
@@ -47,14 +46,14 @@ def _float_blob(values: list[float]) -> bytes:
 
 class TestPragmaProfiles:
     def test_three_profiles_exist(self):
-        from navig.storage.pragma_profiles import FAST, BALANCED, DURABLE
+        from navig.storage.pragma_profiles import BALANCED, DURABLE, FAST
 
         assert FAST.name == "FAST"
         assert BALANCED.name == "BALANCED"
         assert DURABLE.name == "DURABLE"
 
     def test_profile_values(self):
-        from navig.storage.pragma_profiles import FAST, BALANCED, DURABLE
+        from navig.storage.pragma_profiles import BALANCED, DURABLE, FAST
 
         assert FAST.synchronous == "OFF"
         assert BALANCED.synchronous == "NORMAL"
@@ -72,7 +71,12 @@ class TestPragmaProfiles:
         assert "mmap_size" in d
 
     def test_profile_for_db_mapping(self):
-        from navig.storage.pragma_profiles import profile_for_db, FAST, BALANCED, DURABLE
+        from navig.storage.pragma_profiles import (
+            BALANCED,
+            DURABLE,
+            FAST,
+            profile_for_db,
+        )
 
         assert profile_for_db("runtime.db") is FAST
         assert profile_for_db("memory.db") is BALANCED
@@ -82,7 +86,7 @@ class TestPragmaProfiles:
         assert profile_for_db("vault.db") is DURABLE
 
     def test_profile_for_unknown_db(self):
-        from navig.storage.pragma_profiles import profile_for_db, BALANCED
+        from navig.storage.pragma_profiles import BALANCED, profile_for_db
 
         assert profile_for_db("unknown.db") is BALANCED
 
@@ -214,9 +218,7 @@ class TestEngine:
         assert result2 == ""
 
         # NULL input
-        result3 = conn.execute(
-            """SELECT json_text(NULL, 'key')"""
-        ).fetchone()[0]
+        result3 = conn.execute("""SELECT json_text(NULL, 'key')""").fetchone()[0]
         assert result3 is None
         engine.close_all()
 
@@ -269,7 +271,9 @@ class TestMigrationRunner:
         db = _make_db(tmp_path)
 
         def create(conn):
-            conn.execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT)")
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT)"
+            )
 
         result = engine.run_migrations(db, target_version=1, create_schema=create)
         assert result["action"] == "created"
@@ -281,7 +285,9 @@ class TestMigrationRunner:
         assert row[0] == 1
 
         # Table exists
-        rows = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='items'").fetchall()
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='items'"
+        ).fetchall()
         assert len(rows) == 1
         engine.close_all()
 
@@ -735,8 +741,8 @@ class TestStmtCache:
 
 class TestModuleSingleton:
     def test_get_engine_returns_same_instance(self):
-        from navig.storage import get_engine
         import navig.storage as storage_mod
+        from navig.storage import get_engine
 
         # Reset the module-level singleton for test isolation
         storage_mod._engine = None
@@ -765,7 +771,9 @@ class TestEngineBaseStoreIntegration:
             SCHEMA_VERSION = 1
 
             def _create_schema(self, conn):
-                conn.execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT)")
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT)"
+                )
 
         store = SimpleStore(tmp_path / "test.db")
 
@@ -785,7 +793,9 @@ class TestEngineBaseStoreIntegration:
             SCHEMA_VERSION = 1
 
             def _create_schema(self, conn):
-                conn.execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY)")
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY)"
+                )
 
         store = SimpleStore(tmp_path / "test.db")
         count = store._write_many(
@@ -805,7 +815,9 @@ class TestEngineBaseStoreIntegration:
             SCHEMA_VERSION = 1
 
             def _create_schema(self, conn):
-                conn.execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY)")
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY)"
+                )
 
         store = SimpleStore(tmp_path / "test.db")
         result = store.maintenance()
@@ -820,7 +832,9 @@ class TestEngineBaseStoreIntegration:
             SCHEMA_VERSION = 1
 
             def _create_schema(self, conn):
-                conn.execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, val TEXT)")
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, val TEXT)"
+                )
 
         store = SimpleStore(tmp_path / "test.db")
         store._write("INSERT INTO items VALUES (?, ?)", (1, "backup_test"))
@@ -843,7 +857,9 @@ class TestEngineBaseStoreIntegration:
             SCHEMA_VERSION = 1
 
             def _create_schema(self, conn):
-                conn.execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY)")
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY)"
+                )
 
         store = SimpleStore(tmp_path / "test.db")
 

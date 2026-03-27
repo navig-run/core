@@ -31,16 +31,15 @@ DEFAULTS = Threshold(warn_pct=80.0, crit_pct=95.0)
 # Named metric registry — extend as new metrics are introduced.
 REGISTRY: dict[str, Threshold] = {
     # System resources
-    "cpu_usage":          Threshold(warn_pct=75.0,  crit_pct=90.0),
-    "memory_usage":       Threshold(warn_pct=80.0,  crit_pct=95.0),
-    "disk_usage":         Threshold(warn_pct=85.0,  crit_pct=95.0),
-    "disk_io":            Threshold(warn_pct=70.0,  crit_pct=90.0),
-
+    "cpu_usage": Threshold(warn_pct=75.0, crit_pct=90.0),
+    "memory_usage": Threshold(warn_pct=80.0, crit_pct=95.0),
+    "disk_usage": Threshold(warn_pct=85.0, crit_pct=95.0),
+    "disk_io": Threshold(warn_pct=70.0, crit_pct=90.0),
     # Application / network
-    "error_rate":         Threshold(warn_pct=5.0,   crit_pct=15.0),
-    "p99_latency_ms":     Threshold(warn_pct=60.0,  crit_pct=85.0),
-    "request_queue":      Threshold(warn_pct=60.0,  crit_pct=85.0),
-    "worker_connections": Threshold(warn_pct=70.0,  crit_pct=90.0),
+    "error_rate": Threshold(warn_pct=5.0, crit_pct=15.0),
+    "p99_latency_ms": Threshold(warn_pct=60.0, crit_pct=85.0),
+    "request_queue": Threshold(warn_pct=60.0, crit_pct=85.0),
+    "worker_connections": Threshold(warn_pct=70.0, crit_pct=90.0),
 }
 
 

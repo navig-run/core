@@ -19,11 +19,11 @@ from navig.agent.proactive.providers import CalendarEvent, CalendarProvider
 class ICSCalendarProvider(CalendarProvider):
     """
     ICS calendar provider for self-hosted calendars.
-    
+
     Usage:
         # From URL (e.g., Nextcloud public link)
         provider = ICSCalendarProvider(url="https://cloud.example.com/calendar.ics")
-        
+
         # From local file
         provider = ICSCalendarProvider(path=Path("~/calendar.ics"))
     """
@@ -32,11 +32,11 @@ class ICSCalendarProvider(CalendarProvider):
         self,
         url: Optional[str] = None,
         path: Optional[Path] = None,
-        cache_minutes: int = 5
+        cache_minutes: int = 5,
     ):
         """
         Initialize ICS provider.
-        
+
         Args:
             url: Remote ICS URL
             path: Local .ics file path
@@ -62,7 +62,9 @@ class ICSCalendarProvider(CalendarProvider):
 
         # Check cache
         if self._cache and self._cache_time:
-            if datetime.now() - self._cache_time < timedelta(minutes=self.cache_minutes):
+            if datetime.now() - self._cache_time < timedelta(
+                minutes=self.cache_minutes
+            ):
                 return self._filter_events(self._cache, start, end)
 
         ics_data = await self._fetch_ics()
@@ -105,15 +107,15 @@ class ICSCalendarProvider(CalendarProvider):
                 return None
 
         elif self.path and self.path.exists():
-            return self.path.read_text(encoding='utf-8')
+            return self.path.read_text(encoding="utf-8")
 
         return None
 
     def _parse_vevent(self, component) -> Optional[CalendarEvent]:
         """Parse an iCalendar VEVENT component."""
         try:
-            evt_start = component.get('dtstart')
-            evt_end = component.get('dtend')
+            evt_start = component.get("dtstart")
+            evt_end = component.get("dtend")
 
             if not evt_start:
                 return None
@@ -127,13 +129,13 @@ class ICSCalendarProvider(CalendarProvider):
                 end_dt = start_dt + timedelta(hours=1)
 
             return CalendarEvent(
-                id=str(component.get('uid', '')),
-                title=str(component.get('summary', 'Untitled')),
+                id=str(component.get("uid", "")),
+                title=str(component.get("summary", "Untitled")),
                 start=start_dt,
                 end=end_dt,
-                location=str(component.get('location', '')) or None,
-                description=str(component.get('description', '')) or None,
-                attendees=self._parse_attendees(component)
+                location=str(component.get("location", "")) or None,
+                description=str(component.get("description", "")) or None,
+                attendees=self._parse_attendees(component),
             )
         except Exception:
             return None
@@ -148,41 +150,30 @@ class ICSCalendarProvider(CalendarProvider):
     def _parse_attendees(self, component) -> List[str]:
         """Extract attendee emails from VEVENT."""
         attendees = []
-        for attendee in component.get('attendee', []):
-            if hasattr(attendee, '__str__'):
-                email = str(attendee).replace('mailto:', '')
+        for attendee in component.get("attendee", []):
+            if hasattr(attendee, "__str__"):
+                email = str(attendee).replace("mailto:", "")
                 attendees.append(email)
         return attendees
 
     def _filter_events(
-        self,
-        events: List[CalendarEvent],
-        start: datetime,
-        end: datetime
+        self, events: List[CalendarEvent], start: datetime, end: datetime
     ) -> List[CalendarEvent]:
         """Filter events to those within the time range."""
-        return [
-            e for e in events
-            if e.start >= start and e.start <= end
-        ]
+        return [e for e in events if e.start >= start and e.start <= end]
 
 
 class CalDAVProvider(CalendarProvider):
     """
     CalDAV calendar provider for write-capable self-hosted calendars.
-    
+
     Supports Nextcloud, Radicale, Baikal, etc.
     """
 
-    def __init__(
-        self,
-        url: str,
-        username: str,
-        password: str
-    ):
+    def __init__(self, url: str, username: str, password: str):
         """
         Initialize CalDAV provider.
-        
+
         Args:
             url: CalDAV server URL (e.g., https://cloud.example.com/remote.php/dav)
             username: CalDAV username
@@ -200,9 +191,7 @@ class CalDAVProvider(CalendarProvider):
             raise ImportError("CalDAV support requires: pip install caldav") from _exc
 
         client = caldav.DAVClient(
-            url=self.url,
-            username=self.username,
-            password=self.password
+            url=self.url, username=self.username, password=self.password
         )
 
         principal = client.principal()
@@ -219,6 +208,7 @@ class CalDAVProvider(CalendarProvider):
         for raw in raw_events:
             try:
                 from icalendar import Calendar
+
                 cal = Calendar.from_ical(raw.data)
                 for component in cal.walk():
                     if component.name == "VEVENT":
@@ -237,12 +227,12 @@ class CalDAVProvider(CalendarProvider):
             from icalendar import Calendar as ICalendar
             from icalendar import Event as IEvent
         except ImportError as _exc:
-            raise ImportError("CalDAV support requires: pip install caldav icalendar") from _exc
+            raise ImportError(
+                "CalDAV support requires: pip install caldav icalendar"
+            ) from _exc
 
         client = caldav.DAVClient(
-            url=self.url,
-            username=self.username,
-            password=self.password
+            url=self.url, username=self.username, password=self.password
         )
 
         principal = client.principal()
@@ -255,30 +245,30 @@ class CalDAVProvider(CalendarProvider):
 
         # Build iCalendar event
         ical = ICalendar()
-        ical.add('prodid', '-//NAVIG//navig.run//')
-        ical.add('version', '2.0')
+        ical.add("prodid", "-//NAVIG//navig.run//")
+        ical.add("version", "2.0")
 
         ievent = IEvent()
-        ievent.add('summary', event.title)
-        ievent.add('dtstart', event.start)
-        ievent.add('dtend', event.end)
-        ievent.add('uid', event.id or f"navig-{datetime.now().timestamp()}")
+        ievent.add("summary", event.title)
+        ievent.add("dtstart", event.start)
+        ievent.add("dtend", event.end)
+        ievent.add("uid", event.id or f"navig-{datetime.now().timestamp()}")
 
         if event.location:
-            ievent.add('location', event.location)
+            ievent.add("location", event.location)
         if event.description:
-            ievent.add('description', event.description)
+            ievent.add("description", event.description)
 
         ical.add_component(ievent)
 
-        created = calendar.save_event(ical.to_ical().decode('utf-8'))
+        created = calendar.save_event(ical.to_ical().decode("utf-8"))
         return str(created.id) if created else ""
 
     def _parse_vevent(self, component) -> Optional[CalendarEvent]:
         """Parse VEVENT (shared with ICSCalendarProvider)."""
         try:
-            evt_start = component.get('dtstart')
-            evt_end = component.get('dtend')
+            evt_start = component.get("dtstart")
+            evt_end = component.get("dtend")
 
             if not evt_start:
                 return None
@@ -295,12 +285,12 @@ class CalDAVProvider(CalendarProvider):
                 end_dt = start_dt + timedelta(hours=1)
 
             return CalendarEvent(
-                id=str(component.get('uid', '')),
-                title=str(component.get('summary', 'Untitled')),
+                id=str(component.get("uid", "")),
+                title=str(component.get("summary", "Untitled")),
                 start=start_dt,
                 end=end_dt,
-                location=str(component.get('location', '')) or None,
-                description=str(component.get('description', '')) or None
+                location=str(component.get("location", "")) or None,
+                description=str(component.get("description", "")) or None,
             )
         except Exception:
             return None

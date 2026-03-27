@@ -68,7 +68,9 @@ class CortexOrchestrator:
         self._ref_map = ref_map
 
         # Count annotated node lines added by get_a11y_snapshot_with_refs
-        a11y_node_count = sum(1 for ln in a11y_text.splitlines() if ln.lstrip().startswith("- ["))
+        a11y_node_count = sum(
+            1 for ln in a11y_text.splitlines() if ln.lstrip().startswith("- [")
+        )
         use_vision = force_vision or (a11y_node_count < A11Y_MIN_NODES)
         mode = "vision" if use_vision else "a11y"
 
@@ -129,7 +131,8 @@ class CortexOrchestrator:
                 if "429" in err_str and attempt < 2:
                     logger.warning(
                         "[Cortex] Rate limited (attempt %d/3). Waiting %ds...",
-                        attempt + 1, retry_delay,
+                        attempt + 1,
+                        retry_delay,
                     )
                     await asyncio.sleep(retry_delay)
                 else:
@@ -193,7 +196,9 @@ class CortexOrchestrator:
             {"role": "user", "content": user_text},
         ]
 
-    def _build_vision_messages(self, ctx: dict, a11y_text: str, screenshot_b64: Optional[str]) -> list:
+    def _build_vision_messages(
+        self, ctx: dict, a11y_text: str, screenshot_b64: Optional[str]
+    ) -> list:
         text_part = {
             "type": "text",
             "text": (
@@ -204,10 +209,12 @@ class CortexOrchestrator:
         }
         content = [text_part]
         if screenshot_b64:
-            content.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{screenshot_b64}"},
-            })
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{screenshot_b64}"},
+                }
+            )
         return [
             {"role": "system", "content": CORTEX_VISION_PROMPT},
             {"role": "user", "content": content},

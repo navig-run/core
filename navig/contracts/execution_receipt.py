@@ -17,16 +17,18 @@ from typing import Any, Dict, Optional
 
 # ── Enums ──────────────────────────────────────────────────────────────────────
 
+
 class ReceiptOutcome(str, Enum):
     SUCCEEDED = "succeeded"
-    FAILED    = "failed"
+    FAILED = "failed"
     CANCELLED = "cancelled"
     TIMED_OUT = "timed_out"
 
 
 # ── Model ──────────────────────────────────────────────────────────────────────
 
-@dataclass(frozen=True)   # Immutable — receipts are append-only
+
+@dataclass(frozen=True)  # Immutable — receipts are append-only
 class ExecutionReceipt:
     """
     Immutable record of a completed Mission execution.
@@ -55,13 +57,13 @@ class ExecutionReceipt:
     completed_at: str
 
     # Optional
-    receipt_id: str                    = field(default_factory=lambda: str(uuid.uuid4()))
-    started_at: Optional[str]          = None
-    duration_secs: Optional[float]     = None
-    error: Optional[str]               = None
-    artifacts: Dict[str, Any]          = field(default_factory=dict)
-    metadata: Dict[str, Any]           = field(default_factory=dict)
-    recorded_at: str                   = field(default_factory=lambda: _now_iso())
+    receipt_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    started_at: Optional[str] = None
+    duration_secs: Optional[float] = None
+    error: Optional[str] = None
+    artifacts: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    recorded_at: str = field(default_factory=lambda: _now_iso())
 
     # ── Factory method ───────────────────────────────────────────────
 
@@ -134,6 +136,7 @@ class ExecutionReceipt:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()

@@ -24,8 +24,8 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "start",
             "description": "Start the bot and show welcome message with overview of capabilities",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
@@ -37,62 +37,61 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "topic": {
                         "type": "string",
-                        "description": "Category name (core, hosts, monitoring, docker, database, tools, utilities) or specific command name"
+                        "description": "Category name (core, hosts, monitoring, docker, database, tools, utilities) or specific command name",
                     }
                 },
-                "required": []
-            }
-        }
+                "required": [],
+            },
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "status",
             "description": "Show detailed bot status including AI model, loaded skills, and conversation stats",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "ping",
             "description": "Quick health check showing bot latency and active host",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "stats",
             "description": "View command usage statistics, error counts, and performance metrics",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "reset",
             "description": "Clear conversation history and reset AI context",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "about",
             "description": "Show information about NAVIG bot and the SCHEMA community",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
-
     # -------------- Host Management --------------
     {
         "type": "function",
         "function": {
             "name": "hosts",
             "description": "List all configured remote servers and hosts",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
@@ -104,110 +103,109 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "host_name": {
                         "type": "string",
-                        "description": "The server name, alias, IP address, or partial name to switch to"
+                        "description": "The server name, alias, IP address, or partial name to switch to",
                     }
                 },
-                "required": ["host_name"]
-            }
-        }
+                "required": ["host_name"],
+            },
+        },
     },
-
     # -------------- System Monitoring --------------
     {
         "type": "function",
         "function": {
             "name": "disk",
             "description": "Check disk space usage on the current server",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "memory",
             "description": "Check memory (RAM) usage on the current server",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "cpu",
             "description": "Check CPU load average and uptime on the current server",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "df",
             "description": "Show detailed disk usage with filesystem types",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "top",
             "description": "Show top processes sorted by CPU usage",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "uptime",
             "description": "Show how long the server has been running since last reboot",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "ip",
             "description": "Show server internal and external IP addresses",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "env",
             "description": "Show server environment info: OS, kernel version, hostname",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "netstat",
             "description": "Show active network connections (ESTABLISHED and LISTEN)",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "ports",
             "description": "List TCP ports currently listening on the server",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "services",
             "description": "List systemd services currently running on the server",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "cron",
             "description": "List scheduled cron jobs for the current user",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
@@ -219,22 +217,21 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "domain": {
                         "type": "string",
-                        "description": "Domain name to check SSL certificate for"
+                        "description": "Domain name to check SSL certificate for",
                     }
                 },
-                "required": ["domain"]
-            }
-        }
+                "required": ["domain"],
+            },
+        },
     },
-
     # -------------- Docker --------------
     {
         "type": "function",
         "function": {
             "name": "docker_ps",
             "description": "List all Docker containers on the current server with their status",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
@@ -246,16 +243,16 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "container": {
                         "type": "string",
-                        "description": "Container name or ID to get logs from"
+                        "description": "Container name or ID to get logs from",
                     },
                     "lines": {
                         "type": "integer",
-                        "description": "Number of log lines to fetch (default 50, max 200)"
-                    }
+                        "description": "Number of log lines to fetch (default 50, max 200)",
+                    },
                 },
-                "required": ["container"]
-            }
-        }
+                "required": ["container"],
+            },
+        },
     },
     {
         "type": "function",
@@ -267,22 +264,21 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "container": {
                         "type": "string",
-                        "description": "Container name or ID to restart"
+                        "description": "Container name or ID to restart",
                     }
                 },
-                "required": ["container"]
-            }
-        }
+                "required": ["container"],
+            },
+        },
     },
-
     # -------------- Database --------------
     {
         "type": "function",
         "function": {
             "name": "db_list",
             "description": "List all databases on the current server",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
@@ -294,14 +290,13 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "database": {
                         "type": "string",
-                        "description": "Database name to list tables from"
+                        "description": "Database name to list tables from",
                     }
                 },
-                "required": ["database"]
-            }
-        }
+                "required": ["database"],
+            },
+        },
     },
-
     # -------------- Tools --------------
     {
         "type": "function",
@@ -314,16 +309,16 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                     "action": {
                         "type": "string",
                         "enum": ["list", "start", "stop"],
-                        "description": "Action to perform: list tunnels, start a tunnel, or stop a tunnel"
+                        "description": "Action to perform: list tunnels, start a tunnel, or stop a tunnel",
                     },
                     "tunnel_name": {
                         "type": "string",
-                        "description": "Name of the tunnel (required for start/stop)"
-                    }
+                        "description": "Name of the tunnel (required for start/stop)",
+                    },
                 },
-                "required": []
-            }
-        }
+                "required": [],
+            },
+        },
     },
     {
         "type": "function",
@@ -336,16 +331,16 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                     "action": {
                         "type": "string",
                         "enum": ["list", "create"],
-                        "description": "Action: list backups or create a new backup"
+                        "description": "Action: list backups or create a new backup",
                     },
                     "target": {
                         "type": "string",
-                        "description": "What to backup (optional, for create action)"
-                    }
+                        "description": "What to backup (optional, for create action)",
+                    },
                 },
-                "required": []
-            }
-        }
+                "required": [],
+            },
+        },
     },
     {
         "type": "function",
@@ -358,16 +353,16 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                     "resource": {
                         "type": "string",
                         "enum": ["users", "domains", "web"],
-                        "description": "Resource type to manage"
+                        "description": "Resource type to manage",
                     },
                     "user": {
                         "type": "string",
-                        "description": "HestiaCP username (optional)"
-                    }
+                        "description": "HestiaCP username (optional)",
+                    },
                 },
-                "required": []
-            }
-        }
+                "required": [],
+            },
+        },
     },
     {
         "type": "function",
@@ -379,14 +374,13 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "Shell command to execute (dangerous commands blocked)"
+                        "description": "Shell command to execute (dangerous commands blocked)",
                     }
                 },
-                "required": ["command"]
-            }
-        }
+                "required": ["command"],
+            },
+        },
     },
-
     # -------------- Utilities --------------
     {
         "type": "function",
@@ -398,12 +392,12 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "domain": {
                         "type": "string",
-                        "description": "Domain name to look up"
+                        "description": "Domain name to look up",
                     }
                 },
-                "required": ["domain"]
-            }
-        }
+                "required": ["domain"],
+            },
+        },
     },
     {
         "type": "function",
@@ -415,12 +409,12 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "timezone": {
                         "type": "string",
-                        "description": "Timezone name like UTC, PST, EST, JST (optional)"
+                        "description": "Timezone name like UTC, PST, EST, JST (optional)",
                     }
                 },
-                "required": []
-            }
-        }
+                "required": [],
+            },
+        },
     },
     {
         "type": "function",
@@ -433,20 +427,20 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                     "options": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "List of options to choose from"
+                        "description": "List of options to choose from",
                     }
                 },
-                "required": ["options"]
-            }
-        }
+                "required": ["options"],
+            },
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "flip",
             "description": "Flip a coin - heads or tails",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
@@ -458,12 +452,12 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "sides": {
                         "type": "integer",
-                        "description": "Number of sides on the dice (default 6)"
+                        "description": "Number of sides on the dice (default 6)",
                     }
                 },
-                "required": []
-            }
-        }
+                "required": [],
+            },
+        },
     },
     {
         "type": "function",
@@ -473,22 +467,19 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "text": {
-                        "type": "string",
-                        "description": "Note text to save"
-                    }
+                    "text": {"type": "string", "description": "Note text to save"}
                 },
-                "required": ["text"]
-            }
-        }
+                "required": ["text"],
+            },
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "notes",
             "description": "List all saved notes",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
@@ -500,29 +491,29 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "message": {
                         "type": "string",
-                        "description": "What to remind about"
+                        "description": "What to remind about",
                     },
                     "duration": {
                         "type": "integer",
-                        "description": "Time amount (e.g., 5)"
+                        "description": "Time amount (e.g., 5)",
                     },
                     "unit": {
                         "type": "string",
                         "enum": ["minutes", "hours", "days", "weeks"],
-                        "description": "Time unit"
-                    }
+                        "description": "Time unit",
+                    },
                 },
-                "required": ["message", "duration", "unit"]
-            }
-        }
+                "required": ["message", "duration", "unit"],
+            },
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "reminders",
             "description": "List all active reminders",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
@@ -534,14 +525,13 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "reminder_id": {
                         "type": "integer",
-                        "description": "ID of the reminder to cancel"
+                        "description": "ID of the reminder to cancel",
                     }
                 },
-                "required": ["reminder_id"]
-            }
-        }
+                "required": ["reminder_id"],
+            },
+        },
     },
-
     # -------------- Crypto & Finance --------------
     {
         "type": "function",
@@ -553,20 +543,20 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "symbol": {
                         "type": "string",
-                        "description": "Cryptocurrency symbol like BTC, ETH, SOL, XRP, DOGE"
+                        "description": "Cryptocurrency symbol like BTC, ETH, SOL, XRP, DOGE",
                     }
                 },
-                "required": []
-            }
-        }
+                "required": [],
+            },
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "crypto_list",
             "description": "List supported cryptocurrencies",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
@@ -576,24 +566,20 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "amount": {
-                        "type": "number",
-                        "description": "Amount to convert"
-                    },
+                    "amount": {"type": "number", "description": "Amount to convert"},
                     "from_currency": {
                         "type": "string",
-                        "description": "Source currency code (e.g., USD, EUR, GBP)"
+                        "description": "Source currency code (e.g., USD, EUR, GBP)",
                     },
                     "to_currency": {
                         "type": "string",
-                        "description": "Target currency code"
-                    }
+                        "description": "Target currency code",
+                    },
                 },
-                "required": ["amount", "from_currency", "to_currency"]
-            }
-        }
+                "required": ["amount", "from_currency", "to_currency"],
+            },
+        },
     },
-
     # -------------- Weather --------------
     {
         "type": "function",
@@ -605,14 +591,13 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "location": {
                         "type": "string",
-                        "description": "City name or location"
+                        "description": "City name or location",
                     }
                 },
-                "required": []
-            }
-        }
+                "required": [],
+            },
+        },
     },
-
     # -------------- Developer Tools --------------
     {
         "type": "function",
@@ -624,12 +609,12 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "expression": {
                         "type": "string",
-                        "description": "Mathematical expression to evaluate"
+                        "description": "Mathematical expression to evaluate",
                     }
                 },
-                "required": ["expression"]
-            }
-        }
+                "required": ["expression"],
+            },
+        },
     },
     {
         "type": "function",
@@ -642,16 +627,13 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                     "algorithm": {
                         "type": "string",
                         "enum": ["md5", "sha1", "sha256"],
-                        "description": "Hash algorithm to use"
+                        "description": "Hash algorithm to use",
                     },
-                    "text": {
-                        "type": "string",
-                        "description": "Text to hash"
-                    }
+                    "text": {"type": "string", "description": "Text to hash"},
                 },
-                "required": ["algorithm", "text"]
-            }
-        }
+                "required": ["algorithm", "text"],
+            },
+        },
     },
     {
         "type": "function",
@@ -661,14 +643,11 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "domain": {
-                        "type": "string",
-                        "description": "Domain to look up"
-                    }
+                    "domain": {"type": "string", "description": "Domain to look up"}
                 },
-                "required": ["domain"]
-            }
-        }
+                "required": ["domain"],
+            },
+        },
     },
     {
         "type": "function",
@@ -678,14 +657,11 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "text": {
-                        "type": "string",
-                        "description": "Text to encode"
-                    }
+                    "text": {"type": "string", "description": "Text to encode"}
                 },
-                "required": ["text"]
-            }
-        }
+                "required": ["text"],
+            },
+        },
     },
     {
         "type": "function",
@@ -695,14 +671,11 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "text": {
-                        "type": "string",
-                        "description": "Base64 text to decode"
-                    }
+                    "text": {"type": "string", "description": "Base64 text to decode"}
                 },
-                "required": ["text"]
-            }
-        }
+                "required": ["text"],
+            },
+        },
     },
     {
         "type": "function",
@@ -712,16 +685,12 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "URL to request"
-                    }
+                    "url": {"type": "string", "description": "URL to request"}
                 },
-                "required": ["url"]
-            }
-        }
+                "required": ["url"],
+            },
+        },
     },
-
     # -------------- Social & Fun --------------
     {
         "type": "function",
@@ -733,36 +702,36 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "user": {
                         "type": "string",
-                        "description": "Username to look up (optional, defaults to self)"
+                        "description": "Username to look up (optional, defaults to self)",
                     }
                 },
-                "required": []
-            }
-        }
+                "required": [],
+            },
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "quote",
             "description": "Get an inspirational or random quote",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "joke",
             "description": "Tell a random joke",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "uid",
             "description": "Get user's Telegram ID",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
@@ -774,14 +743,13 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "target": {
                         "type": "string",
-                        "description": "Who or what to pay respects to (optional)"
+                        "description": "Who or what to pay respects to (optional)",
                     }
                 },
-                "required": []
-            }
-        }
+                "required": [],
+            },
+        },
     },
-
     # -------------- Media --------------
     {
         "type": "function",
@@ -793,12 +761,12 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "url": {
                         "type": "string",
-                        "description": "Music URL from Spotify, YouTube Music, Apple Music, etc."
+                        "description": "Music URL from Spotify, YouTube Music, Apple Music, etc.",
                     }
                 },
-                "required": ["url"]
-            }
-        }
+                "required": ["url"],
+            },
+        },
     },
     {
         "type": "function",
@@ -810,12 +778,12 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "url": {
                         "type": "string",
-                        "description": "Video URL from YouTube, TikTok, Instagram, Twitter, etc."
+                        "description": "Video URL from YouTube, TikTok, Instagram, Twitter, etc.",
                     }
                 },
-                "required": ["url"]
-            }
-        }
+                "required": ["url"],
+            },
+        },
     },
     {
         "type": "function",
@@ -827,14 +795,13 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "prompt": {
                         "type": "string",
-                        "description": "Description of the image to generate"
+                        "description": "Description of the image to generate",
                     }
                 },
-                "required": ["prompt"]
-            }
-        }
+                "required": ["prompt"],
+            },
+        },
     },
-
     # -------------- AI Commands --------------
     {
         "type": "function",
@@ -846,12 +813,12 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "question": {
                         "type": "string",
-                        "description": "Topic, concept, or question to explain"
+                        "description": "Topic, concept, or question to explain",
                     }
                 },
-                "required": ["question"]
-            }
-        }
+                "required": ["question"],
+            },
+        },
     },
     {
         "type": "function",
@@ -863,20 +830,20 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
                 "properties": {
                     "persona": {
                         "type": "string",
-                        "description": "Persona name to switch to (optional)"
+                        "description": "Persona name to switch to (optional)",
                     }
                 },
-                "required": []
-            }
-        }
+                "required": [],
+            },
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "ai_status",
             "description": "Check AI status and current persona",
-            "parameters": {"type": "object", "properties": {}, "required": []}
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
 ]
 
@@ -885,6 +852,7 @@ COMMAND_TOOLS: List[Dict[str, Any]] = [
 # COMMAND HANDLER MAPPING
 # Maps AI function calls to actual slash commands
 # ============================================================================
+
 
 def _build_command_string(cmd: str, args: Dict[str, Any]) -> str:
     """Build a command string from function name and arguments."""
@@ -900,11 +868,9 @@ COMMAND_HANDLER_MAP: Dict[str, Union[str, Callable[[Dict[str, Any]], str]]] = {
     "stats": "/stats",
     "reset": "/reset",
     "about": "/about",
-
     # Host Management
     "hosts": "/hosts",
     "use_host": lambda args: f"/use {args.get('host_name', '')}",
-
     # System Monitoring
     "disk": "/disk",
     "memory": "/memory",
@@ -919,42 +885,37 @@ COMMAND_HANDLER_MAP: Dict[str, Union[str, Callable[[Dict[str, Any]], str]]] = {
     "services": "/services",
     "cron": "/cron",
     "ssl": lambda args: f"/ssl {args.get('domain', '')}",
-
     # Docker
     "docker_ps": "/docker",
     "docker_logs": lambda args: f"/logs {args.get('container', '')} {args.get('lines', '')}".strip(),
     "docker_restart": lambda args: f"/restart {args.get('container', '')}",
-
     # Database
     "db_list": "/db",
     "db_tables": lambda args: f"/tables {args.get('database', '')}",
-
     # Tools
     "tunnel": lambda args: _build_tunnel_cmd(args),
     "backup": lambda args: _build_backup_cmd(args),
     "hestia": lambda args: _build_hestia_cmd(args),
     "run_command": lambda args: f"/run {args.get('command', '')}",
-
     # Utilities
     "whois": lambda args: f"/whois {args.get('domain', '')}",
     "time": lambda args: f"/time {args.get('timezone', '')}".strip(),
     "pick": lambda args: f"/pick {' '.join(args.get('options', []))}",
     "flip": "/flip",
-    "roll": lambda args: f"/roll {args.get('sides', '')}".strip() if args.get('sides') else "/roll",
+    "roll": lambda args: (
+        f"/roll {args.get('sides', '')}".strip() if args.get("sides") else "/roll"
+    ),
     "note": lambda args: f"/note {args.get('text', '')}",
     "notes": "/notes",
     "remind": lambda args: _build_remind_cmd(args),
     "reminders": "/reminders",
     "cancelreminder": lambda args: f"/cancelreminder {args.get('reminder_id', '')}",
-
     # Crypto & Finance
     "crypto": lambda args: f"/crypto {args.get('symbol', '')}".strip(),
     "crypto_list": "/crypto_list",
     "convert": lambda args: f"/convert {args.get('amount', '')} {args.get('from_currency', '')} {args.get('to_currency', '')}",
-
     # Weather
     "weather": lambda args: f"/weather {args.get('location', '')}".strip(),
-
     # Developer Tools
     "calc": lambda args: f"/calc {args.get('expression', '')}",
     "hash": lambda args: f"/hash {args.get('algorithm', 'sha256')} {args.get('text', '')}",
@@ -962,19 +923,16 @@ COMMAND_HANDLER_MAP: Dict[str, Union[str, Callable[[Dict[str, Any]], str]]] = {
     "encode": lambda args: f"/encode {args.get('text', '')}",
     "decode": lambda args: f"/decode {args.get('text', '')}",
     "curl": lambda args: f"/curl {args.get('url', '')}",
-
     # Social & Fun
     "profile": lambda args: f"/profile {args.get('user', '')}".strip(),
     "quote": "/quote",
     "joke": "/joke",
     "uid": "/uid",
     "respect": lambda args: f"/respect {args.get('target', '')}".strip(),
-
     # Media
     "music": lambda args: f"/music {args.get('url', '')}",
     "video": lambda args: f"/video {args.get('url', '')}",
     "imagegen": lambda args: f"/imagegen {args.get('prompt', '')}",
-
     # AI Commands
     "explain": lambda args: f"/explain {args.get('question', '')}",
     "ai_persona": lambda args: f"/ai_persona {args.get('persona', '')}".strip(),
@@ -984,26 +942,26 @@ COMMAND_HANDLER_MAP: Dict[str, Union[str, Callable[[Dict[str, Any]], str]]] = {
 
 def _build_tunnel_cmd(args: Dict[str, Any]) -> str:
     """Build tunnel command string."""
-    action = args.get('action', 'list')
-    name = args.get('tunnel_name', '')
-    if action == 'list' or not action:
+    action = args.get("action", "list")
+    name = args.get("tunnel_name", "")
+    if action == "list" or not action:
         return "/tunnel"
     return f"/tunnel {action} {name}".strip()
 
 
 def _build_backup_cmd(args: Dict[str, Any]) -> str:
     """Build backup command string."""
-    action = args.get('action', 'list')
-    target = args.get('target', '')
-    if action == 'list' or not action:
+    action = args.get("action", "list")
+    target = args.get("target", "")
+    if action == "list" or not action:
         return "/backup"
     return f"/backup {action} {target}".strip()
 
 
 def _build_hestia_cmd(args: Dict[str, Any]) -> str:
     """Build hestia command string."""
-    resource = args.get('resource', '')
-    user = args.get('user', '')
+    resource = args.get("resource", "")
+    user = args.get("user", "")
     if not resource:
         return "/hestia"
     return f"/hestia {resource} {user}".strip()
@@ -1011,13 +969,13 @@ def _build_hestia_cmd(args: Dict[str, Any]) -> str:
 
 def _build_remind_cmd(args: Dict[str, Any]) -> str:
     """Build remind command string."""
-    message = args.get('message', '')
-    duration = args.get('duration', 30)
-    unit = args.get('unit', 'minutes')
+    message = args.get("message", "")
+    duration = args.get("duration", 30)
+    unit = args.get("unit", "minutes")
 
     # Convert unit to short form
-    unit_map = {'minutes': 'm', 'hours': 'h', 'days': 'd', 'weeks': 'w'}
-    short_unit = unit_map.get(unit, 'm')
+    unit_map = {"minutes": "m", "hours": "h", "days": "d", "weeks": "w"}
+    short_unit = unit_map.get(unit, "m")
 
     return f"/remind {duration}{short_unit} {message}"
 
@@ -1025,11 +983,11 @@ def _build_remind_cmd(args: Dict[str, Any]) -> str:
 def get_command_string(function_name: str, args: Dict[str, Any]) -> Optional[str]:
     """
     Convert a function call to a command string.
-    
+
     Args:
         function_name: Name of the function from AI response
         args: Arguments dictionary
-    
+
     Returns:
         Command string like "/docker" or "/use production"
     """
@@ -1045,14 +1003,14 @@ def get_command_string(function_name: str, args: Dict[str, Any]) -> Optional[str
 def get_tool_by_name(name: str) -> Optional[Dict[str, Any]]:
     """Get a tool definition by its function name."""
     for tool in COMMAND_TOOLS:
-        if tool.get('function', {}).get('name') == name:
+        if tool.get("function", {}).get("name") == name:
             return tool
     return None
 
 
 def get_all_tool_names() -> List[str]:
     """Get list of all available tool/function names."""
-    return [tool['function']['name'] for tool in COMMAND_TOOLS]
+    return [tool["function"]["name"] for tool in COMMAND_TOOLS]
 
 
 # ============================================================================
@@ -1066,26 +1024,35 @@ INTENT_KEYWORDS: Dict[str, List[str]] = {
     "memory": ["memory", "ram", "mem", "free memory", "available memory"],
     "cpu": ["cpu", "processor", "load", "load average"],
     "uptime": ["uptime", "running", "since", "last boot", "reboot"],
-
     # Docker
-    "docker_ps": ["docker", "containers", "running containers", "docker ps", "container list"],
+    "docker_ps": [
+        "docker",
+        "containers",
+        "running containers",
+        "docker ps",
+        "container list",
+    ],
     "docker_logs": ["logs", "container logs", "docker logs"],
     "docker_restart": ["restart container", "restart docker", "reboot container"],
-
     # Host
     "hosts": ["hosts", "servers", "machines", "list servers", "show servers"],
     "use_host": ["switch", "use", "connect to", "change server", "select server"],
-
     # Database
     "db_list": ["databases", "list databases", "show databases", "dbs"],
     "db_tables": ["tables", "database tables", "show tables"],
-
     # Utilities
     "weather": ["weather", "temperature", "forecast", "climate"],
-    "crypto": ["bitcoin", "btc", "eth", "ethereum", "crypto", "cryptocurrency", "price of"],
+    "crypto": [
+        "bitcoin",
+        "btc",
+        "eth",
+        "ethereum",
+        "crypto",
+        "cryptocurrency",
+        "price of",
+    ],
     "convert": ["convert", "exchange", "currency", "usd", "eur", "gbp"],
     "time": ["time", "timezone", "current time", "what time"],
-
     # Fun
     "flip": ["flip", "coin", "heads", "tails"],
     "roll": ["roll", "dice", "d6", "d20"],

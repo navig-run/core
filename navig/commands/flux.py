@@ -25,6 +25,7 @@ import typer
 
 try:
     import httpx
+
     _HTTPX = True
 except ImportError:
     _HTTPX = False
@@ -41,6 +42,7 @@ _GW = "http://127.0.0.1:8789"
 
 # ─────────────────────────── helpers ─────────────────────────────────────────
 
+
 def _daemon_offline_msg() -> str:
     return (
         "\n[OFFLINE]  NAVIG daemon is not running.\n"
@@ -55,6 +57,7 @@ def _daemon_offline_msg() -> str:
 def _get(path: str) -> dict:
     if not _HTTPX:
         import urllib.request
+
         try:
             with urllib.request.urlopen(f"{_GW}{path}", timeout=5) as r:
                 return json.loads(r.read())
@@ -76,9 +79,12 @@ def _get(path: str) -> dict:
 def _post(path: str, payload: dict) -> dict:
     if not _HTTPX:
         import urllib.request
+
         try:
             data = json.dumps(payload).encode()
-            req = urllib.request.Request(f"{_GW}{path}", data=data, headers={"Content-Type": "application/json"})
+            req = urllib.request.Request(
+                f"{_GW}{path}", data=data, headers={"Content-Type": "application/json"}
+            )
             with urllib.request.urlopen(req, timeout=10) as r:
                 return json.loads(r.read())
         except OSError as e:
@@ -109,7 +115,9 @@ def _lan_ip() -> str:
 
 def _table(rows: list, headers: list) -> None:
     all_rows = [headers] + [[str(c) for c in r] for r in rows]
-    widths = [max(len(r[i]) for r in all_rows if i < len(r)) for i in range(len(headers))]
+    widths = [
+        max(len(r[i]) for r in all_rows if i < len(r)) for i in range(len(headers))
+    ]
     sep = "─" * (sum(widths) + 3 * len(widths) + 1)
     fmt = " | ".join(f"{{:<{w}}}" for w in widths)
     typer.echo(sep)
@@ -123,10 +131,11 @@ def _table(rows: list, headers: list) -> None:
 
 # ─────────────────────────── commands ────────────────────────────────────────
 
+
 @flux_app.command("peers")
 def peers(
     json_out: bool = typer.Option(False, "--json", help="Output as JSON"),
-    plain:    bool = typer.Option(False, "--plain", help="Tab-separated (scripting)"),
+    plain: bool = typer.Option(False, "--plain", help="Tab-separated (scripting)"),
 ) -> None:
     """List all known mesh peers."""
     data = _get("/mesh/peers")
@@ -142,30 +151,46 @@ def peers(
 
     if plain:
         for p in peer_list:
-            typer.echo("\t".join([
-                p.get("node_id", "")[:16],
-                p.get("hostname", "-"),
-                p.get("os", "-"),
-                p.get("health", "-"),
-                str(p.get("load_pct", "-")),
-                p.get("gateway_url", "-"),
-            ]))
+            typer.echo(
+                "\t".join(
+                    [
+                        p.get("node_id", "")[:16],
+                        p.get("hostname", "-"),
+                        p.get("os", "-"),
+                        p.get("health", "-"),
+                        str(p.get("load_pct", "-")),
+                        p.get("gateway_url", "-"),
+                    ]
+                )
+            )
         return
 
     rows = []
     for p in peer_list:
         target = " ←" if p.get("is_current_target") else ""
-        rows.append([
-            p.get("node_id", "")[:14] + target,
-            p.get("hostname", "-"),
-            p.get("os", "-"),
-            p.get("health", "?"),
-            f"{float(p.get('load_pct', 0)):.0f}%" if p.get("load_pct") is not None else "-",
-            f"{float(p.get('rtt_ms', 0)):.0f}ms" if p.get("rtt_ms") is not None else "-",
-            p.get("gateway_url", "-"),
-        ])
+        rows.append(
+            [
+                p.get("node_id", "")[:14] + target,
+                p.get("hostname", "-"),
+                p.get("os", "-"),
+                p.get("health", "?"),
+                (
+                    f"{float(p.get('load_pct', 0)):.0f}%"
+                    if p.get("load_pct") is not None
+                    else "-"
+                ),
+                (
+                    f"{float(p.get('rtt_ms', 0)):.0f}ms"
+                    if p.get("rtt_ms") is not None
+                    else "-"
+                ),
+                p.get("gateway_url", "-"),
+            ]
+        )
     _table(rows, ["Node ID", "Hostname", "OS", "Health", "Load", "RTT", "Gateway"])
-    typer.echo(f"\n  {len(peer_list)} peer(s)   use `navig flux target <id>` to route\n")
+    typer.echo(
+        f"\n  {len(peer_list)} peer(s)   use `navig flux target <id>` to route\n"
+    )
 
 
 @flux_app.command("scan")
@@ -179,6 +204,7 @@ def scan(
     except SystemExit:
         pass  # subprocess called sys.exit; suppress
     import time
+
     time.sleep(wait)
     peers()
 
@@ -199,7 +225,9 @@ def target(
         typer.echo("Available peers:\n")
         for i, p in enumerate(peer_list):
             marker = "→" if p.get("is_current_target") else " "
-            typer.echo(f"  [{i + 1}] {marker} {p['node_id'][:16]}  {p.get('hostname', '')}  {p.get('gateway_url', '')}")
+            typer.echo(
+                f"  [{i + 1}] {marker} {p['node_id'][:16]}  {p.get('hostname', '')}  {p.get('gateway_url', '')}"
+            )
         raw = typer.prompt("\nEnter number or node_id").strip()
         if raw.isdigit():
             idx = int(raw) - 1
@@ -208,8 +236,12 @@ def target(
             node_id = raw
 
     match = next(
-        (p for p in peer_list
-         if p["node_id"].startswith(node_id) or p.get("hostname", "").lower() == node_id.lower()),
+        (
+            p
+            for p in peer_list
+            if p["node_id"].startswith(node_id)
+            or p.get("hostname", "").lower() == node_id.lower()
+        ),
         None,
     )
     if match is None:
@@ -217,7 +249,9 @@ def target(
         raise SystemExit(1)
 
     _post("/mesh/target", {"node_id": match["node_id"]})
-    typer.echo(f"🎯 Target set to: {match['node_id'][:16]}  ({match.get('hostname', '')})")
+    typer.echo(
+        f"🎯 Target set to: {match['node_id'][:16]}  ({match.get('hostname', '')})"
+    )
 
 
 @flux_app.command("clear")
@@ -228,6 +262,7 @@ def clear() -> None:
             httpx.delete(f"{_GW}/mesh/target", timeout=5)
         else:
             import urllib.request
+
             req = urllib.request.Request(f"{_GW}/mesh/target", method="DELETE")
             urllib.request.urlopen(req, timeout=5)
     except Exception:  # noqa: BLE001
@@ -246,9 +281,11 @@ def add_node(
 
 @flux_app.command("install")
 def install(
-    gateway: str          = typer.Option("", "--gateway", help="Source gateway URL"),
-    push:    bool         = typer.Option(False, "--push", help="Push install over SSH"),
-    peer:    Optional[str] = typer.Argument(None, help="Target node_id / hostname (for --push)"),
+    gateway: str = typer.Option("", "--gateway", help="Source gateway URL"),
+    push: bool = typer.Option(False, "--push", help="Push install over SSH"),
+    peer: Optional[str] = typer.Argument(
+        None, help="Target node_id / hostname (for --push)"
+    ),
 ) -> None:
     """Show one-liner install commands, or push the install to a peer (--push)."""
     src = gateway or f"http://{_lan_ip()}:8789"
@@ -259,7 +296,10 @@ def install(
             raise SystemExit(1)
         bash = f"curl -fsSL {src}/install/linux | bash"
         import subprocess
-        result = subprocess.run(["navig", "run", f"--host={peer}", bash], capture_output=True, text=True)
+
+        result = subprocess.run(
+            ["navig", "run", f"--host={peer}", bash], capture_output=True, text=True
+        )
         typer.echo(result.stdout)
         if result.returncode != 0:
             typer.echo(result.stderr, err=True)
@@ -267,7 +307,7 @@ def install(
 
     typer.echo("\n  📦  NAVIG — Add a machine to this mesh\n")
     typer.echo("  Windows (PowerShell 5+):")
-    typer.echo(f"    (iwr {src}/install/windows).Content | iex\n")
+    typer.echo(f"    & ([scriptblock]::Create((iwr {src}/install/windows).Content))\n")
     typer.echo("  Linux / macOS (bash):")
     typer.echo(f"    curl -fsSL {src}/install/linux | bash\n")
     typer.echo(f"  Install page: {src}/install\n")
@@ -290,6 +330,7 @@ def token(
     except SystemExit:
         try:
             from navig.config import load_config
+
             tok = load_config().get("gateway", {}).get("mesh_token", "")
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
@@ -303,10 +344,12 @@ def token(
     if copy:
         if platform.system() == "Windows":
             import subprocess
+
             subprocess.run(["clip"], input=tok.encode(), check=True)
             typer.echo("  ✓ Copied to clipboard.")
         elif platform.system() == "Darwin":
             import subprocess
+
             subprocess.run(["pbcopy"], input=tok.encode(), check=True)
             typer.echo("  ✓ Copied to clipboard.")
         else:
@@ -321,14 +364,16 @@ def status(
     data = _get("/mesh/peers")
     peer_list: list = data if isinstance(data, list) else data.get("peers", [])
 
-    healthy     = sum(1 for p in peer_list if p.get("health") == "healthy")
-    degraded    = sum(1 for p in peer_list if p.get("health") == "degraded")
+    healthy = sum(1 for p in peer_list if p.get("health") == "healthy")
+    degraded = sum(1 for p in peer_list if p.get("health") == "degraded")
     unreachable = len(peer_list) - healthy - degraded
     target_node = next((p for p in peer_list if p.get("is_current_target")), None)
 
     summary = {
-        "total": len(peer_list), "healthy": healthy,
-        "degraded": degraded, "unreachable": unreachable,
+        "total": len(peer_list),
+        "healthy": healthy,
+        "degraded": degraded,
+        "unreachable": unreachable,
         "target": target_node.get("node_id") if target_node else None,
         "local_ip": _lan_ip(),
     }

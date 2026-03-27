@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 # ── Capability ────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class Capability:
     """
@@ -28,10 +29,10 @@ class Capability:
     """
 
     slug: str
-    version: str                     = "1.0.0"
-    description: str                 = ""
-    parameters: Dict[str, Any]       = field(default_factory=dict)
-    metadata: Dict[str, Any]         = field(default_factory=dict)
+    version: str = "1.0.0"
+    description: str = ""
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     # ── Serialization ────────────────────────────────────────────────
 
@@ -55,6 +56,7 @@ class Capability:
 
 # ── TrustScore ─────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class TrustScore:
     """
@@ -75,11 +77,11 @@ class TrustScore:
     """
 
     node_id: str
-    score: float               = 1.0
-    total_missions: int        = 0
-    success_count: int         = 0
-    failure_count: int         = 0
-    cancel_count: int          = 0
+    score: float = 1.0
+    total_missions: int = 0
+    success_count: int = 0
+    failure_count: int = 0
+    cancel_count: int = 0
     avg_duration_secs: Optional[float] = None
     computed_at: Optional[str] = None
 
@@ -96,7 +98,7 @@ class TrustScore:
     def compute(
         cls,
         node_id: str,
-        receipts: List[Any],   # List[ExecutionReceipt] — avoid circular import
+        receipts: List[Any],  # List[ExecutionReceipt] — avoid circular import
     ) -> "TrustScore":
         """
         Compute a TrustScore from a list of ExecutionReceipts.
@@ -110,19 +112,23 @@ class TrustScore:
 
         from navig.contracts.execution_receipt import ReceiptOutcome
 
-        total    = len(receipts)
-        success  = sum(1 for r in receipts if r.outcome == ReceiptOutcome.SUCCEEDED)
-        failures = sum(1 for r in receipts if r.outcome in (ReceiptOutcome.FAILED, ReceiptOutcome.TIMED_OUT))
-        cancels  = sum(1 for r in receipts if r.outcome == ReceiptOutcome.CANCELLED)
+        total = len(receipts)
+        success = sum(1 for r in receipts if r.outcome == ReceiptOutcome.SUCCEEDED)
+        failures = sum(
+            1
+            for r in receipts
+            if r.outcome in (ReceiptOutcome.FAILED, ReceiptOutcome.TIMED_OUT)
+        )
+        cancels = sum(1 for r in receipts if r.outcome == ReceiptOutcome.CANCELLED)
 
         durations = [r.duration_secs for r in receipts if r.duration_secs is not None]
-        avg_dur   = sum(durations) / len(durations) if durations else None
+        avg_dur = sum(durations) / len(durations) if durations else None
 
         raw_rate = success / total if total > 0 else 1.0
 
         # Bayesian-ish decay: start conservative for new nodes
         # Converges to raw_rate as total → ∞
-        decay = total / (total + 10)          # 0 → 0.0, 10 → 0.5, 20 → 0.67, 100 → 0.91
+        decay = total / (total + 10)  # 0 → 0.0, 10 → 0.5, 20 → 0.67, 100 → 0.91
         score = raw_rate * decay + 0.5 * (1 - decay)  # blend toward 0.5 prior
 
         return cls(

@@ -80,6 +80,7 @@ try:
         is_perplexity_available,
         perplexity_search,
     )
+
     _PERPLEXITY_AVAILABLE = True
 except ImportError:
     _PERPLEXITY_AVAILABLE = False

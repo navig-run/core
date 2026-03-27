@@ -47,7 +47,7 @@ khal new
 khal search "Lunch"
 
 # Delete an event (interactive confirmation usually required, use --force if available in config or script wrapper)
-# Note: khal does not have a direct 'delete by ID' aimed at automation easily without interactive selection, 
+# Note: khal does not have a direct 'delete by ID' aimed at automation easily without interactive selection,
 # so 'search' + manual intervention is often safest for agents unless using a specific wrapper.
 ```
 
@@ -58,6 +58,3 @@ Combine with `task-warrior` for a complete daily plan:
 
 ## Configuration
 Requires configured `~/.config/khal/config` pointing to local vdirsyncer directories or local ics files.
-
-
-

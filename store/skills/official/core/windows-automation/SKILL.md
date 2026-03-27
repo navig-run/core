@@ -83,6 +83,3 @@ All scripts are located in `scripts/`.
 1. **Try `click_text` first**: It works even if the window is moved or resized.
 2. **Use `read_window`**: It sees text that screenshots might miss (or requires OCR).
 3. **AHK for Global**: Use AHK commands for things that don't depend on specific UI elements (volume, media, window states).
-
-
-

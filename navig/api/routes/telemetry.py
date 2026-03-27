@@ -26,6 +26,7 @@ Run:
   pip install "navig-core[api]"
   uvicorn api.main:app --host 0.0.0.0 --port 8765
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -75,11 +76,13 @@ async def _get_db() -> aiosqlite.Connection:
 class PingPayload(BaseModel):
     """Payload sent by the client on first install."""
 
-    event:    str = Field("install", max_length=32)
+    event: str = Field("install", max_length=32)
     platform: str = Field("unknown", max_length=64)
-    arch:     str = Field("unknown", max_length=64)
-    python:   str = Field("unknown", max_length=32)
-    anon_id:  str = Field(..., min_length=8, max_length=64, description="First-pass hash from client")
+    arch: str = Field("unknown", max_length=64)
+    python: str = Field("unknown", max_length=32)
+    anon_id: str = Field(
+        ..., min_length=8, max_length=64, description="First-pass hash from client"
+    )
 
 
 class PingResponse(BaseModel):
@@ -89,7 +92,7 @@ class PingResponse(BaseModel):
 
 class StatsResponse(BaseModel):
     total_installs: int
-    by_platform:    dict[str, int]
+    by_platform: dict[str, int]
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────

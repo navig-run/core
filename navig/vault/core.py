@@ -12,7 +12,13 @@ from typing import Any, Dict, List, Optional, Union
 from .encryption import VaultEncryption
 from .secret_str import SecretStr
 from .storage import VaultStorage
-from .types import PROVIDER_PRESETS, Credential, CredentialInfo, CredentialType, TestResult
+from .types import (
+    PROVIDER_PRESETS,
+    Credential,
+    CredentialInfo,
+    CredentialType,
+    TestResult,
+)
 from .validators import get_validator
 
 
@@ -235,7 +241,9 @@ class CredentialsVault:
 
         return cred
 
-    def get_by_id(self, credential_id: str, caller: str = "unknown") -> Optional[Credential]:
+    def get_by_id(
+        self, credential_id: str, caller: str = "unknown"
+    ) -> Optional[Credential]:
         """
         Get credential by its ID.
 

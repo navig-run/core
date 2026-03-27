@@ -42,9 +42,7 @@ def save_default_config() -> Path:
     """Write the default daemon config if it doesn't exist."""
     DAEMON_CONFIG.parent.mkdir(parents=True, exist_ok=True)
     if not DAEMON_CONFIG.exists():
-        DAEMON_CONFIG.write_text(
-            json.dumps(_load_config(), indent=2), encoding="utf-8"
-        )
+        DAEMON_CONFIG.write_text(json.dumps(_load_config(), indent=2), encoding="utf-8")
     return DAEMON_CONFIG
 
 
@@ -52,6 +50,7 @@ def main() -> None:
     # Load .env if available (for TELEGRAM_BOT_TOKEN etc.)
     try:
         from dotenv import load_dotenv
+
         # Try multiple locations: cwd, project root (relative to this file), ~/.navig
         project_root = Path(__file__).resolve().parent.parent.parent
         candidates = [

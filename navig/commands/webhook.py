@@ -9,6 +9,7 @@ Commands:
     navig webhook delete <id>      — Delete a webhook permanently
     navig webhook test <id>        — Send a test payload to an outbound webhook
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -27,6 +28,7 @@ _DAEMON_BASE = "http://127.0.0.1:7421"
 def _api(method: str, path: str, json=None):
     """Call the NAVIG host daemon REST API."""
     import httpx
+
     url = f"{_DAEMON_BASE}{path}"
     try:
         if method == "GET":
@@ -51,9 +53,11 @@ def _api(method: str, path: str, json=None):
 def webhook_list(json_output: bool = typer.Option(False, "--json")):
     """List all registered inbound and outbound webhooks."""
     import json as _json
+
     data = _api("GET", "/api/v1/webhooks")
     if json_output:
         from rich import print as rprint
+
         rprint(_json.dumps(data, indent=2))
         return
     from rich.console import Console
@@ -78,7 +82,10 @@ def webhook_list(json_output: bool = typer.Option(False, "--json")):
         t.add_column("Enabled")
         for wh in inbound:
             t.add_row(
-                wh["id"], wh["name"], wh["token"], wh.get("secret", "****"),
+                wh["id"],
+                wh["name"],
+                wh["token"],
+                wh.get("secret", "****"),
                 str(wh.get("trigger_count", 0)),
                 "✅" if wh["enabled"] else "⏸️",
             )
@@ -94,7 +101,9 @@ def webhook_list(json_output: bool = typer.Option(False, "--json")):
         for wh in outbound:
             events = ", ".join(wh.get("events") or []) or "all"
             t2.add_row(
-                wh["id"], wh["name"], wh["url"][:45],
+                wh["id"],
+                wh["name"],
+                wh["url"][:45],
                 events,
                 "✅" if wh["enabled"] else "⏸️",
             )
@@ -116,13 +125,16 @@ def webhook_add_inbound(
              -d '{"event":"deploy","branch":"main"}'
     """
     import json as _json
+
     result = _api("POST", "/api/v1/webhooks/inbound", json={"name": name})
     if json_output:
         from rich import print as rprint
+
         rprint(_json.dumps(result, indent=2))
         return
     wh = result.get("webhook", result)
     from rich.console import Console
+
     Console().print(
         f"\n[bold green]✅ Inbound webhook created[/bold green]\n"
         f"  ID:     [cyan]{wh.get('id')}[/cyan]\n"
@@ -138,9 +150,11 @@ def webhook_add_outbound(
     name: str = typer.Option(..., "--name", "-n", help="Human-readable name"),
     url: str = typer.Option(..., "--url", "-u", help="Target URL to POST events to"),
     events: Optional[str] = typer.Option(
-        None, "--events", "-e",
+        None,
+        "--events",
+        "-e",
         help="Comma-separated events to subscribe to. Empty = all. "
-             "Options: task_complete,task_fail,task_start,captcha,2fa"
+        "Options: task_complete,task_fail,task_start,captcha,2fa",
     ),
     json_output: bool = typer.Option(False, "--json"),
 ):
@@ -152,14 +166,21 @@ def webhook_add_outbound(
         navig webhook add-outbound --name Slack --url https://hooks.slack.com/... --events task_complete,task_fail
     """
     import json as _json
+
     event_list = [e.strip() for e in events.split(",")] if events else []
-    result = _api("POST", "/api/v1/webhooks/outbound", json={"name": name, "url": url, "events": event_list})
+    result = _api(
+        "POST",
+        "/api/v1/webhooks/outbound",
+        json={"name": name, "url": url, "events": event_list},
+    )
     if json_output:
         from rich import print as rprint
+
         rprint(_json.dumps(result, indent=2))
         return
     wh = result.get("webhook", result)
     from rich.console import Console
+
     Console().print(
         f"\n[bold green]✅ Outbound webhook registered[/bold green]\n"
         f"  ID:     [cyan]{wh.get('id')}[/cyan]\n"

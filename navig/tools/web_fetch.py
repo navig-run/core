@@ -4,6 +4,7 @@ WebFetchTool — Async HTTP page fetcher with markdown/text extraction.
 Falls back to existing navig.tools.web helpers if trafilatura is available,
 otherwise returns raw text with basic HTML stripping.
 """
+
 from __future__ import annotations
 
 import logging
@@ -23,8 +24,18 @@ class WebFetchTool(BaseTool):
     description = "Fetch a URL and return the main text content (max 5000 chars)."
     owner_only = False
     parameters = [
-        {"name": "url", "type": "string", "description": "The target URL to fetch text from", "required": True},
-        {"name": "css_selector", "type": "string", "description": "Optional CSS selector to target specific content", "required": False}
+        {
+            "name": "url",
+            "type": "string",
+            "description": "The target URL to fetch text from",
+            "required": True,
+        },
+        {
+            "name": "css_selector",
+            "type": "string",
+            "description": "Optional CSS selector to target specific content",
+            "required": False,
+        },
     ]
 
     async def run(
@@ -44,7 +55,9 @@ class WebFetchTool(BaseTool):
         try:
             import httpx
         except ImportError:
-            return ToolResult(name=self.name, success=False, error="httpx not installed")
+            return ToolResult(
+                name=self.name, success=False, error="httpx not installed"
+            )
 
         try:
             async with httpx.AsyncClient(
@@ -64,12 +77,19 @@ class WebFetchTool(BaseTool):
                 raw_html = resp.text
                 elapsed_ms = (time.monotonic() - t0) * 1000
 
-            await self._emit(on_status, "Reading response…", f"{len(raw_html):,} bytes · HTTP {status_code}", 55)
+            await self._emit(
+                on_status,
+                "Reading response…",
+                f"{len(raw_html):,} bytes · HTTP {status_code}",
+                55,
+            )
 
             text = _extract_text(raw_html)
             text = text[:_MAX_CHARS]
 
-            await self._emit(on_status, "Parsing content…", f"{len(text):,} chars extracted", 80)
+            await self._emit(
+                on_status, "Parsing content…", f"{len(text):,} chars extracted", 80
+            )
 
             return ToolResult(
                 name=self.name,
@@ -83,9 +103,13 @@ class WebFetchTool(BaseTool):
             )
 
         except httpx.TimeoutException:
-            return ToolResult(name=self.name, success=False, error="request timed out (15s)")
+            return ToolResult(
+                name=self.name, success=False, error="request timed out (15s)"
+            )
         except httpx.ConnectError as exc:
-            return ToolResult(name=self.name, success=False, error=f"connection failed: {exc}")
+            return ToolResult(
+                name=self.name, success=False, error=f"connection failed: {exc}"
+            )
         except Exception as exc:
             return ToolResult(name=self.name, success=False, error=str(exc))
 
@@ -95,6 +119,7 @@ def _extract_text(html: str) -> str:
     # Try trafilatura first for clean extraction
     try:
         import trafilatura
+
         text = trafilatura.extract(html, include_comments=False, include_tables=True)
         if text:
             return text.strip()
@@ -103,7 +128,9 @@ def _extract_text(html: str) -> str:
 
     # Fallback: basic HTML strip
     text = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(
+        r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL | re.IGNORECASE
+    )
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"&nbsp;", " ", text)
     text = re.sub(r"&amp;", "&", text)

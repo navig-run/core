@@ -2,15 +2,16 @@
 Tests for the audio file handler: classification, keyboard layout,
 MIME resolution, and STT routing.
 """
-import pytest
+
 from pathlib import Path
 
+import pytest
+
+from navig.gateway.channels.telegram_voice import _classify_audio
 
 # ---------------------------------------------------------------------------
 # _classify_audio tests
 # ---------------------------------------------------------------------------
-
-from navig.gateway.channels.telegram_voice import _classify_audio
 
 
 class TestClassifyAudio:
@@ -53,6 +54,7 @@ class TestClassifyAudio:
 # Smart keyboard: Detect Language button only for speech
 # ---------------------------------------------------------------------------
 
+
 class TestSmartKeyboard:
     """Check that _handle_audio_file_message produces the right button layout."""
 
@@ -66,7 +68,12 @@ class TestSmartKeyboard:
         is_speech = False
         row2 = [{"text": "ℹ️ Info", "callback_data": f"audmsg:info:{file_id}"}]
         if is_speech:
-            row2.append({"text": "🌐 Detect Language", "callback_data": f"audmsg:lang:{file_id}"})
+            row2.append(
+                {
+                    "text": "🌐 Detect Language",
+                    "callback_data": f"audmsg:lang:{file_id}",
+                }
+            )
         cb_data_list = [btn["callback_data"] for btn in row2]
         assert not any("lang" in d for d in cb_data_list)
 
@@ -76,7 +83,12 @@ class TestSmartKeyboard:
         is_speech = True
         row2 = [{"text": "ℹ️ Info", "callback_data": f"audmsg:info:{file_id}"}]
         if is_speech:
-            row2.append({"text": "🌐 Detect Language", "callback_data": f"audmsg:lang:{file_id}"})
+            row2.append(
+                {
+                    "text": "🌐 Detect Language",
+                    "callback_data": f"audmsg:lang:{file_id}",
+                }
+            )
         cb_data_list = [btn["callback_data"] for btn in row2]
         assert any("lang" in d for d in cb_data_list)
 
@@ -84,6 +96,7 @@ class TestSmartKeyboard:
 # ---------------------------------------------------------------------------
 # Callback payload size constraint (<= 64 bytes)
 # ---------------------------------------------------------------------------
+
 
 class TestCallbackPayloadSize:
     def test_payload_fits_64_bytes(self):
@@ -122,9 +135,10 @@ class TestResolveAudioFileParams:
         assert mime == "audio/mp4" or mime == "audio/x-m4a" or "m4a" in name
 
 
-
 # ---
 from navig.gateway.channels.audio_menu.config import PROVIDERS
+
+
 class TestAudioConfigLabels:
     def test_no_gender_symbols(self):
         assert chr(9792) not in str(PROVIDERS)

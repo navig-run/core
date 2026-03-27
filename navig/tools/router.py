@@ -26,11 +26,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set
 
-from navig.tools.schemas import (
-    ToolCallAction,
-    ToolResult,
-    ToolResultStatus,
-)
+from navig.tools.schemas import ToolCallAction, ToolResult, ToolResultStatus
 
 logger = logging.getLogger("navig.tools.router")
 
@@ -39,8 +35,10 @@ logger = logging.getLogger("navig.tools.router")
 # Enums
 # =============================================================================
 
+
 class ToolDomain(str, Enum):
     """Domain categories for tool packs."""
+
     WEB = "web"
     IMAGE = "image"
     CODE = "code"
@@ -51,6 +49,7 @@ class ToolDomain(str, Enum):
 
 class ToolStatus(str, Enum):
     """Availability status of a tool."""
+
     AVAILABLE = "available"
     UNAVAILABLE = "unavailable"
     DISABLED = "disabled"
@@ -59,6 +58,7 @@ class ToolStatus(str, Enum):
 
 class SafetyLevel(str, Enum):
     """Risk classification for a tool."""
+
     SAFE = "safe"
     MODERATE = "moderate"
     DANGEROUS = "dangerous"
@@ -79,6 +79,7 @@ class ToolMeta:
 
     Mirrors ChannelMeta from navig.gateway.channels.registry.
     """
+
     name: str
     domain: ToolDomain
     description: str = ""
@@ -175,6 +176,7 @@ TOOL_ALIASES: Dict[str, str] = {
 # =============================================================================
 # ToolRegistry
 # =============================================================================
+
 
 class ToolRegistry:
     """
@@ -321,7 +323,9 @@ class ToolRegistry:
             self.initialize()
         return sorted({t.domain.value for t in self._tools.values()})
 
-    def get_tools_for_llm_prompt(self, available_only: bool = True) -> List[Dict[str, Any]]:
+    def get_tools_for_llm_prompt(
+        self, available_only: bool = True
+    ) -> List[Dict[str, Any]]:
         """
         Return a JSON-serializable list of tool descriptors
         suitable for injection into the LLM system prompt.
@@ -356,7 +360,7 @@ class ToolRegistry:
             return "No tools registered."
         lines = [
             "| Tool | Domain | Safety | Description |",
-            "|------|--------|--------|-------------|" ,
+            "|------|--------|--------|-------------|",
         ]
         for t in tools:
             lines.append(
@@ -381,6 +385,7 @@ class ToolRegistry:
 # =============================================================================
 # ToolRouter - executes tool calls with safety checks
 # =============================================================================
+
 
 class ToolRouter:
     """
@@ -422,6 +427,7 @@ class ToolRouter:
         canonical = self.registry.normalize_tool_name(tool_name)
         if canonical is None:
             from navig.tools.hooks import ToolEvent, get_hook_registry
+
             get_hook_registry().fire(ToolEvent.NOT_FOUND, tool=tool_name)
             return ToolResult(
                 tool=tool_name,
@@ -469,6 +475,7 @@ class ToolRouter:
                 )
             if meta.safety == SafetyLevel.MODERATE:
                 from navig.safety_guard import classify_action_risk
+
                 params_str = str(action.parameters)
                 risk = classify_action_risk(params_str)
                 if risk in ("destructive", "risky"):
@@ -482,6 +489,7 @@ class ToolRouter:
             # Standard: check DANGEROUS for destructive, log MODERATE risky
             if meta.safety == SafetyLevel.DANGEROUS:
                 from navig.safety_guard import classify_action_risk
+
                 params_str = str(action.parameters)
                 risk = classify_action_risk(params_str)
                 if risk == "destructive":
@@ -493,6 +501,7 @@ class ToolRouter:
                     )
             if meta.safety == SafetyLevel.MODERATE:
                 from navig.safety_guard import classify_action_risk
+
                 params_str = str(action.parameters)
                 risk = classify_action_risk(params_str)
                 if risk == "destructive":
@@ -506,6 +515,7 @@ class ToolRouter:
             # Permissive: only check DANGEROUS for destructive patterns
             if meta.safety == SafetyLevel.DANGEROUS:
                 from navig.safety_guard import classify_action_risk
+
                 params_str = str(action.parameters)
                 risk = classify_action_risk(params_str)
                 if risk == "destructive":
@@ -527,6 +537,7 @@ class ToolRouter:
 
         # 6. Execute
         from navig.tools.hooks import ToolEvent, get_hook_registry
+
         _hooks = get_hook_registry()
         _hooks.fire(ToolEvent.BEFORE_EXECUTE, tool=canonical)
         try:
@@ -570,11 +581,13 @@ class ToolRouter:
         results = []
         for i, action in enumerate(actions):
             if i >= self._max_calls_per_turn:
-                results.append(ToolResult(
-                    tool=action.tool,
-                    status=ToolResultStatus.DENIED,
-                    error=f"Max calls per turn ({self._max_calls_per_turn}) exceeded",
-                ))
+                results.append(
+                    ToolResult(
+                        tool=action.tool,
+                        status=ToolResultStatus.DENIED,
+                        error=f"Max calls per turn ({self._max_calls_per_turn}) exceeded",
+                    )
+                )
                 break
             results.append(self.execute(action))
         return results

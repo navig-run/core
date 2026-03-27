@@ -191,5 +191,3 @@ navig run "rpm -qa | wc -l"
 - **Broken dependencies**: "Dependency issues detected. Try: `apt --fix-broken install`"
 - **Locked**: "Package manager is locked (another process is running). Wait or check `ps aux | grep apt`"
 - **No space**: "Not enough disk space to install. Free some space first."
-
-

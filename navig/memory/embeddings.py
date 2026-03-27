@@ -16,6 +16,7 @@ from typing import Optional
 
 try:
     import numpy as np
+
     HAS_NUMPY = True
 except ImportError:
     np = None  # type: ignore[assignment]
@@ -26,6 +27,7 @@ def _debug_log(message: str) -> None:
     """Simple debug logging wrapper."""
     try:
         from navig.debug_logger import DebugLogger
+
         logger = DebugLogger()
         logger.log_operation("memory", {"message": message})
     except Exception:
@@ -47,7 +49,7 @@ class EmbeddingConfig:
 class EmbeddingProvider(ABC):
     """
     Abstract base class for embedding providers.
-    
+
     Embeddings convert text to fixed-size vectors for similarity search.
     """
 
@@ -61,10 +63,10 @@ class EmbeddingProvider(ABC):
     def embed_text(self, text: str) -> list[float]:
         """
         Generate embedding for a single text.
-        
+
         Args:
             text: Input text
-            
+
         Returns:
             Float vector of dimension size
         """
@@ -74,10 +76,10 @@ class EmbeddingProvider(ABC):
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """
         Generate embeddings for multiple texts.
-        
+
         Args:
             texts: List of input texts
-            
+
         Returns:
             List of float vectors
         """
@@ -90,14 +92,14 @@ class EmbeddingProvider(ABC):
     ) -> float:
         """
         Compute cosine similarity between two vectors.
-        
+
         Args:
             vec1: First vector
             vec2: Second vector
-            
+
         Returns:
             Similarity score between -1 and 1
-        
+
         Raises:
             ImportError: If numpy is not installed
         """
@@ -121,10 +123,10 @@ class EmbeddingProvider(ABC):
 class LocalEmbeddingProvider(EmbeddingProvider):
     """
     Local embedding provider using sentence-transformers.
-    
+
     Runs entirely on-device, no API calls needed.
     Models are cached in ~/.cache/torch/sentence_transformers/
-    
+
     Usage:
         provider = LocalEmbeddingProvider()
         vec = provider.embed_text("Hello world")
@@ -132,11 +134,11 @@ class LocalEmbeddingProvider(EmbeddingProvider):
 
     # Model dimension mappings
     MODEL_DIMENSIONS = {
-        'all-MiniLM-L6-v2': 384,
-        'all-mpnet-base-v2': 768,
-        'all-MiniLM-L12-v2': 384,
-        'paraphrase-MiniLM-L6-v2': 384,
-        'multi-qa-mpnet-base-dot-v1': 768,
+        "all-MiniLM-L6-v2": 384,
+        "all-mpnet-base-v2": 768,
+        "all-MiniLM-L12-v2": 384,
+        "paraphrase-MiniLM-L6-v2": 384,
+        "multi-qa-mpnet-base-dot-v1": 768,
     }
 
     def __init__(
@@ -163,7 +165,7 @@ class LocalEmbeddingProvider(EmbeddingProvider):
 
                 kwargs = {}
                 if self.cache_dir:
-                    kwargs['cache_folder'] = str(self.cache_dir)
+                    kwargs["cache_folder"] = str(self.cache_dir)
 
                 self._model = SentenceTransformer(self.model_name, **kwargs)
 
@@ -203,19 +205,19 @@ class LocalEmbeddingProvider(EmbeddingProvider):
 class OpenAIEmbeddingProvider(EmbeddingProvider):
     """
     OpenAI embedding provider.
-    
+
     Requires OPENAI_API_KEY environment variable or explicit key.
     Uses text-embedding-3-small by default (1536 dimensions).
-    
+
     Usage:
         provider = OpenAIEmbeddingProvider(api_key="sk-...")
         vec = provider.embed_text("Hello world")
     """
 
     MODEL_DIMENSIONS = {
-        'text-embedding-3-small': 1536,
-        'text-embedding-3-large': 3072,
-        'text-embedding-ada-002': 1536,
+        "text-embedding-3-small": 1536,
+        "text-embedding-3-large": 3072,
+        "text-embedding-ada-002": 1536,
     }
 
     def __init__(
@@ -248,9 +250,9 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
             try:
                 from openai import OpenAI
 
-                kwargs = {'api_key': self.api_key}
+                kwargs = {"api_key": self.api_key}
                 if self.base_url:
-                    kwargs['base_url'] = self.base_url
+                    kwargs["base_url"] = self.base_url
 
                 self._client = OpenAI(**kwargs)
                 _debug_log("Initialized OpenAI client for embeddings")
@@ -295,9 +297,9 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
 class CachedEmbeddingProvider(EmbeddingProvider):
     """
     Wrapper that caches embeddings to disk.
-    
+
     Useful for avoiding repeated computation of the same texts.
-    
+
     Usage:
         base = LocalEmbeddingProvider()
         cached = CachedEmbeddingProvider(base, cache_dir=Path('.cache/embeddings'))
@@ -343,7 +345,7 @@ class CachedEmbeddingProvider(EmbeddingProvider):
     def _save_cache(self) -> None:
         """Save cache to disk."""
         try:
-            with open(self._cache_file(), 'w') as f:
+            with open(self._cache_file(), "w") as f:
                 json.dump(self._cache, f)
         except Exception as e:
             _debug_log(f"Failed to save embedding cache: {e}")
@@ -398,10 +400,10 @@ class CachedEmbeddingProvider(EmbeddingProvider):
 def get_embedding_provider(config: EmbeddingConfig) -> EmbeddingProvider:
     """
     Factory function to create embedding provider from config.
-    
+
     Args:
         config: Embedding configuration
-        
+
     Returns:
         Configured embedding provider
     """

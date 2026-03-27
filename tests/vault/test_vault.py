@@ -395,7 +395,9 @@ class TestCredentialsVault:
     def test_list_credentials(self, vault):
         """Test listing credentials."""
         vault.add(provider="openai", credential_type="api_key", data={"api_key": "k1"})
-        vault.add(provider="anthropic", credential_type="api_key", data={"api_key": "k2"})
+        vault.add(
+            provider="anthropic", credential_type="api_key", data={"api_key": "k2"}
+        )
 
         creds = vault.list()
         assert len(creds) == 2
@@ -506,7 +508,11 @@ class TestValidators:
 
     def test_get_validator(self):
         """Test validator registry."""
-        from navig.vault.validators import get_validator, GenericValidator, OpenAIValidator
+        from navig.vault.validators import (
+            GenericValidator,
+            OpenAIValidator,
+            get_validator,
+        )
 
         validator = get_validator("openai")
         assert isinstance(validator, OpenAIValidator)
@@ -1038,7 +1044,9 @@ class TestValidatorsMocked:
             status_code=200,
             json=lambda: {"username": "user", "name": "Test", "email": "t@t.com"},
         )
-        cred = self._make_cred("gitlab", {"token": "glpat-test"}, {"base_url": "https://gitlab.com"})
+        cred = self._make_cred(
+            "gitlab", {"token": "glpat-test"}, {"base_url": "https://gitlab.com"}
+        )
         result = GitLabValidator().validate(cred)
         assert result.success
 
@@ -1062,13 +1070,17 @@ class TestValidatorsMocked:
         from navig.vault.validators import JiraValidator
 
         # Missing token
-        cred = self._make_cred("jira", {}, {"email": "a@b.com", "base_url": "https://x.atlassian.net"})
+        cred = self._make_cred(
+            "jira", {}, {"email": "a@b.com", "base_url": "https://x.atlassian.net"}
+        )
         result = JiraValidator().validate(cred)
         assert not result.success
         assert "token" in result.message.lower() or "empty" in result.message.lower()
 
         # Missing email
-        cred = self._make_cred("jira", {"api_key": "tok"}, {"base_url": "https://x.atlassian.net"})
+        cred = self._make_cred(
+            "jira", {"api_key": "tok"}, {"base_url": "https://x.atlassian.net"}
+        )
         result = JiraValidator().validate(cred)
         assert not result.success
         assert "Email" in result.message
@@ -1085,7 +1097,11 @@ class TestValidatorsMocked:
 
         mock_get.return_value = MagicMock(
             status_code=200,
-            json=lambda: {"displayName": "User", "emailAddress": "a@b.com", "accountType": "atlassian"},
+            json=lambda: {
+                "displayName": "User",
+                "emailAddress": "a@b.com",
+                "accountType": "atlassian",
+            },
         )
         cred = self._make_cred(
             "jira",

@@ -13,6 +13,7 @@ from navig.tools.interfaces import (
 
 logger = logging.getLogger(__name__)
 
+
 class ToolExecutor:
     """
     Executes a single ToolSpec against an ExecutionRequest in a strict pipeline:
@@ -49,7 +50,7 @@ class ToolExecutor:
         # 3. Setup streaming callback
         async def on_event(event: ExecutionEvent) -> None:
             # this callback allows the inner tool to stream explicitly if it supports it
-            pass # The loop below handles the direct yields instead of callbacks, but we can pass it if needed.
+            pass  # The loop below handles the direct yields instead of callbacks, but we can pass it if needed.
 
         # 4. Execute with timeout and cancellation
         try:
@@ -64,7 +65,7 @@ class ToolExecutor:
                 done, pending = await asyncio.wait(
                     [cancel_task, exec_task],
                     timeout=request.timeout_s,
-                    return_when=asyncio.FIRST_COMPLETED
+                    return_when=asyncio.FIRST_COMPLETED,
                 )
 
                 if cancel_task in done:
@@ -75,7 +76,10 @@ class ToolExecutor:
                     # Timeout
                     exec_task.cancel()
                     cancel_task.cancel()
-                    yield StreamError(f"Execution timed out after {request.timeout_s}s", code="timeout")
+                    yield StreamError(
+                        f"Execution timed out after {request.timeout_s}s",
+                        code="timeout",
+                    )
                     return
                 else:
                     cancel_task.cancel()
@@ -89,7 +93,9 @@ class ToolExecutor:
             yield StreamFinal(output=output)
 
         except asyncio.TimeoutError:
-            yield StreamError(f"Execution timed out after {request.timeout_s}s", code="timeout")
+            yield StreamError(
+                f"Execution timed out after {request.timeout_s}s", code="timeout"
+            )
         except asyncio.CancelledError:
             yield StreamError("Execution cancelled", code="cancelled")
         except Exception as e:
@@ -109,6 +115,7 @@ class ToolExecutor:
         """Safely invokes the underlying python function."""
         # Provide context if the handler asks for it, otherwise just pass args
         import inspect
+
         sig = inspect.signature(self.handler)
 
         kwargs = dict(request.args)
@@ -120,4 +127,3 @@ class ToolExecutor:
         else:
             # Run sync functions in threadpool
             return await asyncio.to_thread(self.handler, **kwargs)
-

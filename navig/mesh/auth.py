@@ -41,12 +41,13 @@ from typing import Optional
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 _ENV_KEY = "NAVIG_MESH_SECRET"
-HMAC_FIELD = "hmac"             # JSON field name for the MAC tag
-_DIGEST_SIZE = 32               # bytes → 64 hex chars (BLAKE2b-256)
-_MAX_KEY_LEN = 64               # BLAKE2b key limit in bytes
+HMAC_FIELD = "hmac"  # JSON field name for the MAC tag
+_DIGEST_SIZE = 32  # bytes → 64 hex chars (BLAKE2b-256)
+_MAX_KEY_LEN = 64  # BLAKE2b key limit in bytes
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
+
 
 def load_secret(config_secret: Optional[str] = None) -> Optional[bytes]:
     """Return the mesh shared secret as bytes, or ``None`` if not configured.
@@ -112,6 +113,7 @@ def attach_hmac(payload: dict, secret: bytes) -> dict:
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
+
 
 def _canonical_bytes(payload: dict) -> bytes:
     """Return the stable canonical JSON representation of payload.

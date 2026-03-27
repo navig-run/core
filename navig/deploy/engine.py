@@ -51,13 +51,13 @@ class DeployEngine:
         project_root: Path = Path("."),
         verbose: bool = False,
     ):
-        self._cfg         = config
-        self._server      = server_config
-        self._remote      = remote_ops
-        self._cache_dir   = cache_dir
+        self._cfg = config
+        self._server = server_config
+        self._remote = remote_ops
+        self._cache_dir = cache_dir
         self._project_root = project_root
-        self._verbose     = verbose
-        self._dry_run     = False   # set at run() time
+        self._verbose = verbose
+        self._dry_run = False  # set at run() time
 
         self._rollback_mgr: Optional[RollbackManager] = None
         self._snapshot: Optional[SnapshotRecord] = None
@@ -82,7 +82,7 @@ class DeployEngine:
         phases: List[PhaseResult] = []
         started_at = datetime.now(tz=timezone.utc)
         host_name = self._server.get("name", self._server.get("host", "unknown"))
-        app_name  = self._cfg.app or "app"
+        app_name = self._cfg.app or "app"
 
         def emit(phase: DeployPhase, status: str, msg: str) -> None:
             if on_progress:
@@ -182,7 +182,7 @@ class DeployEngine:
 
         # ── Success ─────────────────────────────────────────────────
         result.success = True
-        result.phases  = phases
+        result.phases = phases
         result.snapshot = self._snapshot
         result.finished_at = datetime.now(tz=timezone.utc)
 
@@ -253,12 +253,16 @@ class DeployEngine:
         emit(phase, "ok", msg)
         return PhaseResult(phase=phase, success=True, message=msg, elapsed=elapsed)
 
-    def _phase_backup(self, emit: ProgressCallback, dry_run: bool, skip: bool = False) -> PhaseResult:
+    def _phase_backup(
+        self, emit: ProgressCallback, dry_run: bool, skip: bool = False
+    ) -> PhaseResult:
         t0 = time.perf_counter()
         phase = DeployPhase.BACKUP
         if skip:
             emit(phase, "skip", "backup disabled")
-            return PhaseResult(phase=phase, success=True, message="skipped", skipped=True, elapsed=0.0)
+            return PhaseResult(
+                phase=phase, success=True, message="skipped", skipped=True, elapsed=0.0
+            )
 
         emit(phase, "start", "")
         try:
@@ -301,11 +305,15 @@ class DeployEngine:
                 # Parse rsync summary line: "sent X bytes  received Y bytes"
                 summary = self._parse_rsync_summary(r.stdout)
                 emit(phase, "ok", summary)
-                return PhaseResult(phase=phase, success=True, message=summary, elapsed=elapsed)
+                return PhaseResult(
+                    phase=phase, success=True, message=summary, elapsed=elapsed
+                )
             else:
                 msg = (r.stderr or r.stdout).strip()[:300]
                 emit(phase, "fail", msg)
-                return PhaseResult(phase=phase, success=False, message=msg, elapsed=elapsed)
+                return PhaseResult(
+                    phase=phase, success=False, message=msg, elapsed=elapsed
+                )
         except subprocess.TimeoutExpired:
             elapsed = time.perf_counter() - t0
             msg = "rsync timed out after 300s"
@@ -324,7 +332,9 @@ class DeployEngine:
 
         if not cmds:
             emit(phase, "skip", "no apply commands")
-            return PhaseResult(phase=phase, success=True, message="skipped", skipped=True, elapsed=0.0)
+            return PhaseResult(
+                phase=phase, success=True, message="skipped", skipped=True, elapsed=0.0
+            )
 
         emit(phase, "start", "")
 
@@ -340,10 +350,16 @@ class DeployEngine:
                 elapsed = time.perf_counter() - t0
                 msg = f"`{cmd}` failed: {(r.stderr or r.stdout).strip()[:200]}"
                 emit(phase, "fail", msg)
-                return PhaseResult(phase=phase, success=False, message=msg, elapsed=elapsed)
+                return PhaseResult(
+                    phase=phase, success=False, message=msg, elapsed=elapsed
+                )
 
         elapsed = time.perf_counter() - t0
-        msg = f"{len(cmds)} command(s) applied" if not dry_run else f"[DRY RUN] {len(cmds)} command(s)"
+        msg = (
+            f"{len(cmds)} command(s) applied"
+            if not dry_run
+            else f"[DRY RUN] {len(cmds)} command(s)"
+        )
         emit(phase, "ok", msg)
         return PhaseResult(phase=phase, success=True, message=msg, elapsed=elapsed)
 
@@ -356,7 +372,9 @@ class DeployEngine:
         enriched_server = {**self._server, "_deploy_target_root": self._cfg.push.target}
 
         try:
-            adapter = build_adapter(self._cfg.restart, enriched_server, self._remote, dry_run)
+            adapter = build_adapter(
+                self._cfg.restart, enriched_server, self._remote, dry_run
+            )
         except ValueError as exc:
             elapsed = time.perf_counter() - t0
             msg = str(exc)
@@ -372,10 +390,14 @@ class DeployEngine:
             if not dry_run:
                 time.sleep(settle)
             emit(phase, "ok", detail)
-            return PhaseResult(phase=phase, success=True, message=detail, elapsed=elapsed)
+            return PhaseResult(
+                phase=phase, success=True, message=detail, elapsed=elapsed
+            )
         else:
             emit(phase, "fail", detail)
-            return PhaseResult(phase=phase, success=False, message=detail, elapsed=elapsed)
+            return PhaseResult(
+                phase=phase, success=False, message=detail, elapsed=elapsed
+            )
 
     def _phase_health(self, emit: ProgressCallback, dry_run: bool) -> PhaseResult:
         t0 = time.perf_counter()
@@ -418,7 +440,9 @@ class DeployEngine:
     # Rollback helper
     # ------------------------------------------------------------------
 
-    def _maybe_rollback(self, result: DeployResult, emit: ProgressCallback) -> DeployResult:
+    def _maybe_rollback(
+        self, result: DeployResult, emit: ProgressCallback
+    ) -> DeployResult:
         """Execute automatic rollback and update result accordingly."""
         if not self._rollback_mgr:
             return result
@@ -437,13 +461,17 @@ class DeployEngine:
         # Restart after restore
         enriched = {**self._server, "_deploy_target_root": self._cfg.push.target}
         try:
-            adapter = build_adapter(self._cfg.restart, enriched, self._remote, self._dry_run)
+            adapter = build_adapter(
+                self._cfg.restart, enriched, self._remote, self._dry_run
+            )
             adapter.restart()
         except Exception as exc:
             logger.warning("Restart after rollback failed: %s", exc)
 
         # Post-rollback health check
-        checker = HealthChecker(self._cfg.health, self._server, self._remote, self._dry_run)
+        checker = HealthChecker(
+            self._cfg.health, self._server, self._remote, self._dry_run
+        )
         checker.check()
 
         result.rolled_back = True
@@ -453,11 +481,13 @@ class DeployEngine:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _build_rsync_cmd(self, source: str, target: str, excludes: List[str]) -> List[str]:
+    def _build_rsync_cmd(
+        self, source: str, target: str, excludes: List[str]
+    ) -> List[str]:
         server = self._server
-        host   = f"{server['user']}@{server['host']}"
-        port   = server.get("port", 22)
-        key    = server.get("ssh_key", "")
+        host = f"{server['user']}@{server['host']}"
+        port = server.get("port", 22)
+        key = server.get("ssh_key", "")
 
         ssh_opts = ["-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=10"]
         if port != 22:
@@ -468,9 +498,10 @@ class DeployEngine:
 
         cmd = [
             "rsync",
-            "-az",              # archive + compress
-            "--delete",         # remove files deleted locally
-            "-e", ssh_cmd,
+            "-az",  # archive + compress
+            "--delete",  # remove files deleted locally
+            "-e",
+            ssh_cmd,
         ]
         for exc in excludes:
             cmd += ["--exclude", exc]
@@ -497,7 +528,9 @@ class DeployEngine:
         try:
             r = subprocess.run(
                 ["git", "rev-parse", "--short", "HEAD"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             return r.stdout.strip() if r.returncode == 0 else None
         except Exception:
@@ -508,11 +541,10 @@ class DeployEngine:
             keep = 50
             try:
                 from navig.config import get_config_manager
+
                 cm = get_config_manager()
                 keep = int(
-                    cm._load_global_config()
-                    .get("deploy", {})
-                    .get("history_keep", 50)
+                    cm._load_global_config().get("deploy", {}).get("history_keep", 50)
                 )
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical

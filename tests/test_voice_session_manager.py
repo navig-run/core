@@ -1,14 +1,19 @@
-import pytest
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock
 
-from navig.voice.session_manager import VoiceSessionManager, SessionState, SessionConfig
+import pytest
+
+from navig.voice.session_manager import SessionConfig, SessionState, VoiceSessionManager
 
 
 @pytest.fixture
 async def manager():
-    m = VoiceSessionManager(config=SessionConfig(silence_timeout_seconds=0.01, max_listen_seconds=0.1, min_audio_ms=0))
+    m = VoiceSessionManager(
+        config=SessionConfig(
+            silence_timeout_seconds=0.01, max_listen_seconds=0.1, min_audio_ms=0
+        )
+    )
     await m.start()
     yield m
     await m.stop()
@@ -25,7 +30,7 @@ async def test_session_lifecycle(manager):
     # Feed audio
     await manager.feed_audio(b"audio_bytes", session_id=session.id)
     await asyncio.sleep(0.05)
-    
+
     # Transition to processing by stopping listening
     await manager.stop_listening(session_id=session.id)
     await asyncio.sleep(0.05)

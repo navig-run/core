@@ -27,6 +27,7 @@ logger = get_debug_logger()
 
 class EventPriority(Enum):
     """Event priority levels."""
+
     LOW = 0
     NORMAL = 1
     HIGH = 2
@@ -36,6 +37,7 @@ class EventPriority(Enum):
 @dataclass
 class SystemEvent:
     """A system event."""
+
     id: str
     event_type: str
     payload: Dict[str, Any]
@@ -46,25 +48,25 @@ class SystemEvent:
 
     def to_dict(self) -> dict:
         return {
-            'id': self.id,
-            'event_type': self.event_type,
-            'payload': self.payload,
-            'priority': self.priority.name,
-            'timestamp': self.timestamp.isoformat(),
-            'processed': self.processed,
-            'error': self.error,
+            "id": self.id,
+            "event_type": self.event_type,
+            "payload": self.payload,
+            "priority": self.priority.name,
+            "timestamp": self.timestamp.isoformat(),
+            "processed": self.processed,
+            "error": self.error,
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'SystemEvent':
+    def from_dict(cls, data: dict) -> "SystemEvent":
         return cls(
-            id=data['id'],
-            event_type=data['event_type'],
-            payload=data['payload'],
-            priority=EventPriority[data['priority']],
-            timestamp=datetime.fromisoformat(data['timestamp']),
-            processed=data.get('processed', False),
-            error=data.get('error'),
+            id=data["id"],
+            event_type=data["event_type"],
+            payload=data["payload"],
+            priority=EventPriority[data["priority"]],
+            timestamp=datetime.fromisoformat(data["timestamp"]),
+            processed=data.get("processed", False),
+            error=data.get("error"),
         )
 
 
@@ -75,7 +77,7 @@ EventHandler = Callable[[SystemEvent], Any]
 class SystemEventQueue:
     """
     Persistent event queue for background tasks.
-    
+
     Features:
     - Priority-based processing
     - Event persistence to disk
@@ -83,11 +85,7 @@ class SystemEventQueue:
     - Event history
     """
 
-    def __init__(
-        self,
-        storage_path: Path,
-        max_history: int = 1000
-    ):
+    def __init__(self, storage_path: Path, max_history: int = 1000):
         self.storage_path = storage_path
         self.max_history = max_history
 
@@ -117,7 +115,7 @@ class SystemEventQueue:
         self._load_events()
 
     def _get_events_path(self) -> Path:
-        return self.storage_path / 'events.json'
+        return self.storage_path / "events.json"
 
     def _load_events(self) -> None:
         """Load pending events from disk."""
@@ -128,12 +126,12 @@ class SystemEventQueue:
                 data = json.loads(events_path.read_text())
 
                 # Load pending events
-                for event_data in data.get('pending', []):
+                for event_data in data.get("pending", []):
                     event = SystemEvent.from_dict(event_data)
                     self._pending[event.id] = event
 
                 # Load counter
-                self._event_counter = data.get('counter', 0)
+                self._event_counter = data.get("counter", 0)
 
                 logger.info(f"Loaded {len(self._pending)} pending events")
 
@@ -145,8 +143,8 @@ class SystemEventQueue:
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
         data = {
-            'counter': self._event_counter,
-            'pending': [e.to_dict() for e in self._pending.values()],
+            "counter": self._event_counter,
+            "pending": [e.to_dict() for e in self._pending.values()],
         }
 
         self._get_events_path().write_text(json.dumps(data, indent=2))
@@ -167,7 +165,7 @@ class SystemEventQueue:
         for event in sorted(
             self._pending.values(),
             key=lambda e: (e.priority.value, e.timestamp),
-            reverse=True  # Higher priority first
+            reverse=True,  # Higher priority first
         ):
             await self._queue.put(event)
 
@@ -196,16 +194,16 @@ class SystemEventQueue:
         self,
         event_type: str,
         payload: Optional[Dict[str, Any]] = None,
-        priority: EventPriority = EventPriority.NORMAL
+        priority: EventPriority = EventPriority.NORMAL,
     ) -> str:
         """
         Emit an event.
-        
+
         Args:
             event_type: Type of event (e.g., 'host_check', 'config_reloaded')
             payload: Event data
             priority: Processing priority
-            
+
         Returns:
             Event ID
         """
@@ -228,19 +226,15 @@ class SystemEventQueue:
 
         return event.id
 
-    def subscribe(
-        self,
-        event_type: str,
-        handler: EventHandler
-    ) -> None:
+    def subscribe(self, event_type: str, handler: EventHandler) -> None:
         """
         Subscribe to events of a specific type.
-        
+
         Args:
             event_type: Event type to subscribe to, or '*' for all
             handler: Callback function
         """
-        if event_type == '*':
+        if event_type == "*":
             self._wildcard_subscribers.append(handler)
         else:
             if event_type not in self._subscribers:
@@ -249,13 +243,9 @@ class SystemEventQueue:
 
         logger.debug(f"Subscribed to event: {event_type}")
 
-    def unsubscribe(
-        self,
-        event_type: str,
-        handler: EventHandler
-    ) -> None:
+    def unsubscribe(self, event_type: str, handler: EventHandler) -> None:
         """Unsubscribe from events."""
-        if event_type == '*':
+        if event_type == "*":
             if handler in self._wildcard_subscribers:
                 self._wildcard_subscribers.remove(handler)
         else:
@@ -269,10 +259,7 @@ class SystemEventQueue:
             try:
                 # Get event with timeout
                 try:
-                    event = await asyncio.wait_for(
-                        self._queue.get(),
-                        timeout=1.0
-                    )
+                    event = await asyncio.wait_for(self._queue.get(), timeout=1.0)
                 except asyncio.TimeoutError:
                     continue
 
@@ -321,7 +308,7 @@ class SystemEventQueue:
 
         # Trim history
         if len(self._history) > self.max_history:
-            self._history = self._history[-self.max_history:]
+            self._history = self._history[-self.max_history :]
 
         self._save_events()
 
@@ -330,9 +317,7 @@ class SystemEventQueue:
         return list(self._pending.values())
 
     def get_history(
-        self,
-        event_type: Optional[str] = None,
-        limit: int = 50
+        self, event_type: Optional[str] = None, limit: int = 50
     ) -> List[SystemEvent]:
         """Get event history."""
         events = self._history
@@ -348,51 +333,51 @@ class EventTypes:
     """Standard event type constants."""
 
     # Host events
-    HOST_CHECK = 'host_check'
-    HOST_DOWN = 'host_down'
-    HOST_UP = 'host_up'
-    HOST_DISK_WARNING = 'host_disk_warning'
-    HOST_MEMORY_WARNING = 'host_memory_warning'
+    HOST_CHECK = "host_check"
+    HOST_DOWN = "host_down"
+    HOST_UP = "host_up"
+    HOST_DISK_WARNING = "host_disk_warning"
+    HOST_MEMORY_WARNING = "host_memory_warning"
 
     # Certificate events
-    CERT_EXPIRY_WARNING = 'cert_expiry_warning'
-    CERT_EXPIRED = 'cert_expired'
+    CERT_EXPIRY_WARNING = "cert_expiry_warning"
+    CERT_EXPIRED = "cert_expired"
 
     # Service events
-    SERVICE_DOWN = 'service_down'
-    SERVICE_UP = 'service_up'
-    SERVICE_RESTARTED = 'service_restarted'
+    SERVICE_DOWN = "service_down"
+    SERVICE_UP = "service_up"
+    SERVICE_RESTARTED = "service_restarted"
 
     # Configuration events
-    CONFIG_RELOADED = 'config_reloaded'
-    CONFIG_ERROR = 'config_error'
+    CONFIG_RELOADED = "config_reloaded"
+    CONFIG_ERROR = "config_error"
 
     # Session events
-    SESSION_CREATED = 'session_created'
-    SESSION_EXPIRED = 'session_expired'
+    SESSION_CREATED = "session_created"
+    SESSION_EXPIRED = "session_expired"
 
     # Heartbeat events
-    HEARTBEAT_START = 'heartbeat_start'
-    HEARTBEAT_COMPLETE = 'heartbeat_complete'
-    HEARTBEAT_FAILED = 'heartbeat_failed'
+    HEARTBEAT_START = "heartbeat_start"
+    HEARTBEAT_COMPLETE = "heartbeat_complete"
+    HEARTBEAT_FAILED = "heartbeat_failed"
 
     # Cron events
-    CRON_JOB_START = 'cron_job_start'
-    CRON_JOB_COMPLETE = 'cron_job_complete'
-    CRON_JOB_FAILED = 'cron_job_failed'
+    CRON_JOB_START = "cron_job_start"
+    CRON_JOB_COMPLETE = "cron_job_complete"
+    CRON_JOB_FAILED = "cron_job_failed"
 
     # Notification events
-    NOTIFICATION_SENT = 'notification_sent'
-    NOTIFICATION_SUPPRESSED = 'notification_suppressed'
+    NOTIFICATION_SENT = "notification_sent"
+    NOTIFICATION_SUPPRESSED = "notification_suppressed"
 
     # Workspace events
-    WORKSPACE_FILE_CHANGED = 'workspace_file_changed'
+    WORKSPACE_FILE_CHANGED = "workspace_file_changed"
 
 
 class SmartNotificationFilter:
     """
     Filters notifications based on context and patterns.
-    
+
     Features:
     - HEARTBEAT_OK suppression
     - Duplicate suppression
@@ -412,32 +397,35 @@ class SmartNotificationFilter:
         self.event_queue = event_queue
         self.cooldown_seconds = cooldown_seconds
         self.quiet_hours_enabled = bool(
-            quiet_hours_enabled if quiet_hours_enabled is not None else _env_bool("NAVIG_QUIET_HOURS_ENABLED", False)
+            quiet_hours_enabled
+            if quiet_hours_enabled is not None
+            else _env_bool("NAVIG_QUIET_HOURS_ENABLED", False)
         )
-        self.quiet_hours_start = int(os.getenv("NAVIG_QUIET_HOURS_START", quiet_hours_start))
+        self.quiet_hours_start = int(
+            os.getenv("NAVIG_QUIET_HOURS_START", quiet_hours_start)
+        )
         self.quiet_hours_end = int(os.getenv("NAVIG_QUIET_HOURS_END", quiet_hours_end))
         self.notifications_enabled = bool(
-            notifications_enabled if notifications_enabled is not None else _env_bool("NAVIG_NOTIFICATIONS_ENABLED", True)
+            notifications_enabled
+            if notifications_enabled is not None
+            else _env_bool("NAVIG_NOTIFICATIONS_ENABLED", True)
         )
 
         # Track recent notifications for dedup
         self._recent: Dict[str, datetime] = {}
 
         # Subscribe to notification events
-        event_queue.subscribe(
-            EventTypes.NOTIFICATION_SENT,
-            self._on_notification
-        )
+        event_queue.subscribe(EventTypes.NOTIFICATION_SENT, self._on_notification)
 
     async def should_notify(
         self,
         notification_type: str,
         message: str,
-        priority: EventPriority = EventPriority.NORMAL
+        priority: EventPriority = EventPriority.NORMAL,
     ) -> bool:
         """
         Determine if a notification should be sent.
-        
+
         Returns False for:
         - HEARTBEAT_OK messages
         - Duplicate messages within cooldown
@@ -446,16 +434,16 @@ class SmartNotificationFilter:
         if not self.notifications_enabled:
             await self.event_queue.emit(
                 EventTypes.NOTIFICATION_SUPPRESSED,
-                {'reason': 'notifications_disabled', 'type': notification_type}
+                {"reason": "notifications_disabled", "type": notification_type},
             )
             return False
 
         # Check for HEARTBEAT_OK
-        if 'HEARTBEAT_OK' in message:
+        if "HEARTBEAT_OK" in message:
             logger.debug("Suppressing HEARTBEAT_OK notification")
             await self.event_queue.emit(
                 EventTypes.NOTIFICATION_SUPPRESSED,
-                {'reason': 'heartbeat_ok', 'type': notification_type}
+                {"reason": "heartbeat_ok", "type": notification_type},
             )
             return False
 
@@ -469,7 +457,7 @@ class SmartNotificationFilter:
                 logger.debug(f"Suppressing duplicate notification: {notification_type}")
                 await self.event_queue.emit(
                     EventTypes.NOTIFICATION_SUPPRESSED,
-                    {'reason': 'duplicate', 'type': notification_type}
+                    {"reason": "duplicate", "type": notification_type},
                 )
                 return False
 
@@ -482,7 +470,7 @@ class SmartNotificationFilter:
             if priority in (EventPriority.LOW, EventPriority.NORMAL):
                 await self.event_queue.emit(
                     EventTypes.NOTIFICATION_SUPPRESSED,
-                    {'reason': 'quiet_hours', 'type': notification_type}
+                    {"reason": "quiet_hours", "type": notification_type},
                 )
                 return False
 
@@ -494,11 +482,11 @@ class SmartNotificationFilter:
         message: str,
         channel: str,
         recipient: str,
-        priority: EventPriority = EventPriority.NORMAL
+        priority: EventPriority = EventPriority.NORMAL,
     ) -> bool:
         """
         Send a notification if it passes filters.
-        
+
         Returns True if notification was sent.
         """
         if not await self.should_notify(notification_type, message, priority):
@@ -512,11 +500,11 @@ class SmartNotificationFilter:
         await self.event_queue.emit(
             EventTypes.NOTIFICATION_SENT,
             {
-                'type': notification_type,
-                'channel': channel,
-                'recipient': recipient,
-                'message_length': len(message),
-            }
+                "type": notification_type,
+                "channel": channel,
+                "recipient": recipient,
+                "message_length": len(message),
+            },
         )
 
         return True
@@ -526,7 +514,8 @@ class SmartNotificationFilter:
         # Cleanup old entries
         now = datetime.now()
         old_keys = [
-            k for k, v in self._recent.items()
+            k
+            for k, v in self._recent.items()
             if (now - v).total_seconds() > self.cooldown_seconds * 2
         ]
         for k in old_keys:

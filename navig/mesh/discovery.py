@@ -39,16 +39,16 @@ logger = get_debug_logger()
 
 MCAST_GROUP = "224.0.0.251"
 MCAST_PORT = 5354
-HEARTBEAT_INTERVAL = 15      # seconds — was 30; two misses = degraded at 45 s threshold
-PROBE_INTERVAL = 20          # seconds between active HTTP /health pings per peer
-PROBE_TIMEOUT_S = 3.0        # seconds before a probe is counted as failed
-MAX_PACKET_SIZE = 512        # bytes — single datagram fits all fields
+HEARTBEAT_INTERVAL = 15  # seconds — was 30; two misses = degraded at 45 s threshold
+PROBE_INTERVAL = 20  # seconds between active HTTP /health pings per peer
+PROBE_TIMEOUT_S = 3.0  # seconds before a probe is counted as failed
+MAX_PACKET_SIZE = 512  # bytes — single datagram fits all fields
 
 # Election message type constants — imported by navig.mesh.election
 ELECT_PROPOSE = "elect_propose"  # candidate announces itself
 ELECT_PROMOTE = "elect_promote"  # winner claims the leader role
-ELECT_YIELD   = "elect_yield"    # current leader gracefully steps down
-ELECT_ACK     = "elect_ack"      # peer acknowledges yield / takeover offer
+ELECT_YIELD = "elect_yield"  # current leader gracefully steps down
+ELECT_ACK = "elect_ack"  # peer acknowledges yield / takeover offer
 
 
 def _build_packet(
@@ -65,8 +65,8 @@ def _build_packet(
     rec = registry.self_record
     payload = {
         "v": 1,
-        "type": ptype,          # "hello" | "heartbeat" | "goodbye"
-        "seq": seq,             # monotonic per-sender counter for loss detection
+        "type": ptype,  # "hello" | "heartbeat" | "goodbye"
+        "seq": seq,  # monotonic per-sender counter for loss detection
         "node_id": rec.node_id,
         "hostname": rec.hostname,
         "os": rec.os,
@@ -81,7 +81,9 @@ def _build_packet(
         payload = attach_hmac(payload, secret)
     data = json.dumps(payload, separators=(",", ":")).encode()
     if len(data) > MAX_PACKET_SIZE:
-        logger.warning(f"[mesh.discovery] Packet too large ({len(data)} bytes) — truncating capabilities")
+        logger.warning(
+            f"[mesh.discovery] Packet too large ({len(data)} bytes) — truncating capabilities"
+        )
         payload["capabilities"] = payload["capabilities"][:4]
         if secret:
             payload = attach_hmac(payload, secret)
@@ -129,7 +131,9 @@ def _create_sender_socket() -> socket.socket:
     """UDP socket for sending multicast packets."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
-    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)  # receive own packets in dev
+    sock.setsockopt(
+        socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1
+    )  # receive own packets in dev
     return sock
 
 
@@ -187,8 +191,8 @@ class MeshDiscovery:
         self._heartbeat_task: Optional[asyncio.Task] = None
         self._probe_task: Optional[asyncio.Task] = None
         self._running = False
-        self._seq: int = 0              # monotonic per-node packet sequence counter
-        self._peer_seqs: dict = {}      # node_id -> last seen seq (loss detection)
+        self._seq: int = 0  # monotonic per-node packet sequence counter
+        self._peer_seqs: dict = {}  # node_id -> last seen seq (loss detection)
         if self._secret:
             logger.info("[mesh.discovery] BLAKE2b HMAC authentication enabled")
 
@@ -242,13 +246,17 @@ class MeshDiscovery:
             return
         try:
             self._seq += 1
-            data = _build_packet(self._registry, ptype, seq=self._seq, secret=self._secret)
+            data = _build_packet(
+                self._registry, ptype, seq=self._seq, secret=self._secret
+            )
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(
                 None,
-                lambda: self._sender.sendto(data, (MCAST_GROUP, MCAST_PORT))  # type: ignore[union-attr]
+                lambda: self._sender.sendto(data, (MCAST_GROUP, MCAST_PORT)),  # type: ignore[union-attr]
             )
-            logger.debug(f"[mesh.discovery] Sent {ptype} seq={self._seq} ({len(data)} bytes)")
+            logger.debug(
+                f"[mesh.discovery] Sent {ptype} seq={self._seq} ({len(data)} bytes)"
+            )
         except Exception as e:
             logger.warning(f"[mesh.discovery] Send error: {e}")
 
@@ -291,6 +299,7 @@ class MeshDiscovery:
         t0 = time.monotonic()
         try:
             import aiohttp
+
             async with aiohttp.ClientSession() as session:
                 async with session.get(
                     url,
@@ -300,16 +309,13 @@ class MeshDiscovery:
                     if resp.status == 200:
                         self._registry.record_probe_success(peer.node_id, rtt_ms)
                         logger.debug(
-                            f"[mesh.probe] {peer.node_id} OK "
-                            f"rtt={rtt_ms:.0f}ms"
+                            f"[mesh.probe] {peer.node_id} OK " f"rtt={rtt_ms:.0f}ms"
                         )
                     else:
                         self._registry.record_probe_failure(peer.node_id)
-                        logger.debug(
-                            f"[mesh.probe] {peer.node_id} HTTP {resp.status}"
-                        )
+                        logger.debug(f"[mesh.probe] {peer.node_id} HTTP {resp.status}")
         except ImportError:
-            pass   # aiohttp not installed — skip probing silently
+            pass  # aiohttp not installed — skip probing silently
         except Exception as e:
             self._registry.record_probe_failure(peer.node_id)
             logger.debug(f"[mesh.probe] {peer.node_id} failed: {e}")
@@ -321,9 +327,7 @@ class MeshDiscovery:
         try:
             while self._running:
                 try:
-                    data, addr = await loop.run_in_executor(
-                        None, self._recv_once
-                    )
+                    data, addr = await loop.run_in_executor(None, self._recv_once)
                     await self._handle_packet(data, addr[0])
                 except TimeoutError:
                     continue
@@ -374,7 +378,7 @@ class MeshDiscovery:
             None,
         )
         if existing:
-            record.consecutive_failures = 0   # live packet → clear circuit
+            record.consecutive_failures = 0  # live packet → clear circuit
         self._registry.upsert_peer(record)
         logger.info(
             f"[mesh.discovery] Peer {ptype}: {record.node_id} @ "

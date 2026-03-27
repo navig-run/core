@@ -10,12 +10,14 @@ Strategy:
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, call, patch
+
 import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_registry(*, am_i_leader=False, node_id="node-A", hostname="node-a.local"):
     reg = MagicMock()
@@ -47,8 +49,10 @@ def _make_discovery():
 # Import guard
 # ---------------------------------------------------------------------------
 
+
 def test_election_import():
     from navig.mesh.election import ElectionManager
+
     assert ElectionManager is not None
 
 
@@ -56,8 +60,10 @@ def test_election_import():
 # ElectionManager init
 # ---------------------------------------------------------------------------
 
+
 def test_election_manager_init():
     from navig.mesh.election import ElectionManager
+
     reg = _make_registry()
     disc = _make_discovery()
     em = ElectionManager(reg, disc, ttl_seconds=15, heartbeat_interval=5)
@@ -68,9 +74,11 @@ def test_election_manager_init():
 # start() — standby enters standby role
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_start_sets_standby_role():
     from navig.mesh.election import ElectionManager
+
     reg = _make_registry(am_i_leader=False)
     disc = _make_discovery()
     em = ElectionManager(reg, disc, ttl_seconds=15, heartbeat_interval=5)
@@ -92,8 +100,10 @@ async def test_start_sets_standby_role():
 # trigger_yield() — thread-safe; sets internal state
 # ---------------------------------------------------------------------------
 
+
 def test_trigger_yield_sets_flag():
     from navig.mesh.election import ElectionManager
+
     reg = _make_registry(am_i_leader=True)
     disc = _make_discovery()
     em = ElectionManager(reg, disc)
@@ -111,8 +121,10 @@ def test_trigger_yield_sets_flag():
 # _is_best_available_standby — tiebreaker evaluation
 # ---------------------------------------------------------------------------
 
+
 def test_is_best_available_standby_no_peers():
     from navig.mesh.election import ElectionManager
+
     reg = _make_registry()
     reg.list_peers.return_value = []
     disc = _make_discovery()
@@ -153,8 +165,10 @@ def test_is_best_available_standby_lower_tiebreaker():
 # state_dict() returns required keys
 # ---------------------------------------------------------------------------
 
+
 def test_state_dict_keys():
     from navig.mesh.election import ElectionManager
+
     reg = _make_registry()
     disc = _make_discovery()
     em = ElectionManager(reg, disc)
@@ -166,6 +180,7 @@ def test_state_dict_keys():
 # ---------------------------------------------------------------------------
 # send_election_packet is called on propose
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_propose_sends_udp_packet():

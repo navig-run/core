@@ -43,6 +43,7 @@ def is_sandbox_available() -> bool:
     """Check if Docker sandbox is available."""
     try:
         from .sandbox import is_sandbox_available as _check
+
         return _check()
     except ImportError:
         return False
@@ -52,6 +53,7 @@ def is_image_generation_available() -> bool:
     """Check if image generation is available."""
     try:
         from .image_generation import is_image_generation_available as _check
+
         return _check()
     except ImportError:
         return False
@@ -61,6 +63,7 @@ def is_web_tools_available() -> bool:
     """Check if web tools are available."""
     try:
         from .web import web_fetch
+
         return True
     except ImportError:
         return False
@@ -116,18 +119,21 @@ __all__ = [
 def get_tool_registry():
     """Get the global ToolRegistry singleton (lazy load)."""
     from .router import get_tool_registry as _get
+
     return _get()
 
 
 def get_tool_router(safety_policy=None):
     """Get the global ToolRouter singleton (lazy load)."""
     from .router import get_tool_router as _get
+
     return _get(safety_policy=safety_policy)
 
 
 def parse_llm_action(text: str):
     """Parse LLM response text into a typed action (lazy load)."""
     from .schemas import parse_llm_action as _parse
+
     return _parse(text)
 
 
@@ -154,7 +160,13 @@ def get_pipeline_registry():
             return t
 
         reg = ToolRegistry()
-        for _name in ("site_check", "browser_fetch", "search", "code_exec_sandbox", "skill_run"):
+        for _name in (
+            "site_check",
+            "browser_fetch",
+            "search",
+            "code_exec_sandbox",
+            "skill_run",
+        ):
             reg.register(_make(_name))
         _pipeline_registry = reg
     return _pipeline_registry

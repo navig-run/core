@@ -17,5 +17,3 @@ Examples:
 Troubleshooting:
 - Validate config: `navig config validate`
 - Test SSH: `navig host test vps`
-
-

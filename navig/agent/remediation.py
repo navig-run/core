@@ -60,39 +60,41 @@ class RemediationAction:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'id': self.id,
-            'type': self.type.value,
-            'component': self.component,
-            'reason': self.reason,
-            'timestamp': self.timestamp.isoformat(),
-            'status': self.status.value,
-            'attempts': self.attempts,
-            'max_attempts': self.max_attempts,
-            'error': self.error,
-            'metadata': self.metadata,
+            "id": self.id,
+            "type": self.type.value,
+            "component": self.component,
+            "reason": self.reason,
+            "timestamp": self.timestamp.isoformat(),
+            "status": self.status.value,
+            "attempts": self.attempts,
+            "max_attempts": self.max_attempts,
+            "error": self.error,
+            "metadata": self.metadata,
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "RemediationAction":
         """Create a RemediationAction from serialized data."""
         return cls(
-            id=data['id'],
-            type=RemediationType(data['type']),
-            component=data['component'],
-            reason=data['reason'],
-            timestamp=datetime.fromisoformat(data['timestamp']),
-            status=RemediationStatus(data.get('status', RemediationStatus.PENDING.value)),
-            attempts=int(data.get('attempts', 0)),
-            max_attempts=int(data.get('max_attempts', 5)),
-            error=data.get('error'),
-            metadata=data.get('metadata', {}),
+            id=data["id"],
+            type=RemediationType(data["type"]),
+            component=data["component"],
+            reason=data["reason"],
+            timestamp=datetime.fromisoformat(data["timestamp"]),
+            status=RemediationStatus(
+                data.get("status", RemediationStatus.PENDING.value)
+            ),
+            attempts=int(data.get("attempts", 0)),
+            max_attempts=int(data.get("max_attempts", 5)),
+            error=data.get("error"),
+            metadata=data.get("metadata", {}),
         )
 
 
 class RemediationEngine:
     """
     Automatic remediation engine for agent component failures.
-    
+
     Monitors component health and automatically attempts recovery
     when failures are detected.
     """
@@ -102,11 +104,11 @@ class RemediationEngine:
         config_dir: Optional[Path] = None,
         log_dir: Optional[Path] = None,
     ):
-        self.config_dir = config_dir or Path.home() / '.navig' / 'workspace'
-        self.log_dir = log_dir or Path.home() / '.navig' / 'logs'
-        self.backup_dir = self.config_dir / 'config-backup'
-        self.actions_file = self.config_dir / 'remediation_actions.json'
-        self.remediation_log = self.log_dir / 'remediation.log'
+        self.config_dir = config_dir or Path.home() / ".navig" / "workspace"
+        self.log_dir = log_dir or Path.home() / ".navig" / "logs"
+        self.backup_dir = self.config_dir / "config-backup"
+        self.actions_file = self.config_dir / "remediation_actions.json"
+        self.remediation_log = self.log_dir / "remediation.log"
 
         # Ensure directories exist
         self.config_dir.mkdir(parents=True, exist_ok=True)
@@ -139,10 +141,7 @@ class RemediationEngine:
         self._log("Remediation engine stopped")
 
     def schedule_restart_sync(
-        self,
-        component: str,
-        reason: str,
-        metadata: Optional[Dict[str, Any]] = None
+        self, component: str, reason: str, metadata: Optional[Dict[str, Any]] = None
     ) -> str:
         """Schedule a component restart (synchronous API)."""
         action_id = f"{component}_{datetime.now().timestamp()}"
@@ -159,20 +158,19 @@ class RemediationEngine:
         return action_id
 
     async def schedule_restart(
-        self,
-        component: str,
-        reason: str,
-        metadata: Optional[Dict[str, Any]] = None
+        self, component: str, reason: str, metadata: Optional[Dict[str, Any]] = None
     ) -> str:
         """Schedule a component restart (async API)."""
-        return self.schedule_restart_sync(component=component, reason=reason, metadata=metadata)
+        return self.schedule_restart_sync(
+            component=component, reason=reason, metadata=metadata
+        )
 
     def schedule_connection_retry_sync(
         self,
         component: str,
         service: str,
         reason: str,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Schedule connection retry (synchronous API)."""
         action_id = f"{component}_conn_{datetime.now().timestamp()}"
@@ -181,7 +179,7 @@ class RemediationEngine:
             type=RemediationType.CONNECTION_RETRY,
             component=component,
             reason=reason,
-            metadata={'service': service, **(metadata or {})},
+            metadata={"service": service, **(metadata or {})},
         )
         self._actions[action_id] = action
         self._save_actions()
@@ -193,7 +191,7 @@ class RemediationEngine:
         component: str,
         service: str,
         reason: str,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Schedule connection retry (async API)."""
         return self.schedule_connection_retry_sync(
@@ -209,8 +207,8 @@ class RemediationEngine:
             return
 
         try:
-            raw = json.loads(self.actions_file.read_text(encoding='utf-8'))
-            actions = raw.get('actions', [])
+            raw = json.loads(self.actions_file.read_text(encoding="utf-8"))
+            actions = raw.get("actions", [])
             for item in actions:
                 action = RemediationAction.from_dict(item)
                 self._actions[action.id] = action
@@ -221,12 +219,12 @@ class RemediationEngine:
         """Persist remediation actions to disk for later inspection."""
         try:
             payload = {
-                'updated_at': datetime.now().isoformat(),
-                'actions': [a.to_dict() for a in self._actions.values()],
+                "updated_at": datetime.now().isoformat(),
+                "actions": [a.to_dict() for a in self._actions.values()],
             }
             self.actions_file.write_text(
                 json.dumps(payload, indent=2),
-                encoding='utf-8',
+                encoding="utf-8",
             )
         except Exception as e:
             self._log(f"Failed to save remediation actions: {e}", level="warning")
@@ -234,7 +232,7 @@ class RemediationEngine:
     async def rollback_config(self, component: str, reason: str) -> bool:
         """
         Rollback configuration to last known good state.
-        
+
         Returns True if rollback succeeded, False otherwise.
         """
         try:
@@ -242,18 +240,23 @@ class RemediationEngine:
             backups = sorted(
                 self.backup_dir.glob(f"{component}-config-*.yaml"),
                 key=lambda p: p.stat().st_mtime,
-                reverse=True
+                reverse=True,
             )
 
             if not backups:
-                self._log(f"No backup found for {component}, cannot rollback", level="warning")
+                self._log(
+                    f"No backup found for {component}, cannot rollback", level="warning"
+                )
                 return False
 
             latest_backup = backups[0]
-            current_config = self.config_dir / 'config.yaml'
+            current_config = self.config_dir / "config.yaml"
 
             # Create backup of current (failed) config
-            failed_backup = self.backup_dir / f"{component}-config-failed-{datetime.now().strftime('%Y%m%d-%H%M%S')}.yaml"
+            failed_backup = (
+                self.backup_dir
+                / f"{component}-config-failed-{datetime.now().strftime('%Y%m%d-%H%M%S')}.yaml"
+            )
             if current_config.exists():
                 shutil.copy2(current_config, failed_backup)
 
@@ -278,7 +281,11 @@ class RemediationEngine:
                         await self._execute_action(action)
 
                     # Clean up completed/failed actions after 1 hour
-                    if action.status in (RemediationStatus.SUCCESS, RemediationStatus.FAILED, RemediationStatus.SKIPPED):
+                    if action.status in (
+                        RemediationStatus.SUCCESS,
+                        RemediationStatus.FAILED,
+                        RemediationStatus.SKIPPED,
+                    ):
                         if (datetime.now() - action.timestamp) > timedelta(hours=1):
                             del self._actions[action_id]
                             removed_any = True
@@ -298,7 +305,10 @@ class RemediationEngine:
             action.status = RemediationStatus.FAILED
             action.error = f"Max attempts ({action.max_attempts}) exceeded"
             self._save_actions()
-            self._log(f"Remediation failed for {action.component}: {action.error}", level="error")
+            self._log(
+                f"Remediation failed for {action.component}: {action.error}",
+                level="error",
+            )
             return
 
         action.status = RemediationStatus.IN_PROGRESS
@@ -306,9 +316,13 @@ class RemediationEngine:
         self._save_actions()
 
         # Calculate backoff
-        backoff = action.backoff_seconds[min(action.attempts - 1, len(action.backoff_seconds) - 1)]
+        backoff = action.backoff_seconds[
+            min(action.attempts - 1, len(action.backoff_seconds) - 1)
+        ]
 
-        self._log(f"Executing {action.type.value} for {action.component} (attempt {action.attempts}/{action.max_attempts})")
+        self._log(
+            f"Executing {action.type.value} for {action.component} (attempt {action.attempts}/{action.max_attempts})"
+        )
 
         try:
             if action.type == RemediationType.COMPONENT_RESTART:
@@ -330,7 +344,9 @@ class RemediationEngine:
             else:
                 action.status = RemediationStatus.PENDING  # Retry
                 self._save_actions()
-                self._log(f"Remediation attempt {action.attempts} failed, will retry after {backoff}s")
+                self._log(
+                    f"Remediation attempt {action.attempts} failed, will retry after {backoff}s"
+                )
                 await asyncio.sleep(backoff)
 
         except Exception as e:
@@ -343,13 +359,15 @@ class RemediationEngine:
     async def _restart_component(self, action: RemediationAction) -> bool:
         """
         Restart a component.
-        
+
         Returns True if restart succeeded, False otherwise.
         """
         try:
             # Get the component from Heart registry
-            if not hasattr(self, '_heart') or not self._heart:
-                self._log(f"Cannot restart {action.component}: Heart not set", level="warning")
+            if not hasattr(self, "_heart") or not self._heart:
+                self._log(
+                    f"Cannot restart {action.component}: Heart not set", level="warning"
+                )
                 return False
 
             component = self._heart._components.get(action.component)
@@ -366,7 +384,10 @@ class RemediationEngine:
                 self._log(f"Component {action.component} restart successful")
                 return True
             else:
-                self._log(f"Component {action.component} is not running after restart", level="warning")
+                self._log(
+                    f"Component {action.component} is not running after restart",
+                    level="warning",
+                )
                 return False
 
         except Exception as e:
@@ -376,11 +397,11 @@ class RemediationEngine:
     async def _retry_connection(self, action: RemediationAction) -> bool:
         """
         Retry a connection.
-        
+
         Note: This is a placeholder - actual connection retry logic
         should be implemented by the specific component.
         """
-        service = action.metadata.get('service', 'unknown')
+        service = action.metadata.get("service", "unknown")
         self._log(f"Connection retry requested for {action.component}/{service}")
         return True
 
@@ -423,12 +444,12 @@ class RemediationEngine:
 
     def _log(self, message: str, level: str = "info") -> None:
         """Log remediation activity."""
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_entry = f"[{timestamp}] [{level.upper()}] {message}\n"
 
         # Append to remediation log
         try:
-            with open(self.remediation_log, 'a', encoding='utf-8') as f:
+            with open(self.remediation_log, "a", encoding="utf-8") as f:
                 f.write(log_entry)
         except Exception:
             pass  # Fail silently if logging fails

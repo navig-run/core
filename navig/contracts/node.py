@@ -20,22 +20,24 @@ from typing import Any, Dict, List
 
 # ── Enums ─────────────────────────────────────────────────────────────────────
 
+
 class NodeStatus(str, Enum):
-    PROVISIONING = "provisioning"   # First-time setup in progress
-    ONLINE       = "online"         # Running and accepting missions
-    OFFLINE      = "offline"        # Unreachable but expected to return
-    SUSPENDED    = "suspended"      # Intentionally paused by operator
+    PROVISIONING = "provisioning"  # First-time setup in progress
+    ONLINE = "online"  # Running and accepting missions
+    OFFLINE = "offline"  # Unreachable but expected to return
+    SUSPENDED = "suspended"  # Intentionally paused by operator
     DECOMMISSIONED = "decommissioned"  # Permanently removed
 
 
 class NodeOS(str, Enum):
-    LINUX   = "linux"
+    LINUX = "linux"
     WINDOWS = "windows"
-    MACOS   = "macos"
+    MACOS = "macos"
     UNKNOWN = "unknown"
 
 
 # ── Model ──────────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class Node:
@@ -61,22 +63,26 @@ class Node:
     hostname: str
 
     # Auto-generated
-    node_id: str            = field(default_factory=lambda: str(uuid.uuid4()))
-    os: NodeOS              = NodeOS.UNKNOWN
-    formation: str          = ""
-    version: str            = "0.0.0"
+    node_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    os: NodeOS = NodeOS.UNKNOWN
+    formation: str = ""
+    version: str = "0.0.0"
     capabilities: List[str] = field(default_factory=list)
-    status: NodeStatus      = NodeStatus.PROVISIONING
-    trust_score: float      = 1.0
-    gateway_url: str        = ""
+    status: NodeStatus = NodeStatus.PROVISIONING
+    trust_score: float = 1.0
+    gateway_url: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
-    created_at: str         = field(default_factory=lambda: _now_iso())
-    last_seen: str          = field(default_factory=lambda: _now_iso())
+    created_at: str = field(default_factory=lambda: _now_iso())
+    last_seen: str = field(default_factory=lambda: _now_iso())
 
     # ── Lifecycle transitions ─────────────────────────────────────────
 
     def go_online(self) -> None:
-        if self.status not in (NodeStatus.OFFLINE, NodeStatus.SUSPENDED, NodeStatus.PROVISIONING):
+        if self.status not in (
+            NodeStatus.OFFLINE,
+            NodeStatus.SUSPENDED,
+            NodeStatus.PROVISIONING,
+        ):
             raise ValueError(f"Cannot go online from {self.status!r}")
         self.status = NodeStatus.ONLINE
         self.touch()
@@ -140,6 +146,7 @@ class Node:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()

@@ -4,6 +4,7 @@ navig doctor — Self-diagnostics (P1-15)
 Reports on NAVIG installation health without mutating any state.
 Checks: config, cache, formations, skills, gateway, API keys, browser agent.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -28,9 +29,9 @@ doctor_app = typer.Typer(
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
-_OK   = "✓"
+_OK = "✓"
 _WARN = "⚠"
-_ERR  = "✗"
+_ERR = "✗"
 _INFO = "·"
 
 
@@ -67,6 +68,7 @@ def _count_yaml_files(directory: Path) -> Tuple[int, int]:
         return 0, 0
     try:
         import yaml
+
         for f in directory.rglob("*.yaml"):
             total += 1
             try:
@@ -98,6 +100,7 @@ def _find_browser_agent() -> Optional[Path]:
             return c
     # Try PATH
     import shutil
+
     found = shutil.which("navig-browser-agent")
     return Path(found) if found else None
 
@@ -105,6 +108,7 @@ def _find_browser_agent() -> Optional[Path]:
 # ──────────────────────────────────────────────────────────────────────────────
 # Individual checks
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def check_config() -> List[Tuple[str, bool, str]]:
     """Check global config.yaml."""
@@ -117,12 +121,17 @@ def check_config() -> List[Tuple[str, bool, str]]:
 
     try:
         import yaml
+
         content = config_path.read_text(encoding="utf-8", errors="replace")
         cfg = yaml.safe_load(content) or {}
         version = cfg.get("version", "missing")
-        results.append(_check("Config file", True, f"{config_path} (v{version}, valid YAML)"))
+        results.append(
+            _check("Config file", True, f"{config_path} (v{version}, valid YAML)")
+        )
     except Exception as e:
-        results.append(_check("Config file", False, f"YAML error in {config_path}: {e}"))
+        results.append(
+            _check("Config file", False, f"YAML error in {config_path}: {e}")
+        )
 
     return results
 
@@ -133,7 +142,9 @@ def check_cache_dir() -> List[Tuple[str, bool, str]]:
     cache_dir = Path.home() / ".navig" / "cache"
 
     if not cache_dir.exists():
-        results.append(_check("Cache dir", False, f"{cache_dir} does not exist", warn=True))
+        results.append(
+            _check("Cache dir", False, f"{cache_dir} does not exist", warn=True)
+        )
         return results
 
     test_file = cache_dir / ".write_test"
@@ -150,6 +161,7 @@ def check_cache_dir() -> List[Tuple[str, bool, str]]:
 def check_storage() -> List[Tuple[str, bool, str]]:
     """Check if the system has enough free disk space for NAVIG databases and operations."""
     import shutil
+
     results = []
 
     navig_dir = Path.home() / ".navig"
@@ -157,13 +169,26 @@ def check_storage() -> List[Tuple[str, bool, str]]:
 
     try:
         usage = shutil.disk_usage(navig_dir)
-        free_gb = usage.free / (1024 ** 3)
+        free_gb = usage.free / (1024**3)
 
         # Invariant: Must have at least 1GB free to safely run SQLite WAL, migrations, and model caches.
         if free_gb < 1.0:
-            results.append(_check("Disk Space", False, f"FATAL: Only {free_gb:.2f}GB free. NAVIG requires >1GB to prevent DB corruption."))
+            results.append(
+                _check(
+                    "Disk Space",
+                    False,
+                    f"FATAL: Only {free_gb:.2f}GB free. NAVIG requires >1GB to prevent DB corruption.",
+                )
+            )
         elif free_gb < 5.0:
-            results.append(_check("Disk Space", True, f"Low Space Warning: {free_gb:.2f}GB free. Consider cleanup.", warn=True))
+            results.append(
+                _check(
+                    "Disk Space",
+                    True,
+                    f"Low Space Warning: {free_gb:.2f}GB free. Consider cleanup.",
+                    warn=True,
+                )
+            )
         else:
             results.append(_check("Disk Space", True, f"{free_gb:.1f}GB free (OK)"))
     except Exception as e:
@@ -179,16 +204,32 @@ def check_sockets(target_port: int = 8789) -> List[Tuple[str, bool, str]]:
     # Try binding to see if the port is strictly available for a new daemon.
     # If it's not available, it should be the running gateway.
     import socket
+
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(0.5)
-            ans = s.connect_ex(('127.0.0.1', target_port))
+            ans = s.connect_ex(("127.0.0.1", target_port))
             if ans == 0:
-                results.append(_check("Port Occupation", True, f"Port {target_port} is bound (Gateway running)", warn=True))
+                results.append(
+                    _check(
+                        "Port Occupation",
+                        True,
+                        f"Port {target_port} is bound (Gateway running)",
+                        warn=True,
+                    )
+                )
             else:
-                results.append(_check("Port Occupation", True, f"Port {target_port} is available for binding"))
+                results.append(
+                    _check(
+                        "Port Occupation",
+                        True,
+                        f"Port {target_port} is available for binding",
+                    )
+                )
     except Exception as e:
-        results.append(_check("Port Occupation", False, f"Socket error on port {target_port}: {e}"))
+        results.append(
+            _check("Port Occupation", False, f"Socket error on port {target_port}: {e}")
+        )
 
     return results
 
@@ -200,7 +241,14 @@ def check_formations() -> List[Tuple[str, bool, str]]:
     total, errors = _count_yaml_files(formations_dir)
 
     if total == 0:
-        results.append(_check("Formations", True, "0 installed (built-in defaults will be used)", warn=True))
+        results.append(
+            _check(
+                "Formations",
+                True,
+                "0 installed (built-in defaults will be used)",
+                warn=True,
+            )
+        )
     elif errors:
         results.append(_check("Formations", False, f"{total} found, {errors} invalid"))
     else:
@@ -216,6 +264,7 @@ def check_skills() -> List[Tuple[str, bool, str]]:
     # Skills live inside the installed package
     try:
         import navig
+
         pkg_dir = Path(navig.__file__).parent.parent
         skills_dir = pkg_dir / "skills"
         if not skills_dir.exists():
@@ -231,7 +280,9 @@ def check_skills() -> List[Tuple[str, bool, str]]:
         else:
             results.append(_check("Skills", True, f"{total} found, 0 invalid"))
     else:
-        results.append(_check("Skills", True, "Skills dir not found (non-fatal)", warn=True))
+        results.append(
+            _check("Skills", True, "Skills dir not found (non-fatal)", warn=True)
+        )
 
     return results
 
@@ -243,9 +294,13 @@ def check_gateway(port: int = 8789) -> List[Tuple[str, bool, str]]:
     # Try to read port from config
     try:
         import yaml
+
         cfg_path = Path.home() / ".navig" / "config.yaml"
         if cfg_path.exists():
-            cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8", errors="replace")) or {}
+            cfg = (
+                yaml.safe_load(cfg_path.read_text(encoding="utf-8", errors="replace"))
+                or {}
+            )
             port = cfg.get("gateway", {}).get("port", port)
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
@@ -254,11 +309,14 @@ def check_gateway(port: int = 8789) -> List[Tuple[str, bool, str]]:
     if reachable:
         results.append(_check("Gateway", True, f"Responding at 127.0.0.1:{port}"))
     else:
-        results.append(_check(
-            "Gateway", False,
-            f"No response at 127.0.0.1:{port} (start with: navig service start)",
-            warn=True,
-        ))
+        results.append(
+            _check(
+                "Gateway",
+                False,
+                f"No response at 127.0.0.1:{port} (start with: navig service start)",
+                warn=True,
+            )
+        )
 
     return results
 
@@ -271,16 +329,20 @@ def check_env_keys() -> List[Tuple[str, bool, str]]:
     cfg: Dict[str, Any] = {}
     try:
         import yaml
+
         cfg_path = Path.home() / ".navig" / "config.yaml"
         if cfg_path.exists():
-            cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8", errors="replace")) or {}
+            cfg = (
+                yaml.safe_load(cfg_path.read_text(encoding="utf-8", errors="replace"))
+                or {}
+            )
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
 
     key_checks = [
-        ("OPENROUTER_API_KEY",  "openrouter_api_key",  "ai commands degraded without it"),
-        ("OPENAI_API_KEY",      "openai_api_key",       "some models unavailable"),
-        ("ANTHROPIC_API_KEY",   "anthropic_api_key",    "Claude models unavailable"),
+        ("OPENROUTER_API_KEY", "openrouter_api_key", "ai commands degraded without it"),
+        ("OPENAI_API_KEY", "openai_api_key", "some models unavailable"),
+        ("ANTHROPIC_API_KEY", "anthropic_api_key", "Claude models unavailable"),
     ]
 
     for env_var, cfg_key, impact in key_checks:
@@ -296,7 +358,11 @@ def check_env_keys() -> List[Tuple[str, bool, str]]:
     if has_token:
         results.append(_check("MESH_TOKEN", True, f"present ({mesh_token_path})"))
     else:
-        results.append(_check("MESH_TOKEN", False, "not found (generated on gateway start)", warn=True))
+        results.append(
+            _check(
+                "MESH_TOKEN", False, "not found (generated on gateway start)", warn=True
+            )
+        )
 
     return results
 
@@ -308,11 +374,14 @@ def check_browser_agent() -> List[Tuple[str, bool, str]]:
     if found:
         results.append(_check("navig-browser-agent", True, str(found)))
     else:
-        results.append(_check(
-            "navig-browser-agent", False,
-            "binary not found (browser automation commands will fail)",
-            warn=True,
-        ))
+        results.append(
+            _check(
+                "navig-browser-agent",
+                False,
+                "binary not found (browser automation commands will fail)",
+                warn=True,
+            )
+        )
     return results
 
 
@@ -321,11 +390,11 @@ def check_python_deps() -> List[Tuple[str, bool, str]]:
     results = []
 
     optional_deps = [
-        ("aiohttp",      "gateway server"),
-        ("yaml",         "config parsing"),
-        ("typer",        "CLI framework"),
-        ("rich",         "terminal output"),
-        ("pydantic",     "data validation"),
+        ("aiohttp", "gateway server"),
+        ("yaml", "config parsing"),
+        ("typer", "CLI framework"),
+        ("rich", "terminal output"),
+        ("pydantic", "data validation"),
         ("cryptography", "vault / encryption"),
     ]
 
@@ -334,7 +403,9 @@ def check_python_deps() -> List[Tuple[str, bool, str]]:
             importlib.import_module(mod)
             results.append(_check(f"Python/{mod}", True, purpose))
         except ImportError:
-            results.append(_check(f"Python/{mod}", False, f"missing — affects {purpose}"))
+            results.append(
+                _check(f"Python/{mod}", False, f"missing — affects {purpose}")
+            )
 
     return results
 
@@ -343,10 +414,15 @@ def check_python_deps() -> List[Tuple[str, bool, str]]:
 # Main command
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @doctor_app.callback(invoke_without_command=True)
 def doctor(
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show all checks, including passing ones"),
-    skip_deps: bool = typer.Option(False, "--skip-deps", help="Skip Python dependency checks"),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Show all checks, including passing ones"
+    ),
+    skip_deps: bool = typer.Option(
+        False, "--skip-deps", help="Skip Python dependency checks"
+    ),
     port: int = typer.Option(8789, "--port", help="Gateway port to probe"),
 ):
     """Run self-diagnostics on the NAVIG installation."""
@@ -355,6 +431,7 @@ def doctor(
         from rich import print as rprint
         from rich.console import Console
         from rich.table import Table
+
         console = Console()
         _has_rich = True
     except ImportError:
@@ -362,15 +439,15 @@ def doctor(
         console = None  # type: ignore[assignment]
 
     sections: List[Tuple[str, List[Tuple[str, bool, str]]]] = [
-        ("Config",          check_config()),
-        ("Storage",         check_storage()),
-        ("Filesystem",      check_cache_dir()),
+        ("Config", check_config()),
+        ("Storage", check_storage()),
+        ("Filesystem", check_cache_dir()),
         ("Network Sockets", check_sockets(port)),
-        ("Formations",      check_formations()),
-        ("Skills",          check_skills()),
-        ("Gateway",         check_gateway(port=port)),
-        ("API Keys",        check_env_keys()),
-        ("Browser Agent",   check_browser_agent()),
+        ("Formations", check_formations()),
+        ("Skills", check_skills()),
+        ("Gateway", check_gateway(port=port)),
+        ("API Keys", check_env_keys()),
+        ("Browser Agent", check_browser_agent()),
     ]
 
     if not skip_deps:
@@ -403,7 +480,9 @@ def doctor(
     if all_ok:
         footer += f"\n{footer_icon} All checks passed."
     else:
-        footer += f"\n{footer_icon} Some issues found. Review items marked with ✗ or ⚠ above."
+        footer += (
+            f"\n{footer_icon} Some issues found. Review items marked with ✗ or ⚠ above."
+        )
     print(footer)
 
     if not all_ok:

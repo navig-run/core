@@ -72,7 +72,9 @@ def _line_for(doc, path_items: Tuple[Any, ...]) -> int:
     return 1
 
 
-def _validate_host_data(host_file: Path, data: Dict[str, Any], doc, strict: bool) -> List[Dict[str, Any]]:
+def _validate_host_data(
+    host_file: Path, data: Dict[str, Any], doc, strict: bool
+) -> List[Dict[str, Any]]:
     errors: List[Dict[str, Any]] = []
 
     def issue(severity: str, message: str, key_path: Tuple[Any, ...] = ()):
@@ -128,7 +130,9 @@ def _validate_host_data(host_file: Path, data: Dict[str, Any], doc, strict: bool
     return errors
 
 
-def _validate_app_data(app_file: Path, data: Dict[str, Any], doc, known_hosts: set[str], strict: bool) -> List[Dict[str, Any]]:
+def _validate_app_data(
+    app_file: Path, data: Dict[str, Any], doc, known_hosts: set[str], strict: bool
+) -> List[Dict[str, Any]]:
     errors: List[Dict[str, Any]] = []
 
     def issue(severity: str, message: str, key_path: Tuple[Any, ...] = ()):
@@ -173,35 +177,31 @@ def _validate_app_data(app_file: Path, data: Dict[str, Any], doc, known_hosts: s
 
 def migrate(
     dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Show what would be migrated without making changes"
+        False, "--dry-run", help="Show what would be migrated without making changes"
     ),
     no_backup: bool = typer.Option(
-        False,
-        "--no-backup",
-        help="Skip creating backups before migration"
-    )
+        False, "--no-backup", help="Skip creating backups before migration"
+    ),
 ):
     """
     Migrate legacy configurations to new format.
-    
+
     Converts old format (~/.navig/apps/*.yaml) to new format (~/.navig/hosts/*.yaml).
-    
+
     Migration process:
     1. Detects old format configurations
     2. Extracts webserver type from services.web field
     3. Converts to new two-tier hierarchy (host → app)
     4. Creates backups (unless --no-backup specified)
     5. Saves new format configurations
-    
+
     Examples:
         # Preview migration
         navig config migrate --dry-run
-        
+
         # Perform migration with backups
         navig config migrate
-        
+
         # Perform migration without backups
         navig config migrate --no-backup
     """
@@ -209,8 +209,8 @@ def migrate(
 
     # Get configuration directories
     config_manager = get_config_manager()
-    old_dir = Path.home() / '.navig' / 'apps'
-    new_dir = Path.home() / '.navig' / 'hosts'
+    old_dir = Path.home() / ".navig" / "apps"
+    new_dir = Path.home() / ".navig" / "hosts"
 
     if not old_dir.exists():
         ch.error(f"Old configuration directory not found: {old_dir}")
@@ -224,10 +224,7 @@ def migrate(
 
     try:
         results = migrate_all_configs(
-            old_dir=old_dir,
-            new_dir=new_dir,
-            dry_run=dry_run,
-            backup=not no_backup
+            old_dir=old_dir, new_dir=new_dir, dry_run=dry_run, backup=not no_backup
         )
     except Exception as e:
         ch.error(f"Migration failed: {str(e)}")
@@ -236,54 +233,46 @@ def migrate(
     # Display results
     console.print()
 
-    if results['migrated']:
+    if results["migrated"]:
         table = Table(title="✅ Migrated Configurations", show_header=True)
         table.add_column("Old File", style="cyan")
         table.add_column("New File", style="green")
         table.add_column("Status", style="yellow")
 
-        for item in results['migrated']:
-            status = "DRY RUN" if item.get('dry_run') else "MIGRATED"
+        for item in results["migrated"]:
+            status = "DRY RUN" if item.get("dry_run") else "MIGRATED"
             table.add_row(
-                Path(item['old_file']).name,
-                Path(item['new_file']).name,
-                status
+                Path(item["old_file"]).name, Path(item["new_file"]).name, status
             )
 
         console.print(table)
         console.print()
 
-    if results['skipped']:
+    if results["skipped"]:
         table = Table(title="⏭️  Skipped Configurations", show_header=True)
         table.add_column("File", style="yellow")
         table.add_column("Reason", style="dim")
 
-        for item in results['skipped']:
-            table.add_row(
-                Path(item['file']).name,
-                item['reason']
-            )
+        for item in results["skipped"]:
+            table.add_row(Path(item["file"]).name, item["reason"])
 
         console.print(table)
         console.print()
 
-    if results['failed']:
+    if results["failed"]:
         table = Table(title="❌ Failed Migrations", show_header=True)
         table.add_column("File", style="red")
         table.add_column("Error", style="dim")
 
-        for item in results['failed']:
-            table.add_row(
-                Path(item['file']).name,
-                item['error']
-            )
+        for item in results["failed"]:
+            table.add_row(Path(item["file"]).name, item["error"])
 
         console.print(table)
         console.print()
 
-    if results['backups'] and not dry_run:
+    if results["backups"] and not dry_run:
         ch.success(f"Created {len(results['backups'])} backup(s)")
-        for backup in results['backups']:
+        for backup in results["backups"]:
             ch.info(f"  Backup: {backup}")
         console.print()
 
@@ -292,22 +281,23 @@ def migrate(
         ch.warning("DRY RUN - No changes were made")
         ch.info(f"Would migrate {len(results['migrated'])} configuration(s)")
     else:
-        if results['migrated']:
-            ch.success(f"Successfully migrated {len(results['migrated'])} configuration(s)")
+        if results["migrated"]:
+            ch.success(
+                f"Successfully migrated {len(results['migrated'])} configuration(s)"
+            )
             ch.info("Old configurations are still available in ~/.navig/apps/")
             ch.info("Backups created with .backup.<timestamp>.yaml extension")
         else:
             ch.info("No configurations were migrated")
 
-    if results['failed']:
+    if results["failed"]:
         ch.error(f"Failed to migrate {len(results['failed'])} configuration(s)")
         raise typer.Exit(1)
 
 
 def validate(
     host: Optional[str] = typer.Argument(
-        None,
-        help="Host name to validate (validates all if not specified)"
+        None, help="Host name to validate (validates all if not specified)"
     ),
     options: Optional[Dict[str, Any]] = None,
 ):
@@ -403,9 +393,13 @@ def validate(
                     )
                     continue
                 if isinstance(doc.data, dict):
-                    issues.extend(_validate_host_data(host_path, doc.data, doc, strict=strict))
+                    issues.extend(
+                        _validate_host_data(host_path, doc.data, doc, strict=strict)
+                    )
                 else:
-                    issues.extend(_validate_host_data(host_path, {}, doc, strict=strict))
+                    issues.extend(
+                        _validate_host_data(host_path, {}, doc, strict=strict)
+                    )
 
         if apps_dir.exists():
             for app_path in sorted(apps_dir.glob("*.y*ml")):
@@ -424,9 +418,17 @@ def validate(
                     )
                     continue
                 if isinstance(doc.data, dict):
-                    issues.extend(_validate_app_data(app_path, doc.data, doc, known_hosts, strict=strict))
+                    issues.extend(
+                        _validate_app_data(
+                            app_path, doc.data, doc, known_hosts, strict=strict
+                        )
+                    )
                 else:
-                    issues.extend(_validate_app_data(app_path, {}, doc, known_hosts, strict=strict))
+                    issues.extend(
+                        _validate_app_data(
+                            app_path, {}, doc, known_hosts, strict=strict
+                        )
+                    )
 
         if config_file.exists():
             try:
@@ -442,13 +444,16 @@ def validate(
                     }
                 )
 
-        scope_result["issues"] = sum(1 for e in issues if e.get("file", "").startswith(str(root)))
+        scope_result["issues"] = sum(
+            1 for e in issues if e.get("file", "").startswith(str(root))
+        )
         results.append(scope_result)
 
     if json_out:
         payload = {
             "ok": all(i.get("severity") != "error" for i in issues),
-            "scope": scope or ("project" if any(r[0] == "project" for r in roots) else "global"),
+            "scope": scope
+            or ("project" if any(r[0] == "project" for r in roots) else "global"),
             "strict": strict,
             "results": results,
             "issues": issues,
@@ -475,7 +480,9 @@ def validate(
         ch.dim("  - Then re-run: navig config validate")
         ch.dim("")
         ch.dim("Tip:")
-        ch.dim("  - Validate only the project config: navig config validate --scope project")
+        ch.dim(
+            "  - Validate only the project config: navig config validate --scope project"
+        )
         ch.dim("  - Validate both:                 navig config validate --scope both")
         raise typer.Exit(1)
 
@@ -517,7 +524,9 @@ def install_schemas(
         ch.dim("  Or:  --scope project  (installs under .navig in current dir)")
         raise typer.Exit(1)
 
-    target_root = (Path.home() / ".navig") if scope == "global" else (Path.cwd() / ".navig")
+    target_root = (
+        (Path.home() / ".navig") if scope == "global" else (Path.cwd() / ".navig")
+    )
     target_dir = target_root / "schemas"
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -546,8 +555,18 @@ def install_schemas(
             yaml_schemas = {}
 
         # VS Code expects file paths or URLs as keys.
-        yaml_schemas[str(host_dst)] = ["**/.navig/hosts/*.yml", "**/.navig/hosts/*.yaml", "**/hosts/*.yml", "**/hosts/*.yaml"]
-        yaml_schemas[str(app_dst)] = ["**/.navig/apps/*.yml", "**/.navig/apps/*.yaml", "**/apps/*.yml", "**/apps/*.yaml"]
+        yaml_schemas[str(host_dst)] = [
+            "**/.navig/hosts/*.yml",
+            "**/.navig/hosts/*.yaml",
+            "**/hosts/*.yml",
+            "**/hosts/*.yaml",
+        ]
+        yaml_schemas[str(app_dst)] = [
+            "**/.navig/apps/*.yml",
+            "**/.navig/apps/*.yaml",
+            "**/apps/*.yml",
+            "**/apps/*.yaml",
+        ]
         settings["yaml.schemas"] = yaml_schemas
         settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
         vscode_settings_written = True
@@ -560,7 +579,9 @@ def install_schemas(
                     "scope": scope,
                     "installed": [str(host_dst), str(app_dst)],
                     "vscode_settings_written": vscode_settings_written,
-                    "vscode_settings_path": str(settings_path) if write_vscode_settings else None,
+                    "vscode_settings_path": (
+                        str(settings_path) if write_vscode_settings else None
+                    ),
                 },
                 indent=2,
             )
@@ -580,12 +601,7 @@ def install_schemas(
     raise typer.Exit(0)
 
 
-def show(
-    target: str = typer.Argument(
-        ...,
-        help="Host name or host:app to display"
-    )
-):
+def show(target: str = typer.Argument(..., help="Host name or host:app to display")):
     """
     Display configuration.
 
@@ -598,9 +614,9 @@ def show(
     """
     config_manager = get_config_manager()
 
-    if ':' in target:
+    if ":" in target:
         # Show app configuration
-        host_name, app_name = target.split(':', 1)
+        host_name, app_name = target.split(":", 1)
 
         try:
             app_config = config_manager.load_app_config(host_name, app_name)
@@ -642,7 +658,7 @@ def set_mode(mode: str):
         config_manager.set_execution_mode(mode)
         ch.success(f"Execution mode set to: {mode}")
 
-        if mode == 'auto':
+        if mode == "auto":
             ch.warning("⚠️  Auto mode bypasses all confirmation prompts")
             ch.info("Use --confirm flag to force prompts for specific commands")
     except ValueError as e:
@@ -671,11 +687,11 @@ def set_confirmation_level(level: str):
         ch.success(f"Confirmation level set to: {level}")
 
         level_descriptions = {
-            'critical': 'Only destructive operations will require confirmation',
-            'standard': 'State-changing operations will require confirmation',
-            'verbose': 'All operations will require confirmation',
+            "critical": "Only destructive operations will require confirmation",
+            "standard": "State-changing operations will require confirmation",
+            "verbose": "All operations will require confirmation",
         }
-        ch.info(level_descriptions.get(level, ''))
+        ch.info(level_descriptions.get(level, ""))
     except ValueError as e:
         ch.error(str(e))
         raise typer.Exit(1) from e
@@ -696,7 +712,7 @@ def show_settings():
     execution_settings = config_manager.get_execution_settings()
     active_host = config_manager.get_active_host()
     active_app = config_manager.get_active_app()
-    default_host = global_config.get('default_host')
+    default_host = global_config.get("default_host")
 
     # Create table
     table = Table(title="NAVIG Settings", show_header=True)
@@ -707,47 +723,33 @@ def show_settings():
     # Execution settings
     table.add_row(
         "Execution Mode",
-        execution_settings['mode'],
-        "interactive: prompts | auto: no prompts"
+        execution_settings["mode"],
+        "interactive: prompts | auto: no prompts",
     )
     table.add_row(
         "Confirmation Level",
-        execution_settings['confirmation_level'],
-        "critical | standard | verbose"
+        execution_settings["confirmation_level"],
+        "critical | standard | verbose",
     )
 
     # Active context
+    table.add_row("Active Host", active_host or "(none)", "Currently selected host")
+    table.add_row("Active App", active_app or "(none)", "Currently selected app")
     table.add_row(
-        "Active Host",
-        active_host or "(none)",
-        "Currently selected host"
-    )
-    table.add_row(
-        "Active App",
-        active_app or "(none)",
-        "Currently selected app"
-    )
-    table.add_row(
-        "Default Host",
-        default_host or "(none)",
-        "Fallback when no active host"
+        "Default Host", default_host or "(none)", "Fallback when no active host"
     )
 
     # Other settings
     table.add_row(
-        "Log Level",
-        global_config.get('log_level', 'INFO'),
-        "Logging verbosity"
+        "Log Level", global_config.get("log_level", "INFO"), "Logging verbosity"
     )
     table.add_row(
         "Tunnel Auto-Cleanup",
-        str(global_config.get('tunnel_auto_cleanup', True)),
-        "Auto-stop tunnels when done"
+        str(global_config.get("tunnel_auto_cleanup", True)),
+        "Auto-stop tunnels when done",
     )
     table.add_row(
-        "Config Directory",
-        str(config_manager.base_dir),
-        "Configuration storage path"
+        "Config Directory", str(config_manager.base_dir), "Configuration storage path"
     )
 
     console.print()
@@ -755,7 +757,7 @@ def show_settings():
     console.print()
 
     # Show API key status (not the key itself)
-    api_key = global_config.get('openrouter_api_key', '')
+    api_key = global_config.get("openrouter_api_key", "")
     if api_key:
         ch.success("OpenRouter API Key: ✓ configured")
     else:
@@ -780,8 +782,8 @@ def set_config(key: str, value: str):
     config_manager = get_config_manager()
 
     # Handle nested keys (e.g., execution.mode)
-    if '.' in key:
-        parts = key.split('.')
+    if "." in key:
+        parts = key.split(".")
         config = config_manager.global_config
 
         # Navigate to parent
@@ -810,8 +812,8 @@ def get_config(key: str):
     config_manager = get_config_manager()
 
     # Handle nested keys
-    if '.' in key:
-        parts = key.split('.')
+    if "." in key:
+        parts = key.split(".")
         config = config_manager.global_config
 
         for part in parts:
@@ -834,7 +836,7 @@ def get_config(key: str):
 def edit_config(options: dict = None):
     """
     Edit global configuration file in default editor.
-    
+
     Opens the ~/.navig/config.yaml file in the system's default editor.
     """
     import os
@@ -851,13 +853,13 @@ def edit_config(options: dict = None):
     ch.info(f"Opening config file: {config_path}")
 
     try:
-        if platform.system() == 'Windows':
+        if platform.system() == "Windows":
             os.startfile(str(config_path))
-        elif platform.system() == 'Darwin':  # macOS
-            subprocess.run(['open', str(config_path)])
+        elif platform.system() == "Darwin":  # macOS
+            subprocess.run(["open", str(config_path)])
         else:  # Linux and others
             # Try common editors
-            editor = os.environ.get('EDITOR', 'nano')
+            editor = os.environ.get("EDITOR", "nano")
             subprocess.run([editor, str(config_path)])
 
         ch.success("Configuration file opened in editor.")
@@ -865,4 +867,3 @@ def edit_config(options: dict = None):
         ch.error(f"Failed to open editor: {e}")
         ch.info(f"You can manually edit: {config_path}")
         raise typer.Exit(1) from e
-

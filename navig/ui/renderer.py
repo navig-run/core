@@ -34,13 +34,18 @@ back to plain print(). They never raise.
            render_action_approval    y/n approval prompt
            render_section_divider    thin horizontal rule
 """
+
 from __future__ import annotations
 
 # ── Layer 4 ──────────────────────────────────────────────────────────────
 from navig.ui.actions import render_action_queue, render_actions, render_fallback
 from navig.ui.bars import render_metric_bars, render_sparklines
 from navig.ui.diff import render_diff_preview
-from navig.ui.formatters import render_command_row, render_kv_diagnostics, render_section_divider
+from navig.ui.formatters import (
+    render_command_row,
+    render_kv_diagnostics,
+    render_section_divider,
+)
 
 # ── Icons ─────────────────────────────────────────────────────────────────
 from navig.ui.icons import icon

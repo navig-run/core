@@ -3,6 +3,7 @@ SearchTool — DuckDuckGo HTML scraper.  Zero API key required.
 
 Scrapes DDG's /html endpoint and returns top-5 organic results.
 """
+
 from __future__ import annotations
 
 import logging
@@ -26,9 +27,16 @@ _HEADERS = {
 
 class SearchTool(BaseTool):
     name = "search"
-    description = "Search the web via DuckDuckGo. Returns top-5 results with title, URL, snippet."
+    description = (
+        "Search the web via DuckDuckGo. Returns top-5 results with title, URL, snippet."
+    )
     parameters = [
-        {"name": "query", "type": "string", "description": "Search query containing keywords", "required": True}
+        {
+            "name": "query",
+            "type": "string",
+            "description": "Search query containing keywords",
+            "required": True,
+        }
     ]
 
     async def run(
@@ -45,7 +53,9 @@ class SearchTool(BaseTool):
         try:
             import httpx
         except ImportError:
-            return ToolResult(name=self.name, success=False, error="httpx not installed")
+            return ToolResult(
+                name=self.name, success=False, error="httpx not installed"
+            )
 
         try:
             async with httpx.AsyncClient(
@@ -56,7 +66,9 @@ class SearchTool(BaseTool):
                 resp = await client.post(_DDG_URL, data={"q": query, "b": "", "kl": ""})
                 html = resp.text
 
-            await self._emit(on_status, "Parsing results…", f"HTTP {resp.status_code}", 65)
+            await self._emit(
+                on_status, "Parsing results…", f"HTTP {resp.status_code}", 65
+            )
 
             results = _parse_ddg_html(html)[:5]
 
@@ -74,7 +86,9 @@ class SearchTool(BaseTool):
             )
 
         except httpx.TimeoutException:
-            return ToolResult(name=self.name, success=False, error="search timed out (15s)")
+            return ToolResult(
+                name=self.name, success=False, error="search timed out (15s)"
+            )
         except Exception as exc:
             return ToolResult(name=self.name, success=False, error=str(exc))
 
@@ -104,16 +118,21 @@ def _parse_ddg_html(html: str) -> List[Dict[str, str]]:
         if url.startswith("//duckduckgo.com/l/?uddg="):
             # Decode DDG redirect
             from urllib.parse import unquote
+
             target_m = re.search(r"uddg=([^&]+)", url)
             if target_m:
                 url = unquote(target_m.group(1))
 
         # Snippet
-        snippet_m = re.search(r'class="result__snippet"[^>]*>(.*?)</span>', block, re.DOTALL)
+        snippet_m = re.search(
+            r'class="result__snippet"[^>]*>(.*?)</span>', block, re.DOTALL
+        )
         snippet = _strip_tags(snippet_m.group(1)) if snippet_m else ""
 
         if title or url:
-            results.append({"title": title.strip(), "url": url, "snippet": snippet.strip()})
+            results.append(
+                {"title": title.strip(), "url": url, "snippet": snippet.strip()}
+            )
 
     return results
 

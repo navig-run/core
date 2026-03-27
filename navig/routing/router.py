@@ -55,12 +55,19 @@ _HEDGE = re.compile(
 
 # ── Route Request / Decision ────────────────────────────────────────
 
+
 class RouteRequest:
     """Input to the unified router."""
 
     __slots__ = (
-        "messages", "text", "temperature", "max_tokens",
-        "tier_override", "model_override", "entrypoint", "metadata",
+        "messages",
+        "text",
+        "temperature",
+        "max_tokens",
+        "tier_override",
+        "model_override",
+        "entrypoint",
+        "metadata",
     )
 
     def __init__(
@@ -88,8 +95,15 @@ class RouteDecision:
     """Output of the route() step — everything needed before execution."""
 
     __slots__ = (
-        "mode", "confidence", "reasons", "provider", "model",
-        "purpose", "max_tokens", "temperature", "capabilities",
+        "mode",
+        "confidence",
+        "reasons",
+        "provider",
+        "model",
+        "purpose",
+        "max_tokens",
+        "temperature",
+        "capabilities",
     )
 
     def __init__(
@@ -117,11 +131,18 @@ class RouteDecision:
 
 # ── Provider Status ─────────────────────────────────────────────────
 
+
 class ProviderInfo:
     """Runtime information about a provider."""
 
-    def __init__(self, name: str, available: bool = False, models: Optional[List[str]] = None,
-                 capabilities: Optional[Dict[str, List[str]]] = None, error: str = ""):
+    def __init__(
+        self,
+        name: str,
+        available: bool = False,
+        models: Optional[List[str]] = None,
+        capabilities: Optional[Dict[str, List[str]]] = None,
+        error: str = "",
+    ):
         self.name = name
         self.available = available
         self.models = models or []
@@ -141,8 +162,12 @@ class ProviderInfo:
 class ProviderStatus:
     """Snapshot of all provider availability."""
 
-    def __init__(self, providers: Optional[List[ProviderInfo]] = None,
-                 active_provider: str = "", router_mode: str = "unified"):
+    def __init__(
+        self,
+        providers: Optional[List[ProviderInfo]] = None,
+        active_provider: str = "",
+        router_mode: str = "unified",
+    ):
         self.providers = providers or []
         self.active_provider = active_provider
         self.router_mode = router_mode
@@ -158,6 +183,7 @@ class ProviderStatus:
 
 
 # ── Unified Router ──────────────────────────────────────────────────
+
 
 class UnifiedRouter:
     """
@@ -186,14 +212,18 @@ class UnifiedRouter:
         # Tier override → direct mapping
         if request.tier_override:
             tier_to_mode = {
-                "small": "small_talk", "big": "big_tasks",
-                "coder_big": "coding", "coder": "coding",
+                "small": "small_talk",
+                "big": "big_tasks",
+                "coder_big": "coding",
+                "coder": "coding",
             }
             mode = tier_to_mode.get(request.tier_override, "big_tasks")
             return RouteDecision(
-                mode=mode, confidence=1.0,
+                mode=mode,
+                confidence=1.0,
                 reasons=[f"tier_override:{request.tier_override}"],
-                purpose=mode, max_tokens=request.max_tokens,
+                purpose=mode,
+                max_tokens=request.max_tokens,
                 temperature=request.temperature,
                 capabilities=MODE_CAPABILITIES.get(mode),
             )
@@ -201,9 +231,12 @@ class UnifiedRouter:
         # Model override → big_tasks by default
         if request.model_override:
             return RouteDecision(
-                mode="big_tasks", confidence=1.0,
-                reasons=["model_override"], model=request.model_override,
-                purpose="big_tasks", max_tokens=request.max_tokens,
+                mode="big_tasks",
+                confidence=1.0,
+                reasons=["model_override"],
+                model=request.model_override,
+                purpose="big_tasks",
+                max_tokens=request.max_tokens,
                 temperature=request.temperature,
                 capabilities=MODE_CAPABILITIES.get("big_tasks"),
             )
@@ -218,9 +251,13 @@ class UnifiedRouter:
 
         caps = MODE_CAPABILITIES.get(mode)
         return RouteDecision(
-            mode=mode, confidence=confidence, reasons=reasons,
-            purpose=mode, max_tokens=request.max_tokens,
-            temperature=request.temperature, capabilities=caps,
+            mode=mode,
+            confidence=confidence,
+            reasons=reasons,
+            purpose=mode,
+            max_tokens=request.max_tokens,
+            temperature=request.temperature,
+            capabilities=caps,
         )
 
     async def run(self, request: RouteRequest) -> Tuple[str, RouteTrace]:
@@ -267,7 +304,10 @@ class UnifiedRouter:
             # Execute
             try:
                 response_text = await self._execute(
-                    provider, provider_name, decision, request,
+                    provider,
+                    provider_name,
+                    decision,
+                    request,
                 )
                 trace.provider = provider_name
                 trace.model = decision.model or "(purpose-selected)"
@@ -278,7 +318,9 @@ class UnifiedRouter:
                 trace.fallbacks_tried.append(provider_name)
                 logger.warning(
                     "Provider %s failed for mode=%s: %s",
-                    provider_name, decision.mode, e,
+                    provider_name,
+                    decision.mode,
+                    e,
                 )
                 continue
 
@@ -298,7 +340,11 @@ class UnifiedRouter:
         if audit == "retry" and trace.provider != "mcp_bridge":
             # Escalate: try next provider with stronger model
             escalated = await self._escalate(
-                request, decision, trace, provider_chain, t0,
+                request,
+                decision,
+                trace,
+                provider_chain,
+                t0,
             )
             if escalated:
                 response_text = escalated
@@ -308,8 +354,12 @@ class UnifiedRouter:
 
         logger.info(
             "Route: mode=%s conf=%.2f provider=%s model=%s latency=%dms audit=%s fallbacks=%s",
-            trace.mode, trace.confidence, trace.provider,
-            trace.model, trace.latency_ms, trace.audit_result,
+            trace.mode,
+            trace.confidence,
+            trace.provider,
+            trace.model,
+            trace.latency_ms,
+            trace.audit_result,
             trace.fallbacks_tried,
         )
 
@@ -326,9 +376,12 @@ class UnifiedRouter:
                 continue
             try:
                 available = await provider.is_available()
-                providers.append(ProviderInfo(
-                    name=name, available=available,
-                ))
+                providers.append(
+                    ProviderInfo(
+                        name=name,
+                        available=available,
+                    )
+                )
             except Exception as e:
                 providers.append(ProviderInfo(name=name, error=str(e)))
 
@@ -341,9 +394,15 @@ class UnifiedRouter:
 
     def _get_provider_chain(self) -> List[str]:
         """Ordered provider chain. VS Code first, then cloud, then local."""
-        chain = self._config.get("provider_chain", [
-            "mcp_bridge", "openrouter", "github_models", "ollama",
-        ])
+        chain = self._config.get(
+            "provider_chain",
+            [
+                "mcp_bridge",
+                "openrouter",
+                "github_models",
+                "ollama",
+            ],
+        )
         return chain
 
     def _get_provider_instance(self, name: str):
@@ -380,16 +439,19 @@ class UnifiedRouter:
 
         elif name == "openrouter":
             import os
-            api_key = (
-                self._config.get("openrouter_api_key", "")
-                or os.getenv("OPENROUTER_API_KEY", "")
+
+            api_key = self._config.get("openrouter_api_key", "") or os.getenv(
+                "OPENROUTER_API_KEY", ""
             )
             if not api_key:
                 # Try vault
                 try:
                     from navig.vault import get_vault
+
                     vault = get_vault()
-                    secret = vault.get_secret("openrouter", "api_key", caller="unified_router")
+                    secret = vault.get_secret(
+                        "openrouter", "api_key", caller="unified_router"
+                    )
                     if secret:
                         api_key = secret.reveal().strip()
                 except Exception:  # noqa: BLE001
@@ -400,10 +462,12 @@ class UnifiedRouter:
 
         elif name == "github_models":
             import os
+
             token = os.getenv("GITHUB_TOKEN", "")
             if not token:
                 try:
                     from navig.agent.llm_providers import GitHubModelsProvider as GMP
+
                     token = GMP._resolve_token(GMP)
                 except Exception:  # noqa: BLE001
                     pass  # best-effort; failure is non-critical
@@ -419,8 +483,11 @@ class UnifiedRouter:
     # ── Execution ───────────────────────────────────────────────────
 
     async def _execute(
-        self, provider, provider_name: str,
-        decision: RouteDecision, request: RouteRequest,
+        self,
+        provider,
+        provider_name: str,
+        decision: RouteDecision,
+        request: RouteRequest,
     ) -> str:
         """Execute a request against a specific provider."""
 
@@ -446,14 +513,18 @@ class UnifiedRouter:
             model = prefs.get(provider_name, "")
 
         if not model:
-            raise RuntimeError(f"No model configured for {provider_name}/{decision.mode}")
+            raise RuntimeError(
+                f"No model configured for {provider_name}/{decision.mode}"
+            )
 
         # Guard: log a warning if Opus is about to be used — it must never auto-route.
         if "claude-opus" in model.lower():
             logger.warning(
                 "[routing] Opus model selected: provider=%s mode=%s model=%s — "
                 "verify this is an explicit user request (allow_premium=True)",
-                provider_name, decision.mode, model,
+                provider_name,
+                decision.mode,
+                model,
             )
 
         resp = await provider.chat(
@@ -490,8 +561,12 @@ class UnifiedRouter:
         return "pass"
 
     async def _escalate(
-        self, request: RouteRequest, decision: RouteDecision,
-        trace: RouteTrace, provider_chain: List[str], t0: float,
+        self,
+        request: RouteRequest,
+        decision: RouteDecision,
+        trace: RouteTrace,
+        provider_chain: List[str],
+        t0: float,
     ) -> Optional[str]:
         """
         Try the next available stronger provider (max 1 escalation).
@@ -507,7 +582,7 @@ class UnifiedRouter:
             return None
 
         # Try the next providers (skip current)
-        for name in provider_chain[current_idx + 1:]:
+        for name in provider_chain[current_idx + 1 :]:
             provider = self._get_provider_instance(name)
             if provider is None:
                 continue
@@ -553,6 +628,7 @@ def get_router(config: Optional[Dict[str, Any]] = None) -> UnifiedRouter:
         if config is None:
             try:
                 from navig.config import get_config_manager
+
                 config = get_config_manager().global_config
             except Exception:
                 config = {}
@@ -566,6 +642,7 @@ def reset_router() -> None:
     if _router:
         try:
             import asyncio
+
             loop = asyncio.get_running_loop()
             loop.create_task(_router.close())
         except RuntimeError:

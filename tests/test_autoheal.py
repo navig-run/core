@@ -12,6 +12,7 @@ Covers:
     AutoHealMixin._handle_autoheal — 5 tests (on, off, hive on, hive off, status)
     HealPRSubmitter.store_pending_patch — 2 tests (creates file, list_pending_patches)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -20,11 +21,9 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
-
-# ── Imports under test ───────────────────────────────────────────────────────
 
 from navig.gateway.channels.telegram_autoheal import (
     AutoHealMixin,
@@ -34,6 +33,8 @@ from navig.gateway.channels.telegram_autoheal import (
     detect_failure_in_response,
 )
 from navig.selfheal.ssh_healer import HealResult, SSHHealer
+
+# ── Imports under test ───────────────────────────────────────────────────────
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -78,7 +79,9 @@ class TestClassifyFailure(unittest.TestCase):
     """classify_failure returns the correct FailureClass for each scenario."""
 
     def test_ssh_auth_fail_publickey(self) -> None:
-        fc = classify_failure("Permission denied (publickey, gssapi-keyex)", 1, "run ls")
+        fc = classify_failure(
+            "Permission denied (publickey, gssapi-keyex)", 1, "run ls"
+        )
         assert fc == FailureClass.SSH_AUTH_FAIL
 
     def test_ssh_auth_fail_password(self) -> None:
@@ -157,7 +160,9 @@ class TestSSHHealerKeyscanAndTrust(unittest.IsolatedAsyncioTestCase):
         healer = SSHHealer()
         result = await healer.keyscan_and_trust("localhost")
         assert result.status == "partial"
-        assert "localhost" in result.message.lower() or "local" in result.message.lower()
+        assert (
+            "localhost" in result.message.lower() or "local" in result.message.lower()
+        )
 
     async def test_keyscan_success_writes_known_hosts(self) -> None:
         healer = SSHHealer()
@@ -180,6 +185,7 @@ class TestSSHHealerKeyscanAndTrust(unittest.IsolatedAsyncioTestCase):
             ):
                 # Patch the module-level constant directly
                 import navig.selfheal.ssh_healer as _m
+
                 orig = _m._KNOWN_HOSTS_PATH
                 _m._KNOWN_HOSTS_PATH = kh
                 try:
@@ -192,7 +198,12 @@ class TestSSHHealerKeyscanAndTrust(unittest.IsolatedAsyncioTestCase):
     async def test_keyscan_subprocess_failure_returns_failed(self) -> None:
         healer = SSHHealer()
         proc = MagicMock()
-        proc.communicate = AsyncMock(return_value=(b"", b"ssh-keyscan: getaddrinfo broken_host: Name or service not known"))
+        proc.communicate = AsyncMock(
+            return_value=(
+                b"",
+                b"ssh-keyscan: getaddrinfo broken_host: Name or service not known",
+            )
+        )
         proc.returncode = 1
 
         with patch("asyncio.create_subprocess_exec", return_value=proc):
@@ -205,6 +216,7 @@ class TestSSHHealerEnsureSSHKey(unittest.IsolatedAsyncioTestCase):
         healer = SSHHealer()
         with tempfile.NamedTemporaryFile(suffix="id_ed25519") as f:
             import navig.selfheal.ssh_healer as _m
+
             orig = _m._DEFAULT_SSH_KEY_PATH
             _m._DEFAULT_SSH_KEY_PATH = Path(f.name)
             try:
@@ -222,6 +234,7 @@ class TestSSHHealerEnsureSSHKey(unittest.IsolatedAsyncioTestCase):
             proc.returncode = 0
 
             import navig.selfheal.ssh_healer as _m
+
             orig = _m._DEFAULT_SSH_KEY_PATH
             _m._DEFAULT_SSH_KEY_PATH = key_path
             try:
@@ -243,6 +256,7 @@ class TestSSHHealerEnsureSSHKey(unittest.IsolatedAsyncioTestCase):
             proc.returncode = 1
 
             import navig.selfheal.ssh_healer as _m
+
             orig = _m._DEFAULT_SSH_KEY_PATH
             _m._DEFAULT_SSH_KEY_PATH = key_path
             try:
@@ -270,7 +284,10 @@ class TestSSHHealerProbe(unittest.IsolatedAsyncioTestCase):
 
         proc = MagicMock()
         proc.communicate = AsyncMock(
-            return_value=(b"", b"debug1: Connection established.\ndebug1: Server host key: ecdsa\n")
+            return_value=(
+                b"",
+                b"debug1: Connection established.\ndebug1: Server host key: ecdsa\n",
+            )
         )
         proc.returncode = 0
 
@@ -298,7 +315,9 @@ class TestSSHHealerProbe(unittest.IsolatedAsyncioTestCase):
 class TestRunAutofix(unittest.IsolatedAsyncioTestCase):
     async def test_ssh_hostkey_dispatches_to_keyscan(self) -> None:
         mixin = _make_mixin()
-        fake_result = HealResult(status="resolved", message="Trusted.", should_retry=True)
+        fake_result = HealResult(
+            status="resolved", message="Trusted.", should_retry=True
+        )
         with patch(
             "navig.selfheal.ssh_healer.SSHHealer.keyscan_and_trust",
             new=AsyncMock(return_value=fake_result),
@@ -326,7 +345,9 @@ class TestRunAutofix(unittest.IsolatedAsyncioTestCase):
         ctx = _ctx(attempt_count=2)  # already at max
         result = await mixin._run_autofix(ctx)
         assert result.status == "failed"
-        assert "maximum" in result.message.lower() or "attempts" in result.message.lower()
+        assert (
+            "maximum" in result.message.lower() or "attempts" in result.message.lower()
+        )
 
     async def test_timeout_class_returns_partial(self) -> None:
         mixin = _make_mixin()
@@ -383,7 +404,9 @@ class TestHandleAutoheal(unittest.IsolatedAsyncioTestCase):
 
         await mixin._handle_autoheal(chat_id=100, user_id=200, args="hive off")
 
-        sm.update_settings.assert_called_once_with(100, 200, autoheal_hive_enabled=False)
+        sm.update_settings.assert_called_once_with(
+            100, 200, autoheal_hive_enabled=False
+        )
 
     async def test_status_calls_send_autoheal_status(self) -> None:
         mixin = _make_mixin()
@@ -423,6 +446,7 @@ class TestHealPRSubmitter(unittest.TestCase):
             submitter = HealPRSubmitter()
 
             import navig.selfheal.heal_pr_submitter as _m
+
             orig = _m._HEAL_PATCHES_DIR
             _m._HEAL_PATCHES_DIR = Path(tmpdir)
             try:
@@ -450,6 +474,7 @@ class TestHealPRSubmitter(unittest.TestCase):
             submitter = HealPRSubmitter()
 
             import navig.selfheal.heal_pr_submitter as _m
+
             orig = _m._HEAL_PATCHES_DIR
             _m._HEAL_PATCHES_DIR = Path(tmpdir)
             try:
@@ -499,7 +524,12 @@ class TestTelegramSessionAutoHealFields(unittest.TestCase):
         from navig.gateway.channels.telegram_sessions import TelegramSession
 
         # Simulate an old session dict that predates autoheal fields
-        old_dict = {"chat_id": 1, "user_id": 2, "session_key": "1:2", "username": "someone"}
+        old_dict = {
+            "chat_id": 1,
+            "user_id": 2,
+            "session_key": "1:2",
+            "username": "someone",
+        }
         session = TelegramSession.from_dict(old_dict)
         assert session.autoheal_enabled is False
         assert session.heal_history == []

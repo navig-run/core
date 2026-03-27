@@ -12,35 +12,35 @@ quick_actions:
   - name: logs
     command: "navig logs --follow --lines 100"
     description: "Follow application logs"
-  
+
   - name: health
     command: "navig health --all"
     description: "Check all host health"
-  
+
   - name: deploy
     command: "navig workflow run deploy"
     description: "Run deployment workflow"
-  
+
   - name: backup
     command: "navig db backup --verify"
     description: "Create verified database backup"
-  
+
   - name: restart
     command: "navig docker restart --all"
     description: "Restart all containers"
-  
+
   - name: disk
     command: "navig exec df -h"
     description: "Check disk usage"
-  
+
   - name: mem
     command: "navig exec free -h"
     description: "Check memory usage"
-  
+
   - name: procs
     command: "navig exec htop || top -bn1 | head -20"
     description: "View running processes"
-  
+
   - name: conn
     command: "navig host test"
     description: "Test host connectivity"

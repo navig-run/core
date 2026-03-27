@@ -22,15 +22,17 @@ logger = logging.getLogger(__name__)
 
 class NotificationPriority(Enum):
     """Priority levels for notifications."""
-    LOW = 1       # Can wait, batch with others
-    NORMAL = 2    # Send within reasonable time
-    HIGH = 3      # Send soon
+
+    LOW = 1  # Can wait, batch with others
+    NORMAL = 2  # Send within reasonable time
+    HIGH = 3  # Send soon
     CRITICAL = 4  # Send immediately
 
 
 @dataclass
 class Notification:
     """A notification to send."""
+
     type: str  # 'alert', 'briefing', 'routine', 'heartbeat', 'reminder'
     title: str
     message: str
@@ -41,22 +43,22 @@ class Notification:
     def to_telegram_message(self) -> str:
         """Format for Telegram."""
         emoji_map = {
-            'alert': '🚨',
-            'briefing': '📊',
-            'routine': '☀️',
-            'heartbeat': '💓',
-            'reminder': '⏰',
+            "alert": "🚨",
+            "briefing": "📊",
+            "routine": "☀️",
+            "heartbeat": "💓",
+            "reminder": "⏰",
         }
 
         priority_prefix = {
-            NotificationPriority.CRITICAL: '🔴 ',
-            NotificationPriority.HIGH: '🟡 ',
-            NotificationPriority.NORMAL: '',
-            NotificationPriority.LOW: '',
+            NotificationPriority.CRITICAL: "🔴 ",
+            NotificationPriority.HIGH: "🟡 ",
+            NotificationPriority.NORMAL: "",
+            NotificationPriority.LOW: "",
         }
 
-        emoji = emoji_map.get(self.type, '📢')
-        prefix = priority_prefix.get(self.priority, '')
+        emoji = emoji_map.get(self.type, "📢")
+        prefix = priority_prefix.get(self.priority, "")
 
         return f"{prefix}{emoji} **{self.title}**\n\n{self.message}"
 
@@ -64,6 +66,7 @@ class Notification:
 @dataclass
 class ScheduledTask:
     """A scheduled notification task."""
+
     name: str
     time: time  # Time of day to run
     func: Callable
@@ -105,7 +108,7 @@ class ChannelNotifier(ABC):
 class TelegramNotifier(ChannelNotifier):
     """
     Manages automatic Telegram notifications.
-    
+
     Features:
     - Push alerts when issues detected
     - Daily briefings (morning/evening)
@@ -118,7 +121,7 @@ class TelegramNotifier(ChannelNotifier):
     def __init__(
         self,
         telegram_channel,  # TelegramChannel instance
-        chat_id: int,      # Where to send notifications
+        chat_id: int,  # Where to send notifications
     ):
         self.channel = telegram_channel
         self.chat_id = chat_id
@@ -146,34 +149,42 @@ class TelegramNotifier(ChannelNotifier):
     def _setup_default_schedules(self):
         """Set up default scheduled notifications."""
         # Morning briefing at 7:00 AM
-        self.scheduled_tasks.append(ScheduledTask(
-            name="morning_briefing",
-            time=time(7, 0),
-            func=self._morning_briefing,
-            days=[0, 1, 2, 3, 4],  # Weekdays
-        ))
+        self.scheduled_tasks.append(
+            ScheduledTask(
+                name="morning_briefing",
+                time=time(7, 0),
+                func=self._morning_briefing,
+                days=[0, 1, 2, 3, 4],  # Weekdays
+            )
+        )
 
         # Evening summary at 6:00 PM
-        self.scheduled_tasks.append(ScheduledTask(
-            name="evening_summary",
-            time=time(18, 0),
-            func=self._evening_summary,
-            days=[0, 1, 2, 3, 4],  # Weekdays
-        ))
+        self.scheduled_tasks.append(
+            ScheduledTask(
+                name="evening_summary",
+                time=time(18, 0),
+                func=self._evening_summary,
+                days=[0, 1, 2, 3, 4],  # Weekdays
+            )
+        )
 
         # Heartbeat check every 30 minutes (handled separately)
-        self.scheduled_tasks.append(ScheduledTask(
-            name="heartbeat_check",
-            time=time(0, 0),  # Runs on interval, not specific time
-            func=self._heartbeat_check,
-        ))
+        self.scheduled_tasks.append(
+            ScheduledTask(
+                name="heartbeat_check",
+                time=time(0, 0),  # Runs on interval, not specific time
+                func=self._heartbeat_check,
+            )
+        )
 
         # Proactive engagement tick (runs alongside heartbeat interval)
-        self.scheduled_tasks.append(ScheduledTask(
-            name="engagement_tick",
-            time=time(0, 0),  # Runs on interval, not specific time
-            func=self._engagement_tick,
-        ))
+        self.scheduled_tasks.append(
+            ScheduledTask(
+                name="engagement_tick",
+                time=time(0, 0),  # Runs on interval, not specific time
+                func=self._engagement_tick,
+            )
+        )
 
     async def start(self):
         """Start the notification system."""
@@ -216,7 +227,9 @@ class TelegramNotifier(ChannelNotifier):
 
                     # Special handling for engagement tick
                     if task.name == "engagement_tick":
-                        if (now - last_engagement).total_seconds() >= engagement_interval:
+                        if (
+                            now - last_engagement
+                        ).total_seconds() >= engagement_interval:
                             await self._run_task(task)
                             last_engagement = now
                         continue
@@ -230,12 +243,13 @@ class TelegramNotifier(ChannelNotifier):
                         hour=task.time.hour,
                         minute=task.time.minute,
                         second=0,
-                        microsecond=0
+                        microsecond=0,
                     )
 
                     # Run if within 1 minute window and not already run today
-                    if (abs((now - task_time).total_seconds()) < 60 and
-                        (task.last_run is None or task.last_run.date() != now.date())):
+                    if abs((now - task_time).total_seconds()) < 60 and (
+                        task.last_run is None or task.last_run.date() != now.date()
+                    ):
                         await self._run_task(task)
                         task.last_run = now
 
@@ -267,9 +281,13 @@ class TelegramNotifier(ChannelNotifier):
                 return
 
             # Group by priority
-            critical = [n for n in self.queue if n.priority == NotificationPriority.CRITICAL]
+            critical = [
+                n for n in self.queue if n.priority == NotificationPriority.CRITICAL
+            ]
             high = [n for n in self.queue if n.priority == NotificationPriority.HIGH]
-            normal = [n for n in self.queue if n.priority == NotificationPriority.NORMAL]
+            normal = [
+                n for n in self.queue if n.priority == NotificationPriority.NORMAL
+            ]
             low = [n for n in self.queue if n.priority == NotificationPriority.LOW]
 
             # Send critical immediately
@@ -283,7 +301,9 @@ class TelegramNotifier(ChannelNotifier):
                 self.queue.remove(n)
 
             # Batch low priority (send if more than 3 or older than 30 min)
-            if len(low) >= 3 or (low and (datetime.now() - low[0].created_at).seconds > 1800):
+            if len(low) >= 3 or (
+                low and (datetime.now() - low[0].created_at).seconds > 1800
+            ):
                 await self._send_batched(low)
                 for n in low:
                     self.queue.remove(n)
@@ -298,7 +318,9 @@ class TelegramNotifier(ChannelNotifier):
         try:
             # Quiet-hours / DND gating
             if self._should_suppress(notification):
-                logger.debug("Suppressed notification (quiet hours/DND): %s", notification.title)
+                logger.debug(
+                    "Suppressed notification (quiet hours/DND): %s", notification.title
+                )
                 return
             message = notification.to_telegram_message()
             await self.channel.send_message(self.chat_id, message)
@@ -324,6 +346,7 @@ class TelegramNotifier(ChannelNotifier):
         """Check if notification should be held (quiet hours / DND mode)."""
         try:
             from navig.agent.proactive.user_state import get_user_state_tracker
+
             tracker = get_user_state_tracker()
             return tracker.should_suppress_notification(notification.priority.value)
         except Exception:
@@ -348,15 +371,17 @@ class TelegramNotifier(ChannelNotifier):
         self,
         title: str,
         message: str,
-        priority: NotificationPriority = NotificationPriority.HIGH
+        priority: NotificationPriority = NotificationPriority.HIGH,
     ):
         """Send an alert notification."""
-        await self.send(Notification(
-            type='alert',
-            title=title,
-            message=message,
-            priority=priority,
-        ))
+        await self.send(
+            Notification(
+                type="alert",
+                title=title,
+                message=message,
+                priority=priority,
+            )
+        )
 
     async def _flush_batch_after_delay(self):
         """Wait batch_window_sec then flush the buffer as a single message."""
@@ -394,19 +419,20 @@ class TelegramNotifier(ChannelNotifier):
         ]
 
         return Notification(
-            type='routine',
-            title='Morning Briefing',
-            message='\n'.join(lines),
+            type="routine",
+            title="Morning Briefing",
+            message="\n".join(lines),
             priority=NotificationPriority.NORMAL,
         )
 
     async def _evening_summary(self) -> Optional[Notification]:
         """Generate evening summary — NAVIG lore-flavored, day/hour-aware."""
         import random
+
         now = datetime.now()
         hour = now.hour
-        weekday = now.weekday()   # 0 = Monday, 6 = Sunday
-        day_name = now.strftime('%A')
+        weekday = now.weekday()  # 0 = Monday, 6 = Sunday
+        day_name = now.strftime("%A")
 
         # --- Dynamic opening line ---
         if hour < 19:
@@ -452,9 +478,9 @@ class TelegramNotifier(ChannelNotifier):
         ]
 
         return Notification(
-            type='briefing',
-            title=f'{day_name} Evening Summary',
-            message='\n'.join(lines),
+            type="briefing",
+            title=f"{day_name} Evening Summary",
+            message="\n".join(lines),
             priority=NotificationPriority.LOW,
         )
 
@@ -492,7 +518,7 @@ class TelegramNotifier(ChannelNotifier):
     async def _engagement_tick(self) -> Optional[Notification]:
         """
         Run proactive engagement evaluation.
-        
+
         This is the bridge between the EngagementCoordinator and the
         Telegram notification system. On each tick, the coordinator
         evaluates whether a proactive message should be sent.
@@ -506,15 +532,15 @@ class TelegramNotifier(ChannelNotifier):
 
             # Map engagement actions to notification types
             type_map = {
-                'greeting': 'routine',
-                'checkin': 'routine',
-                'capability_promo': 'reminder',
-                'contextual_tip': 'reminder',
-                'evening_wrapup': 'briefing',
-                'feedback_ask': 'routine',
-                'idle_nudge': 'routine',
-                'celebration': 'routine',
-                'heartbeat_report': 'heartbeat',
+                "greeting": "routine",
+                "checkin": "routine",
+                "capability_promo": "reminder",
+                "contextual_tip": "reminder",
+                "evening_wrapup": "briefing",
+                "feedback_ask": "routine",
+                "idle_nudge": "routine",
+                "celebration": "routine",
+                "heartbeat_report": "heartbeat",
             }
 
             # Map engagement priority (1-10) to notification priority
@@ -526,7 +552,7 @@ class TelegramNotifier(ChannelNotifier):
                 priority = NotificationPriority.LOW
 
             return Notification(
-                type=type_map.get(result.action.value, 'routine'),
+                type=type_map.get(result.action.value, "routine"),
                 title=f"NAVIG — {result.action.value.replace('_', ' ').title()}",
                 message=result.message,
                 priority=priority,
@@ -540,6 +566,7 @@ class TelegramNotifier(ChannelNotifier):
         """Lazy-load the engagement coordinator."""
         if self._engagement is None:
             from navig.agent.proactive.engagement import EngagementCoordinator
+
             self._engagement = EngagementCoordinator()
         return self._engagement
 
@@ -550,7 +577,7 @@ class TelegramNotifier(ChannelNotifier):
     ):
         """
         Record a user interaction for engagement tracking.
-        
+
         Call this from message handlers when the user sends a message
         to keep the engagement system's state tracker up to date.
         """
@@ -567,7 +594,7 @@ class TelegramNotifier(ChannelNotifier):
 class NotificationManager:
     """
     Central manager for all notification channels.
-    
+
     Integrates with:
     - Telegram
     - Discord (future)
@@ -594,7 +621,7 @@ class NotificationManager:
     def configure_telegram(self, telegram_channel, chat_id: int):
         """Configure Telegram notifications."""
         self.telegram = TelegramNotifier(telegram_channel, chat_id)
-        self._channels['telegram'] = self.telegram
+        self._channels["telegram"] = self.telegram
 
     def configure_matrix(
         self,
@@ -617,7 +644,9 @@ class NotificationManager:
         from navig.gateway.matrix_notifier import MatrixNotifier
 
         notifier = MatrixNotifier(
-            bot, room_id, priority_room_id=priority_room_id,
+            bot,
+            room_id,
+            priority_room_id=priority_room_id,
         )
         self._channels["matrix"] = notifier
 
@@ -642,7 +671,7 @@ class NotificationManager:
         self,
         title: str,
         message: str,
-        priority: NotificationPriority = NotificationPriority.HIGH
+        priority: NotificationPriority = NotificationPriority.HIGH,
     ):
         """Broadcast alert to all channels."""
         for channel in self._channels.values():

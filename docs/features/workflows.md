@@ -167,15 +167,15 @@ steps:
   - name: Step name
     command: host use ${host}
     description: What this step does (optional)
-    
+
   - name: Step with prompt
     command: run "systemctl restart ${service}"
     prompt: "Proceed with restart?"
-    
+
   - name: Step that can fail
     command: docker ps
     continue_on_error: true
-    
+
   - name: Skip if previous failed
     command: docker logs app
     skip_on_error: true
@@ -310,7 +310,7 @@ navig workflow run server-health --var host=production
 # Good
 name: Production Database Backup
 
-# Bad  
+# Bad
 name: Backup
 ```
 
@@ -467,5 +467,3 @@ ls -la ~/.navig/workflows/
 # Ensure workflow directory exists
 mkdir -p ~/.navig/workflows
 ```
-
-

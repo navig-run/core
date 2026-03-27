@@ -3,6 +3,7 @@
 Each source knows how to discover the latest available version.
 The factory ``build_source()`` constructs the right source from config.
 """
+
 from __future__ import annotations
 
 import re
@@ -18,6 +19,7 @@ class SourceError(Exception):
 # Base
 # ---------------------------------------------------------------------------
 
+
 class _BaseSource:
     @property
     def label(self) -> str:
@@ -30,6 +32,7 @@ class _BaseSource:
 # ---------------------------------------------------------------------------
 # PyPI
 # ---------------------------------------------------------------------------
+
 
 class PyPISource(_BaseSource):
     """Fetch latest version from PyPI."""
@@ -46,6 +49,7 @@ class PyPISource(_BaseSource):
     def latest_version(self) -> str:
         import json
         import urllib.request
+
         url = f"https://pypi.org/pypi/{self._package}/json"
         try:
             with urllib.request.urlopen(url, timeout=10) as resp:
@@ -84,6 +88,7 @@ class PyPISource(_BaseSource):
 # GitHub Releases
 # ---------------------------------------------------------------------------
 
+
 class GitHubSource(_BaseSource):
     """Fetch latest release tag from GitHub."""
 
@@ -98,9 +103,15 @@ class GitHubSource(_BaseSource):
     def latest_version(self) -> str:
         import json
         import urllib.request
+
         url = f"https://api.github.com/repos/{self._repo}/releases/latest"
-        req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json",
-                                                    "User-Agent": "navig-update/1.0"})
+        req = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "navig-update/1.0",
+            },
+        )
         if self._token:
             req.add_header("Authorization", f"Bearer {self._token}")
         try:
@@ -118,6 +129,7 @@ class GitHubSource(_BaseSource):
 # ---------------------------------------------------------------------------
 # Git Repo (local or remote)
 # ---------------------------------------------------------------------------
+
 
 class GitRepoSource(_BaseSource):
     """Inspect git tags in a local or remote repo to find the latest version."""
@@ -160,6 +172,7 @@ class GitRepoSource(_BaseSource):
 # Artifact URL
 # ---------------------------------------------------------------------------
 
+
 class ArtifactURLSource(_BaseSource):
     """Fetch version string from an arbitrary URL (JSON or plain text)."""
 
@@ -174,6 +187,7 @@ class ArtifactURLSource(_BaseSource):
     def latest_version(self) -> str:
         import json as _json
         import urllib.request
+
         try:
             with urllib.request.urlopen(self._url, timeout=10) as resp:
                 body = resp.read().decode("utf-8", errors="replace")
@@ -199,6 +213,7 @@ class ArtifactURLSource(_BaseSource):
 # Local File
 # ---------------------------------------------------------------------------
 
+
 class LocalFileSource(_BaseSource):
     """Read version from a local plain-text file."""
 
@@ -212,14 +227,18 @@ class LocalFileSource(_BaseSource):
     def latest_version(self) -> str:
         try:
             from pathlib import Path
+
             return Path(self._path).read_text(encoding="utf-8").strip().lstrip("v")
         except Exception as exc:
-            raise SourceError(f"Cannot read version file '{self._path}': {exc}") from exc
+            raise SourceError(
+                f"Cannot read version file '{self._path}': {exc}"
+            ) from exc
 
 
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
+
 
 def build_source(cfg: Dict[str, Any], channel: str = "stable") -> _BaseSource:
     """Construct a source from a config dict (from defaults.yaml ``update.source``)."""
@@ -229,19 +248,22 @@ def build_source(cfg: Dict[str, Any], channel: str = "stable") -> _BaseSource:
         return PyPISource(package=cfg.get("package", "navig"), channel=channel)
 
     if src_type == "github":
-        return GitHubSource(repo=cfg.get("repo", "navig-os/navig-core"),
-                             token=cfg.get("token"))
+        return GitHubSource(
+            repo=cfg.get("repo", "navig-os/navig-core"), token=cfg.get("token")
+        )
 
     if src_type == "git-repo":
-        return GitRepoSource(repo_path=cfg.get("path", "."),
-                              remote=cfg.get("remote"))
+        return GitRepoSource(repo_path=cfg.get("path", "."), remote=cfg.get("remote"))
 
     if src_type == "artifact-url":
-        return ArtifactURLSource(url=cfg["url"],
-                                  json_key=cfg.get("json_key", "version"))
+        return ArtifactURLSource(
+            url=cfg["url"], json_key=cfg.get("json_key", "version")
+        )
 
     if src_type == "local-file":
         return LocalFileSource(path=cfg["path"])
 
-    raise ValueError(f"Unknown update source type: '{src_type}'. "
-                     "Valid: pypi, github, git-repo, artifact-url, local-file")
+    raise ValueError(
+        f"Unknown update source type: '{src_type}'. "
+        "Valid: pypi, github, git-repo, artifact-url, local-file"
+    )

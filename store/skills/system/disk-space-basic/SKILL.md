@@ -14,7 +14,7 @@ navig-commands:
     syntax: "navig system disk"
     description: "Show disk usage for all mounted filesystems."
     output-format: "table"
-    
+
   - name: "check-directory"
     syntax: "navig system storage --path <path>"
     description: "Analyze storage usage for a specific directory."
@@ -28,7 +28,7 @@ examples:
   - user: "How much space is left on the C drive?"
     thought: "User wants to check global disk usage."
     command: "navig system disk"
-  
+
   - user: "Why is my projects folder so big?"
     thought: "User wants to analyze a specific directory. I should check the current working directory or ask, but here I'll check the projects folder."
     command: "navig system storage --path k:\\_PROJECTS_SMALL"
@@ -49,5 +49,3 @@ Displays a summary of all mounted drives, their total size, used space, and avai
 
 ### `navig system storage --path <path>`
 Calculates the size of a specific directory and lists the largest subdirectories. This is useful for drilling down into what is consuming space.
-
-

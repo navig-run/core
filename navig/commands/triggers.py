@@ -34,43 +34,48 @@ from navig import console_helper as ch
 # ENUMS AND DATA CLASSES
 # ============================================================================
 
+
 class TriggerType(str, Enum):
     """Types of events that can trigger actions."""
-    HEALTH = "health"           # Heartbeat failure/recovery
-    SCHEDULE = "schedule"       # Time-based (cron-like)
-    THRESHOLD = "threshold"     # Resource thresholds
-    WEBHOOK = "webhook"         # Incoming webhooks
-    FILE = "file"               # File changes
-    COMMAND = "command"         # After command execution
-    MANUAL = "manual"           # Manual trigger only
-    CALENDAR = "calendar"       # Calendar events
-    EMAIL = "email"             # Incoming email
+
+    HEALTH = "health"  # Heartbeat failure/recovery
+    SCHEDULE = "schedule"  # Time-based (cron-like)
+    THRESHOLD = "threshold"  # Resource thresholds
+    WEBHOOK = "webhook"  # Incoming webhooks
+    FILE = "file"  # File changes
+    COMMAND = "command"  # After command execution
+    MANUAL = "manual"  # Manual trigger only
+    CALENDAR = "calendar"  # Calendar events
+    EMAIL = "email"  # Incoming email
 
 
 class TriggerStatus(str, Enum):
     """Status of a trigger."""
+
     ENABLED = "enabled"
     DISABLED = "disabled"
-    FIRING = "firing"           # Currently executing
-    COOLDOWN = "cooldown"       # In cooldown period
+    FIRING = "firing"  # Currently executing
+    COOLDOWN = "cooldown"  # In cooldown period
 
 
 class ActionType(str, Enum):
     """Types of actions a trigger can execute."""
-    COMMAND = "command"         # Run navig command
-    WORKFLOW = "workflow"       # Run workflow
-    NOTIFY = "notify"           # Send notification
-    WEBHOOK = "webhook"         # Call external webhook
-    SCRIPT = "script"           # Run script file
+
+    COMMAND = "command"  # Run navig command
+    WORKFLOW = "workflow"  # Run workflow
+    NOTIFY = "notify"  # Send notification
+    WEBHOOK = "webhook"  # Call external webhook
+    SCRIPT = "script"  # Run script file
 
 
 @dataclass
 class TriggerCondition:
     """Condition that must be met for trigger to fire."""
-    type: str                   # check_type: health_status, resource, time, etc.
-    operator: str               # eq, ne, gt, lt, gte, lte, contains, matches
-    value: Any                  # Expected value
-    target: str = ""            # Target to check (host, service, metric name)
+
+    type: str  # check_type: health_status, resource, time, etc.
+    operator: str  # eq, ne, gt, lt, gte, lte, contains, matches
+    value: Any  # Expected value
+    target: str = ""  # Target to check (host, service, metric name)
 
     def evaluate(self, actual_value: Any) -> bool:
         """Evaluate if condition is met."""
@@ -117,8 +122,9 @@ class TriggerCondition:
 @dataclass
 class TriggerAction:
     """Action to execute when trigger fires."""
+
     type: ActionType
-    target: str                 # Command, workflow name, webhook URL, etc.
+    target: str  # Command, workflow name, webhook URL, etc.
     params: Dict[str, Any] = field(default_factory=dict)
     on_failure: str = "continue"  # continue, stop, retry
     retries: int = 0
@@ -146,6 +152,7 @@ class TriggerAction:
 @dataclass
 class Trigger:
     """Complete trigger definition."""
+
     id: str
     name: str
     type: TriggerType
@@ -162,11 +169,11 @@ class Trigger:
     fire_count: int = 0
 
     # Schedule-specific (for SCHEDULE type)
-    schedule: str = ""          # Cron expression or interval
+    schedule: str = ""  # Cron expression or interval
 
     # Threshold-specific (for THRESHOLD type)
-    host: str = ""              # Target host
-    metric: str = ""            # Metric to monitor
+    host: str = ""  # Target host
+    metric: str = ""  # Metric to monitor
 
     def __post_init__(self):
         if not self.created_at:
@@ -176,7 +183,7 @@ class Trigger:
 
     def _generate_id(self) -> str:
         """Generate unique trigger ID from name."""
-        base = re.sub(r'[^a-z0-9]+', '-', self.name.lower()).strip('-')
+        base = re.sub(r"[^a-z0-9]+", "-", self.name.lower()).strip("-")
         hash_suffix = hashlib.md5(self.name.encode()).hexdigest()[:6]
         return f"{base}-{hash_suffix}"
 
@@ -223,7 +230,9 @@ class Trigger:
             name=data.get("name", "Unnamed"),
             type=TriggerType(data.get("type", "manual")),
             description=data.get("description", ""),
-            conditions=[TriggerCondition.from_dict(c) for c in data.get("conditions", [])],
+            conditions=[
+                TriggerCondition.from_dict(c) for c in data.get("conditions", [])
+            ],
             actions=[TriggerAction.from_dict(a) for a in data.get("actions", [])],
             status=TriggerStatus(data.get("status", "enabled")),
             cooldown_seconds=data.get("cooldown_seconds", 60),
@@ -242,9 +251,10 @@ class Trigger:
 @dataclass
 class TriggerEvent:
     """Event that may trigger actions."""
+
     type: TriggerType
-    source: str                 # Where event came from
-    data: Dict[str, Any]        # Event payload
+    source: str  # Where event came from
+    data: Dict[str, Any]  # Event payload
     timestamp: str = ""
 
     def __post_init__(self):
@@ -255,6 +265,7 @@ class TriggerEvent:
 @dataclass
 class TriggerResult:
     """Result of trigger execution."""
+
     trigger_id: str
     success: bool
     actions_run: int
@@ -273,10 +284,11 @@ class TriggerResult:
 # TRIGGER MANAGER
 # ============================================================================
 
+
 class TriggerManager:
     """
     Manages trigger definitions, evaluation, and execution.
-    
+
     Storage: ~/.navig/triggers/
     - triggers.yaml - Trigger definitions
     - history.jsonl - Execution history
@@ -284,6 +296,7 @@ class TriggerManager:
 
     def __init__(self, config_manager=None):
         from navig.config import get_config_manager
+
         self.config_manager = config_manager or get_config_manager()
 
         # Storage paths
@@ -310,7 +323,7 @@ class TriggerManager:
 
         if self.triggers_file.exists():
             try:
-                with open(self.triggers_file, 'r', encoding='utf-8') as f:
+                with open(self.triggers_file, "r", encoding="utf-8") as f:
                     data = yaml.safe_load(f) or {}
 
                 for trigger_data in data.get("triggers", []):
@@ -323,11 +336,11 @@ class TriggerManager:
         """Save triggers to YAML file."""
         data = {
             "version": 1,
-            "triggers": [t.to_dict() for t in self._triggers.values()]
+            "triggers": [t.to_dict() for t in self._triggers.values()],
         }
 
         try:
-            with open(self.triggers_file, 'w', encoding='utf-8') as f:
+            with open(self.triggers_file, "w", encoding="utf-8") as f:
                 yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
         except Exception as e:
             ch.error(f"Failed to save triggers: {e}")
@@ -335,17 +348,22 @@ class TriggerManager:
     def _log_history(self, result: TriggerResult):
         """Append result to history file."""
         try:
-            with open(self.history_file, 'a', encoding='utf-8') as f:
-                f.write(json.dumps({
-                    "trigger_id": result.trigger_id,
-                    "success": result.success,
-                    "actions_run": result.actions_run,
-                    "actions_succeeded": result.actions_succeeded,
-                    "actions_failed": result.actions_failed,
-                    "message": result.message,
-                    "duration_ms": result.duration_ms,
-                    "timestamp": result.timestamp,
-                }) + "\n")
+            with open(self.history_file, "a", encoding="utf-8") as f:
+                f.write(
+                    json.dumps(
+                        {
+                            "trigger_id": result.trigger_id,
+                            "success": result.success,
+                            "actions_run": result.actions_run,
+                            "actions_succeeded": result.actions_succeeded,
+                            "actions_failed": result.actions_failed,
+                            "message": result.message,
+                            "duration_ms": result.duration_ms,
+                            "timestamp": result.timestamp,
+                        }
+                    )
+                    + "\n"
+                )
         except Exception:
             pass  # Don't fail on history logging errors
 
@@ -442,7 +460,7 @@ class TriggerManager:
     def process_event(self, event: TriggerEvent) -> List[TriggerResult]:
         """
         Process an event against all triggers.
-        
+
         Returns list of results for triggers that fired.
         """
         self._ensure_loaded()
@@ -469,7 +487,9 @@ class TriggerManager:
 
         for condition in trigger.conditions:
             # Get actual value from event data
-            actual_value = event.data.get(condition.target, event.data.get(condition.type))
+            actual_value = event.data.get(
+                condition.target, event.data.get(condition.type)
+            )
 
             if not condition.evaluate(actual_value):
                 return False
@@ -479,6 +499,7 @@ class TriggerManager:
     def _execute_trigger(self, trigger: Trigger, event: TriggerEvent) -> TriggerResult:
         """Execute all actions for a trigger."""
         import time
+
         start_time = time.time()
 
         actions_run = 0
@@ -524,10 +545,7 @@ class TriggerManager:
         return result
 
     def _execute_action(
-        self,
-        action: TriggerAction,
-        trigger: Trigger,
-        event: TriggerEvent
+        self, action: TriggerAction, trigger: Trigger, event: TriggerEvent
     ) -> tuple[bool, str]:
         """Execute a single action."""
         try:
@@ -536,7 +554,9 @@ class TriggerManager:
             elif action.type == ActionType.WORKFLOW:
                 return self._run_workflow(action.target, action.params)
             elif action.type == ActionType.NOTIFY:
-                return self._send_notification(action.target, trigger, event, action.params)
+                return self._send_notification(
+                    action.target, trigger, event, action.params
+                )
             elif action.type == ActionType.WEBHOOK:
                 return self._call_webhook(action.target, trigger, event, action.params)
             elif action.type == ActionType.SCRIPT:
@@ -570,8 +590,8 @@ class TriggerManager:
                 capture_output=True,
                 text=True,
                 timeout=300,
-                encoding='utf-8',
-                errors='replace',
+                encoding="utf-8",
+                errors="replace",
                 env=env,
             )
 
@@ -584,7 +604,9 @@ class TriggerManager:
         except Exception as e:
             return False, str(e)
 
-    def _run_workflow(self, workflow_name: str, params: Dict[str, Any]) -> tuple[bool, str]:
+    def _run_workflow(
+        self, workflow_name: str, params: Dict[str, Any]
+    ) -> tuple[bool, str]:
         """Run a workflow."""
         from navig.commands.workflow import WorkflowManager
 
@@ -608,7 +630,7 @@ class TriggerManager:
         channel: str,
         trigger: Trigger,
         event: TriggerEvent,
-        params: Dict[str, Any]
+        params: Dict[str, Any],
     ) -> tuple[bool, str]:
         """Send notification via specified channel."""
         message = params.get("message", f"Trigger '{trigger.name}' fired")
@@ -623,6 +645,7 @@ class TriggerManager:
             # Try to send via telegram bot
             try:
                 from navig.commands.gateway import send_telegram_message
+
                 send_telegram_message(message)
                 return True, ""
             except Exception as e:
@@ -632,6 +655,7 @@ class TriggerManager:
             return True, ""
         elif channel == "log":
             from navig.debug_logger import get_logger
+
             logger = get_logger()
             logger.info(f"[TRIGGER] {message}")
             return True, ""
@@ -639,11 +663,7 @@ class TriggerManager:
             return False, f"Unknown notification channel: {channel}"
 
     def _call_webhook(
-        self,
-        url: str,
-        trigger: Trigger,
-        event: TriggerEvent,
-        params: Dict[str, Any]
+        self, url: str, trigger: Trigger, event: TriggerEvent, params: Dict[str, Any]
     ) -> tuple[bool, str]:
         """Call external webhook."""
         try:
@@ -660,12 +680,12 @@ class TriggerManager:
                 **params,
             }
 
-            data = json.dumps(payload).encode('utf-8')
+            data = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(
                 url,
                 data=data,
-                headers={'Content-Type': 'application/json'},
-                method='POST',
+                headers={"Content-Type": "application/json"},
+                method="POST",
             )
 
             with urllib.request.urlopen(req, timeout=30) as response:
@@ -699,7 +719,10 @@ class TriggerManager:
                 cmd = [str(path)]
 
             # Add params as environment
-            env = {**dict(__import__('os').environ), **{k: str(v) for k, v in params.items()}}
+            env = {
+                **dict(__import__("os").environ),
+                **{k: str(v) for k, v in params.items()},
+            }
 
             result = subprocess.run(
                 cmd,
@@ -722,7 +745,9 @@ class TriggerManager:
     # MANUAL TRIGGER
     # ========================================================================
 
-    def fire_trigger(self, trigger_id: str, dry_run: bool = False) -> Optional[TriggerResult]:
+    def fire_trigger(
+        self, trigger_id: str, dry_run: bool = False
+    ) -> Optional[TriggerResult]:
         """Manually fire a trigger."""
         trigger = self.get_trigger(trigger_id)
         if not trigger:
@@ -766,7 +791,7 @@ class TriggerManager:
             return history
 
         try:
-            with open(self.history_file, 'r', encoding='utf-8') as f:
+            with open(self.history_file, "r", encoding="utf-8") as f:
                 for line in f:
                     if line.strip():
                         entry = json.loads(line)
@@ -791,7 +816,7 @@ class TriggerManager:
 
         if trigger_id is None:
             # Clear all
-            count = sum(1 for _ in open(self.history_file, 'r'))
+            count = sum(1 for _ in open(self.history_file, "r"))
             self.history_file.unlink()
             return count
 
@@ -799,7 +824,7 @@ class TriggerManager:
         kept = []
         removed = 0
 
-        with open(self.history_file, 'r', encoding='utf-8') as f:
+        with open(self.history_file, "r", encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     entry = json.loads(line)
@@ -808,7 +833,7 @@ class TriggerManager:
                     else:
                         kept.append(line)
 
-        with open(self.history_file, 'w', encoding='utf-8') as f:
+        with open(self.history_file, "w", encoding="utf-8") as f:
             f.writelines(kept)
 
         return removed
@@ -817,6 +842,7 @@ class TriggerManager:
 # ============================================================================
 # CLI DISPLAY FUNCTIONS
 # ============================================================================
+
 
 def list_triggers(
     type_filter: Optional[str] = None,
@@ -846,6 +872,7 @@ def list_triggers(
 
     if json_out:
         import json
+
         print(json.dumps([t.to_dict() for t in triggers], indent=2))
         return
 
@@ -902,6 +929,7 @@ def show_trigger(trigger_id: str, plain: bool = False, json_out: bool = False):
 
     if json_out:
         import json
+
         print(json.dumps(trigger.to_dict(), indent=2))
         return
 
@@ -914,9 +942,12 @@ def show_trigger(trigger_id: str, plain: bool = False, json_out: bool = False):
         print(f"Fire Count: {trigger.fire_count}")
         return
 
-
     # Header
-    status = "[green]ENABLED[/green]" if trigger.status == TriggerStatus.ENABLED else "[red]DISABLED[/red]"
+    status = (
+        "[green]ENABLED[/green]"
+        if trigger.status == TriggerStatus.ENABLED
+        else "[red]DISABLED[/red]"
+    )
     ch.header(f"{trigger.name} ({status})")
 
     if trigger.description:
@@ -1021,7 +1052,9 @@ def add_trigger_interactive():
         trigger.host = host
         trigger.metric = metric
         trigger.conditions = [
-            TriggerCondition(type="metric", operator="gte", value=int(threshold), target=metric)
+            TriggerCondition(
+                type="metric", operator="gte", value=int(threshold), target=metric
+            )
         ]
 
     # Save
@@ -1149,10 +1182,14 @@ def fire_trigger(trigger_id: str):
 
     if result:
         if result.success:
-            ch.success(f"Trigger fired successfully: {result.actions_succeeded}/{result.actions_run} actions succeeded")
+            ch.success(
+                f"Trigger fired successfully: {result.actions_succeeded}/{result.actions_run} actions succeeded"
+            )
         else:
             ch.error(f"Trigger failed: {result.message}")
-            ch.info(f"Actions: {result.actions_succeeded} succeeded, {result.actions_failed} failed")
+            ch.info(
+                f"Actions: {result.actions_succeeded} succeeded, {result.actions_failed} failed"
+            )
 
 
 def show_trigger_history(
@@ -1173,13 +1210,16 @@ def show_trigger_history(
 
     if json_out:
         import json
+
         print(json.dumps(history, indent=2))
         return
 
     if plain:
         for entry in history:
             status = "OK" if entry["success"] else "FAIL"
-            print(f"{entry['timestamp']}\t{entry['trigger_id']}\t{status}\t{entry['message']}")
+            print(
+                f"{entry['timestamp']}\t{entry['trigger_id']}\t{status}\t{entry['message']}"
+            )
         return
 
     table = Table(title="Trigger History")

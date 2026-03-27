@@ -61,7 +61,7 @@ def list_sessions(
             identifier,
             session.username or "-",
             str(session.message_count),
-            last_str
+            last_str,
         )
 
     ch.console.print(table)
@@ -70,8 +70,12 @@ def list_sessions(
 
 @sessions_app.command("show")
 def show_session(
-    session_key: str = typer.Argument(..., help="Session key (e.g., telegram:user:123)"),
-    messages: int = typer.Option(10, "--messages", "-n", help="Number of messages to show"),
+    session_key: str = typer.Argument(
+        ..., help="Session key (e.g., telegram:user:123)"
+    ),
+    messages: int = typer.Option(
+        10, "--messages", "-n", help="Number of messages to show"
+    ),
 ):
     """Show details of a specific session."""
     try:
@@ -189,6 +193,7 @@ def prune_sessions(
 
     # Count sessions that would be pruned
     from datetime import timedelta
+
     cutoff = datetime.now() - timedelta(days=days)
     to_prune = []
 
@@ -248,6 +253,7 @@ def telegram_status():
     # Session stats
     try:
         from navig.gateway.channels.telegram_sessions import get_session_manager
+
         manager = get_session_manager()
         sessions = manager.list_sessions()
         ch.console.print(f"  Sessions: {len(sessions)} active")

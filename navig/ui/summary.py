@@ -6,6 +6,7 @@ Always ends failure output with:
 
 render_next_step is the signature close of every failure / degraded path.
 """
+
 from __future__ import annotations
 
 import sys
@@ -24,7 +25,9 @@ def render_next_step(
     """Print the ⚑ next-step line. Always shown at end of failure output. Never raises."""
     try:
         flag = icon("flag")
-        console.print(f"\n  [{flag}] [dim]{label}:[/dim]  [bold cyan]{command}[/bold cyan]")
+        console.print(
+            f"\n  [{flag}] [dim]{label}:[/dim]  [bold cyan]{command}[/bold cyan]"
+        )
     except Exception:
         try:
             print(f"\n  >> {label}: {command}", file=sys.stdout)

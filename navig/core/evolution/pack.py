@@ -1,4 +1,3 @@
-
 import os
 from pathlib import Path
 from typing import Any, Optional
@@ -15,7 +14,7 @@ class PackEvolver(BaseEvolver):
 
     def __init__(self):
         super().__init__()
-        self._packs_dir = Path("packs") # Assume relative to CWD for now
+        self._packs_dir = Path("packs")  # Assume relative to CWD for now
         self._packs_dir.mkdir(exist_ok=True)
         self._system_prompt = """
 You are a Navig Pack Designer.
@@ -39,12 +38,16 @@ Constraints:
 - Include dependencies relevant to the goal.
 """
 
-    def _generate(self, goal: str, previous_artifact: Any, error_msg: str, context: Any) -> Any:
+    def _generate(
+        self, goal: str, previous_artifact: Any, error_msg: str, context: Any
+    ) -> Any:
 
         prompt = f"Goal: Create a pack for {goal}\n\n"
 
         if previous_artifact:
-            prompt += f"Previous attempt failed:\nError: {error_msg}\n\nRefine this YAML."
+            prompt += (
+                f"Previous attempt failed:\nError: {error_msg}\n\nRefine this YAML."
+            )
 
         if os.environ.get("NAVIG_MOCK_AI"):
             return """
@@ -63,15 +66,16 @@ workflows:
         try:
             # Extract YAML
             import re
+
             match = re.search(r"```yaml\n(.*?)\n```", artifact, re.DOTALL)
             code = match.group(1).strip() if match else artifact
 
             data = yaml.safe_load(code)
             if not isinstance(data, dict):
                 return "Root must be dictionary"
-            if 'name' not in data:
+            if "name" not in data:
                 return "Missing 'name'"
-            if 'skills' not in data and 'workflows' not in data:
+            if "skills" not in data and "workflows" not in data:
                 return "Must contain skills or workflows"
 
             return None
@@ -82,16 +86,17 @@ workflows:
         """Save to packs/[name]/pack.yaml."""
         try:
             import re
+
             match = re.search(r"```yaml\n(.*?)\n```", artifact, re.DOTALL)
             code = match.group(1).strip() if match else artifact
             data = yaml.safe_load(code)
 
-            name = data.get('name', 'unnamed_pack')
+            name = data.get("name", "unnamed_pack")
             pack_dir = self._packs_dir / name
             pack_dir.mkdir(parents=True, exist_ok=True)
 
             path = pack_dir / "pack.yaml"
-            with open(path, 'w', encoding='utf-8') as f:
+            with open(path, "w", encoding="utf-8") as f:
                 f.write(code)
 
             success(f"Pack saved to {path}")

@@ -33,12 +33,7 @@ def run(
         replicas: Target replica count.
         host:     Target host name (default ``production-01``).
     """
-    from navig.core.renderer import (
-        BlockType,
-        renderBlock,
-        sessionClose,
-        sessionOpen,
-    )
+    from navig.core.renderer import BlockType, renderBlock, sessionClose, sessionOpen
 
     sessionOpen(host, f"scale  {service}")
 
@@ -65,8 +60,9 @@ def run(
 def scale_cmd(
     service: str = typer.Argument(..., help="Service name to scale"),
     replicas: int = typer.Argument(..., help="Target replica count"),
-    host: Optional[str] = typer.Option(None, "--host", "-H",
-                                       help="Target host (default: production-01)"),
+    host: Optional[str] = typer.Option(
+        None, "--host", "-H", help="Target host (default: production-01)"
+    ),
 ) -> None:
     """Scale a service to a desired replica count."""
     run(service, replicas, host=host or "production-01")

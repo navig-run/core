@@ -49,10 +49,12 @@ matrix_app = typer.Typer(
 # Helpers
 # ============================================================================
 
+
 def _get_config() -> dict:
     """Load comms.matrix config block."""
     try:
         from navig.core.config import get_global_config
+
         cfg = get_global_config()
         return cfg.get("comms", {}).get("matrix", {})
     except Exception:
@@ -63,6 +65,7 @@ def _get_credential(profile: str = "default") -> dict:
     """Pull Matrix credential from the vault (if available)."""
     try:
         from navig.vault.core import CredentialsVault
+
         vault = CredentialsVault()
         creds = vault.list_by_provider("matrix")
         for c in creds:
@@ -84,6 +87,7 @@ def _run_async(coro):
 
     if loop and loop.is_running():
         import concurrent.futures
+
         with concurrent.futures.ThreadPoolExecutor() as pool:
             return pool.submit(asyncio.run, coro).result()
     return asyncio.run(coro)
@@ -100,7 +104,9 @@ async def _get_bot(config: Optional[dict] = None):
     cfg = config or _get_config()
     if not cfg.get("user_id"):
         console.print("[red]✗[/] No Matrix user_id configured.")
-        console.print("  Set: [cyan]navig config set comms.matrix.user_id @bot:server[/]")
+        console.print(
+            "  Set: [cyan]navig config set comms.matrix.user_id @bot:server[/]"
+        )
         raise typer.Exit(1)
 
     bot = NavigMatrixBot(cfg)
@@ -112,11 +118,16 @@ async def _get_bot(config: Optional[dict] = None):
 # Authentication commands
 # ============================================================================
 
+
 @matrix_app.command("login")
 @require_matrix()
 def login(
-    profile: Annotated[str, typer.Option("--profile", "-p", help="Credential profile")] = "default",
-    token: Annotated[str, typer.Option("--token", "-t", help="Use access token instead of password")] = "",
+    profile: Annotated[
+        str, typer.Option("--profile", "-p", help="Credential profile")
+    ] = "default",
+    token: Annotated[
+        str, typer.Option("--token", "-t", help="Use access token instead of password")
+    ] = "",
 ):
     """Authenticate with a Matrix homeserver."""
     cfg = _get_config()
@@ -125,7 +136,13 @@ def login(
     cred = _get_credential(profile)
     if cred:
         for k, v in cred.items():
-            if v and k in ("homeserver_url", "homeserver", "user_id", "password", "access_token"):
+            if v and k in (
+                "homeserver_url",
+                "homeserver",
+                "user_id",
+                "password",
+                "access_token",
+            ):
                 mapped = k if k != "homeserver" else "homeserver_url"
                 cfg.setdefault(mapped, v)
 
@@ -141,6 +158,7 @@ def login(
             # Persist token back to vault
             try:
                 from navig.vault.core import CredentialsVault
+
                 vault = CredentialsVault()
                 creds = vault.list_by_provider("matrix")
                 for c in creds:
@@ -161,8 +179,10 @@ def login(
 @require_matrix()
 def logout():
     """End the current Matrix session."""
+
     async def _logout():
         from navig.comms.matrix import get_matrix_bot
+
         bot = get_matrix_bot()
         if bot and bot.is_running:
             await bot.stop()
@@ -192,6 +212,7 @@ def status():
 
     # Check live connection
     from navig.comms.matrix import get_matrix_bot
+
     bot = get_matrix_bot()
     if bot and bot.is_running:
         table.add_row("Connection", "[green]connected[/]")
@@ -206,10 +227,13 @@ def accounts():
     """List configured Matrix accounts from the vault."""
     try:
         from navig.vault.core import CredentialsVault
+
         vault = CredentialsVault()
         creds = vault.list_by_provider("matrix")
     except Exception:
-        console.print("[yellow]![/] Vault not available or no Matrix credentials stored")
+        console.print(
+            "[yellow]![/] Vault not available or no Matrix credentials stored"
+        )
         return
 
     if not creds:
@@ -243,6 +267,7 @@ def use_profile(
     """Switch the active Matrix account."""
     try:
         from navig.vault.core import CredentialsVault
+
         vault = CredentialsVault()
         creds = vault.list_by_provider("matrix")
         found = any(c.profile_id == profile for c in creds)
@@ -255,6 +280,7 @@ def use_profile(
 
     try:
         from navig.core.config import set_config_value
+
         set_config_value("comms.matrix.credential_id", profile)
         console.print(f"[green]✓[/] Active Matrix profile → [bold]{profile}[/]")
     except Exception as e:
@@ -266,14 +292,21 @@ def use_profile(
 # Messaging commands
 # ============================================================================
 
+
 @matrix_app.command("send")
 @require_matrix()
 @require_feature("messaging")
 def send(
-    room: Annotated[str, typer.Argument(help="Room ID or alias (omit for default)")] = "",
+    room: Annotated[
+        str, typer.Argument(help="Room ID or alias (omit for default)")
+    ] = "",
     message: Annotated[str, typer.Argument(help="Message text")] = "",
-    stdin: Annotated[bool, typer.Option("--stdin", "-s", help="Read message from stdin")] = False,
-    format: Annotated[str, typer.Option("--format", "-f", help="text | markdown | html")] = "text",
+    stdin: Annotated[
+        bool, typer.Option("--stdin", "-s", help="Read message from stdin")
+    ] = False,
+    format: Annotated[
+        str, typer.Option("--format", "-f", help="text | markdown | html")
+    ] = "text",
 ):
     """Send a text message to a Matrix room."""
     if stdin:
@@ -295,11 +328,12 @@ def send(
         if format == "markdown":
             try:
                 import re
+
                 # Basic markdown → HTML (bold, italic, code)
                 html = message
-                html = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html)
-                html = re.sub(r'\*(.+?)\*', r'<em>\1</em>', html)
-                html = re.sub(r'`(.+?)`', r'<code>\1</code>', html)
+                html = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", html)
+                html = re.sub(r"\*(.+?)\*", r"<em>\1</em>", html)
+                html = re.sub(r"`(.+?)`", r"<code>\1</code>", html)
                 result = await bot.send_message(room, message)
             except Exception:
                 result = await bot.send_message(room, message)
@@ -323,6 +357,7 @@ def notice(
     message: Annotated[str, typer.Argument(help="Notice text")],
 ):
     """Send a notice (bot-style, no notification highlight)."""
+
     async def _notice():
         bot = await _get_bot()
         result = await bot.send_notice(room, message)
@@ -340,10 +375,13 @@ def notice(
 @require_feature("messaging")
 def read_messages(
     room: Annotated[str, typer.Argument(help="Room ID or alias")],
-    limit: Annotated[int, typer.Option("--limit", "-n", help="Number of messages")] = 20,
+    limit: Annotated[
+        int, typer.Option("--limit", "-n", help="Number of messages")
+    ] = 20,
     json_output: Annotated[bool, typer.Option("--json", help="JSON output")] = False,
 ):
     """Read recent messages from a room."""
+
     async def _read():
         bot = await _get_bot()
         messages = await bot.get_room_messages(room, limit=limit)
@@ -364,7 +402,9 @@ def read_messages(
         for msg in messages:
             ts = msg.get("timestamp", "")
             if isinstance(ts, (int, float)):
-                ts = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).strftime("%H:%M %b %d")
+                ts = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).strftime(
+                    "%H:%M %b %d"
+                )
             table.add_row(str(ts), msg.get("sender", "?"), msg.get("body", ""))
 
         console.print(table)
@@ -414,7 +454,9 @@ def tail(
 # Room management commands
 # ============================================================================
 
-room_app = typer.Typer(name="room", help="Room management (create, join, leave, invite)")
+room_app = typer.Typer(
+    name="room", help="Room management (create, join, leave, invite)"
+)
 matrix_app.add_typer(room_app)
 
 
@@ -425,6 +467,7 @@ def list_rooms(
     json_output: Annotated[bool, typer.Option("--json", help="JSON output")] = False,
 ):
     """List joined Matrix rooms."""
+
     async def _rooms():
         bot = await _get_bot()
         rooms = await bot.get_rooms()
@@ -462,9 +505,12 @@ def list_rooms(
 def room_create(
     name: Annotated[str, typer.Argument(help="Room name")],
     topic: Annotated[str, typer.Option("--topic", "-t", help="Room topic")] = "",
-    public: Annotated[bool, typer.Option("--public", help="Create as public room")] = False,
+    public: Annotated[
+        bool, typer.Option("--public", help="Create as public room")
+    ] = False,
 ):
     """Create a new Matrix room."""
+
     async def _create():
         bot = await _get_bot()
         room_id = await bot.create_room(name, topic=topic, is_public=public)
@@ -484,6 +530,7 @@ def room_join(
     room_id: Annotated[str, typer.Argument(help="Room ID or alias to join")],
 ):
     """Join a Matrix room."""
+
     async def _join():
         bot = await _get_bot()
         if not bot._client:
@@ -506,6 +553,7 @@ def room_leave(
     room_id: Annotated[str, typer.Argument(help="Room ID to leave")],
 ):
     """Leave a Matrix room."""
+
     async def _leave():
         bot = await _get_bot()
         if not bot._client:
@@ -529,6 +577,7 @@ def room_invite(
     user_id: Annotated[str, typer.Argument(help="User Matrix ID (e.g. @alice:server)")],
 ):
     """Invite a user to a Matrix room."""
+
     async def _invite():
         bot = await _get_bot()
         ok = await bot.invite_user(room_id, user_id)
@@ -548,6 +597,7 @@ def room_members(
     room_id: Annotated[str, typer.Argument(help="Room ID")],
 ):
     """List members of a Matrix room."""
+
     async def _members():
         bot = await _get_bot()
         members = await bot.get_room_members(room_id)
@@ -581,6 +631,7 @@ def room_topic(
     topic: Annotated[str, typer.Argument(help="New topic text")],
 ):
     """Set the topic for a Matrix room."""
+
     async def _topic():
         bot = await _get_bot()
         if not bot._client:
@@ -620,8 +671,12 @@ registration_app.add_typer(token_app)
 @require_feature("registration_control")
 def registration_callback(
     ctx: typer.Context,
-    enable: Annotated[bool, typer.Option("--enable", help="Enable open registration")] = False,
-    disable: Annotated[bool, typer.Option("--disable", help="Disable open registration")] = False,
+    enable: Annotated[
+        bool, typer.Option("--enable", help="Enable open registration")
+    ] = False,
+    disable: Annotated[
+        bool, typer.Option("--disable", help="Disable open registration")
+    ] = False,
 ):
     """Check or toggle homeserver registration state."""
     if ctx.invoked_subcommand is not None:
@@ -631,9 +686,12 @@ def registration_callback(
         # Display current status
         async def _check():
             from navig.comms.matrix_admin import get_admin_client
+
             admin = get_admin_client()
             reg_status = await admin.get_registration_status()
-            state = "[green]OPEN[/]" if reg_status else "[yellow]CLOSED (invite-only)[/]"
+            state = (
+                "[green]OPEN[/]" if reg_status else "[yellow]CLOSED (invite-only)[/]"
+            )
             console.print(f"Registration: {state}")
 
         _run_async(_check())
@@ -645,11 +703,14 @@ def registration_callback(
 
     async def _toggle():
         from navig.comms.matrix_admin import get_admin_client
+
         admin = get_admin_client()
         if enable:
             ok = await admin.set_registration(True)
             if ok:
-                console.print("[green]✓[/] Registration enabled — anyone can create accounts")
+                console.print(
+                    "[green]✓[/] Registration enabled — anyone can create accounts"
+                )
             else:
                 console.print("[red]✗[/] Failed to enable registration")
         else:
@@ -666,12 +727,18 @@ def registration_callback(
 @require_matrix()
 @require_feature("registration_control")
 def token_create(
-    uses: Annotated[int, typer.Option("--uses", "-n", help="Max uses (0 = unlimited)")] = 1,
-    expiry: Annotated[str, typer.Option("--expiry", "-e", help="Expiry duration (e.g. 7d, 30d)")] = "7d",
+    uses: Annotated[
+        int, typer.Option("--uses", "-n", help="Max uses (0 = unlimited)")
+    ] = 1,
+    expiry: Annotated[
+        str, typer.Option("--expiry", "-e", help="Expiry duration (e.g. 7d, 30d)")
+    ] = "7d",
 ):
     """Create an invite registration token."""
+
     async def _create():
         from navig.comms.matrix_admin import get_admin_client
+
         admin = get_admin_client()
         token = await admin.create_registration_token(uses_allowed=uses, expiry=expiry)
         if token:
@@ -688,8 +755,10 @@ def token_create(
 @require_feature("registration_control")
 def token_list():
     """List active registration tokens."""
+
     async def _list():
         from navig.comms.matrix_admin import get_admin_client
+
         admin = get_admin_client()
         tokens = await admin.list_registration_tokens()
 
@@ -723,8 +792,10 @@ def token_revoke(
     token: Annotated[str, typer.Argument(help="Token to revoke")],
 ):
     """Revoke a registration token."""
+
     async def _revoke():
         from navig.comms.matrix_admin import get_admin_client
+
         admin = get_admin_client()
         ok = await admin.revoke_registration_token(token)
         if ok:
@@ -748,8 +819,10 @@ matrix_app.add_typer(admin_app)
 @require_feature("admin_ops")
 def admin_users():
     """List registered users on the homeserver."""
+
     async def _users():
         from navig.comms.matrix_admin import get_admin_client
+
         admin = get_admin_client()
         users = await admin.list_users()
 
@@ -780,14 +853,19 @@ def admin_users():
 @require_feature("admin_ops")
 def admin_user(
     mxid: Annotated[str, typer.Argument(help="Matrix user ID (e.g. @alice:server)")],
-    deactivate: Annotated[bool, typer.Option("--deactivate", help="Deactivate user")] = False,
-    reset_password: Annotated[bool, typer.Option("--reset-password", help="Reset password")] = False,
+    deactivate: Annotated[
+        bool, typer.Option("--deactivate", help="Deactivate user")
+    ] = False,
+    reset_password: Annotated[
+        bool, typer.Option("--reset-password", help="Reset password")
+    ] = False,
 ):
     """Manage a specific user on the homeserver."""
     if not deactivate and not reset_password:
         # Show user info
         async def _info():
             from navig.comms.matrix_admin import get_admin_client
+
             admin = get_admin_client()
             info = await admin.get_user(mxid)
             if info:
@@ -809,6 +887,7 @@ def admin_user(
 
         async def _deactivate():
             from navig.comms.matrix_admin import get_admin_client
+
             admin = get_admin_client()
             ok = await admin.deactivate_user(mxid)
             if ok:
@@ -820,10 +899,12 @@ def admin_user(
 
     if reset_password:
         import secrets
+
         new_pass = secrets.token_urlsafe(16)
 
         async def _reset():
             from navig.comms.matrix_admin import get_admin_client
+
             admin = get_admin_client()
             ok = await admin.reset_password(mxid, new_pass)
             if ok:
@@ -839,6 +920,7 @@ def admin_user(
 # Features command
 # ============================================================================
 
+
 @matrix_app.command("features")
 def features():
     """Show Matrix feature toggle states."""
@@ -853,7 +935,9 @@ def features():
         table.add_row(name, status, desc)
 
     console.print(table)
-    console.print("\n[dim]Toggle: navig config set comms.matrix.features.<name> true|false[/]")
+    console.print(
+        "\n[dim]Toggle: navig config set comms.matrix.features.<name> true|false[/]"
+    )
 
 
 # ============================================================================
@@ -870,7 +954,9 @@ matrix_app.add_typer(inbox_bridge_app, name="inbox")
 @inbox_bridge_app.command("list")
 @require_feature("notifications")
 def inbox_list(
-    status: Annotated[Optional[str], typer.Option("--status", "-s", help="Filter: unread|read")] = None,
+    status: Annotated[
+        Optional[str], typer.Option("--status", "-s", help="Filter: unread|read")
+    ] = None,
     limit: Annotated[int, typer.Option("--limit", "-n", help="Max messages")] = 30,
     json_output: Annotated[bool, typer.Option("--json", help="JSON output")] = False,
 ):
@@ -882,6 +968,7 @@ def inbox_list(
 
     if json_output:
         import json as _json
+
         typer.echo(_json.dumps(msgs, indent=2, default=str))
         return
 
@@ -899,7 +986,9 @@ def inbox_list(
 
     for i, m in enumerate(msgs, 1):
         st = "[green]●[/]" if m["status"] == "unread" else "[dim]○[/]"
-        table.add_row(str(i), st, m["sender"], m["room_name"], m["preview"], m["created"])
+        table.add_row(
+            str(i), st, m["sender"], m["room_name"], m["preview"], m["created"]
+        )
 
     console.print(table)
 
@@ -921,7 +1010,9 @@ def inbox_unread():
 @inbox_bridge_app.command("mark-read")
 @require_feature("notifications")
 def inbox_mark_read(
-    filename: Annotated[Optional[str], typer.Argument(help="Specific file, or omit for all")] = None,
+    filename: Annotated[
+        Optional[str], typer.Argument(help="Specific file, or omit for all")
+    ] = None,
 ):
     """Mark messages as read (one or all)."""
     from navig.comms.matrix_inbox import get_inbox_bridge
@@ -1013,7 +1104,9 @@ matrix_app.add_typer(file_app, name="file")
 @require_feature("file_sharing")
 def file_upload(
     path: Annotated[str, typer.Argument(help="Local file to upload")],
-    room: Annotated[Optional[str], typer.Option("--room", "-r", help="Target room ID")] = None,
+    room: Annotated[
+        Optional[str], typer.Option("--room", "-r", help="Target room ID")
+    ] = None,
     name: Annotated[Optional[str], typer.Option("--name", help="Display name")] = None,
 ):
     """Upload a file to a Matrix room."""
@@ -1026,7 +1119,9 @@ def file_upload(
 
     room_id = room or _get_config().get("default_room_id", "")
     if not room_id:
-        console.print("[red]✗[/] No room specified (pass --room or set default_room_id)")
+        console.print(
+            "[red]✗[/] No room specified (pass --room or set default_room_id)"
+        )
         raise typer.Exit(1)
 
     async def _upload():
@@ -1107,6 +1202,7 @@ def e2ee_status():
         bot = await _get_bot()
         try:
             from navig.comms.matrix_e2ee import MatrixE2EEManager
+
             mgr = MatrixE2EEManager(bot)
             info = await mgr.e2ee_status()
         finally:
@@ -1130,13 +1226,17 @@ def e2ee_status():
 @e2ee_app.command("devices")
 @require_feature("e2ee")
 def e2ee_devices(
-    user_id: Annotated[Optional[str], typer.Argument(help="User ID (omit for own devices)")] = None,
+    user_id: Annotated[
+        Optional[str], typer.Argument(help="User ID (omit for own devices)")
+    ] = None,
 ):
     """List devices and their trust state."""
+
     async def _devices():
         bot = await _get_bot()
         try:
             from navig.comms.matrix_e2ee import MatrixE2EEManager
+
             mgr = MatrixE2EEManager(bot)
             if user_id:
                 devices = await mgr.list_devices(user_id)
@@ -1178,6 +1278,7 @@ def e2ee_trust(
     device_id: Annotated[str, typer.Argument(help="Device ID")],
 ):
     """Manually trust a device (skip SAS verification)."""
+
     async def _trust():
         bot = await _get_bot()
         try:
@@ -1201,6 +1302,7 @@ def e2ee_blacklist(
     device_id: Annotated[str, typer.Argument(help="Device ID")],
 ):
     """Blacklist a device (do not send keys to it)."""
+
     async def _blacklist():
         bot = await _get_bot()
         try:
@@ -1224,6 +1326,7 @@ def e2ee_unverify(
     device_id: Annotated[str, typer.Argument(help="Device ID")],
 ):
     """Remove trust from a device."""
+
     async def _unverify():
         bot = await _get_bot()
         try:
@@ -1246,10 +1349,12 @@ def e2ee_trust_all(
     user_id: Annotated[str, typer.Argument(help="User ID to trust all devices for")],
 ):
     """Trust ALL known devices for a user."""
+
     async def _trust_all():
         bot = await _get_bot()
         try:
             from navig.comms.matrix_e2ee import MatrixE2EEManager
+
             mgr = MatrixE2EEManager(bot)
             count = await mgr.trust_all_devices(user_id)
         finally:
@@ -1267,10 +1372,12 @@ def e2ee_verify(
     device_id: Annotated[str, typer.Argument(help="Device ID to verify")],
 ):
     """Start interactive SAS (emoji) verification with a device."""
+
     async def _verify():
         bot = await _get_bot()
         try:
             from navig.comms.matrix_e2ee import MatrixE2EEManager
+
             mgr = MatrixE2EEManager(bot)
 
             console.print(f"Starting SAS verification with {user_id}/{device_id}...")
@@ -1287,7 +1394,9 @@ def e2ee_verify(
             for _ in range(30):  # 30s timeout
                 emoji = await mgr.get_emoji(session.transaction_id)
                 if emoji:
-                    console.print("\n[bold]Verify these emoji match on both devices:[/]\n")
+                    console.print(
+                        "\n[bold]Verify these emoji match on both devices:[/]\n"
+                    )
                     emoji_line = "  ".join(f"{e} ({d})" for e, d in emoji)
                     console.print(f"  {emoji_line}\n")
 
@@ -1317,10 +1426,12 @@ def e2ee_verify(
 @require_feature("e2ee")
 def e2ee_keys():
     """Show the bot's own device keys (for cross-verification)."""
+
     async def _keys():
         bot = await _get_bot()
         try:
             from navig.comms.matrix_e2ee import MatrixE2EEManager
+
             mgr = MatrixE2EEManager(bot)
             info = await mgr.e2ee_status()
         finally:
@@ -1340,13 +1451,17 @@ def e2ee_keys():
 @require_feature("e2ee")
 def e2ee_export_keys(
     path: Annotated[str, typer.Argument(help="Output file path")],
-    passphrase: Annotated[str, typer.Option("--passphrase", "-p", prompt=True, hide_input=True)],
+    passphrase: Annotated[
+        str, typer.Option("--passphrase", "-p", prompt=True, hide_input=True)
+    ],
 ):
     """Export E2EE room keys to a file (encrypted)."""
+
     async def _export():
         bot = await _get_bot()
         try:
             from navig.comms.matrix_e2ee import MatrixE2EEManager
+
             mgr = MatrixE2EEManager(bot)
             ok = await mgr.export_keys(path, passphrase)
         finally:
@@ -1365,10 +1480,13 @@ def e2ee_export_keys(
 @require_feature("e2ee")
 def e2ee_import_keys(
     path: Annotated[str, typer.Argument(help="Key file path")],
-    passphrase: Annotated[str, typer.Option("--passphrase", "-p", prompt=True, hide_input=True)],
+    passphrase: Annotated[
+        str, typer.Option("--passphrase", "-p", prompt=True, hide_input=True)
+    ],
 ):
     """Import E2EE room keys from a file."""
     from pathlib import Path as _P
+
     if not _P(path).exists():
         console.print(f"[red]✗[/] File not found: {path}")
         raise typer.Exit(1)
@@ -1377,6 +1495,7 @@ def e2ee_import_keys(
         bot = await _get_bot()
         try:
             from navig.comms.matrix_e2ee import MatrixE2EEManager
+
             mgr = MatrixE2EEManager(bot)
             ok = await mgr.import_keys(path, passphrase)
         finally:
@@ -1430,7 +1549,9 @@ def store_stats():
 
 @store_app.command("rooms")
 def store_rooms(
-    purpose: Annotated[Optional[str], typer.Option("--purpose", "-p", help="Filter by purpose")] = None,
+    purpose: Annotated[
+        Optional[str], typer.Option("--purpose", "-p", help="Filter by purpose")
+    ] = None,
 ):
     """List rooms in the persistent store."""
     import os
@@ -1501,13 +1622,20 @@ def store_events(
     table.add_column("Body", max_width=50)
     for e in events:
         body = e.content.get("body", "") if e.content else ""
-        table.add_row(e.event_id[:28] + "…" if len(e.event_id) > 28 else e.event_id, e.sender, e.event_type, body[:50])
+        table.add_row(
+            e.event_id[:28] + "…" if len(e.event_id) > 28 else e.event_id,
+            e.sender,
+            e.event_type,
+            body[:50],
+        )
     console.print(table)
 
 
 @store_app.command("prune")
 def store_prune(
-    max_rows: Annotated[int, typer.Option("--max", "-m", help="Max events to keep")] = 10000,
+    max_rows: Annotated[
+        int, typer.Option("--max", "-m", help="Max events to keep")
+    ] = 10000,
 ):
     """Prune old events from the store."""
     import os

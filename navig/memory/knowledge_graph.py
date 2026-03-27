@@ -24,6 +24,7 @@ Usage:
     kg.add_routine("pay bills", schedule="0 9 15 * *", description="Pay monthly bills on the 15th")
     routines = kg.get_routines()
 """
+
 from __future__ import annotations
 
 import json
@@ -87,6 +88,7 @@ END;
 
 # ─────────────────────────── data models ─────────────────────────────────────
 
+
 class Fact:
     def __init__(self, row: Dict[str, Any]) -> None:
         self.id: str = row["id"]
@@ -140,6 +142,7 @@ class Routine:
 
 
 # ─────────────────────────── knowledge graph class ───────────────────────────
+
 
 class KnowledgeGraph:
     """
@@ -279,7 +282,13 @@ class KnowledgeGraph:
         self._con.execute(
             """INSERT INTO routines (id, name, schedule, description, task_spec)
                VALUES (?,?,?,?,?)""",
-            (routine_id, name, schedule, description, json.dumps(task_spec) if task_spec else None),
+            (
+                routine_id,
+                name,
+                schedule,
+                description,
+                json.dumps(task_spec) if task_spec else None,
+            ),
         )
         self._con.commit()
         return routine_id
@@ -287,13 +296,17 @@ class KnowledgeGraph:
     def get_routines(self, enabled_only: bool = True) -> List[Routine]:
         """List all registered routines."""
         if enabled_only:
-            rows = self._con.execute("SELECT * FROM routines WHERE enabled=1 ORDER BY name").fetchall()
+            rows = self._con.execute(
+                "SELECT * FROM routines WHERE enabled=1 ORDER BY name"
+            ).fetchall()
         else:
             rows = self._con.execute("SELECT * FROM routines ORDER BY name").fetchall()
         return [Routine(dict(r)) for r in rows]
 
     def get_routine(self, routine_id: str) -> Optional[Routine]:
-        row = self._con.execute("SELECT * FROM routines WHERE id=?", (routine_id,)).fetchone()
+        row = self._con.execute(
+            "SELECT * FROM routines WHERE id=?", (routine_id,)
+        ).fetchone()
         return Routine(dict(row)) if row else None
 
     def update_routine_last_run(self, routine_id: str) -> None:
@@ -304,7 +317,9 @@ class KnowledgeGraph:
         self._con.commit()
 
     def disable_routine(self, routine_id: str) -> bool:
-        cur = self._con.execute("UPDATE routines SET enabled=0 WHERE id=?", (routine_id,))
+        cur = self._con.execute(
+            "UPDATE routines SET enabled=0 WHERE id=?", (routine_id,)
+        )
         self._con.commit()
         return cur.rowcount > 0
 
@@ -323,7 +338,7 @@ class KnowledgeGraph:
     ) -> List[str]:
         """
         After a successful task, optionally use an LLM to extract habits.
-        
+
         Args:
             task_description: what the user asked to do
             result_summary: brief description of what happened
@@ -347,6 +362,7 @@ class KnowledgeGraph:
         try:
             raw = llm_fn(prompt)
             import re
+
             match = re.search(r"\[.*\]", raw, re.DOTALL)
             if not match:
                 return []
@@ -361,7 +377,9 @@ class KnowledgeGraph:
             obj = triple.get("object")
             conf = float(triple.get("confidence", 0.8))
             if pred and obj and conf >= 0.6:
-                fid = self.remember_fact(subj, pred, obj, confidence=conf, source="habit_inference")
+                fid = self.remember_fact(
+                    subj, pred, obj, confidence=conf, source="habit_inference"
+                )
                 stored.append(fid)
 
         return stored
@@ -380,6 +398,7 @@ def get_knowledge_graph() -> KnowledgeGraph:
     global _kg_instance
     if _kg_instance is None:
         from navig.config import get_config
+
         cfg = get_config()
         db_path = Path(cfg.data_dir) / "knowledge_graph.db"
         _kg_instance = KnowledgeGraph(db_path)

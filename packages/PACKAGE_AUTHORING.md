@@ -1,6 +1,6 @@
 ﻿# NAVIG Plugin System — AI Dev Agent Instructions
 
-> Version: 1.0.0  
+> Version: 1.0.0
 > This file is the authoritative guide for AI dev agents building packs, tools, skills, and workflows for NAVIG.
 
 ---
@@ -97,7 +97,7 @@ COMMANDS: dict[str, callable] = {
 }
 ```
 
-**Only import stdlib or pip deps the pack declares in its manifest.**  
+**Only import stdlib or pip deps the pack declares in its manifest.**
 Never import `telegram`, `discord`, or `click` inside commands/.
 
 ---

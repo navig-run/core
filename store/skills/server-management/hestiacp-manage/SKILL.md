@@ -309,12 +309,12 @@ commands:
 - **Response:**
   ```
   ✅ HestiaCP Health Check:
-  
+
   Services: All running ✅
   Users: 3 accounts (admin, client1, client2)
   Disk: 3.9GB / 50GB (8% used)
   Domains: 6 websites hosted
-  
+
   Everything looks healthy! 🚀
   ```
 
@@ -327,11 +327,11 @@ commands:
 - **Response:**
   ```
   ✅ Domain Setup Complete!
-  
+
   🌐 newsite.com is now live
   🔐 SSL certificate installed
   📂 Files: /home/admin/web/newsite.com/public_html
-  
+
   You can now upload your website files! 🚀
   ```
 
@@ -341,12 +341,10 @@ commands:
 - **Response:**
   ```
   👥 Users on {host}:
-  
+
   1. admin: 2.3GB / 10GB (23%) - 3 domains
   2. client2: 1.2GB / 5GB (24%) - 2 domains
   3. client1: 456MB / 5GB (9%) - 1 domain
-  
+
   Total: 3.9GB / 20GB used (20%)
   ```
-
-

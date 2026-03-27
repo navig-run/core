@@ -11,22 +11,32 @@ Coverage:
 """
 
 import json
-import pytest
 import tempfile
 from pathlib import Path
 
-from navig.contracts import (
-    Node, NodeStatus, NodeOS,
-    Mission, MissionStatus, MissionPriority, TERMINAL_STATES, ALLOWED_TRANSITIONS,
-    ExecutionReceipt, ReceiptOutcome,
-    Capability, TrustScore,
-    RuntimeStore, reset_runtime_store,
-)
+import pytest
 
+from navig.contracts import (
+    ALLOWED_TRANSITIONS,
+    TERMINAL_STATES,
+    Capability,
+    ExecutionReceipt,
+    Mission,
+    MissionPriority,
+    MissionStatus,
+    Node,
+    NodeOS,
+    NodeStatus,
+    ReceiptOutcome,
+    RuntimeStore,
+    TrustScore,
+    reset_runtime_store,
+)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # NODE TESTS
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class TestNode:
 
@@ -35,8 +45,8 @@ class TestNode:
         assert n.hostname == "test-host"
         assert n.node_id  # auto UUID
         assert len(n.node_id) == 36
-        assert n.status    == NodeStatus.PROVISIONING
-        assert n.os        == NodeOS.UNKNOWN
+        assert n.status == NodeStatus.PROVISIONING
+        assert n.os == NodeOS.UNKNOWN
         assert n.capabilities == []
         assert 0.0 <= n.trust_score <= 1.0
 
@@ -85,7 +95,7 @@ class TestNode:
         assert not n.has_capability("llm")
         n.add_capability("llm")
         assert n.has_capability("llm")
-        n.add_capability("llm")          # idempotent
+        n.add_capability("llm")  # idempotent
         assert n.capabilities.count("llm") == 1
         n.remove_capability("llm")
         assert not n.has_capability("llm")
@@ -93,7 +103,9 @@ class TestNode:
     def test_touch_updates_last_seen(self):
         n = Node(hostname="h")
         old_ts = n.last_seen
-        import time; time.sleep(0.01)
+        import time
+
+        time.sleep(0.01)
         n.touch()
         assert n.last_seen >= old_ts
 
@@ -101,15 +113,15 @@ class TestNode:
         n = Node(hostname="h", os=NodeOS.LINUX, capabilities=["ssh", "llm"])
         n.go_online()
         raw = n.to_json()
-        n2  = Node.from_json(raw)
-        assert n2.node_id     == n.node_id
-        assert n2.status      == NodeStatus.ONLINE
+        n2 = Node.from_json(raw)
+        assert n2.node_id == n.node_id
+        assert n2.status == NodeStatus.ONLINE
         assert n2.capabilities == ["ssh", "llm"]
 
     def test_to_dict_os_and_status_are_strings(self):
         n = Node(hostname="h", os=NodeOS.WINDOWS, status=NodeStatus.ONLINE)
         d = n.to_dict()
-        assert d["os"]     == "windows"
+        assert d["os"] == "windows"
         assert d["status"] == "online"
 
 
@@ -117,36 +129,37 @@ class TestNode:
 # MISSION TESTS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestMission:
 
     def test_default_fields(self):
         m = Mission(title="Do something")
-        assert m.title      == "Do something"
-        assert m.mission_id          # auto UUID
-        assert m.status     == MissionStatus.QUEUED
+        assert m.title == "Do something"
+        assert m.mission_id  # auto UUID
+        assert m.status == MissionStatus.QUEUED
         assert m.is_terminal is False
 
     def test_queued_to_running(self):
         m = Mission(title="t")
         m.start()
-        assert m.status     == MissionStatus.RUNNING
+        assert m.status == MissionStatus.RUNNING
         assert m.started_at is not None
 
     def test_running_to_succeed(self):
         m = Mission(title="t")
         m.start()
         m.succeed(result={"answer": 42})
-        assert m.status      == MissionStatus.SUCCEEDED
-        assert m.result      == {"answer": 42}
+        assert m.status == MissionStatus.SUCCEEDED
+        assert m.result == {"answer": 42}
         assert m.completed_at is not None
-        assert m.is_terminal  is True
+        assert m.is_terminal is True
 
     def test_running_to_fail(self):
         m = Mission(title="t")
         m.start()
         m.fail("oops")
         assert m.status == MissionStatus.FAILED
-        assert m.error  == "oops"
+        assert m.error == "oops"
         assert m.is_terminal
 
     def test_queued_cancel(self):
@@ -173,7 +186,7 @@ class TestMission:
         m.start()
         m.succeed()
         with pytest.raises(ValueError):
-            m.cancel()    # cannot cancel succeeded mission
+            m.cancel()  # cannot cancel succeeded mission
 
     def test_double_start_raises(self):
         m = Mission(title="t")
@@ -206,10 +219,10 @@ class TestMission:
         m.start()
         m.succeed(result="done")
         raw = m.to_json()
-        m2  = Mission.from_json(raw)
+        m2 = Mission.from_json(raw)
         assert m2.mission_id == m.mission_id
-        assert m2.status     == MissionStatus.SUCCEEDED
-        assert m2.result     == "done"
+        assert m2.status == MissionStatus.SUCCEEDED
+        assert m2.result == "done"
 
     def test_to_dict_status_is_string(self):
         m = Mission(title="t")
@@ -219,6 +232,7 @@ class TestMission:
 # ═══════════════════════════════════════════════════════════════════════════════
 # EXECUTION RECEIPT TESTS
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class TestExecutionReceipt:
 
@@ -249,10 +263,10 @@ class TestExecutionReceipt:
         assert not self._make(ReceiptOutcome.SUCCEEDED).is_failure
 
     def test_serialisation_round_trip(self):
-        r  = self._make(ReceiptOutcome.FAILED, error="boom", duration_secs=1.5)
+        r = self._make(ReceiptOutcome.FAILED, error="boom", duration_secs=1.5)
         r2 = ExecutionReceipt.from_json(r.to_json())
-        assert r2.outcome       == ReceiptOutcome.FAILED
-        assert r2.error         == "boom"
+        assert r2.outcome == ReceiptOutcome.FAILED
+        assert r2.error == "boom"
         assert r2.duration_secs == 1.5
 
     def test_to_dict_outcome_is_string(self):
@@ -264,6 +278,7 @@ class TestExecutionReceipt:
 # CAPABILITY & TRUST SCORE TESTS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 class TestCapability:
 
     def test_defaults(self):
@@ -272,15 +287,17 @@ class TestCapability:
         assert c.description == ""
 
     def test_round_trip(self):
-        c  = Capability(slug="ssh", version="2.0.0", description="remote shell")
+        c = Capability(slug="ssh", version="2.0.0", description="remote shell")
         c2 = Capability.from_json(c.to_json())
-        assert c2.slug  == "ssh"
+        assert c2.slug == "ssh"
         assert c2.version == "2.0.0"
 
 
 class TestTrustScore:
 
-    def _receipt(self, outcome: ReceiptOutcome, node_id="n1", dur=1.0) -> ExecutionReceipt:
+    def _receipt(
+        self, outcome: ReceiptOutcome, node_id="n1", dur=1.0
+    ) -> ExecutionReceipt:
         return ExecutionReceipt(
             mission_id="m" * 36,
             node_id=node_id,
@@ -294,7 +311,7 @@ class TestTrustScore:
 
     def test_new_node_score_is_conservative(self):
         ts = TrustScore.compute("n1", [])
-        assert ts.score == pytest.approx(0.5, abs=0.01)   # prior = 0.5
+        assert ts.score == pytest.approx(0.5, abs=0.01)  # prior = 0.5
 
     def test_all_success_converges_high(self):
         receipts = [self._receipt(ReceiptOutcome.SUCCEEDED) for _ in range(50)]
@@ -321,17 +338,19 @@ class TestTrustScore:
         ]
         ts = TrustScore.compute("n1", receipts)
         assert ts.total_missions == 3
-        assert ts.success_count  == 1
-        assert ts.failure_count  == 1
-        assert ts.cancel_count   == 1
+        assert ts.success_count == 1
+        assert ts.failure_count == 1
+        assert ts.cancel_count == 1
 
     def test_avg_duration(self):
-        receipts = [self._receipt(ReceiptOutcome.SUCCEEDED, dur=d) for d in (1.0, 2.0, 3.0)]
+        receipts = [
+            self._receipt(ReceiptOutcome.SUCCEEDED, dur=d) for d in (1.0, 2.0, 3.0)
+        ]
         ts = TrustScore.compute("n1", receipts)
         assert ts.avg_duration_secs == pytest.approx(2.0)
 
     def test_round_trip(self):
-        ts  = TrustScore(node_id="x", score=0.75, total_missions=5)
+        ts = TrustScore(node_id="x", score=0.75, total_missions=5)
         ts2 = TrustScore.from_json(ts.to_json())
         assert ts2.score == 0.75
         assert ts2.total_missions == 5
@@ -340,6 +359,7 @@ class TestTrustScore:
 # ═══════════════════════════════════════════════════════════════════════════════
 # RUNTIME STORE TESTS
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class TestRuntimeStore:
 
@@ -414,7 +434,7 @@ class TestRuntimeStore:
         store.advance_mission(m.mission_id, "start")
         receipt = store.complete_mission(m.mission_id, succeeded=False, error="crash")
         assert receipt.outcome == ReceiptOutcome.FAILED
-        assert receipt.error   == "crash"
+        assert receipt.error == "crash"
 
     def test_list_receipts_filter(self, store):
         n1_id = "n1-" + "a" * 33
@@ -460,7 +480,7 @@ class TestRuntimeStore:
         store.register_node(Node(hostname="x"))
         store.create_mission(Mission(title="y"))
         s = store.stats()
-        assert s["nodes"]    == 1
+        assert s["nodes"] == 1
         assert s["missions"] == 1
         assert s["receipts"] == 0
 

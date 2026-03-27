@@ -79,5 +79,3 @@ For the active host:
 - `navig status` — Quick status summary
 - `navig history` — Full operation history
 - `navig host list` — List all hosts
-
-

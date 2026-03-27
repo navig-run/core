@@ -101,6 +101,3 @@ mogrify -resize 1080x *.jpg
 1. **MPV IPC**: Use the IPC socket for programmed control of the player.
 2. **AHK for Global**: Use AHK when you just want to "hit the pause button" on whatever is playing (Spotify, YouTube, etc.).
 3. **CRF for Quality**: Use `-crf 18-28` for balance between size and quality.
-
-
-

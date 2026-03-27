@@ -30,21 +30,23 @@ logger = logging.getLogger(__name__)
 
 
 class PolicyDecision(str, Enum):
-    ALLOW            = "allow"
+    ALLOW = "allow"
     REQUIRE_APPROVAL = "require_approval"
-    DENY             = "deny"
+    DENY = "deny"
 
 
 @dataclass
 class PolicyRule:
     """A single pattern-based policy rule."""
-    pattern: str            # fnmatch pattern, e.g. "db.*" or "run.restart"
+
+    pattern: str  # fnmatch pattern, e.g. "db.*" or "run.restart"
     decision: PolicyDecision
 
 
 @dataclass
 class PolicyConfig:
     """Full policy configuration."""
+
     default: PolicyDecision = PolicyDecision.ALLOW
     rules: List[PolicyRule] = field(default_factory=list)
 
@@ -52,9 +54,10 @@ class PolicyConfig:
 @dataclass
 class PolicyResult:
     """Decision returned by PolicyGate.check()."""
+
     decision: PolicyDecision
-    action:   str
-    matched_rule: Optional[str] = None   # pattern that matched, or None for default
+    action: str
+    matched_rule: Optional[str] = None  # pattern that matched, or None for default
 
     @property
     def is_allowed(self) -> bool:
@@ -116,14 +119,18 @@ class PolicyGate:
 
         rules: List[PolicyRule] = []
         for raw_rule in policy_cfg.get("rules", []):
-            pattern  = raw_rule.get("pattern", "").strip()
-            act_str  = raw_rule.get("action",  "allow").lower()
+            pattern = raw_rule.get("pattern", "").strip()
+            act_str = raw_rule.get("action", "allow").lower()
             if not pattern:
                 continue
             try:
                 decision = PolicyDecision(act_str)
             except ValueError:
-                logger.warning("Unknown rule action '%s' for pattern '%s', skipping", act_str, pattern)
+                logger.warning(
+                    "Unknown rule action '%s' for pattern '%s', skipping",
+                    act_str,
+                    pattern,
+                )
                 continue
             rules.append(PolicyRule(pattern=pattern, decision=decision))
 
@@ -147,7 +154,9 @@ class PolicyGate:
             if fnmatch.fnmatch(action, hard_pattern):
                 logger.warning(
                     "PolicyGate HARD_DENY: action=%s actor=%s pattern=%s",
-                    action, actor, hard_pattern
+                    action,
+                    actor,
+                    hard_pattern,
                 )
                 return PolicyResult(
                     decision=PolicyDecision.DENY,
@@ -160,7 +169,10 @@ class PolicyGate:
             if fnmatch.fnmatch(action, rule.pattern):
                 logger.debug(
                     "PolicyGate %s: action=%s actor=%s matched_rule=%s",
-                    rule.decision.value, action, actor, rule.pattern
+                    rule.decision.value,
+                    action,
+                    actor,
+                    rule.pattern,
                 )
                 return PolicyResult(
                     decision=rule.decision,
@@ -171,7 +183,9 @@ class PolicyGate:
         # Default
         logger.debug(
             "PolicyGate %s (default): action=%s actor=%s",
-            self._config.default.value, action, actor
+            self._config.default.value,
+            action,
+            actor,
         )
         return PolicyResult(
             decision=self._config.default,

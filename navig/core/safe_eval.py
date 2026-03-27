@@ -1,4 +1,3 @@
-
 import ast
 import operator
 from typing import Any, Dict, Optional
@@ -29,10 +28,11 @@ calc_operators = {
     ast.Or: lambda x, y: x or y,
 }
 
+
 def safe_eval(expr: str, variables: Optional[Dict[str, Any]] = None) -> Any:
     """
     Safely evaluate a simple Python expression.
-    
+
     Supports:
     - Arithmetic (+, -, *, /, //, %, **)
     - Comparison (==, !=, <, <=, >, >=, is, in)
@@ -46,17 +46,24 @@ def safe_eval(expr: str, variables: Optional[Dict[str, Any]] = None) -> Any:
         variables = {}
 
     try:
-        node = ast.parse(expr, mode='eval')
+        node = ast.parse(expr, mode="eval")
         return _eval_node(node.body, variables)
     except Exception as e:
         raise ValueError(f"Evaluation failed: {e}") from e
+
 
 def _eval_node(node: ast.AST, variables: Dict[str, Any]) -> Any:
     # Literals
     if isinstance(node, ast.Constant):  # Python 3.8+
         return node.value
-    if isinstance(node, (ast.Str, ast.Num, ast.Bytes, ast.NameConstant)):  # Python < 3.8
-        return node.n if isinstance(node, ast.Num) else node.s if isinstance(node, ast.Str) else node.value
+    if isinstance(
+        node, (ast.Str, ast.Num, ast.Bytes, ast.NameConstant)
+    ):  # Python < 3.8
+        return (
+            node.n
+            if isinstance(node, ast.Num)
+            else node.s if isinstance(node, ast.Str) else node.value
+        )
 
     # Data structures
     if isinstance(node, ast.List):
@@ -73,9 +80,12 @@ def _eval_node(node: ast.AST, variables: Dict[str, Any]) -> Any:
     if isinstance(node, ast.Name):
         if node.id in variables:
             return variables[node.id]
-        if node.id == 'True': return True
-        if node.id == 'False': return False
-        if node.id == 'None': return None
+        if node.id == "True":
+            return True
+        if node.id == "False":
+            return False
+        if node.id == "None":
+            return None
         raise ValueError(f"Unknown variable: {node.id}")
 
     # Unary Ops (not, -x)
@@ -89,7 +99,9 @@ def _eval_node(node: ast.AST, variables: Dict[str, Any]) -> Any:
     if isinstance(node, ast.BinOp):
         op = calc_operators.get(type(node.op))
         if op:
-            return op(_eval_node(node.left, variables), _eval_node(node.right, variables))
+            return op(
+                _eval_node(node.left, variables), _eval_node(node.right, variables)
+            )
         raise ValueError(f"Unknown binary operator: {type(node.op)}")
 
     if isinstance(node, ast.Compare):
@@ -120,4 +132,3 @@ def _eval_node(node: ast.AST, variables: Dict[str, Any]) -> Any:
         return val[idx]
 
     raise ValueError(f"Unsupported expression node: {type(node)}")
-

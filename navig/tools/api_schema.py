@@ -76,9 +76,11 @@ def redact_sensitive(
 # Core data classes
 # ─────────────────────────────────────────────────────────────
 
+
 @dataclass
 class ApiSource:
     """Provenance metadata for an API tool result."""
+
     tool: str
     endpoint: str = ""
     timestamp: str = field(
@@ -98,6 +100,7 @@ class ApiToolResult:
         source     : Provenance (tool name, endpoint, timestamp).
         error      : Human-readable error string or None on success.
     """
+
     status: str = "ok"  # "ok" | "error"
     raw_json: Dict[str, Any] = field(default_factory=dict)
     normalized: Union[Dict[str, Any], List[Any]] = field(default_factory=dict)
@@ -181,6 +184,7 @@ class ApiToolResult:
 # Validation helper
 # ─────────────────────────────────────────────────────────────
 
+
 def validate_api_result(result: ApiToolResult) -> List[str]:
     """
     Validate an ApiToolResult, returning a list of issues (empty = valid).
@@ -197,7 +201,9 @@ def validate_api_result(result: ApiToolResult) -> List[str]:
     if not result.source.tool:
         issues.append("source.tool is empty")
     if not isinstance(result.normalized, (dict, list)):
-        issues.append(f"normalized must be dict or list, got {type(result.normalized).__name__}")
+        issues.append(
+            f"normalized must be dict or list, got {type(result.normalized).__name__}"
+        )
     if result.status == "error" and not result.error:
         issues.append("status is 'error' but error message is empty")
     return issues

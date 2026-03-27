@@ -101,9 +101,7 @@ def store_status(
 
         console.print(table)
         total_kb = sum(r["size_kb"] for r in rows)
-        console.print(
-            f"  [dim]{len(rows)} databases · {total_kb:.0f} KB total[/dim]"
-        )
+        console.print(f"  [dim]{len(rows)} databases · {total_kb:.0f} KB total[/dim]")
 
 
 # ── Maintenance ───────────────────────────────────────────────
@@ -176,9 +174,7 @@ def store_maintenance(
 
 @store_app.command("backup")
 def store_backup(
-    dest: str = typer.Argument(
-        ..., help="Destination directory for backup files"
-    ),
+    dest: str = typer.Argument(..., help="Destination directory for backup files"),
     json_output: bool = typer.Option(False, "--json", help="JSON output"),
 ):
     """Backup all managed SQLite databases to a destination directory."""
@@ -241,12 +237,8 @@ def store_backup(
                 console.print(f"  [red]✗ {name}: {r['error']}[/red]")
             else:
                 size_kb = round(r["size_bytes"] / 1024, 1)
-                console.print(
-                    f"  [green]✓[/green] {name} → {r['path']} ({size_kb} KB)"
-                )
-        console.print(
-            Panel(f"Backups saved to [cyan]{dest_path}[/cyan]", title="Done")
-        )
+                console.print(f"  [green]✓[/green] {name} → {r['path']} ({size_kb} KB)")
+        console.print(Panel(f"Backups saved to [cyan]{dest_path}[/cyan]", title="Done"))
 
 
 # ── Migrate ───────────────────────────────────────────────────
@@ -266,7 +258,11 @@ def store_migrate(
         navig / "bot" / "bot_data.db",
         navig / "daily_log.db",
     ]
-    pending = [f for f in legacy_files if f.exists() and not f.with_suffix(".db.migrated").exists()]
+    pending = [
+        f
+        for f in legacy_files
+        if f.exists() and not f.with_suffix(".db.migrated").exists()
+    ]
 
     if not pending:
         msg = "No pending migrations — all legacy databases have been migrated."

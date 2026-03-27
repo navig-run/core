@@ -28,7 +28,14 @@ def _copy_repo(repo_path: str) -> Path:
 
     tmp = Path(tempfile.mkdtemp(prefix="navig-sandbox-"))
     dst = tmp / "repo"
-    shutil.copytree(src, dst, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".venv", "node_modules", "__pycache__", ".pytest_cache"))
+    shutil.copytree(
+        src,
+        dst,
+        dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns(
+            ".venv", "node_modules", "__pycache__", ".pytest_cache"
+        ),
+    )
     return dst
 
 
@@ -91,13 +98,20 @@ def repo_patch(payload: dict):
     if git_present:
         _run(["git", "checkout", "-b", f"of/{timestamp}"], cwd=str(sandbox_repo))
         _run(["git", "add", "OPERATIONAL_FACTORY_PATCH_PLAN.md"], cwd=str(sandbox_repo))
-        _run(["git", "commit", "-m", "chore: add operational factory patch plan"], cwd=str(sandbox_repo))
-        diff = _run(["git", "show", "--stat", "--patch", "--max-count=1"], cwd=str(sandbox_repo))
+        _run(
+            ["git", "commit", "-m", "chore: add operational factory patch plan"],
+            cwd=str(sandbox_repo),
+        )
+        diff = _run(
+            ["git", "show", "--stat", "--patch", "--max-count=1"], cwd=str(sandbox_repo)
+        )
         artifacts["diff_summary"] = diff.get("stdout", "")[:5000]
         artifacts["mode"] = "git"
     else:
         artifacts["mode"] = "filesystem"
-        artifacts["diff_summary"] = "No git repository found; generated patch plan file only."
+        artifacts["diff_summary"] = (
+            "No git repository found; generated patch plan file only."
+        )
 
     return artifacts
 

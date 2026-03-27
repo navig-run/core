@@ -89,5 +89,3 @@ navig q add x "y"  # Add action
 - `navig suggest` — AI-powered command suggestions
 - `navig history` — Command history and replay
 - `navig flow` — More complex workflow automation
-
-

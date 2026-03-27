@@ -6,4 +6,4 @@ Provides persistent cron-like job scheduling.
 
 from navig.scheduler.cron_service import CronConfig, CronJob, CronService
 
-__all__ = ['CronService', 'CronJob', 'CronConfig']
+__all__ = ["CronService", "CronJob", "CronConfig"]

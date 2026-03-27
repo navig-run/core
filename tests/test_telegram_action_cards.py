@@ -33,7 +33,9 @@ async def test_edit_message_includes_inline_keyboard() -> None:
 
 
 @pytest.mark.asyncio
-async def test_send_response_strips_search_tags_before_building_keyboard(monkeypatch) -> None:
+async def test_send_response_strips_search_tags_before_building_keyboard(
+    monkeypatch,
+) -> None:
     from navig.gateway.channels import telegram as tg
     from navig.gateway.channels.telegram import TelegramChannel
 
@@ -42,8 +44,12 @@ async def test_send_response_strips_search_tags_before_building_keyboard(monkeyp
     channel._maybe_send_voice = AsyncMock(return_value=False)
     channel.send_message = AsyncMock(return_value={"message_id": 1})
 
-    fake_session = SimpleNamespace(action_cards_enabled=True, voice_response_to_text="text")
-    monkeypatch.setattr(tg, "get_session_manager", lambda: _FakeSessionManager(fake_session))
+    fake_session = SimpleNamespace(
+        action_cards_enabled=True, voice_response_to_text="text"
+    )
+    monkeypatch.setattr(
+        tg, "get_session_manager", lambda: _FakeSessionManager(fake_session)
+    )
 
     builder = MagicMock()
     builder.build.return_value = [[{"text": "Card", "callback_data": "cb:1"}]]
@@ -56,7 +62,9 @@ async def test_send_response_strips_search_tags_before_building_keyboard(monkeyp
         "<search>latest CNN news today</search>\n\n"
         "Based on the latest from CNN:"
     )
-    await channel._send_response(123, raw, "latest cnn news", user_id=99, is_group=False)
+    await channel._send_response(
+        123, raw, "latest cnn news", user_id=99, is_group=False
+    )
 
     sent_text = channel.send_message.await_args.args[1]
     assert "searchqualityreflection" not in sent_text
@@ -70,7 +78,9 @@ async def test_send_response_strips_search_tags_before_building_keyboard(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_handle_reason_edits_placeholder_with_generated_keyboard(monkeypatch) -> None:
+async def test_handle_reason_edits_placeholder_with_generated_keyboard(
+    monkeypatch,
+) -> None:
     from navig.gateway.channels import telegram as tg
     from navig.gateway.channels.telegram import TelegramChannel
 
@@ -91,11 +101,17 @@ async def test_handle_reason_edits_placeholder_with_generated_keyboard(monkeypat
     channel._record_assistant_msg = MagicMock()
     channel._is_debug_mode = MagicMock(return_value=False)
 
-    fake_session = SimpleNamespace(action_cards_enabled=True, voice_response_to_text="text")
-    monkeypatch.setattr(tg, "get_session_manager", lambda: _FakeSessionManager(fake_session))
+    fake_session = SimpleNamespace(
+        action_cards_enabled=True, voice_response_to_text="text"
+    )
+    monkeypatch.setattr(
+        tg, "get_session_manager", lambda: _FakeSessionManager(fake_session)
+    )
 
     builder = MagicMock()
-    builder.build.return_value = [[{"text": "📰 Fetch CNN headlines", "callback_data": "card_exec:abc"}]]
+    builder.build.return_value = [
+        [{"text": "📰 Fetch CNN headlines", "callback_data": "card_exec:abc"}]
+    ]
     channel._kb_builder = builder
 
     await channel._handle_reason(
@@ -116,12 +132,15 @@ async def test_handle_reason_edits_placeholder_with_generated_keyboard(monkeypat
     assert "searchqualityreflection" not in args[2]
     assert "searchqualityscore" not in args[2]
     assert "<search>" not in args[2]
-    assert kwargs["keyboard"] == [[{"text": "📰 Fetch CNN headlines", "callback_data": "card_exec:abc"}]]
+    assert kwargs["keyboard"] == [
+        [{"text": "📰 Fetch CNN headlines", "callback_data": "card_exec:abc"}]
+    ]
 
 
 # ---------------------------------------------------------------------------
 # Reasoning card navigator tests
 # ---------------------------------------------------------------------------
+
 
 def test_split_into_cards_basic():
     """Short text returns a single card."""
@@ -136,7 +155,7 @@ def test_split_into_cards_long_paragraph():
     """Long text results in multiple cards, each within max_chars."""
     from navig.gateway.channels.telegram_navigator import split_into_cards
 
-    paragraph = "Word " * 1000   # ~5000 chars
+    paragraph = "Word " * 1000  # ~5000 chars
     cards = split_into_cards(paragraph, max_chars=2000)
     assert len(cards) >= 2
     for card in cards:
@@ -145,8 +164,12 @@ def test_split_into_cards_long_paragraph():
 
 def test_card_nav_keyboard_last_card_has_accept():
     """The last card's keyboard must include an Accept button."""
-    from navig.gateway.channels.telegram_navigator import build_nav_keyboard, CardSession
     import time
+
+    from navig.gateway.channels.telegram_navigator import (
+        CardSession,
+        build_nav_keyboard,
+    )
 
     session = CardSession(
         cards=["Card 1 text", "Card 2 text", "Card 3 text"],
@@ -158,12 +181,11 @@ def test_card_nav_keyboard_last_card_has_accept():
         session_key="nav:abc123",
         created_at=time.time(),
     )
-    keyboard = build_nav_keyboard(session, idx=2)   # last card (0-based)
+    keyboard = build_nav_keyboard(session, idx=2)  # last card (0-based)
     flat_buttons = [btn["text"] for row in keyboard for btn in row]
-    assert any("Accept" in t for t in flat_buttons), (
-        f"Accept button missing from last card keyboard: {flat_buttons}"
-    )
-    assert any("Refine" in t for t in flat_buttons), (
-        f"Refine button missing from last card keyboard: {flat_buttons}"
-    )
-
+    assert any(
+        "Accept" in t for t in flat_buttons
+    ), f"Accept button missing from last card keyboard: {flat_buttons}"
+    assert any(
+        "Refine" in t for t in flat_buttons
+    ), f"Refine button missing from last card keyboard: {flat_buttons}"

@@ -7,6 +7,7 @@ The vault operates in two modes:
 Session is process-memory-only.  Daemon restart requires re-unlock.
 Thread-safe via a module-level lock.
 """
+
 from __future__ import annotations
 
 import threading

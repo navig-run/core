@@ -34,6 +34,7 @@ stack_app = typer.Typer(
 def _get_stack_dir() -> Path:
     """Resolve the stack directory."""
     from navig.platform import stack_dir
+
     return stack_dir()
 
 
@@ -65,7 +66,9 @@ def _check_prerequisites(stack_path: Path) -> bool:
     compose_file = stack_path / "docker-compose.yml"
     if not compose_file.exists():
         ch.error(f"No docker-compose.yml found in {stack_path}")
-        ch.info("Run the bootstrap script first: navig-core/scripts/bootstrap_navig_linux.sh")
+        ch.info(
+            "Run the bootstrap script first: navig-core/scripts/bootstrap_navig_linux.sh"
+        )
         return False
 
     return True
@@ -93,6 +96,7 @@ def stack_status(
     result = subprocess.run(cmd, capture_output=not json_output)
     if json_output:
         import json
+
         try:
             containers = json.loads(result.stdout)
             print(json.dumps(containers, indent=2))
@@ -102,7 +106,9 @@ def stack_status(
 
 @stack_app.command("up")
 def stack_up(
-    detach: bool = typer.Option(True, "--detach/--foreground", "-d", help="Run in background"),
+    detach: bool = typer.Option(
+        True, "--detach/--foreground", "-d", help="Run in background"
+    ),
 ):
     """
     Start the NAVIG infrastructure stack.
@@ -131,7 +137,9 @@ def stack_up(
 
 @stack_app.command("down")
 def stack_down(
-    volumes: bool = typer.Option(False, "--volumes", "-v", help="Also remove volumes (DATA LOSS)"),
+    volumes: bool = typer.Option(
+        False, "--volumes", "-v", help="Also remove volumes (DATA LOSS)"
+    ),
 ):
     """
     Stop the NAVIG infrastructure stack.
@@ -145,7 +153,10 @@ def stack_down(
         raise typer.Exit(1)
 
     if volumes:
-        if not ch.confirm_action("This will DELETE all stack data (Postgres, Redis, Ollama models). Continue?", default=False):
+        if not ch.confirm_action(
+            "This will DELETE all stack data (Postgres, Redis, Ollama models). Continue?",
+            default=False,
+        ):
             ch.info("Cancelled")
             return
 
@@ -164,7 +175,9 @@ def stack_down(
 
 @stack_app.command("logs")
 def stack_logs(
-    service: Optional[str] = typer.Argument(None, help="Service name (postgres, redis, ollama)"),
+    service: Optional[str] = typer.Argument(
+        None, help="Service name (postgres, redis, ollama)"
+    ),
     follow: bool = typer.Option(False, "--follow", "-f", help="Follow log output"),
     lines: int = typer.Option(50, "--lines", "-n", help="Number of lines to show"),
 ):
@@ -212,7 +225,17 @@ def stack_health():
         ("Docker", ["docker", "info"]),
         ("Postgres", ["docker", "exec", "navig-postgres", "pg_isready"]),
         ("Redis", ["docker", "exec", "navig-redis", "redis-cli", "ping"]),
-        ("Ollama", ["docker", "exec", "navig-ollama", "curl", "-sf", "http://localhost:11434/api/tags"]),
+        (
+            "Ollama",
+            [
+                "docker",
+                "exec",
+                "navig-ollama",
+                "curl",
+                "-sf",
+                "http://localhost:11434/api/tags",
+            ],
+        ),
     ]
 
     passed = 0
@@ -249,7 +272,9 @@ def stack_info():
     pinfo = platform_info()
 
     ch.header("NAVIG Stack Info")
-    ch.console.print(f"  OS:           {pinfo['os']} ({pinfo.get('distro', pinfo['os_version'])})")
+    ch.console.print(
+        f"  OS:           {pinfo['os']} ({pinfo.get('distro', pinfo['os_version'])})"
+    )
     ch.console.print(f"  Stack dir:    {stack_path}")
     ch.console.print(f"  Config dir:   {pinfo['paths']['config']}")
 

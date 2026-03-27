@@ -15,6 +15,7 @@ logger = get_debug_logger()
 @dataclass
 class WorkerConfig:
     """Task worker configuration."""
+
     max_concurrent: int = 5
     poll_interval: float = 1.0
     shutdown_timeout: float = 30.0
@@ -24,34 +25,34 @@ class WorkerConfig:
 class TaskWorker:
     """
     Task worker that processes tasks from a queue.
-    
+
     Supports:
     - Concurrent task execution
     - Task timeouts
     - Handler registration
     - Graceful shutdown
-    
+
     Example:
         queue = TaskQueue()
         worker = TaskWorker(queue)
-        
+
         # Register handlers
         @worker.handler("backup_database")
         async def backup_handler(params):
             host = params["host"]
             # ... backup logic ...
             return {"size": "1.2GB"}
-        
+
         # Start worker
         await worker.start()
-        
+
         # Add tasks
         await queue.add(Task(
             name="backup",
             handler="backup_database",
             params={"host": "prod-db"},
         ))
-        
+
         # Stop worker
         await worker.stop()
     """
@@ -63,7 +64,7 @@ class TaskWorker:
     ):
         """
         Initialize task worker.
-        
+
         Args:
             queue: Task queue to process
             config: Worker configuration
@@ -85,25 +86,27 @@ class TaskWorker:
     def handler(self, name: str):
         """
         Decorator to register a task handler.
-        
+
         Args:
             name: Handler name (matches Task.handler)
-        
+
         Example:
             @worker.handler("send_email")
             async def send_email_handler(params):
                 # ... send email ...
                 return {"sent": True}
         """
+
         def decorator(func: Callable):
             self._handlers[name] = func
             return func
+
         return decorator
 
     def register_handler(self, name: str, func: Callable):
         """
         Register a task handler.
-        
+
         Args:
             name: Handler name
             func: Handler function (async or sync)
@@ -134,7 +137,7 @@ class TaskWorker:
     async def stop(self, wait: bool = True):
         """
         Stop the worker.
-        
+
         Args:
             wait: Wait for running tasks to complete
         """
@@ -168,13 +171,13 @@ class TaskWorker:
                 # Wait for available slot
                 async with self._semaphore:
                     # Get next task
-                    task = await self.queue.get_next(wait=True, timeout=self.config.poll_interval)
+                    task = await self.queue.get_next(
+                        wait=True, timeout=self.config.poll_interval
+                    )
 
                     if task:
                         # Start execution
-                        asyncio_task = asyncio.create_task(
-                            self._execute_task(task)
-                        )
+                        asyncio_task = asyncio.create_task(self._execute_task(task))
                         self._tasks[task.id] = asyncio_task
 
             except asyncio.CancelledError:
@@ -230,13 +233,13 @@ class TaskWorker:
     async def execute_now(self, task: Task) -> Any:
         """
         Execute a task immediately without queuing.
-        
+
         Args:
             task: Task to execute
-        
+
         Returns:
             Task result
-        
+
         Raises:
             ValueError: If no handler is registered
             Exception: If task fails
@@ -280,7 +283,11 @@ class TaskWorker:
         """Get worker statistics."""
         return {
             "running": self._running,
-            "started_at": self._stats["started_at"].isoformat() if self._stats["started_at"] else None,
+            "started_at": (
+                self._stats["started_at"].isoformat()
+                if self._stats["started_at"]
+                else None
+            ),
             "active_tasks": self.active_tasks,
             "max_concurrent": self.config.max_concurrent,
             "tasks_completed": self._stats["tasks_completed"],
@@ -293,14 +300,14 @@ class TaskWorker:
 def create_task_handler(func: Callable) -> Callable:
     """
     Decorator to create a task-compatible handler.
-    
+
     Wraps a function to accept a params dict.
-    
+
     Example:
         @create_task_handler
         async def my_handler(host: str, port: int = 22):
             # ...
-        
+
         # Can be called as:
         await my_handler({"host": "example.com", "port": 22})
     """

@@ -8,17 +8,14 @@ Layout contract (4 layers):
            render_metrics_panel    (this file) — numeric signals
   Layer 4: render_actions          (actions.py)
 """
+
 from __future__ import annotations
 
 import sys
 from typing import List, Optional
 
 from navig.ui.models import CauseScore, Metric
-from navig.ui.theme import (
-    SAFE_MODE,
-    SEVERITY_STYLE,
-    console,
-)
+from navig.ui.theme import SAFE_MODE, SEVERITY_STYLE, console
 
 
 def render_primary_state(
@@ -57,7 +54,9 @@ def render_explanation(
         lines = [f"[bold]{title}[/bold]"]
         for c in causes:
             bar_len = max(1, c.confidence // 10)
-            bar = ("█" if not SAFE_MODE else "#") * bar_len + ("░" if not SAFE_MODE else ".") * (10 - bar_len)
+            bar = ("█" if not SAFE_MODE else "#") * bar_len + (
+                "░" if not SAFE_MODE else "."
+            ) * (10 - bar_len)
             sev_style = SEVERITY_STYLE.get(c.severity, "white")
             lines.append(
                 f"  [{sev_style}]{bar}[/{sev_style}] "
@@ -81,6 +80,7 @@ def render_metrics_panel(
     """Layer 3b — metric bars panel. Never raises."""
     try:
         from navig.ui.bars import render_metric_bars
+
         render_metric_bars(metrics, title=title)
     except Exception:
         try:

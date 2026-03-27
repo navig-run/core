@@ -4,6 +4,7 @@ SiteCheckTool — HTTP site availability and latency checker.
 Reports: status code, redirect chain, response latency, TLS cert expiry.
 Zero API key required. Uses httpx for async HTTP.
 """
+
 from __future__ import annotations
 
 import logging
@@ -34,7 +35,9 @@ class SiteCheckTool(BaseTool):
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
 
-        await self._emit(on_status, "Resolving DNS…", f"target: {urlparse(url).netloc}", 20)
+        await self._emit(
+            on_status, "Resolving DNS…", f"target: {urlparse(url).netloc}", 20
+        )
 
         try:
             import httpx

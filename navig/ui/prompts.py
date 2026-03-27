@@ -4,6 +4,7 @@ navig.ui.prompts — Keymap footer and action approval prompt.
   render_keymap_footer(keymap)     — dim footer showing key bindings
   render_action_approval(cmd)      — wait-for-y/n approval prompt
 """
+
 from __future__ import annotations
 
 import sys
@@ -21,7 +22,9 @@ def render_keymap_footer(
     try:
         if not keymap:
             return
-        parts = [f"[bold cyan]{k}[/bold cyan] [dim]{v}[/dim]" for k, v in keymap.items()]
+        parts = [
+            f"[bold cyan]{k}[/bold cyan] [dim]{v}[/dim]" for k, v in keymap.items()
+        ]
         console.print(separator.join(parts))
     except Exception:
         try:
@@ -38,7 +41,7 @@ def render_action_approval(
     hint: Optional[str] = None,
 ) -> bool:
     """Show approval prompt and return True if user confirms. Never raises on display.
-    
+
     Returns True on y/yes, False on anything else.
     """
     try:

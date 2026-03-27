@@ -51,7 +51,7 @@ class AuthGuard:
         - Otherwise → not authorized
         """
         if not self.allowed_users:
-            return True                         # open mode
+            return True  # open mode
 
         if user_id in self.allowed_users:
             return True
@@ -61,6 +61,8 @@ class AuthGuard:
 
         logger.info(
             "Auth denied: user_id=%s chat_id=%s is_group=%s",
-            user_id, chat_id, is_group,
+            user_id,
+            chat_id,
+            is_group,
         )
         return False

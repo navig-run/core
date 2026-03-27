@@ -9,6 +9,7 @@ Modes map to the existing LLMModeRouter tiers:
 
 Priority: CODE > ACT > REASON > TALK
 """
+
 from __future__ import annotations
 
 import re
@@ -86,7 +87,13 @@ def classify_mode(text: str) -> Mode:
     # "ping", "test", "check" with nothing to act on go straight to TALK.
     word_count = len(stripped.split())
     if word_count <= 2:
-        has_target = bool(re.search(r'https?://|\b(?:[\w-]+\.){1,}[a-z]{2,}\b|\d{1,3}(?:\.\d{1,3}){3}', stripped, re.IGNORECASE))
+        has_target = bool(
+            re.search(
+                r"https?://|\b(?:[\w-]+\.){1,}[a-z]{2,}\b|\d{1,3}(?:\.\d{1,3}){3}",
+                stripped,
+                re.IGNORECASE,
+            )
+        )
         if _ACT_PATTERNS.search(stripped) and has_target:
             return "ACT"
         return "TALK"

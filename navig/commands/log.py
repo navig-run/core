@@ -1,5 +1,3 @@
-
-
 from typing import Optional
 
 import typer
@@ -31,18 +29,26 @@ def log_callback(ctx: typer.Context):
 @log_app.command("show")
 def log_show(
     ctx: typer.Context,
-    service: str = typer.Argument(..., help="Service name (nginx, php-fpm, mysql, app, etc.)"),
-    container: Optional[str] = typer.Option(None, "--container", "-c", help="Docker container name"),
+    service: str = typer.Argument(
+        ..., help="Service name (nginx, php-fpm, mysql, app, etc.)"
+    ),
+    container: Optional[str] = typer.Option(
+        None, "--container", "-c", help="Docker container name"
+    ),
     tail: bool = typer.Option(False, "--tail", "-f", help="Follow logs in real-time"),
     lines: int = typer.Option(50, "--lines", "-n", help="Number of lines"),
-    since: Optional[str] = typer.Option(None, "--since", help="Show logs since (e.g., 10m, 1h)"),
+    since: Optional[str] = typer.Option(
+        None, "--since", help="Show logs since (e.g., 10m, 1h)"
+    ),
 ):
     """Show service or container logs."""
     if container:
         from navig.commands.docker import docker_logs
+
         docker_logs(container, ctx.obj, tail=lines, follow=tail, since=since)
     else:
         from navig.commands.monitoring import view_service_logs
+
         view_service_logs(service, tail, lines, ctx.obj)
 
 
@@ -54,6 +60,7 @@ def log_run(
     """Run log maintenance operations."""
     if rotate:
         from navig.commands.maintenance import rotate_logs
+
         rotate_logs(ctx.obj)
     else:
         ch.error("Specify an action: --rotate")

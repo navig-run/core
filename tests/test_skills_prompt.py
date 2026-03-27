@@ -1,31 +1,36 @@
 """Tests for Skills prompt renderer."""
 
 import json
-import pytest
 from pathlib import Path
+
+import pytest
 
 
 class TestSkillsPrompt:
 
     def test_json_manifest_renders(self, tmp_path):
         """JSON skill manifest renders correctly via template."""
-        from navig.skills_renderer import render_skills_prompt, _manual_render
+        from navig.skills_renderer import _manual_render, render_skills_prompt
 
         # Create a skill JSON
         skill_dir = tmp_path / "skills"
         skill_dir.mkdir()
-        (skill_dir / "test_skill.json").write_text(json.dumps({
-            "id": "test_skill",
-            "name": "Test Skill",
-            "summary": "A test skill for unit tests.",
-            "commands": [
+        (skill_dir / "test_skill.json").write_text(
+            json.dumps(
                 {
-                    "name": "do_thing",
-                    "signature": "do_thing(arg1, arg2)",
-                    "description": "Does a thing with two arguments.",
-                },
-            ],
-        }))
+                    "id": "test_skill",
+                    "name": "Test Skill",
+                    "summary": "A test skill for unit tests.",
+                    "commands": [
+                        {
+                            "name": "do_thing",
+                            "signature": "do_thing(arg1, arg2)",
+                            "description": "Does a thing with two arguments.",
+                        },
+                    ],
+                }
+            )
+        )
 
         # Use manual render (no Jinja2 dependency needed)
         data = json.loads((skill_dir / "test_skill.json").read_text())
@@ -42,7 +47,10 @@ class TestSkillsPrompt:
 
         skill_dir = tmp_path / "skills"
         skill_dir.mkdir()
-        md_content = "# My Skill\n\nThis is a skill description.\n" + "Line {}\n".format("x") * 60
+        md_content = (
+            "# My Skill\n\nThis is a skill description.\n"
+            + "Line {}\n".format("x") * 60
+        )
         (skill_dir / "md_skill.md").write_text(md_content)
 
         # Load first 50 lines
@@ -63,12 +71,16 @@ class TestSkillsPrompt:
         skill_dir.mkdir()
 
         # Create both JSON and MD
-        (skill_dir / "dual.json").write_text(json.dumps({
-            "id": "dual",
-            "name": "Dual Skill",
-            "summary": "From JSON manifest.",
-            "commands": [],
-        }))
+        (skill_dir / "dual.json").write_text(
+            json.dumps(
+                {
+                    "id": "dual",
+                    "name": "Dual Skill",
+                    "summary": "From JSON manifest.",
+                    "commands": [],
+                }
+            )
+        )
         (skill_dir / "dual.md").write_text("# Dual\nFrom markdown file.")
 
         with pytest.MonkeyPatch.context() as mp:
@@ -82,6 +94,7 @@ class TestSkillsPrompt:
     def test_empty_skill_ids(self):
         """Empty skill list returns empty string."""
         from navig.skills_renderer import render_skills_prompt
+
         result = render_skills_prompt([])
         assert result == ""
 

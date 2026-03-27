@@ -7,6 +7,7 @@ Scan roots (highest priority last wins for name collisions):
   1. navig-core/packages/  (built-in, shipped with NAVIG)
   2. ~/.navig/packages/    (user-installed)
 """
+
 from __future__ import annotations
 
 import json
@@ -26,11 +27,13 @@ package_app = typer.Typer(
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 def _get_package_roots() -> list[Path]:
     """Return all package roots in priority order (lower = higher priority)."""
     roots: list[Path] = []
     try:
         from navig.platform.paths import builtin_packages_dir, packages_dir
+
         roots.append(builtin_packages_dir())
         roots.append(packages_dir())
     except Exception:
@@ -84,13 +87,20 @@ def _load_package(name: str) -> tuple[dict | None, Path | None, str]:
 
 # ── Commands ──────────────────────────────────────────────────────────────────
 
+
 @package_app.command("list")
 def package_list(
     json_out: bool = typer.Option(False, "--json", help="Output as JSON"),
     plain: bool = typer.Option(False, "--plain", help="Plain text output"),
-    builtin_only: bool = typer.Option(False, "--builtin", help="Show only built-in packages"),
-    user_only: bool = typer.Option(False, "--user", help="Show only user-installed packages"),
-    status: bool = typer.Option(False, "--status", "-s", help="Show runtime load status"),
+    builtin_only: bool = typer.Option(
+        False, "--builtin", help="Show only built-in packages"
+    ),
+    user_only: bool = typer.Option(
+        False, "--user", help="Show only user-installed packages"
+    ),
+    status: bool = typer.Option(
+        False, "--status", "-s", help="Show runtime load status"
+    ),
 ):
     """List all available packages."""
     packages = _discover_packages()
@@ -109,6 +119,7 @@ def package_list(
     if status:
         try:
             from navig.plugins import get_plugin_manager
+
             mgr = get_plugin_manager()
             mgr.discover_plugins()
             loaded_state = mgr.list_plugins()
@@ -117,6 +128,7 @@ def package_list(
 
     if json_out:
         import sys
+
         out = []
         for pkg_id, v in packages.items():
             entry: dict = {
@@ -142,6 +154,7 @@ def package_list(
 
     from rich.console import Console
     from rich.table import Table
+
     _con = Console()
     table = Table(show_header=True, header_style="bold cyan")
     table.add_column("ID", style="cyan", no_wrap=True)
@@ -192,6 +205,7 @@ def package_show(
 
     if json_out:
         import sys
+
         sys.stdout.write(json.dumps(manifest, indent=2) + "\n")
         return
 
@@ -247,6 +261,7 @@ def package_install(
 ):
     """Install a package into ~/.navig/packages/."""
     import shutil
+
     src = Path(source).expanduser().resolve()
 
     if not src.is_dir():
@@ -268,6 +283,7 @@ def package_install(
 
     try:
         from navig.platform.paths import packages_dir
+
         dest_root = packages_dir()
     except Exception:
         dest_root = config_dir() / "packages"
@@ -275,7 +291,9 @@ def package_install(
     dest = dest_root / pkg_id
     if dest.exists():
         if not force:
-            ch.error(f"Package '{pkg_id}' already installed at {dest}. Use --force to overwrite.")
+            ch.error(
+                f"Package '{pkg_id}' already installed at {dest}. Use --force to overwrite."
+            )
             raise typer.Exit(1)
         shutil.rmtree(dest)
 
@@ -291,7 +309,10 @@ def package_install(
     if pip_deps:
         import subprocess
         import sys as _sys
-        ch.info(f"Installing {len(pip_deps)} pip dependenc{'y' if len(pip_deps) == 1 else 'ies'}…")
+
+        ch.info(
+            f"Installing {len(pip_deps)} pip dependenc{'y' if len(pip_deps) == 1 else 'ies'}…"
+        )
         try:
             subprocess.check_call(
                 [_sys.executable, "-m", "pip", "install", *pip_deps],
@@ -309,6 +330,7 @@ def package_install(
         if hook_path.exists():
             import subprocess
             import sys as _sys
+
             ch.info("Running post-install hook…")
             result = subprocess.run([_sys.executable, str(hook_path)])
             if result.returncode != 0:
@@ -337,5 +359,6 @@ def package_remove(
             raise typer.Abort()
 
     import shutil
+
     shutil.rmtree(path)
     ch.success(f"Removed package '{name}'.")

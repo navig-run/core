@@ -25,9 +25,7 @@ logger = logging.getLogger(__name__)
 
 def _sign(payload: str, secret: str) -> str:
     """HMAC-SHA256 hex digest."""
-    return hmac.new(
-        secret.encode(), payload.encode(), hashlib.sha256
-    ).hexdigest()
+    return hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
 
 
 async def push_matrix_stats(
@@ -55,6 +53,7 @@ async def push_matrix_stats(
     if not endpoint or not secret:
         try:
             from navig.core.config import get_config
+
             cfg = get_config()
             matrix_cfg = cfg.get("comms", {}).get("matrix", {})
             endpoint = endpoint or matrix_cfg.get("stats_endpoint", "")
@@ -72,6 +71,7 @@ async def push_matrix_stats(
             import os
 
             from navig.comms.matrix_store import MatrixStore
+
             db_path = os.path.expanduser("~/.navig/matrix.db")
             if not os.path.exists(db_path):
                 logger.debug("Matrix stats webhook: no store DB, skip")
@@ -85,17 +85,20 @@ async def push_matrix_stats(
             logger.exception("Matrix stats webhook: failed to read store")
             return False
 
-    payload = json.dumps({
-        "rooms": stats.get("rooms", 0),
-        "events": stats.get("events", 0),
-        "ts": int(time.time()),
-    })
+    payload = json.dumps(
+        {
+            "rooms": stats.get("rooms", 0),
+            "events": stats.get("events", 0),
+            "ts": int(time.time()),
+        }
+    )
 
     sig = _sign(payload, secret)
 
     # Send with httpx (async) or urllib (sync fallback)
     try:
         import httpx
+
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.post(
                 endpoint,
@@ -107,14 +110,21 @@ async def push_matrix_stats(
             )
             ok = resp.status_code == 200
             if ok:
-                logger.info("Matrix stats pushed to %s (rooms=%s, events=%s)",
-                            endpoint, stats.get("rooms"), stats.get("events"))
+                logger.info(
+                    "Matrix stats pushed to %s (rooms=%s, events=%s)",
+                    endpoint,
+                    stats.get("rooms"),
+                    stats.get("events"),
+                )
             else:
-                logger.warning("Matrix stats push failed: %s %s", resp.status_code, resp.text[:200])
+                logger.warning(
+                    "Matrix stats push failed: %s %s", resp.status_code, resp.text[:200]
+                )
             return ok
     except ImportError:
         # Fallback to urllib (sync, wrapped in thread)
         import asyncio
+
         return await asyncio.to_thread(_push_sync, endpoint, payload, sig)
     except Exception:
         logger.exception("Matrix stats push error")

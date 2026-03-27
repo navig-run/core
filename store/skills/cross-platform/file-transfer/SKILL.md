@@ -120,5 +120,3 @@ navig sync push ./dist /var/www/html
 - **Permission denied**: "Can't access '{path}'. Try with sudo or check permissions."
 - **No space**: "Upload failed — server disk is full. Free some space first."
 - **Large file**: "This file is 500MB. Download may take a while. Continue?"
-
-

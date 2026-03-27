@@ -3,7 +3,7 @@ Integration test for MeshDiscovery — two in-process instances communicating
 via a mocked packet exchange (no real UDP sockets required).
 
 Approach:
-  1. Build two NodeRegistry instances (registryA, registryB) with distinct 
+  1. Build two NodeRegistry instances (registryA, registryB) with distinct
      node IDs in temp dirs.
   2. Build corresponding MeshDiscovery instances.
   3. Override socket creation so start() succeeds without real sockets.
@@ -19,20 +19,24 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from navig.mesh.discovery import (
-    MeshDiscovery,
-    _build_packet,
-    _parse_packet,
-)
+from navig.mesh.discovery import MeshDiscovery, _build_packet, _parse_packet
 from navig.mesh.registry import NodeRecord, NodeRegistry
 
 
 def _make_registry(tmp_path: Path, node_suffix: str) -> NodeRegistry:
     """Create a minimal NodeRegistry without real network calls."""
-    with patch("navig.mesh.registry._derive_node_id", return_value=f"navig-test-{node_suffix}"), \
-         patch("navig.mesh.registry.NodeRegistry._local_ip", return_value="127.0.0.1"), \
-         patch("navig.mesh.registry._measure_load", return_value=0.1), \
-         patch("navig.mesh.registry.NodeRegistry._detect_capabilities", return_value=["llm", "shell"]):
+    with (
+        patch(
+            "navig.mesh.registry._derive_node_id",
+            return_value=f"navig-test-{node_suffix}",
+        ),
+        patch("navig.mesh.registry.NodeRegistry._local_ip", return_value="127.0.0.1"),
+        patch("navig.mesh.registry._measure_load", return_value=0.1),
+        patch(
+            "navig.mesh.registry.NodeRegistry._detect_capabilities",
+            return_value=["llm", "shell"],
+        ),
+    ):
         return NodeRegistry(storage_dir=tmp_path)
 
 
@@ -155,6 +159,7 @@ class TestMeshDiscoveryIntegration(unittest.IsolatedAsyncioTestCase):
     async def test_wrong_version_packet_ignored(self):
         """Packets with v != 1 must be silently dropped."""
         import json
+
         bad = json.dumps({"v": 99, "type": "hello", "node_id": "x"}).encode()
         await self.discB._handle_packet(bad, "127.0.0.1")
         self.assertEqual(len(self.regB.get_peers()), 0)
@@ -189,8 +194,12 @@ class TestMeshDiscoveryIntegration(unittest.IsolatedAsyncioTestCase):
         mock_sock.settimeout = MagicMock()
         mock_sock.recvfrom = MagicMock(side_effect=TimeoutError)
 
-        with patch("navig.mesh.discovery._create_sender_socket", return_value=mock_sock), \
-             patch("navig.mesh.discovery._create_receiver_socket", return_value=mock_sock):
+        with (
+            patch("navig.mesh.discovery._create_sender_socket", return_value=mock_sock),
+            patch(
+                "navig.mesh.discovery._create_receiver_socket", return_value=mock_sock
+            ),
+        ):
             await new_disc.start()
             # Give tasks time to call sendto
             await asyncio.sleep(0.05)

@@ -13,7 +13,7 @@ Design intent:
 
 Usage:
   On the new machine, open a browser or run:
-    Windows: (iwr http://10.0.x.x:8789/install/windows).Content | iex
+    Windows: & ([scriptblock]::Create((iwr http://10.0.x.x:8789/install/windows).Content))
     Linux:   curl -fsSL http://10.0.x.x:8789/install/linux | bash
 """
 
@@ -23,8 +23,6 @@ import textwrap
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from aiohttp import web
-
     from navig.gateway.server import NavigGateway
 
 try:
@@ -78,10 +76,11 @@ _HTML_TEMPLATE = """\
 
 <div class="card qr-card">
   <h2>Scan to open on another device</h2>
-  <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&color=A5F3FC&bgcolor=050E1A&data={gateway_url}/install"
+    <img src="{qr_img_src}"
        alt="QR — scan to open this page" width="200" height="200">
   <p class="qr-url">{gateway_url}/install</p>
-  <p class="note">Scan with phone or tablet — opens this page without typing the URL.</p>
+  <p class="note">Scan with phone or tablet — opens this page without
+      typing the URL.</p>
 </div>
 
 <div class="card">
@@ -117,14 +116,15 @@ function copy(id) {{
 
 
 def register(app: "web.Application", gateway: "NavigGateway") -> None:
-    app.router.add_get("/install",          _html(gateway))
-    app.router.add_get("/install/windows",  _windows(gateway))
-    app.router.add_get("/install/linux",    _linux(gateway))
-    app.router.add_get("/install/mac",      _linux(gateway))   # same script
-    app.router.add_get("/install/config",   _config(gateway))
+    app.router.add_get("/install", _html(gateway))
+    app.router.add_get("/install/windows", _windows(gateway))
+    app.router.add_get("/install/linux", _linux(gateway))
+    app.router.add_get("/install/mac", _linux(gateway))  # same script
+    app.router.add_get("/install/config", _config(gateway))
 
 
 # ─────────────────────────── helpers ─────────────────────────────────────────
+
 
 def _get_my_url(gw: "NavigGateway") -> str:
     """Best guess at this machine's reachable gateway URL from other LAN machines."""
@@ -138,6 +138,7 @@ def _get_my_url(gw: "NavigGateway") -> str:
 
 def _lan_ip() -> str:
     import socket
+
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(("8.8.8.8", 80))
@@ -154,18 +155,25 @@ def _mesh_token(gw: "NavigGateway") -> str:
 
 # ─────────────────────────── route handlers ──────────────────────────────────
 
+
 def _html(gw: "NavigGateway"):
     async def h(r: "web.Request") -> "web.Response":
         url = _get_my_url(gw)
         token = _mesh_token(gw)
         win = _ps1_oneliner(url, token)
         nix = _bash_oneliner(url, token)
+        qr_img_src = (
+            "https://api.qrserver.com/v1/create-qr-code/"
+            f"?size=200x200&color=A5F3FC&bgcolor=050E1A&data={url}/install"
+        )
         body = _HTML_TEMPLATE.format(
             gateway_url=url,
+            qr_img_src=qr_img_src,
             win_cmd=win,
             nix_cmd=nix,
         )
         return web.Response(text=body, content_type="text/html")
+
     return h
 
 
@@ -175,6 +183,7 @@ def _windows(gw: "NavigGateway"):
         token = _mesh_token(gw)
         script = _ps1_oneliner(url, token)
         return web.Response(text=script, content_type="text/plain")
+
     return h
 
 
@@ -184,28 +193,33 @@ def _linux(gw: "NavigGateway"):
         token = _mesh_token(gw)
         script = _bash_oneliner(url, token)
         return web.Response(text=script, content_type="text/plain")
+
     return h
 
 
 def _config(gw: "NavigGateway"):
     """Return a minimal JSON bootstrap config so a new node can join without browsing."""
+
     async def h(r: "web.Request") -> "web.Response":
         import json
+
         url = _get_my_url(gw)
         token = _mesh_token(gw)
         data = {
-            "gateway_url":  url,
-            "mesh_token":   token,
+            "gateway_url": url,
+            "mesh_token": token,
             "install_hint": f"curl -fsSL {url}/install/linux | bash",
         }
         return web.Response(
             text=json.dumps(data, indent=2),
             content_type="application/json",
         )
+
     return h
 
 
 # ─────────────────────────── script builders ─────────────────────────────────
+
 
 def _ps1_oneliner(gateway_url: str, mesh_token: str) -> str:
     """
@@ -221,11 +235,10 @@ def _ps1_oneliner(gateway_url: str, mesh_token: str) -> str:
     """
     token_line = ""
     if mesh_token:
-        token_line = (
-            f"navig config set gateway.mesh_token '{mesh_token}'; "
-        )
+        token_line = f"navig config set gateway.mesh_token '{mesh_token}'; "
 
-    script = textwrap.dedent(f"""\
+    script = textwrap.dedent(
+        f"""\
         $NAVIG_GATEWAY='{gateway_url}'; \
         $NAVIG_TOKEN='{mesh_token}'; \
         $env:PYTHONUTF8='1'; \
@@ -243,7 +256,8 @@ def _ps1_oneliner(gateway_url: str, mesh_token: str) -> str:
           -ContentType 'application/json' \
           -Body (@{{gateway_url="http://localhost:8789"}}|ConvertTo-Json) | Out-Null; \
         Write-Host '✓ NAVIG joined the mesh!' -ForegroundColor Green\
-    """).replace("\n", "")
+    """
+    ).replace("\n", "")
 
     return script
 
@@ -255,11 +269,11 @@ def _bash_oneliner(gateway_url: str, mesh_token: str) -> str:
         f"{token_export}"
         f"curl -fsSL https://raw.githubusercontent.com/navig-core/main/install.sh | bash || "
         f"pip install --user --upgrade navig; "
-        f"navig config set gateway.mesh_token \"$NAVIG_MESH_TOKEN\"; "
+        f'navig config set gateway.mesh_token "$NAVIG_MESH_TOKEN"; '
         f"navig service install && navig service start; "
         f"sleep 3 && "
         f"curl -s -X POST '$NAVIG_GATEWAY/mesh/ping' "
         f"  -H 'Content-Type: application/json' "
-        f"  -d '{{\"gateway_url\":\"http://localhost:8789\"}}' > /dev/null && "
+        f'  -d \'{{"gateway_url":"http://localhost:8789"}}\' > /dev/null && '
         f"echo '✓ NAVIG joined the mesh!'"
     )

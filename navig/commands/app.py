@@ -23,10 +23,10 @@ console = Console()
 
 def list_apps(options: Dict[str, Any]) -> None:
     """List all apps on the active host (or host specified via --host flag)."""
-    host_name = options.get('host')
-    show_all = options.get('all', False)
-    output_format = options.get('format', 'table')
-    list_all_hosts = options.get('list_all_hosts', False)
+    host_name = options.get("host")
+    show_all = options.get("all", False)
+    output_format = options.get("format", "table")
+    list_all_hosts = options.get("list_all_hosts", False)
 
     # If --all flag is used without --host, list apps from all hosts
     if show_all and not host_name:
@@ -41,23 +41,27 @@ def list_apps(options: Dict[str, Any]) -> None:
             try:
                 apps = config_manager.list_apps(host)
                 host_config = config_manager.load_host_config(host)
-                default_app = host_config.get('default_app')
+                default_app = host_config.get("default_app")
 
                 for app_name in apps:
                     try:
                         app_config = config_manager.load_app_config(host, app_name)
 
                         app_info = {
-                            'host': host,
-                            'app': app_name,
-                            'webserver': app_config.get('webserver', {}).get('type', 'N/A'),
-                            'database': app_config.get('database', {}).get('type', 'N/A'),
-                            'is_active': app_name == active_app,
-                            'is_default': app_name == default_app,
+                            "host": host,
+                            "app": app_name,
+                            "webserver": app_config.get("webserver", {}).get(
+                                "type", "N/A"
+                            ),
+                            "database": app_config.get("database", {}).get(
+                                "type", "N/A"
+                            ),
+                            "is_active": app_name == active_app,
+                            "is_default": app_name == default_app,
                         }
 
                         if show_all:
-                            app_info['paths'] = app_config.get('paths', {})
+                            app_info["paths"] = app_config.get("paths", {})
 
                         all_apps.append(app_info)
                     except Exception:
@@ -70,8 +74,9 @@ def list_apps(options: Dict[str, Any]) -> None:
             return
 
         # Output based on format
-        if options.get('json'):
+        if options.get("json"):
             import json
+
             ch.raw_print(
                 json.dumps(
                     {
@@ -87,16 +92,18 @@ def list_apps(options: Dict[str, Any]) -> None:
                 )
             )
             return
-        if output_format == 'json':
+        if output_format == "json":
             import json
+
             print(json.dumps(all_apps, indent=2))
-        elif output_format == 'yaml':
+        elif output_format == "yaml":
             import yaml
+
             print(yaml.dump(all_apps, default_flow_style=False, sort_keys=False))
-        elif options.get('plain'):
+        elif options.get("plain"):
             # Plain text output - one app per line for scripting
             for app_info in all_apps:
-                ch.raw_print(app_info['app'])
+                ch.raw_print(app_info["app"])
         else:  # table format
             table = ch.create_table(
                 title="All Apps",
@@ -104,19 +111,23 @@ def list_apps(options: Dict[str, Any]) -> None:
                     {"name": "Host", "style": "cyan"},
                     {"name": "App", "style": "green"},
                     {"name": "Webserver", "style": "blue"},
-                    {"name": "Database", "style": "yellow"}
-                ]
+                    {"name": "Database", "style": "yellow"},
+                ],
             )
 
             for app_info in all_apps:
                 # Color-code active/default apps
-                app_style = "bold green" if app_info['is_active'] else ("bold yellow" if app_info['is_default'] else "green")
+                app_style = (
+                    "bold green"
+                    if app_info["is_active"]
+                    else ("bold yellow" if app_info["is_default"] else "green")
+                )
 
                 table.add_row(
-                    app_info['host'],
+                    app_info["host"],
                     f"[{app_style}]{app_info['app']}[/{app_style}]",
-                    app_info['webserver'],
-                    app_info['database']
+                    app_info["webserver"],
+                    app_info["database"],
                 )
 
             ch.print_table(table)
@@ -127,27 +138,35 @@ def list_apps(options: Dict[str, Any]) -> None:
         host_name = config_manager.get_active_host()
 
     if not host_name:
-        ch.error("No active host configured", "Use 'navig host use <name>' to set active host.")
+        ch.error(
+            "No active host configured",
+            "Use 'navig host use <name>' to set active host.",
+        )
         return
 
     # Verify host exists
     if not config_manager.host_exists(host_name):
-        ch.error(f"Host '{host_name}' not found", "Use 'navig host list' to see available hosts.")
+        ch.error(
+            f"Host '{host_name}' not found",
+            "Use 'navig host list' to see available hosts.",
+        )
         return
 
     # Get apps on this host
     try:
         apps = config_manager.list_apps(host_name)
         host_config = config_manager.load_host_config(host_name)
-        default_app = host_config.get('default_app')
+        default_app = host_config.get("default_app")
         active_app = config_manager.get_active_app()
     except Exception as e:
         ch.error(f"Error listing apps on host '{host_name}'", str(e))
         return
 
     if not apps:
-        ch.warning(f"No apps configured on host '{host_name}'",
-                   f"Use 'navig app add <name> --host {host_name}' to add one.")
+        ch.warning(
+            f"No apps configured on host '{host_name}'",
+            f"Use 'navig app add <name> --host {host_name}' to add one.",
+        )
         return
 
     # Collect app data
@@ -157,30 +176,35 @@ def list_apps(options: Dict[str, Any]) -> None:
             app_config = config_manager.load_app_config(host_name, app_name)
 
             app_info = {
-                'app': app_name,
-                'webserver': app_config.get('webserver', {}).get('type', 'N/A'),
-                'database': app_config.get('database', {}).get('type', 'N/A'),
-                'is_active': app_name == active_app,
-                'is_default': app_name == default_app,
+                "app": app_name,
+                "webserver": app_config.get("webserver", {}).get("type", "N/A"),
+                "database": app_config.get("database", {}).get("type", "N/A"),
+                "is_active": app_name == active_app,
+                "is_default": app_name == default_app,
             }
 
             if show_all:
-                app_info['paths'] = app_config.get('paths', {})
-                app_info['database_name'] = app_config.get('database', {}).get('name', 'N/A')
+                app_info["paths"] = app_config.get("paths", {})
+                app_info["database_name"] = app_config.get("database", {}).get(
+                    "name", "N/A"
+                )
 
             app_data.append(app_info)
         except Exception as e:
-            app_data.append({
-                'app': app_name,
-                'webserver': 'ERROR',
-                'database': str(e),
-                'is_active': False,
-                'is_default': False,
-            })
+            app_data.append(
+                {
+                    "app": app_name,
+                    "webserver": "ERROR",
+                    "database": str(e),
+                    "is_active": False,
+                    "is_default": False,
+                }
+            )
 
     # Output based on format
-    if options.get('json'):
+    if options.get("json"):
         import json
+
         ch.raw_print(
             json.dumps(
                 {
@@ -196,16 +220,18 @@ def list_apps(options: Dict[str, Any]) -> None:
                 sort_keys=True,
             )
         )
-    elif output_format == 'json':
+    elif output_format == "json":
         import json
+
         print(json.dumps(app_data, indent=2))
-    elif output_format == 'yaml':
+    elif output_format == "yaml":
         import yaml
+
         print(yaml.dump(app_data, default_flow_style=False, sort_keys=False))
-    elif options.get('plain'):
+    elif options.get("plain"):
         # Plain text output - one app per line for scripting
         for app_info in app_data:
-            ch.raw_print(app_info['app'])
+            ch.raw_print(app_info["app"])
     else:  # table format
         if show_all:
             table = ch.create_table(
@@ -214,19 +240,23 @@ def list_apps(options: Dict[str, Any]) -> None:
                     {"name": "App", "style": "cyan"},
                     {"name": "Webserver", "style": "green"},
                     {"name": "Database", "style": "blue"},
-                    {"name": "DB Name", "style": "yellow"}
-                ]
+                    {"name": "DB Name", "style": "yellow"},
+                ],
             )
 
             for app_info in app_data:
                 # Color-code active/default apps
-                app_style = "bold green" if app_info['is_active'] else ("bold yellow" if app_info['is_default'] else "cyan")
+                app_style = (
+                    "bold green"
+                    if app_info["is_active"]
+                    else ("bold yellow" if app_info["is_default"] else "cyan")
+                )
 
                 table.add_row(
                     f"[{app_style}]{app_info['app']}[/{app_style}]",
-                    app_info['webserver'],
-                    app_info['database'],
-                    app_info.get('database_name', 'N/A')
+                    app_info["webserver"],
+                    app_info["database"],
+                    app_info.get("database_name", "N/A"),
                 )
         else:
             table = ch.create_table(
@@ -234,18 +264,22 @@ def list_apps(options: Dict[str, Any]) -> None:
                 columns=[
                     {"name": "App", "style": "cyan"},
                     {"name": "Webserver", "style": "green"},
-                    {"name": "Database", "style": "blue"}
-                ]
+                    {"name": "Database", "style": "blue"},
+                ],
             )
 
             for app_info in app_data:
                 # Color-code active/default apps
-                app_style = "bold green" if app_info['is_active'] else ("bold yellow" if app_info['is_default'] else "cyan")
+                app_style = (
+                    "bold green"
+                    if app_info["is_active"]
+                    else ("bold yellow" if app_info["is_default"] else "cyan")
+                )
 
                 table.add_row(
                     f"[{app_style}]{app_info['app']}[/{app_style}]",
-                    app_info['webserver'],
-                    app_info['database']
+                    app_info["webserver"],
+                    app_info["database"],
                 )
 
         ch.print_table(table)
@@ -263,10 +297,10 @@ def use_app(options: Dict[str, Any]) -> None:
             - quiet: Suppress success messages
     """
     # Handle --clear-local flag
-    if options.get('clear_local'):
+    if options.get("clear_local"):
         try:
             config_manager.clear_active_app_local()
-            if not options.get('quiet'):
+            if not options.get("quiet"):
                 ch.success("✓ Cleared local active app setting")
                 ch.info("Commands will now use global active app")
         except FileNotFoundError as e:
@@ -275,7 +309,7 @@ def use_app(options: Dict[str, Any]) -> None:
             ch.error("Failed to clear local active app", str(e))
         return
 
-    app_name = options.get('app_name')
+    app_name = options.get("app_name")
 
     if not app_name:
         ch.error("App name is required")
@@ -284,23 +318,28 @@ def use_app(options: Dict[str, Any]) -> None:
     # Get active host
     host_name = config_manager.get_active_host()
     if not host_name:
-        ch.error("No active host configured", "Use 'navig host use <name>' to set active host first.")
+        ch.error(
+            "No active host configured",
+            "Use 'navig host use <name>' to set active host first.",
+        )
         return
 
     # Verify app exists on active host
     if not config_manager.app_exists(host_name, app_name):
-        ch.error(f"App '{app_name}' not found on host '{host_name}'",
-                 "Use 'navig app list' to see available apps.")
+        ch.error(
+            f"App '{app_name}' not found on host '{host_name}'",
+            "Use 'navig app list' to see available apps.",
+        )
         return
 
     # Determine scope (local or global)
-    local_scope = options.get('local', False)
+    local_scope = options.get("local", False)
 
     # Set active app
     try:
         config_manager.set_active_app(app_name, local=local_scope)
 
-        if not options.get('quiet'):
+        if not options.get("quiet"):
             if local_scope:
                 ch.success(f"✓ Set local active app to '{app_name}'")
                 ch.info("This only affects commands run in this directory")
@@ -321,37 +360,44 @@ def current_app(options: Dict[str, Any]) -> None:
     active_host = config_manager.get_active_host()
     active_app, source = config_manager.get_active_app(return_source=True)
 
-    if options.get('raw'):
+    if options.get("raw"):
         if active_app:
             ch.raw_print(active_app)
         return
 
     if not active_host:
-        ch.warning("No active host configured", "Use 'navig host use <name>' to set active host.")
+        ch.warning(
+            "No active host configured",
+            "Use 'navig host use <name>' to set active host.",
+        )
         return
 
     if not active_app:
-        ch.warning("No active app configured", "Use 'navig app use <name>' to set active app.")
+        ch.warning(
+            "No active app configured", "Use 'navig app use <name>' to set active app."
+        )
         return
 
     # Map source to display format
     source_display = {
-        'local': '📍 local (.navig/)',
-        'legacy': '📄 legacy (.navig file)',
-        'global': '🌐 global (~/.navig/)',
-        'default': '⚙️  default (from host config)',
-        'none': 'none'
+        "local": "📍 local (.navig/)",
+        "legacy": "📄 legacy (.navig file)",
+        "global": "🌐 global (~/.navig/)",
+        "default": "⚙️  default (from host config)",
+        "none": "none",
     }
 
     ch.header("Active Context")
     ch.console.print(f"[cyan]  Host:    {active_host}[/cyan]")
-    ch.console.print(f"[green]  App: {active_app}[/green] {source_display.get(source, '')}")
+    ch.console.print(
+        f"[green]  App: {active_app}[/green] {source_display.get(source, '')}"
+    )
 
 
 def add_app(options: Dict[str, Any]) -> None:
     """Add new app to a host configuration."""
-    app_name = options.get('app_name')
-    host_name = options.get('host')
+    app_name = options.get("app_name")
+    host_name = options.get("host")
 
     if not app_name:
         ch.error("App name is required")
@@ -362,12 +408,18 @@ def add_app(options: Dict[str, Any]) -> None:
         host_name = config_manager.get_active_host()
 
     if not host_name:
-        ch.error("No active host configured", "Use 'navig host use <name>' or specify --host flag.")
+        ch.error(
+            "No active host configured",
+            "Use 'navig host use <name>' or specify --host flag.",
+        )
         return
 
     # Verify host exists
     if not config_manager.host_exists(host_name):
-        ch.error(f"Host '{host_name}' not found", "Use 'navig host list' to see available hosts.")
+        ch.error(
+            f"Host '{host_name}' not found",
+            "Use 'navig host list' to see available hosts.",
+        )
         return
 
     # Check if app already exists
@@ -387,12 +439,12 @@ def add_app(options: Dict[str, Any]) -> None:
 
     # Auto-detect webserver type from host configuration
     detected_webserver = None
-    if 'services' in host_config and 'web' in host_config.get('services', {}):
-        web_service = host_config['services']['web'].lower()
-        if 'nginx' in web_service:
-            detected_webserver = 'nginx'
-        elif 'apache' in web_service:
-            detected_webserver = 'apache2'
+    if "services" in host_config and "web" in host_config.get("services", {}):
+        web_service = host_config["services"]["web"].lower()
+        if "nginx" in web_service:
+            detected_webserver = "nginx"
+        elif "apache" in web_service:
+            detected_webserver = "apache2"
 
     # Prompt for required fields
     ch.header("App Configuration")
@@ -404,34 +456,28 @@ def add_app(options: Dict[str, Any]) -> None:
             webserver_type = detected_webserver
         else:
             webserver_type = ch.prompt_choice(
-                "Webserver Type",
-                ["nginx", "apache2"],
-                default=detected_webserver
+                "Webserver Type", ["nginx", "apache2"], default=detected_webserver
             )
     else:
         ch.warning("Could not auto-detect webserver type from host configuration")
         webserver_type = ch.prompt_choice(
-            "Webserver Type (REQUIRED)",
-            ["nginx", "apache2"],
-            default="nginx"
+            "Webserver Type (REQUIRED)", ["nginx", "apache2"], default="nginx"
         )
 
     # Database configuration
     if ch.confirm_action("Configure database?", default=True):
         db_type = ch.prompt_choice(
-            "Database Type",
-            ["mysql", "postgresql", "mariadb"],
-            default="mysql"
+            "Database Type", ["mysql", "postgresql", "mariadb"], default="mysql"
         )
         db_name = ch.prompt_input("Database Name")
         db_user = ch.prompt_input("Database User")
         db_pass = ch.prompt_input("Database Password", password=True)
 
         database = {
-            'type': db_type,
-            'name': db_name,
-            'user': db_user,
-            'password': db_pass,
+            "type": db_type,
+            "name": db_name,
+            "user": db_user,
+            "password": db_pass,
         }
     else:
         database = {}
@@ -446,7 +492,7 @@ def add_app(options: Dict[str, Any]) -> None:
 
         # Suggest web_root based on app_root
         suggested_web_root = app_root
-        if webserver_type == 'nginx':
+        if webserver_type == "nginx":
             # Common patterns for different frameworks
             suggested_web_root = f"{app_root}/public"  # Laravel, Symfony
 
@@ -454,25 +500,21 @@ def add_app(options: Dict[str, Any]) -> None:
         log_path = ch.prompt_input("Log Path", default=f"/var/log/{app_name}")
 
         paths = {
-            'app_root': app_root,
-            'web_root': web_root,
-            'log_path': log_path,
+            "app_root": app_root,
+            "web_root": web_root,
+            "log_path": log_path,
         }
     else:
         paths = {}
 
     # Create app configuration
-    app_config = {
-        'webserver': {
-            'type': webserver_type
-        }
-    }
+    app_config = {"webserver": {"type": webserver_type}}
 
     if database:
-        app_config['database'] = database
+        app_config["database"] = database
 
     if paths:
-        app_config['paths'] = paths
+        app_config["paths"] = paths
 
     # Save app configuration
     try:
@@ -482,8 +524,12 @@ def add_app(options: Dict[str, Any]) -> None:
         # Show next steps
         ch.header("Next Steps")
         ch.console.print(f"[cyan]1. Set as active app: navig app use {app_name}[/cyan]")
-        ch.console.print(f"[cyan]2. View configuration: navig config show {host_name}:{app_name}[/cyan]")
-        ch.console.print(f"[cyan]3. Deploy application to {paths.get('web_root', '/var/www/' + app_name)}[/cyan]")
+        ch.console.print(
+            f"[cyan]2. View configuration: navig config show {host_name}:{app_name}[/cyan]"
+        )
+        ch.console.print(
+            f"[cyan]3. Deploy application to {paths.get('web_root', '/var/www/' + app_name)}[/cyan]"
+        )
 
         # Ask if they want to make it active
         ch.newline()
@@ -496,10 +542,10 @@ def add_app(options: Dict[str, Any]) -> None:
 
 def remove_app(options: Dict[str, Any]) -> None:
     """Remove app from a host configuration."""
-    app_name = options.get('app_name')
-    host_name = options.get('host')
-    force = options.get('force', False)
-    quiet = options.get('quiet', False)
+    app_name = options.get("app_name")
+    host_name = options.get("host")
+    force = options.get("force", False)
+    quiet = options.get("quiet", False)
 
     if not app_name:
         if not quiet:
@@ -512,7 +558,10 @@ def remove_app(options: Dict[str, Any]) -> None:
 
     if not host_name:
         if not quiet:
-            ch.error("No active host configured", "Use 'navig host use <name>' or specify --host flag.")
+            ch.error(
+                "No active host configured",
+                "Use 'navig host use <name>' or specify --host flag.",
+            )
         return
 
     # Verify app exists
@@ -523,7 +572,9 @@ def remove_app(options: Dict[str, Any]) -> None:
 
     # Confirm deletion
     if not force:
-        if not ch.confirm_action(f"Are you sure you want to remove app '{app_name}' from host '{host_name}'?"):
+        if not ch.confirm_action(
+            f"Are you sure you want to remove app '{app_name}' from host '{host_name}'?"
+        ):
             ch.warning("Cancelled.")
             return
 
@@ -545,9 +596,9 @@ def remove_app(options: Dict[str, Any]) -> None:
 
 def show_app(options: Dict[str, Any]) -> None:
     """Show detailed app configuration."""
-    app_name = options.get('app_name')
-    host_name = options.get('host')
-    json_output = options.get('json', False)
+    app_name = options.get("app_name")
+    host_name = options.get("host")
+    json_output = options.get("json", False)
 
     if not app_name:
         ch.error("App name is required")
@@ -558,7 +609,10 @@ def show_app(options: Dict[str, Any]) -> None:
         host_name = config_manager.get_active_host()
 
     if not host_name:
-        ch.error("No active host configured", "Use 'navig host use <name>' or specify --host flag.")
+        ch.error(
+            "No active host configured",
+            "Use 'navig host use <name>' or specify --host flag.",
+        )
         return
 
     # Load app configuration
@@ -571,6 +625,7 @@ def show_app(options: Dict[str, Any]) -> None:
     # Output format
     if json_output:
         import json
+
         ch.raw_print(
             json.dumps(
                 {
@@ -600,8 +655,8 @@ def show_app(options: Dict[str, Any]) -> None:
 def edit_app(options: Dict[str, Any]) -> None:
     """Edit app configuration in default editor."""
 
-    app_name = options.get('app_name')
-    host_name = options.get('host')
+    app_name = options.get("app_name")
+    host_name = options.get("host")
 
     if not app_name:
         ch.error("App name is required")
@@ -612,7 +667,10 @@ def edit_app(options: Dict[str, Any]) -> None:
         host_name = config_manager.get_active_host()
 
     if not host_name:
-        ch.error("No active host configured", "Use 'navig host use <name>' or specify --host flag.")
+        ch.error(
+            "No active host configured",
+            "Use 'navig host use <name>' or specify --host flag.",
+        )
         return
 
     # Verify app exists
@@ -643,17 +701,17 @@ def edit_app(options: Dict[str, Any]) -> None:
             return
 
     # Determine editor
-    editor = os.environ.get('EDITOR') or os.environ.get('VISUAL')
+    editor = os.environ.get("EDITOR") or os.environ.get("VISUAL")
 
     if not editor:
         # Use platform-specific defaults
         system = platform.system()
-        if system == 'Windows':
-            editor = 'notepad'
-        elif system == 'Darwin':  # macOS
-            editor = 'open -e'
+        if system == "Windows":
+            editor = "notepad"
+        elif system == "Darwin":  # macOS
+            editor = "open -e"
         else:  # Linux
-            editor = 'nano'
+            editor = "nano"
 
     ch.info(f"Opening {config_file} ({file_type}) in {editor}...")
     if file_type == "host configuration (legacy embedded format)":
@@ -663,7 +721,7 @@ def edit_app(options: Dict[str, Any]) -> None:
 
     try:
         # Open editor - use shlex.split for safe argument parsing
-        if platform.system() == 'Windows' and editor == 'notepad':
+        if platform.system() == "Windows" and editor == "notepad":
             subprocess.run([editor, str(config_file)], check=True)
         else:
             # Safely split editor command and add file path
@@ -681,9 +739,9 @@ def edit_app(options: Dict[str, Any]) -> None:
 
 def clone_app(options: Dict[str, Any]) -> None:
     """Clone an existing app configuration."""
-    source_name = options.get('source_name')
-    new_name = options.get('new_name')
-    host_name = options.get('host')
+    source_name = options.get("source_name")
+    new_name = options.get("new_name")
+    host_name = options.get("host")
 
     if not source_name or not new_name:
         ch.error("Both source and new app names are required")
@@ -694,7 +752,10 @@ def clone_app(options: Dict[str, Any]) -> None:
         host_name = config_manager.get_active_host()
 
     if not host_name:
-        ch.error("No active host configured", "Use 'navig host use <name>' or specify --host flag.")
+        ch.error(
+            "No active host configured",
+            "Use 'navig host use <name>' or specify --host flag.",
+        )
         return
 
     # Verify source exists
@@ -718,22 +779,22 @@ def clone_app(options: Dict[str, Any]) -> None:
     ch.dim("The new app will have the same configuration as the source.\n")
 
     # Update paths if they exist
-    if 'paths' in source_config:
-        paths = source_config['paths']
+    if "paths" in source_config:
+        paths = source_config["paths"]
 
         # Update web_root if it contains the source app name
-        if 'web_root' in paths and source_name in paths['web_root']:
-            paths['web_root'] = paths['web_root'].replace(source_name, new_name)
+        if "web_root" in paths and source_name in paths["web_root"]:
+            paths["web_root"] = paths["web_root"].replace(source_name, new_name)
 
         # Update log_path if it contains the source app name
-        if 'log_path' in paths and source_name in paths['log_path']:
-            paths['log_path'] = paths['log_path'].replace(source_name, new_name)
+        if "log_path" in paths and source_name in paths["log_path"]:
+            paths["log_path"] = paths["log_path"].replace(source_name, new_name)
 
     # Update database name if it contains the source app name
-    if 'database' in source_config and 'name' in source_config['database']:
-        db_name = source_config['database']['name']
+    if "database" in source_config and "name" in source_config["database"]:
+        db_name = source_config["database"]["name"]
         if source_name in db_name:
-            source_config['database']['name'] = db_name.replace(source_name, new_name)
+            source_config["database"]["name"] = db_name.replace(source_name, new_name)
 
     # Save cloned configuration
     try:
@@ -742,15 +803,23 @@ def clone_app(options: Dict[str, Any]) -> None:
 
         # Show what was updated
         ch.header("Cloned Configuration")
-        if 'paths' in source_config:
-            ch.console.print(f"[cyan]Web Root: {source_config['paths'].get('web_root', 'N/A')}[/cyan]")
-            ch.console.print(f"[cyan]Log Path: {source_config['paths'].get('log_path', 'N/A')}[/cyan]")
-        if 'database' in source_config:
-            ch.console.print(f"[cyan]Database: {source_config['database'].get('name', 'N/A')}[/cyan]")
+        if "paths" in source_config:
+            ch.console.print(
+                f"[cyan]Web Root: {source_config['paths'].get('web_root', 'N/A')}[/cyan]"
+            )
+            ch.console.print(
+                f"[cyan]Log Path: {source_config['paths'].get('log_path', 'N/A')}[/cyan]"
+            )
+        if "database" in source_config:
+            ch.console.print(
+                f"[cyan]Database: {source_config['database'].get('name', 'N/A')}[/cyan]"
+            )
 
         ch.newline()
         ch.header("Next Steps")
-        ch.console.print(f"[green]1. Edit configuration: navig app edit {new_name}[/green]")
+        ch.console.print(
+            f"[green]1. Edit configuration: navig app edit {new_name}[/green]"
+        )
         ch.console.print(f"[green]2. Set as active: navig app use {new_name}[/green]")
         ch.console.print("[green]3. Deploy application to the new paths[/green]")
     except Exception as e:
@@ -759,9 +828,9 @@ def clone_app(options: Dict[str, Any]) -> None:
 
 def info_app(options: Dict[str, Any]) -> None:
     """Show detailed app information (webserver type, database, paths, etc.)."""
-    app_name = options.get('app_name')
-    host_name = options.get('host')
-    json_output = options.get('json', False)
+    app_name = options.get("app_name")
+    host_name = options.get("host")
+    json_output = options.get("json", False)
 
     if not app_name:
         ch.error("App name is required")
@@ -772,7 +841,10 @@ def info_app(options: Dict[str, Any]) -> None:
         host_name = config_manager.get_active_host()
 
     if not host_name:
-        ch.error("No active host configured", "Use 'navig host use <name>' or specify --host flag.")
+        ch.error(
+            "No active host configured",
+            "Use 'navig host use <name>' or specify --host flag.",
+        )
         return
 
     # Verify app exists
@@ -790,22 +862,23 @@ def info_app(options: Dict[str, Any]) -> None:
     # Get additional info
     active_app = config_manager.get_active_app()
     host_config = config_manager.load_host_config(host_name)
-    default_app = host_config.get('default_app')
+    default_app = host_config.get("default_app")
 
     # Build info dictionary
     info = {
-        'name': app_name,
-        'host': host_name,
-        'webserver': app_config.get('webserver', {}),
-        'database': app_config.get('database', {}),
-        'paths': app_config.get('paths', {}),
-        'is_active': app_name == active_app,
-        'is_default': app_name == default_app,
+        "name": app_name,
+        "host": host_name,
+        "webserver": app_config.get("webserver", {}),
+        "database": app_config.get("database", {}),
+        "paths": app_config.get("paths", {}),
+        "is_active": app_name == active_app,
+        "is_default": app_name == default_app,
     }
 
     # Output format
     if json_output:
         import json
+
         print(json.dumps(info, indent=2))
     else:
         ch.header(f"App Information: {host_name}:{app_name}")
@@ -814,9 +887,9 @@ def info_app(options: Dict[str, Any]) -> None:
         # Status
         ch.subheader("Status")
         status_items = []
-        if info['is_active']:
+        if info["is_active"]:
             status_items.append("✓ Active")
-        if info['is_default']:
+        if info["is_default"]:
             status_items.append("★ Default")
         if status_items:
             ch.console.print(f"[green]  {', '.join(status_items)}[/green]")
@@ -826,7 +899,7 @@ def info_app(options: Dict[str, Any]) -> None:
 
         # Webserver
         ch.subheader("Webserver")
-        webserver = info['webserver']
+        webserver = info["webserver"]
         if webserver:
             ch.console.print(f"[cyan]  Type: {webserver.get('type', 'N/A')}[/cyan]")
         else:
@@ -835,7 +908,7 @@ def info_app(options: Dict[str, Any]) -> None:
 
         # Database
         ch.subheader("Database")
-        database = info['database']
+        database = info["database"]
         if database:
             ch.console.print(f"[blue]  Type:     {database.get('type', 'N/A')}[/blue]")
             ch.console.print(f"[blue]  Name:     {database.get('name', 'N/A')}[/blue]")
@@ -846,11 +919,11 @@ def info_app(options: Dict[str, Any]) -> None:
 
         # Paths
         ch.subheader("Paths")
-        paths = info['paths']
+        paths = info["paths"]
         if paths:
-            if 'web_root' in paths:
+            if "web_root" in paths:
                 ch.console.print(f"[green]  Web Root: {paths['web_root']}[/green]")
-            if 'log_path' in paths:
+            if "log_path" in paths:
                 ch.console.print(f"[green]  Logs:     {paths['log_path']}[/green]")
         else:
             ch.dim("  Not configured")
@@ -866,8 +939,8 @@ def info_app(options: Dict[str, Any]) -> None:
 
 def search_apps(options: Dict[str, Any]) -> None:
     """Search for apps across all hosts by name or configuration."""
-    query = options.get('query')
-    json_output = options.get('json', False)
+    query = options.get("query")
+    json_output = options.get("json", False)
 
     if not query:
         ch.error("Search query is required")
@@ -886,12 +959,18 @@ def search_apps(options: Dict[str, Any]) -> None:
                 if query_lower in app_name.lower():
                     try:
                         app_config = config_manager.load_app_config(host_name, app_name)
-                        results.append({
-                            'host': host_name,
-                            'app': app_name,
-                            'webserver': app_config.get('webserver', {}).get('type', 'N/A'),
-                            'database': app_config.get('database', {}).get('type', 'N/A'),
-                        })
+                        results.append(
+                            {
+                                "host": host_name,
+                                "app": app_name,
+                                "webserver": app_config.get("webserver", {}).get(
+                                    "type", "N/A"
+                                ),
+                                "database": app_config.get("database", {}).get(
+                                    "type", "N/A"
+                                ),
+                            }
+                        )
                     except Exception:
                         continue
         except Exception:
@@ -904,6 +983,7 @@ def search_apps(options: Dict[str, Any]) -> None:
     # Output format
     if json_output:
         import json
+
         print(json.dumps(results, indent=2))
     else:
         ch.header(f"Search Results for '{query}' ({len(results)} found)")
@@ -916,16 +996,13 @@ def search_apps(options: Dict[str, Any]) -> None:
                 {"name": "Host", "style": "cyan"},
                 {"name": "App", "style": "green"},
                 {"name": "Webserver", "style": "blue"},
-                {"name": "Database", "style": "yellow"}
-            ]
+                {"name": "Database", "style": "yellow"},
+            ],
         )
 
         for result in results:
             table.add_row(
-                result['host'],
-                result['app'],
-                result['webserver'],
-                result['database']
+                result["host"], result["app"], result["webserver"], result["database"]
             )
 
         ch.print_table(table)
@@ -938,20 +1015,26 @@ def migrate_apps(options: Dict[str, Any]) -> None:
     This command converts apps stored in hosts/<host>.yaml under the 'apps:' field
     to individual .navig/apps/<app>.yaml files.
     """
-    host_name = options.get('host')
-    dry_run = options.get('dry_run', False)
+    host_name = options.get("host")
+    dry_run = options.get("dry_run", False)
 
     # Get active host if not specified
     if not host_name:
         host_name = config_manager.get_active_host()
 
     if not host_name:
-        ch.error("No active host configured", "Use 'navig host use <name>' or specify --host flag.")
+        ch.error(
+            "No active host configured",
+            "Use 'navig host use <name>' or specify --host flag.",
+        )
         return
 
     # Verify host exists
     if not config_manager.host_exists(host_name):
-        ch.error(f"Host '{host_name}' not found", "Use 'navig host list' to see available hosts.")
+        ch.error(
+            f"Host '{host_name}' not found",
+            "Use 'navig host list' to see available hosts.",
+        )
         return
 
     ch.header(f"App Migration: {host_name}")
@@ -970,28 +1053,30 @@ def migrate_apps(options: Dict[str, Any]) -> None:
         return
 
     # Check if host has embedded apps
-    if 'apps' not in host_config or not host_config['apps']:
+    if "apps" not in host_config or not host_config["apps"]:
         ch.warning(f"No embedded apps found in host '{host_name}'")
         ch.info("This host is already using the new format or has no apps.")
         return
 
     # Show what will be migrated
-    app_count = len(host_config['apps'])
+    app_count = len(host_config["apps"])
     ch.info(f"Found {app_count} app(s) to migrate:")
-    for app_name in host_config['apps'].keys():
+    for app_name in host_config["apps"].keys():
         ch.console.print(f"  • {app_name}")
     ch.newline()
 
     # Confirm migration
     if not dry_run:
-        if not ch.confirm_action(f"Migrate {app_count} app(s) to individual files?", default=True):
+        if not ch.confirm_action(
+            f"Migrate {app_count} app(s) to individual files?", default=True
+        ):
             ch.warning("Migration cancelled.")
             return
 
     # Perform migration
     if dry_run:
         ch.info("Would migrate the following apps:")
-        for app_name in host_config['apps'].keys():
+        for app_name in host_config["apps"].keys():
             ch.console.print(f"  ✓ {app_name} → .navig/apps/{app_name}.yaml")
         ch.newline()
         ch.success("Dry run complete - no changes made")
@@ -1002,32 +1087,31 @@ def migrate_apps(options: Dict[str, Any]) -> None:
         ch.newline()
         ch.header("Migration Results")
 
-        if results['migrated']:
+        if results["migrated"]:
             ch.success(f"✓ Migrated {len(results['migrated'])} app(s):")
-            for app_name in results['migrated']:
+            for app_name in results["migrated"]:
                 ch.console.print(f"  • {app_name} → .navig/apps/{app_name}.yaml")
 
-        if results['skipped']:
-            ch.warning(f"⚠ Skipped {len(results['skipped'])} app(s) (already exist as individual files):")
-            for app_name in results['skipped']:
+        if results["skipped"]:
+            ch.warning(
+                f"⚠ Skipped {len(results['skipped'])} app(s) (already exist as individual files):"
+            )
+            for app_name in results["skipped"]:
                 ch.console.print(f"  • {app_name}")
 
-        if results['errors']:
+        if results["errors"]:
             ch.error(f"✗ Failed to migrate {len(results['errors'])} app(s):")
-            for app_name, error in results['errors'].items():
+            for app_name, error in results["errors"].items():
                 ch.console.print(f"  • {app_name}: {error}")
 
         ch.newline()
 
-        if results['migrated']:
+        if results["migrated"]:
             ch.success("Migration complete!")
             ch.info("Apps are now stored in individual files under .navig/apps/")
             ch.dim("The host configuration has been updated to remove embedded apps.")
         else:
             ch.warning("No apps were migrated.")
-
-
-
 
 
 from typing import Any, Dict, Optional
@@ -1054,19 +1138,31 @@ def app_callback(ctx: typer.Context):
 @app_app.command("list")
 def app_list(
     ctx: typer.Context,
-    host: Optional[str] = typer.Option(None, "--host", "-h", help="Host to list apps from"),
-    all: bool = typer.Option(False, "--all", "-a", help="Show all apps from all hosts with detailed information"),
-    format: str = typer.Option("table", "--format", "-f", help="Output format: table, json, yaml"),
-    plain: bool = typer.Option(False, "--plain", help="Output plain text (one app per line) for scripting"),
+    host: Optional[str] = typer.Option(
+        None, "--host", "-h", help="Host to list apps from"
+    ),
+    all: bool = typer.Option(
+        False,
+        "--all",
+        "-a",
+        help="Show all apps from all hosts with detailed information",
+    ),
+    format: str = typer.Option(
+        "table", "--format", "-f", help="Output format: table, json, yaml"
+    ),
+    plain: bool = typer.Option(
+        False, "--plain", help="Output plain text (one app per line) for scripting"
+    ),
     json: bool = typer.Option(False, "--json", help="Output JSON"),
 ):
     """List all apps on a host."""
     from navig.commands.app import list_apps
+
     if host:
-        ctx.obj['host'] = host
-    ctx.obj['all'] = all
-    ctx.obj['format'] = "json" if json else format
-    ctx.obj['plain'] = plain
+        ctx.obj["host"] = host
+    ctx.obj["all"] = all
+    ctx.obj["format"] = "json" if json else format
+    ctx.obj["plain"] = plain
     if json:
         ctx.obj["json"] = True
     list_apps(ctx.obj)
@@ -1076,8 +1172,12 @@ def app_list(
 def app_use(
     ctx: typer.Context,
     app_name: Optional[str] = typer.Argument(None, help="App name to activate"),
-    local: bool = typer.Option(False, "--local", "-l", help="Set as local active app (current directory only)"),
-    clear_local: bool = typer.Option(False, "--clear-local", help="Clear local active app setting"),
+    local: bool = typer.Option(
+        False, "--local", "-l", help="Set as local active app (current directory only)"
+    ),
+    clear_local: bool = typer.Option(
+        False, "--clear-local", help="Clear local active app setting"
+    ),
 ):
     """
     Set active app (global or local scope).
@@ -1088,10 +1188,11 @@ def app_use(
         navig app use --clear-local     # Remove local active app setting
     """
     from navig.commands.app import use_app
+
     if app_name:
-        ctx.obj['app_name'] = app_name
-    ctx.obj['local'] = local
-    ctx.obj['clear_local'] = clear_local
+        ctx.obj["app_name"] = app_name
+    ctx.obj["local"] = local
+    ctx.obj["clear_local"] = clear_local
     use_app(ctx.obj)
 
 
@@ -1100,6 +1201,7 @@ def app_current(ctx: typer.Context):
     """[DEPRECATED: Use 'navig app show --current'] Show currently active app."""
     deprecation_warning("navig app current", "navig app show --current")
     from navig.commands.app import current_app
+
     current_app(ctx.obj)
 
 
@@ -1108,21 +1210,25 @@ def app_add(
     ctx: typer.Context,
     app_name: str = typer.Argument(..., help="App name to add"),
     host: Optional[str] = typer.Option(None, "--host", "-h", help="Host to add app to"),
-    from_app: Optional[str] = typer.Option(None, "--from", help="Clone from existing app"),
+    from_app: Optional[str] = typer.Option(
+        None, "--from", help="Clone from existing app"
+    ),
 ):
     """Add new app to a host (or clone from existing)."""
     if from_app:
         from navig.commands.app import clone_app
-        ctx.obj['source_name'] = from_app
-        ctx.obj['new_name'] = app_name
+
+        ctx.obj["source_name"] = from_app
+        ctx.obj["new_name"] = app_name
         if host:
-            ctx.obj['host'] = host
+            ctx.obj["host"] = host
         clone_app(ctx.obj)
     else:
         from navig.commands.app import add_app
-        ctx.obj['app_name'] = app_name
+
+        ctx.obj["app_name"] = app_name
         if host:
-            ctx.obj['host'] = host
+            ctx.obj["host"] = host
         add_app(ctx.obj)
 
 
@@ -1130,15 +1236,18 @@ def app_add(
 def app_remove(
     ctx: typer.Context,
     app_name: str = typer.Argument(..., help="App name to remove"),
-    host: Optional[str] = typer.Option(None, "--host", "-h", help="Host to remove app from"),
+    host: Optional[str] = typer.Option(
+        None, "--host", "-h", help="Host to remove app from"
+    ),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
 ):
     """Remove app from a host."""
     from navig.commands.app import remove_app
-    ctx.obj['app_name'] = app_name
-    ctx.obj['force'] = force
+
+    ctx.obj["app_name"] = app_name
+    ctx.obj["force"] = force
     if host:
-        ctx.obj['host'] = host
+        ctx.obj["host"] = host
     remove_app(ctx.obj)
 
 
@@ -1146,7 +1255,9 @@ def app_remove(
 def app_show(
     ctx: typer.Context,
     app_name: Optional[str] = typer.Argument(None, help="App name to show"),
-    host: Optional[str] = typer.Option(None, "--host", "-h", help="Host containing the app"),
+    host: Optional[str] = typer.Option(
+        None, "--host", "-h", help="Host containing the app"
+    ),
     current: bool = typer.Option(False, "--current", help="Show currently active app"),
     json: bool = typer.Option(False, "--json", help="Output JSON"),
 ):
@@ -1155,13 +1266,15 @@ def app_show(
         ctx.obj["json"] = True
     if current:
         from navig.commands.app import current_app
+
         current_app(ctx.obj)
     else:
         from navig.commands.app import show_app
+
         if app_name:
-            ctx.obj['app_name'] = app_name
+            ctx.obj["app_name"] = app_name
         if host:
-            ctx.obj['host'] = host
+            ctx.obj["host"] = host
         show_app(ctx.obj)
 
 
@@ -1169,13 +1282,16 @@ def app_show(
 def app_edit(
     ctx: typer.Context,
     app_name: str = typer.Argument(..., help="App name to edit"),
-    host: Optional[str] = typer.Option(None, "--host", "-h", help="Host containing the app"),
+    host: Optional[str] = typer.Option(
+        None, "--host", "-h", help="Host containing the app"
+    ),
 ):
     """Edit app configuration in default editor."""
     from navig.commands.app import edit_app
-    ctx.obj['app_name'] = app_name
+
+    ctx.obj["app_name"] = app_name
     if host:
-        ctx.obj['host'] = host
+        ctx.obj["host"] = host
     edit_app(ctx.obj)
 
 
@@ -1184,15 +1300,18 @@ def app_clone(
     ctx: typer.Context,
     source: str = typer.Argument(..., help="Source app name to clone"),
     new_name: str = typer.Argument(..., help="New app name"),
-    host: Optional[str] = typer.Option(None, "--host", "-h", help="Host containing the app"),
+    host: Optional[str] = typer.Option(
+        None, "--host", "-h", help="Host containing the app"
+    ),
 ):
     """[DEPRECATED: Use 'navig app add <name> --from <source>'] Clone app."""
     deprecation_warning("navig app clone", "navig app add <name> --from <source>")
     from navig.commands.app import clone_app
-    ctx.obj['source_name'] = source
-    ctx.obj['new_name'] = new_name
+
+    ctx.obj["source_name"] = source
+    ctx.obj["new_name"] = new_name
     if host:
-        ctx.obj['host'] = host
+        ctx.obj["host"] = host
     clone_app(ctx.obj)
 
 
@@ -1200,14 +1319,17 @@ def app_clone(
 def app_info(
     ctx: typer.Context,
     app_name: str = typer.Argument(..., help="App name to show info for"),
-    host: Optional[str] = typer.Option(None, "--host", "-h", help="Host containing the app"),
+    host: Optional[str] = typer.Option(
+        None, "--host", "-h", help="Host containing the app"
+    ),
 ):
     """[DEPRECATED: Use 'navig app show'] Show detailed app information."""
     deprecation_warning("navig app info", "navig app show")
     from navig.commands.app import info_app
-    ctx.obj['app_name'] = app_name
+
+    ctx.obj["app_name"] = app_name
     if host:
-        ctx.obj['host'] = host
+        ctx.obj["host"] = host
     info_app(ctx.obj)
 
 
@@ -1218,15 +1340,20 @@ def app_search(
 ):
     """Search for apps across all hosts by name or configuration."""
     from navig.commands.app import search_apps
-    ctx.obj['query'] = query
+
+    ctx.obj["query"] = query
     search_apps(ctx.obj)
 
 
 @app_app.command("migrate")
 def app_migrate(
     ctx: typer.Context,
-    host: Optional[str] = typer.Option(None, "--host", "-h", help="Host to migrate apps from"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be migrated without making changes"),
+    host: Optional[str] = typer.Option(
+        None, "--host", "-h", help="Host to migrate apps from"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be migrated without making changes"
+    ),
 ):
     """
     Migrate apps from legacy embedded format to individual files.
@@ -1239,9 +1366,10 @@ def app_migrate(
         navig app migrate --dry-run             # Preview migration without changes
     """
     from navig.commands.app import migrate_apps
+
     if host:
-        ctx.obj['host'] = host
-    ctx.obj['dry_run'] = dry_run
+        ctx.obj["host"] = host
+    ctx.obj["dry_run"] = dry_run
     migrate_apps(ctx.obj)
 
 

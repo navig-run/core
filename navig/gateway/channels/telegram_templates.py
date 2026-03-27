@@ -24,18 +24,19 @@ logger = logging.getLogger(__name__)
 # Character limits (from spec)
 # ────────────────────────────────────────────────────────────────
 
-DEFAULT_LIMIT = 280   # Standard reply
-STATUS_LIMIT = 200    # Status / completion
+DEFAULT_LIMIT = 280  # Standard reply
+STATUS_LIMIT = 200  # Status / completion
 GREETING_LIMIT = 120  # T1 base
-ACK_LIMIT = 80        # T7 acknowledgment
-TASK_DONE_LIMIT = 100 # T4 base
+ACK_LIMIT = 80  # T7 acknowledgment
+TASK_DONE_LIMIT = 100  # T4 base
 BRIEFING_LIMIT = 300  # T5 base
-MAX_SINGLE_MSG = 2000 # Split above this
-SPLIT_THRESHOLD = 500 # Soft split target for multi-part
+MAX_SINGLE_MSG = 2000  # Split above this
+SPLIT_THRESHOLD = 500  # Soft split target for multi-part
 
 
 class TemplateID(str, Enum):
     """Template identifiers matching the spec."""
+
     GREETING = "T1"
     STATUS = "T2"
     INCIDENT = "T3"
@@ -51,6 +52,7 @@ class TemplateID(str, Enum):
 @dataclass
 class FormattedMessage:
     """A formatted message ready for Telegram."""
+
     text: str
     template_id: Optional[TemplateID] = None
     keyboard_profile: Optional[str] = None  # "action", "expand", "feedback", "none"
@@ -60,6 +62,7 @@ class FormattedMessage:
 # ────────────────────────────────────────────────────────────────
 # Template formatters
 # ────────────────────────────────────────────────────────────────
+
 
 def t1_greeting(
     username: str = "",
@@ -80,7 +83,9 @@ def t1_greeting(
         text = _enforce_limit(text, 200)
     else:
         text = _enforce_limit(base, GREETING_LIMIT)
-    return FormattedMessage(text=text, template_id=TemplateID.GREETING, keyboard_profile="none")
+    return FormattedMessage(
+        text=text, template_id=TemplateID.GREETING, keyboard_profile="none"
+    )
 
 
 def t2_status(
@@ -103,9 +108,15 @@ def t2_status(
         text = f"{base}\n\n{bullets}"
         if len(items) > 5:
             text += "\n\n_See all in Deck_"
-            return FormattedMessage(text=text, template_id=TemplateID.STATUS, keyboard_profile="expand")
-        return FormattedMessage(text=text, template_id=TemplateID.STATUS, keyboard_profile="none")
-    return FormattedMessage(text=base, template_id=TemplateID.STATUS, keyboard_profile="none")
+            return FormattedMessage(
+                text=text, template_id=TemplateID.STATUS, keyboard_profile="expand"
+            )
+        return FormattedMessage(
+            text=text, template_id=TemplateID.STATUS, keyboard_profile="none"
+        )
+    return FormattedMessage(
+        text=base, template_id=TemplateID.STATUS, keyboard_profile="none"
+    )
 
 
 def t3_incident(
@@ -117,9 +128,13 @@ def t3_incident(
 ) -> FormattedMessage:
     """T3 — Incident / alert — entity alarm."""
     human_clause = "need your call on this." if human_needed else "handled it."
-    base = f"🚨 {service} went down. impact: {impact}. I've {action_taken}. {human_clause}"
+    base = (
+        f"🚨 {service} went down. impact: {impact}. I've {action_taken}. {human_clause}"
+    )
     base = _enforce_limit(base, 200)
-    return FormattedMessage(text=base, template_id=TemplateID.INCIDENT, keyboard_profile="action")
+    return FormattedMessage(
+        text=base, template_id=TemplateID.INCIDENT, keyboard_profile="action"
+    )
 
 
 def t4_task_done(
@@ -137,8 +152,12 @@ def t4_task_done(
     if verbosity == "detailed" and method_summary:
         text = f"{base}\n{method_summary}"
         text = _enforce_limit(text, 200)
-        return FormattedMessage(text=text, template_id=TemplateID.TASK_DONE, keyboard_profile="none")
-    return FormattedMessage(text=base, template_id=TemplateID.TASK_DONE, keyboard_profile="none")
+        return FormattedMessage(
+            text=text, template_id=TemplateID.TASK_DONE, keyboard_profile="none"
+        )
+    return FormattedMessage(
+        text=base, template_id=TemplateID.TASK_DONE, keyboard_profile="none"
+    )
 
 
 def t5_briefing(
@@ -151,8 +170,16 @@ def t5_briefing(
     text = f"{header}\n{bullets}"
     if len(items) > 5:
         text += "\n\n_Open briefing in Deck for full view._"
-        return FormattedMessage(text=_enforce_limit(text, BRIEFING_LIMIT + 100), template_id=TemplateID.BRIEFING, keyboard_profile="expand")
-    return FormattedMessage(text=_enforce_limit(text, BRIEFING_LIMIT), template_id=TemplateID.BRIEFING, keyboard_profile="none")
+        return FormattedMessage(
+            text=_enforce_limit(text, BRIEFING_LIMIT + 100),
+            template_id=TemplateID.BRIEFING,
+            keyboard_profile="expand",
+        )
+    return FormattedMessage(
+        text=_enforce_limit(text, BRIEFING_LIMIT),
+        template_id=TemplateID.BRIEFING,
+        keyboard_profile="none",
+    )
 
 
 def t6_clarification(
@@ -166,8 +193,12 @@ def t6_clarification(
     base = _enforce_limit(base, 150)
     if options and len(options) <= 3:
         # Options as inline buttons are handled by keyboard system
-        return FormattedMessage(text=base, template_id=TemplateID.CLARIFICATION, keyboard_profile="action")
-    return FormattedMessage(text=base, template_id=TemplateID.CLARIFICATION, keyboard_profile="none")
+        return FormattedMessage(
+            text=base, template_id=TemplateID.CLARIFICATION, keyboard_profile="action"
+        )
+    return FormattedMessage(
+        text=base, template_id=TemplateID.CLARIFICATION, keyboard_profile="none"
+    )
 
 
 def t7_ack(
@@ -179,7 +210,9 @@ def t7_ack(
     if next_suggestion:
         base += f" {next_suggestion}"
     base = _enforce_limit(base, ACK_LIMIT)
-    return FormattedMessage(text=base, template_id=TemplateID.ACK, keyboard_profile="none")
+    return FormattedMessage(
+        text=base, template_id=TemplateID.ACK, keyboard_profile="none"
+    )
 
 
 def t8_approval(
@@ -191,7 +224,9 @@ def t8_approval(
     """T8 — Approval request — entity requesting consent."""
     base = f"⚠️ I want to {action}. risk: {risk}. alternative: {alternative}."
     base = _enforce_limit(base, 250)
-    return FormattedMessage(text=base, template_id=TemplateID.APPROVAL, keyboard_profile="action")
+    return FormattedMessage(
+        text=base, template_id=TemplateID.APPROVAL, keyboard_profile="action"
+    )
 
 
 def t10_error(
@@ -203,12 +238,15 @@ def t10_error(
     """T10 — Error / failure — entity stumble."""
     base = f"❌ …{what_failed}. {why}. {what_next}."
     base = _enforce_limit(base, 200)
-    return FormattedMessage(text=base, template_id=TemplateID.ERROR, keyboard_profile="feedback")
+    return FormattedMessage(
+        text=base, template_id=TemplateID.ERROR, keyboard_profile="feedback"
+    )
 
 
 # ────────────────────────────────────────────────────────────────
 # Response post-processing
 # ────────────────────────────────────────────────────────────────
+
 
 def enforce_response_limits(
     text: str,
@@ -218,7 +256,7 @@ def enforce_response_limits(
 ) -> FormattedMessage:
     """
     Post-process any AI response to obey char limits.
-    
+
     - brief: truncate to DEFAULT_LIMIT
     - normal: keep up to max_single, split if over
     - detailed: keep full, split at split_at boundaries
@@ -282,7 +320,9 @@ _GREETING_RE = re.compile(
 )
 _STATUS_RE = re.compile(r"(all\s+systems|status|health|uptime|running)", re.IGNORECASE)
 _ERROR_RE = re.compile(r"^(❌|error|failed|sorry,?\s+i\s+can)", re.IGNORECASE)
-_ACK_RE = re.compile(r"^(glad|no\s+problem|you'?re\s+welcome|done|got\s+it)", re.IGNORECASE)
+_ACK_RE = re.compile(
+    r"^(glad|no\s+problem|you'?re\s+welcome|done|got\s+it)", re.IGNORECASE
+)
 
 
 def auto_detect_template(ai_response: str) -> Optional[TemplateID]:

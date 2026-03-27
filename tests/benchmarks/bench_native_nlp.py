@@ -16,8 +16,8 @@ Native extension build (one-time):
 from __future__ import annotations
 
 import re
-import time
 import statistics
+import time
 from typing import Dict, List
 
 # ── Python implementations (copied from source for isolated benchmarking) ──
@@ -35,9 +35,14 @@ _STRIP_INLINE = re.compile(r"`[^`]+`")
 _STRIP_URL = re.compile(r"https?://\S+")
 
 _LOW_PATTERNS = [
-    re.compile(r"^(hi|hello|hey|thanks|thank you|ok|okay|sure|yes|no|bye|great|good|nice|cool)\s*[.!?]*$", re.I),
+    re.compile(
+        r"^(hi|hello|hey|thanks|thank you|ok|okay|sure|yes|no|bye|great|good|nice|cool)\s*[.!?]*$",
+        re.I,
+    ),
     re.compile(r"^(what|how|why|when|where|can you|could you|please|help)\s", re.I),
-    re.compile(r"^(show me|list|display|print|run|execute|debug|fix|build|deploy)\s", re.I),
+    re.compile(
+        r"^(show me|list|display|print|run|execute|debug|fix|build|deploy)\s", re.I
+    ),
 ]
 
 
@@ -159,19 +164,24 @@ def main():
 
     try:
         import navig_nlp  # type: ignore[import-untyped]
+
         HAS = True
         print("[OK] navig_nlp native extension loaded")
     except ImportError:
         HAS = False
         print("[--] navig_nlp not found  (Python-only baseline)")
-        print("     build: cd host/crates/navig_nlp && py -3 -m maturin develop --release")
+        print(
+            "     build: cd host/crates/navig_nlp && py -3 -m maturin develop --release"
+        )
 
     sw = list(_STOP_WORDS)
     hdr = f"  {'Function + text':46s} {'py (µs)':>8s}  {'nat (µs)':>8s}  speedup"
 
     # ── 1. Short texts (2–100 chars) ──────────────────────────────────────
     print(f"\n  [1] tokenize_and_score — short texts (dominant: PyO3 call overhead)")
-    hr(); print(hdr); hr()
+    hr()
+    print(hdr)
+    hr()
     py_all, nat_all = [], []
     for i, t in enumerate(SHORT_TEXTS):
         py_m, _ = bench(py_tokenize_and_score, (t,))
@@ -179,52 +189,78 @@ def main():
         if HAS:
             nat_m, _ = bench(navig_nlp.tokenize_and_score, (t, sw))
             nat_all.append(nat_m)
-            print(f"  tok_score text[{i:2d}] ({len(t):3d} ch)           {py_m:>8.1f}  {nat_m:>8.1f} {speedup_tag(py_m, nat_m)}")
+            print(
+                f"  tok_score text[{i:2d}] ({len(t):3d} ch)           {py_m:>8.1f}  {nat_m:>8.1f} {speedup_tag(py_m, nat_m)}"
+            )
         else:
             print(f"  tok_score text[{i:2d}] ({len(t):3d} ch)           {py_m:>8.1f}")
 
     # ── 2. Medium texts (300–600 chars) ───────────────────────────────────
     print(f"\n  [2] tokenize_and_score — medium texts (300–600 chars)")
-    hr(); print(hdr); hr()
+    hr()
+    print(hdr)
+    hr()
     for i, t in enumerate(MEDIUM_TEXTS):
         py_m, _ = bench(py_tokenize_and_score, (t,))
         py_all.append(py_m)
         if HAS:
             nat_m, _ = bench(navig_nlp.tokenize_and_score, (t, sw))
             nat_all.append(nat_m)
-            print(f"  tok_score medium[{i}] ({len(t):4d} ch)          {py_m:>8.1f}  {nat_m:>8.1f} {speedup_tag(py_m, nat_m)}")
+            print(
+                f"  tok_score medium[{i}] ({len(t):4d} ch)          {py_m:>8.1f}  {nat_m:>8.1f} {speedup_tag(py_m, nat_m)}"
+            )
         else:
             print(f"  tok_score medium[{i}] ({len(t):4d} ch)          {py_m:>8.1f}")
 
     # ── 3. Large text (1.8 KB) ─────────────────────────────────────────────
-    print(f"\n  [3] tokenize_and_score — large text (~{len(LARGE_TEXT)} chars) — regex dominates")
-    hr(); print(hdr); hr()
+    print(
+        f"\n  [3] tokenize_and_score — large text (~{len(LARGE_TEXT)} chars) — regex dominates"
+    )
+    hr()
+    print(hdr)
+    hr()
     py_m, _ = bench(py_tokenize_and_score, (LARGE_TEXT,), iterations=LARGE_ITER)
     py_all.append(py_m)
     if HAS:
-        nat_m, _ = bench(navig_nlp.tokenize_and_score, (LARGE_TEXT, sw), iterations=LARGE_ITER)
+        nat_m, _ = bench(
+            navig_nlp.tokenize_and_score, (LARGE_TEXT, sw), iterations=LARGE_ITER
+        )
         nat_all.append(nat_m)
-        print(f"  tok_score large  ({len(LARGE_TEXT):5d} ch)            {py_m:>8.1f}  {nat_m:>8.1f} {speedup_tag(py_m, nat_m)}")
+        print(
+            f"  tok_score large  ({len(LARGE_TEXT):5d} ch)            {py_m:>8.1f}  {nat_m:>8.1f} {speedup_tag(py_m, nat_m)}"
+        )
     else:
         print(f"  tok_score large  ({len(LARGE_TEXT):5d} ch)            {py_m:>8.1f}")
 
     # ── 4. batch_tokenize (Rayon parallel) ────────────────────────────────
-    print(f"\n  [4] batch_tokenize — {len(BATCH_50)} texts, Rayon parallel (GIL released)")
-    hr(); print(hdr); hr()
+    print(
+        f"\n  [4] batch_tokenize — {len(BATCH_50)} texts, Rayon parallel (GIL released)"
+    )
+    hr()
+    print(hdr)
+    hr()
     py_batch_m, _ = bench(
         lambda: [py_tokenize_and_score(t) for t in BATCH_50], (), iterations=BATCH_ITER
     )
     if HAS:
-        nat_batch_m, _ = bench(navig_nlp.batch_tokenize, (BATCH_50, sw), iterations=BATCH_ITER)
-        print(f"  batch({len(BATCH_50)} texts) total          {py_batch_m:>8.1f}  {nat_batch_m:>8.1f} {speedup_tag(py_batch_m, nat_batch_m)}")
-        print(f"  per-text amortised             {py_batch_m/len(BATCH_50):>8.1f}  {nat_batch_m/len(BATCH_50):>8.1f}")
+        nat_batch_m, _ = bench(
+            navig_nlp.batch_tokenize, (BATCH_50, sw), iterations=BATCH_ITER
+        )
+        print(
+            f"  batch({len(BATCH_50)} texts) total          {py_batch_m:>8.1f}  {nat_batch_m:>8.1f} {speedup_tag(py_batch_m, nat_batch_m)}"
+        )
+        print(
+            f"  per-text amortised             {py_batch_m/len(BATCH_50):>8.1f}  {nat_batch_m/len(BATCH_50):>8.1f}"
+        )
     else:
         print(f"  batch({len(BATCH_50)} texts) py total       {py_batch_m:>8.1f}")
         print(f"  per-text amortised             {py_batch_m/len(BATCH_50):>8.1f}")
 
     # ── 5. is_low_signal ──────────────────────────────────────────────────
     print(f"\n  [5] is_low_signal — all texts (boolean, no Python object allocation)")
-    hr(); print(hdr); hr()
+    hr()
+    print(hdr)
+    hr()
     ls_py, ls_nat = [], []
     all_texts = SHORT_TEXTS + MEDIUM_TEXTS + [LARGE_TEXT]
     for i, t in enumerate(all_texts):
@@ -233,7 +269,9 @@ def main():
         if HAS:
             nat_m, _ = bench(navig_nlp.is_low_signal, (t,))
             ls_nat.append(nat_m)
-            print(f"  is_low_signal [{i:2d}] ({len(t):5d} ch)          {py_m:>8.1f}  {nat_m:>8.1f} {speedup_tag(py_m, nat_m)}")
+            print(
+                f"  is_low_signal [{i:2d}] ({len(t):5d} ch)          {py_m:>8.1f}  {nat_m:>8.1f} {speedup_tag(py_m, nat_m)}"
+            )
         else:
             print(f"  is_low_signal [{i:2d}] ({len(t):5d} ch)          {py_m:>8.1f}")
 
@@ -243,9 +281,15 @@ def main():
         ts_avg = statistics.mean(py_all) / statistics.mean(nat_all)
         ls_avg = statistics.mean(ls_py) / statistics.mean(ls_nat) if ls_nat else 0
         batch_sp = py_batch_m / nat_batch_m if nat_batch_m > 0 else 0
-        print(f"  tokenize_and_score  avg speedup : {ts_avg:.2f}x  (< 1x on short texts = PyO3 overhead)")
-        print(f"  is_low_signal       avg speedup : {ls_avg:.2f}x  (boolean, no alloc = consistent win)")
-        print(f"  batch_tokenize({len(BATCH_50)}) speedup : {batch_sp:.2f}x  (Rayon releases GIL)")
+        print(
+            f"  tokenize_and_score  avg speedup : {ts_avg:.2f}x  (< 1x on short texts = PyO3 overhead)"
+        )
+        print(
+            f"  is_low_signal       avg speedup : {ls_avg:.2f}x  (boolean, no alloc = consistent win)"
+        )
+        print(
+            f"  batch_tokenize({len(BATCH_50)}) speedup : {batch_sp:.2f}x  (Rayon releases GIL)"
+        )
         print()
         print("  Recommendation: is_low_signal native path is always faster.")
         print("  tokenize_and_score: Rust wins on >300 char texts and batch mode.")

@@ -9,6 +9,7 @@ Usage:
   navig stats --url https://your-self-hosted-server.example.com
   navig stats --json
 """
+
 from __future__ import annotations
 
 import json as _json_mod
@@ -97,7 +98,9 @@ def stats(
     sorted_platforms = sorted(by_platform.items(), key=lambda x: -x[1])
 
     # Build platform table
-    table = Table(box=box.SIMPLE, show_header=True, header_style="bold cyan", padding=(0, 1))
+    table = Table(
+        box=box.SIMPLE, show_header=True, header_style="bold cyan", padding=(0, 1)
+    )
     table.add_column("Platform", style="white", no_wrap=True)
     table.add_column("Installs", style="bold white", justify="right")
     table.add_column("Share", style="dim", justify="right")

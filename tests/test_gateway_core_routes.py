@@ -38,6 +38,7 @@ def _build_gateway(*, auth_token: str | None = None):
 def _build_core_app(gateway):
     pytest.importorskip("aiohttp")
     from aiohttp import web
+
     from navig.gateway.routes.core import register
 
     app = web.Application()
@@ -132,7 +133,9 @@ async def test_core_auth_enforced_when_token_is_set():
         unauthorized_body = await unauthorized.json()
         assert unauthorized_body["error_code"] == "unauthorized"
 
-        authorized = await client.get("/status", headers={"Authorization": "Bearer top-secret"})
+        authorized = await client.get(
+            "/status", headers={"Authorization": "Bearer top-secret"}
+        )
         assert authorized.status == 200
 
 
@@ -141,6 +144,7 @@ async def test_deck_auth_middleware_allows_dev_header_user():
     pytest.importorskip("aiohttp")
     from aiohttp import web
     from aiohttp.test_utils import TestClient, TestServer
+
     from navig.gateway.deck import register_deck_routes
 
     app = web.Application()
@@ -156,7 +160,9 @@ async def test_deck_auth_middleware_allows_dev_header_user():
         denied = await client.get("/api/deck/status")
         assert denied.status == 401
 
-        allowed = await client.get("/api/deck/status", headers={"X-Telegram-User": "123"})
+        allowed = await client.get(
+            "/api/deck/status", headers={"X-Telegram-User": "123"}
+        )
         assert allowed.status == 200
         allowed_body = await allowed.json()
         assert "avatar_state" in allowed_body
@@ -167,6 +173,7 @@ async def test_deck_auth_middleware_forbidden_user():
     pytest.importorskip("aiohttp")
     from aiohttp import web
     from aiohttp.test_utils import TestClient, TestServer
+
     from navig.gateway.deck import register_deck_routes
 
     app = web.Application()
@@ -179,7 +186,9 @@ async def test_deck_auth_middleware_forbidden_user():
     )
 
     async with TestClient(TestServer(app)) as client:
-        forbidden = await client.get("/api/deck/status", headers={"X-Telegram-User": "123"})
+        forbidden = await client.get(
+            "/api/deck/status", headers={"X-Telegram-User": "123"}
+        )
         assert forbidden.status == 403
         body = await forbidden.json()
         assert body["error"] == "forbidden"

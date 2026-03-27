@@ -1,4 +1,3 @@
-
 import os
 from pathlib import Path
 from typing import Any, Optional
@@ -48,7 +47,9 @@ Constraints:
 - Use type hints.
 """
 
-    def _generate(self, goal: str, previous_artifact: Any, error_msg: str, context: Any) -> Any:
+    def _generate(
+        self, goal: str, previous_artifact: Any, error_msg: str, context: Any
+    ) -> Any:
         prompt = f"Goal: Create a python script to {goal}\n\n"
 
         if previous_artifact:
@@ -71,6 +72,7 @@ if __name__ == "__main__":
         try:
             # Extract code
             import re
+
             match = re.search(r"```python\n(.*?)\n```", artifact, re.DOTALL)
             code = match.group(1).strip() if match else artifact
 
@@ -80,7 +82,6 @@ if __name__ == "__main__":
             return f"Syntax Error: {e}"
         except Exception as e:
             return f"Validation Error: {e}"
-
 
     def _save(self, goal: str, artifact: str):
         """Save to scripts/[name].py."""
@@ -95,7 +96,9 @@ if __name__ == "__main__":
             filename = "script.py"
 
             # Check for "# filename: ..." comment
-            name_match = re.search(r"^#\s*filename:\s*(.+?)$", code, re.MULTILINE | re.IGNORECASE)
+            name_match = re.search(
+                r"^#\s*filename:\s*(.+?)$", code, re.MULTILINE | re.IGNORECASE
+            )
             if name_match:
                 filename = name_match.group(1).strip()
             else:
@@ -119,7 +122,7 @@ if __name__ == "__main__":
                     path = self._scripts_dir / f"{stem}_{counter}.py"
                     counter += 1
 
-            with open(path, 'w', encoding='utf-8') as f:
+            with open(path, "w", encoding="utf-8") as f:
                 f.write(code)
 
             success(f"Script saved to {path}")

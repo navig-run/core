@@ -31,12 +31,7 @@ Usage:
 
 from .core import CredentialsVault
 from .secret_str import SecretStr
-from .types import (
-    Credential,
-    CredentialInfo,
-    CredentialType,
-    TestResult,
-)
+from .types import Credential, CredentialInfo, CredentialType, TestResult
 
 __all__ = [
     "CredentialsVault",

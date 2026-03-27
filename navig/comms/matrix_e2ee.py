@@ -23,8 +23,10 @@ logger = logging.getLogger(__name__)
 
 # ── Trust State Enum ──
 
+
 class DeviceTrust(str, Enum):
     """Human-readable trust state for device display."""
+
     verified = "verified"
     blacklisted = "blacklisted"
     ignored = "ignored"
@@ -46,9 +48,11 @@ class DeviceTrust(str, Enum):
 
 # ── Data Classes ──
 
+
 @dataclass
 class DeviceInfo:
     """Normalized device information."""
+
     device_id: str
     user_id: str = ""
     display_name: str = ""
@@ -79,6 +83,7 @@ class DeviceInfo:
 @dataclass
 class VerificationSession:
     """Tracks a SAS verification session."""
+
     transaction_id: str
     user_id: str
     device_id: str
@@ -100,6 +105,7 @@ class VerificationSession:
 
 # ── E2EE Manager ──
 
+
 class MatrixE2EEManager:
     """High-level E2EE management attached to a NavigMatrixBot instance.
 
@@ -115,6 +121,7 @@ class MatrixE2EEManager:
 
     def __init__(self, bot) -> None:
         from navig.comms.matrix import NavigMatrixBot
+
         if not isinstance(bot, NavigMatrixBot):
             raise TypeError("Expected NavigMatrixBot instance")
         self._bot = bot
@@ -158,9 +165,11 @@ class MatrixE2EEManager:
                 user_id=d.get("user_id", user_id),
                 display_name=d.get("display_name", ""),
                 ed25519_key=d.get("ed25519_key", ""),
-                trust=DeviceTrust(d.get("trust", "unset"))
-                if d.get("trust", "unset") in DeviceTrust.__members__
-                else DeviceTrust.unknown,
+                trust=(
+                    DeviceTrust(d.get("trust", "unset"))
+                    if d.get("trust", "unset") in DeviceTrust.__members__
+                    else DeviceTrust.unknown
+                ),
             )
             for d in raw
         ]
@@ -203,7 +212,9 @@ class MatrixE2EEManager:
 
     # ── SAS Verification Flow ──
 
-    async def start_verification(self, user_id: str, device_id: str) -> Optional[VerificationSession]:
+    async def start_verification(
+        self, user_id: str, device_id: str
+    ) -> Optional[VerificationSession]:
         """Initiate SAS verification with a specific device."""
         txn_id = await self._bot.start_verification(user_id, device_id)
         if not txn_id:
@@ -252,13 +263,16 @@ class MatrixE2EEManager:
     def get_active_sessions(self) -> List[VerificationSession]:
         """Get all non-terminal sessions."""
         return [
-            s for s in self._sessions.values()
+            s
+            for s in self._sessions.values()
             if s.state not in ("confirmed", "cancelled")
         ]
 
     # ── Verification Callback ──
 
-    async def _on_verification_event(self, event_type: str, transaction_id: str, data: dict) -> None:
+    async def _on_verification_event(
+        self, event_type: str, transaction_id: str, data: dict
+    ) -> None:
         """Handle verification events dispatched by NavigMatrixBot."""
         logger.debug("E2EE verification event: %s txn=%s", event_type, transaction_id)
 
@@ -295,6 +309,7 @@ class MatrixE2EEManager:
     async def e2ee_status(self) -> Dict[str, Any]:
         """Return E2EE diagnostic information."""
         from navig.comms.matrix import HAS_OLM
+
         status: Dict[str, Any] = {
             "olm_installed": HAS_OLM,
             "e2ee_enabled": self._bot._e2ee_enabled,

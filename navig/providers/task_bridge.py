@@ -8,6 +8,7 @@ Every provider implements BaseTaskProvider:
 TaskBridge.route(instruction) calls all providers that score above threshold
 and returns the list of ProviderResult objects.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -18,9 +19,11 @@ from typing import List, Optional
 # Data types
 # ============================================================================
 
+
 @dataclass
 class ProviderResult:
     """Result from a single provider execution."""
+
     provider: str
     success: bool
     output: str
@@ -30,6 +33,7 @@ class ProviderResult:
 # ============================================================================
 # Base class
 # ============================================================================
+
 
 class BaseTaskProvider(ABC):
     """Abstract base for task providers."""
@@ -52,6 +56,7 @@ class BaseTaskProvider(ABC):
 # Task Bridge
 # ============================================================================
 
+
 class TaskBridge:
     """Routes instructions through a list of BaseTaskProvider instances."""
 
@@ -67,12 +72,14 @@ class TaskBridge:
             try:
                 score = provider.can_handle(instruction)
             except Exception as exc:
-                results.append(ProviderResult(
-                    provider=provider.name,
-                    success=False,
-                    output="",
-                    error=f"can_handle error: {exc}",
-                ))
+                results.append(
+                    ProviderResult(
+                        provider=provider.name,
+                        success=False,
+                        output="",
+                        error=f"can_handle error: {exc}",
+                    )
+                )
                 continue
 
             if score < self.THRESHOLD:
@@ -96,6 +103,7 @@ class TaskBridge:
 # Stub providers
 # ============================================================================
 
+
 def _keyword_score(instruction: str, keywords: List[str]) -> float:
     """Simple keyword-based confidence scorer."""
     lowered = instruction.lower()
@@ -118,6 +126,7 @@ class EmailProvider(BaseTaskProvider):
     def process(self, instruction: str) -> ProviderResult:
         try:
             from navig.commands.email import get_email_provider  # type: ignore
+
             provider = get_email_provider()
             result = provider.send_from_instruction(instruction)
             return ProviderResult(provider=self.name, success=True, output=str(result))
@@ -129,13 +138,24 @@ class EmailProvider(BaseTaskProvider):
                 error="email module not available (navig[email] not installed)",
             )
         except Exception as exc:
-            return ProviderResult(provider=self.name, success=False, output="", error=str(exc))
+            return ProviderResult(
+                provider=self.name, success=False, output="", error=str(exc)
+            )
 
 
 class CalendarProvider(BaseTaskProvider):
     """Handles calendar and scheduling instructions."""
 
-    _KEYWORDS = ["schedule", "calendar", "meeting", "remind", "appointment", "event", "tomorrow", "today"]
+    _KEYWORDS = [
+        "schedule",
+        "calendar",
+        "meeting",
+        "remind",
+        "appointment",
+        "event",
+        "tomorrow",
+        "today",
+    ]
 
     @property
     def name(self) -> str:
@@ -146,7 +166,10 @@ class CalendarProvider(BaseTaskProvider):
 
     def process(self, instruction: str) -> ProviderResult:
         try:
-            from navig.commands.calendar import create_event_from_instruction  # type: ignore
+            from navig.commands.calendar import (
+                create_event_from_instruction,  # type: ignore
+            )
+
             result = create_event_from_instruction(instruction)
             return ProviderResult(provider=self.name, success=True, output=str(result))
         except ImportError:
@@ -157,13 +180,25 @@ class CalendarProvider(BaseTaskProvider):
                 error="calendar module not available",
             )
         except Exception as exc:
-            return ProviderResult(provider=self.name, success=False, output="", error=str(exc))
+            return ProviderResult(
+                provider=self.name, success=False, output="", error=str(exc)
+            )
 
 
 class CommsProvider(BaseTaskProvider):
     """Handles communications instructions (Slack, Telegram, Matrix)."""
 
-    _KEYWORDS = ["slack", "telegram", "matrix", "notify", "alert", "message", "chat", "team", "channel"]
+    _KEYWORDS = [
+        "slack",
+        "telegram",
+        "matrix",
+        "notify",
+        "alert",
+        "message",
+        "chat",
+        "team",
+        "channel",
+    ]
 
     @property
     def name(self) -> str:
@@ -176,12 +211,19 @@ class CommsProvider(BaseTaskProvider):
         # Attempt to route through gateway comms channels
         try:
             from navig.gateway.comms import dispatch_message  # type: ignore
+
             dispatch_message(instruction)
-            return ProviderResult(provider=self.name, success=True, output="Message dispatched via gateway")
+            return ProviderResult(
+                provider=self.name,
+                success=True,
+                output="Message dispatched via gateway",
+            )
         except ImportError:
             pass  # optional dependency not installed; feature disabled
         except Exception as exc:
-            return ProviderResult(provider=self.name, success=False, output="", error=str(exc))
+            return ProviderResult(
+                provider=self.name, success=False, output="", error=str(exc)
+            )
 
         return ProviderResult(
             provider=self.name,
@@ -194,7 +236,17 @@ class CommsProvider(BaseTaskProvider):
 class RemoteProvider(BaseTaskProvider):
     """Handles remote server/ops instructions."""
 
-    _KEYWORDS = ["run", "deploy", "server", "ssh", "remote", "production", "staging", "restart", "health"]
+    _KEYWORDS = [
+        "run",
+        "deploy",
+        "server",
+        "ssh",
+        "remote",
+        "production",
+        "staging",
+        "restart",
+        "health",
+    ]
 
     @property
     def name(self) -> str:
@@ -208,13 +260,14 @@ class RemoteProvider(BaseTaskProvider):
         return ProviderResult(
             provider=self.name,
             success=True,
-            output=f"Suggested: navig run \"{instruction}\" — review and confirm before executing",
+            output=f'Suggested: navig run "{instruction}" — review and confirm before executing',
         )
 
 
 # ============================================================================
 # Factory
 # ============================================================================
+
 
 def build_default_providers() -> List[BaseTaskProvider]:
     """Return the default set of task providers."""

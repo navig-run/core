@@ -12,16 +12,19 @@ from typing import Dict, FrozenSet, Set
 
 # ── Canonical capability tags ───────────────────────────────────────
 
-CAPABILITY_TAGS = frozenset({
-    "fast",           # Low latency, streaming preferred
-    "strong",         # Deep reasoning, high accuracy
-    "coder",          # Code generation / editing
-    "format_strict",  # High structured-output reliability (JSON, schemas)
-    "tool_capable",   # Function calling, web search, citations
-    "long_context",   # >32 k input tokens
-})
+CAPABILITY_TAGS = frozenset(
+    {
+        "fast",  # Low latency, streaming preferred
+        "strong",  # Deep reasoning, high accuracy
+        "coder",  # Code generation / editing
+        "format_strict",  # High structured-output reliability (JSON, schemas)
+        "tool_capable",  # Function calling, web search, citations
+        "long_context",  # >32 k input tokens
+    }
+)
 
 # ── Mode → capability requirements ─────────────────────────────────
+
 
 class ModeProfile:
     """Capability requirements + cost/latency targets for a task mode."""
@@ -87,12 +90,16 @@ MODE_CAPABILITIES: Dict[str, ModeProfile] = {
 # only for daemon-side fallback providers.
 
 OPENROUTER_MODELS: Dict[str, FrozenSet[str]] = {
-    "anthropic/claude-sonnet-4.5": frozenset({"fast", "strong", "coder", "format_strict"}),
+    "anthropic/claude-sonnet-4.5": frozenset(
+        {"fast", "strong", "coder", "format_strict"}
+    ),
     "anthropic/claude-sonnet-4": frozenset({"fast", "coder", "format_strict"}),
     # NOTE: claude-opus-4 is catalogued for capability lookup only.
     # It must NEVER appear as a routing default — too expensive for automated tasks.
     # Users may select it explicitly via CLI flag allow_premium=True.
-    "anthropic/claude-opus-4": frozenset({"strong", "coder", "format_strict", "long_context"}),
+    "anthropic/claude-opus-4": frozenset(
+        {"strong", "coder", "format_strict", "long_context"}
+    ),
     "openai/gpt-4o": frozenset({"fast", "coder", "format_strict", "tool_capable"}),
     "openai/gpt-4o-mini": frozenset({"fast", "format_strict", "tool_capable"}),
     "deepseek/deepseek-v3.2": frozenset({"fast", "coder", "long_context"}),

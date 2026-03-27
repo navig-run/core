@@ -68,10 +68,7 @@ curl -fsSL https://navig.run/install.sh | bash
 ### Windows (PowerShell)
 
 ```powershell
-irm https://navig.run/install.ps1 | iex
-```
-
-### pipx
+  & ([scriptblock]::Create((irm https://navig.run/install.ps1)))
 
 ```bash
 pipx install navig

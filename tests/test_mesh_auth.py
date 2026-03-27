@@ -27,8 +27,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-# ── Imports under test ───────────────────────────────────────────────────────
-
 from navig.mesh.auth import (
     HMAC_FIELD,
     attach_hmac,
@@ -38,6 +36,8 @@ from navig.mesh.auth import (
 )
 from navig.mesh.discovery import MeshDiscovery, _build_packet, _parse_packet
 from navig.mesh.registry import NodeRecord, NodeRegistry
+
+# ── Imports under test ───────────────────────────────────────────────────────
 
 
 # ── Shared fixtures ──────────────────────────────────────────────────────────
@@ -63,10 +63,15 @@ _SAMPLE_PAYLOAD = {
 
 def _make_registry(tmp_path: Path, suffix: str) -> NodeRegistry:
     with (
-        patch("navig.mesh.registry._derive_node_id", return_value=f"navig-test-{suffix}"),
+        patch(
+            "navig.mesh.registry._derive_node_id", return_value=f"navig-test-{suffix}"
+        ),
         patch("navig.mesh.registry.NodeRegistry._local_ip", return_value="127.0.0.1"),
         patch("navig.mesh.registry._measure_load", return_value=0.1),
-        patch("navig.mesh.registry.NodeRegistry._detect_capabilities", return_value=["llm"]),
+        patch(
+            "navig.mesh.registry.NodeRegistry._detect_capabilities",
+            return_value=["llm"],
+        ),
     ):
         return NodeRegistry(storage_dir=tmp_path)
 
@@ -81,13 +86,14 @@ def _make_discovery(registry: NodeRegistry, secret=None) -> MeshDiscovery:
 
 # ── Unit: auth.sign_payload ──────────────────────────────────────────────────
 
+
 class TestSignPayload(unittest.TestCase):
 
     def test_returns_hex_string(self):
         tag = sign_payload(_SAMPLE_PAYLOAD, _SECRET_A)
         self.assertIsInstance(tag, str)
-        self.assertEqual(len(tag), 64)         # 32-byte BLAKE2b-256 → 64 hex chars
-        int(tag, 16)                           # must be valid hex
+        self.assertEqual(len(tag), 64)  # 32-byte BLAKE2b-256 → 64 hex chars
+        int(tag, 16)  # must be valid hex
 
     def test_deterministic(self):
         t1 = sign_payload(_SAMPLE_PAYLOAD, _SECRET_A)
@@ -110,6 +116,7 @@ class TestSignPayload(unittest.TestCase):
 
 
 # ── Unit: auth.verify_payload ────────────────────────────────────────────────
+
 
 class TestVerifyPayload(unittest.TestCase):
 
@@ -137,6 +144,7 @@ class TestVerifyPayload(unittest.TestCase):
 
 # ── Unit: auth.attach_hmac ───────────────────────────────────────────────────
 
+
 class TestAttachHmac(unittest.TestCase):
 
     def test_adds_hmac_field(self):
@@ -159,6 +167,7 @@ class TestAttachHmac(unittest.TestCase):
 
 
 # ── Unit: auth.load_secret ───────────────────────────────────────────────────
+
 
 class TestLoadSecret(unittest.TestCase):
 
@@ -185,6 +194,7 @@ class TestLoadSecret(unittest.TestCase):
 
 
 # ── Integration: _parse_packet ───────────────────────────────────────────────
+
 
 class TestParsePacketAuth(unittest.TestCase):
 
@@ -217,6 +227,7 @@ class TestParsePacketAuth(unittest.TestCase):
 
 # ── Integration: MeshDiscovery two-node scenarios ────────────────────────────
 
+
 class TestMeshDiscoveryAuth(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self):
@@ -229,7 +240,9 @@ class TestMeshDiscoveryAuth(unittest.IsolatedAsyncioTestCase):
         self._tmpA.cleanup()
         self._tmpB.cleanup()
 
-    async def _deliver(self, src: MeshDiscovery, dst: MeshDiscovery, ptype="hello") -> None:
+    async def _deliver(
+        self, src: MeshDiscovery, dst: MeshDiscovery, ptype="hello"
+    ) -> None:
         packet = _build_packet(src._registry, ptype, seq=1, secret=src._secret)
         with patch.object(dst, "_send", new=AsyncMock()):
             await dst._handle_packet(packet, "127.0.0.1")

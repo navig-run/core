@@ -1,6 +1,7 @@
 """
 AHK Script Evolver
 """
+
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -20,6 +21,7 @@ class EvolutionResult:
     attempts: int = 0
     history: List[str] = None
 
+
 class Evolver:
     def __init__(self):
         self.adapter = AHKAdapter()
@@ -34,7 +36,9 @@ class Evolver:
         # 1. Check Library First
         existing = self.library.find_script(goal)
         if existing:
-            info(f"Hit! Found existing script for '{goal}' (Successes: {existing.success_count})")
+            info(
+                f"Hit! Found existing script for '{goal}' (Successes: {existing.success_count})"
+            )
             if dry_run:
                 print(existing.script)
                 return EvolutionResult(True, existing.id, existing.script, 0)
@@ -54,9 +58,9 @@ class Evolver:
         screen_size = self.adapter.get_screen_size()
 
         context = GenerationContext(
-            windows=[{'title': w.title, 'pid': w.pid} for w in windows[:15]],
+            windows=[{"title": w.title, "pid": w.pid} for w in windows[:15]],
             screen_width=screen_size[0],
-            screen_height=screen_size[1]
+            screen_height=screen_size[1],
         )
 
         current_script = ""
@@ -92,8 +96,16 @@ Original Script:
             history.append(current_script)
 
             if dry_run:
-                 console.print(Panel(current_script, title="Generated Script (Dry Run)", border_style="yellow"))
-                 return EvolutionResult(True, final_script=current_script, attempts=attempt)
+                console.print(
+                    Panel(
+                        current_script,
+                        title="Generated Script (Dry Run)",
+                        border_style="yellow",
+                    )
+                )
+                return EvolutionResult(
+                    True, final_script=current_script, attempts=attempt
+                )
 
             # Test Execution
             # We run with a short timeout to prevent hangs
@@ -103,11 +115,18 @@ Original Script:
                 success(f"Evolution successful on attempt {attempt}!")
                 # Save to library
                 script_id = self.library.save_script(goal, current_script)
-                return EvolutionResult(True, script_id, current_script, attempt, history)
+                return EvolutionResult(
+                    True, script_id, current_script, attempt, history
+                )
             else:
                 warning(f"Execution failed: {exec_res.stderr}")
                 current_error = exec_res.stderr
                 # Loop continues to next attempt
 
         error("Evolution failed after max retries.")
-        return EvolutionResult(False, final_script=current_script, attempts=self.max_retries, history=history)
+        return EvolutionResult(
+            False,
+            final_script=current_script,
+            attempts=self.max_retries,
+            history=history,
+        )

@@ -10,7 +10,7 @@ This is additive — existing agents work unchanged.
 
 Usage:
     from navig.agent_config_loader import load_agent_json, AgentJsonConfig
-    
+
     cfg = load_agent_json("system_architect")
     if cfg:
         print(cfg.llm_mode)  # "coding"
@@ -27,6 +27,7 @@ logger = logging.getLogger("navig.agent_config_loader")
 
 try:
     from pydantic import BaseModel, ConfigDict, Field, field_validator
+
     PYDANTIC_OK = True
 except ImportError:
     PYDANTIC_OK = False
@@ -41,12 +42,14 @@ if PYDANTIC_OK:
 
     class AgentIdentity(BaseModel):
         """Agent identity/domain configuration."""
+
         domains: List[str] = Field(default_factory=list)
         philosophy: str = ""
         model_config = ConfigDict(extra="allow")
 
     class AgentVoice(BaseModel):
         """Agent voice/personality traits."""
+
         traits: List[str] = Field(default_factory=list)
         signature_phrases: List[str] = Field(default_factory=list)
         model_config = ConfigDict(extra="allow")
@@ -64,6 +67,7 @@ if PYDANTIC_OK:
             identity: Domain and philosophy config
             voice: Personality traits and phrases
         """
+
         id: str = ""
         name: str = ""
         role: str = ""
@@ -80,7 +84,8 @@ if PYDANTIC_OK:
             if v and v not in CANONICAL_MODES:
                 logger.warning(
                     "Agent llm_mode '%s' not in canonical modes %s, defaulting to 'big_tasks'",
-                    v, CANONICAL_MODES,
+                    v,
+                    CANONICAL_MODES,
                 )
                 return "big_tasks"
             return v
@@ -129,6 +134,7 @@ def load_agent_json(
     # Project-root relative paths
     try:
         from navig.config import get_config_manager
+
         cm = get_config_manager()
         base = Path(cm.base_dir) if hasattr(cm, "base_dir") else None
         if base:
@@ -138,10 +144,12 @@ def load_agent_json(
 
     # Workspace paths
     cwd = Path.cwd()
-    paths_to_check.extend([
-        cwd / "agents" / agent_id / "agent.json",
-        cwd / "formations" / "**" / "agents" / agent_id / "agent.json",
-    ])
+    paths_to_check.extend(
+        [
+            cwd / "agents" / agent_id / "agent.json",
+            cwd / "formations" / "**" / "agents" / agent_id / "agent.json",
+        ]
+    )
 
     # Global
     home = Path.home()
@@ -179,7 +187,12 @@ def _parse_agent_json(path: Path, agent_id: str) -> Optional[AgentJsonConfig]:
             data = json.load(f)
         cfg = AgentJsonConfig.model_validate(data)
         _agent_config_cache[agent_id] = cfg
-        logger.debug("Loaded agent.json for '%s' from %s (llm_mode=%s)", agent_id, path, cfg.llm_mode)
+        logger.debug(
+            "Loaded agent.json for '%s' from %s (llm_mode=%s)",
+            agent_id,
+            path,
+            cfg.llm_mode,
+        )
         return cfg
     except Exception as e:
         logger.warning("Failed to parse agent.json at %s: %s", path, e)

@@ -28,6 +28,7 @@ from navig import console_helper as ch
 
 class PackType(str, Enum):
     """Types of packs."""
+
     WORKFLOW = "workflow"
     RUNBOOK = "runbook"
     CHECKLIST = "checklist"
@@ -38,6 +39,7 @@ class PackType(str, Enum):
 
 class PackStatus(str, Enum):
     """Installation status of a pack."""
+
     AVAILABLE = "available"
     INSTALLED = "installed"
     OUTDATED = "outdated"
@@ -48,9 +50,10 @@ class PackStatus(str, Enum):
 class PackManifest:
     """
     Pack manifest containing metadata and contents.
-    
+
     File: pack.yaml or <pack-name>.yaml
     """
+
     name: str
     description: str = ""
     version: str = "1.0.0"
@@ -79,31 +82,33 @@ class PackManifest:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         d = asdict(self)
-        d['type'] = self.type.value if isinstance(self.type, PackType) else self.type
+        d["type"] = self.type.value if isinstance(self.type, PackType) else self.type
         # Remove runtime fields
-        d.pop('source_path', None)
-        d.pop('installed_at', None)
+        d.pop("source_path", None)
+        d.pop("installed_at", None)
         return d
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], source_path: Optional[Path] = None) -> 'PackManifest':
+    def from_dict(
+        cls, data: Dict[str, Any], source_path: Optional[Path] = None
+    ) -> "PackManifest":
         """Create from dictionary."""
         # Handle type enum
-        pack_type = data.get('type', 'runbook')
+        pack_type = data.get("type", "runbook")
         if isinstance(pack_type, str):
             try:
                 pack_type = PackType(pack_type)
             except ValueError:
                 pack_type = PackType.RUNBOOK
-        data['type'] = pack_type
+        data["type"] = pack_type
 
         # Handle lists
-        data.setdefault('steps', [])
-        data.setdefault('variables', {})
-        data.setdefault('workflows', [])
-        data.setdefault('quick_actions', [])
-        data.setdefault('tags', [])
-        data.setdefault('requires_packs', [])
+        data.setdefault("steps", [])
+        data.setdefault("variables", {})
+        data.setdefault("workflows", [])
+        data.setdefault("quick_actions", [])
+        data.setdefault("tags", [])
+        data.setdefault("requires_packs", [])
 
         # Remove unknown fields
         known_fields = {f.name for f in cls.__dataclass_fields__.values()}
@@ -117,6 +122,7 @@ class PackManifest:
 @dataclass
 class PackStep:
     """A single step in a runbook or checklist."""
+
     description: str
     command: Optional[str] = None
     notes: Optional[str] = None
@@ -125,22 +131,22 @@ class PackStep:
     skip_if: Optional[str] = None  # Condition to skip
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'PackStep':
+    def from_dict(cls, data: Dict[str, Any]) -> "PackStep":
         """Create from dictionary."""
         return cls(
-            description=data.get('description', ''),
-            command=data.get('command'),
-            notes=data.get('notes'),
-            prompt=data.get('prompt'),
-            continue_on_error=data.get('continue_on_error', False),
-            skip_if=data.get('skip_if'),
+            description=data.get("description", ""),
+            command=data.get("command"),
+            notes=data.get("notes"),
+            prompt=data.get("prompt"),
+            continue_on_error=data.get("continue_on_error", False),
+            skip_if=data.get("skip_if"),
         )
 
 
 class PackManager:
     """
     Manages pack discovery, installation, and execution.
-    
+
     Pack locations:
     - Built-in: <navig>/packs/
     - Installed: ~/.navig/packs/installed/
@@ -150,11 +156,14 @@ class PackManager:
     def __init__(self, config_manager=None):
         """Initialize pack manager."""
         from navig.config import get_config_manager
+
         self.config_manager = config_manager or get_config_manager()
 
         # Pack directories
         self.builtin_dir = self._get_builtin_dir()
-        self.installed_dir = self.config_manager.global_config_dir / "packs" / "installed"
+        self.installed_dir = (
+            self.config_manager.global_config_dir / "packs" / "installed"
+        )
         self.local_dir = self.config_manager.global_config_dir / "packs" / "local"
 
         # Ensure directories exist
@@ -181,6 +190,7 @@ class PackManager:
 
         # Fallback: site-packages layout
         import navig
+
         pkg_dir = Path(navig.__file__).parent.parent
         packages_dir = pkg_dir / "packages"
         if packages_dir.exists():
@@ -217,9 +227,9 @@ class PackManager:
                         for subitem in item.iterdir():
                             if subitem.is_dir():
                                 self._load_pack_from_dir(subitem, source)
-                            elif subitem.suffix in ('.yaml', '.yml'):
+                            elif subitem.suffix in (".yaml", ".yml"):
                                 self._load_pack_from_file(subitem, source)
-                elif item.suffix in ('.yaml', '.yml'):
+                elif item.suffix in (".yaml", ".yml"):
                     self._load_pack_from_file(item, source)
 
         self._loaded = True
@@ -243,7 +253,7 @@ class PackManager:
     def _load_pack_from_file(self, pack_file: Path, source: str):
         """Load a pack from a YAML file."""
         try:
-            with open(pack_file, 'r', encoding='utf-8') as f:
+            with open(pack_file, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f)
 
             if not data or not isinstance(data, dict):
@@ -275,7 +285,7 @@ class PackManager:
     ) -> List[PackManifest]:
         """
         List available packs.
-        
+
         Args:
             pack_type: Filter by type
             tag: Filter by tag
@@ -296,7 +306,7 @@ class PackManager:
                 continue
             if tag and tag not in manifest.tags:
                 continue
-            if installed_only and 'installed' not in str(manifest.source_path):
+            if installed_only and "installed" not in str(manifest.source_path):
                 continue
 
             packs.append(manifest)
@@ -313,9 +323,9 @@ class PackManager:
             return self._packs[name]
 
         # Try normalized name
-        normalized = name.lower().replace(' ', '-')
+        normalized = name.lower().replace(" ", "-")
         for key, manifest in self._packs.items():
-            if manifest.name.lower().replace(' ', '-') == normalized:
+            if manifest.name.lower().replace(" ", "-") == normalized:
                 return manifest
 
         # Try partial match
@@ -332,7 +342,7 @@ class PackManager:
     ) -> Optional[PackManifest]:
         """
         Install a pack from a source.
-        
+
         Sources:
         - Local file path
         - Built-in pack name (e.g., "starter/deployment-checklist")
@@ -350,7 +360,11 @@ class PackManager:
             if builtin_path.is_dir():
                 manifest_file = builtin_path / "pack.yaml"
                 if not manifest_file.exists():
-                    manifest_file = list(builtin_path.glob("*.yaml"))[0] if list(builtin_path.glob("*.yaml")) else None
+                    manifest_file = (
+                        list(builtin_path.glob("*.yaml"))[0]
+                        if list(builtin_path.glob("*.yaml"))
+                        else None
+                    )
             else:
                 manifest_file = builtin_path
 
@@ -358,8 +372,8 @@ class PackManager:
                 return self._install_from_file(manifest_file, force)
 
         # Try with .yaml/.yml extension
-        for ext in ['.yaml', '.yml', '']:
-            for dir_name in ['starter', '']:
+        for ext in [".yaml", ".yml", ""]:
+            for dir_name in ["starter", ""]:
                 test_path = self.builtin_dir / dir_name / f"{source}{ext}"
                 if test_path.exists():
                     return self._install_from_file(test_path, force)
@@ -373,7 +387,7 @@ class PackManager:
     ) -> Optional[PackManifest]:
         """Install a pack from a file."""
         try:
-            with open(source_path, 'r', encoding='utf-8') as f:
+            with open(source_path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f)
 
             if not data:
@@ -382,7 +396,7 @@ class PackManager:
             manifest = PackManifest.from_dict(data, source_path=source_path)
 
             # Check if already installed
-            pack_name = manifest.name.lower().replace(' ', '-')
+            pack_name = manifest.name.lower().replace(" ", "-")
             target_dir = self.installed_dir / pack_name
             target_file = target_dir / "pack.yaml"
 
@@ -416,7 +430,7 @@ class PackManager:
             return False
 
         # Check if it's an installed pack
-        pack_name = pack.name.lower().replace(' ', '-')
+        pack_name = pack.name.lower().replace(" ", "-")
         target_dir = self.installed_dir / pack_name
 
         if target_dir.exists():
@@ -442,7 +456,7 @@ class PackManager:
     ) -> bool:
         """
         Run a pack (execute its steps).
-        
+
         Args:
             name: Pack name
             variables: Variable overrides
@@ -503,14 +517,13 @@ class PackManager:
                     if interactive:
                         # Ask user to confirm
                         result = typer.prompt(
-                            "   Run command? [y/n/s(kip)]",
-                            default="y"
+                            "   Run command? [y/n/s(kip)]", default="y"
                         ).lower()
 
-                        if result == 'n':
+                        if result == "n":
                             ch.warning(f"   Checklist stopped at step {i}")
                             return False
-                        elif result == 's':
+                        elif result == "s":
                             ch.dim("   Skipped")
                             skipped += 1
                             continue
@@ -533,9 +546,7 @@ class PackManager:
                 # Manual step
                 if not dry_run and interactive:
                     typer.prompt(
-                        "   Press Enter when complete",
-                        default="",
-                        show_default=False
+                        "   Press Enter when complete", default="", show_default=False
                     )
                 completed += 1
 
@@ -597,7 +608,9 @@ class PackManager:
             print()
 
         if failed:
-            ch.warning(f"Runbook complete: {completed}/{len(steps)} steps ({failed} failed)")
+            ch.warning(
+                f"Runbook complete: {completed}/{len(steps)} steps ({failed} failed)"
+            )
         else:
             ch.success(f"Runbook complete: {completed}/{len(steps)} steps")
 
@@ -615,10 +628,10 @@ class PackManager:
 
             # Create a temporary workflow definition
             workflow_def = {
-                'name': pack.name,
-                'description': pack.description,
-                'variables': variables,
-                'steps': pack.steps,
+                "name": pack.name,
+                "description": pack.description,
+                "variables": variables,
+                "steps": pack.steps,
             }
 
             wf_manager = WorkflowManager()
@@ -639,9 +652,9 @@ class PackManager:
 
             installed = 0
             for action in pack.quick_actions:
-                name = action.get('name', '')
-                command = action.get('command', '')
-                description = action.get('description', '')
+                name = action.get("name", "")
+                command = action.get("command", "")
+                description = action.get("description", "")
 
                 if name and command:
                     add_quick_action(name, command, description)
@@ -662,7 +675,7 @@ class PackManager:
             var_name = match.group(1)
             return str(variables.get(var_name, match.group(0)))
 
-        return re.sub(r'\$\{(\w+)\}', replace, text)
+        return re.sub(r"\$\{(\w+)\}", replace, text)
 
     def _execute_command(self, command: str) -> bool:
         """Execute a command."""
@@ -671,12 +684,12 @@ class PackManager:
 
         try:
             # Check if it's a navig command
-            if command.startswith('navig '):
+            if command.startswith("navig "):
                 # Run as subprocess
                 result = subprocess.run(
-                    [sys.executable, '-m', 'navig'] + command[6:].split(),
+                    [sys.executable, "-m", "navig"] + command[6:].split(),
                     capture_output=False,
-                    env={**os.environ, 'PYTHONIOENCODING': 'utf-8'},
+                    env={**os.environ, "PYTHONIOENCODING": "utf-8"},
                 )
                 return result.returncode == 0
             else:
@@ -701,10 +714,10 @@ class PackManager:
     ) -> Optional[Path]:
         """
         Create a new pack in the local directory.
-        
+
         Returns the path to the created pack file.
         """
-        pack_name = name.lower().replace(' ', '-')
+        pack_name = name.lower().replace(" ", "-")
         pack_dir = self.local_dir / pack_name
         pack_dir.mkdir(parents=True, exist_ok=True)
 
@@ -719,8 +732,10 @@ class PackManager:
         )
 
         try:
-            with open(pack_file, 'w', encoding='utf-8') as f:
-                yaml.dump(manifest.to_dict(), f, default_flow_style=False, sort_keys=False)
+            with open(pack_file, "w", encoding="utf-8") as f:
+                yaml.dump(
+                    manifest.to_dict(), f, default_flow_style=False, sort_keys=False
+                )
 
             self._loaded = False
             return pack_file
@@ -732,7 +747,8 @@ class PackManager:
     def _get_author(self) -> str:
         """Get the current user for pack authorship."""
         import os
-        return os.environ.get('USER', os.environ.get('USERNAME', 'Unknown'))
+
+        return os.environ.get("USER", os.environ.get("USERNAME", "Unknown"))
 
     def search_packs(self, query: str) -> List[PackManifest]:
         """Search packs by name, description, or tags."""
@@ -775,6 +791,7 @@ class PackManager:
 # CLI DISPLAY FUNCTIONS
 # ============================================================================
 
+
 def list_packs(
     pack_type: Optional[str] = None,
     tag: Optional[str] = None,
@@ -795,7 +812,9 @@ def list_packs(
             ch.info(f"Valid types: {', '.join(t.value for t in PackType)}")
             return
 
-    packs = manager.list_packs(pack_type=type_filter, tag=tag, installed_only=installed_only)
+    packs = manager.list_packs(
+        pack_type=type_filter, tag=tag, installed_only=installed_only
+    )
 
     if not packs:
         ch.info("No packs found")
@@ -803,12 +822,15 @@ def list_packs(
 
     if json_out:
         import json
+
         print(json.dumps([p.to_dict() for p in packs], indent=2))
         return
 
     if plain:
         for pack in packs:
-            status = "installed" if 'installed' in str(pack.source_path) else "available"
+            status = (
+                "installed" if "installed" in str(pack.source_path) else "available"
+            )
             print(f"{pack.name}\t{pack.type.value}\t{status}\t{pack.description[:50]}")
         return
 
@@ -825,8 +847,12 @@ def list_packs(
     table.add_column("Description")
 
     for pack in packs:
-        status = "[green]installed[/green]" if 'installed' in str(pack.source_path) else "[dim]available[/dim]"
-        if 'local' in str(pack.source_path):
+        status = (
+            "[green]installed[/green]"
+            if "installed" in str(pack.source_path)
+            else "[dim]available[/dim]"
+        )
+        if "local" in str(pack.source_path):
             status = "[yellow]local[/yellow]"
 
         table.add_row(
@@ -834,7 +860,11 @@ def list_packs(
             pack.type.value,
             pack.version,
             status,
-            pack.description[:40] + "..." if len(pack.description) > 40 else pack.description,
+            (
+                pack.description[:40] + "..."
+                if len(pack.description) > 40
+                else pack.description
+            ),
         )
 
     console.print(table)
@@ -851,6 +881,7 @@ def show_pack(name: str, plain: bool = False, json_out: bool = False):
 
     if json_out:
         import json
+
         print(json.dumps(pack.to_dict(), indent=2))
         return
 
@@ -868,18 +899,20 @@ def show_pack(name: str, plain: bool = False, json_out: bool = False):
     console = Console()
 
     # Header
-    console.print(Panel(
-        f"[bold]{pack.name}[/bold]\n{pack.description}",
-        title=f"Pack: {pack.type.value}",
-        subtitle=f"v{pack.version} by {pack.author}",
-    ))
+    console.print(
+        Panel(
+            f"[bold]{pack.name}[/bold]\n{pack.description}",
+            title=f"Pack: {pack.type.value}",
+            subtitle=f"v{pack.version} by {pack.author}",
+        )
+    )
 
     # Steps
     if pack.steps:
         console.print("\n[bold]Steps:[/bold]")
         for i, step in enumerate(pack.steps, 1):
-            desc = step.get('description', 'No description')
-            cmd = step.get('command', '')
+            desc = step.get("description", "No description")
+            cmd = step.get("command", "")
             console.print(f"  {i}. {desc}")
             if cmd:
                 console.print(f"     [dim]$ {cmd}[/dim]")
@@ -990,6 +1023,7 @@ def search_packs(query: str, plain: bool = False, json_out: bool = False):
 
     if json_out:
         import json
+
         print(json.dumps([p.to_dict() for p in results], indent=2))
         return
 

@@ -12,6 +12,7 @@ Features:
 - Prompt enhancement
 - Output management
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
 
 try:
     import httpx
+
     HTTPX_AVAILABLE = True
 except ImportError:
     httpx = None  # type: ignore[assignment]
@@ -40,13 +42,15 @@ logger = get_debug_logger()
 
 class ImageProvider(Enum):
     """Supported image generation providers."""
-    OPENAI = "openai"           # DALL-E 3
-    STABILITY = "stability"     # Stability AI
-    LOCAL = "local"             # Local model (ComfyUI, A1111)
+
+    OPENAI = "openai"  # DALL-E 3
+    STABILITY = "stability"  # Stability AI
+    LOCAL = "local"  # Local model (ComfyUI, A1111)
 
 
 class ImageSize(Enum):
     """Standard image sizes."""
+
     SQUARE_SMALL = "256x256"
     SQUARE_MEDIUM = "512x512"
     SQUARE_LARGE = "1024x1024"
@@ -56,12 +60,14 @@ class ImageSize(Enum):
 
 class ImageQuality(Enum):
     """Image quality levels."""
+
     STANDARD = "standard"
     HD = "hd"
 
 
 class ImageStyle(Enum):
     """Image style presets."""
+
     VIVID = "vivid"
     NATURAL = "natural"
 
@@ -90,17 +96,19 @@ class ImageGenerationConfig:
     rate_limit_delay: float = 1.0
 
     @classmethod
-    def from_env(cls) -> 'ImageGenerationConfig':
+    def from_env(cls) -> "ImageGenerationConfig":
         """Create config from environment variables."""
         return cls(
             provider=ImageProvider(os.environ.get("IMAGE_PROVIDER", "openai")),
             openai_api_key=os.environ.get("OPENAI_API_KEY"),
             stability_api_key=os.environ.get("STABILITY_API_KEY"),
-            local_api_url=os.environ.get("LOCAL_IMAGE_API_URL", "http://localhost:7860"),
+            local_api_url=os.environ.get(
+                "LOCAL_IMAGE_API_URL", "http://localhost:7860"
+            ),
         )
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'ImageGenerationConfig':
+    def from_dict(cls, data: Dict[str, Any]) -> "ImageGenerationConfig":
         """Create config from dictionary."""
         return cls(
             provider=ImageProvider(data.get("provider", "openai")),
@@ -118,13 +126,14 @@ class ImageGenerationConfig:
 @dataclass
 class GeneratedImage:
     """A generated image result."""
+
     prompt: str
     revised_prompt: Optional[str]  # Provider's enhanced prompt
     provider: ImageProvider
     size: str
 
     # Image data (one of these will be set)
-    url: Optional[str] = None      # Remote URL
+    url: Optional[str] = None  # Remote URL
     b64_data: Optional[str] = None  # Base64 encoded data
     local_path: Optional[str] = None  # Local file path
 
@@ -151,10 +160,10 @@ class GeneratedImage:
     async def save_to_file(self, filepath: str) -> str:
         """
         Save image to file.
-        
+
         Args:
             filepath: Destination file path
-            
+
         Returns:
             Actual saved path
         """
@@ -183,7 +192,7 @@ class GeneratedImage:
 class ImageGenerator:
     """
     Multi-provider image generation client.
-    
+
     Usage:
         generator = ImageGenerator()
         image = await generator.generate("A sunset over mountains")
@@ -192,12 +201,14 @@ class ImageGenerator:
     def __init__(self, config: Optional[ImageGenerationConfig] = None):
         """
         Initialize image generator.
-        
+
         Args:
             config: Generation configuration
         """
         if not HTTPX_AVAILABLE:
-            raise ImportError("httpx is required for image generation. Install: pip install httpx")
+            raise ImportError(
+                "httpx is required for image generation. Install: pip install httpx"
+            )
 
         self.config = config or ImageGenerationConfig.from_env()
         self._client: Optional[httpx.AsyncClient] = None
@@ -227,7 +238,7 @@ class ImageGenerator:
     ) -> List[GeneratedImage]:
         """
         Generate images from a text prompt.
-        
+
         Args:
             prompt: Text description of the image
             size: Image size
@@ -236,7 +247,7 @@ class ImageGenerator:
             n: Number of images to generate
             provider: Provider to use (overrides config)
             save: Whether to save locally
-            
+
         Returns:
             List of GeneratedImage objects
         """
@@ -313,15 +324,17 @@ class ImageGenerator:
 
         images = []
         for item in data.get("data", []):
-            images.append(GeneratedImage(
-                prompt=prompt,
-                revised_prompt=item.get("revised_prompt"),
-                provider=ImageProvider.OPENAI,
-                size=size.value,
-                url=item.get("url"),
-                generation_time=generation_time,
-                model="dall-e-3",
-            ))
+            images.append(
+                GeneratedImage(
+                    prompt=prompt,
+                    revised_prompt=item.get("revised_prompt"),
+                    provider=ImageProvider.OPENAI,
+                    size=size.value,
+                    url=item.get("url"),
+                    generation_time=generation_time,
+                    model="dall-e-3",
+                )
+            )
 
         # DALL-E 3 only generates 1 image, so loop for multiple
         if n > 1:
@@ -374,16 +387,18 @@ class ImageGenerator:
 
         images = []
         for item in data.get("artifacts", []):
-            images.append(GeneratedImage(
-                prompt=prompt,
-                revised_prompt=None,
-                provider=ImageProvider.STABILITY,
-                size=size.value,
-                b64_data=item.get("base64"),
-                generation_time=generation_time,
-                model="stable-diffusion-xl-1024-v1-0",
-                seed=item.get("seed"),
-            ))
+            images.append(
+                GeneratedImage(
+                    prompt=prompt,
+                    revised_prompt=None,
+                    provider=ImageProvider.STABILITY,
+                    size=size.value,
+                    b64_data=item.get("base64"),
+                    generation_time=generation_time,
+                    model="stable-diffusion-xl-1024-v1-0",
+                    seed=item.get("seed"),
+                )
+            )
 
         return images
 
@@ -421,15 +436,17 @@ class ImageGenerator:
 
         images = []
         for b64_img in data.get("images", []):
-            images.append(GeneratedImage(
-                prompt=prompt,
-                revised_prompt=None,
-                provider=ImageProvider.LOCAL,
-                size=size.value,
-                b64_data=b64_img,
-                generation_time=generation_time,
-                model="local",
-            ))
+            images.append(
+                GeneratedImage(
+                    prompt=prompt,
+                    revised_prompt=None,
+                    provider=ImageProvider.LOCAL,
+                    size=size.value,
+                    b64_data=b64_img,
+                    generation_time=generation_time,
+                    model="local",
+                )
+            )
 
         return images
 
@@ -441,12 +458,12 @@ class ImageGenerator:
     ) -> GeneratedImage:
         """
         Edit an existing image.
-        
+
         Args:
             image_path: Path to image to edit
             prompt: Description of edit
             mask_path: Optional mask image for inpainting
-            
+
         Returns:
             Edited GeneratedImage
         """
@@ -497,6 +514,7 @@ class ImageGenerator:
 
 # Convenience functions
 
+
 async def generate_image(
     prompt: str,
     provider: str = "openai",
@@ -505,13 +523,13 @@ async def generate_image(
 ) -> GeneratedImage:
     """
     Generate a single image from a prompt.
-    
+
     Args:
         prompt: Text description
         provider: Provider name ("openai", "stability", "local")
         size: Image size
         **kwargs: Additional arguments
-        
+
     Returns:
         GeneratedImage
     """
@@ -522,7 +540,11 @@ async def generate_image(
     try:
         images = await generator.generate(
             prompt,
-            size=ImageSize(size) if size in [s.value for s in ImageSize] else ImageSize.SQUARE_LARGE,
+            size=(
+                ImageSize(size)
+                if size in [s.value for s in ImageSize]
+                else ImageSize.SQUARE_LARGE
+            ),
             n=1,
             **kwargs,
         )

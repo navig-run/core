@@ -6,6 +6,7 @@ A .navbox file is a standard ZIP archive containing:
   crashes/        — crash report JSON files
   logs/           — tail snapshots of key log files
 """
+
 from __future__ import annotations
 
 import json
@@ -20,7 +21,7 @@ from .types import BlackboxEvent, Bundle
 __all__ = ["create_bundle", "inspect_bundle", "write_bundle"]
 
 _LOG_TAIL_LINES = 200
-_BUNDLE_EXT     = ".navbox"
+_BUNDLE_EXT = ".navbox"
 
 
 def create_bundle(
@@ -38,16 +39,19 @@ def create_bundle(
     """
     if blackbox_dir is None:
         from navig.platform.paths import blackbox_dir as _bbdir
+
         blackbox_dir = _bbdir()
 
     since = datetime.now(timezone.utc) - timedelta(hours=since_hours)
 
     # Events
     from .recorder import get_recorder
+
     events = get_recorder(blackbox_dir).read_events(since=since, limit=2000)
 
     # Crash reports
     from .crash import list_crashes
+
     crash_reports = [r.to_dict() for r in list_crashes(blackbox_dir)]
 
     # Log tails
@@ -64,6 +68,7 @@ def create_bundle(
     # NAVIG version
     try:
         from navig import __version__  # type: ignore[attr-defined]
+
         navig_version = __version__
     except Exception:
         navig_version = "unknown"
@@ -71,8 +76,8 @@ def create_bundle(
     # Compute hash over event + crash content
     content_bytes = json.dumps(
         {
-            "events":   [json.loads(e.to_json()) for e in events],
-            "crashes":  crash_reports,
+            "events": [json.loads(e.to_json()) for e in events],
+            "crashes": crash_reports,
         },
         separators=(",", ":"),
     ).encode()
@@ -92,10 +97,10 @@ def create_bundle(
 
 def inspect_bundle(path: Path) -> Bundle:
     """Load and return a Bundle from a .navbox ZIP file."""
-    events:        list[BlackboxEvent] = []
-    crash_reports: list[dict]          = []
-    log_tails:     dict[str, str]      = {}
-    manifest:      dict                = {}
+    events: list[BlackboxEvent] = []
+    crash_reports: list[dict] = []
+    log_tails: dict[str, str] = {}
+    manifest: dict = {}
 
     with zipfile.ZipFile(path, "r") as zf:
         names = set(zf.namelist())
@@ -125,7 +130,9 @@ def inspect_bundle(path: Path) -> Bundle:
 
     return Bundle(
         id=manifest.get("bundle_id", "unknown"),
-        created_at=datetime.fromisoformat(manifest.get("created_at", "2000-01-01T00:00:00+00:00")),
+        created_at=datetime.fromisoformat(
+            manifest.get("created_at", "2000-01-01T00:00:00+00:00")
+        ),
         navig_version=manifest.get("navig_version", "unknown"),
         events=events,
         crash_reports=crash_reports,
@@ -148,13 +155,13 @@ def write_bundle(bundle: Bundle, output: Path) -> Path:
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         # Manifest
         manifest = {
-            "bundle_id":      bundle.id,
-            "created_at":     bundle.created_at.isoformat(),
-            "navig_version":  bundle.navig_version,
-            "event_count":    bundle.event_count(),
-            "crash_count":    bundle.crash_count(),
-            "manifest_hash":  bundle.manifest_hash,
-            "sealed":         bundle.sealed,
+            "bundle_id": bundle.id,
+            "created_at": bundle.created_at.isoformat(),
+            "navig_version": bundle.navig_version,
+            "event_count": bundle.event_count(),
+            "crash_count": bundle.crash_count(),
+            "manifest_hash": bundle.manifest_hash,
+            "sealed": bundle.sealed,
         }
         zf.writestr("manifest.json", json.dumps(manifest, indent=2))
 
@@ -177,6 +184,7 @@ def write_bundle(bundle: Bundle, output: Path) -> Path:
 def _default_log_files() -> list[Path]:
     """Default log files to include in bundles."""
     from navig.platform.paths import local_log_dir
+
     log_dir = local_log_dir()
     return [
         log_dir / "debug.log",

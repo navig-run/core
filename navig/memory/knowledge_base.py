@@ -26,6 +26,7 @@ def _debug_log(message: str) -> None:
     """Simple debug logging wrapper."""
     try:
         from navig.debug_logger import DebugLogger
+
         logger = DebugLogger()
         logger.log_operation("memory", {"message": message})
     except Exception:
@@ -50,32 +51,44 @@ class KnowledgeEntry:
     def to_dict(self) -> dict:
         """Convert to dictionary for storage."""
         return {
-            'id': self.id,
-            'key': self.key,
-            'content': self.content,
-            'summary': self.summary,
-            'tags': json.dumps(self.tags),
-            'source': self.source,
-            'created_at': self.created_at.isoformat(),
-            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
-            'metadata': json.dumps(self.metadata),
-            'embedding': json.dumps(self.embedding) if self.embedding else None,
+            "id": self.id,
+            "key": self.key,
+            "content": self.content,
+            "summary": self.summary,
+            "tags": json.dumps(self.tags),
+            "source": self.source,
+            "created_at": self.created_at.isoformat(),
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "metadata": json.dumps(self.metadata),
+            "embedding": json.dumps(self.embedding) if self.embedding else None,
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'KnowledgeEntry':
+    def from_dict(cls, data: dict) -> "KnowledgeEntry":
         """Create from dictionary."""
         return cls(
-            id=data['id'],
-            key=data['key'],
-            content=data['content'],
-            summary=data.get('summary'),
-            tags=json.loads(data['tags']) if isinstance(data['tags'], str) else data['tags'],
-            source=data.get('source', ''),
-            created_at=datetime.fromisoformat(data['created_at']),
-            expires_at=datetime.fromisoformat(data['expires_at']) if data.get('expires_at') else None,
-            metadata=json.loads(data['metadata']) if isinstance(data['metadata'], str) else data.get('metadata', {}),
-            embedding=json.loads(data['embedding']) if data.get('embedding') else None,
+            id=data["id"],
+            key=data["key"],
+            content=data["content"],
+            summary=data.get("summary"),
+            tags=(
+                json.loads(data["tags"])
+                if isinstance(data["tags"], str)
+                else data["tags"]
+            ),
+            source=data.get("source", ""),
+            created_at=datetime.fromisoformat(data["created_at"]),
+            expires_at=(
+                datetime.fromisoformat(data["expires_at"])
+                if data.get("expires_at")
+                else None
+            ),
+            metadata=(
+                json.loads(data["metadata"])
+                if isinstance(data["metadata"], str)
+                else data.get("metadata", {})
+            ),
+            embedding=json.loads(data["embedding"]) if data.get("embedding") else None,
         )
 
     @property
@@ -89,19 +102,19 @@ class KnowledgeEntry:
 class KnowledgeBase:
     """
     Persistent knowledge store with vector search.
-    
+
     Stores structured knowledge with:
     - Unique keys for upsert operations
     - TTL-based expiration
     - Tag-based filtering
     - Optional vector embeddings for semantic search
-    
+
     Usage:
         kb = KnowledgeBase(
             db_path=Path.home() / '.navig' / 'knowledge.db',
             embedding_provider=LocalEmbeddingProvider(),
         )
-        
+
         # Add knowledge
         entry = KnowledgeEntry(
             key='project-info',
@@ -110,7 +123,7 @@ class KnowledgeBase:
             source='user',
         )
         kb.upsert(entry)
-        
+
         # Search
         results = kb.search('python version', limit=5)
     """
@@ -141,20 +154,21 @@ class KnowledgeBase:
 
     def _get_conn(self) -> sqlite3.Connection:
         """Get thread-local connection."""
-        if not hasattr(self._local, 'conn') or self._local.conn is None:
+        if not hasattr(self._local, "conn") or self._local.conn is None:
             self._local.conn = sqlite3.connect(
                 str(self.db_path),
                 check_same_thread=False,
             )
             self._local.conn.row_factory = sqlite3.Row
-            self._local.conn.execute('PRAGMA journal_mode=WAL')
+            self._local.conn.execute("PRAGMA journal_mode=WAL")
         return self._local.conn
 
     def _init_schema(self) -> None:
         """Initialize database schema."""
         conn = self._get_conn()
 
-        conn.executescript('''
+        conn.executescript(
+            """
             CREATE TABLE IF NOT EXISTS knowledge (
                 id TEXT PRIMARY KEY,
                 key TEXT UNIQUE NOT NULL,
@@ -167,14 +181,15 @@ class KnowledgeBase:
                 metadata TEXT DEFAULT '{}',
                 embedding TEXT
             );
-            
-            CREATE INDEX IF NOT EXISTS idx_knowledge_key 
+
+            CREATE INDEX IF NOT EXISTS idx_knowledge_key
                 ON knowledge(key);
-            CREATE INDEX IF NOT EXISTS idx_knowledge_source 
+            CREATE INDEX IF NOT EXISTS idx_knowledge_source
                 ON knowledge(source);
-            CREATE INDEX IF NOT EXISTS idx_knowledge_expires 
+            CREATE INDEX IF NOT EXISTS idx_knowledge_expires
                 ON knowledge(expires_at);
-        ''')
+        """
+        )
 
         conn.commit()
         _debug_log(f"KnowledgeBase initialized at {self.db_path}")
@@ -186,8 +201,8 @@ class KnowledgeBase:
 
         with self._lock:
             cursor = conn.execute(
-                'DELETE FROM knowledge WHERE expires_at IS NOT NULL AND expires_at < ?',
-                (now,)
+                "DELETE FROM knowledge WHERE expires_at IS NOT NULL AND expires_at < ?",
+                (now,),
             )
             conn.commit()
 
@@ -203,13 +218,13 @@ class KnowledgeBase:
     ) -> KnowledgeEntry:
         """
         Insert or update a knowledge entry.
-        
+
         If an entry with the same key exists, it will be updated.
-        
+
         Args:
             entry: The knowledge entry
             compute_embedding: Whether to compute embedding vector
-            
+
         Returns:
             The stored entry
         """
@@ -222,7 +237,8 @@ class KnowledgeBase:
         data = entry.to_dict()
 
         with self._lock:
-            conn.execute('''
+            conn.execute(
+                """
                 INSERT INTO knowledge (
                     id, key, content, summary, tags, source,
                     created_at, expires_at, metadata, embedding
@@ -238,7 +254,9 @@ class KnowledgeBase:
                     expires_at = excluded.expires_at,
                     metadata = excluded.metadata,
                     embedding = excluded.embedding
-            ''', data)
+            """,
+                data,
+            )
             conn.commit()
 
         _debug_log(f"Upserted knowledge entry: {entry.key}")
@@ -248,10 +266,7 @@ class KnowledgeBase:
         """Get entry by key."""
         conn = self._get_conn()
 
-        cursor = conn.execute(
-            'SELECT * FROM knowledge WHERE key = ?',
-            (key,)
-        )
+        cursor = conn.execute("SELECT * FROM knowledge WHERE key = ?", (key,))
         row = cursor.fetchone()
 
         if not row:
@@ -270,10 +285,7 @@ class KnowledgeBase:
         """Get entry by ID."""
         conn = self._get_conn()
 
-        cursor = conn.execute(
-            'SELECT * FROM knowledge WHERE id = ?',
-            (id,)
-        )
+        cursor = conn.execute("SELECT * FROM knowledge WHERE id = ?", (id,))
         row = cursor.fetchone()
 
         if not row:
@@ -291,10 +303,7 @@ class KnowledgeBase:
         conn = self._get_conn()
 
         with self._lock:
-            cursor = conn.execute(
-                'DELETE FROM knowledge WHERE key = ?',
-                (key,)
-            )
+            cursor = conn.execute("DELETE FROM knowledge WHERE key = ?", (key,))
             conn.commit()
 
         return cursor.rowcount > 0
@@ -309,18 +318,18 @@ class KnowledgeBase:
         now = datetime.utcnow().isoformat()
 
         # JSON contains check
-        cursor = conn.execute('''
-            SELECT * FROM knowledge 
-            WHERE tags LIKE ? 
+        cursor = conn.execute(
+            """
+            SELECT * FROM knowledge
+            WHERE tags LIKE ?
             AND (expires_at IS NULL OR expires_at > ?)
             ORDER BY created_at DESC
             LIMIT ?
-        ''', (f'%"{tag}"%', now, limit))
+        """,
+            (f'%"{tag}"%', now, limit),
+        )
 
-        return [
-            KnowledgeEntry.from_dict(dict(row))
-            for row in cursor.fetchall()
-        ]
+        return [KnowledgeEntry.from_dict(dict(row)) for row in cursor.fetchall()]
 
     def list_by_source(
         self,
@@ -331,18 +340,18 @@ class KnowledgeBase:
         conn = self._get_conn()
         now = datetime.utcnow().isoformat()
 
-        cursor = conn.execute('''
-            SELECT * FROM knowledge 
+        cursor = conn.execute(
+            """
+            SELECT * FROM knowledge
             WHERE source = ?
             AND (expires_at IS NULL OR expires_at > ?)
             ORDER BY created_at DESC
             LIMIT ?
-        ''', (source, now, limit))
+        """,
+            (source, now, limit),
+        )
 
-        return [
-            KnowledgeEntry.from_dict(dict(row))
-            for row in cursor.fetchall()
-        ]
+        return [KnowledgeEntry.from_dict(dict(row)) for row in cursor.fetchall()]
 
     def search(
         self,
@@ -353,13 +362,13 @@ class KnowledgeBase:
     ) -> list[tuple[KnowledgeEntry, float]]:
         """
         Semantic search across knowledge base.
-        
+
         Args:
             query: Search query
             limit: Maximum results
             min_similarity: Minimum cosine similarity threshold
             tags: Optional tag filter
-            
+
         Returns:
             List of (entry, similarity) tuples sorted by relevance
         """
@@ -375,21 +384,25 @@ class KnowledgeBase:
         now = datetime.utcnow().isoformat()
 
         if tags:
-            tag_conditions = ' AND '.join(
-                f"tags LIKE '%\"{tag}\"%'" for tag in tags
-            )
-            cursor = conn.execute(f'''
-                SELECT * FROM knowledge 
+            tag_conditions = " AND ".join(f"tags LIKE '%\"{tag}\"%'" for tag in tags)
+            cursor = conn.execute(
+                f"""
+                SELECT * FROM knowledge
                 WHERE embedding IS NOT NULL
                 AND (expires_at IS NULL OR expires_at > ?)
                 AND {tag_conditions}
-            ''', (now,))
+            """,
+                (now,),
+            )
         else:
-            cursor = conn.execute('''
-                SELECT * FROM knowledge 
+            cursor = conn.execute(
+                """
+                SELECT * FROM knowledge
                 WHERE embedding IS NOT NULL
                 AND (expires_at IS NULL OR expires_at > ?)
-            ''', (now,))
+            """,
+                (now,),
+            )
 
         # Compute similarities
         results = []
@@ -416,24 +429,24 @@ class KnowledgeBase:
     ) -> list[KnowledgeEntry]:
         """
         Full-text search (fallback when no embeddings).
-        
+
         Args:
             query: Search query
             limit: Maximum results
             tags: Optional tag filter
-            
+
         Returns:
             Matching entries
         """
         conn = self._get_conn()
         now = datetime.utcnow().isoformat()
-        pattern = f'%{query}%'
+        pattern = f"%{query}%"
 
-        sql = '''
-            SELECT * FROM knowledge 
+        sql = """
+            SELECT * FROM knowledge
             WHERE (content LIKE ? OR summary LIKE ?)
             AND (expires_at IS NULL OR expires_at > ?)
-        '''
+        """
         params = [pattern, pattern, now]
 
         if tags:
@@ -441,15 +454,12 @@ class KnowledgeBase:
                 sql += " AND tags LIKE ?"
                 params.append(f'%"{tag}"%')
 
-        sql += ' ORDER BY created_at DESC LIMIT ?'
+        sql += " ORDER BY created_at DESC LIMIT ?"
         params.append(limit)
 
         cursor = conn.execute(sql, params)
 
-        return [
-            KnowledgeEntry.from_dict(dict(row))
-            for row in cursor.fetchall()
-        ]
+        return [KnowledgeEntry.from_dict(dict(row)) for row in cursor.fetchall()]
 
     def add_with_ttl(
         self,
@@ -460,13 +470,13 @@ class KnowledgeBase:
     ) -> KnowledgeEntry:
         """
         Add knowledge with automatic expiration.
-        
+
         Args:
             key: Unique key
             content: Knowledge content
             ttl_hours: Hours until expiration
             **kwargs: Additional KnowledgeEntry fields
-            
+
         Returns:
             Stored entry
         """
@@ -487,8 +497,8 @@ class KnowledgeBase:
         now = datetime.utcnow().isoformat()
 
         cursor = conn.execute(
-            'SELECT COUNT(*) FROM knowledge WHERE expires_at IS NULL OR expires_at > ?',
-            (now,)
+            "SELECT COUNT(*) FROM knowledge WHERE expires_at IS NULL OR expires_at > ?",
+            (now,),
         )
         return cursor.fetchone()[0]
 
@@ -497,7 +507,7 @@ class KnowledgeBase:
         conn = self._get_conn()
 
         with self._lock:
-            cursor = conn.execute('DELETE FROM knowledge')
+            cursor = conn.execute("DELETE FROM knowledge")
             conn.commit()
 
         deleted = cursor.rowcount
@@ -510,8 +520,7 @@ class KnowledgeBase:
         now = datetime.utcnow().isoformat()
 
         cursor = conn.execute(
-            'SELECT * FROM knowledge WHERE expires_at IS NULL OR expires_at > ?',
-            (now,)
+            "SELECT * FROM knowledge WHERE expires_at IS NULL OR expires_at > ?", (now,)
         )
 
         return [dict(row) for row in cursor.fetchall()]
@@ -523,11 +532,11 @@ class KnowledgeBase:
     ) -> int:
         """
         Import entries from dictionaries.
-        
+
         Args:
             entries: List of entry dictionaries
             overwrite: Whether to overwrite existing keys
-            
+
         Returns:
             Number of entries imported
         """
@@ -550,6 +559,6 @@ class KnowledgeBase:
 
     def close(self) -> None:
         """Close database connection."""
-        if hasattr(self._local, 'conn') and self._local.conn:
+        if hasattr(self._local, "conn") and self._local.conn:
             self._local.conn.close()
             self._local.conn = None

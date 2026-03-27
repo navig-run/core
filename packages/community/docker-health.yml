@@ -11,25 +11,25 @@ tags:
 steps:
   - description: "Check Docker daemon status"
     command: "navig docker info"
-  
+
   - description: "List running containers"
     command: "navig docker ps"
-  
+
   - description: "Check container resource usage"
     command: "navig docker stats --no-stream"
-  
+
   - description: "Review container logs for errors"
     notes: "Look for ERROR, FATAL, or exception messages"
     command: "navig docker logs --tail 50"
-  
+
   - description: "Check disk space"
     command: "navig exec df -h"
     notes: "Ensure at least 20% free space"
-  
+
   - description: "Verify network connectivity"
     command: "navig exec curl -I http://localhost:80"
     continue_on_error: true
-  
+
   - description: "Check for stopped containers"
     command: "navig docker ps -a --filter status=exited"
 

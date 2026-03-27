@@ -1,6 +1,7 @@
 """
 Tests for navig.onboarding.engine — OnboardingEngine core logic.
 """
+
 from __future__ import annotations
 
 import json
@@ -25,7 +26,9 @@ def _make_config(tmp_path: Path, **kwargs) -> EngineConfig:
     )
 
 
-def _success_step(step_id: str, title: str = "A Step", independent: bool = False) -> OnboardingStep:
+def _success_step(
+    step_id: str, title: str = "A Step", independent: bool = False
+) -> OnboardingStep:
     return OnboardingStep(
         id=step_id,
         title=title,
@@ -35,7 +38,9 @@ def _success_step(step_id: str, title: str = "A Step", independent: bool = False
     )
 
 
-def _failing_step(step_id: str, on_failure: str = "skip", title: str = "Bad Step") -> OnboardingStep:
+def _failing_step(
+    step_id: str, on_failure: str = "skip", title: str = "Bad Step"
+) -> OnboardingStep:
     return OnboardingStep(
         id=step_id,
         title=title,
@@ -57,6 +62,7 @@ def _verified_step(step_id: str) -> OnboardingStep:
 
 # ── 1. Happy path — all steps complete ───────────────────────────────────────
 
+
 def test_run_all_steps_complete(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
     steps = [_success_step("s1"), _success_step("s2"), _success_step("s3")]
@@ -76,6 +82,7 @@ def test_run_all_steps_complete(tmp_path: Path) -> None:
 
 # ── 2. verify() → step skipped ───────────────────────────────────────────────
 
+
 def test_verify_skips_step(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
     steps = [_verified_step("s-verified"), _success_step("s-normal")]
@@ -88,6 +95,7 @@ def test_verify_skips_step(tmp_path: Path) -> None:
 
 
 # ── 3. on_failure=abort stops the run ────────────────────────────────────────
+
 
 def test_on_failure_abort_stops_run(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
@@ -106,6 +114,7 @@ def test_on_failure_abort_stops_run(tmp_path: Path) -> None:
 
 # ── 4. on_failure=skip continues ─────────────────────────────────────────────
 
+
 def test_on_failure_skip_continues(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
     steps = [
@@ -120,6 +129,7 @@ def test_on_failure_skip_continues(tmp_path: Path) -> None:
 
 
 # ── 5. Resume skips already-completed steps ──────────────────────────────────
+
 
 def test_resume_skips_completed_steps(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
@@ -147,6 +157,7 @@ def test_jump_to_step_runs_target_and_following_steps(tmp_path: Path) -> None:
 
 # ── 6. --reset deletes artifact ───────────────────────────────────────────────
 
+
 def test_reset_deletes_artifact(tmp_path: Path) -> None:
     # First run
     config = _make_config(tmp_path)
@@ -162,6 +173,7 @@ def test_reset_deletes_artifact(tmp_path: Path) -> None:
 
 # ── 7. dry_run marks all steps skipped, no side effects ──────────────────────
 
+
 def test_dry_run_no_execution(tmp_path: Path) -> None:
     executed: list[str] = []
 
@@ -170,7 +182,9 @@ def test_dry_run_no_execution(tmp_path: Path) -> None:
         return StepResult(status="completed", output={})
 
     config = _make_config(tmp_path, dry_run=True)
-    step = OnboardingStep(id="tracked", title="Track", run=tracking_run, on_failure="skip")
+    step = OnboardingStep(
+        id="tracked", title="Track", run=tracking_run, on_failure="skip"
+    )
     engine = OnboardingEngine(config, [step])
     state = engine.run()
 
@@ -179,6 +193,7 @@ def test_dry_run_no_execution(tmp_path: Path) -> None:
 
 
 # ── 8. execute_single returns correct (skipped, result) ──────────────────────
+
 
 def test_execute_single_returns_tuple(tmp_path: Path) -> None:
     config = _make_config(tmp_path)

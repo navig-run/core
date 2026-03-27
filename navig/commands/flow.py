@@ -23,66 +23,75 @@ flow_app = typer.Typer(
 def flow_list():
     """List all available flows."""
     from navig.commands.workflow import list_workflows
+
     list_workflows()
 
 
 @flow_app.command("show")
-def flow_show(
-    name: str = typer.Argument(..., help="Flow name")
-):
+def flow_show(name: str = typer.Argument(..., help="Flow name")):
     """Display flow definition and steps."""
     from navig.commands.workflow import show_workflow
+
     show_workflow(name)
 
 
 @flow_app.command("run")
 def flow_run(
     name: str = typer.Argument(..., help="Flow name"),
-    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview without executing"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip all confirmation prompts"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", "-n", help="Preview without executing"
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip all confirmation prompts"
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed output"),
-    var: Optional[List[str]] = typer.Option(None, "--var", "-V", help="Variable override (name=value)")
+    var: Optional[List[str]] = typer.Option(
+        None, "--var", "-V", help="Variable override (name=value)"
+    ),
 ):
     """Execute a flow."""
     from navig.commands.workflow import run_workflow
+
     run_workflow(name, dry_run=dry_run, yes=yes, verbose=verbose, var=var or [])
 
 
 @flow_app.command("test")
-def flow_test(
-    name: str = typer.Argument(..., help="Flow name")
-):
+def flow_test(name: str = typer.Argument(..., help="Flow name")):
     """Test/validate flow syntax and structure."""
     from navig.commands.workflow import validate_workflow
+
     validate_workflow(name)
 
 
 @flow_app.command("add")
 def flow_add(
     name: str = typer.Argument(..., help="New flow name"),
-    global_scope: bool = typer.Option(False, "--global", "-g", help="Create in global directory")
+    global_scope: bool = typer.Option(
+        False, "--global", "-g", help="Create in global directory"
+    ),
 ):
     """Create a new flow."""
     from navig.commands.workflow import create_workflow
+
     create_workflow(name, global_scope=global_scope)
 
 
 @flow_app.command("edit")
-def flow_edit(
-    name: str = typer.Argument(..., help="Flow name")
-):
+def flow_edit(name: str = typer.Argument(..., help="Flow name")):
     """Open flow in default editor."""
     from navig.commands.workflow import edit_workflow
+
     edit_workflow(name)
 
 
 @flow_app.command("remove")
 def flow_remove(
     name: str = typer.Argument(..., help="Flow name"),
-    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation")
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ):
     """Remove a flow."""
     from navig.commands.workflow import delete_workflow
+
     delete_workflow(name, force=force)
 
 
@@ -91,6 +100,7 @@ def flow_remove(
 # ============================================================================
 # These functions provide a consistent interface for the interactive menu system.
 # Each wrapper calls the underlying Typer command with appropriate defaults.
+
 
 def list_flows_cmd(ctx: Dict[str, Any]) -> None:
     """Wrapper for flow list command (interactive menu)."""

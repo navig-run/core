@@ -1,4 +1,5 @@
 """PlanExtractor, PlanValidator, FallbackPlanner: JSON plan parsing and no-AI fallback."""
+
 from __future__ import annotations
 
 import json
@@ -230,8 +231,13 @@ class FallbackPlanner:
                 app = m.group(1)
                 return _make_plan(
                     f"You want me to open {app}",
-                    [{"action": "auto.open_app", "params": {"target": app},
-                      "description": f"Opening {app}"}],
+                    [
+                        {
+                            "action": "auto.open_app",
+                            "params": {"target": app},
+                            "description": f"Opening {app}",
+                        }
+                    ],
                     message=f"Sure! Opening {app} 🚀",
                 )
 
@@ -241,19 +247,31 @@ class FallbackPlanner:
                 x, y = int(m.group(1)), int(m.group(2))
                 return _make_plan(
                     f"You want me to click at ({x}, {y})",
-                    [{"action": "auto.click", "params": {"x": x, "y": y},
-                      "description": f"Clicking at ({x}, {y})"}],
+                    [
+                        {
+                            "action": "auto.click",
+                            "params": {"x": x, "y": y},
+                            "description": f"Clicking at ({x}, {y})",
+                        }
+                    ],
                     message=f"Clicking at ({x}, {y}) 👆",
                 )
 
         if any(w in lower for w in ("type", "write", "enter")):
-            m = re.search(r'(?:type|write|enter)\s+["\']?(.+?)["\']?$', message, re.IGNORECASE)
+            m = re.search(
+                r'(?:type|write|enter)\s+["\']?(.+?)["\']?$', message, re.IGNORECASE
+            )
             if m:
                 text = m.group(1)
                 return _make_plan(
                     f"You want me to type: {text}",
-                    [{"action": "auto.type", "params": {"text": text},
-                      "description": "Typing text"}],
+                    [
+                        {
+                            "action": "auto.type",
+                            "params": {"text": text},
+                            "description": "Typing text",
+                        }
+                    ],
                     message="Typing that for you! ⌨️",
                 )
 
@@ -266,8 +284,13 @@ class FallbackPlanner:
                 desc = m.group(1)
                 return _make_plan(
                     f"Create a workflow: {desc}",
-                    [{"action": "evolve.workflow", "params": {"goal": desc},
-                      "description": f"Creating workflow: {desc}"}],
+                    [
+                        {
+                            "action": "evolve.workflow",
+                            "params": {"goal": desc},
+                            "description": f"Creating workflow: {desc}",
+                        }
+                    ],
                     confirmation_needed=True,
                     message=f"I'll create a workflow to {desc}. Proceed? 🛠️",
                 )

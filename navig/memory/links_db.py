@@ -16,6 +16,7 @@ Usage:
     results  = db.search("github work")
     db.record_visit(link_id)
 """
+
 from __future__ import annotations
 
 import json
@@ -71,6 +72,7 @@ END;
 
 # ─────────────────────────── data model ──────────────────────────────────────
 
+
 class LinkRecord:
     """Represents a single bookmarked link."""
 
@@ -82,7 +84,9 @@ class LinkRecord:
         self.tags: List[str] = json.loads(row.get("tags") or "[]")
         self.vault_cred_id: Optional[str] = row.get("vault_cred_id")
         self.last_visited: Optional[datetime] = (
-            datetime.fromisoformat(row["last_visited"]) if row.get("last_visited") else None
+            datetime.fromisoformat(row["last_visited"])
+            if row.get("last_visited")
+            else None
         )
         self.visit_count: int = int(row.get("visit_count") or 0)
         self.screenshot_path: Optional[str] = row.get("screenshot_path")
@@ -97,12 +101,16 @@ class LinkRecord:
             "notes": self.notes,
             "tags": self.tags,
             "vault_cred_id": self.vault_cred_id,
-            "last_visited": self.last_visited.isoformat() if self.last_visited else None,
+            "last_visited": (
+                self.last_visited.isoformat() if self.last_visited else None
+            ),
             "visit_count": self.visit_count,
             "created_at": self.created_at.isoformat(),
         }
 
+
 # ─────────────────────────── database class ──────────────────────────────────
+
 
 class LinksDB:
     """SQLite-backed browser links database with FTS5 search."""
@@ -137,7 +145,16 @@ class LinksDB:
             """INSERT INTO links
                (id, url, title, notes, tags, vault_cred_id, screenshot_path, favicon_path)
                VALUES (?,?,?,?,?,?,?,?)""",
-            (link_id, url, title, notes, tags_json, vault_cred_id, screenshot_path, favicon_path),
+            (
+                link_id,
+                url,
+                title,
+                notes,
+                tags_json,
+                vault_cred_id,
+                screenshot_path,
+                favicon_path,
+            ),
         )
         self._con.commit()
         return link_id
@@ -219,7 +236,7 @@ class LinksDB:
 
     def search(self, query: str, limit: int = 20) -> List[LinkRecord]:
         """Full-text search across url, title, notes, and tags.
-        
+
         Uses SQLite FTS5 for fast fuzzy matching. Query supports boolean
         operators: AND, OR, NOT, prefix* matching.
         """
@@ -258,6 +275,7 @@ def get_links_db() -> LinksDB:
     global _db_instance
     if _db_instance is None:
         from navig.config import get_config
+
         cfg = get_config()
         db_path = Path(cfg.data_dir) / "links.db"
         _db_instance = LinksDB(db_path)

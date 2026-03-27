@@ -5,6 +5,7 @@ Each tool emits granular status events consumed by the StatusRenderer pipeline.
 Tool failures are isolated: they return ToolResult(success=False) and never
 propagate exceptions to the caller.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -35,7 +36,9 @@ class ToolResult:
         """One-line human-readable summary of the result."""
         if self.success:
             if isinstance(self.output, dict):
-                return " · ".join(f"{k}: {v}" for k, v in self.output.items() if v is not None)
+                return " · ".join(
+                    f"{k}: {v}" for k, v in self.output.items() if v is not None
+                )
             return str(self.output)[:200]
         return f"⚠️ {self.error or 'unknown error'}"
 
@@ -43,14 +46,14 @@ class ToolResult:
 class BaseTool(ABC):
     """Abstract base for all NAVIG pipeline tools."""
 
-    name: str = "base_tool" # id maps directly to NavigToolMeta.id
+    name: str = "base_tool"  # id maps directly to NavigToolMeta.id
     description: str = ""
-    parameters: dict[str, Any] = {} # Defines NavigToolParameter keys
+    parameters: dict[str, Any] = {}  # Defines NavigToolParameter keys
     owner_only: bool = False
 
     def get_meta(self) -> dict[str, Any]:
         """
-        Exports the tool definition aligning strictly 
+        Exports the tool definition aligning strictly
         with the navig-shared/core/src/types/agent.ts NavigToolMeta interface.
         """
         return {
@@ -58,7 +61,7 @@ class BaseTool(ABC):
             "name": self.__class__.__name__,
             "description": self.description,
             "parameters": self.parameters,
-            "ownerOnly": self.owner_only
+            "ownerOnly": self.owner_only,
         }
 
     @abstractmethod

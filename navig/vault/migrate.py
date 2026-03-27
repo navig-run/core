@@ -5,6 +5,7 @@ Target : ~/.navig/vault/vault.db         (AES-GCM + Argon2id, new schema)
 
 The source is never modified or deleted.  Run ``navig vault migrate`` to execute.
 """
+
 from __future__ import annotations
 
 import json
@@ -18,18 +19,18 @@ __all__ = ["MigrationReport", "migrate_from_legacy", "check_legacy_exists"]
 from navig.platform.paths import config_dir as _navig_config_dir
 
 # Default paths
-_LEGACY_DB    = _navig_config_dir() / "credentials" / "vault.db"
+_LEGACY_DB = _navig_config_dir() / "credentials" / "vault.db"
 
 
 @dataclass
 class MigrationReport:
     """Summary returned by :func:`migrate_from_legacy`."""
 
-    migrated:  int = 0
-    skipped:   int = 0
-    errors:    list[str] = field(default_factory=list)
-    dry_run:   bool = False
-    source:    Path = _LEGACY_DB
+    migrated: int = 0
+    skipped: int = 0
+    errors: list[str] = field(default_factory=list)
+    dry_run: bool = False
+    source: Path = _LEGACY_DB
 
     def ok(self) -> bool:
         return len(self.errors) == 0
@@ -106,7 +107,9 @@ def migrate_from_legacy(
             "SELECT id, provider, profile_id, label, credential_type FROM credentials"
         ).fetchall()
     except sqlite3.OperationalError:
-        report.errors.append("Legacy DB schema unrecognised — is this a NAVIG credentials DB?")
+        report.errors.append(
+            "Legacy DB schema unrecognised — is this a NAVIG credentials DB?"
+        )
         conn.close()
         return report
 

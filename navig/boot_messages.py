@@ -61,7 +61,8 @@ def get_boot_message(
     base = NAVIG_BOOT_MESSAGES[random.randrange(len(NAVIG_BOOT_MESSAGES))]
 
     extras: list[str] = [
-        x for x in [
+        x
+        for x in [
             f"Position: {location}." if location else None,
             f"Last session: {uptime}s." if uptime is not None else None,
             f"Signal: {signal_strength}%." if signal_strength is not None else None,

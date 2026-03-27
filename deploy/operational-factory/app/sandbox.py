@@ -9,7 +9,11 @@ def run_readonly_git(repo_path: str):
         text=True,
         timeout=20,
     )
-    return {"exit_code": result.returncode, "stdout": result.stdout, "stderr": result.stderr}
+    return {
+        "exit_code": result.returncode,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+    }
 
 
 def run_bounded_log_read(path: str, lines: int = 200):
@@ -23,15 +27,27 @@ def run_bounded_log_read(path: str, lines: int = 200):
 
 def run_in_sandbox(repo_path: str, command: str):
     cmd = [
-        "docker", "run", "--rm", "--network", "none",
-        "-v", f"{repo_path}:/repo:ro",
-        "-w", "/repo",
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "-v",
+        f"{repo_path}:/repo:ro",
+        "-w",
+        "/repo",
         "python:3.12-slim",
-        "bash", "-lc", command,
+        "bash",
+        "-lc",
+        command,
     ]
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
-        return {"exit_code": proc.returncode, "stdout": proc.stdout[-4000:], "stderr": proc.stderr[-4000:]}
+        return {
+            "exit_code": proc.returncode,
+            "stdout": proc.stdout[-4000:],
+            "stderr": proc.stderr[-4000:],
+        }
     except FileNotFoundError:
         return {
             "exit_code": 127,

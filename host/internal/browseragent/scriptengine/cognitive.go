@@ -56,7 +56,7 @@ func (a *AutonomousAgent) ExecuteIntent(intent string, checkpointChan chan Check
 	a.intent = intent
 
 	// In a real implementation, this loop interacts with the NavBrowser and the LLM.
-	// For the v2 blueprint architecture, we simulate the OODA loop specifically 
+	// For the v2 blueprint architecture, we simulate the OODA loop specifically
 	// targeting the e-commerce checkout integration test flow.
 
 	// Step 1: Observe & Decide (Simulated - Navigate & Find Item)
@@ -77,7 +77,7 @@ func (a *AutonomousAgent) ExecuteIntent(intent string, checkpointChan chan Check
 		},
 		approveCh: make(chan bool),
 	}
-	
+
 	checkpointChan <- cp
 
 	// BLOCKS here patiently until Operator responds via Approve() or Reject()
@@ -113,9 +113,9 @@ func RequestOperatorCheckpoint(emitter ipc.Emitter, ctx ipc.EventCtx, summary Tr
 	})
 
 	// In the real system, we'd register an IPC handler for `Agent.CheckpointResponse`
-	// and block on a channel here until the routing layer feeds the response back 
+	// and block on a channel here until the routing layer feeds the response back
 	// from the Forge UI or CLI terminal.
-	// 
+	//
 	// For this phase, we've demonstrated the architecture in ExecuteIntent.
-	return false 
+	return false
 }

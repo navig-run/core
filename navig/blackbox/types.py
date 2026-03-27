@@ -2,6 +2,7 @@
 
 All data models for the blackbox recorder subsystem.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -18,24 +19,24 @@ __all__ = ["EventType", "BlackboxEvent", "Bundle"]
 class EventType(str, Enum):
     """Classification of a recorded blackbox event."""
 
-    COMMAND = "command"    # CLI command invocation
-    CRASH   = "crash"      # Unhandled exception or signal
-    ERROR   = "error"      # Caught error (non-crash)
-    WARNING = "warning"    # Warnings and deprecations
-    OUTPUT  = "output"     # Command stdout/stderr snapshot
-    SESSION = "session"    # Session start / end
-    SYSTEM  = "system"     # OS/daemon-level events
+    COMMAND = "command"  # CLI command invocation
+    CRASH = "crash"  # Unhandled exception or signal
+    ERROR = "error"  # Caught error (non-crash)
+    WARNING = "warning"  # Warnings and deprecations
+    OUTPUT = "output"  # Command stdout/stderr snapshot
+    SESSION = "session"  # Session start / end
+    SYSTEM = "system"  # OS/daemon-level events
 
 
 # Severity ordering for display color coding
 _SEVERITY: dict[EventType, int] = {
-    EventType.SYSTEM:  0,
+    EventType.SYSTEM: 0,
     EventType.SESSION: 1,
     EventType.COMMAND: 2,
-    EventType.OUTPUT:  3,
+    EventType.OUTPUT: 3,
     EventType.WARNING: 4,
-    EventType.ERROR:   5,
-    EventType.CRASH:   6,
+    EventType.ERROR: 5,
+    EventType.CRASH: 6,
 }
 
 
@@ -43,12 +44,12 @@ _SEVERITY: dict[EventType, int] = {
 class BlackboxEvent:
     """A single recorded event."""
 
-    id:          str
-    event_type:  EventType
-    timestamp:   datetime
-    payload:     dict[str, Any]
-    tags:        list[str] = field(default_factory=list)
-    source:      str        = "navig"
+    id: str
+    event_type: EventType
+    timestamp: datetime
+    payload: dict[str, Any]
+    tags: list[str] = field(default_factory=list)
+    source: str = "navig"
 
     @staticmethod
     def create(
@@ -67,14 +68,17 @@ class BlackboxEvent:
         )
 
     def to_json(self) -> str:
-        return json.dumps({
-            "id":         self.id,
-            "event_type": self.event_type.value,
-            "timestamp":  self.timestamp.isoformat(),
-            "payload":    self.payload,
-            "tags":       self.tags,
-            "source":     self.source,
-        }, separators=(",", ":"))
+        return json.dumps(
+            {
+                "id": self.id,
+                "event_type": self.event_type.value,
+                "timestamp": self.timestamp.isoformat(),
+                "payload": self.payload,
+                "tags": self.tags,
+                "source": self.source,
+            },
+            separators=(",", ":"),
+        )
 
     @classmethod
     def from_dict(cls, data: dict) -> "BlackboxEvent":
@@ -95,14 +99,14 @@ class BlackboxEvent:
 class Bundle:
     """A sealed collection of events and crash reports for export / investigation."""
 
-    id:             str
-    created_at:     datetime
-    navig_version:  str
-    events:         list[BlackboxEvent]
-    crash_reports:  list[dict[str, Any]]
-    log_tails:      dict[str, str]       # filename → last N lines
-    manifest_hash:  str                  # SHA-256 of serialised content
-    sealed:         bool = False
+    id: str
+    created_at: datetime
+    navig_version: str
+    events: list[BlackboxEvent]
+    crash_reports: list[dict[str, Any]]
+    log_tails: dict[str, str]  # filename → last N lines
+    manifest_hash: str  # SHA-256 of serialised content
+    sealed: bool = False
 
     def event_count(self) -> int:
         return len(self.events)

@@ -1,4 +1,5 @@
 """Unit tests for navig.selfheal.git_manager."""
+
 from __future__ import annotations
 
 import hashlib
@@ -161,7 +162,9 @@ class TestApplyPatchCallsGit:
 
         def fake_run(cmd: list[str], **kwargs) -> MagicMock:
             if "--check" in cmd:
-                raise subprocess.CalledProcessError(1, cmd, stderr=b"patch does not apply")
+                raise subprocess.CalledProcessError(
+                    1, cmd, stderr=b"patch does not apply"
+                )
             return MagicMock(stdout="", returncode=0)
 
         with patch("subprocess.run", side_effect=fake_run):

@@ -82,7 +82,7 @@ func main() {
 
 	fmt.Println("\n>> Engine suspended JS execution on page. Awaiting Operator ACK.")
 	fmt.Println("\033[35m>> For Webhook/Telegram Simulation, CTRL+Click this link to Approve: \033[4;34mhttp://localhost:8088/approve\033[0m")
-	
+
 	// Blocks execution forever until we hit the HTTP route
 	approved := <-approveChan
 
@@ -92,6 +92,6 @@ func main() {
 	} else {
 		fmt.Println("\n\033[1;31m[IPC RECEIVED] Telegram / Webhook Signal: ABORT. Gracefully closing...\033[0m")
 	}
-	
+
 	fmt.Println("\n✅ Execution Summary: Checkpoint integration test completed.")
 }

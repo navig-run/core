@@ -26,6 +26,7 @@ Usage
     print(result.final_output)
     print(result.succeeded)
 """
+
 from __future__ import annotations
 
 import logging
@@ -184,8 +185,8 @@ class ToolPipeline:
         prior_output: Any = initial_input
 
         for idx, step in enumerate(self._steps):
-            args = dict(context)      # start with accumulated context
-            args.update(step.args)    # step's own args take precedence
+            args = dict(context)  # start with accumulated context
+            args.update(step.args)  # step's own args take precedence
 
             # Inject prior output under input_key (with optional transform)
             if step.input_key and prior_output is not None:

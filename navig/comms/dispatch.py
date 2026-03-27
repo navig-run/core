@@ -5,6 +5,7 @@ Routes ``send_user_notification()`` to the correct channel backend.
 Reads ``comms.default_notification_channel`` from NAVIG config to decide
 which channel to use when the caller passes ``channel="auto"``.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -26,8 +27,8 @@ logger = logging.getLogger(__name__)
 # Global registry — populated by gateway startup or tests
 # ---------------------------------------------------------------------------
 
-_telegram_notifier = None   # TelegramNotifier | None
-_matrix_notifier = None     # NavigMatrixBot | None   (Prompt 4)
+_telegram_notifier = None  # TelegramNotifier | None
+_matrix_notifier = None  # NavigMatrixBot | None   (Prompt 4)
 _default_channel: CommsChannel = "telegram"
 
 
@@ -58,6 +59,7 @@ def get_default_channel() -> CommsChannel:
 # ---------------------------------------------------------------------------
 # Public dispatch function
 # ---------------------------------------------------------------------------
+
 
 async def send_user_notification(
     channel: CommsChannel,
@@ -99,12 +101,15 @@ async def send_user_notification(
     if resolved == "matrix":
         return await _send_matrix(target, message, options)
 
-    return DeliveryResult.failure(channel=resolved, error=f"Unknown channel: {resolved}")
+    return DeliveryResult.failure(
+        channel=resolved, error=f"Unknown channel: {resolved}"
+    )
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _resolve_channel(channel: CommsChannel, target: NotificationTarget) -> str:
     """Resolve "auto" to a concrete channel name."""
@@ -115,6 +120,7 @@ def _resolve_channel(channel: CommsChannel, target: NotificationTarget) -> str:
     if target.user_id:
         try:
             from navig.identity.store import get_user_preferred_channel
+
             return get_user_preferred_channel(target.user_id) or _default_channel
         except ImportError:
             pass  # optional dependency not installed; feature disabled
@@ -166,7 +172,9 @@ async def _send_matrix(
 ) -> DeliveryResult:
     """Deliver via Matrix.  Placeholder until Prompt 4 is implemented."""
     if not _matrix_notifier:
-        return DeliveryResult.failure("matrix", "Matrix notifier not configured (install matrix module)")
+        return DeliveryResult.failure(
+            "matrix", "Matrix notifier not configured (install matrix module)"
+        )
 
     room_id = target.matrix_room_id
     if not room_id:
@@ -193,9 +201,9 @@ async def _fanout(
         tasks.append(_send_matrix(target, message, options))
 
     if not tasks:
-        return FanoutResult(results=[
-            DeliveryResult.failure("both", "No channels available for fanout")
-        ])
+        return FanoutResult(
+            results=[DeliveryResult.failure("both", "No channels available for fanout")]
+        )
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
     delivery_results = []

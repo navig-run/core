@@ -18,7 +18,12 @@ def envelope_error(
     code: str,
     details: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {"ok": False, "data": None, "error": message, "error_code": code}
+    payload: Dict[str, Any] = {
+        "ok": False,
+        "data": None,
+        "error": message,
+        "error_code": code,
+    }
     if details:
         payload["details"] = details
     return payload
@@ -35,7 +40,9 @@ def json_error_response(
     code: str,
     details: Optional[Dict[str, Any]] = None,
 ) -> web.Response:
-    return web.json_response(envelope_error(message, code=code, details=details), status=status)
+    return web.json_response(
+        envelope_error(message, code=code, details=details), status=status
+    )
 
 
 def require_bearer_auth(request: web.Request, gateway: Any) -> Optional[web.Response]:
@@ -46,10 +53,14 @@ def require_bearer_auth(request: web.Request, gateway: Any) -> Optional[web.Resp
 
     header = request.headers.get("Authorization", "")
     if not header.startswith("Bearer "):
-        return json_error_response("Missing bearer token", status=401, code="unauthorized")
+        return json_error_response(
+            "Missing bearer token", status=401, code="unauthorized"
+        )
 
     provided = header[len("Bearer ") :].strip()
     if not provided or not hmac.compare_digest(provided, str(token)):
-        return json_error_response("Invalid bearer token", status=401, code="unauthorized")
+        return json_error_response(
+            "Invalid bearer token", status=401, code="unauthorized"
+        )
 
     return None

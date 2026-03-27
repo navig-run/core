@@ -22,7 +22,9 @@ class NavigKernel:
         self.plugin_manager.discover_and_load()
         self.load_skills()
         self.load_packs()
-        print(f"🌟 System Ready. Loaded {len(self.skills)} skills, {len(self.packs)} packs, and {len(self.plugin_manager.plugins)} active plugins.")
+        print(
+            f"🌟 System Ready. Loaded {len(self.skills)} skills, {len(self.packs)} packs, and {len(self.plugin_manager.plugins)} active plugins."
+        )
 
     def load_skills(self):
         # 1. Load Built-in Skills (YAML/Markdown)
@@ -38,10 +40,10 @@ class NavigKernel:
 
     def _parse_skill_file(self, filepath: str):
         try:
-            with open(filepath, 'r', encoding='utf-8') as f:
+            with open(filepath, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            match = re.search(r'^---\n(.*?)\n---', content, re.DOTALL)
+            match = re.search(r"^---\n(.*?)\n---", content, re.DOTALL)
             if not match:
                 return
 
@@ -63,7 +65,9 @@ class NavigKernel:
     def load_packs(self):
         patterns = [
             os.path.join(self.root_path, "packs", "**", "*.yml"),
-            os.path.join(self.root_path, "context", "packs", "**", "*.yml"), # Support context packs if any
+            os.path.join(
+                self.root_path, "context", "packs", "**", "*.yml"
+            ),  # Support context packs if any
             os.path.join(self.root_path, ".navig", "packs", "**", "*.yml"),
         ]
 
@@ -73,7 +77,7 @@ class NavigKernel:
 
     def _parse_pack_file(self, filepath: str):
         try:
-            with open(filepath, 'r', encoding='utf-8') as f:
+            with open(filepath, "r", encoding="utf-8") as f:
                 content = yaml.safe_load(f)
 
             # Helper to map 'steps' properly if they are strings (simple commands) or dicts
@@ -173,7 +177,7 @@ class NavigKernel:
                 max_score = score
                 best_match = cmd
 
-        if max_score > 5: # Threshold
+        if max_score > 5:  # Threshold
             return best_match
         return None
 
@@ -184,10 +188,10 @@ class NavigKernel:
             return
 
         # Check safety
-        if cmd.risk in ['destructive', 'moderate'] or cmd.confirmation_required:
+        if cmd.risk in ["destructive", "moderate"] or cmd.confirmation_required:
             msg = cmd.confirmation_msg or f"Execute {cmd.name}?"
             ans = input(f"🛑 {msg} [y/N] ")
-            if ans.lower() != 'y':
+            if ans.lower() != "y":
                 print("❌ Aborted.")
                 return
 
@@ -216,14 +220,14 @@ class NavigKernel:
             # providing empty dict for now, or naive mapping
             params = {}
             if args:
-                 # simplistic: if command is "type", text is remainder
-                 if method == "type":
-                     params["text"] = " ".join(args)
-                 elif method == "open-app":
-                     params["target"] = " ".join(args)
-                 elif method == "click" and len(args) >= 2:
-                     params["x"] = args[0]
-                     params["y"] = args[1]
+                # simplistic: if command is "type", text is remainder
+                if method == "type":
+                    params["text"] = " ".join(args)
+                elif method == "open-app":
+                    params["target"] = " ".join(args)
+                elif method == "click" and len(args) >= 2:
+                    params["x"] = args[0]
+                    params["y"] = args[1]
 
             self._exec_plugin(plugin_name, method, params)
 
@@ -236,4 +240,3 @@ class NavigKernel:
             print(f"✨ Plugin Result: {result}")
         except Exception as e:
             print(f"❌ Plugin execution failed: {e}")
-

@@ -42,6 +42,7 @@ logger = logging.getLogger("navig.memory.project_indexer")
 # Configuration
 # ============================================================================
 
+
 @dataclass
 class ProjectIndexConfig:
     """Tuning knobs for the project indexer."""
@@ -75,31 +76,82 @@ class ProjectIndexConfig:
 CONTENT_TYPES = ("code", "config", "docs", "wiki", "plans", "memory")
 
 _CODE_EXTS: Set[str] = {
-    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
-    ".py", ".rb", ".go", ".rs", ".java", ".kt", ".scala", ".cs",
-    ".cpp", ".c", ".h", ".hpp",
-    ".php", ".swift", ".dart", ".lua", ".r", ".jl",
-    ".vue", ".svelte", ".astro",
-    ".sql", ".graphql", ".gql",
-    ".sh", ".bash", ".zsh", ".ps1", ".bat", ".cmd",
-    ".html", ".css", ".scss", ".less", ".sass",
-    ".prisma", ".proto",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".mjs",
+    ".cjs",
+    ".py",
+    ".rb",
+    ".go",
+    ".rs",
+    ".java",
+    ".kt",
+    ".scala",
+    ".cs",
+    ".cpp",
+    ".c",
+    ".h",
+    ".hpp",
+    ".php",
+    ".swift",
+    ".dart",
+    ".lua",
+    ".r",
+    ".jl",
+    ".vue",
+    ".svelte",
+    ".astro",
+    ".sql",
+    ".graphql",
+    ".gql",
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".ps1",
+    ".bat",
+    ".cmd",
+    ".html",
+    ".css",
+    ".scss",
+    ".less",
+    ".sass",
+    ".prisma",
+    ".proto",
 }
 
 _CONFIG_EXTS: Set[str] = {
-    ".json", ".yaml", ".yml", ".toml", ".xml", ".ini", ".env",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".xml",
+    ".ini",
+    ".env",
 }
 
 _DOCS_EXTS: Set[str] = {
-    ".md", ".mdx", ".txt", ".rst",
+    ".md",
+    ".mdx",
+    ".txt",
+    ".rst",
 }
 
 _INDEXABLE_EXTS: Set[str] = _CODE_EXTS | _CONFIG_EXTS | _DOCS_EXTS
 
 _INDEXABLE_FILENAMES: Set[str] = {
-    "dockerfile", "makefile", "cmakelists.txt", "gemfile",
-    "rakefile", "procfile", "vagrantfile", ".env",
-    ".gitignore", ".navigignore", ".editorconfig",
+    "dockerfile",
+    "makefile",
+    "cmakelists.txt",
+    "gemfile",
+    "rakefile",
+    "procfile",
+    "vagrantfile",
+    ".env",
+    ".gitignore",
+    ".navigignore",
+    ".editorconfig",
 }
 
 
@@ -147,14 +199,51 @@ def content_type_priority(ct: str) -> float:
 # ============================================================================
 
 DEFAULT_EXCLUDES: List[str] = [
-    ".git", "node_modules", ".next", ".nuxt", "dist", "build", ".cache",
-    ".vscode", ".idea", "__pycache__", "*.pyc", ".DS_Store", "Thumbs.db",
-    "vendor", "target", ".turbo", "coverage", ".nyc_output",
-    "*.min.js", "*.min.css", "package-lock.json", "pnpm-lock.yaml",
-    "yarn.lock", "*.lock", "*.map", "*.woff", "*.woff2", "*.ttf",
-    "*.eot", "*.ico", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.svg",
-    "*.mp4", "*.mp3", "*.pdf", "*.zip", "*.tar", "*.gz", "*.vsix",
-    ".venv", ".env.local", ".tsbuildinfo",
+    ".git",
+    "node_modules",
+    ".next",
+    ".nuxt",
+    "dist",
+    "build",
+    ".cache",
+    ".vscode",
+    ".idea",
+    "__pycache__",
+    "*.pyc",
+    ".DS_Store",
+    "Thumbs.db",
+    "vendor",
+    "target",
+    ".turbo",
+    "coverage",
+    ".nyc_output",
+    "*.min.js",
+    "*.min.css",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "*.lock",
+    "*.map",
+    "*.woff",
+    "*.woff2",
+    "*.ttf",
+    "*.eot",
+    "*.ico",
+    "*.png",
+    "*.jpg",
+    "*.jpeg",
+    "*.gif",
+    "*.svg",
+    "*.mp4",
+    "*.mp3",
+    "*.pdf",
+    "*.zip",
+    "*.tar",
+    "*.gz",
+    "*.vsix",
+    ".venv",
+    ".env.local",
+    ".tsbuildinfo",
 ]
 
 
@@ -165,7 +254,9 @@ def _load_ignore_rules(project_root: Path) -> List[str]:
         p = project_root / name
         if p.is_file():
             try:
-                for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+                for line in p.read_text(
+                    encoding="utf-8", errors="replace"
+                ).splitlines():
                     line = line.strip()
                     if line and not line.startswith("#"):
                         patterns.append(line)
@@ -174,7 +265,9 @@ def _load_ignore_rules(project_root: Path) -> List[str]:
     return patterns
 
 
-def _is_ignored(rel_path: str, ignore_patterns: List[str], is_dir: bool = False) -> bool:
+def _is_ignored(
+    rel_path: str, ignore_patterns: List[str], is_dir: bool = False
+) -> bool:
     """Check if a relative path matches any ignore pattern."""
     parts = rel_path.replace("\\", "/").split("/")
     for pattern in ignore_patterns:
@@ -204,9 +297,11 @@ def _is_indexable(rel_path: str) -> bool:
 # Chunking
 # ============================================================================
 
+
 @dataclass
 class Chunk:
     """A chunk of file content."""
+
     file_path: str
     content: str
     start_line: int
@@ -264,17 +359,21 @@ def chunk_file(
         chunk_text = "\n".join(chunk_lines)
 
         if chunk_text.strip():
-            h = hashlib.sha256(chunk_text.encode("utf-8", errors="replace")).hexdigest()[:16]
+            h = hashlib.sha256(
+                chunk_text.encode("utf-8", errors="replace")
+            ).hexdigest()[:16]
             title = _extract_section_title(chunk_lines, ct)
-            chunks.append(Chunk(
-                file_path=rel_path,
-                content=chunk_text,
-                start_line=i + 1,
-                end_line=end,
-                content_type=ct,
-                section_title=title,
-                content_hash=h,
-            ))
+            chunks.append(
+                Chunk(
+                    file_path=rel_path,
+                    content=chunk_text,
+                    start_line=i + 1,
+                    end_line=end,
+                    content_type=ct,
+                    section_title=title,
+                    content_hash=h,
+                )
+            )
 
         if end >= len(lines):
             break
@@ -287,9 +386,11 @@ def chunk_file(
 # Search result
 # ============================================================================
 
+
 @dataclass
 class ProjectSearchResult:
     """A single search result from the project index."""
+
     file_path: str
     content: str
     start_line: int
@@ -310,6 +411,7 @@ class ProjectSearchResult:
 # ============================================================================
 # ProjectIndexer
 # ============================================================================
+
 
 class ProjectIndexer:
     """
@@ -350,7 +452,8 @@ class ProjectIndexer:
     def _ensure_db(self) -> None:
         """Create tables if they don't exist."""
         conn = self._get_conn()
-        conn.executescript("""
+        conn.executescript(
+            """
             CREATE TABLE IF NOT EXISTS file_meta (
                 path TEXT PRIMARY KEY,
                 content_type TEXT NOT NULL,
@@ -376,7 +479,8 @@ class ProjectIndexer:
                 key TEXT PRIMARY KEY,
                 value TEXT
             );
-        """)
+        """
+        )
         conn.commit()
 
         # Load existing file hashes for incremental checks
@@ -404,13 +508,16 @@ class ProjectIndexer:
         for dirpath, dirnames, filenames in os.walk(self.project_root):
             # Skip ignored directories (in-place filter)
             rel_dir = os.path.relpath(dirpath, self.project_root)
-            if rel_dir != "." and _is_ignored(rel_dir, self._ignore_patterns, is_dir=True):
+            if rel_dir != "." and _is_ignored(
+                rel_dir, self._ignore_patterns, is_dir=True
+            ):
                 dirnames.clear()
                 continue
 
             # Filter out ignored subdirectories
             dirnames[:] = [
-                d for d in dirnames
+                d
+                for d in dirnames
                 if not _is_ignored(
                     os.path.relpath(os.path.join(dirpath, d), self.project_root),
                     self._ignore_patterns,
@@ -484,14 +591,24 @@ class ProjectIndexer:
                 logger.debug("[ProjectIndexer] Read error %s: %s", rel_path, e)
                 continue
 
-            content_hash = hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest()[:16]
+            content_hash = hashlib.sha256(
+                content.encode("utf-8", errors="replace")
+            ).hexdigest()[:16]
             ct = classify_content_type(rel_path)
             line_count = content.count("\n") + 1
 
             # Store file metadata
             conn.execute(
                 "INSERT OR REPLACE INTO file_meta VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (rel_path, ct, content_hash, line_count, len(content), mtime, time.time()),
+                (
+                    rel_path,
+                    ct,
+                    content_hash,
+                    line_count,
+                    len(content),
+                    mtime,
+                    time.time(),
+                ),
             )
             self._file_hashes[rel_path] = content_hash
 
@@ -503,7 +620,15 @@ class ProjectIndexer:
             for chunk in chunks:
                 conn.execute(
                     "INSERT INTO chunks (file_path, content, start_line, end_line, content_type, section_title, content_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (chunk.file_path, chunk.content, chunk.start_line, chunk.end_line, chunk.content_type, chunk.section_title, chunk.content_hash),
+                    (
+                        chunk.file_path,
+                        chunk.content,
+                        chunk.start_line,
+                        chunk.end_line,
+                        chunk.content_type,
+                        chunk.section_title,
+                        chunk.content_hash,
+                    ),
                 )
                 chunks_created += 1
 
@@ -584,11 +709,15 @@ class ProjectIndexer:
             except Exception:
                 continue
 
-            new_hash = hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest()[:16]
+            new_hash = hashlib.sha256(
+                content.encode("utf-8", errors="replace")
+            ).hexdigest()[:16]
 
             if new_hash == old_hash:
                 # mtime changed but content didn't — update mtime only
-                conn.execute("UPDATE file_meta SET mtime = ? WHERE path = ?", (mtime, rel_path))
+                conn.execute(
+                    "UPDATE file_meta SET mtime = ? WHERE path = ?", (mtime, rel_path)
+                )
                 continue
 
             # File changed — re-index it
@@ -608,7 +737,15 @@ class ProjectIndexer:
             for chunk in chunks:
                 conn.execute(
                     "INSERT INTO chunks (file_path, content, start_line, end_line, content_type, section_title, content_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (chunk.file_path, chunk.content, chunk.start_line, chunk.end_line, chunk.content_type, chunk.section_title, chunk.content_hash),
+                    (
+                        chunk.file_path,
+                        chunk.content,
+                        chunk.start_line,
+                        chunk.end_line,
+                        chunk.content_type,
+                        chunk.section_title,
+                        chunk.content_hash,
+                    ),
                 )
                 chunks_added += 1
 
@@ -713,15 +850,17 @@ class ProjectIndexer:
             if total_chars + len(content) > max_chars:
                 continue
 
-            results.append(ProjectSearchResult(
-                file_path=fpath,
-                content=content,
-                start_line=sl,
-                end_line=el,
-                content_type=ct,
-                section_title=title,
-                score=round(score, 4),
-            ))
+            results.append(
+                ProjectSearchResult(
+                    file_path=fpath,
+                    content=content,
+                    start_line=sl,
+                    end_line=el,
+                    content_type=ct,
+                    section_title=title,
+                    score=round(score, 4),
+                )
+            )
             file_counts[fpath] = fc + 1
             total_chars += len(content)
 
@@ -739,7 +878,7 @@ class ProjectIndexer:
     def _sanitize_fts_query(query: str) -> str:
         """Convert natural language query to FTS5 safe query."""
         # Remove special FTS5 characters
-        cleaned = re.sub(r'[^\w\s]', ' ', query)
+        cleaned = re.sub(r"[^\w\s]", " ", query)
         tokens = cleaned.split()
         # Keep meaningful tokens
         tokens = [t for t in tokens if len(t) >= 2]
@@ -791,10 +930,14 @@ class ProjectIndexer:
 
         file_count = conn.execute("SELECT COUNT(*) FROM file_meta").fetchone()[0]
         chunk_count = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
-        total_chars = conn.execute("SELECT COALESCE(SUM(char_count), 0) FROM file_meta").fetchone()[0]
+        total_chars = conn.execute(
+            "SELECT COALESCE(SUM(char_count), 0) FROM file_meta"
+        ).fetchone()[0]
 
         last_scan = None
-        row = conn.execute("SELECT value FROM index_meta WHERE key = 'last_scan'").fetchone()
+        row = conn.execute(
+            "SELECT value FROM index_meta WHERE key = 'last_scan'"
+        ).fetchone()
         if row:
             last_scan = float(row[0])
 
@@ -815,7 +958,9 @@ class ProjectIndexer:
     def file_tree_summary(self, max_lines: int = 80) -> str:
         """Generate a compact file tree for LLM context injection."""
         conn = self._get_conn()
-        rows = conn.execute("SELECT path, content_type FROM file_meta ORDER BY path").fetchall()
+        rows = conn.execute(
+            "SELECT path, content_type FROM file_meta ORDER BY path"
+        ).fetchall()
 
         if not rows:
             return "(no files indexed)"
@@ -833,7 +978,9 @@ class ProjectIndexer:
             files = groups[folder]
             lines.append(f"  {folder}/ ({len(files)} files)")
             if len(lines) >= max_lines:
-                lines.append(f"  ... and {len(rows) - sum(len(v) for v in groups.values())} more")
+                lines.append(
+                    f"  ... and {len(rows) - sum(len(v) for v in groups.values())} more"
+                )
                 break
 
         return "\n".join(lines[:max_lines])

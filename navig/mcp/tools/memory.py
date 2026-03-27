@@ -3,107 +3,107 @@ from typing import Any, Dict
 
 def register(server: Any) -> None:
     """Register memory (key facts) tools."""
-    server.tools.update({
-        "memory.key_facts.remember": {
-            "name": "memory.key_facts.remember",
-            "description": "Store a key fact in persistent memory.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "fact": {
-                        "type": "string",
-                        "description": "The fact text to remember"
+    server.tools.update(
+        {
+            "memory.key_facts.remember": {
+                "name": "memory.key_facts.remember",
+                "description": "Store a key fact in persistent memory.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "fact": {
+                            "type": "string",
+                            "description": "The fact text to remember",
+                        },
+                        "source": {
+                            "type": "string",
+                            "description": "Origin label for this fact (defaults to 'mcp')",
+                            "default": "mcp",
+                        },
+                        "tags": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Optional topic tags",
+                        },
                     },
-                    "source": {
-                        "type": "string",
-                        "description": "Origin label for this fact (defaults to 'mcp')",
-                        "default": "mcp"
+                    "required": ["fact"],
+                },
+            },
+            "memory.key_facts.forget": {
+                "name": "memory.key_facts.forget",
+                "description": "Soft-delete a stored key fact by its ID.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "fact_id": {
+                            "type": "string",
+                            "description": "UUID of the fact to forget",
+                        }
                     },
-                    "tags": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Optional topic tags"
-                    }
+                    "required": ["fact_id"],
                 },
-                "required": ["fact"]
-            }
-        },
-        "memory.key_facts.forget": {
-            "name": "memory.key_facts.forget",
-            "description": "Soft-delete a stored key fact by its ID.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "fact_id": {
-                        "type": "string",
-                        "description": "UUID of the fact to forget"
-                    }
-                },
-                "required": ["fact_id"]
-            }
-        },
-        "memory.key_facts.retrieve": {
-            "name": "memory.key_facts.retrieve",
-            "description": "Search persistent memory for key facts matching a query.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search query"
+            },
+            "memory.key_facts.retrieve": {
+                "name": "memory.key_facts.retrieve",
+                "description": "Search persistent memory for key facts matching a query.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query"},
+                        "limit": {
+                            "type": "integer",
+                            "description": "Maximum number of facts to return",
+                            "default": 10,
+                        },
                     },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Maximum number of facts to return",
-                        "default": 10
-                    }
+                    "required": ["query"],
                 },
-                "required": ["query"]
-            }
-        },
-        "memory.key_facts.stats": {
-            "name": "memory.key_facts.stats",
-            "description": "Return counts of total, active, deleted, and superseded facts.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        },
-        "memory.key_facts.update": {
-            "name": "memory.key_facts.update",
-            "description": "Update the content of an existing key fact by its ID.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "fact_id": {
-                        "type": "string",
-                        "description": "UUID of the fact to update"
+            },
+            "memory.key_facts.stats": {
+                "name": "memory.key_facts.stats",
+                "description": "Return counts of total, active, deleted, and superseded facts.",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+            },
+            "memory.key_facts.update": {
+                "name": "memory.key_facts.update",
+                "description": "Update the content of an existing key fact by its ID.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "fact_id": {
+                            "type": "string",
+                            "description": "UUID of the fact to update",
+                        },
+                        "new_content": {
+                            "type": "string",
+                            "description": "Replacement fact text",
+                        },
                     },
-                    "new_content": {
-                        "type": "string",
-                        "description": "Replacement fact text"
-                    }
+                    "required": ["fact_id", "new_content"],
                 },
-                "required": ["fact_id", "new_content"]
-            }
+            },
         }
-    })
+    )
 
-    server._tool_handlers.update({
-        "memory.key_facts.remember": _tool_memory_remember,
-        "memory.key_facts.forget": _tool_memory_forget,
-        "memory.key_facts.retrieve": _tool_memory_retrieve,
-        "memory.key_facts.stats": _tool_memory_stats,
-        "memory.key_facts.update": _tool_memory_update,
-    })
+    server._tool_handlers.update(
+        {
+            "memory.key_facts.remember": _tool_memory_remember,
+            "memory.key_facts.forget": _tool_memory_forget,
+            "memory.key_facts.retrieve": _tool_memory_retrieve,
+            "memory.key_facts.stats": _tool_memory_stats,
+            "memory.key_facts.update": _tool_memory_update,
+        }
+    )
+
 
 def _tool_memory_remember(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
     """Store a key fact via KeyFactStore.upsert()."""
     import logging as _logging
+
     _log = _logging.getLogger("navig.mcp.memory.remember")
     try:
         from navig.memory.key_facts import KeyFact, KeyFactStore
+
         fact_text = args.get("fact", "").strip()
         if not fact_text:
             return {"error": "fact is required", "isError": True}
@@ -121,12 +121,15 @@ def _tool_memory_remember(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
         _log.error("memory.key_facts.remember failed: %s", exc, exc_info=True)
         return {"error": str(exc), "isError": True}
 
+
 def _tool_memory_forget(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
     """Soft-delete a key fact via KeyFactStore.soft_delete()."""
     import logging as _logging
+
     _log = _logging.getLogger("navig.mcp.memory.forget")
     try:
         from navig.memory.key_facts import KeyFactStore
+
         fact_id = args.get("fact_id", "").strip()
         if not fact_id:
             return {"error": "fact_id is required", "isError": True}
@@ -144,13 +147,16 @@ def _tool_memory_forget(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
         _log.error("memory.key_facts.forget failed: %s", exc, exc_info=True)
         return {"error": str(exc), "fact_id": args.get("fact_id"), "isError": True}
 
+
 def _tool_memory_retrieve(server: Any, args: Dict[str, Any]) -> Any:
     """Search key facts via FactRetriever.retrieve()."""
     import logging as _logging
+
     _log = _logging.getLogger("navig.mcp.memory.retrieve")
     try:
         from navig.memory.fact_retriever import FactRetriever
         from navig.memory.key_facts import KeyFactStore
+
         query = args.get("query", "").strip()
         if not query:
             return []
@@ -175,12 +181,15 @@ def _tool_memory_retrieve(server: Any, args: Dict[str, Any]) -> Any:
         _log.error("memory.key_facts.retrieve failed: %s", exc, exc_info=True)
         return {"error": str(exc), "facts": [], "isError": True}
 
+
 def _tool_memory_stats(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
     """Return store statistics via KeyFactStore.get_stats()."""
     import logging as _logging
+
     _log = _logging.getLogger("navig.mcp.memory.stats")
     try:
         from navig.memory.key_facts import KeyFactStore
+
         store = KeyFactStore()
         return store.get_stats()
     except Exception as exc:
@@ -191,9 +200,11 @@ def _tool_memory_stats(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
 def _tool_memory_update(server: Any, args: Dict[str, Any]) -> Dict[str, Any]:
     """Update an existing fact's content in-place (soft-delete + re-insert)."""
     import logging as _logging
+
     _log = _logging.getLogger("navig.mcp.memory.update")
     try:
         from navig.memory.key_facts import KeyFact, KeyFactStore
+
         fact_id = args.get("fact_id", "").strip()
         new_content = args.get("new_content", "").strip()
         if not fact_id:

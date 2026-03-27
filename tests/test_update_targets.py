@@ -1,4 +1,5 @@
 """Tests for navig.update.targets — TargetResolver."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -32,6 +33,7 @@ def _make_cm(host_names=None, group_map=None):
 # Default (no args)
 # ---------------------------------------------------------------------------
 
+
 class TestDefaultResolution:
     def test_returns_local(self):
         r = TargetResolver(_make_cm()).resolve()
@@ -52,6 +54,7 @@ class TestDefaultResolution:
 # --host
 # ---------------------------------------------------------------------------
 
+
 class TestHostResolution:
     def test_ssh_target(self):
         cm = _make_cm(host_names=["web-prod"])
@@ -71,6 +74,7 @@ class TestHostResolution:
 # ---------------------------------------------------------------------------
 # --group
 # ---------------------------------------------------------------------------
+
 
 class TestGroupResolution:
     def test_group_with_two_hosts(self):
@@ -96,6 +100,7 @@ class TestGroupResolution:
 # --all
 # ---------------------------------------------------------------------------
 
+
 class TestAllResolution:
     def test_all_includes_local_first(self):
         cm = _make_cm(host_names=["h1", "h2"])
@@ -114,6 +119,7 @@ class TestAllResolution:
 # UpdateTarget
 # ---------------------------------------------------------------------------
 
+
 class TestUpdateTarget:
     def test_is_local(self):
         t = UpdateTarget(node_id="local", type="local")
@@ -121,5 +127,7 @@ class TestUpdateTarget:
         assert t.label == "local"
 
     def test_is_ssh(self):
-        t = UpdateTarget(node_id="myhost", type="ssh", server_config={"host": "1.1.1.1"})
+        t = UpdateTarget(
+            node_id="myhost", type="ssh", server_config={"host": "1.1.1.1"}
+        )
         assert not t.is_local

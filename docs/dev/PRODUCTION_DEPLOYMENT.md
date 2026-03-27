@@ -313,8 +313,8 @@ EOF
 # Create log rotation script
 $scriptPath = "$env:USERPROFILE\.navig\scripts\rotate-logs.ps1"
 @"
-Get-ChildItem "$env:USERPROFILE\.navig\*.log" | 
-Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } | 
+Get-ChildItem "$env:USERPROFILE\.navig\*.log" |
+Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } |
 Remove-Item
 "@ | Out-File -FilePath $scriptPath
 
@@ -780,5 +780,3 @@ For issues or questions:
 - [Goal Planning](AGENT_GOALS.md)
 - [Self-Healing](AGENT_SELF_HEALING.md)
 - [Troubleshooting](troubleshooting.md)
-
-

@@ -28,6 +28,7 @@ Completion is marked in ~/.navig/.pinged — subsequent runs are silent no-ops.
 
 This telemetry exists solely to count installs. That's it.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -93,7 +94,9 @@ def _machine_id() -> Optional[str]:
                 timeout=5,
             )
             # Output has a header line "UUID" then the value on line [1]
-            lines = [ln.strip() for ln in result.stdout.strip().splitlines() if ln.strip()]
+            lines = [
+                ln.strip() for ln in result.stdout.strip().splitlines() if ln.strip()
+            ]
             if len(lines) >= 2:
                 return lines[1]  # lines[0] == "UUID" (header), lines[1] == actual value
             return None
@@ -170,15 +173,16 @@ def ping_install_if_first_time() -> None:
     sys.stdout.flush()
 
     payload = {
-        "event":    "install",
+        "event": "install",
         "platform": platform.system(),
-        "arch":     platform.machine(),
-        "python":   platform.python_version(),
-        "anon_id":  _build_anon_id(),
+        "arch": platform.machine(),
+        "python": platform.python_version(),
+        "anon_id": _build_anon_id(),
     }
 
     try:
         import requests as _req
+
         _req.post(
             f"{TELEMETRY_URL}/telemetry/ping",
             json=payload,

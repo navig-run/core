@@ -17,7 +17,12 @@ from navig.mesh.discovery import MeshDiscovery
 from navig.mesh.registry import NodeRecord, NodeRegistry, get_registry
 
 __all__ = [
-    "NodeRecord", "NodeRegistry", "get_registry",
+    "NodeRecord",
+    "NodeRegistry",
+    "get_registry",
     "MeshDiscovery",
-    "load_secret", "attach_hmac", "verify_payload", "HMAC_FIELD",
+    "load_secret",
+    "attach_hmac",
+    "verify_payload",
+    "HMAC_FIELD",
 ]

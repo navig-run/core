@@ -2,17 +2,19 @@
 Tests for navig.mesh.registry — unit coverage for NodeRecord health, eviction,
 best-peer selection, and persistence round-trip.
 """
+
 import json
 import time
 from pathlib import Path
+
 import pytest
 
 from navig.mesh.registry import (
+    DEGRADED_AFTER_S,
+    EVICT_AFTER_S,
+    OFFLINE_AFTER_S,
     NodeRecord,
     NodeRegistry,
-    DEGRADED_AFTER_S,
-    OFFLINE_AFTER_S,
-    EVICT_AFTER_S,
 )
 
 
@@ -51,17 +53,17 @@ class TestNodeRecordSerialization:
     def test_round_trip(self):
         r = _make_record()
         d = r.to_dict()
-        r2 = NodeRecord.from_dict(dict(d))   # from_dict strips 'health' and 'is_self'
+        r2 = NodeRecord.from_dict(dict(d))  # from_dict strips 'health' and 'is_self'
         assert r2.node_id == r.node_id
         assert r2.gateway_url == r.gateway_url
-        assert r2.is_self is False           # from_dict never trusts external is_self
+        assert r2.is_self is False  # from_dict never trusts external is_self
 
     def test_health_not_stored(self):
         """health is a computed property — should not be in from_dict fields."""
         r = _make_record()
         d = r.to_dict()
-        assert "health" in d                 # present in API output
-        r2 = NodeRecord.from_dict(d)         # from_dict drops it
+        assert "health" in d  # present in API output
+        r2 = NodeRecord.from_dict(d)  # from_dict drops it
         assert r2.health in {"online", "degraded", "offline"}
 
 
@@ -81,19 +83,23 @@ class TestNodeRegistry:
 
     def test_offline_peer_not_returned_as_best(self, tmp_path):
         reg = NodeRegistry(tmp_path)
-        reg.upsert_peer(_make_record(
-            node_id="old",
-            load=0.0,
-            last_seen=time.time() - OFFLINE_AFTER_S - 10,
-        ))
+        reg.upsert_peer(
+            _make_record(
+                node_id="old",
+                load=0.0,
+                last_seen=time.time() - OFFLINE_AFTER_S - 10,
+            )
+        )
         assert reg.get_best_peer() is None
 
     def test_eviction_after_long_absence(self, tmp_path):
         reg = NodeRegistry(tmp_path)
-        reg.upsert_peer(_make_record(
-            node_id="ghost",
-            last_seen=time.time() - EVICT_AFTER_S - 10,
-        ))
+        reg.upsert_peer(
+            _make_record(
+                node_id="ghost",
+                last_seen=time.time() - EVICT_AFTER_S - 10,
+            )
+        )
         peers = reg.get_peers()
         assert not any(r.node_id == "ghost" for r in peers)
 

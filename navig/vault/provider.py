@@ -9,6 +9,7 @@ Add an entry to PROVIDERS with at minimum: key_field, env.
 ``label`` is shown in ``navig vault provider list``.
 ``test_url`` (optional) is used by ``navig vault provider test``.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -22,126 +23,126 @@ __all__ = ["PROVIDERS", "get_provider", "list_providers", "resolve_env"]
 PROVIDERS: dict[str, dict] = {
     # ── AI / LLM providers ───────────────────────────────────────────────────
     "openai": {
-        "label":     "OpenAI",
+        "label": "OpenAI",
         "key_field": "api_key",
-        "env":       "OPENAI_API_KEY",
-        "test_url":  "https://api.openai.com/v1/models",
+        "env": "OPENAI_API_KEY",
+        "test_url": "https://api.openai.com/v1/models",
     },
     "anthropic": {
-        "label":     "Anthropic",
+        "label": "Anthropic",
         "key_field": "api_key",
-        "env":       "ANTHROPIC_API_KEY",
-        "test_url":  "https://api.anthropic.com/v1/messages",
+        "env": "ANTHROPIC_API_KEY",
+        "test_url": "https://api.anthropic.com/v1/messages",
     },
     "openrouter": {
-        "label":     "OpenRouter",
+        "label": "OpenRouter",
         "key_field": "api_key",
-        "env":       "OPENROUTER_API_KEY",
-        "test_url":  "https://openrouter.ai/api/v1/auth/key",
+        "env": "OPENROUTER_API_KEY",
+        "test_url": "https://openrouter.ai/api/v1/auth/key",
     },
     "groq": {
-        "label":     "Groq",
+        "label": "Groq",
         "key_field": "api_key",
-        "env":       "GROQ_API_KEY",
-        "test_url":  "https://api.groq.com/openai/v1/models",
+        "env": "GROQ_API_KEY",
+        "test_url": "https://api.groq.com/openai/v1/models",
     },
     "mistral": {
-        "label":     "Mistral AI",
+        "label": "Mistral AI",
         "key_field": "api_key",
-        "env":       "MISTRAL_API_KEY",
+        "env": "MISTRAL_API_KEY",
     },
     "cohere": {
-        "label":     "Cohere",
+        "label": "Cohere",
         "key_field": "api_key",
-        "env":       "COHERE_API_KEY",
+        "env": "COHERE_API_KEY",
     },
     # ── Code & DevOps ────────────────────────────────────────────────────────
     "github": {
-        "label":     "GitHub",
+        "label": "GitHub",
         "key_field": "token",
-        "env":       "GITHUB_TOKEN",
-        "test_url":  "https://api.github.com/user",
+        "env": "GITHUB_TOKEN",
+        "test_url": "https://api.github.com/user",
     },
     # Separate PAT for Self-Heal contribution submissions (requires repo + fork
     # scopes).  Kept isolated from the "github" entry which is used for GitHub
     # Models LLM access and should remain read-only.
     "github_contribute": {
-        "label":     "GitHub (Self-Heal Contributions)",
+        "label": "GitHub (Self-Heal Contributions)",
         "key_field": "token",
-        "env":       "NAVIG_GITHUB_TOKEN",
-        "test_url":  "https://api.github.com/user",
+        "env": "NAVIG_GITHUB_TOKEN",
+        "test_url": "https://api.github.com/user",
     },
     "gitlab": {
-        "label":     "GitLab",
+        "label": "GitLab",
         "key_field": "token",
-        "env":       "GITLAB_TOKEN",
-        "test_url":  "https://gitlab.com/api/v4/user",
+        "env": "GITLAB_TOKEN",
+        "test_url": "https://gitlab.com/api/v4/user",
     },
     "vercel": {
-        "label":     "Vercel",
+        "label": "Vercel",
         "key_field": "token",
-        "env":       "VERCEL_TOKEN",
+        "env": "VERCEL_TOKEN",
     },
     # ── Messaging / bots ──────────────────────────────────────────────────────
     "telegram": {
-        "label":     "Telegram Bot",
+        "label": "Telegram Bot",
         "key_field": "bot_token",
-        "env":       "TELEGRAM_BOT_TOKEN",
-        "test_url":  "https://api.telegram.org/bot{token}/getMe",
+        "env": "TELEGRAM_BOT_TOKEN",
+        "test_url": "https://api.telegram.org/bot{token}/getMe",
     },
     "slack": {
-        "label":     "Slack",
+        "label": "Slack",
         "key_field": "bot_token",
-        "env":       "SLACK_BOT_TOKEN",
+        "env": "SLACK_BOT_TOKEN",
     },
     "discord": {
-        "label":     "Discord",
+        "label": "Discord",
         "key_field": "bot_token",
-        "env":       "DISCORD_BOT_TOKEN",
+        "env": "DISCORD_BOT_TOKEN",
     },
     # ── Cloud / infra ─────────────────────────────────────────────────────────
     "aws": {
-        "label":        "AWS",
-        "key_field":    "secret_access_key",
-        "env":          "AWS_SECRET_ACCESS_KEY",
+        "label": "AWS",
+        "key_field": "secret_access_key",
+        "env": "AWS_SECRET_ACCESS_KEY",
         "extra_fields": ["access_key_id", "region"],
     },
     "gcp": {
-        "label":     "Google Cloud",
+        "label": "Google Cloud",
         "key_field": "service_account_json",
-        "env":       "GOOGLE_APPLICATION_CREDENTIALS",
+        "env": "GOOGLE_APPLICATION_CREDENTIALS",
     },
     "azure": {
-        "label":     "Azure",
+        "label": "Azure",
         "key_field": "client_secret",
-        "env":       "AZURE_CLIENT_SECRET",
+        "env": "AZURE_CLIENT_SECRET",
     },
     "example-vps": {
-        "label":     "Hetzner Cloud",
+        "label": "Hetzner Cloud",
         "key_field": "api_token",
-        "env":       "HCLOUD_TOKEN",
+        "env": "HCLOUD_TOKEN",
     },
     "digitalocean": {
-        "label":     "DigitalOcean",
+        "label": "DigitalOcean",
         "key_field": "api_token",
-        "env":       "DIGITALOCEAN_TOKEN",
+        "env": "DIGITALOCEAN_TOKEN",
     },
     # ── Payments ──────────────────────────────────────────────────────────────
     "stripe": {
-        "label":     "Stripe",
+        "label": "Stripe",
         "key_field": "secret_key",
-        "env":       "STRIPE_SECRET_KEY",
+        "env": "STRIPE_SECRET_KEY",
     },
     # ── Data / storage ────────────────────────────────────────────────────────
     "supabase": {
-        "label":     "Supabase",
+        "label": "Supabase",
         "key_field": "service_role_key",
-        "env":       "SUPABASE_SERVICE_ROLE_KEY",
+        "env": "SUPABASE_SERVICE_ROLE_KEY",
     },
     "planetscale": {
-        "label":     "PlanetScale",
+        "label": "PlanetScale",
         "key_field": "password",
-        "env":       "PLANETSCALE_PASSWORD",
+        "env": "PLANETSCALE_PASSWORD",
     },
 }
 
@@ -162,6 +163,7 @@ def resolve_env(provider_name: str) -> Optional[str]:
     Supports format strings in test_url (e.g. ``{token}``).
     """
     import os
+
     meta = get_provider(provider_name)
     if not meta:
         return None

@@ -12,6 +12,7 @@ Design decisions:
 - QR target is a real URI. The QR is always scannable.
 - genesis.json is IMMUTABLE after first write — enforced in load_or_create().
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -28,12 +29,14 @@ from typing import Optional
 try:
     import qrcode
     import qrcode.constants
+
     _QR_AVAILABLE = True
 except ImportError:
     _QR_AVAILABLE = False
 
 try:
     from PIL import Image, ImageDraw, ImageFont
+
     _PIL_AVAILABLE = True
 except ImportError:
     _PIL_AVAILABLE = False
@@ -48,14 +51,14 @@ NODE_URL_BASE = "https://navig.run/node"
 # 8 fixed accent colors — assigned deterministically per node ID.
 # High contrast on both dark and light terminal backgrounds.
 _ACCENT_COLORS: list[tuple[int, int, int]] = [
-    (34, 211, 238),   # cyan
-    (74, 222, 128),   # emerald
-    (251, 191, 36),   # amber
-    (249, 115, 22),   # orange
+    (34, 211, 238),  # cyan
+    (74, 222, 128),  # emerald
+    (251, 191, 36),  # amber
+    (249, 115, 22),  # orange
     (167, 139, 250),  # violet
-    (244, 63, 94),    # rose
-    (56, 189, 248),   # sky
-    (52, 211, 153),   # teal
+    (244, 63, 94),  # rose
+    (56, 189, 248),  # sky
+    (52, 211, 153),  # teal
 ]
 
 # ANSI 256-color closest matches for the accent colors (for basic terminals)
@@ -120,6 +123,7 @@ class GenesisData:
 
 # ── Core derivation ────────────────────────────────────────────────────────
 
+
 def _derive_node_id(born_at: str) -> str:
     """
     Stable hash of hostname + creation timestamp.
@@ -143,6 +147,7 @@ def _qr_target(node_id: str) -> str:
 
 # ── Public API ─────────────────────────────────────────────────────────────
 
+
 def load_or_create(navig_dir: Path, name: str) -> GenesisData:
     """
     Idempotent genesis loader.
@@ -155,7 +160,9 @@ def load_or_create(navig_dir: Path, name: str) -> GenesisData:
     if genesis_path.exists():
         try:
             raw = json.loads(genesis_path.read_text(encoding="utf-8"))
-            return GenesisData(**{k: raw.get(k) for k in GenesisData.__dataclass_fields__})
+            return GenesisData(
+                **{k: raw.get(k) for k in GenesisData.__dataclass_fields__}
+            )
         except Exception:
             pass  # Corrupt file — regenerate
 
@@ -190,6 +197,7 @@ def load_or_create(navig_dir: Path, name: str) -> GenesisData:
 
 
 # ── Avatar PNG ─────────────────────────────────────────────────────────────
+
 
 def _export_avatar_png(
     navig_dir: Path,
@@ -226,7 +234,9 @@ def _export_avatar_png(
 
         # Outer accent border
         b = 4
-        draw.rectangle([b, b, canvas_size - b, canvas_size - b], outline=accent, width=b)
+        draw.rectangle(
+            [b, b, canvas_size - b, canvas_size - b], outline=accent, width=b
+        )
 
         # QR centered, with label space at bottom
         label_h = 44
@@ -249,9 +259,11 @@ def _export_avatar_png(
 
     except Exception as exc:  # noqa: BLE001
         import warnings
+
         warnings.warn(
             f"Avatar PNG export failed ({exc}). Continuing without avatar.",
-            UserWarning, stacklevel=2,
+            UserWarning,
+            stacklevel=2,
         )
         return None
 
@@ -284,6 +296,7 @@ def _draw_label(
 
 
 # ── Terminal render ────────────────────────────────────────────────────────
+
 
 def _supports_unicode() -> bool:
     """Detect Unicode block character support at runtime."""
@@ -342,17 +355,21 @@ def render_qr_terminal(genesis: GenesisData) -> str:
         lines: list[str] = []
         if use_unicode:
             _BLOCKS = {
-                (True,  True):  "\u2588",  # █ full
-                (True,  False): "\u2580",  # ▀ upper half
-                (False, True):  "\u2584",  # ▄ lower half
+                (True, True): "\u2588",  # █ full
+                (True, False): "\u2580",  # ▀ upper half
+                (False, True): "\u2584",  # ▄ lower half
                 (False, False): " ",
             }
             # White on dark for the QR cells
-            fg_on  = "\x1b[97m"   # bright white
-            fg_off = "\x1b[90m"   # dark grey
+            fg_on = "\x1b[97m"  # bright white
+            fg_off = "\x1b[90m"  # dark grey
             for row_idx in range(0, len(matrix), 2):
                 row_top = matrix[row_idx]
-                row_bot = matrix[row_idx + 1] if row_idx + 1 < len(matrix) else [False] * len(row_top)
+                row_bot = (
+                    matrix[row_idx + 1]
+                    if row_idx + 1 < len(matrix)
+                    else [False] * len(row_top)
+                )
                 row_str = ""
                 for t, bot in zip(row_top, row_bot):
                     ch = _BLOCKS[(t, bot)]
@@ -380,23 +397,23 @@ def render_genesis_banner(genesis: GenesisData) -> str:
       ✦  navig_d1ccd9  (NEURON)  ·  born 2026-03-15
       "Infrastructure is the product."
     """
-    use_tc  = _supports_truecolor()
+    use_tc = _supports_truecolor()
     r, g, b = genesis.accent_rgb()
-    a256    = genesis.accent_ansi256()
-    accent  = _ansi_fg(r, g, b, use_tc, a256)
-    bold    = "\x1b[1m"
-    dim     = "\x1b[2m"
-    reset   = "\x1b[0m"
+    a256 = genesis.accent_ansi256()
+    accent = _ansi_fg(r, g, b, use_tc, a256)
+    bold = "\x1b[1m"
+    dim = "\x1b[2m"
+    reset = "\x1b[0m"
 
-    spark   = "✦" if _supports_unicode() else "*"
-    dot     = "·" if _supports_unicode() else "."
+    spark = "✦" if _supports_unicode() else "*"
+    dot = "·" if _supports_unicode() else "."
     # Date portion only (YYYY-MM-DD)
     born_date = genesis.bornAt[:10] if genesis.bornAt else ""
-    name_s  = f"  {dim}({genesis.name}){reset}" if genesis.name else ""
-    born_s  = f"  {dim}{dot}  born {born_date}{reset}" if born_date else ""
+    name_s = f"  {dim}({genesis.name}){reset}" if genesis.name else ""
+    born_s = f"  {dim}{dot}  born {born_date}{reset}" if born_date else ""
 
     lines = [
         f"  {accent}{spark}{reset}  {accent}{bold}{genesis.nodeId}{reset}{name_s}{born_s}",
-        f"  {dim}\"{genesis.maxim()}\"{reset}",
+        f'  {dim}"{genesis.maxim()}"{reset}',
     ]
     return "\n".join(lines)

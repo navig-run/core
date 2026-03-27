@@ -1,4 +1,5 @@
 """Database Commands - Execute SQL through encrypted tunnels"""
+
 import json
 import os
 import subprocess
@@ -16,9 +17,9 @@ def _create_mysql_config_file(user: str, password: str) -> str:
     Returns path to config file.
     SECURITY: Prevents password from appearing in process listings.
     """
-    fd, config_path = tempfile.mkstemp(suffix='.cnf', text=True)
+    fd, config_path = tempfile.mkstemp(suffix=".cnf", text=True)
     try:
-        with os.fdopen(fd, 'w') as f:
+        with os.fdopen(fd, "w") as f:
             f.write("[client]\n")
             f.write(f"user={user}\n")
             f.write(f"password={password}\n")
@@ -41,17 +42,19 @@ def execute_sql(query: str, options: Dict[str, Any]):
     config_manager = get_config_manager()
     tunnel_manager = TunnelManager(config_manager)
 
-    server_name = options.get('app') or config_manager.get_active_server()
+    server_name = options.get("app") or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return
 
-    dry_run = options.get('dry_run', False)
-    json_enabled = options.get('json', False)
+    dry_run = options.get("dry_run", False)
+    json_enabled = options.get("json", False)
 
     if dry_run:
         if json_enabled:
-            ch.raw_print(json.dumps({"dry_run": True, "action": "execute_sql", "query": query}))
+            ch.raw_print(
+                json.dumps({"dry_run": True, "action": "execute_sql", "query": query})
+            )
         else:
             ch.info(f"[DRY RUN] Would execute SQL: {query}")
         return
@@ -64,8 +67,8 @@ def execute_sql(query: str, options: Dict[str, Any]):
         operation_name=f"SQL: {query_preview}",
         operation_type=query_type,
         host=server_name,
-        auto_confirm=options.get('yes', False),
-        force_confirm=options.get('confirm', False),
+        auto_confirm=options.get("yes", False),
+        force_confirm=options.get("confirm", False),
     ):
         ch.warning("Cancelled.")
         return
@@ -77,31 +80,38 @@ def execute_sql(query: str, options: Dict[str, Any]):
         tunnel_info = tunnel_manager.start_tunnel(server_name)
 
     server_config = config_manager.load_server_config(server_name)
-    db = server_config['database']
+    db = server_config["database"]
 
     # Create secure config file (prevents password in process listings)
-    config_file = _create_mysql_config_file(db['user'], db['password'])
+    config_file = _create_mysql_config_file(db["user"], db["password"])
 
     try:
         # Execute via mysql client
         mysql_cmd = [
-            'mysql',
-            f'--defaults-file={config_file}',
-            '-h', '127.0.0.1',
-            '-P', str(tunnel_info['local_port']),
-            db['name'],
-            '-e', query
+            "mysql",
+            f"--defaults-file={config_file}",
+            "-h",
+            "127.0.0.1",
+            "-P",
+            str(tunnel_info["local_port"]),
+            db["name"],
+            "-e",
+            query,
         ]
 
         try:
             result = subprocess.run(mysql_cmd, capture_output=True, text=True)
             if json_enabled:
-                ch.raw_print(json.dumps({
-                    "query": query,
-                    "success": result.returncode == 0,
-                    "output": result.stdout if result.returncode == 0 else None,
-                    "error": result.stderr if result.returncode != 0 else None
-                }))
+                ch.raw_print(
+                    json.dumps(
+                        {
+                            "query": query,
+                            "success": result.returncode == 0,
+                            "output": result.stdout if result.returncode == 0 else None,
+                            "error": result.stderr if result.returncode != 0 else None,
+                        }
+                    )
+                )
             else:
                 if result.returncode == 0:
                     ch.raw_print(result.stdout)
@@ -109,7 +119,9 @@ def execute_sql(query: str, options: Dict[str, Any]):
                     ch.error(f"SQL Error: {result.stderr}")
         except FileNotFoundError:
             if json_enabled:
-                ch.raw_print(json.dumps({"success": False, "error": "mysql client not found"}))
+                ch.raw_print(
+                    json.dumps({"success": False, "error": "mysql client not found"})
+                )
             else:
                 ch.error("mysql client not found. Please install MySQL client tools.")
     finally:
@@ -138,13 +150,13 @@ def backup_database(path: Optional[Path], options: Dict[str, Any]):
     config_manager = get_config_manager()
     tunnel_manager = TunnelManager(config_manager)
 
-    server_name = options.get('app') or config_manager.get_active_server()
+    server_name = options.get("app") or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return
 
-    dry_run = options.get('dry_run', False)
-    json_enabled = options.get('json', False)
+    dry_run = options.get("dry_run", False)
+    json_enabled = options.get("json", False)
 
     # Default path
     if path is None:
@@ -157,11 +169,20 @@ def backup_database(path: Optional[Path], options: Dict[str, Any]):
         tunnel_info = tunnel_manager.start_tunnel(server_name)
 
     server_config = config_manager.load_server_config(server_name)
-    db = server_config['database']
+    db = server_config["database"]
 
     if dry_run:
         if json_enabled:
-            ch.raw_print(json.dumps({"dry_run": True, "action": "backup", "database": db['name'], "path": str(path)}))
+            ch.raw_print(
+                json.dumps(
+                    {
+                        "dry_run": True,
+                        "action": "backup",
+                        "database": db["name"],
+                        "path": str(path),
+                    }
+                )
+            )
         else:
             ch.info(f"[DRY RUN] Would backup database: {db['name']}")
             ch.dim(f"[DRY RUN] Destination: {path}")
@@ -171,25 +192,38 @@ def backup_database(path: Optional[Path], options: Dict[str, Any]):
         ch.info(f"Creating backup: {path}")
 
     # Create secure config file (prevents password in process listings)
-    config_file = _create_mysql_config_file(db['user'], db['password'])
+    config_file = _create_mysql_config_file(db["user"], db["password"])
 
     try:
         mysqldump_cmd = [
-            'mysqldump',
-            f'--defaults-file={config_file}',
-            '-h', '127.0.0.1',
-            '-P', str(tunnel_info['local_port']),
-            db['name']
+            "mysqldump",
+            f"--defaults-file={config_file}",
+            "-h",
+            "127.0.0.1",
+            "-P",
+            str(tunnel_info["local_port"]),
+            db["name"],
         ]
 
         try:
-            with open(path, 'w') as f:
-                result = subprocess.run(mysqldump_cmd, stdout=f, stderr=subprocess.PIPE, text=True)
+            with open(path, "w") as f:
+                result = subprocess.run(
+                    mysqldump_cmd, stdout=f, stderr=subprocess.PIPE, text=True
+                )
 
             if result.returncode == 0:
                 size = path.stat().st_size
                 if json_enabled:
-                    ch.raw_print(json.dumps({"success": True, "database": db['name'], "path": str(path), "size_bytes": size}))
+                    ch.raw_print(
+                        json.dumps(
+                            {
+                                "success": True,
+                                "database": db["name"],
+                                "path": str(path),
+                                "size_bytes": size,
+                            }
+                        )
+                    )
                 else:
                     ch.success(f"✓ Backup complete: {size:,} bytes")
             else:
@@ -199,7 +233,9 @@ def backup_database(path: Optional[Path], options: Dict[str, Any]):
                     ch.error(f"Backup failed: {result.stderr}")
         except FileNotFoundError:
             if json_enabled:
-                ch.raw_print(json.dumps({"success": False, "error": "mysqldump not found"}))
+                ch.raw_print(
+                    json.dumps({"success": False, "error": "mysqldump not found"})
+                )
             else:
                 ch.error("mysqldump not found. Please install MySQL client tools.")
             ch.info("")
@@ -230,13 +266,13 @@ def restore_database(file: Path, options: Dict[str, Any]):
     config_manager = get_config_manager()
     tunnel_manager = TunnelManager(config_manager)
 
-    server_name = options.get('app') or config_manager.get_active_server()
+    server_name = options.get("app") or config_manager.get_active_server()
     if not server_name:
         ch.error("No active server.")
         return
 
-    dry_run = options.get('dry_run', False)
-    json_enabled = options.get('json', False)
+    dry_run = options.get("dry_run", False)
+    json_enabled = options.get("json", False)
 
     # Safety check - verify backup file integrity if checksum exists
     backup_dir = file.parent
@@ -244,7 +280,16 @@ def restore_database(file: Path, options: Dict[str, Any]):
 
     if dry_run:
         if json_enabled:
-            ch.raw_print(json.dumps({"dry_run": True, "action": "restore", "file": str(file), "warning": "This will OVERWRITE the database"}))
+            ch.raw_print(
+                json.dumps(
+                    {
+                        "dry_run": True,
+                        "action": "restore",
+                        "file": str(file),
+                        "warning": "This will OVERWRITE the database",
+                    }
+                )
+            )
         else:
             ch.warning(f"[DRY RUN] Would restore database from: {file}")
             ch.warning("[DRY RUN] This will REPLACE all data in the database")
@@ -255,15 +300,15 @@ def restore_database(file: Path, options: Dict[str, Any]):
             with open(metadata_file) as f:
                 metadata = json.load(f)
                 # Find checksum for this file
-                for db_info in metadata.get('databases', []):
-                    if db_info.get('file') == file.name and 'checksum' in db_info:
+                for db_info in metadata.get("databases", []):
+                    if db_info.get("file") == file.name and "checksum" in db_info:
                         ch.info("Verifying backup integrity...")
                         actual_checksum = _calculate_file_checksum(file)
-                        if actual_checksum != db_info['checksum']:
+                        if actual_checksum != db_info["checksum"]:
                             ch.error("Backup file corrupted! Checksum mismatch.")
                             ch.error(f"Expected: {db_info['checksum'][:16]}...")
                             ch.error(f"Actual: {actual_checksum[:16]}...")
-                            if not options.get('force'):
+                            if not options.get("force"):
                                 ch.error("Restore cancelled. Use --force to override.")
                                 return
                         else:
@@ -277,9 +322,9 @@ def restore_database(file: Path, options: Dict[str, Any]):
     ch.warning(f"   Backup file: {file.name}")
     ch.warning(f"   Size: {file.stat().st_size / (1024 * 1024):.2f} MB")
 
-    if not options.get('yes'):
+    if not options.get("yes"):
         confirm = input("\nType 'RESTORE' to confirm: ")
-        if confirm != 'RESTORE':
+        if confirm != "RESTORE":
             if json_enabled:
                 ch.raw_print(json.dumps({"success": False, "cancelled": True}))
             else:
@@ -293,50 +338,55 @@ def restore_database(file: Path, options: Dict[str, Any]):
         tunnel_info = tunnel_manager.start_tunnel(server_name)
 
     server_config = config_manager.load_server_config(server_name)
-    db = server_config['database']
+    db = server_config["database"]
 
     # Create backup of current state before restore
-    if not options.get('no_backup'):
+    if not options.get("no_backup"):
         ch.info("Creating safety backup of current database...")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safety_backup = config_manager.backups_dir / f"{server_name}_pre_restore_{timestamp}.sql"
+        safety_backup = (
+            config_manager.backups_dir / f"{server_name}_pre_restore_{timestamp}.sql"
+        )
         backup_database(safety_backup, options)
         ch.success(f"✓ Safety backup created: {safety_backup.name}")
 
     ch.info("Restoring database...")
 
     # Create secure config file
-    config_file = _create_mysql_config_file(db['user'], db['password'])
+    config_file = _create_mysql_config_file(db["user"], db["password"])
 
     try:
         # Restore with error handling
         mysql_cmd = [
-            'mysql',
-            f'--defaults-file={config_file}',
-            '-h', '127.0.0.1',
-            '-P', str(tunnel_info['local_port']),
-            db['name']
+            "mysql",
+            f"--defaults-file={config_file}",
+            "-h",
+            "127.0.0.1",
+            "-P",
+            str(tunnel_info["local_port"]),
+            db["name"],
         ]
 
         try:
-            with open(file, 'r') as f:
+            with open(file, "r") as f:
                 result = subprocess.run(
-                    mysql_cmd,
-                    stdin=f,
-                    capture_output=True,
-                    text=True
+                    mysql_cmd, stdin=f, capture_output=True, text=True
                 )
 
             if result.returncode == 0:
                 if json_enabled:
-                    output = {"success": True, "database": db['name'], "source": str(file)}
-                    if not options.get('no_backup'):
+                    output = {
+                        "success": True,
+                        "database": db["name"],
+                        "source": str(file),
+                    }
+                    if not options.get("no_backup"):
                         output["safety_backup"] = str(safety_backup.name)
                     ch.raw_print(json.dumps(output))
                 else:
                     ch.success("✅ Database restored successfully")
                     ch.info(f"   Restored from: {file.name}")
-                    if not options.get('no_backup'):
+                    if not options.get("no_backup"):
                         ch.info(f"   Safety backup: {safety_backup.name}")
             else:
                 if json_enabled:
@@ -344,12 +394,16 @@ def restore_database(file: Path, options: Dict[str, Any]):
                 else:
                     ch.error("❌ Restore failed")
                     ch.error(f"Error: {result.stderr}")
-                    if not options.get('no_backup'):
-                        ch.warning(f"You can rollback using: navig restore {safety_backup}")
+                    if not options.get("no_backup"):
+                        ch.warning(
+                            f"You can rollback using: navig restore {safety_backup}"
+                        )
 
         except FileNotFoundError:
             if json_enabled:
-                ch.raw_print(json.dumps({"success": False, "error": "mysql client not found"}))
+                ch.raw_print(
+                    json.dumps({"success": False, "error": "mysql client not found"})
+                )
             else:
                 ch.error("mysql client not found. Please install MySQL client tools.")
     finally:
@@ -360,14 +414,12 @@ def restore_database(file: Path, options: Dict[str, Any]):
             pass  # best-effort cleanup
 
 
-def _calculate_file_checksum(file_path: Path, algorithm: str = 'sha256') -> str:
+def _calculate_file_checksum(file_path: Path, algorithm: str = "sha256") -> str:
     """Calculate checksum for file integrity verification."""
     import hashlib
 
     hash_obj = hashlib.new(algorithm)
-    with open(file_path, 'rb') as f:
-        for chunk in iter(lambda: f.read(8192), b''):
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
             hash_obj.update(chunk)
     return hash_obj.hexdigest()
-
-

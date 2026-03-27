@@ -17,6 +17,7 @@ Usage (from the contribute command)::
 
     pr_url = run_approval_flow(findings, branch, config, alias, version)
 """
+
 from __future__ import annotations
 
 import os
@@ -54,8 +55,8 @@ def _escape_md2(text: str) -> str:
 _APPROVAL_SEVERITIES = ("critical", "high", "medium")
 _SEVERITY_EMOJI: dict[str, str] = {
     "critical": "🔴",
-    "high":     "🟠",
-    "medium":   "🟡",
+    "high": "🟠",
+    "medium": "🟡",
 }
 
 
@@ -195,7 +196,11 @@ def cli_review_and_approve(
 
     typer.echo("Applying patch and submitting PR…")
     try:
-        from navig.selfheal.git_manager import apply_patch, commit_and_push  # noqa: PLC0415
+        from navig.selfheal.git_manager import (  # noqa: PLC0415
+            apply_patch,
+            commit_and_push,
+        )
+
         apply_patch(repo_path, patch_str)
         summary = f"{len(approved_findings)} finding(s)"
         commit_and_push(repo_path, branch, summary)
@@ -266,12 +271,8 @@ class ContributeFlow:
             List of ``{"text": str, "keyboard": list[list[dict]]|None}`` dicts.
         """
         total = len(self._all_findings)
-        severity_counts = {
-            sev: len(grp) for sev, grp in self._grouped.items()
-        }
-        summary = ", ".join(
-            f"{cnt} {sev}" for sev, cnt in severity_counts.items()
-        )
+        severity_counts = {sev: len(grp) for sev, grp in self._grouped.items()}
+        summary = ", ".join(f"{cnt} {sev}" for sev, cnt in severity_counts.items())
         intro = _escape_md2(
             f"🧠 Self-Heal scan complete: {total} finding(s) — {summary}\n"
             "Review each severity group and approve or reject."
@@ -295,7 +296,7 @@ class ContributeFlow:
         keyboard = [
             [
                 {"text": "Approve ✅", "callback_data": f"selfheal:approve:{sev}"},
-                {"text": "Reject ❌",  "callback_data": f"selfheal:reject:{sev}"},
+                {"text": "Reject ❌", "callback_data": f"selfheal:reject:{sev}"},
             ]
         ]
         return {"text": text, "keyboard": keyboard, "parse_mode": "MarkdownV2"}
@@ -313,7 +314,12 @@ class ContributeFlow:
         """
         parts = callback_data.split(":", 2)
         if len(parts) != 3 or parts[0] != "selfheal":
-            return {"text": "Unexpected callback.", "keyboard": None, "done": False, "pr_url": None}
+            return {
+                "text": "Unexpected callback.",
+                "keyboard": None,
+                "done": False,
+                "pr_url": None,
+            }
 
         _, action, sev = parts
 
@@ -352,9 +358,7 @@ class ContributeFlow:
             }
 
         approved_count = len(self._approved)
-        rejected_str = (
-            ", ".join(self._rejected_severities) or "none"
-        )
+        rejected_str = ", ".join(self._rejected_severities) or "none"
         text = _escape_md2(
             f"✅ {approved_count} finding(s) approved for patching.\n"
             f"Rejected groups: {rejected_str}\n\n"
@@ -363,7 +367,7 @@ class ContributeFlow:
         keyboard = [
             [
                 {"text": "Confirm & Submit PR ✅", "callback_data": "selfheal:submit"},
-                {"text": "Cancel ❌",              "callback_data": "selfheal:cancel"},
+                {"text": "Cancel ❌", "callback_data": "selfheal:cancel"},
             ]
         ]
         return {
@@ -393,7 +397,9 @@ class ContributeFlow:
             patch_str = build_patch(self._approved, repo_path)
             if not patch_str:
                 return {
-                    "text": _escape_md2("⚠️ No effective patch changes. Nothing submitted."),
+                    "text": _escape_md2(
+                        "⚠️ No effective patch changes. Nothing submitted."
+                    ),
                     "keyboard": None,
                     "done": True,
                     "pr_url": None,

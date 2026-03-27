@@ -1,15 +1,22 @@
 """
 Tests for navig.engine.queue — CommandQueue lane-based asyncio queue.
 """
+
 import asyncio
+
 import pytest
 
-from navig.engine.queue import CommandQueue, LaneClearedError, QueueShutdownError, TaskState
-
+from navig.engine.queue import (
+    CommandQueue,
+    LaneClearedError,
+    QueueShutdownError,
+    TaskState,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 async def _ok(value=42, delay=0.0):
     if delay:
@@ -24,6 +31,7 @@ async def _fail(msg="oops"):
 # ---------------------------------------------------------------------------
 # Basic enqueue + wait
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_enqueue_returns_result():
@@ -79,6 +87,7 @@ async def test_different_lanes_run_concurrently():
 # Error propagation
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_failed_task_propagates_exception():
     q = CommandQueue(default_timeout=5.0)
@@ -93,6 +102,7 @@ async def test_failed_task_propagates_exception():
 # Timeout
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_task_timeout_raises():
     q = CommandQueue(default_timeout=0.1)
@@ -105,6 +115,7 @@ async def test_task_timeout_raises():
 # ---------------------------------------------------------------------------
 # clear_lane
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_clear_lane_cancels_pending():
@@ -124,13 +135,16 @@ async def test_clear_lane_cancels_pending():
     # All three handles should raise LaneClearedError — always retrieve to
     # prevent "Future exception was never retrieved" asyncio warnings.
     for h in (h1, h2, h3):
-        with pytest.raises((LaneClearedError, asyncio.CancelledError, asyncio.TimeoutError, Exception)):
+        with pytest.raises(
+            (LaneClearedError, asyncio.CancelledError, asyncio.TimeoutError, Exception)
+        ):
             await h.wait()
 
 
 # ---------------------------------------------------------------------------
 # shutdown
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_shutdown_prevents_enqueue():
@@ -143,6 +157,7 @@ async def test_shutdown_prevents_enqueue():
 # ---------------------------------------------------------------------------
 # status introspection
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_status_reports_lanes():

@@ -26,9 +26,9 @@ try {
             ExitApp(1)
         }
     }
-    
+
     hwnd := WinExist(target)
-    
+
     if (position = "maximize") {
         WinMaximize(target)
         FileAppend("Maximized", "*")
@@ -44,26 +44,26 @@ try {
     }
 
     ; Get monitor handle
-    hMon := DllCall("User32\\MonitorFromWindow", "Ptr", hwnd, "UInt", 0x2) 
-    
+    hMon := DllCall("User32\\MonitorFromWindow", "Ptr", hwnd, "UInt", 0x2)
+
     ; Get monitor info
     NumPut("UInt", 40, monitorInfo := Buffer(40))
     DllCall("User32\\GetMonitorInfo", "Ptr", hMon, "Ptr", monitorInfo)
-    
+
     ; Rects
     wal := NumGet(monitorInfo, 20, "Int")
     wat := NumGet(monitorInfo, 24, "Int")
     war := NumGet(monitorInfo, 28, "Int")
     wab := NumGet(monitorInfo, 32, "Int")
-    
+
     wW := war - wal
     wH := wab - wat
-    
+
     posX := wal
     posY := wat
     newW := wW
     newH := wH
-    
+
     if (position = "left") {
         newW := Integer(wW / 2)
     } else if (position = "right") {
@@ -97,13 +97,13 @@ try {
         newW := curW
         newH := curH
     }
-    
+
     if (WinGetMinMax(target) != 0)
         WinRestore(target)
-        
+
     WinMove(posX, posY, newW, newH, target)
     FileAppend("Snapped to " . position, "*")
-    
+
 } catch as e {
     FileAppend("Error: " . e.Message, "**")
     ExitApp(1)

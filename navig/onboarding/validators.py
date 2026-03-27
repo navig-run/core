@@ -13,6 +13,7 @@ All functions return `ValidationResult(ok, errors, info)` — never raise.
 Network timeouts produce ok=False with the standard offline message.
 Timeout policy: 5 s connect, 8 s read — tight enough for onboarding UX.
 """
+
 from __future__ import annotations
 
 import smtplib
@@ -41,19 +42,22 @@ class ValidationResult:
     def timeout(cls, service: str) -> "ValidationResult":
         return cls(
             ok=False,
-            errors=[{
-                "field": "connection",
-                "message": (
-                    f"Could not reach {service}. "
-                    "Check your internet connection or skip and configure later."
-                ),
-            }],
+            errors=[
+                {
+                    "field": "connection",
+                    "message": (
+                        f"Could not reach {service}. "
+                        "Check your internet connection or skip and configure later."
+                    ),
+                }
+            ],
         )
 
 
 def _http_client():
     """Lazy-imported httpx.Client with a standard timeout."""
     import httpx  # noqa: PLC0415
+
     return httpx.Client(
         timeout=httpx.Timeout(_READ_TIMEOUT, connect=_CONNECT_TIMEOUT),
         follow_redirects=True,
@@ -61,6 +65,7 @@ def _http_client():
 
 
 # ── Matrix ─────────────────────────────────────────────────────────────────
+
 
 def validate_matrix(homeserver_url: str, token: str) -> ValidationResult:
     """
@@ -105,6 +110,7 @@ def validate_matrix(homeserver_url: str, token: str) -> ValidationResult:
 
 # ── Telegram ───────────────────────────────────────────────────────────────
 
+
 def validate_telegram(token: str) -> ValidationResult:
     """
     Validate a Telegram bot token via GET /bot<token>/getMe.
@@ -135,6 +141,7 @@ def validate_telegram(token: str) -> ValidationResult:
 
 
 # ── Email / SMTP ───────────────────────────────────────────────────────────
+
 
 def validate_smtp(host: str, port: str | int) -> ValidationResult:
     """
@@ -181,6 +188,7 @@ def validate_smtp(host: str, port: str | int) -> ValidationResult:
 
 # ── Twitter / X ────────────────────────────────────────────────────────────
 
+
 def validate_twitter(api_key: str, api_secret: str) -> ValidationResult:
     """
     Validate Twitter/X app credentials by exchanging them for a bearer token.
@@ -218,6 +226,7 @@ def validate_twitter(api_key: str, api_secret: str) -> ValidationResult:
 
 # ── LinkedIn ───────────────────────────────────────────────────────────────
 
+
 def validate_linkedin(access_token: str) -> ValidationResult:
     """
     Validate a LinkedIn access token via GET /v2/me.
@@ -225,7 +234,9 @@ def validate_linkedin(access_token: str) -> ValidationResult:
     Returns ValidationResult.success(name=...) on success.
     """
     if not access_token:
-        return ValidationResult.failure("access_token", "LinkedIn access token is required.")
+        return ValidationResult.failure(
+            "access_token", "LinkedIn access token is required."
+        )
 
     try:
         with _http_client() as client:
@@ -255,6 +266,7 @@ def validate_linkedin(access_token: str) -> ValidationResult:
 
 
 # ── Mastodon ───────────────────────────────────────────────────────────────
+
 
 def validate_mastodon(instance_url: str, access_token: str) -> ValidationResult:
     """

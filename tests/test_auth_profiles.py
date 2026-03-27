@@ -1,7 +1,9 @@
 """Tests for navig.agent.auth_profiles."""
+
 from __future__ import annotations
 
 import time
+
 import pytest
 
 from navig.agent.auth_profiles import (
@@ -12,10 +14,10 @@ from navig.agent.auth_profiles import (
     reset_profile_pool,
 )
 
-
 # ---------------------------------------------------------------------------
 # ProfileCooldown
 # ---------------------------------------------------------------------------
+
 
 class TestProfileCooldown:
     def test_new_cd_not_on_cooldown(self):
@@ -25,11 +27,11 @@ class TestProfileCooldown:
 
     def test_record_failure_exponential(self):
         cd = ProfileCooldown()
-        cd.record_failure()       # failure 1 → 5s
+        cd.record_failure()  # failure 1 → 5s
         assert cd.cooldown_seconds == pytest.approx(5.0)
-        cd.record_failure()       # failure 2 → 10s
+        cd.record_failure()  # failure 2 → 10s
         assert cd.cooldown_seconds == pytest.approx(10.0)
-        cd.record_failure()       # failure 3 → 20s
+        cd.record_failure()  # failure 3 → 20s
         assert cd.cooldown_seconds == pytest.approx(20.0)
 
     def test_record_failure_capped(self):
@@ -57,8 +59,11 @@ class TestProfileCooldown:
 # AuthProfilePool — round-robin
 # ---------------------------------------------------------------------------
 
+
 def _pool(*names):
-    profiles = [AuthProfile(name=n, api_key=f"sk-{n}", provider="openai") for n in names]
+    profiles = [
+        AuthProfile(name=n, api_key=f"sk-{n}", provider="openai") for n in names
+    ]
     return AuthProfilePool(profiles)
 
 
@@ -135,6 +140,7 @@ class TestAuthProfilePool:
 # ---------------------------------------------------------------------------
 # Singleton
 # ---------------------------------------------------------------------------
+
 
 class TestGetProfilePool:
     def setup_method(self):

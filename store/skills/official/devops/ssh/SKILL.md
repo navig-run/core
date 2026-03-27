@@ -53,6 +53,3 @@ navig run "ssh -v user@host 'echo Connection Successful'"
 1. **Use Ed25519**: Preferred over RSA for security and performance.
 2. **Multiplexing**: Use `ControlMaster` to speed up sequential commands by reusing the TCP connection.
 3. **Permissions**: Always ensure `~/.ssh` is 700 and keys are 600.
-
-
-

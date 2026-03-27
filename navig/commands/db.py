@@ -21,14 +21,15 @@ from navig import console_helper as ch
 # DATABASE TYPE DETECTION
 # ============================================================================
 
+
 def _detect_db_type(discovery, container: Optional[str] = None) -> Optional[str]:
     """
     Detect database type (mysql, mariadb, postgresql).
-    
+
     Args:
         discovery: ServerDiscovery instance
         container: Optional Docker container name
-        
+
     Returns:
         Database type string or None if not detected
     """
@@ -41,25 +42,25 @@ def _detect_db_type(discovery, container: Optional[str] = None) -> Optional[str]
     success, stdout, _ = discovery._execute_ssh(cmd)
 
     if success and stdout:
-        if 'psql' in stdout:
-            return 'postgresql'
-        elif 'mariadb' in stdout or 'mysql' in stdout:
+        if "psql" in stdout:
+            return "postgresql"
+        elif "mariadb" in stdout or "mysql" in stdout:
             # Check if it's MariaDB specifically
             if container:
                 version_cmd = f"docker exec {container} mysql --version 2>/dev/null"
             else:
                 version_cmd = "mysql --version 2>/dev/null"
             _, version_out, _ = discovery._execute_ssh(version_cmd)
-            if version_out and 'mariadb' in version_out.lower():
-                return 'mariadb'
-            return 'mysql'
+            if version_out and "mariadb" in version_out.lower():
+                return "mariadb"
+            return "mysql"
     return None
 
 
 def _list_docker_db_containers(discovery) -> List[Dict[str, str]]:
     """
     List Docker containers running database services.
-    
+
     Returns:
         List of dicts with container info: {name, image, status, db_type}
     """
@@ -71,12 +72,12 @@ def _list_docker_db_containers(discovery) -> List[Dict[str, str]]:
         return []
 
     containers = []
-    db_images = ['mysql', 'mariadb', 'postgres', 'postgresql', 'mongo', 'redis']
+    db_images = ["mysql", "mariadb", "postgres", "postgresql", "mongo", "redis"]
 
-    for line in stdout.strip().split('\n'):
+    for line in stdout.strip().split("\n"):
         if not line:
             continue
-        parts = line.split('|')
+        parts = line.split("|")
         if len(parts) >= 3:
             name, image, status = parts[0], parts[1], parts[2]
             # Check if image is a database
@@ -85,17 +86,14 @@ def _list_docker_db_containers(discovery) -> List[Dict[str, str]]:
             for db in db_images:
                 if db in image_lower:
                     db_type = db
-                    if db == 'postgres':
-                        db_type = 'postgresql'
+                    if db == "postgres":
+                        db_type = "postgresql"
                     break
 
             if db_type:
-                containers.append({
-                    'name': name,
-                    'image': image,
-                    'status': status,
-                    'db_type': db_type
-                })
+                containers.append(
+                    {"name": name, "image": image, "status": status, "db_type": db_type}
+                )
 
     return containers
 
@@ -104,12 +102,13 @@ def _list_docker_db_containers(discovery) -> List[Dict[str, str]]:
 # CREDENTIAL RESOLUTION
 # ============================================================================
 
+
 def _get_db_credentials_from_config(
     config_manager,
     host_name: str,
     user: Optional[str] = None,
     password: Optional[str] = None,
-    db_type: Optional[str] = None
+    db_type: Optional[str] = None,
 ) -> Tuple[str, Optional[str], Optional[str]]:
     """
     Get database credentials from app or host configuration.
@@ -139,15 +138,15 @@ def _get_db_credentials_from_config(
         active_app = config_manager.get_active_app()
         if active_app:
             app_config = config_manager.load_app_config(host_name, active_app)
-            db_config = app_config.get('database', {})
+            db_config = app_config.get("database", {})
 
             # Use app credentials if not provided via command-line
-            if not resolved_user or resolved_user == 'root':
-                resolved_user = db_config.get('user') or resolved_user
+            if not resolved_user or resolved_user == "root":
+                resolved_user = db_config.get("user") or resolved_user
             if not resolved_password:
-                resolved_password = db_config.get('password')
+                resolved_password = db_config.get("password")
             if not resolved_db_type:
-                resolved_db_type = db_config.get('type')
+                resolved_db_type = db_config.get("type")
     except (FileNotFoundError, ValueError):
         pass  # No active app or app not found
 
@@ -155,21 +154,23 @@ def _get_db_credentials_from_config(
     if not resolved_password:
         try:
             host_config = config_manager.load_host_config(host_name)
-            host_db_config = host_config.get('database', {})
+            host_db_config = host_config.get("database", {})
 
             # Use host root credentials if user is 'root' and no password provided
-            if (not resolved_user or resolved_user == 'root') and host_db_config.get('root_user'):
-                resolved_user = host_db_config.get('root_user')
-                resolved_password = host_db_config.get('root_password')
+            if (not resolved_user or resolved_user == "root") and host_db_config.get(
+                "root_user"
+            ):
+                resolved_user = host_db_config.get("root_user")
+                resolved_password = host_db_config.get("root_password")
 
             if not resolved_db_type:
-                resolved_db_type = host_db_config.get('type')
+                resolved_db_type = host_db_config.get("type")
         except FileNotFoundError:
             pass  # Host not found
 
     # Default to 'root' if no user specified
     if not resolved_user:
-        resolved_user = 'root'
+        resolved_user = "root"
 
     return resolved_user, resolved_password, resolved_db_type
 
@@ -177,6 +178,7 @@ def _get_db_credentials_from_config(
 # ============================================================================
 # CORE DATABASE OPERATIONS
 # ============================================================================
+
 
 def _escape_for_shell(value: str) -> str:
     """
@@ -197,7 +199,7 @@ def _escape_for_shell(value: str) -> str:
 def _build_db_command(
     db_type: str,
     query: str,
-    user: str = 'root',
+    user: str = "root",
     password: Optional[str] = None,
     database: Optional[str] = None,
     container: Optional[str] = None,
@@ -220,10 +222,10 @@ def _build_db_command(
     escaped_password = _escape_for_shell(password) if password else None
     escaped_query = _escape_for_shell(query)
 
-    if db_type in ('mysql', 'mariadb'):
+    if db_type in ("mysql", "mariadb"):
         # Build MySQL/MariaDB command
         # Use mariadb command for MariaDB to avoid deprecation warnings
-        cmd_name = 'mariadb' if db_type == 'mariadb' else 'mysql'
+        cmd_name = "mariadb" if db_type == "mariadb" else "mysql"
 
         # Use -p with password attached (no space) for MySQL compatibility
         if password:
@@ -262,7 +264,7 @@ def _execute_db_query(
     discovery,
     query: str,
     db_type: str,
-    user: str = 'root',
+    user: str = "root",
     password: Optional[str] = None,
     database: Optional[str] = None,
     container: Optional[str] = None,
@@ -276,6 +278,7 @@ def _execute_db_query(
 # PUBLIC COMMAND FUNCTIONS
 # ============================================================================
 
+
 def db_containers_cmd(options: Dict[str, Any]):
     """
     List Docker containers running database services.
@@ -286,7 +289,7 @@ def db_containers_cmd(options: Dict[str, Any]):
     from navig.discovery import ServerDiscovery
 
     config_manager = get_config_manager()
-    host_name = options.get('host') or config_manager.get_active_host()
+    host_name = options.get("host") or config_manager.get_active_host()
 
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
@@ -298,20 +301,24 @@ def db_containers_cmd(options: Dict[str, Any]):
         return
 
     # Get debug logger from options
-    debug_logger = options.get('debug_logger')
+    debug_logger = options.get("debug_logger")
 
     # Build SSH config dict for ServerDiscovery
     ssh_config = {
-        'host': host_config.get('host', host_config.get('hostname')),
-        'user': host_config.get('user', 'root'),
-        'port': host_config.get('port', 22),
-        'ssh_key': host_config.get('ssh_key'),
-        'ssh_password': host_config.get('ssh_password'),
+        "host": host_config.get("host", host_config.get("hostname")),
+        "user": host_config.get("user", "root"),
+        "port": host_config.get("port", 22),
+        "ssh_key": host_config.get("ssh_key"),
+        "ssh_password": host_config.get("ssh_password"),
     }
 
     discovery = ServerDiscovery(ssh_config, debug_logger=debug_logger)
 
-    spinner_ctx = ch.create_spinner("Scanning for database containers...") if not options.get('json') else nullcontext()
+    spinner_ctx = (
+        ch.create_spinner("Scanning for database containers...")
+        if not options.get("json")
+        else nullcontext()
+    )
     with spinner_ctx:
         containers = _list_docker_db_containers(discovery)
 
@@ -321,7 +328,7 @@ def db_containers_cmd(options: Dict[str, Any]):
         return
 
     # Display results
-    if options.get('json'):
+    if options.get("json"):
         ch.raw_print(json.dumps({"containers": containers, "count": len(containers)}))
     else:
         table = ch.create_table(
@@ -331,11 +338,11 @@ def db_containers_cmd(options: Dict[str, Any]):
                 {"name": "Image", "style": "green"},
                 {"name": "Type", "style": "yellow"},
                 {"name": "Status", "style": "white"},
-            ]
+            ],
         )
 
         for c in containers:
-            table.add_row(c['name'], c['image'], c['db_type'], c['status'])
+            table.add_row(c["name"], c["image"], c["db_type"], c["status"])
 
         ch.print_table(table)
         ch.dim(f"\nFound {len(containers)} database container(s)")
@@ -348,7 +355,7 @@ def db_query_cmd(
     password: Optional[str],
     database: Optional[str],
     db_type: Optional[str],
-    options: Dict[str, Any]
+    options: Dict[str, Any],
 ):
     """
     Execute SQL query on remote database (Docker or native).
@@ -359,7 +366,7 @@ def db_query_cmd(
     from navig.discovery import ServerDiscovery
 
     config_manager = get_config_manager()
-    host_name = options.get('host') or config_manager.get_active_host()
+    host_name = options.get("host") or config_manager.get_active_host()
 
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
@@ -370,14 +377,14 @@ def db_query_cmd(
         ch.error(f"Host not found: {host_name}")
         return
 
-    debug_logger = options.get('debug_logger')
+    debug_logger = options.get("debug_logger")
 
     ssh_config = {
-        'host': host_config.get('host', host_config.get('hostname')),
-        'user': host_config.get('user', 'root'),
-        'port': host_config.get('port', 22),
-        'ssh_key': host_config.get('ssh_key'),
-        'ssh_password': host_config.get('ssh_password'),
+        "host": host_config.get("host", host_config.get("hostname")),
+        "user": host_config.get("user", "root"),
+        "port": host_config.get("port", 22),
+        "ssh_key": host_config.get("ssh_key"),
+        "ssh_password": host_config.get("ssh_password"),
     }
     discovery = ServerDiscovery(ssh_config, debug_logger=debug_logger)
 
@@ -385,10 +392,11 @@ def db_query_cmd(
     # Only use CLI-provided credentials if they differ from defaults
     cli_user_provided = user != "root"  # Check if user explicitly provided
     user, password, db_type_from_config = _get_db_credentials_from_config(
-        config_manager, host_name,
+        config_manager,
+        host_name,
         user if cli_user_provided else None,  # Only pass if explicitly provided
         password,
-        db_type
+        db_type,
     )
 
     # Use db_type from config if available and not specified
@@ -397,7 +405,11 @@ def db_query_cmd(
 
     # Auto-detect database type if still not specified
     if not db_type:
-        spinner_ctx = ch.create_spinner("Detecting database type...") if not options.get('json') else nullcontext()
+        spinner_ctx = (
+            ch.create_spinner("Detecting database type...")
+            if not options.get("json")
+            else nullcontext()
+        )
         with spinner_ctx:
             db_type = _detect_db_type(discovery, container)
 
@@ -406,16 +418,24 @@ def db_query_cmd(
             ch.info("Use --type to specify: mysql, mariadb, or postgresql")
             return
         # Keep JSON/plain/quiet output strictly machine-readable.
-        if not options.get('json') and not options.get('plain') and not options.get('quiet'):
+        if (
+            not options.get("json")
+            and not options.get("plain")
+            and not options.get("quiet")
+        ):
             ch.dim(f"Detected: {db_type}")
 
     # Dry run
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         ch.info(f"[DRY RUN] Would execute on {db_type}: {query}")
         return
 
     # Execute query
-    spinner_ctx = ch.create_spinner("Executing query...") if not options.get('json') else nullcontext()
+    spinner_ctx = (
+        ch.create_spinner("Executing query...")
+        if not options.get("json")
+        else nullcontext()
+    )
     with spinner_ctx:
         success, stdout, stderr = _execute_db_query(
             discovery, query, db_type, user, password, database, container
@@ -423,16 +443,17 @@ def db_query_cmd(
 
     # Filter out MySQL deprecation warning from stderr
     if stderr:
-        stderr_lines = stderr.strip().split('\n')
-        filtered_stderr = '\n'.join(
-            line for line in stderr_lines
-            if 'Deprecated program name' not in line and
-               'use \'/usr/bin/mariadb\' instead' not in line
+        stderr_lines = stderr.strip().split("\n")
+        filtered_stderr = "\n".join(
+            line
+            for line in stderr_lines
+            if "Deprecated program name" not in line
+            and "use '/usr/bin/mariadb' instead" not in line
         ).strip()
     else:
-        filtered_stderr = ''
+        filtered_stderr = ""
 
-    if options.get('json'):
+    if options.get("json"):
         ch.raw_print(
             json.dumps(
                 {
@@ -455,17 +476,19 @@ def db_query_cmd(
 
     if success:
         if stdout:
-            if options.get('plain'):
+            if options.get("plain"):
                 ch.format_db_output_plain(stdout)
             else:
                 # Detect query type for smart formatting
                 query_upper = query.strip().upper()
-                if query_upper.startswith('DESCRIBE') or query_upper.startswith('DESC '):
-                    query_type = 'describe'
-                elif query_upper.startswith('SHOW'):
-                    query_type = 'show'
+                if query_upper.startswith("DESCRIBE") or query_upper.startswith(
+                    "DESC "
+                ):
+                    query_type = "describe"
+                elif query_upper.startswith("SHOW"):
+                    query_type = "show"
                 else:
-                    query_type = 'select'
+                    query_type = "select"
                 ch.format_db_output(stdout, query_type)
         else:
             ch.success("Query executed successfully (no output)")
@@ -475,7 +498,10 @@ def db_query_cmd(
             ch.error(filtered_stderr)
 
             # Detect authentication errors and provide helpful guidance
-            if "Access denied" in filtered_stderr or "authentication failed" in filtered_stderr.lower():
+            if (
+                "Access denied" in filtered_stderr
+                or "authentication failed" in filtered_stderr.lower()
+            ):
                 ch.console.print()
                 ch.warning("Database Authentication Failed")
                 ch.console.print()
@@ -486,7 +512,7 @@ def db_query_cmd(
                 ch.console.print()
                 ch.info("Solutions:")
                 ch.dim("  1. Specify credentials explicitly:")
-                ch.dim("     navig db query \"...\" -u YOUR_USER -p YOUR_PASSWORD")
+                ch.dim('     navig db query "..." -u YOUR_USER -p YOUR_PASSWORD')
                 ch.console.print()
                 ch.dim("  2. Configure in app database settings:")
                 ch.dim("     navig app edit")
@@ -497,7 +523,9 @@ def db_query_cmd(
                 ch.dim("     # Add database.root_user and database.root_password")
                 ch.console.print()
                 ch.dim("  4. Use app-specific database user (recommended):")
-                ch.dim("     Instead of root, use a dedicated user with limited permissions")
+                ch.dim(
+                    "     Instead of root, use a dedicated user with limited permissions"
+                )
 
 
 def db_list_cmd(
@@ -505,7 +533,7 @@ def db_list_cmd(
     user: str,
     password: Optional[str],
     db_type: Optional[str],
-    options: Dict[str, Any]
+    options: Dict[str, Any],
 ):
     """
     List all databases.
@@ -522,7 +550,7 @@ def db_list_cmd(
     from navig.discovery import ServerDiscovery
 
     config_manager = get_config_manager()
-    host_name = options.get('host') or config_manager.get_active_host()
+    host_name = options.get("host") or config_manager.get_active_host()
 
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
@@ -534,29 +562,35 @@ def db_list_cmd(
         return
 
     # Resolve database credentials from config if not provided
-    resolved_user, resolved_password, resolved_db_type = _get_db_credentials_from_config(
-        config_manager, host_name, user, password, db_type
+    resolved_user, resolved_password, resolved_db_type = (
+        _get_db_credentials_from_config(
+            config_manager, host_name, user, password, db_type
+        )
     )
 
     # Show credential source info if verbose
-    if options.get('verbose'):
+    if options.get("verbose"):
         if resolved_password and not password:
             ch.dim("Using database credentials from configuration")
 
-    debug_logger = options.get('debug_logger')
+    debug_logger = options.get("debug_logger")
 
     ssh_config = {
-        'host': host_config.get('host', host_config.get('hostname')),
-        'user': host_config.get('user', 'root'),
-        'port': host_config.get('port', 22),
-        'ssh_key': host_config.get('ssh_key'),
-        'ssh_password': host_config.get('ssh_password'),
+        "host": host_config.get("host", host_config.get("hostname")),
+        "user": host_config.get("user", "root"),
+        "port": host_config.get("port", 22),
+        "ssh_key": host_config.get("ssh_key"),
+        "ssh_password": host_config.get("ssh_password"),
     }
     discovery = ServerDiscovery(ssh_config, debug_logger=debug_logger)
 
     # Auto-detect database type
     if not resolved_db_type:
-        spinner_ctx = ch.create_spinner("Detecting database type...") if not options.get('json') else nullcontext()
+        spinner_ctx = (
+            ch.create_spinner("Detecting database type...")
+            if not options.get("json")
+            else nullcontext()
+        )
         with spinner_ctx:
             resolved_db_type = _detect_db_type(discovery, container)
 
@@ -565,15 +599,25 @@ def db_list_cmd(
             return
 
     # Build query based on database type
-    if resolved_db_type in ('mysql', 'mariadb'):
+    if resolved_db_type in ("mysql", "mariadb"):
         query = "SHOW DATABASES"
     else:
         query = "SELECT datname FROM pg_database WHERE datistemplate = false"
 
-    spinner_ctx = ch.create_spinner("Fetching databases...") if not options.get('json') else nullcontext()
+    spinner_ctx = (
+        ch.create_spinner("Fetching databases...")
+        if not options.get("json")
+        else nullcontext()
+    )
     with spinner_ctx:
         success, stdout, stderr = _execute_db_query(
-            discovery, query, resolved_db_type, resolved_user, resolved_password, None, container
+            discovery,
+            query,
+            resolved_db_type,
+            resolved_user,
+            resolved_password,
+            None,
+            container,
         )
 
     if not success:
@@ -583,17 +627,24 @@ def db_list_cmd(
         return
 
     # Parse output
-    lines = stdout.strip().split('\n')
-    databases = [line.strip() for line in lines if line.strip() and not line.startswith('+') and 'Database' not in line and 'datname' not in line]
+    lines = stdout.strip().split("\n")
+    databases = [
+        line.strip()
+        for line in lines
+        if line.strip()
+        and not line.startswith("+")
+        and "Database" not in line
+        and "datname" not in line
+    ]
 
     # Clean up database names (remove MySQL table formatting)
     clean_databases = []
     for db in databases:
-        db_name = db.replace('|', '').strip()
+        db_name = db.replace("|", "").strip()
         if db_name:
             clean_databases.append(db_name)
 
-    if options.get('json'):
+    if options.get("json"):
         ch.raw_print(
             json.dumps(
                 {
@@ -610,14 +661,14 @@ def db_list_cmd(
                 sort_keys=True,
             )
         )
-    elif options.get('plain'):
+    elif options.get("plain"):
         # Plain text output - one database per line
         for db_name in clean_databases:
             ch.raw_print(db_name)
     else:
         table = ch.create_table(
             title=f"Databases ({resolved_db_type})",
-            columns=[{"name": "Database Name", "style": "cyan"}]
+            columns=[{"name": "Database Name", "style": "cyan"}],
         )
         for db_name in clean_databases:
             table.add_row(db_name)
@@ -632,7 +683,7 @@ def db_tables_cmd(
     user: str,
     password: Optional[str],
     db_type: Optional[str],
-    options: Dict[str, Any]
+    options: Dict[str, Any],
 ):
     """
     List tables in a database.
@@ -649,7 +700,7 @@ def db_tables_cmd(
     from navig.discovery import ServerDiscovery
 
     config_manager = get_config_manager()
-    host_name = options.get('host') or config_manager.get_active_host()
+    host_name = options.get("host") or config_manager.get_active_host()
 
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
@@ -661,23 +712,29 @@ def db_tables_cmd(
         return
 
     # Resolve database credentials from config if not provided
-    resolved_user, resolved_password, resolved_db_type = _get_db_credentials_from_config(
-        config_manager, host_name, user, password, db_type
+    resolved_user, resolved_password, resolved_db_type = (
+        _get_db_credentials_from_config(
+            config_manager, host_name, user, password, db_type
+        )
     )
 
-    debug_logger = options.get('debug_logger')
+    debug_logger = options.get("debug_logger")
 
     ssh_config = {
-        'host': host_config.get('host', host_config.get('hostname')),
-        'user': host_config.get('user', 'root'),
-        'port': host_config.get('port', 22),
-        'ssh_key': host_config.get('ssh_key'),
-        'ssh_password': host_config.get('ssh_password'),
+        "host": host_config.get("host", host_config.get("hostname")),
+        "user": host_config.get("user", "root"),
+        "port": host_config.get("port", 22),
+        "ssh_key": host_config.get("ssh_key"),
+        "ssh_password": host_config.get("ssh_password"),
     }
     discovery = ServerDiscovery(ssh_config, debug_logger=debug_logger)
 
     if not resolved_db_type:
-        spinner_ctx = ch.create_spinner("Detecting database type...") if not options.get('json') else nullcontext()
+        spinner_ctx = (
+            ch.create_spinner("Detecting database type...")
+            if not options.get("json")
+            else nullcontext()
+        )
         with spinner_ctx:
             resolved_db_type = _detect_db_type(discovery, container)
         if not resolved_db_type:
@@ -685,15 +742,25 @@ def db_tables_cmd(
             return
 
     # Build query
-    if resolved_db_type in ('mysql', 'mariadb'):
+    if resolved_db_type in ("mysql", "mariadb"):
         query = "SHOW TABLES"
     else:
         query = "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
 
-    spinner_ctx = ch.create_spinner(f"Fetching tables from {database}...") if not options.get('json') else nullcontext()
+    spinner_ctx = (
+        ch.create_spinner(f"Fetching tables from {database}...")
+        if not options.get("json")
+        else nullcontext()
+    )
     with spinner_ctx:
         success, stdout, stderr = _execute_db_query(
-            discovery, query, resolved_db_type, resolved_user, resolved_password, database, container
+            discovery,
+            query,
+            resolved_db_type,
+            resolved_user,
+            resolved_password,
+            database,
+            container,
         )
 
     if not success:
@@ -703,12 +770,18 @@ def db_tables_cmd(
         return
 
     # Parse output
-    lines = stdout.strip().split('\n')
-    tables = [line.strip().replace('|', '').strip() for line in lines
-              if line.strip() and not line.startswith('+') and 'Tables_in' not in line and 'tablename' not in line]
+    lines = stdout.strip().split("\n")
+    tables = [
+        line.strip().replace("|", "").strip()
+        for line in lines
+        if line.strip()
+        and not line.startswith("+")
+        and "Tables_in" not in line
+        and "tablename" not in line
+    ]
     tables = [t for t in tables if t]
 
-    if options.get('json'):
+    if options.get("json"):
         ch.raw_print(
             json.dumps(
                 {
@@ -726,14 +799,14 @@ def db_tables_cmd(
                 sort_keys=True,
             )
         )
-    elif options.get('plain'):
+    elif options.get("plain"):
         # Plain text output - one table per line
         for t in tables:
             ch.raw_print(t)
     else:
         table = ch.create_table(
             title=f"Tables in {database}",
-            columns=[{"name": "Table Name", "style": "cyan"}]
+            columns=[{"name": "Table Name", "style": "cyan"}],
         )
         for t in tables:
             table.add_row(t)
@@ -749,7 +822,7 @@ def db_dump_cmd(
     user: str,
     password: Optional[str],
     db_type: Optional[str],
-    options: Dict[str, Any]
+    options: Dict[str, Any],
 ):
     """
     Dump/backup a database.
@@ -768,7 +841,7 @@ def db_dump_cmd(
     from navig.discovery import ServerDiscovery
 
     config_manager = get_config_manager()
-    host_name = options.get('host') or config_manager.get_active_host()
+    host_name = options.get("host") or config_manager.get_active_host()
 
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
@@ -780,18 +853,20 @@ def db_dump_cmd(
         return
 
     # Resolve database credentials from config if not provided
-    resolved_user, resolved_password, resolved_db_type = _get_db_credentials_from_config(
-        config_manager, host_name, user, password, db_type
+    resolved_user, resolved_password, resolved_db_type = (
+        _get_db_credentials_from_config(
+            config_manager, host_name, user, password, db_type
+        )
     )
 
-    debug_logger = options.get('debug_logger')
+    debug_logger = options.get("debug_logger")
 
     ssh_config = {
-        'host': host_config.get('host', host_config.get('hostname')),
-        'user': host_config.get('user', 'root'),
-        'port': host_config.get('port', 22),
-        'ssh_key': host_config.get('ssh_key'),
-        'ssh_password': host_config.get('ssh_password'),
+        "host": host_config.get("host", host_config.get("hostname")),
+        "user": host_config.get("user", "root"),
+        "port": host_config.get("port", 22),
+        "ssh_key": host_config.get("ssh_key"),
+        "ssh_password": host_config.get("ssh_password"),
     }
     discovery = ServerDiscovery(ssh_config, debug_logger=debug_logger)
 
@@ -804,12 +879,16 @@ def db_dump_cmd(
 
     # Build dump command with proper shell escaping
     escaped_user = _escape_for_shell(resolved_user)
-    escaped_password = _escape_for_shell(resolved_password) if resolved_password else None
+    escaped_password = (
+        _escape_for_shell(resolved_password) if resolved_password else None
+    )
     escaped_database = _escape_for_shell(database)
 
-    if resolved_db_type in ('mysql', 'mariadb'):
+    if resolved_db_type in ("mysql", "mariadb"):
         if resolved_password:
-            dump_cmd = f"mysqldump -u{escaped_user} -p{escaped_password} {escaped_database}"
+            dump_cmd = (
+                f"mysqldump -u{escaped_user} -p{escaped_password} {escaped_database}"
+            )
         else:
             dump_cmd = f"mysqldump -u{escaped_user} {escaped_database}"
     else:
@@ -825,7 +904,7 @@ def db_dump_cmd(
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output = config_manager.backups_dir / f"{database}_{timestamp}.sql"
 
-    if options.get('dry_run'):
+    if options.get("dry_run"):
         ch.info(f"[DRY RUN] Would dump {database} to {output}")
         return
 
@@ -854,7 +933,7 @@ def db_shell_cmd(
     password: Optional[str],
     database: Optional[str],
     db_type: Optional[str],
-    options: Dict[str, Any]
+    options: Dict[str, Any],
 ):
     """
     Open interactive database shell.
@@ -872,7 +951,7 @@ def db_shell_cmd(
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    host_name = options.get('host') or config_manager.get_active_host()
+    host_name = options.get("host") or config_manager.get_active_host()
 
     if not host_name:
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
@@ -884,25 +963,29 @@ def db_shell_cmd(
         return
 
     # Resolve database credentials from config if not provided
-    resolved_user, resolved_password, resolved_db_type = _get_db_credentials_from_config(
-        config_manager, host_name, user, password, db_type
+    resolved_user, resolved_password, resolved_db_type = (
+        _get_db_credentials_from_config(
+            config_manager, host_name, user, password, db_type
+        )
     )
 
     # Default to mysql if still not detected
     if not resolved_db_type:
-        resolved_db_type = 'mysql'
+        resolved_db_type = "mysql"
 
-    ssh_host = host_config.get('host', host_config.get('hostname'))
-    ssh_user = host_config.get('user', 'root')
-    ssh_port = host_config.get('port', 22)
-    ssh_key = host_config.get('ssh_key')
+    ssh_host = host_config.get("host", host_config.get("hostname"))
+    ssh_user = host_config.get("user", "root")
+    ssh_port = host_config.get("port", 22)
+    ssh_key = host_config.get("ssh_key")
 
     # Build the database client command with proper shell escaping
     escaped_user = _escape_for_shell(resolved_user)
-    escaped_password = _escape_for_shell(resolved_password) if resolved_password else None
+    escaped_password = (
+        _escape_for_shell(resolved_password) if resolved_password else None
+    )
     escaped_database = _escape_for_shell(database) if database else None
 
-    if resolved_db_type in ('mysql', 'mariadb'):
+    if resolved_db_type in ("mysql", "mariadb"):
         if resolved_password:
             db_cmd = f"mysql -u{escaped_user} -p{escaped_password}"
         else:
@@ -922,17 +1005,24 @@ def db_shell_cmd(
     # Build SSH command for interactive session — resolve full path for 32-bit Python on Windows
     import pathlib as _pl
     import shutil as _shutil
+
     def _find_ssh_db():
-        b = _shutil.which('ssh') or _shutil.which('ssh.exe')
-        if b: return b
-        _sr = __import__('os').environ.get('SystemRoot', 'C:/Windows')
-        for _c in [_pl.Path(_sr)/'SysNative'/'OpenSSH'/'ssh.exe', _pl.Path(_sr)/'System32'/'OpenSSH'/'ssh.exe']:
-            if _c.exists(): return str(_c)
-        raise FileNotFoundError('ssh.exe not found')
-    ssh_cmd = [_find_ssh_db(), '-t', '-p', str(ssh_port)]
+        b = _shutil.which("ssh") or _shutil.which("ssh.exe")
+        if b:
+            return b
+        _sr = __import__("os").environ.get("SystemRoot", "C:/Windows")
+        for _c in [
+            _pl.Path(_sr) / "SysNative" / "OpenSSH" / "ssh.exe",
+            _pl.Path(_sr) / "System32" / "OpenSSH" / "ssh.exe",
+        ]:
+            if _c.exists():
+                return str(_c)
+        raise FileNotFoundError("ssh.exe not found")
+
+    ssh_cmd = [_find_ssh_db(), "-t", "-p", str(ssh_port)]
     if ssh_key:
-        ssh_cmd.extend(['-i', str(Path(ssh_key).expanduser())])
-    ssh_cmd.append(f'{ssh_user}@{ssh_host}')
+        ssh_cmd.extend(["-i", str(Path(ssh_key).expanduser())])
+    ssh_cmd.append(f"{ssh_user}@{ssh_host}")
     ssh_cmd.append(db_cmd)
 
     ch.info(f"Connecting to {resolved_db_type} on {host_name}...")
@@ -941,7 +1031,6 @@ def db_shell_cmd(
 
     # Run interactively
     subprocess.run(ssh_cmd)
-
 
 
 from pathlib import Path
@@ -970,31 +1059,44 @@ def db_callback(ctx: typer.Context):
 def db_show(
     ctx: typer.Context,
     database: Optional[str] = typer.Argument(None, help="Database name"),
-    container: Optional[str] = typer.Option(None, "--container", "-c", help="Docker container name"),
+    container: Optional[str] = typer.Option(
+        None, "--container", "-c", help="Docker container name"
+    ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(None, "--password", "-p", help="Database password"),
-    db_type: Optional[str] = typer.Option(None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p", help="Database password"
+    ),
+    db_type: Optional[str] = typer.Option(
+        None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
+    ),
     tables: bool = typer.Option(False, "--tables", help="Show tables in database"),
-    containers: bool = typer.Option(False, "--containers", help="Show database containers"),
+    containers: bool = typer.Option(
+        False, "--containers", help="Show database containers"
+    ),
     users: bool = typer.Option(False, "--users", help="Show database users"),
     plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
 ):
     """Show database information (canonical command)."""
-    ctx.obj['plain'] = plain
+    ctx.obj["plain"] = plain
     if containers:
         from navig.commands.db import db_containers_cmd
+
         db_containers_cmd(ctx.obj)
     elif users:
         from navig.commands.database_advanced import list_users_cmd
+
         list_users_cmd(ctx.obj)
     elif tables and database:
         from navig.commands.db import db_tables_cmd
+
         db_tables_cmd(database, container, user, password, db_type, ctx.obj)
     elif database:
         from navig.commands.db import db_tables_cmd
+
         db_tables_cmd(database, container, user, password, db_type, ctx.obj)
     else:
         from navig.commands.db import db_list_cmd
+
         db_list_cmd(container, user, password, db_type, ctx.obj)
 
 
@@ -1002,27 +1104,41 @@ def db_show(
 def db_run(
     ctx: typer.Context,
     query: Optional[str] = typer.Argument(None, help="SQL query to execute"),
-    container: Optional[str] = typer.Option(None, "--container", "-c", help="Docker container name"),
+    container: Optional[str] = typer.Option(
+        None, "--container", "-c", help="Docker container name"
+    ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(None, "--password", "-p", help="Database password"),
-    database: Optional[str] = typer.Option(None, "--database", "-d", help="Database name"),
-    db_type: Optional[str] = typer.Option(None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"),
-    file: Optional[Path] = typer.Option(None, "--file", "-f", help="SQL file to execute"),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p", help="Database password"
+    ),
+    database: Optional[str] = typer.Option(
+        None, "--database", "-d", help="Database name"
+    ),
+    db_type: Optional[str] = typer.Option(
+        None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
+    ),
+    file: Optional[Path] = typer.Option(
+        None, "--file", "-f", help="SQL file to execute"
+    ),
     shell: bool = typer.Option(False, "--shell", "-s", help="Open interactive shell"),
 ):
     """Run SQL query/file or open shell (canonical command)."""
     if shell:
         from navig.commands.db import db_shell_cmd
+
         db_shell_cmd(container, user, password, database, db_type, ctx.obj)
     elif file:
         from navig.commands.database import execute_sql_file
+
         execute_sql_file(file, ctx.obj)
     elif query:
         from navig.commands.db import db_query_cmd
+
         db_query_cmd(query, container, user, password, database, db_type, ctx.obj)
     else:
         # Default to shell if no query provided
         from navig.commands.db import db_shell_cmd
+
         db_shell_cmd(container, user, password, database, db_type, ctx.obj)
 
 
@@ -1030,8 +1146,9 @@ def _is_base64_encoded(s: str) -> bool:
     """Check if string looks like base64 (for auto-detection)."""
     import base64
     import re
+
     # Base64 pattern: only A-Za-z0-9+/= and length multiple of 4
-    if not re.match(r'^[A-Za-z0-9+/]+=*$', s):
+    if not re.match(r"^[A-Za-z0-9+/]+=*$", s):
         return False
     if len(s) % 4 != 0:
         return False
@@ -1040,9 +1157,19 @@ def _is_base64_encoded(s: str) -> bool:
         return False
     # Try to decode - valid base64 should decode cleanly
     try:
-        decoded = base64.b64decode(s).decode('utf-8')
+        decoded = base64.b64decode(s).decode("utf-8")
         # Check if decoded looks like SQL (common keywords)
-        sql_keywords = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'ALTER', 'SHOW', 'DESCRIBE']
+        sql_keywords = [
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "CREATE",
+            "DROP",
+            "ALTER",
+            "SHOW",
+            "DESCRIBE",
+        ]
         return any(kw in decoded.upper() for kw in sql_keywords)
     except Exception:
         return False
@@ -1052,21 +1179,36 @@ def _is_base64_encoded(s: str) -> bool:
 def db_query_new(
     ctx: typer.Context,
     query: str = typer.Argument(..., help="SQL query to execute (auto-detects base64)"),
-    container: Optional[str] = typer.Option(None, "--container", "-c", help="Docker container name"),
+    container: Optional[str] = typer.Option(
+        None, "--container", "-c", help="Docker container name"
+    ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(None, "--password", "-p", help="Database password"),
-    database: Optional[str] = typer.Option(None, "--database", "-d", help="Database name"),
-    db_type: Optional[str] = typer.Option(None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"),
-    plain: bool = typer.Option(False, "--plain", "--raw", help="Output plain text (no formatting) for scripting"),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p", help="Database password"
+    ),
+    database: Optional[str] = typer.Option(
+        None, "--database", "-d", help="Database name"
+    ),
+    db_type: Optional[str] = typer.Option(
+        None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
+    ),
+    plain: bool = typer.Option(
+        False,
+        "--plain",
+        "--raw",
+        help="Output plain text (no formatting) for scripting",
+    ),
     json: bool = typer.Option(False, "--json", help="Output JSON"),
-    b64: bool = typer.Option(False, "--b64", "-b", help="Force base64 decode (usually auto-detected)"),
+    b64: bool = typer.Option(
+        False, "--b64", "-b", help="Force base64 decode (usually auto-detected)"
+    ),
 ):
     """Execute SQL query on remote database.
-    
+
     Base64 encoding is AUTO-DETECTED. Just pass the query:
         navig db query "SELECT * FROM users" -d mydb
         navig db query "U0VMRUNUICogRlJPTSB1c2Vycw==" -d mydb  # Auto-detected as base64
-    
+
     Use --b64 to force base64 decoding if auto-detection fails.
     """
     import base64
@@ -1076,9 +1218,11 @@ def db_query_new(
     # Auto-detect base64 or use explicit flag
     if b64 or _is_base64_encoded(query):
         try:
-            decoded = base64.b64decode(query).decode('utf-8').strip()
+            decoded = base64.b64decode(query).decode("utf-8").strip()
             if not b64:
-                ch.info(f"Auto-detected base64 query ({len(query)} chars → {len(decoded)} chars)")
+                ch.info(
+                    f"Auto-detected base64 query ({len(query)} chars → {len(decoded)} chars)"
+                )
             query = decoded
         except Exception as e:
             if b64:
@@ -1087,7 +1231,7 @@ def db_query_new(
             # If auto-detect failed, just use original query
             pass
 
-    ctx.obj['plain'] = plain
+    ctx.obj["plain"] = plain
     if json:
         ctx.obj["json"] = True
     db_query_cmd(query, container, user, password, database, db_type, ctx.obj)
@@ -1100,22 +1244,32 @@ def db_file_new(
 ):
     """Execute SQL file through tunnel."""
     from navig.commands.database import execute_sql_file
+
     execute_sql_file(file, ctx.obj)
 
 
 @db_app.command("list")
 def db_list_new(
     ctx: typer.Context,
-    container: Optional[str] = typer.Option(None, "--container", "-c", help="Docker container name"),
+    container: Optional[str] = typer.Option(
+        None, "--container", "-c", help="Docker container name"
+    ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(None, "--password", "-p", help="Database password"),
-    db_type: Optional[str] = typer.Option(None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"),
-    plain: bool = typer.Option(False, "--plain", help="Output plain text (one database per line) for scripting"),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p", help="Database password"
+    ),
+    db_type: Optional[str] = typer.Option(
+        None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
+    ),
+    plain: bool = typer.Option(
+        False, "--plain", help="Output plain text (one database per line) for scripting"
+    ),
     json: bool = typer.Option(False, "--json", help="Output JSON"),
 ):
     """List all databases on remote server."""
     from navig.commands.db import db_list_cmd
-    ctx.obj['plain'] = plain
+
+    ctx.obj["plain"] = plain
     if json:
         ctx.obj["json"] = True
     db_list_cmd(container, user, password, db_type, ctx.obj)
@@ -1125,15 +1279,24 @@ def db_list_new(
 def db_tables_new(
     ctx: typer.Context,
     database: str = typer.Argument(..., help="Database name"),
-    container: Optional[str] = typer.Option(None, "--container", "-c", help="Docker container name"),
+    container: Optional[str] = typer.Option(
+        None, "--container", "-c", help="Docker container name"
+    ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(None, "--password", "-p", help="Database password"),
-    db_type: Optional[str] = typer.Option(None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"),
-    plain: bool = typer.Option(False, "--plain", help="Output plain text (one table per line) for scripting"),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p", help="Database password"
+    ),
+    db_type: Optional[str] = typer.Option(
+        None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
+    ),
+    plain: bool = typer.Option(
+        False, "--plain", help="Output plain text (one table per line) for scripting"
+    ),
 ):
     """List tables in a database."""
     from navig.commands.db import db_tables_cmd
-    ctx.obj['plain'] = plain
+
+    ctx.obj["plain"] = plain
     db_tables_cmd(database, container, user, password, db_type, ctx.obj)
 
 
@@ -1141,14 +1304,23 @@ def db_tables_new(
 def db_dump_new(
     ctx: typer.Context,
     database: str = typer.Argument(..., help="Database name to dump"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file path"),
-    container: Optional[str] = typer.Option(None, "--container", "-c", help="Docker container name"),
+    output: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Output file path"
+    ),
+    container: Optional[str] = typer.Option(
+        None, "--container", "-c", help="Docker container name"
+    ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(None, "--password", "-p", help="Database password"),
-    db_type: Optional[str] = typer.Option(None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p", help="Database password"
+    ),
+    db_type: Optional[str] = typer.Option(
+        None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
+    ),
 ):
     """Dump/backup a database from remote server."""
     from navig.commands.db import db_dump_cmd
+
     db_dump_cmd(database, output, container, user, password, db_type, ctx.obj)
 
 
@@ -1159,21 +1331,31 @@ def db_restore_new(
 ):
     """Restore database from backup file."""
     from navig.commands.database import restore_database
+
     restore_database(file, ctx.obj)
 
 
 @db_app.command("shell", hidden=True)
 def db_shell_new(
     ctx: typer.Context,
-    container: Optional[str] = typer.Option(None, "--container", "-c", help="Docker container name"),
+    container: Optional[str] = typer.Option(
+        None, "--container", "-c", help="Docker container name"
+    ),
     user: str = typer.Option("root", "--user", "-u", help="Database user"),
-    password: Optional[str] = typer.Option(None, "--password", "-p", help="Database password"),
-    database: Optional[str] = typer.Option(None, "--database", "-d", help="Database name"),
-    db_type: Optional[str] = typer.Option(None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"),
+    password: Optional[str] = typer.Option(
+        None, "--password", "-p", help="Database password"
+    ),
+    database: Optional[str] = typer.Option(
+        None, "--database", "-d", help="Database name"
+    ),
+    db_type: Optional[str] = typer.Option(
+        None, "--type", "-t", help="Database type: mysql, mariadb, postgresql"
+    ),
 ):
     """[DEPRECATED: Use 'navig db run --shell'] Open interactive database shell."""
     deprecation_warning("navig db shell", "navig db run --shell")
     from navig.commands.db import db_shell_cmd
+
     db_shell_cmd(container, user, password, database, db_type, ctx.obj)
 
 
@@ -1182,6 +1364,7 @@ def db_containers_new(ctx: typer.Context):
     """[DEPRECATED: Use 'navig db show --containers'] List database containers."""
     deprecation_warning("navig db containers", "navig db show --containers")
     from navig.commands.db import db_containers_cmd
+
     db_containers_cmd(ctx.obj)
 
 
@@ -1190,6 +1373,7 @@ def db_users_new(ctx: typer.Context):
     """[DEPRECATED: Use 'navig db show --users'] List database users."""
     deprecation_warning("navig db users", "navig db show --users")
     from navig.commands.database_advanced import list_users_cmd
+
     list_users_cmd(ctx.obj)
 
 
@@ -1200,6 +1384,7 @@ def db_optimize_new(
 ):
     """Optimize database table."""
     from navig.commands.database_advanced import optimize_table_cmd
+
     optimize_table_cmd(table, ctx.obj)
 
 
@@ -1210,6 +1395,5 @@ def db_repair_new(
 ):
     """Repair database table."""
     from navig.commands.database_advanced import repair_table_cmd
+
     repair_table_cmd(table, ctx.obj)
-
-

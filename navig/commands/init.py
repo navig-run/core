@@ -80,18 +80,18 @@ def _copy_instructions_file(project_root: Path) -> bool:
 def init_app(options: Dict[str, Any]) -> None:
     """
     Initialize app-specific .navig/ directory.
-    
+
     Creates a .navig/ directory in the current working directory with:
     - hosts/ subdirectory for app-specific host configs
     - apps/ subdirectory for app-specific app configs
     - config.yaml with app metadata
-    
+
     Args:
         options: Command options (quiet, yes, copy_global, etc.)
     """
-    quiet = options.get('quiet', False)
-    copy_global = options.get('copy_global', False)
-    auto_yes = options.get('yes', False)
+    quiet = options.get("quiet", False)
+    copy_global = options.get("copy_global", False)
+    auto_yes = options.get("yes", False)
 
     # Check if .navig/ already exists
     navig_dir = Path.cwd() / ".navig"
@@ -99,7 +99,7 @@ def init_app(options: Dict[str, Any]) -> None:
     if navig_dir.exists():
         ch.error(
             "App already initialized",
-            f".navig/ directory already exists in {Path.cwd()}"
+            f".navig/ directory already exists in {Path.cwd()}",
         )
         return
 
@@ -117,16 +117,24 @@ def init_app(options: Dict[str, Any]) -> None:
         navig_dir.mkdir(parents=True, exist_ok=True)
 
         # Set permissions on Windows (full control for current user)
-        if os.name == 'nt':
+        if os.name == "nt":
             try:
                 import getpass
                 import subprocess
+
                 username = getpass.getuser()
                 # Grant full control to current user
                 subprocess.run(
-                    ['icacls', str(navig_dir), '/grant', f'{username}:(OI)(CI)F', '/T', '/Q'],
+                    [
+                        "icacls",
+                        str(navig_dir),
+                        "/grant",
+                        f"{username}:(OI)(CI)F",
+                        "/T",
+                        "/Q",
+                    ],
                     capture_output=True,
-                    check=False
+                    check=False,
                 )
             except Exception as e:
                 if not quiet:
@@ -134,7 +142,14 @@ def init_app(options: Dict[str, Any]) -> None:
         else:
             # Unix-like systems - set rwx for user
             try:
-                os.chmod(navig_dir, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+                os.chmod(
+                    navig_dir,
+                    stat.S_IRWXU
+                    | stat.S_IRGRP
+                    | stat.S_IXGRP
+                    | stat.S_IROTH
+                    | stat.S_IXOTH,
+                )
             except Exception as e:
                 if not quiet:
                     ch.warning(f"Could not set permissions: {e}")
@@ -164,15 +179,15 @@ def init_app(options: Dict[str, Any]) -> None:
         # Create config.yaml with app metadata
         app_name = Path.cwd().name
         config_data = {
-            'app': {
-                'name': app_name,
-                'initialized': datetime.now().isoformat(),
-                'version': '1.0',
+            "app": {
+                "name": app_name,
+                "initialized": datetime.now().isoformat(),
+                "version": "1.0",
             }
         }
 
         config_file = navig_dir / "config.yaml"
-        with open(config_file, 'w', encoding='utf-8') as f:
+        with open(config_file, "w", encoding="utf-8") as f:
             yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
 
         # Copy NAVIG instructions file to .github/instructions/ (silent operation)
@@ -208,9 +223,13 @@ def init_app(options: Dict[str, Any]) -> None:
                 # Build informative prompt message
                 config_summary = []
                 if host_count > 0:
-                    config_summary.append(f"{host_count} host{'s' if host_count != 1 else ''}")
+                    config_summary.append(
+                        f"{host_count} host{'s' if host_count != 1 else ''}"
+                    )
                 if app_count > 0:
-                    config_summary.append(f"{app_count} legacy config{'s' if app_count != 1 else ''}")
+                    config_summary.append(
+                        f"{app_count} legacy config{'s' if app_count != 1 else ''}"
+                    )
 
                 prompt_msg = f"Found {' and '.join(config_summary)} in global config. Copy to this app?"
 
@@ -241,6 +260,7 @@ def init_app(options: Dict[str, Any]) -> None:
         # Clean up partial creation
         if navig_dir.exists():
             import shutil
+
             shutil.rmtree(navig_dir)
 
 
@@ -269,10 +289,13 @@ def _count_global_configs() -> tuple[int, int]:
         if global_apps_dir.exists() and global_apps_dir.is_dir():
             try:
                 # Exclude backup files
-                app_count = len([
-                    f for f in global_apps_dir.glob("*.yaml")
-                    if '.backup.' not in f.name
-                ])
+                app_count = len(
+                    [
+                        f
+                        for f in global_apps_dir.glob("*.yaml")
+                        if ".backup." not in f.name
+                    ]
+                )
             except (PermissionError, OSError):
                 pass  # best-effort cleanup; ignore access/IO errors
     except (PermissionError, OSError):
@@ -315,6 +338,7 @@ def _copy_global_configs(navig_dir: Path, quiet: bool = False) -> None:
                 try:
                     dest_file = app_hosts_dir / host_file.name
                     import shutil
+
                     shutil.copy2(host_file, dest_file)
                     copied_hosts += 1
                 except (PermissionError, OSError) as e:
@@ -334,10 +358,11 @@ def _copy_global_configs(navig_dir: Path, quiet: bool = False) -> None:
 
             for app_file in global_apps_dir.glob("*.yaml"):
                 # Skip backup files
-                if '.backup.' not in app_file.name:
+                if ".backup." not in app_file.name:
                     try:
                         dest_file = app_apps_dir / app_file.name
                         import shutil
+
                         shutil.copy2(app_file, dest_file)
                         copied_apps += 1
                     except (PermissionError, OSError) as e:
@@ -359,7 +384,9 @@ def _copy_global_configs(navig_dir: Path, quiet: bool = False) -> None:
             if copied_hosts > 0:
                 parts.append(f"{copied_hosts} host{'s' if copied_hosts != 1 else ''}")
             if copied_apps > 0:
-                parts.append(f"{copied_apps} legacy config{'s' if copied_apps != 1 else ''}")
+                parts.append(
+                    f"{copied_apps} legacy config{'s' if copied_apps != 1 else ''}"
+                )
 
             ch.success(f"✓ Copied {' and '.join(parts)} to .navig/")
             ch.dim("  (Originals remain in ~/.navig/)")
@@ -367,13 +394,15 @@ def _copy_global_configs(navig_dir: Path, quiet: bool = False) -> None:
             ch.dim("No configurations found to copy")
 
         if total_failed > 0:
-            ch.warning(f"Failed to copy {total_failed} file(s) due to permission errors")
+            ch.warning(
+                f"Failed to copy {total_failed} file(s) due to permission errors"
+            )
 
 
 def _prompt_local_discovery(navig_dir: Path) -> None:
     """
     Prompt user to discover local development environment if no hosts are configured.
-    
+
     Args:
         navig_dir: Path to the .navig/ directory
     """
@@ -383,34 +412,34 @@ def _prompt_local_discovery(navig_dir: Path) -> None:
     hosts = config_manager.list_hosts()
 
     # Check if there are any hosts (excluding 'localhost' which might already exist)
-    non_local_hosts = [h for h in hosts if h not in ('localhost', 'local', 'local-dev')]
+    non_local_hosts = [h for h in hosts if h not in ("localhost", "local", "local-dev")]
 
     if len(hosts) == 0:
         # No hosts at all - definitely offer local discovery
         ch.newline()
         ch.header("Local Development Setup")
-        ch.info("No hosts configured. Would you like to auto-discover your local environment?")
+        ch.info(
+            "No hosts configured. Would you like to auto-discover your local environment?"
+        )
         ch.dim("This will detect installed databases, web servers, PHP, Node.js, etc.")
         ch.newline()
 
         if ch.confirm_action("Discover local environment?", default=True):
             from navig.commands.local_discovery import discover_local_host
+
             discover_local_host(
-                name="localhost",
-                auto_confirm=True,
-                set_active=True,
-                progress=True
+                name="localhost", auto_confirm=True, set_active=True, progress=True
             )
-    elif len(non_local_hosts) == 0 and 'localhost' not in hosts:
+    elif len(non_local_hosts) == 0 and "localhost" not in hosts:
         # Only has generic hosts, offer local discovery
         ch.newline()
-        if ch.confirm_action("Would you like to add your local machine as a host?", default=False):
+        if ch.confirm_action(
+            "Would you like to add your local machine as a host?", default=False
+        ):
             from navig.commands.local_discovery import discover_local_host
+
             discover_local_host(
-                name="localhost",
-                auto_confirm=True,
-                set_active=False,
-                progress=True
+                name="localhost", auto_confirm=True, set_active=False, progress=True
             )
 
 
@@ -430,6 +459,7 @@ def _local_log_dir() -> Path:
     """Return the canonical per-user log directory for NAVIG."""
     try:
         import platformdirs
+
         return Path(platformdirs.user_log_dir("navig", "navig"))
     except ImportError:
         return Path.home() / ".navig" / "logs"
@@ -439,6 +469,7 @@ def _local_state_dir() -> Path:
     """Return the canonical per-user state directory for NAVIG."""
     try:
         import platformdirs
+
         return Path(platformdirs.user_state_dir("navig", "navig"))
     except ImportError:
         return Path.home() / ".navig" / "state"
@@ -448,6 +479,7 @@ def _cache_dir() -> Path:
     """Return the canonical per-user cache directory for NAVIG."""
     try:
         import platformdirs
+
         return Path(platformdirs.user_cache_dir("navig", "navig"))
     except ImportError:
         return Path.home() / ".navig" / "cache"
@@ -457,9 +489,11 @@ def _legacy_windows_platformdirs_root() -> Path:
     """Return the nested legacy Windows platformdirs NAVIG root (pre-migration)."""
     try:
         import platformdirs
+
         return Path(platformdirs.user_data_dir("NAVIG", "navig"))
     except ImportError:
         import os
+
         local = os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))
         return Path(local) / "navig" / "NAVIG"
 
@@ -492,7 +526,9 @@ def _migrate_legacy_documents_dir(target_dir: Path) -> None:
         return
 
     # Detect conflicts: any item that already exists in the target
-    conflicts = [item.name for item in source_dir.iterdir() if (target_dir / item.name).exists()]
+    conflicts = [
+        item.name for item in source_dir.iterdir() if (target_dir / item.name).exists()
+    ]
     if conflicts:
         _write_init_log(
             f"legacy migration failed: conflict detected in {', '.join(conflicts)}"
@@ -538,9 +574,9 @@ def _migrate_legacy_windows_runtime_layout() -> None:
 
     # Map legacy sub-dir name → (canonical destination root, keep subdir name?)
     MOVES = [
-        ("Logs",   log_dir,   False),   # Logs/*   → log_dir/*
-        ("memory", state_dir, True),    # memory/* → state_dir/memory/*
-        ("Cache",  cache_dir, False),   # Cache/*  → cache_dir/*
+        ("Logs", log_dir, False),  # Logs/*   → log_dir/*
+        ("memory", state_dir, True),  # memory/* → state_dir/memory/*
+        ("Cache", cache_dir, False),  # Cache/*  → cache_dir/*
     ]
 
     for sub_name, dest_root, keep_subdir in MOVES:

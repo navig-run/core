@@ -8,6 +8,7 @@ Schema
 vault_items  : encrypted items (DEK + payload blobs)
 vault_audit  : append-only event log per item
 """
+
 from __future__ import annotations
 
 import json
@@ -180,16 +181,12 @@ class VaultStore:
     def delete(self, label: str) -> bool:
         """Delete item by label.  Returns True if a row was deleted."""
         with self._tx() as conn:
-            cur = conn.execute(
-                "DELETE FROM vault_items WHERE label = ?", (label,)
-            )
+            cur = conn.execute("DELETE FROM vault_items WHERE label = ?", (label,))
             return cur.rowcount > 0
 
     def count(self) -> int:
         """Total number of items in the vault."""
-        return self._connect().execute(
-            "SELECT COUNT(*) FROM vault_items"
-        ).fetchone()[0]
+        return self._connect().execute("SELECT COUNT(*) FROM vault_items").fetchone()[0]
 
     # ── Audit log ────────────────────────────────────────────────────────────
 
@@ -204,15 +201,25 @@ class VaultStore:
         with self._tx() as conn:
             conn.execute(
                 "INSERT INTO vault_audit (item_id, action, actor, ts, detail) VALUES (?,?,?,?,?)",
-                (item_id, action, actor, datetime.now(timezone.utc).isoformat(), detail),
+                (
+                    item_id,
+                    action,
+                    actor,
+                    datetime.now(timezone.utc).isoformat(),
+                    detail,
+                ),
             )
 
     def get_audit(self, item_id: str) -> list[dict]:
         """Return audit log for a specific item, newest first."""
-        rows = self._connect().execute(
-            "SELECT * FROM vault_audit WHERE item_id = ? ORDER BY ts DESC",
-            (item_id,),
-        ).fetchall()
+        rows = (
+            self._connect()
+            .execute(
+                "SELECT * FROM vault_audit WHERE item_id = ? ORDER BY ts DESC",
+                (item_id,),
+            )
+            .fetchall()
+        )
         return [dict(r) for r in rows]
 
     # ── Lifecycle ────────────────────────────────────────────────────────────

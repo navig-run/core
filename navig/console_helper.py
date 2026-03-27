@@ -36,23 +36,14 @@ def _ensure_rich():
         return
     from rich.console import Console as _C
     from rich.panel import Panel as _P
-    from rich.progress import (
-        BarColumn as _BC,
-    )
-    from rich.progress import (
-        Progress as _Pr,
-    )
-    from rich.progress import (
-        SpinnerColumn as _SC,
-    )
-    from rich.progress import (
-        TaskProgressColumn as _TPC,
-    )
-    from rich.progress import (
-        TextColumn as _TC,
-    )
+    from rich.progress import BarColumn as _BC
+    from rich.progress import Progress as _Pr
+    from rich.progress import SpinnerColumn as _SC
+    from rich.progress import TaskProgressColumn as _TPC
+    from rich.progress import TextColumn as _TC
     from rich.table import Table as _T
     from rich.tree import Tree as _Tr
+
     _Console = _C
     _Panel = _P
     _Table = _T
@@ -69,6 +60,7 @@ def _get_syntax():
     global _Syntax
     if _Syntax is None:
         from rich.syntax import Syntax
+
         _Syntax = Syntax
     return _Syntax
 
@@ -78,6 +70,7 @@ def _get_markdown():
     global _Markdown
     if _Markdown is None:
         from rich.markdown import Markdown
+
         _Markdown = Markdown
     return _Markdown
 
@@ -85,6 +78,7 @@ def _get_markdown():
 # ---------------------------------------------------------------------------
 # Lazy console singleton — proxy that imports Rich on first real access.
 # ---------------------------------------------------------------------------
+
 
 class _LazyConsole:
     """Lightweight proxy that defers ``Console()`` creation."""
@@ -171,8 +165,10 @@ def __getattr__(name: str):
 # COLOR SCHEME (Schema Standard)
 # ============================================================================
 
+
 class Colors:
     """Centralized color definitions for consistent theming."""
+
     SUCCESS = "green"
     ERROR = "red"
     WARNING = "yellow"
@@ -191,6 +187,7 @@ class Colors:
 # ============================================================================
 # MESSAGE HELPERS
 # ============================================================================
+
 
 def success(message: str, details: Optional[str] = None):
     """Print success message in green with checkmark."""
@@ -226,7 +223,11 @@ def info(message: str, details: Optional[str] = None, no_wrap: bool = False):
     """
     mark = _safe_symbol("ℹ", "i")
     if no_wrap:
-        console.print(f"[{Colors.INFO}]{mark}[/{Colors.INFO}] {message}", overflow="ellipsis", no_wrap=True)
+        console.print(
+            f"[{Colors.INFO}]{mark}[/{Colors.INFO}] {message}",
+            overflow="ellipsis",
+            no_wrap=True,
+        )
     else:
         console.print(f"[{Colors.INFO}]{mark}[/{Colors.INFO}] {message}")
     if details:
@@ -266,20 +267,16 @@ def raw_print(message: str):
 # PANELS
 # ============================================================================
 
+
 def panel(
     content: str,
     title: Optional[str] = None,
     style: str = "cyan",
-    border_style: str = "cyan"
+    border_style: str = "cyan",
 ):
     """Display content in a bordered panel."""
     _ensure_rich()
-    console.print(_Panel(
-        content,
-        title=title,
-        style=style,
-        border_style=border_style
-    ))
+    console.print(_Panel(content, title=title, style=style, border_style=border_style))
 
 
 def success_panel(message: str, title: str = "Success"):
@@ -301,24 +298,25 @@ def warning_panel(message: str, title: str = "Warning"):
 # TABLES
 # ============================================================================
 
+
 def create_table(
     title: Optional[str] = None,
     columns: Optional[List[Dict[str, str]]] = None,
     show_header: bool = True,
-    show_lines: bool = False
+    show_lines: bool = False,
 ):
     """
     Create a Rich table with standard styling.
-    
+
     Args:
         title: Optional table title
         columns: List of dicts with 'name', 'style', 'justify' keys
         show_header: Whether to show column headers
         show_lines: Whether to show row lines
-        
+
     Returns:
         Configured Rich Table instance
-        
+
     Example:
         table = create_table("Servers", [
             {"name": "Name", "style": "cyan"},
@@ -332,15 +330,15 @@ def create_table(
         title=title,
         show_header=show_header,
         show_lines=show_lines,
-        header_style="bold cyan"
+        header_style="bold cyan",
     )
 
     if columns:
         for col in columns:
             table.add_column(
-                col.get('name', ''),
-                style=col.get('style', 'white'),
-                justify=col.get('justify', 'left')
+                col.get("name", ""),
+                style=col.get("style", "white"),
+                justify=col.get("justify", "left"),
             )
 
     return table
@@ -354,11 +352,11 @@ def print_table(table):
 def format_db_output(stdout: str, query_type: Optional[str] = None) -> None:
     """
     Format database query output with minimal colors for token efficiency.
-    
+
     Only highlights critical schema elements:
     - PRI keys (bold)
     - auto_increment (dim)
-    
+
     Args:
         stdout: Raw tab-separated output from database
         query_type: Optional hint ('describe', 'select', 'show')
@@ -366,13 +364,13 @@ def format_db_output(stdout: str, query_type: Optional[str] = None) -> None:
     if not stdout or not stdout.strip():
         return
 
-    lines = stdout.strip().split('\n')
+    lines = stdout.strip().split("\n")
     if not lines:
         return
 
     # Parse header and rows
-    header = lines[0].split('\t')
-    rows = [line.split('\t') for line in lines[1:] if line.strip()]
+    header = lines[0].split("\t")
+    rows = [line.split("\t") for line in lines[1:] if line.strip()]
 
     if not rows:
         # Just header, no data
@@ -382,10 +380,10 @@ def format_db_output(stdout: str, query_type: Optional[str] = None) -> None:
     # Detect query type from headers if not provided
     if not query_type:
         header_lower = [h.lower() for h in header]
-        if 'field' in header_lower and 'type' in header_lower:
-            query_type = 'describe'
+        if "field" in header_lower and "type" in header_lower:
+            query_type = "describe"
         else:
-            query_type = 'select'
+            query_type = "select"
 
     # Create minimal table - no box, no colors on columns
     _ensure_rich()
@@ -408,22 +406,22 @@ def format_db_output(stdout: str, query_type: Optional[str] = None) -> None:
             if i >= len(header):
                 continue
 
-            col_lower = header[i].lower() if i < len(header) else ''
+            col_lower = header[i].lower() if i < len(header) else ""
 
             # Only color truly critical things (saves tokens)
-            if query_type == 'describe':
-                if col_lower == 'key' and val == 'PRI':
+            if query_type == "describe":
+                if col_lower == "key" and val == "PRI":
                     val = "[bold]PRI[/]"  # Primary keys are important
-                elif col_lower == 'extra' and 'auto_increment' in val.lower():
+                elif col_lower == "extra" and "auto_increment" in val.lower():
                     val = "[dim]AI[/]"  # Shorten to save tokens
 
             formatted_row.append(val)
 
         # Ensure row has same number of columns as header
         while len(formatted_row) < len(header):
-            formatted_row.append('')
+            formatted_row.append("")
 
-        table.add_row(*formatted_row[:len(header)])
+        table.add_row(*formatted_row[: len(header)])
 
     console.print(table)
 
@@ -441,6 +439,7 @@ def format_db_output_plain(stdout: str) -> None:
 # PROGRESS INDICATORS
 # ============================================================================
 
+
 def create_progress():
     """Create a progress bar with standard styling."""
     _ensure_rich()
@@ -449,16 +448,16 @@ def create_progress():
         _TextColumn("[progress.description]{task.description}"),
         _BarColumn(),
         _TaskProgressColumn(),
-        console=console
+        console=console,
     )
 
 
 def create_spinner(message: str = "Working...") -> "SpinnerContext":
     """Create a spinner for indeterminate operations.
-    
+
     Args:
         message: The message to display next to the spinner
-        
+
     Returns:
         A context manager that shows a spinner while active
     """
@@ -473,7 +472,9 @@ class SpinnerContext:
         self.status = None
 
     def __enter__(self):
-        self.status = console.status(f"[{Colors.INFO}]{self.message}[/{Colors.INFO}]", spinner="dots")
+        self.status = console.status(
+            f"[{Colors.INFO}]{self.message}[/{Colors.INFO}]", spinner="dots"
+        )
         self.status.__enter__()
         return self
 
@@ -487,20 +488,17 @@ class SpinnerContext:
 # SYNTAX HIGHLIGHTING
 # ============================================================================
 
+
 def print_code(
     code: str,
     language: str = "python",
     theme: str = "monokai",
-    line_numbers: bool = False
+    line_numbers: bool = False,
 ):
     """Print code with syntax highlighting."""
     Syntax = _get_syntax()
     syntax = Syntax(
-        code,
-        language,
-        theme=theme,
-        line_numbers=line_numbers,
-        word_wrap=True
+        code, language, theme=theme, line_numbers=line_numbers, word_wrap=True
     )
     console.print(syntax)
 
@@ -508,6 +506,7 @@ def print_code(
 def print_json(data: Union[dict, list], indent: int = 2):
     """Print JSON with syntax highlighting."""
     import json
+
     json_str = json.dumps(data, indent=indent)
     print_code(json_str, language="json")
 
@@ -531,6 +530,7 @@ def print_path(path: Union[str, Path]):
 # TREE VIEWS
 # ============================================================================
 
+
 def create_tree(label: str, guide_style: str = "cyan"):
     """Create a tree structure for hierarchical data."""
     _ensure_rich()
@@ -540,6 +540,7 @@ def create_tree(label: str, guide_style: str = "cyan"):
 # ============================================================================
 # MARKDOWN
 # ============================================================================
+
 
 def print_markdown(markdown_text: str):
     """Print markdown with rich formatting."""
@@ -551,6 +552,7 @@ def print_markdown(markdown_text: str):
 # ============================================================================
 # STATUS INDICATORS
 # ============================================================================
+
 
 def status_icon(is_good: bool) -> str:
     """Return colored status icon."""
@@ -572,30 +574,31 @@ def status_text(text: str, is_good: bool) -> str:
 # SERVER-SPECIFIC HELPERS
 # ============================================================================
 
+
 def print_server_info(name: str, config: Dict[str, Any]):
     """Print formatted server information."""
     table = create_table(
         title=f"Server: {name}",
         columns=[
             {"name": "Property", "style": "cyan"},
-            {"name": "Value", "style": "green"}
-        ]
+            {"name": "Value", "style": "green"},
+        ],
     )
 
-    table.add_row("Host", config.get('host', 'N/A'))
-    table.add_row("User", config.get('user', 'N/A'))
-    table.add_row("Port", str(config.get('port', 22)))
+    table.add_row("Host", config.get("host", "N/A"))
+    table.add_row("User", config.get("user", "N/A"))
+    table.add_row("Port", str(config.get("port", 22)))
 
-    if 'database' in config:
-        db = config['database']
+    if "database" in config:
+        db = config["database"]
         table.add_row("Database", f"{db.get('type', 'N/A')} ({db.get('name', 'N/A')})")
 
-    if 'metadata' in config:
-        meta = config['metadata']
-        if meta.get('os'):
-            table.add_row("OS", meta['os'])
-        if meta.get('php_version'):
-            table.add_row("PHP", meta['php_version'])
+    if "metadata" in config:
+        meta = config["metadata"]
+        if meta.get("os"):
+            table.add_row("OS", meta["os"])
+        if meta.get("php_version"):
+            table.add_row("PHP", meta["php_version"])
 
     print_table(table)
 
@@ -606,14 +609,14 @@ def print_tunnel_status(tunnel_info: Dict[str, Any], server_name: str):
         title=f"Tunnel Status: {server_name}",
         columns=[
             {"name": "Property", "style": "cyan"},
-            {"name": "Value", "style": "green"}
-        ]
+            {"name": "Value", "style": "green"},
+        ],
     )
 
     table.add_row("Status", status_text("RUNNING", True))
     table.add_row("Local Endpoint", f"127.0.0.1:{tunnel_info['local_port']}")
-    table.add_row("Process ID", str(tunnel_info['pid']))
-    table.add_row("Started At", tunnel_info.get('started_at', 'Unknown'))
+    table.add_row("Process ID", str(tunnel_info["pid"]))
+    table.add_row("Started At", tunnel_info.get("started_at", "Unknown"))
 
     print_table(table)
 
@@ -626,9 +629,9 @@ def print_tunnel_status(tunnel_info: Dict[str, Any], server_name: str):
 
 # Operation type levels (lower number = more dangerous)
 OPERATION_LEVELS = {
-    'critical': 1,   # Most dangerous: DROP, DELETE, rm, service stop
-    'standard': 2,   # State-changing: CREATE, UPDATE, uploads, config changes
-    'verbose': 3,    # All operations including reads
+    "critical": 1,  # Most dangerous: DROP, DELETE, rm, service stop
+    "standard": 2,  # State-changing: CREATE, UPDATE, uploads, config changes
+    "verbose": 3,  # All operations including reads
 }
 
 # Confirmation level thresholds
@@ -636,9 +639,9 @@ OPERATION_LEVELS = {
 # 'standard' level: confirm standard and critical (level <= 2)
 # 'verbose' level: confirm all operations (level <= 3)
 CONFIRMATION_THRESHOLDS = {
-    'critical': 1,
-    'standard': 2,
-    'verbose': 3,
+    "critical": 1,
+    "standard": 2,
+    "verbose": 3,
 }
 
 
@@ -646,17 +649,17 @@ def requires_confirmation(
     operation_type: str,
     confirmation_level: str,
     execution_mode: str,
-    auto_confirm: bool = False
+    auto_confirm: bool = False,
 ) -> bool:
     """
     Determine if an operation requires confirmation.
-    
+
     Args:
         operation_type: Type of operation ('critical', 'standard', or 'verbose')
         confirmation_level: Configured confirmation level
         execution_mode: Configured execution mode ('interactive' or 'auto')
         auto_confirm: If True (--yes flag), bypass confirmation
-        
+
     Returns:
         True if confirmation is required, False otherwise
     """
@@ -665,19 +668,21 @@ def requires_confirmation(
         return False
 
     # Auto mode bypasses confirmation
-    if execution_mode == 'auto':
+    if execution_mode == "auto":
         return False
 
     # Check if operation level meets the confirmation threshold
     op_level = OPERATION_LEVELS.get(operation_type, 2)  # Default to standard
-    threshold = CONFIRMATION_THRESHOLDS.get(confirmation_level, 2)  # Default to standard
+    threshold = CONFIRMATION_THRESHOLDS.get(
+        confirmation_level, 2
+    )  # Default to standard
 
     return op_level <= threshold
 
 
 def confirm_operation(
     operation_name: str,
-    operation_type: str = 'standard',
+    operation_type: str = "standard",
     details: Optional[str] = None,
     host: Optional[str] = None,
     app: Optional[str] = None,
@@ -686,10 +691,10 @@ def confirm_operation(
 ) -> bool:
     """
     Prompt user for confirmation based on configured level.
-    
+
     This function checks the global execution mode and confirmation level
     settings, then prompts the user if confirmation is required.
-    
+
     Args:
         operation_name: Name/description of the operation (e.g., "DROP DATABASE production_db")
         operation_type: Type of operation - 'critical', 'standard', or 'verbose'
@@ -698,10 +703,10 @@ def confirm_operation(
         app: Optional app name for context
         auto_confirm: If True (--yes flag), bypass confirmation
         force_confirm: If True (--confirm flag), force confirmation even in auto mode
-        
+
     Returns:
         True if operation should proceed, False otherwise
-        
+
     Operation Types:
         - 'critical': Destructive operations (DROP, DELETE, rm, service stop)
         - 'standard': State-changing operations (CREATE, UPDATE, uploads)
@@ -715,22 +720,24 @@ def confirm_operation(
 
     # --confirm flag forces interactive mode for this command
     if force_confirm:
-        execution_mode = 'interactive'
+        execution_mode = "interactive"
         auto_confirm = False
 
     # Check if confirmation is needed
-    if not requires_confirmation(operation_type, confirmation_level, execution_mode, auto_confirm):
+    if not requires_confirmation(
+        operation_type, confirmation_level, execution_mode, auto_confirm
+    ):
         return True
 
     # Build confirmation message
     console.print()
 
     # Choose icon and color based on operation type
-    if operation_type == 'critical':
+    if operation_type == "critical":
         icon = "⚠️"
         title_color = Colors.ERROR
         title_text = "Confirm DESTRUCTIVE operation"
-    elif operation_type == 'standard':
+    elif operation_type == "standard":
         icon = "📝"
         title_color = Colors.WARNING
         title_text = "Confirm operation"
@@ -743,16 +750,20 @@ def confirm_operation(
     console.print(f"  [bold]{operation_name}[/bold]")
 
     if host:
-        console.print(f"  [{Colors.DIM}]Host:[/{Colors.DIM}] [{Colors.SERVER}]{host}[/{Colors.SERVER}]")
+        console.print(
+            f"  [{Colors.DIM}]Host:[/{Colors.DIM}] [{Colors.SERVER}]{host}[/{Colors.SERVER}]"
+        )
     if app:
-        console.print(f"  [{Colors.DIM}]App:[/{Colors.DIM}] [{Colors.ACCENT}]{app}[/{Colors.ACCENT}]")
+        console.print(
+            f"  [{Colors.DIM}]App:[/{Colors.DIM}] [{Colors.ACCENT}]{app}[/{Colors.ACCENT}]"
+        )
     if details:
         console.print(f"  [{Colors.DIM}]{details}[/{Colors.DIM}]")
 
     console.print()
 
     # Default to Yes, except for critical operations (keep No for destructive ops)
-    default = False if operation_type == 'critical' else True
+    default = False if operation_type == "critical" else True
 
     return confirm_action("Are you sure you want to proceed?", default=default)
 
@@ -760,10 +771,10 @@ def confirm_operation(
 def classify_command(command: str) -> str:
     """
     Classify a shell command by its danger level.
-    
+
     Args:
         command: Shell command to classify
-        
+
     Returns:
         'critical', 'standard', or 'verbose'
     """
@@ -771,120 +782,179 @@ def classify_command(command: str) -> str:
 
     # Critical patterns (destructive operations)
     critical_patterns = [
-        'rm ', 'rm\t', 'rmdir', 'rm -rf', 'rm -r',
-        'drop database', 'drop table', 'truncate',
-        'delete from', 'delete ',
-        'systemctl stop', 'systemctl disable',
-        'service stop', 'service disable',
-        'shutdown', 'reboot', 'halt', 'poweroff',
-        'dd if=', 'mkfs', 'fdisk', 'parted',
-        'userdel', 'groupdel',
-        ':(){:|:&};:',  # Fork bomb
+        "rm ",
+        "rm\t",
+        "rmdir",
+        "rm -rf",
+        "rm -r",
+        "drop database",
+        "drop table",
+        "truncate",
+        "delete from",
+        "delete ",
+        "systemctl stop",
+        "systemctl disable",
+        "service stop",
+        "service disable",
+        "shutdown",
+        "reboot",
+        "halt",
+        "poweroff",
+        "dd if=",
+        "mkfs",
+        "fdisk",
+        "parted",
+        "userdel",
+        "groupdel",
+        ":(){:|:&};:",  # Fork bomb
     ]
 
     for pattern in critical_patterns:
         if pattern in command_lower:
-            return 'critical'
+            return "critical"
 
     # Standard patterns (state-changing operations)
     standard_patterns = [
-        'create database', 'create table', 'alter table',
-        'insert into', 'update ', 'replace into',
-        'chmod', 'chown', 'chgrp',
-        'mv ', 'cp ', 'ln ',
-        'systemctl start', 'systemctl restart', 'systemctl enable',
-        'service start', 'service restart',
-        'apt install', 'apt remove', 'apt upgrade',
-        'yum install', 'yum remove', 'dnf install',
-        'pip install', 'npm install', 'composer install',
-        'git push', 'git reset', 'git checkout',
-        'mysql ', 'psql ', 'redis-cli',
-        'certbot', 'ufw ', 'iptables',
-        'crontab', 'at ',
+        "create database",
+        "create table",
+        "alter table",
+        "insert into",
+        "update ",
+        "replace into",
+        "chmod",
+        "chown",
+        "chgrp",
+        "mv ",
+        "cp ",
+        "ln ",
+        "systemctl start",
+        "systemctl restart",
+        "systemctl enable",
+        "service start",
+        "service restart",
+        "apt install",
+        "apt remove",
+        "apt upgrade",
+        "yum install",
+        "yum remove",
+        "dnf install",
+        "pip install",
+        "npm install",
+        "composer install",
+        "git push",
+        "git reset",
+        "git checkout",
+        "mysql ",
+        "psql ",
+        "redis-cli",
+        "certbot",
+        "ufw ",
+        "iptables",
+        "crontab",
+        "at ",
     ]
 
     for pattern in standard_patterns:
         if pattern in command_lower:
-            return 'standard'
+            return "standard"
 
     # Default to verbose (read-only or unknown)
-    return 'verbose'
+    return "verbose"
 
 
 def classify_sql(query: str) -> str:
     """
     Classify an SQL query by its danger level.
-    
+
     Args:
         query: SQL query to classify
-        
+
     Returns:
         'critical', 'standard', or 'verbose'
     """
     query_upper = query.upper().strip()
 
     # Critical SQL operations
-    if any(kw in query_upper for kw in ['DROP', 'TRUNCATE', 'DELETE']):
-        return 'critical'
+    if any(kw in query_upper for kw in ["DROP", "TRUNCATE", "DELETE"]):
+        return "critical"
 
     # Standard SQL operations
-    if any(kw in query_upper for kw in ['CREATE', 'ALTER', 'INSERT', 'UPDATE', 'REPLACE', 'GRANT', 'REVOKE']):
-        return 'standard'
+    if any(
+        kw in query_upper
+        for kw in ["CREATE", "ALTER", "INSERT", "UPDATE", "REPLACE", "GRANT", "REVOKE"]
+    ):
+        return "standard"
 
     # Verbose (read-only)
-    return 'verbose'
+    return "verbose"
 
 
 def confirm_action(message: str, default: bool = True) -> bool:
     """
     Ask user for confirmation with rich formatting.
-    
+
     Args:
         message: Question to ask
         default: Default answer if user presses Enter (default: True)
-        
+
     Returns:
         True if user confirms, False otherwise
     """
     from rich.prompt import Confirm
+
     return Confirm.ask(f"[{Colors.PROMPT}]{message}[/{Colors.PROMPT}]", default=default)
 
 
-def prompt_input(message: str, default: Optional[str] = None, password: bool = False) -> str:
+def prompt_input(
+    message: str, default: Optional[str] = None, password: bool = False
+) -> str:
     """
     Prompt user for input with rich formatting.
-    
+
     Args:
         message: Prompt message
         default: Default value
         password: Whether to hide input
-        
+
     Returns:
         User input string
     """
     from rich.prompt import Prompt
-    return Prompt.ask(f"[{Colors.PROMPT}]{message}[/{Colors.PROMPT}]", default=default, password=password)
+
+    return Prompt.ask(
+        f"[{Colors.PROMPT}]{message}[/{Colors.PROMPT}]",
+        default=default,
+        password=password,
+    )
 
 
-def prompt_choice(message: str, choices: List[str], default: Optional[str] = None) -> str:
+def prompt_choice(
+    message: str, choices: List[str], default: Optional[str] = None
+) -> str:
     """
     Prompt user to choose from list of options.
-    
+
     Args:
         message: Prompt message
         choices: List of valid choices
         default: Default choice
-        
+
     Returns:
         Selected choice
     """
     from rich.prompt import Prompt
-    return Prompt.ask(f"[{Colors.PROMPT}]{message}[/{Colors.PROMPT}]", choices=choices, default=default)
+
+    return Prompt.ask(
+        f"[{Colors.PROMPT}]{message}[/{Colors.PROMPT}]",
+        choices=choices,
+        default=default,
+    )
 
 
 # ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
+
 
 def clear():
     """Clear the console screen."""

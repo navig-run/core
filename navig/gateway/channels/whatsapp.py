@@ -10,6 +10,7 @@ Supports:
 
 Requires external whatsapp-web.js bridge server.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
 
 try:
     import aiohttp
+
     AIOHTTP_AVAILABLE = True
 except ImportError:
     aiohttp = None  # type: ignore[assignment]
@@ -31,6 +33,7 @@ except ImportError:
 
 try:
     import websockets
+
     WEBSOCKETS_AVAILABLE = True
 except ImportError:
     websockets = None  # type: ignore[assignment]
@@ -57,7 +60,7 @@ class WhatsAppChannelConfig:
     ):
         """
         Initialize WhatsApp config.
-        
+
         Args:
             bridge_url: HTTP URL for WhatsApp bridge (for sending)
             bridge_ws_url: WebSocket URL for bridge (for receiving)
@@ -82,7 +85,7 @@ class WhatsAppChannelConfig:
         self.mention_required_in_groups = mention_required_in_groups
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'WhatsAppChannelConfig':
+    def from_dict(cls, data: Dict[str, Any]) -> "WhatsAppChannelConfig":
         """Create config from dictionary."""
         return cls(
             bridge_url=data.get("bridge_url"),
@@ -124,13 +127,15 @@ class WhatsAppMessage:
         self.quoted_message = quoted_message
 
     @classmethod
-    def from_bridge_payload(cls, data: Dict[str, Any]) -> 'WhatsAppMessage':
+    def from_bridge_payload(cls, data: Dict[str, Any]) -> "WhatsAppMessage":
         """Create from bridge webhook payload."""
         return cls(
             message_id=data.get("id", ""),
             from_number=data.get("from", "").split("@")[0],  # Remove @c.us suffix
             content=data.get("body", ""),
-            timestamp=datetime.fromisoformat(data.get("timestamp", datetime.now().isoformat())),
+            timestamp=datetime.fromisoformat(
+                data.get("timestamp", datetime.now().isoformat())
+            ),
             is_group=data.get("isGroup", False),
             group_id=data.get("groupId"),
             group_name=data.get("groupName"),
@@ -143,9 +148,9 @@ class WhatsAppMessage:
 class WhatsAppChannel:
     """
     WhatsApp channel adapter for NAVIG Gateway.
-    
+
     Uses whatsapp-web.js based bridge for WhatsApp Web connectivity.
-    
+
     Bridge setup:
     1. Install whatsapp-web.js bridge: https://github.com/nichuanfang/whatsapp-bridge
     2. Run bridge server on localhost:3000
@@ -159,7 +164,7 @@ class WhatsAppChannel:
     ):
         """
         Initialize WhatsApp channel.
-        
+
         Args:
             config: WhatsApp channel configuration
             message_handler: Async callback for message routing
@@ -195,11 +200,11 @@ class WhatsAppChannel:
     async def _send_message(self, to: str, content: str) -> bool:
         """
         Send a message via the bridge.
-        
+
         Args:
             to: Recipient number (with or without @c.us suffix)
             content: Message content
-            
+
         Returns:
             True if sent successfully
         """
@@ -266,8 +271,7 @@ class WhatsAppChannel:
             logger.error(f"Error handling WhatsApp message: {e}")
             reply_to = message.group_id if message.is_group else message.from_number
             await self._send_message(
-                reply_to,
-                "❌ Sorry, I encountered an error processing your request."
+                reply_to, "❌ Sorry, I encountered an error processing your request."
             )
 
     def _should_respond(self, message: WhatsAppMessage) -> bool:
@@ -334,7 +338,9 @@ class WhatsAppChannel:
 
         while self._running:
             try:
-                logger.info(f"Connecting to WhatsApp bridge at {self.config.bridge_ws_url}")
+                logger.info(
+                    f"Connecting to WhatsApp bridge at {self.config.bridge_ws_url}"
+                )
 
                 headers = {}
                 if self.config.api_key:
@@ -358,7 +364,9 @@ class WhatsAppChannel:
 
                             if event_type == "qr":
                                 # QR code for authentication
-                                logger.info("WhatsApp QR code received - scan to authenticate")
+                                logger.info(
+                                    "WhatsApp QR code received - scan to authenticate"
+                                )
                                 # Could emit event for UI display
 
                             elif event_type == "authenticated":
@@ -376,7 +384,9 @@ class WhatsAppChannel:
                                 logger.warning("WhatsApp disconnected")
 
                         except json.JSONDecodeError:
-                            logger.warning(f"Invalid JSON from bridge: {raw_message[:100]}")
+                            logger.warning(
+                                f"Invalid JSON from bridge: {raw_message[:100]}"
+                            )
                         except Exception as e:
                             logger.error(f"Error processing bridge message: {e}")
 
@@ -419,14 +429,17 @@ class WhatsAppChannel:
     async def get_qr_code(self) -> Optional[str]:
         """
         Get QR code for WhatsApp authentication.
-        
+
         Returns:
             QR code data URL or None if not available
         """
         session = await self._get_session()
 
         try:
-            async with session.get(f"{self.config.bridge_url}/api/qr", timeout=aiohttp.ClientTimeout(total=15)) as response:
+            async with session.get(
+                f"{self.config.bridge_url}/api/qr",
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as response:
                 if response.status == 200:
                     data = await response.json()
                     return data.get("qr")
@@ -438,14 +451,17 @@ class WhatsAppChannel:
     async def get_status(self) -> Dict[str, Any]:
         """
         Get WhatsApp connection status.
-        
+
         Returns:
             Status dict with connection info
         """
         session = await self._get_session()
 
         try:
-            async with session.get(f"{self.config.bridge_url}/api/status", timeout=aiohttp.ClientTimeout(total=15)) as response:
+            async with session.get(
+                f"{self.config.bridge_url}/api/status",
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as response:
                 if response.status == 200:
                     return await response.json()
         except Exception as e:
@@ -465,11 +481,11 @@ def create_whatsapp_channel(
 ) -> WhatsAppChannel:
     """
     Create a WhatsApp channel adapter.
-    
+
     Args:
         config: WhatsApp configuration (uses defaults if not provided)
         message_handler: Message routing callback
-        
+
     Returns:
         Configured WhatsAppChannel instance
     """
@@ -480,6 +496,7 @@ def create_whatsapp_channel(
         # Default handler that echoes
         async def echo_handler(channel, user_id, message, metadata):
             return f"Echo: {message}"
+
         message_handler = echo_handler
 
     return WhatsAppChannel(config, message_handler)

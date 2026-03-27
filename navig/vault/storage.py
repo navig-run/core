@@ -90,13 +90,13 @@ class VaultStorage:
                 );
 
                 -- Indexes for common queries
-                CREATE INDEX IF NOT EXISTS idx_provider 
+                CREATE INDEX IF NOT EXISTS idx_provider
                     ON credentials(provider);
-                CREATE INDEX IF NOT EXISTS idx_profile 
+                CREATE INDEX IF NOT EXISTS idx_profile
                     ON credentials(profile_id);
-                CREATE INDEX IF NOT EXISTS idx_provider_profile 
+                CREATE INDEX IF NOT EXISTS idx_provider_profile
                     ON credentials(provider, profile_id);
-                CREATE INDEX IF NOT EXISTS idx_enabled 
+                CREATE INDEX IF NOT EXISTS idx_enabled
                     ON credentials(enabled);
 
                 -- Vault metadata
@@ -114,9 +114,9 @@ class VaultStorage:
                     timestamp TEXT NOT NULL
                 );
 
-                CREATE INDEX IF NOT EXISTS idx_audit_credential 
+                CREATE INDEX IF NOT EXISTS idx_audit_credential
                     ON audit_log(credential_id);
-                CREATE INDEX IF NOT EXISTS idx_audit_timestamp 
+                CREATE INDEX IF NOT EXISTS idx_audit_timestamp
                     ON audit_log(timestamp);
             """
             )
@@ -169,9 +169,11 @@ class VaultStorage:
                     1 if credential.enabled else 0,
                     credential.created_at.isoformat(),
                     credential.updated_at.isoformat(),
-                    credential.last_used_at.isoformat()
-                    if credential.last_used_at
-                    else None,
+                    (
+                        credential.last_used_at.isoformat()
+                        if credential.last_used_at
+                        else None
+                    ),
                 ),
             )
             conn.commit()
@@ -215,7 +217,7 @@ class VaultStorage:
         with self._connection() as conn:
             row = conn.execute(
                 """
-                SELECT * FROM credentials 
+                SELECT * FROM credentials
                 WHERE provider = ? AND profile_id = ? AND enabled = 1
                 ORDER BY created_at DESC LIMIT 1
             """,
@@ -293,7 +295,11 @@ class VaultStorage:
         with self._connection() as conn:
             cursor = conn.execute(
                 "UPDATE credentials SET enabled = ?, updated_at = ? WHERE id = ?",
-                (1 if enabled else 0, datetime.now(timezone.utc).isoformat(), credential_id),
+                (
+                    1 if enabled else 0,
+                    datetime.now(timezone.utc).isoformat(),
+                    credential_id,
+                ),
             )
             conn.commit()
             return cursor.rowcount > 0
@@ -328,11 +334,16 @@ class VaultStorage:
         with self._connection() as conn:
             conn.execute(
                 """
-                INSERT INTO audit_log 
+                INSERT INTO audit_log
                 (credential_id, action, accessed_by, timestamp)
                 VALUES (?, ?, ?, ?)
             """,
-                (credential_id, action, accessed_by, datetime.now(timezone.utc).isoformat()),
+                (
+                    credential_id,
+                    action,
+                    accessed_by,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
             )
             conn.commit()
 
@@ -353,7 +364,7 @@ class VaultStorage:
             if credential_id:
                 rows = conn.execute(
                     """
-                    SELECT * FROM audit_log 
+                    SELECT * FROM audit_log
                     WHERE credential_id = ?
                     ORDER BY timestamp DESC LIMIT ?
                 """,
@@ -362,7 +373,7 @@ class VaultStorage:
             else:
                 rows = conn.execute(
                     """
-                    SELECT * FROM audit_log 
+                    SELECT * FROM audit_log
                     ORDER BY timestamp DESC LIMIT ?
                 """,
                     (limit,),
@@ -370,9 +381,7 @@ class VaultStorage:
 
             return [dict(row) for row in rows]
 
-    def count(
-        self, provider: Optional[str] = None, enabled_only: bool = False
-    ) -> int:
+    def count(self, provider: Optional[str] = None, enabled_only: bool = False) -> int:
         """
         Count credentials in vault.
 
@@ -415,9 +424,11 @@ class VaultStorage:
             enabled=bool(row["enabled"]),
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
-            last_used_at=datetime.fromisoformat(row["last_used_at"])
-            if row["last_used_at"]
-            else None,
+            last_used_at=(
+                datetime.fromisoformat(row["last_used_at"])
+                if row["last_used_at"]
+                else None
+            ),
         )
 
     def _row_to_info(self, row: sqlite3.Row) -> CredentialInfo:
@@ -434,8 +445,10 @@ class VaultStorage:
             label=row["label"],
             enabled=bool(row["enabled"]),
             created_at=datetime.fromisoformat(row["created_at"]),
-            last_used_at=datetime.fromisoformat(row["last_used_at"])
-            if row["last_used_at"]
-            else None,
+            last_used_at=(
+                datetime.fromisoformat(row["last_used_at"])
+                if row["last_used_at"]
+                else None
+            ),
             metadata=json.loads(row["metadata_json"]),
         )

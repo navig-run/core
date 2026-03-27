@@ -4,7 +4,7 @@
 # No Admin Visible In Graveyard · Keep your servers alive. Forever.
 #
 # Usage:
-#   irm https://navig.run/install.ps1 | iex
+#   & ([scriptblock]::Create((irm https://navig.run/install.ps1)))
 #   .\install.ps1 -Version 2.3.0
 #   .\install.ps1 -Dev
 #
@@ -200,7 +200,7 @@ function Show-Usage {
 NAVIG Installer for Windows
 
 Usage:
-    irm https://navig.run/install.ps1 | iex
+    & ([scriptblock]::Create((irm https://navig.run/install.ps1)))
     .\install.ps1 [OPTIONS]
 
 Options:
@@ -617,13 +617,11 @@ function Main {
 Main
 
 # ── Developer sync (set $env:NAVIG_DEV_SYNC=1 to activate) ───────────────
-# Copies installer + uninstaller scripts to the sibling navig-www project.
-# NOT triggered on end-user installs (irm navig.run/install.ps1 | iex).
 if ($env:NAVIG_DEV_SYNC -eq "1") {
-    $wwwDir = Join-Path $PSScriptRoot "..\navig-www"
+    $wwwDir = Join-Path $PSScriptRoot "..\navig-www\public"
     if (-not (Test-Path $wwwDir)) {
-        Write-NavErr "navig-www directory not found at: $(Resolve-Path $wwwDir -ErrorAction SilentlyContinue)"
-        Write-NavHint "Copy manually:  Copy-Item install.ps1 ..\navig-www\install.ps1"
+        Write-NavErr "navig-www/public directory not found at: $(Resolve-Path $wwwDir -ErrorAction SilentlyContinue)"
+        Write-NavHint "Copy manually:  Copy-Item install.ps1 ..\navig-www\public\install.ps1"
         exit 1
     }
     foreach ($f in @("install.ps1", "install.sh", "uninstall.ps1", "uninstall.sh")) {

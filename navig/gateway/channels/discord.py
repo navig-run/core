@@ -8,6 +8,7 @@ Supports:
 - Slash commands
 - Message history for context
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -23,6 +24,7 @@ try:
     import discord
     from discord import app_commands
     from discord.ext import commands
+
     DISCORD_AVAILABLE = True
 except ImportError:
     discord = None  # type: ignore[assignment]
@@ -50,7 +52,7 @@ class DiscordChannelConfig:
     ):
         """
         Initialize Discord config.
-        
+
         Args:
             token: Discord bot token (from env if not provided)
             allowed_guilds: List of allowed guild/server IDs (None = all)
@@ -69,7 +71,7 @@ class DiscordChannelConfig:
         self.respond_to_dms = respond_to_dms
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'DiscordChannelConfig':
+    def from_dict(cls, data: Dict[str, Any]) -> "DiscordChannelConfig":
         """Create config from dictionary."""
         return cls(
             token=data.get("token"),
@@ -85,7 +87,7 @@ class DiscordChannelConfig:
 class DiscordChannel:
     """
     Discord channel adapter for NAVIG Gateway.
-    
+
     Handles:
     - Bot lifecycle management
     - Message routing to gateway
@@ -100,7 +102,7 @@ class DiscordChannel:
     ):
         """
         Initialize Discord channel.
-        
+
         Args:
             config: Discord channel configuration
             message_handler: Async callback for message routing
@@ -162,7 +164,10 @@ class DiscordChannel:
                     should_respond = True
             else:
                 # Server message - check for mention or prefix
-                if self.config.respond_to_mentions and self.bot.user in message.mentions:
+                if (
+                    self.config.respond_to_mentions
+                    and self.bot.user in message.mentions
+                ):
                     should_respond = True
                 elif message.content.startswith(self.config.command_prefix):
                     should_respond = True
@@ -180,7 +185,7 @@ class DiscordChannel:
                 content = content.replace(f"<@{self.bot.user.id}>", "").strip()
                 content = content.replace(f"<@!{self.bot.user.id}>", "").strip()
             elif content.startswith(self.config.command_prefix):
-                content = content[len(self.config.command_prefix):].strip()
+                content = content[len(self.config.command_prefix) :].strip()
 
             if not content:
                 return
@@ -238,7 +243,9 @@ class DiscordChannel:
             try:
                 # Build metadata
                 metadata = {
-                    "guild_id": str(interaction.guild_id) if interaction.guild_id else None,
+                    "guild_id": (
+                        str(interaction.guild_id) if interaction.guild_id else None
+                    ),
                     "channel_id": str(interaction.channel_id),
                     "interaction": True,
                 }
@@ -443,11 +450,11 @@ def create_discord_channel(
 ) -> DiscordChannel:
     """
     Create a Discord channel adapter.
-    
+
     Args:
         config: Discord configuration (uses defaults if not provided)
         message_handler: Message routing callback
-        
+
     Returns:
         Configured DiscordChannel instance
     """
@@ -458,6 +465,7 @@ def create_discord_channel(
         # Default handler that echoes
         async def echo_handler(channel, user_id, message, metadata):
             return f"Echo: {message}"
+
         message_handler = echo_handler
 
     return DiscordChannel(config, message_handler)

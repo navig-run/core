@@ -23,7 +23,7 @@ from typing import Any, Dict, Optional
 class DebugLogger:
     """
     Comprehensive debug logger for NAVIG CLI operations.
-    
+
     Features:
     - ISO 8601 timestamps with milliseconds
     - Rotating log files (default 10MB, 5 backups)
@@ -36,30 +36,86 @@ class DebugLogger:
     # Extended with patterns from navig.core.security module (Agent-inspired)
     SENSITIVE_PATTERNS = [
         # Original patterns (backward compatibility)
-        (re.compile(r'(password["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', re.IGNORECASE), r'\1***REDACTED***'),
-        (re.compile(r'(ssh_password["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', re.IGNORECASE), r'\1***REDACTED***'),
-        (re.compile(r'(api_key["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', re.IGNORECASE), r'\1***REDACTED***'),
-        (re.compile(r'(token["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', re.IGNORECASE), r'\1***REDACTED***'),
-        (re.compile(r'(secret["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', re.IGNORECASE), r'\1***REDACTED***'),
-        (re.compile(r'(auth["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', re.IGNORECASE), r'\1***REDACTED***'),
-        (re.compile(r'(-p\s+)[^\s]+', re.IGNORECASE), r'\1***REDACTED***'),  # MySQL -p password
-        (re.compile(r'(MYSQL_PWD=)[^\s]+', re.IGNORECASE), r'\1***REDACTED***'),
-        (re.compile(r'(-----BEGIN[^-]+-----)[^-]+(-----END)', re.DOTALL), r'\1***REDACTED***\2'),  # SSH keys
-        (re.compile(r'(Authorization:\s*Bearer\s+)[^\s]+', re.IGNORECASE), r'\1***REDACTED***'),  # Bearer tokens
-        (re.compile(r'(Authorization:\s*Basic\s+)[^\s]+', re.IGNORECASE), r'\1***REDACTED***'),  # Basic auth
+        (
+            re.compile(r'(password["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', re.IGNORECASE),
+            r"\1***REDACTED***",
+        ),
+        (
+            re.compile(
+                r'(ssh_password["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', re.IGNORECASE
+            ),
+            r"\1***REDACTED***",
+        ),
+        (
+            re.compile(r'(api_key["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', re.IGNORECASE),
+            r"\1***REDACTED***",
+        ),
+        (
+            re.compile(r'(token["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', re.IGNORECASE),
+            r"\1***REDACTED***",
+        ),
+        (
+            re.compile(r'(secret["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', re.IGNORECASE),
+            r"\1***REDACTED***",
+        ),
+        (
+            re.compile(r'(auth["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', re.IGNORECASE),
+            r"\1***REDACTED***",
+        ),
+        (
+            re.compile(r"(-p\s+)[^\s]+", re.IGNORECASE),
+            r"\1***REDACTED***",
+        ),  # MySQL -p password
+        (re.compile(r"(MYSQL_PWD=)[^\s]+", re.IGNORECASE), r"\1***REDACTED***"),
+        (
+            re.compile(r"(-----BEGIN[^-]+-----)[^-]+(-----END)", re.DOTALL),
+            r"\1***REDACTED***\2",
+        ),  # SSH keys
+        (
+            re.compile(r"(Authorization:\s*Bearer\s+)[^\s]+", re.IGNORECASE),
+            r"\1***REDACTED***",
+        ),  # Bearer tokens
+        (
+            re.compile(r"(Authorization:\s*Basic\s+)[^\s]+", re.IGNORECASE),
+            r"\1***REDACTED***",
+        ),  # Basic auth
         # Agent-inspired patterns for provider API keys
-        (re.compile(r'\b(sk-[A-Za-z0-9_-]{8,})\b'), r'sk-***REDACTED***'),  # OpenAI
-        (re.compile(r'\b(sk-proj-[A-Za-z0-9_-]{8,})\b'), r'sk-proj-***REDACTED***'),  # OpenAI project
-        (re.compile(r'\b(sk-ant-[A-Za-z0-9_-]{8,})\b'), r'sk-ant-***REDACTED***'),  # Anthropic
-        (re.compile(r'\b(ghp_[A-Za-z0-9]{20,})\b'), r'ghp_***REDACTED***'),  # GitHub PAT
-        (re.compile(r'\b(github_pat_[A-Za-z0-9_]{20,})\b'), r'github_pat_***REDACTED***'),  # GitHub fine-grained
-        (re.compile(r'\b(xox[baprs]-[A-Za-z0-9-]{10,})\b'), r'xox*-***REDACTED***'),  # Slack
-        (re.compile(r'\b(gsk_[A-Za-z0-9_-]{10,})\b'), r'gsk_***REDACTED***'),  # Groq
-        (re.compile(r'\b(AIza[0-9A-Za-z\-_]{20,})\b'), r'AIza***REDACTED***'),  # Google
-        (re.compile(r'\b(pplx-[A-Za-z0-9_-]{10,})\b'), r'pplx-***REDACTED***'),  # Perplexity
+        (re.compile(r"\b(sk-[A-Za-z0-9_-]{8,})\b"), r"sk-***REDACTED***"),  # OpenAI
+        (
+            re.compile(r"\b(sk-proj-[A-Za-z0-9_-]{8,})\b"),
+            r"sk-proj-***REDACTED***",
+        ),  # OpenAI project
+        (
+            re.compile(r"\b(sk-ant-[A-Za-z0-9_-]{8,})\b"),
+            r"sk-ant-***REDACTED***",
+        ),  # Anthropic
+        (
+            re.compile(r"\b(ghp_[A-Za-z0-9]{20,})\b"),
+            r"ghp_***REDACTED***",
+        ),  # GitHub PAT
+        (
+            re.compile(r"\b(github_pat_[A-Za-z0-9_]{20,})\b"),
+            r"github_pat_***REDACTED***",
+        ),  # GitHub fine-grained
+        (
+            re.compile(r"\b(xox[baprs]-[A-Za-z0-9-]{10,})\b"),
+            r"xox*-***REDACTED***",
+        ),  # Slack
+        (re.compile(r"\b(gsk_[A-Za-z0-9_-]{10,})\b"), r"gsk_***REDACTED***"),  # Groq
+        (re.compile(r"\b(AIza[0-9A-Za-z\-_]{20,})\b"), r"AIza***REDACTED***"),  # Google
+        (
+            re.compile(r"\b(pplx-[A-Za-z0-9_-]{10,})\b"),
+            r"pplx-***REDACTED***",
+        ),  # Perplexity
         # Connection strings
-        (re.compile(r'(mysql://[^:]+:)([^@]+)(@)', re.IGNORECASE), r'\1***REDACTED***\3'),
-        (re.compile(r'(postgres://[^:]+:)([^@]+)(@)', re.IGNORECASE), r'\1***REDACTED***\3'),
+        (
+            re.compile(r"(mysql://[^:]+:)([^@]+)(@)", re.IGNORECASE),
+            r"\1***REDACTED***\3",
+        ),
+        (
+            re.compile(r"(postgres://[^:]+:)([^@]+)(@)", re.IGNORECASE),
+            r"\1***REDACTED***\3",
+        ),
     ]
 
     SEPARATOR = "=" * 80
@@ -73,7 +129,7 @@ class DebugLogger:
     ):
         """
         Initialize the debug logger.
-        
+
         Args:
             log_path: Path to log file. If None, uses app-specific or global default.
             max_size_mb: Maximum log file size in MB before rotation.
@@ -97,6 +153,7 @@ class DebugLogger:
         if self.log_path is None:
             # Determine log path based on context
             from navig.config import get_config_manager
+
             config_manager = get_config_manager()
             self.log_path = config_manager.base_dir / "debug.log"
 
@@ -115,12 +172,12 @@ class DebugLogger:
             self.log_path,
             maxBytes=self.max_size_bytes,
             backupCount=self.max_files,
-            encoding='utf-8',
+            encoding="utf-8",
         )
         handler.setLevel(logging.DEBUG)
 
         # Simple formatter - we handle formatting in log methods
-        formatter = logging.Formatter('%(message)s')
+        formatter = logging.Formatter("%(message)s")
         handler.setFormatter(formatter)
 
         self.logger.addHandler(handler)
@@ -131,14 +188,14 @@ class DebugLogger:
 
     def close(self):
         """Close the log file handler and release resources."""
-        if self.logger and hasattr(self, '_handler'):
+        if self.logger and hasattr(self, "_handler"):
             self._handler.close()
             self.logger.removeHandler(self._handler)
 
     def _get_timestamp(self) -> str:
         """Get current timestamp in ISO 8601 format with milliseconds."""
         now = datetime.now(timezone.utc)
-        return now.strftime('%Y-%m-%dT%H:%M:%S.') + f'{now.microsecond // 1000:03d}Z'
+        return now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
 
     def _redact_sensitive_data(self, text: str) -> str:
         """Redact sensitive information from text."""
@@ -155,11 +212,13 @@ class DebugLogger:
         if not output:
             return output
 
-        output_bytes = output.encode('utf-8', errors='replace')
+        output_bytes = output.encode("utf-8", errors="replace")
         if len(output_bytes) <= self.truncate_output_bytes:
             return output
 
-        truncated = output_bytes[:self.truncate_output_bytes].decode('utf-8', errors='replace')
+        truncated = output_bytes[: self.truncate_output_bytes].decode(
+            "utf-8", errors="replace"
+        )
         return f"{truncated}\n... [OUTPUT TRUNCATED - {len(output_bytes)} bytes total]"
 
     def _log(self, message: str):
@@ -196,9 +255,11 @@ class DebugLogger:
             f"Platform: {sys.platform}",
             self.SEPARATOR,
         ]
-        self._log('\n'.join(lines))
+        self._log("\n".join(lines))
 
-    def log_ssh_command(self, host: str, port: int, user: str, command: str, method: str = "subprocess"):
+    def log_ssh_command(
+        self, host: str, port: int, user: str, command: str, method: str = "subprocess"
+    ):
         """
         Log an SSH command being executed.
 
@@ -218,9 +279,11 @@ class DebugLogger:
             f"Method: {method}",
             f"Command: {safe_command}",
         ]
-        self._log('\n'.join(lines))
+        self._log("\n".join(lines))
 
-    def log_ssh_result(self, success: bool, output: str, error: str = "", duration_ms: float = 0):
+    def log_ssh_result(
+        self, success: bool, output: str, error: str = "", duration_ms: float = 0
+    ):
         """
         Log the result of an SSH command.
 
@@ -248,7 +311,7 @@ class DebugLogger:
             lines.append(f"Error:\n{safe_error}")
 
         lines.append("-" * 40)
-        self._log('\n'.join(lines))
+        self._log("\n".join(lines))
 
     def log_command_end(self, success: bool, message: str = ""):
         """
@@ -280,7 +343,7 @@ class DebugLogger:
             lines.append(f"Message: {self._redact_sensitive_data(message_str)}")
         lines.append(self.SEPARATOR + "\n")
 
-        self._log('\n'.join(lines))
+        self._log("\n".join(lines))
         self._command_start_time = None
 
     def log_error(self, error: Exception, context: str = ""):
@@ -303,14 +366,17 @@ class DebugLogger:
 
         # Include traceback for debugging
         import traceback
+
         tb = traceback.format_exc()
         if tb and tb != "NoneType: None\n":
             lines.append(f"Traceback:\n{self._redact_sensitive_data(tb)}")
 
         lines.append("-" * 40)
-        self._log('\n'.join(lines))
+        self._log("\n".join(lines))
 
-    def log_operation(self, operation: str, details: Dict[str, Any], success: bool = True):
+    def log_operation(
+        self, operation: str, details: Dict[str, Any], success: bool = True
+    ):
         """
         Log a general operation (file transfer, database query, etc.).
 
@@ -337,7 +403,7 @@ class DebugLogger:
             lines.append(f"  {key}: {value}")
 
         lines.append("-" * 40)
-        self._log('\n'.join(lines))
+        self._log("\n".join(lines))
 
 
 # Global logger instance
@@ -347,11 +413,12 @@ _global_logger: Optional[DebugLogger] = None
 def get_debug_logger() -> logging.Logger:
     """
     Get a standard Python logger using the new structured logging system.
-    
+
     This function now delegates to navig.core.logging.get_logger
     """
     try:
         from navig.core.logging import get_logger
+
         return get_logger("gateway")
     except ImportError:
         # Fallback to legacy implementation if core.logging unavailable
@@ -369,6 +436,7 @@ def get_debug_logger() -> logging.Logger:
         # Try to use the NAVIG debug log path
         try:
             from navig.config import get_config_manager
+
             config_manager = get_config_manager()
             log_path = config_manager.base_dir / "debug.log"
             log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -378,14 +446,14 @@ def get_debug_logger() -> logging.Logger:
                 log_path,
                 maxBytes=10 * 1024 * 1024,  # 10MB
                 backupCount=5,
-                encoding='utf-8',
+                encoding="utf-8",
             )
             handler.setLevel(logging.DEBUG)
 
             # Format with timestamp
             formatter = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S'
+                "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
             )
             handler.setFormatter(formatter)
 
@@ -394,7 +462,7 @@ def get_debug_logger() -> logging.Logger:
             # Fallback to console if file logging fails
             handler = logging.StreamHandler()
             handler.setLevel(logging.DEBUG)
-            formatter = logging.Formatter('%(levelname)s - %(message)s')
+            formatter = logging.Formatter("%(levelname)s - %(message)s")
             handler.setFormatter(formatter)
             logger.addHandler(handler)
 
@@ -402,4 +470,3 @@ def get_debug_logger() -> logging.Logger:
         logger.propagate = False
 
     return logger
-

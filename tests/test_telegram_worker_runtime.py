@@ -37,7 +37,12 @@ async def test_run_fails_when_channel_init_returns_none(monkeypatch):
     monkeypatch.setattr(
         tw,
         "_telegram_config",
-        lambda: {"bot_token": "token", "allowed_users": [], "allowed_groups": [], "require_auth": True},
+        lambda: {
+            "bot_token": "token",
+            "allowed_users": [],
+            "allowed_groups": [],
+            "require_auth": True,
+        },
     )
     monkeypatch.setattr(tw, "_deck_config", lambda: {"enabled": False})
     monkeypatch.setattr(tw, "NavigGateway", lambda: gateway)
@@ -61,11 +66,18 @@ async def test_run_starts_and_stops_gateway_and_channel(monkeypatch):
     monkeypatch.setattr(
         tw,
         "_telegram_config",
-        lambda: {"bot_token": "token", "allowed_users": [], "allowed_groups": [], "require_auth": True},
+        lambda: {
+            "bot_token": "token",
+            "allowed_users": [],
+            "allowed_groups": [],
+            "require_auth": True,
+        },
     )
     monkeypatch.setattr(tw, "_deck_config", lambda: {"enabled": True})
     monkeypatch.setattr(tw, "NavigGateway", lambda: gateway)
-    monkeypatch.setattr(tw, "create_telegram_channel", lambda *_args, **_kwargs: channel)
+    monkeypatch.setattr(
+        tw, "create_telegram_channel", lambda *_args, **_kwargs: channel
+    )
     monkeypatch.setattr(tw, "_start_gateway_http", start_http)
     monkeypatch.setattr(tw, "_stop_gateway_http", stop_http)
     monkeypatch.setattr(tw.asyncio, "Event", _PreSetEvent)
@@ -82,6 +94,7 @@ async def test_run_starts_and_stops_gateway_and_channel(monkeypatch):
 @pytest.mark.asyncio
 async def test_start_gateway_http_registers_full_routes(monkeypatch):
     from aiohttp import web
+
     from navig.daemon import telegram_worker as tw
 
     gateway = SimpleNamespace(

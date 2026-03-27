@@ -1,4 +1,5 @@
 """Tests for navig.update.checker — VersionChecker."""
+
 from __future__ import annotations
 
 import json
@@ -30,10 +31,13 @@ def _make_remote_ops(stdout: str = "2.4.16", returncode: int = 0):
 # check_local
 # ---------------------------------------------------------------------------
 
+
 class TestCheckLocal:
     def test_returns_version_info(self):
         checker = VersionChecker(_make_source("2.5.0"))
-        with patch("navig.update.checker.VersionChecker._latest_cached", return_value="2.5.0"):
+        with patch(
+            "navig.update.checker.VersionChecker._latest_cached", return_value="2.5.0"
+        ):
             vi = checker.check_local()
         assert vi.node_id == "local"
         assert vi.current != ""
@@ -58,6 +62,7 @@ class TestCheckLocal:
 # ---------------------------------------------------------------------------
 # check_ssh
 # ---------------------------------------------------------------------------
+
 
 class TestCheckSSH:
     def test_parses_plain_version(self):
@@ -96,6 +101,7 @@ class TestCheckSSH:
 # version cache
 # ---------------------------------------------------------------------------
 
+
 class TestVersionCache:
     def test_source_called_once(self):
         src = MagicMock()
@@ -112,18 +118,22 @@ class TestVersionCache:
 # VersionInfo.needs_update
 # ---------------------------------------------------------------------------
 
+
 class TestVersionInfo:
     def test_needs_update_true(self):
         from navig.update.models import VersionInfo
+
         vi = VersionInfo(node_id="x", current="2.4.0", latest="2.5.0")
         assert vi.needs_update
 
     def test_needs_update_false_same(self):
         from navig.update.models import VersionInfo
+
         vi = VersionInfo(node_id="x", current="2.5.0", latest="2.5.0")
         assert not vi.needs_update
 
     def test_needs_update_false_with_error(self):
         from navig.update.models import VersionInfo
+
         vi = VersionInfo(node_id="x", current="2.4.0", latest="2.5.0", error="broken")
         assert not vi.needs_update

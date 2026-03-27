@@ -88,6 +88,3 @@ account Income:Salary
 2. **Double Entry**: Every transaction must balance (Total = 0).
 3. **Hierarchy**: Use colons for categories (e.g., `Expenses:Food:Dining`).
 4. **Currency**: Be consistent with symbols ($ vs USD).
-
-
-

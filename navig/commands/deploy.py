@@ -37,29 +37,30 @@ deploy_app = typer.Typer(
 # ─── phase display metadata ─────────────────────────────────────────────────
 _PHASE_LABELS = {
     "pre_check": "Pre-checks",
-    "backup":    "Backup",
-    "push":      "Push",
-    "apply":     "Apply",
-    "restart":   "Restart",
-    "health":    "Health check",
-    "cleanup":   "Cleanup",
+    "backup": "Backup",
+    "push": "Push",
+    "apply": "Apply",
+    "restart": "Restart",
+    "health": "Health check",
+    "cleanup": "Cleanup",
 }
 
 _STATUS_ICON = {
-    "ok":    "[green]✓[/green]",
-    "fail":  "[red]✗[/red]",
-    "skip":  "[dim]→[/dim]",
-    "warn":  "[yellow]⚠[/yellow]",
+    "ok": "[green]✓[/green]",
+    "fail": "[red]✗[/red]",
+    "skip": "[dim]→[/dim]",
+    "warn": "[yellow]⚠[/yellow]",
     "start": "[dim]→[/dim]",
 }
 
 _PHASE_COL_WIDTH = 12
-_MSG_COL_WIDTH   = 60
+_MSG_COL_WIDTH = 60
 
 
 # ============================================================================
 # Helpers — config resolution
 # ============================================================================
+
 
 def _load_deploy_yaml(project_root: Path) -> Dict[str, Any]:
     """Load .navig/deploy.yaml from the project root. Returns {} if absent."""
@@ -70,9 +71,7 @@ def _load_deploy_yaml(project_root: Path) -> Dict[str, Any]:
         with open(candidate, encoding="utf-8") as fh:
             return yaml.safe_load(fh) or {}
     except Exception as exc:
-        raise typer.BadParameter(
-            f"Could not parse .navig/deploy.yaml: {exc}"
-        ) from exc
+        raise typer.BadParameter(f"Could not parse .navig/deploy.yaml: {exc}") from exc
 
 
 def _resolve_context(
@@ -82,19 +81,14 @@ def _resolve_context(
     config_manager: Any,
 ) -> tuple[str, str]:
     """Resolve active host and app name. CLI flag > deploy.yaml > active context."""
-    host_name = (
-        host_flag
-        or deploy_yaml.get("host")
-        or config_manager.get_active_host()
-    )
+    host_name = host_flag or deploy_yaml.get("host") or config_manager.get_active_host()
     app_name = (
-        app_flag
-        or deploy_yaml.get("app")
-        or config_manager.get_active_app()
-        or "app"
+        app_flag or deploy_yaml.get("app") or config_manager.get_active_app() or "app"
     )
     if not host_name:
-        console.print("[red]No host selected.[/red] Run [bold]navig host use <name>[/bold] or set host: in .navig/deploy.yaml")
+        console.print(
+            "[red]No host selected.[/red] Run [bold]navig host use <name>[/bold] or set host: in .navig/deploy.yaml"
+        )
         raise typer.Exit(1)
     return host_name, app_name
 
@@ -110,6 +104,7 @@ def _get_cache_dir(config_manager: Any) -> Path:
 # Progress renderer (live output during deploy)
 # ============================================================================
 
+
 class _ProgressRenderer:
     """
     Thin stateful renderer for deploy phase output.
@@ -117,8 +112,8 @@ class _ProgressRenderer:
     """
 
     def __init__(self, dry_run: bool = False):
-        self._dry_run    = dry_run
-        self._phases: List[tuple] = []   # (phase, status, msg, elapsed)
+        self._dry_run = dry_run
+        self._phases: List[tuple] = []  # (phase, status, msg, elapsed)
         self._phase_start: Dict[str, float] = {}
         self._current_line_len = 0
 
@@ -129,25 +124,32 @@ class _ProgressRenderer:
         if status == "start":
             self._phase_start[phase_val] = time.perf_counter()
             label = _PHASE_LABELS.get(phase_val, phase_val).ljust(_PHASE_COL_WIDTH)
-            icon  = "[dim]·[/dim]"
+            icon = "[dim]·[/dim]"
             console.print(f"  {icon}  {label}", end="", highlight=False)
             return
 
-        elapsed = time.perf_counter() - self._phase_start.get(phase_val, time.perf_counter())
-        icon    = _STATUS_ICON.get(status, "·")
-        label   = _PHASE_LABELS.get(phase_val, phase_val).ljust(_PHASE_COL_WIDTH)
+        elapsed = time.perf_counter() - self._phase_start.get(
+            phase_val, time.perf_counter()
+        )
+        icon = _STATUS_ICON.get(status, "·")
+        label = _PHASE_LABELS.get(phase_val, phase_val).ljust(_PHASE_COL_WIDTH)
 
         # Truncate long messages
         display_msg = (msg or "")[:_MSG_COL_WIDTH]
 
         # Overwrite the pending "·" line
-        console.print(f"\r  {icon}  {label} {display_msg:<{_MSG_COL_WIDTH}}  [dim]{elapsed:.1f}s[/dim]", highlight=False)
+        console.print(
+            f"\r  {icon}  {label} {display_msg:<{_MSG_COL_WIDTH}}  [dim]{elapsed:.1f}s[/dim]",
+            highlight=False,
+        )
         self._phases.append((phase_val, status, msg, elapsed))
 
     def print_header(self, host: str, app: str) -> None:
         tag = "[dim](DRY RUN)[/dim] " if self._dry_run else ""
         console.print()
-        console.print(f"[bold]NAVIG Deploy[/bold] — [cyan]{app}[/cyan] → [cyan]{host}[/cyan]  {tag}")
+        console.print(
+            f"[bold]NAVIG Deploy[/bold] — [cyan]{app}[/cyan] → [cyan]{host}[/cyan]  {tag}"
+        )
         console.rule(style="dim")
 
     def print_summary(self, result: Any) -> None:
@@ -159,7 +161,9 @@ class _ProgressRenderer:
         elapsed = f"{result.elapsed:.1f}s" if result.finished_at else "?"
 
         if result.rolled_back:
-            console.print("\n[yellow]Health check failed. Rolled back to previous state.[/yellow]")
+            console.print(
+                "\n[yellow]Health check failed. Rolled back to previous state.[/yellow]"
+            )
             console.print(f"[red]Deploy failed[/red] in {elapsed}. Exit code 1.")
         elif result.success:
             snap_msg = ""
@@ -170,7 +174,9 @@ class _ProgressRenderer:
                 snap_msg += f"\n  Git ref: [dim]{result.git_ref}[/dim]"
             console.print(f"\n[green]Deploy complete[/green] in {elapsed}.{snap_msg}")
         else:
-            console.print(f"\n[red]Deploy failed[/red] in {elapsed}. Error: {result.error}")
+            console.print(
+                f"\n[red]Deploy failed[/red] in {elapsed}. Error: {result.error}"
+            )
             if result.snapshot:
                 console.print("  To rollback: [bold]navig deploy rollback[/bold]")
 
@@ -179,14 +185,27 @@ class _ProgressRenderer:
 # Commands
 # ============================================================================
 
+
 @deploy_app.command("run")
 def deploy_run(
-    host: Optional[str] = typer.Option(None, "--host", "-H", help="Target host name (overrides active context)"),
-    app:  Optional[str] = typer.Option(None, "--app",  "-a", help="App name (overrides active context)"),
-    dry_run: bool = typer.Option(False, "--dry-run",  help="Preview all steps without executing"),
-    skip_backup: bool = typer.Option(False, "--skip-backup", help="Skip remote snapshot (faster, unsafe)"),
-    no_auto_rollback: bool = typer.Option(False, "--no-auto-rollback", help="Do not auto-rollback on health check failure"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Stream full command output"),
+    host: Optional[str] = typer.Option(
+        None, "--host", "-H", help="Target host name (overrides active context)"
+    ),
+    app: Optional[str] = typer.Option(
+        None, "--app", "-a", help="App name (overrides active context)"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview all steps without executing"
+    ),
+    skip_backup: bool = typer.Option(
+        False, "--skip-backup", help="Skip remote snapshot (faster, unsafe)"
+    ),
+    no_auto_rollback: bool = typer.Option(
+        False, "--no-auto-rollback", help="Do not auto-rollback on health check failure"
+    ),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Stream full command output"
+    ),
 ):
     """Deploy the active (or specified) app to the target host."""
     from navig.config import get_config_manager
@@ -196,7 +215,7 @@ def deploy_run(
     cm = get_config_manager()
 
     project_root = _detect_project_root(cm)
-    raw_yaml     = _load_deploy_yaml(project_root)
+    raw_yaml = _load_deploy_yaml(project_root)
 
     if not raw_yaml and not dry_run:
         console.print(
@@ -217,7 +236,7 @@ def deploy_run(
     # Build deploy config
     deploy_cfg = DeployConfig.from_dict(raw_yaml)
     deploy_cfg.host = host_name
-    deploy_cfg.app  = app_name
+    deploy_cfg.app = app_name
 
     # Merge global defaults
     try:
@@ -232,6 +251,7 @@ def deploy_run(
 
     # Build and run the engine
     from navig.remote import RemoteOperations
+
     remote_ops = RemoteOperations(cm)
 
     engine = DeployEngine(
@@ -259,8 +279,10 @@ def deploy_run(
 @deploy_app.command("rollback")
 def deploy_rollback(
     host: Optional[str] = typer.Option(None, "--host", "-H", help="Target host name"),
-    app:  Optional[str] = typer.Option(None, "--app",  "-a", help="App name"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Preview rollback without executing"),
+    app: Optional[str] = typer.Option(None, "--app", "-a", help="App name"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview rollback without executing"
+    ),
 ):
     """Restore the previous deploy snapshot."""
     from navig.config import get_config_manager
@@ -272,7 +294,7 @@ def deploy_rollback(
 
     cm = get_config_manager()
     project_root = _detect_project_root(cm)
-    raw_yaml     = _load_deploy_yaml(project_root)
+    raw_yaml = _load_deploy_yaml(project_root)
 
     host_name, app_name = _resolve_context(host, app, raw_yaml, cm)
 
@@ -284,10 +306,10 @@ def deploy_rollback(
 
     deploy_cfg = DeployConfig.from_dict(raw_yaml)
     deploy_cfg.host = host_name
-    deploy_cfg.app  = app_name
+    deploy_cfg.app = app_name
 
     remote_ops = RemoteOperations(cm)
-    cache_dir  = _get_cache_dir(cm)
+    cache_dir = _get_cache_dir(cm)
 
     mgr = RollbackManager(
         backup_cfg=deploy_cfg.backup,
@@ -301,11 +323,15 @@ def deploy_rollback(
 
     snap = mgr.load_state()
     if not snap:
-        console.print(f"[red]No snapshot found[/red] for app '[cyan]{app_name}[/cyan]' on host '[cyan]{host_name}[/cyan]'.")
+        console.print(
+            f"[red]No snapshot found[/red] for app '[cyan]{app_name}[/cyan]' on host '[cyan]{host_name}[/cyan]'."
+        )
         console.print("Run [bold]navig deploy run[/bold] first.")
         raise typer.Exit(1)
 
-    console.print(f"\n[bold]NAVIG Rollback[/bold] — [cyan]{app_name}[/cyan] → [cyan]{host_name}[/cyan]")
+    console.print(
+        f"\n[bold]NAVIG Rollback[/bold] — [cyan]{app_name}[/cyan] → [cyan]{host_name}[/cyan]"
+    )
     console.print(f"  Snapshot: [dim]{snap.path}[/dim]")
     if not dry_run:
         console.print()
@@ -342,24 +368,26 @@ def deploy_rollback(
         console.print(f"  {icon}  Health    {h_msg}  [dim]{h_elapsed:.1f}s[/dim]")
 
     console.print()
-    console.print("[green]Rollback complete.[/green]" if ok else "[red]Rollback failed.[/red]")
+    console.print(
+        "[green]Rollback complete.[/green]" if ok else "[red]Rollback failed.[/red]"
+    )
 
 
 @deploy_app.command("history")
 def deploy_history(
     limit: int = typer.Option(10, "--limit", "-n", help="Number of entries to show"),
     host: Optional[str] = typer.Option(None, "--host", "-H", help="Filter by host"),
-    app:  Optional[str] = typer.Option(None, "--app",  "-a", help="Filter by app"),
+    app: Optional[str] = typer.Option(None, "--app", "-a", help="Filter by app"),
     json_out: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """Show recent deploy history."""
     from navig.config import get_config_manager
     from navig.deploy.history import DeployHistory
 
-    cm        = get_config_manager()
+    cm = get_config_manager()
     cache_dir = _get_cache_dir(cm)
-    history   = DeployHistory(cache_dir=cache_dir)
-    entries   = history.read(limit=limit, app=app, host=host)
+    history = DeployHistory(cache_dir=cache_dir)
+    entries = history.read(limit=limit, app=app, host=host)
 
     if not entries:
         console.print("[dim]No deploy history found.[/dim]")
@@ -370,21 +398,21 @@ def deploy_history(
         return
 
     table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
-    table.add_column("Time",       style="dim",  min_width=20)
-    table.add_column("App",        style="cyan", min_width=12)
-    table.add_column("Host",       style="cyan", min_width=12)
-    table.add_column("Status",     min_width=10)
-    table.add_column("Elapsed",    justify="right", min_width=8)
-    table.add_column("Ref",        style="dim",  min_width=8)
+    table.add_column("Time", style="dim", min_width=20)
+    table.add_column("App", style="cyan", min_width=12)
+    table.add_column("Host", style="cyan", min_width=12)
+    table.add_column("Status", min_width=10)
+    table.add_column("Elapsed", justify="right", min_width=8)
+    table.add_column("Ref", style="dim", min_width=8)
 
     for entry in entries:
         ts = entry.get("started_at", "")[:19].replace("T", " ")
-        app_n  = entry.get("app",  "-")
+        app_n = entry.get("app", "-")
         host_n = entry.get("host", "-")
-        success  = entry.get("success", False)
-        rolled   = entry.get("rolled_back", False)
-        elapsed  = f"{entry.get('elapsed_seconds', 0):.1f}s"
-        ref      = entry.get("git_ref") or "-"
+        success = entry.get("success", False)
+        rolled = entry.get("rolled_back", False)
+        elapsed = f"{entry.get('elapsed_seconds', 0):.1f}s"
+        ref = entry.get("git_ref") or "-"
 
         if rolled:
             status_str = "[yellow]rolled back[/yellow]"
@@ -401,36 +429,39 @@ def deploy_history(
 @deploy_app.command("status")
 def deploy_status(
     host: Optional[str] = typer.Option(None, "--host", "-H", help="Target host"),
-    app:  Optional[str] = typer.Option(None, "--app",  "-a", help="App name"),
+    app: Optional[str] = typer.Option(None, "--app", "-a", help="App name"),
 ):
     """Show the status of the last deploy."""
     from navig.config import get_config_manager
     from navig.deploy.history import DeployHistory
 
-    cm        = get_config_manager()
+    cm = get_config_manager()
     project_root = _detect_project_root(cm)
-    raw_yaml  = _load_deploy_yaml(project_root)
+    raw_yaml = _load_deploy_yaml(project_root)
     cache_dir = _get_cache_dir(cm)
 
     host_name = host or raw_yaml.get("host") or cm.get_active_host()
-    app_name  = app  or raw_yaml.get("app")  or cm.get_active_app() or "app"
+    app_name = app or raw_yaml.get("app") or cm.get_active_app() or "app"
 
     history = DeployHistory(cache_dir=cache_dir)
-    entries = history.read(limit=1, app=app_name if (app or raw_yaml.get("app")) else None,
-                           host=host_name if (host or raw_yaml.get("host")) else None)
+    entries = history.read(
+        limit=1,
+        app=app_name if (app or raw_yaml.get("app")) else None,
+        host=host_name if (host or raw_yaml.get("host")) else None,
+    )
 
     if not entries:
         console.print("[dim]No deploy history found.[/dim]")
         return
 
     entry = entries[0]
-    ts      = entry.get("started_at", "")[:19].replace("T", " ")
+    ts = entry.get("started_at", "")[:19].replace("T", " ")
     success = entry.get("success", False)
-    rolled  = entry.get("rolled_back", False)
+    rolled = entry.get("rolled_back", False)
     elapsed = f"{entry.get('elapsed_seconds', 0):.1f}s"
-    snap    = (entry.get("snapshot") or {}).get("path", "-")
-    ref     = entry.get("git_ref") or "-"
-    err     = entry.get("error", "")
+    snap = (entry.get("snapshot") or {}).get("path", "-")
+    ref = entry.get("git_ref") or "-"
+    err = entry.get("error", "")
 
     if rolled:
         status_label = "[yellow]rolled back[/yellow]"
@@ -453,18 +484,22 @@ def deploy_status(
 
 @deploy_app.command("init")
 def deploy_init(
-    force: bool = typer.Option(False, "--force", help="Overwrite existing .navig/deploy.yaml"),
+    force: bool = typer.Option(
+        False, "--force", help="Overwrite existing .navig/deploy.yaml"
+    ),
 ):
     """Scaffold a .navig/deploy.yaml config interactively."""
     from navig.config import get_config_manager
 
-    cm           = get_config_manager()
+    cm = get_config_manager()
     project_root = _detect_project_root(cm)
-    config_dir   = project_root / ".navig"
-    config_path  = config_dir / "deploy.yaml"
+    config_dir = project_root / ".navig"
+    config_path = config_dir / "deploy.yaml"
 
     if config_path.exists() and not force:
-        console.print(f"[yellow]{config_path}[/yellow] already exists. Use --force to overwrite.")
+        console.print(
+            f"[yellow]{config_path}[/yellow] already exists. Use --force to overwrite."
+        )
         raise typer.Exit(0)
 
     # Detect runtime hints
@@ -475,14 +510,22 @@ def deploy_init(
     console.print("Scaffolding [cyan].navig/deploy.yaml[/cyan]\n")
 
     active_host = cm.get_active_host() or ""
-    active_app  = cm.get_active_app() or ""
+    active_app = cm.get_active_app() or ""
 
-    host_in = typer.prompt("Target host name", default=active_host) if not active_host else active_host
-    app_in  = typer.prompt("App name",         default=active_app)  if not active_app  else active_app
+    host_in = (
+        typer.prompt("Target host name", default=active_host)
+        if not active_host
+        else active_host
+    )
+    app_in = (
+        typer.prompt("App name", default=active_app) if not active_app else active_app
+    )
 
     # Gather push source
     default_source = hints.get("build_dir", "./dist/")
-    source = typer.prompt("Local source directory (relative to project root)", default=default_source)
+    source = typer.prompt(
+        "Local source directory (relative to project root)", default=default_source
+    )
     if not source.endswith("/"):
         source += "/"
 
@@ -493,12 +536,14 @@ def deploy_init(
 
     # Adapter
     default_adapter = hints.get("adapter", "systemd")
-    console.print("\nRestart adapters: [bold]systemd[/bold] | docker-compose | pm2 | command")
+    console.print(
+        "\nRestart adapters: [bold]systemd[/bold] | docker-compose | pm2 | command"
+    )
     adapter = typer.prompt("Service restart adapter", default=default_adapter)
 
     service = ""
     compose_file = "docker-compose.yml"
-    restart_cmd  = ""
+    restart_cmd = ""
     if adapter in ("systemd", "pm2"):
         service = typer.prompt("Service/process name", default=app_in)
     elif adapter == "docker-compose":
@@ -507,7 +552,9 @@ def deploy_init(
         restart_cmd = typer.prompt("Restart command")
 
     # Health check URL
-    health_url = typer.prompt("Health check URL (leave empty to skip)", default="http://localhost/health")
+    health_url = typer.prompt(
+        "Health check URL (leave empty to skip)", default="http://localhost/health"
+    )
 
     # Apply commands
     default_apply = hints.get("apply_commands", [])
@@ -543,7 +590,11 @@ def deploy_init(
     if health_url:
         doc["health_check"] = {"url": health_url}
 
-    doc["backup"] = {"enabled": True, "remote_path": f"/var/backups/{app_in}", "keep_last": 5}
+    doc["backup"] = {
+        "enabled": True,
+        "remote_path": f"/var/backups/{app_in}",
+        "keep_last": 5,
+    }
 
     if host_in:
         doc["host"] = host_in
@@ -553,29 +604,37 @@ def deploy_init(
     # Write to disk
     config_dir.mkdir(parents=True, exist_ok=True)
     with open(config_path, "w", encoding="utf-8") as fh:
-        yaml.dump(doc, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        yaml.dump(
+            doc, fh, default_flow_style=False, allow_unicode=True, sort_keys=False
+        )
 
-    console.print(f"\n[green]✓[/green]  Created [cyan]{config_path.relative_to(project_root)}[/cyan]")
+    console.print(
+        f"\n[green]✓[/green]  Created [cyan]{config_path.relative_to(project_root)}[/cyan]"
+    )
     console.print("\nNext steps:")
     console.print("  1. Review and edit the generated file")
-    console.print("  2. [bold]navig deploy check[/bold]   — validate config + test connectivity")
-    console.print("  3. [bold]navig deploy run --dry-run[/bold]   — preview deploy steps")
+    console.print(
+        "  2. [bold]navig deploy check[/bold]   — validate config + test connectivity"
+    )
+    console.print(
+        "  3. [bold]navig deploy run --dry-run[/bold]   — preview deploy steps"
+    )
     console.print("  4. [bold]navig deploy run[/bold]   — deploy")
 
 
 @deploy_app.command("check")
 def deploy_check(
     host: Optional[str] = typer.Option(None, "--host", "-H", help="Target host"),
-    app:  Optional[str] = typer.Option(None, "--app",  "-a", help="App name"),
+    app: Optional[str] = typer.Option(None, "--app", "-a", help="App name"),
 ):
     """Validate .navig/deploy.yaml and test connectivity — no deploy executed."""
     from navig.config import get_config_manager
     from navig.deploy.models import DeployConfig
     from navig.remote import RemoteOperations
 
-    cm           = get_config_manager()
+    cm = get_config_manager()
     project_root = _detect_project_root(cm)
-    raw_yaml     = _load_deploy_yaml(project_root)
+    raw_yaml = _load_deploy_yaml(project_root)
 
     host_name, app_name = _resolve_context(host, app, raw_yaml, cm)
 
@@ -602,7 +661,11 @@ def deploy_check(
     # 2. Host config
     try:
         server_cfg = cm.load_server_config(host_name)
-        _check("Host config", True, f"{server_cfg.get('host', '?')}:{server_cfg.get('port', 22)}")
+        _check(
+            "Host config",
+            True,
+            f"{server_cfg.get('host', '?')}:{server_cfg.get('port', 22)}",
+        )
     except Exception as exc:
         _check("Host config", False, str(exc))
         server_cfg = None
@@ -637,28 +700,44 @@ def deploy_check(
 
     # 6. rsync available locally
     import shutil
+
     rsync_path = shutil.which("rsync")
-    _check("rsync available (local)", rsync_path is not None, rsync_path or "not found in PATH")
+    _check(
+        "rsync available (local)",
+        rsync_path is not None,
+        rsync_path or "not found in PATH",
+    )
 
     # 7. Restart adapter
     if deploy_cfg:
         adapter = deploy_cfg.restart.adapter
-        if deploy_cfg.restart.service or deploy_cfg.restart.command or adapter == "docker-compose":
+        if (
+            deploy_cfg.restart.service
+            or deploy_cfg.restart.command
+            or adapter == "docker-compose"
+        ):
             _check("Restart adapter configured", True, adapter)
         else:
-            _check("Restart adapter configured", False, f"adapter={adapter} but no service/command set")
+            _check(
+                "Restart adapter configured",
+                False,
+                f"adapter={adapter} but no service/command set",
+            )
 
     console.print()
     if fail_count == 0:
         console.print(f"[green]All {ok_count} checks passed.[/green]  Ready to deploy.")
     else:
-        console.print(f"[yellow]{ok_count} passed[/yellow], [red]{fail_count} failed[/red].  Fix the issues above before deploying.")
+        console.print(
+            f"[yellow]{ok_count} passed[/yellow], [red]{fail_count} failed[/red].  Fix the issues above before deploying."
+        )
         raise typer.Exit(1)
 
 
 # ============================================================================
 # Internal helpers
 # ============================================================================
+
 
 def _detect_project_root(config_manager: Any) -> Path:
     """Return the project root dir (.navig/ parent), falling back to cwd."""
@@ -685,16 +764,26 @@ def _detect_runtime_hints(project_root: Path) -> Dict[str, Any]:
                 pkg = json.load(fh)
             scripts = pkg.get("scripts", {})
             if "build" in scripts:
-                hints["apply_commands"] = []   # build is local; apply = nothing by default
+                hints["apply_commands"] = (
+                    []
+                )  # build is local; apply = nothing by default
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
-    elif (project_root / "requirements.txt").exists() or (project_root / "pyproject.toml").exists():
+    elif (project_root / "requirements.txt").exists() or (
+        project_root / "pyproject.toml"
+    ).exists():
         hints["adapter"] = "systemd"
         hints["build_dir"] = "./"
-        hints["apply_commands"] = ["pip install -r requirements.txt --quiet"] if (project_root / "requirements.txt").exists() else []
+        hints["apply_commands"] = (
+            ["pip install -r requirements.txt --quiet"]
+            if (project_root / "requirements.txt").exists()
+            else []
+        )
 
-    elif (project_root / "artisan").exists() or (project_root / "composer.json").exists():
+    elif (project_root / "artisan").exists() or (
+        project_root / "composer.json"
+    ).exists():
         # Laravel
         hints["adapter"] = "systemd"
         hints["build_dir"] = "./"
@@ -704,7 +793,9 @@ def _detect_runtime_hints(project_root: Path) -> Dict[str, Any]:
             "php artisan config:cache",
         ]
 
-    elif (project_root / "docker-compose.yml").exists() or (project_root / "compose.yml").exists():
+    elif (project_root / "docker-compose.yml").exists() or (
+        project_root / "compose.yml"
+    ).exists():
         hints["adapter"] = "docker-compose"
         hints["build_dir"] = "./"
 

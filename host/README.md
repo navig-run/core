@@ -31,4 +31,3 @@ go build ./...
 cd navig-core/host/_rust_legacy
 cargo check
 ```
-

@@ -24,6 +24,7 @@ def _debug_log(message: str) -> None:
     """Simple debug logging wrapper."""
     try:
         from navig.debug_logger import DebugLogger
+
         logger = DebugLogger()
         logger.log_operation("memory", {"message": message})
     except Exception:  # noqa: BLE001
@@ -46,29 +47,33 @@ class MemoryChunk:
 
     def to_dict(self) -> dict:
         return {
-            'id': self.id,
-            'file_path': self.file_path,
-            'content': self.content,
-            'line_start': self.line_start,
-            'line_end': self.line_end,
-            'token_count': self.token_count,
-            'embedding': json.dumps(self.embedding) if self.embedding else None,
-            'metadata': json.dumps(self.metadata),
-            'created_at': self.created_at,
+            "id": self.id,
+            "file_path": self.file_path,
+            "content": self.content,
+            "line_start": self.line_start,
+            "line_end": self.line_end,
+            "token_count": self.token_count,
+            "embedding": json.dumps(self.embedding) if self.embedding else None,
+            "metadata": json.dumps(self.metadata),
+            "created_at": self.created_at,
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'MemoryChunk':
+    def from_dict(cls, data: dict) -> "MemoryChunk":
         return cls(
-            id=data['id'],
-            file_path=data['file_path'],
-            content=data['content'],
-            line_start=data['line_start'],
-            line_end=data['line_end'],
-            token_count=data.get('token_count', 0),
-            embedding=json.loads(data['embedding']) if data.get('embedding') else None,
-            metadata=json.loads(data['metadata']) if isinstance(data['metadata'], str) else data.get('metadata', {}),
-            created_at=data.get('created_at', datetime.utcnow().isoformat()),
+            id=data["id"],
+            file_path=data["file_path"],
+            content=data["content"],
+            line_start=data["line_start"],
+            line_end=data["line_end"],
+            token_count=data.get("token_count", 0),
+            embedding=json.loads(data["embedding"]) if data.get("embedding") else None,
+            metadata=(
+                json.loads(data["metadata"])
+                if isinstance(data["metadata"], str)
+                else data.get("metadata", {})
+            ),
+            created_at=data.get("created_at", datetime.utcnow().isoformat()),
         )
 
 
@@ -85,45 +90,45 @@ class FileMetadata:
 
     def to_dict(self) -> dict:
         return {
-            'file_path': self.file_path,
-            'file_hash': self.file_hash,
-            'last_modified': self.last_modified,
-            'chunk_count': self.chunk_count,
-            'total_tokens': self.total_tokens,
-            'indexed_at': self.indexed_at,
+            "file_path": self.file_path,
+            "file_hash": self.file_hash,
+            "last_modified": self.last_modified,
+            "chunk_count": self.chunk_count,
+            "total_tokens": self.total_tokens,
+            "indexed_at": self.indexed_at,
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'FileMetadata':
+    def from_dict(cls, data: dict) -> "FileMetadata":
         return cls(
-            file_path=data['file_path'],
-            file_hash=data['file_hash'],
-            last_modified=data['last_modified'],
-            chunk_count=data.get('chunk_count', 0),
-            total_tokens=data.get('total_tokens', 0),
-            indexed_at=data.get('indexed_at', datetime.utcnow().isoformat()),
+            file_path=data["file_path"],
+            file_hash=data["file_hash"],
+            last_modified=data["last_modified"],
+            chunk_count=data.get("chunk_count", 0),
+            total_tokens=data.get("total_tokens", 0),
+            indexed_at=data.get("indexed_at", datetime.utcnow().isoformat()),
         )
 
 
 class MemoryStorage:
     """
     SQLite-backed storage for memory chunks and file metadata.
-    
+
     Features:
     - WAL mode for concurrent read/write
     - FTS5 full-text search for BM25 ranking
     - Embedding cache to avoid re-embedding unchanged content
     - Thread-safe with connection pooling
-    
+
     Usage:
         storage = MemoryStorage(Path.home() / '.navig' / 'memory' / 'index.db')
-        
+
         # Store chunks
         storage.upsert_chunks(chunks)
-        
+
         # Search by text (BM25)
         results = storage.search_fts("docker compose", limit=10)
-        
+
         # Get all chunks with embeddings
         chunks = storage.get_all_chunks_with_embeddings()
     """
@@ -135,7 +140,7 @@ class MemoryStorage:
         self._local = threading.local()
         self._lock = threading.Lock()
         self._embedding_dim = embedding_dimensions
-        self._vec: Optional['VectorIndex'] = None  # lazy init per connection
+        self._vec: Optional["VectorIndex"] = None  # lazy init per connection
 
         # Ensure directory exists
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -145,27 +150,28 @@ class MemoryStorage:
 
     def _get_conn(self) -> sqlite3.Connection:
         """Get thread-local connection."""
-        if not hasattr(self._local, 'conn') or self._local.conn is None:
+        if not hasattr(self._local, "conn") or self._local.conn is None:
             self._local.conn = sqlite3.connect(
                 str(self.db_path),
                 check_same_thread=False,
             )
             self._local.conn.row_factory = sqlite3.Row
-            self._local.conn.execute('PRAGMA journal_mode=WAL')
-            self._local.conn.execute('PRAGMA synchronous=NORMAL')
-            self._local.conn.execute('PRAGMA cache_size=-64000')  # 64MB cache
+            self._local.conn.execute("PRAGMA journal_mode=WAL")
+            self._local.conn.execute("PRAGMA synchronous=NORMAL")
+            self._local.conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
         return self._local.conn
 
     def _init_schema(self) -> None:
         """Initialize database schema with FTS5."""
         conn = self._get_conn()
 
-        conn.executescript('''
+        conn.executescript(
+            """
             -- Schema version tracking
             CREATE TABLE IF NOT EXISTS schema_version (
                 version INTEGER PRIMARY KEY
             );
-            
+
             -- File metadata table
             CREATE TABLE IF NOT EXISTS files (
                 file_path TEXT PRIMARY KEY,
@@ -175,7 +181,7 @@ class MemoryStorage:
                 total_tokens INTEGER DEFAULT 0,
                 indexed_at TEXT NOT NULL
             );
-            
+
             -- Chunks table
             CREATE TABLE IF NOT EXISTS chunks (
                 id TEXT PRIMARY KEY,
@@ -189,17 +195,17 @@ class MemoryStorage:
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (file_path) REFERENCES files(file_path) ON DELETE CASCADE
             );
-            
+
             -- Indexes for efficient queries
-            CREATE INDEX IF NOT EXISTS idx_chunks_file 
+            CREATE INDEX IF NOT EXISTS idx_chunks_file
                 ON chunks(file_path);
-            CREATE INDEX IF NOT EXISTS idx_chunks_tokens 
+            CREATE INDEX IF NOT EXISTS idx_chunks_tokens
                 ON chunks(token_count);
-            CREATE INDEX IF NOT EXISTS idx_files_hash 
+            CREATE INDEX IF NOT EXISTS idx_files_hash
                 ON files(file_hash);
-            CREATE INDEX IF NOT EXISTS idx_files_modified 
+            CREATE INDEX IF NOT EXISTS idx_files_modified
                 ON files(last_modified);
-            
+
             -- FTS5 virtual table for full-text search (BM25)
             CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
                 content,
@@ -207,25 +213,25 @@ class MemoryStorage:
                 content=chunks,
                 content_rowid=rowid
             );
-            
+
             -- Triggers to keep FTS in sync
             CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
-                INSERT INTO chunks_fts(rowid, content, file_path) 
+                INSERT INTO chunks_fts(rowid, content, file_path)
                 VALUES (NEW.rowid, NEW.content, NEW.file_path);
             END;
-            
+
             CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
-                INSERT INTO chunks_fts(chunks_fts, rowid, content, file_path) 
+                INSERT INTO chunks_fts(chunks_fts, rowid, content, file_path)
                 VALUES('delete', OLD.rowid, OLD.content, OLD.file_path);
             END;
-            
+
             CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
-                INSERT INTO chunks_fts(chunks_fts, rowid, content, file_path) 
+                INSERT INTO chunks_fts(chunks_fts, rowid, content, file_path)
                 VALUES('delete', OLD.rowid, OLD.content, OLD.file_path);
-                INSERT INTO chunks_fts(rowid, content, file_path) 
+                INSERT INTO chunks_fts(rowid, content, file_path)
                 VALUES (NEW.rowid, NEW.content, NEW.file_path);
             END;
-            
+
             -- Embedding cache table
             CREATE TABLE IF NOT EXISTS embedding_cache (
                 content_hash TEXT PRIMARY KEY,
@@ -233,21 +239,22 @@ class MemoryStorage:
                 model_name TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
-            
+
             -- Global metadata/stats
             CREATE TABLE IF NOT EXISTS metadata (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
-        ''')
+        """
+        )
 
         # Set schema version if not exists
-        cursor = conn.execute('SELECT version FROM schema_version LIMIT 1')
+        cursor = conn.execute("SELECT version FROM schema_version LIMIT 1")
         if cursor.fetchone() is None:
             conn.execute(
-                'INSERT INTO schema_version (version) VALUES (?)',
-                (self.SCHEMA_VERSION,)
+                "INSERT INTO schema_version (version) VALUES (?)",
+                (self.SCHEMA_VERSION,),
             )
 
         conn.commit()
@@ -261,7 +268,8 @@ class MemoryStorage:
         data = metadata.to_dict()
 
         with self._lock:
-            conn.execute('''
+            conn.execute(
+                """
                 INSERT INTO files (file_path, file_hash, last_modified, chunk_count, total_tokens, indexed_at)
                 VALUES (:file_path, :file_hash, :last_modified, :chunk_count, :total_tokens, :indexed_at)
                 ON CONFLICT(file_path) DO UPDATE SET
@@ -270,23 +278,22 @@ class MemoryStorage:
                     chunk_count = excluded.chunk_count,
                     total_tokens = excluded.total_tokens,
                     indexed_at = excluded.indexed_at
-            ''', data)
+            """,
+                data,
+            )
             conn.commit()
 
     def get_file_metadata(self, file_path: str) -> Optional[FileMetadata]:
         """Get file metadata by path."""
         conn = self._get_conn()
-        cursor = conn.execute(
-            'SELECT * FROM files WHERE file_path = ?',
-            (file_path,)
-        )
+        cursor = conn.execute("SELECT * FROM files WHERE file_path = ?", (file_path,))
         row = cursor.fetchone()
         return FileMetadata.from_dict(dict(row)) if row else None
 
     def get_all_files(self) -> List[FileMetadata]:
         """Get all indexed files."""
         conn = self._get_conn()
-        cursor = conn.execute('SELECT * FROM files ORDER BY indexed_at DESC')
+        cursor = conn.execute("SELECT * FROM files ORDER BY indexed_at DESC")
         return [FileMetadata.from_dict(dict(row)) for row in cursor.fetchall()]
 
     def delete_file(self, file_path: str) -> int:
@@ -296,15 +303,11 @@ class MemoryStorage:
         with self._lock:
             # Delete chunks first (foreign key)
             cursor = conn.execute(
-                'DELETE FROM chunks WHERE file_path = ?',
-                (file_path,)
+                "DELETE FROM chunks WHERE file_path = ?", (file_path,)
             )
             deleted_chunks = cursor.rowcount
 
-            conn.execute(
-                'DELETE FROM files WHERE file_path = ?',
-                (file_path,)
-            )
+            conn.execute("DELETE FROM files WHERE file_path = ?", (file_path,))
             conn.commit()
 
         return deleted_chunks
@@ -326,8 +329,9 @@ class MemoryStorage:
         with self._lock:
             for chunk in chunks:
                 data = chunk.to_dict()
-                conn.execute('''
-                    INSERT INTO chunks (id, file_path, content, line_start, line_end, 
+                conn.execute(
+                    """
+                    INSERT INTO chunks (id, file_path, content, line_start, line_end,
                                        token_count, embedding, metadata, created_at)
                     VALUES (:id, :file_path, :content, :line_start, :line_end,
                             :token_count, :embedding, :metadata, :created_at)
@@ -338,7 +342,9 @@ class MemoryStorage:
                         token_count = excluded.token_count,
                         embedding = excluded.embedding,
                         metadata = excluded.metadata
-                ''', data)
+                """,
+                    data,
+                )
             conn.commit()
 
         return len(chunks)
@@ -346,10 +352,7 @@ class MemoryStorage:
     def get_chunk(self, chunk_id: str) -> Optional[MemoryChunk]:
         """Get a chunk by ID."""
         conn = self._get_conn()
-        cursor = conn.execute(
-            'SELECT * FROM chunks WHERE id = ?',
-            (chunk_id,)
-        )
+        cursor = conn.execute("SELECT * FROM chunks WHERE id = ?", (chunk_id,))
         row = cursor.fetchone()
         return MemoryChunk.from_dict(dict(row)) if row else None
 
@@ -357,32 +360,27 @@ class MemoryStorage:
         """Get all chunks for a file."""
         conn = self._get_conn()
         cursor = conn.execute(
-            'SELECT * FROM chunks WHERE file_path = ? ORDER BY line_start',
-            (file_path,)
+            "SELECT * FROM chunks WHERE file_path = ? ORDER BY line_start", (file_path,)
         )
         return [MemoryChunk.from_dict(dict(row)) for row in cursor.fetchall()]
 
     def get_all_chunks(self) -> Iterator[MemoryChunk]:
         """Iterate over all chunks."""
         conn = self._get_conn()
-        cursor = conn.execute('SELECT * FROM chunks')
+        cursor = conn.execute("SELECT * FROM chunks")
         for row in cursor:
             yield MemoryChunk.from_dict(dict(row))
 
     def get_all_chunks_with_embeddings(self) -> List[MemoryChunk]:
         """Get all chunks that have embeddings."""
         conn = self._get_conn()
-        cursor = conn.execute(
-            'SELECT * FROM chunks WHERE embedding IS NOT NULL'
-        )
+        cursor = conn.execute("SELECT * FROM chunks WHERE embedding IS NOT NULL")
         return [MemoryChunk.from_dict(dict(row)) for row in cursor.fetchall()]
 
     def get_chunks_without_embeddings(self) -> List[MemoryChunk]:
         """Get chunks that need embedding generation."""
         conn = self._get_conn()
-        cursor = conn.execute(
-            'SELECT * FROM chunks WHERE embedding IS NULL'
-        )
+        cursor = conn.execute("SELECT * FROM chunks WHERE embedding IS NULL")
         return [MemoryChunk.from_dict(dict(row)) for row in cursor.fetchall()]
 
     def update_chunk_embedding(self, chunk_id: str, embedding: List[float]) -> None:
@@ -391,8 +389,8 @@ class MemoryStorage:
 
         with self._lock:
             conn.execute(
-                'UPDATE chunks SET embedding = ? WHERE id = ?',
-                (json.dumps(embedding), chunk_id)
+                "UPDATE chunks SET embedding = ? WHERE id = ?",
+                (json.dumps(embedding), chunk_id),
             )
             conn.commit()
 
@@ -410,8 +408,7 @@ class MemoryStorage:
 
         with self._lock:
             cursor = conn.execute(
-                'DELETE FROM chunks WHERE file_path = ?',
-                (file_path,)
+                "DELETE FROM chunks WHERE file_path = ?", (file_path,)
             )
             conn.commit()
 
@@ -427,12 +424,12 @@ class MemoryStorage:
     ) -> List[tuple[MemoryChunk, float]]:
         """
         Search using FTS5 with BM25 ranking.
-        
+
         Args:
             query: Search query (supports FTS5 syntax)
             limit: Maximum results
             file_filter: Optional file path pattern filter
-            
+
         Returns:
             List of (chunk, bm25_score) tuples, higher scores = more relevant
         """
@@ -441,7 +438,8 @@ class MemoryStorage:
         # Escape special FTS characters and build query
         # FTS5 uses negative BM25 (more negative = more relevant)
         if file_filter:
-            cursor = conn.execute('''
+            cursor = conn.execute(
+                """
                 SELECT c.*, -bm25(chunks_fts) as score
                 FROM chunks_fts
                 JOIN chunks c ON chunks_fts.rowid = c.rowid
@@ -449,21 +447,26 @@ class MemoryStorage:
                 AND c.file_path LIKE ?
                 ORDER BY score DESC
                 LIMIT ?
-            ''', (query, file_filter, limit))
+            """,
+                (query, file_filter, limit),
+            )
         else:
-            cursor = conn.execute('''
+            cursor = conn.execute(
+                """
                 SELECT c.*, -bm25(chunks_fts) as score
                 FROM chunks_fts
                 JOIN chunks c ON chunks_fts.rowid = c.rowid
                 WHERE chunks_fts MATCH ?
                 ORDER BY score DESC
                 LIMIT ?
-            ''', (query, limit))
+            """,
+                (query, limit),
+            )
 
         results = []
         for row in cursor.fetchall():
             row_dict = dict(row)
-            score = row_dict.pop('score', 0.0)
+            score = row_dict.pop("score", 0.0)
             chunk = MemoryChunk.from_dict(row_dict)
             results.append((chunk, score))
 
@@ -485,7 +488,7 @@ class MemoryStorage:
 
         # Escape quotes and build FTS query
         escaped_words = [w.replace('"', '""') for w in words]
-        fts_query = ' OR '.join(f'"{w}"' for w in escaped_words)
+        fts_query = " OR ".join(f'"{w}"' for w in escaped_words)
 
         try:
             return self.search_fts(fts_query, limit)
@@ -501,18 +504,18 @@ class MemoryStorage:
         """Fallback LIKE-based search."""
         conn = self._get_conn()
 
-        pattern = f'%{query}%'
-        cursor = conn.execute('''
-            SELECT * FROM chunks 
+        pattern = f"%{query}%"
+        cursor = conn.execute(
+            """
+            SELECT * FROM chunks
             WHERE content LIKE ?
             ORDER BY token_count DESC
             LIMIT ?
-        ''', (pattern, limit))
+        """,
+            (pattern, limit),
+        )
 
-        return [
-            (MemoryChunk.from_dict(dict(row)), 1.0)
-            for row in cursor.fetchall()
-        ]
+        return [(MemoryChunk.from_dict(dict(row)), 1.0) for row in cursor.fetchall()]
 
     # ---------- Embedding Cache ----------
 
@@ -524,11 +527,11 @@ class MemoryStorage:
         """Get cached embedding for content hash."""
         conn = self._get_conn()
         cursor = conn.execute(
-            'SELECT embedding FROM embedding_cache WHERE content_hash = ? AND model_name = ?',
-            (content_hash, model_name)
+            "SELECT embedding FROM embedding_cache WHERE content_hash = ? AND model_name = ?",
+            (content_hash, model_name),
         )
         row = cursor.fetchone()
-        return json.loads(row['embedding']) if row else None
+        return json.loads(row["embedding"]) if row else None
 
     def cache_embedding(
         self,
@@ -545,7 +548,7 @@ class MemoryStorage:
     ) -> int:
         """
         Batch update embedding cache.
-        
+
         Args:
             entries: List of (content_hash, embedding, model_name) tuples
         """
@@ -556,20 +559,20 @@ class MemoryStorage:
         created_at = datetime.utcnow().isoformat()
 
         # Prepare data
-        data = [
-            (h, json.dumps(e), m, created_at)
-            for h, e, m in entries
-        ]
+        data = [(h, json.dumps(e), m, created_at) for h, e, m in entries]
 
         with self._lock:
-            conn.executemany('''
+            conn.executemany(
+                """
                 INSERT INTO embedding_cache (content_hash, embedding, model_name, created_at)
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT(content_hash) DO UPDATE SET
                     embedding = excluded.embedding,
                     model_name = excluded.model_name,
                     created_at = excluded.created_at
-            ''', data)
+            """,
+                data,
+            )
             conn.commit()
 
         return len(entries)
@@ -580,7 +583,7 @@ class MemoryStorage:
     ) -> int:
         """
         Batch update chunk embeddings.
-        
+
         Args:
             updates: List of (chunk_id, embedding) tuples
         """
@@ -590,15 +593,15 @@ class MemoryStorage:
         conn = self._get_conn()
 
         # Prepare data
-        data = [
-            (json.dumps(e), cid)
-            for cid, e in updates
-        ]
+        data = [(json.dumps(e), cid) for cid, e in updates]
 
         with self._lock:
-            conn.executemany('''
+            conn.executemany(
+                """
                 UPDATE chunks SET embedding = ? WHERE id = ?
-            ''', data)
+            """,
+                data,
+            )
             conn.commit()
 
         # Sync to vec0 table (best-effort)
@@ -614,7 +617,7 @@ class MemoryStorage:
     @staticmethod
     def compute_content_hash(content: str) -> str:
         """Compute SHA256 hash of content."""
-        return hashlib.sha256(content.encode('utf-8')).hexdigest()[:16]
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
 
     # ---------- Metadata/Stats ----------
 
@@ -623,48 +626,50 @@ class MemoryStorage:
         conn = self._get_conn()
 
         with self._lock:
-            conn.execute('''
+            conn.execute(
+                """
                 INSERT INTO metadata (key, value, updated_at)
                 VALUES (?, ?, ?)
                 ON CONFLICT(key) DO UPDATE SET
                     value = excluded.value,
                     updated_at = excluded.updated_at
-            ''', (key, json.dumps(value), datetime.utcnow().isoformat()))
+            """,
+                (key, json.dumps(value), datetime.utcnow().isoformat()),
+            )
             conn.commit()
 
     def get_metadata(self, key: str) -> Optional[Any]:
         """Get a metadata value."""
         conn = self._get_conn()
-        cursor = conn.execute(
-            'SELECT value FROM metadata WHERE key = ?',
-            (key,)
-        )
+        cursor = conn.execute("SELECT value FROM metadata WHERE key = ?", (key,))
         row = cursor.fetchone()
-        return json.loads(row['value']) if row else None
+        return json.loads(row["value"]) if row else None
 
     def get_stats(self) -> Dict[str, Any]:
         """Get storage statistics."""
         conn = self._get_conn()
 
-        file_count = conn.execute('SELECT COUNT(*) FROM files').fetchone()[0]
-        chunk_count = conn.execute('SELECT COUNT(*) FROM chunks').fetchone()[0]
-        total_tokens = conn.execute('SELECT SUM(token_count) FROM chunks').fetchone()[0] or 0
+        file_count = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+        chunk_count = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+        total_tokens = (
+            conn.execute("SELECT SUM(token_count) FROM chunks").fetchone()[0] or 0
+        )
         embedded_count = conn.execute(
-            'SELECT COUNT(*) FROM chunks WHERE embedding IS NOT NULL'
+            "SELECT COUNT(*) FROM chunks WHERE embedding IS NOT NULL"
         ).fetchone()[0]
-        cache_count = conn.execute('SELECT COUNT(*) FROM embedding_cache').fetchone()[0]
+        cache_count = conn.execute("SELECT COUNT(*) FROM embedding_cache").fetchone()[0]
 
         # Get database size
         db_size = self.db_path.stat().st_size if self.db_path.exists() else 0
 
         return {
-            'file_count': file_count,
-            'chunk_count': chunk_count,
-            'total_tokens': total_tokens,
-            'embedded_chunks': embedded_count,
-            'embedding_cache_size': cache_count,
-            'database_size_bytes': db_size,
-            'database_size_mb': round(db_size / 1024 / 1024, 2),
+            "file_count": file_count,
+            "chunk_count": chunk_count,
+            "total_tokens": total_tokens,
+            "embedded_chunks": embedded_count,
+            "embedding_cache_size": cache_count,
+            "database_size_bytes": db_size,
+            "database_size_mb": round(db_size / 1024 / 1024, 2),
         }
 
     # ---------- Maintenance ----------
@@ -672,7 +677,7 @@ class MemoryStorage:
     def vacuum(self) -> None:
         """Compact the database."""
         conn = self._get_conn()
-        conn.execute('VACUUM')
+        conn.execute("VACUUM")
 
     def clear_all(self) -> Dict[str, int]:
         """Clear all data and return counts."""
@@ -681,20 +686,22 @@ class MemoryStorage:
         stats = self.get_stats()
 
         with self._lock:
-            conn.executescript('''
+            conn.executescript(
+                """
                 DELETE FROM chunks;
                 DELETE FROM files;
                 DELETE FROM embedding_cache;
                 DELETE FROM metadata;
-            ''')
+            """
+            )
             conn.commit()
 
         self.vacuum()
 
         return {
-            'files_deleted': stats['file_count'],
-            'chunks_deleted': stats['chunk_count'],
-            'cache_cleared': stats['embedding_cache_size'],
+            "files_deleted": stats["file_count"],
+            "chunks_deleted": stats["chunk_count"],
+            "cache_cleared": stats["embedding_cache_size"],
         }
 
     def clear_embedding_cache(self) -> int:
@@ -702,14 +709,14 @@ class MemoryStorage:
         conn = self._get_conn()
 
         with self._lock:
-            cursor = conn.execute('DELETE FROM embedding_cache')
+            cursor = conn.execute("DELETE FROM embedding_cache")
             conn.commit()
 
         return cursor.rowcount
 
     def close(self) -> None:
         """Close database connection."""
-        if hasattr(self._local, 'conn') and self._local.conn:
+        if hasattr(self._local, "conn") and self._local.conn:
             self._local.conn.close()
             self._local.conn = None
         self._vec = None
@@ -721,9 +728,7 @@ class MemoryStorage:
         if self._vec is None:
             from navig.memory.vector import VectorIndex
 
-            self._vec = VectorIndex(
-                self._get_conn(), dimensions=self._embedding_dim
-            )
+            self._vec = VectorIndex(self._get_conn(), dimensions=self._embedding_dim)
         return self._vec
 
     @property
@@ -735,7 +740,7 @@ class MemoryStorage:
         self,
         query_embedding: List[float],
         limit: int = 10,
-    ) -> List[Tuple['MemoryChunk', float]]:
+    ) -> List[Tuple["MemoryChunk", float]]:
         """
         ANN vector search using sqlite-vec.
 
@@ -769,7 +774,7 @@ class MemoryStorage:
         *,
         limit: int = 10,
         alpha: float = 0.3,
-    ) -> List[Tuple['MemoryChunk', float]]:
+    ) -> List[Tuple["MemoryChunk", float]]:
         """
         Combined FTS5 BM25 + vector reranking.
 

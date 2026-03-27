@@ -22,6 +22,7 @@ logger = get_debug_logger()
 @dataclass
 class MCPClientConfig:
     """Configuration for an MCP client connection."""
+
     id: str
     command: Optional[str] = None
     args: List[str] = field(default_factory=list)
@@ -33,48 +34,48 @@ class MCPClientConfig:
     enabled: bool = True
 
     @classmethod
-    def from_dict(cls, id: str, data: dict) -> 'MCPClientConfig':
+    def from_dict(cls, id: str, data: dict) -> "MCPClientConfig":
         """Create from config dictionary."""
         return cls(
             id=id,
-            command=data.get('command'),
-            args=data.get('args', []),
-            env=data.get('env', {}),
-            transport=data.get('transport', 'stdio'),
-            url=data.get('url'),
-            cwd=data.get('cwd'),
-            auto_connect=data.get('auto_connect', True),
-            enabled=data.get('enabled', True),
+            command=data.get("command"),
+            args=data.get("args", []),
+            env=data.get("env", {}),
+            transport=data.get("transport", "stdio"),
+            url=data.get("url"),
+            cwd=data.get("cwd"),
+            auto_connect=data.get("auto_connect", True),
+            enabled=data.get("enabled", True),
         )
 
 
 class MCPClient:
     """
     MCP client for connecting to external MCP servers.
-    
+
     Handles:
     - Connection lifecycle
     - Protocol initialization
     - Tool discovery and invocation
     - Resource access
-    
+
     Example:
         config = MCPClientConfig(
             id="filesystem",
             command="npx",
             args=["-y", "@anthropic/mcp-server-filesystem", "/tmp"],
         )
-        
+
         client = MCPClient(config)
         await client.connect()
-        
+
         # List available tools
         for tool in client.tools:
             print(f"{tool.name}: {tool.description}")
-        
+
         # Call a tool
         result = await client.call_tool("read_file", {"path": "/tmp/test.txt"})
-        
+
         await client.disconnect()
     """
 
@@ -97,9 +98,9 @@ class MCPClient:
     def is_connected(self) -> bool:
         """Check if client is connected and initialized."""
         return (
-            self._transport is not None and
-            self._transport.is_connected() and
-            self._initialized
+            self._transport is not None
+            and self._transport.is_connected()
+            and self._initialized
         )
 
     @property
@@ -135,7 +136,9 @@ class MCPClient:
             self._transport = SSETransport(self.config.url)
         else:
             if not self.config.command:
-                raise ValueError(f"Stdio transport requires 'command' for client {self.id}")
+                raise ValueError(
+                    f"Stdio transport requires 'command' for client {self.id}"
+                )
             self._transport = StdioTransport(
                 command=self.config.command,
                 args=self.config.args,
@@ -189,14 +192,14 @@ class MCPClient:
     async def call_tool(self, name: str, arguments: Dict[str, Any] = None) -> Any:
         """
         Call a tool on the connected server.
-        
+
         Args:
             name: Tool name
             arguments: Tool arguments
-        
+
         Returns:
             Tool result (content)
-        
+
         Raises:
             ValueError: If tool not found
             RuntimeError: If call fails
@@ -205,11 +208,12 @@ class MCPClient:
             raise RuntimeError(f"MCP client {self.id} not connected")
 
         if name not in self._tools:
-            raise ValueError(f"Tool not found: {name} (available: {list(self._tools.keys())})")
+            raise ValueError(
+                f"Tool not found: {name} (available: {list(self._tools.keys())})"
+            )
 
         response = await self._send_request(
-            MCPMethod.TOOLS_CALL,
-            {"name": name, "arguments": arguments or {}}
+            MCPMethod.TOOLS_CALL, {"name": name, "arguments": arguments or {}}
         )
 
         if response.is_error:
@@ -231,20 +235,17 @@ class MCPClient:
     async def read_resource(self, uri: str) -> Any:
         """
         Read a resource from the connected server.
-        
+
         Args:
             uri: Resource URI
-        
+
         Returns:
             Resource content
         """
         if not self.is_connected:
             raise RuntimeError(f"MCP client {self.id} not connected")
 
-        response = await self._send_request(
-            MCPMethod.RESOURCES_READ,
-            {"uri": uri}
-        )
+        response = await self._send_request(MCPMethod.RESOURCES_READ, {"uri": uri})
 
         if response.is_error:
             raise RuntimeError(f"Resource read failed: {response.get_error_message()}")
@@ -254,11 +255,11 @@ class MCPClient:
     async def get_prompt(self, name: str, arguments: Dict[str, str] = None) -> Any:
         """
         Get a prompt from the connected server.
-        
+
         Args:
             name: Prompt name
             arguments: Prompt arguments
-        
+
         Returns:
             Prompt result
         """
@@ -266,8 +267,7 @@ class MCPClient:
             raise RuntimeError(f"MCP client {self.id} not connected")
 
         response = await self._send_request(
-            MCPMethod.PROMPTS_GET,
-            {"name": name, "arguments": arguments or {}}
+            MCPMethod.PROMPTS_GET, {"name": name, "arguments": arguments or {}}
         )
 
         if response.is_error:
@@ -295,11 +295,8 @@ class MCPClient:
                 "capabilities": {
                     "roots": {"listChanged": True},
                 },
-                "clientInfo": {
-                    "name": "navig",
-                    "version": "1.0.0"
-                }
-            }
+                "clientInfo": {"name": "navig", "version": "1.0.0"},
+            },
         )
 
         if response.is_error:
@@ -365,7 +362,9 @@ class MCPClient:
             )
             self._prompts[prompt.name] = prompt
 
-    async def _send_request(self, method: MCPMethod, params: Dict[str, Any]) -> JSONRPCResponse:
+    async def _send_request(
+        self, method: MCPMethod, params: Dict[str, Any]
+    ) -> JSONRPCResponse:
         """Send request and wait for response."""
         self._request_id += 1
 

@@ -3,6 +3,7 @@ Data Tool Pack - json_parse, text_summarize (stub).
 
 Lightweight data processing tools.
 """
+
 from __future__ import annotations
 
 import json
@@ -30,7 +31,11 @@ def register_tools(registry: "ToolRegistry") -> None:
             description="Parse a JSON string into structured data.",
             safety=SafetyLevel.SAFE,
             parameters_schema={
-                "text": {"type": "string", "required": True, "description": "JSON string to parse"},
+                "text": {
+                    "type": "string",
+                    "required": True,
+                    "description": "JSON string to parse",
+                },
             },
             tags=["json", "parse", "data"],
         ),

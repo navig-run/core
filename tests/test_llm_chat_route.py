@@ -9,12 +9,13 @@ starting a full gateway process.
 
 from __future__ import annotations
 
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 
 # ── Fixtures ────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def mock_gateway():
@@ -31,6 +32,7 @@ def app(mock_gateway):
     """Build an aiohttp Application with just the LLM route registered."""
     aiohttp = pytest.importorskip("aiohttp")
     from aiohttp import web
+
     from navig.gateway.routes.llm import register
 
     application = web.Application()
@@ -39,6 +41,7 @@ def app(mock_gateway):
 
 
 # ── Happy path ──────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_llm_chat_basic(app, mock_gateway):
@@ -104,6 +107,7 @@ async def test_llm_chat_full_request(app, mock_gateway):
 
 # ── Error paths ─────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_llm_chat_missing_text(app):
     """Missing 'text' field returns 400."""
@@ -111,7 +115,9 @@ async def test_llm_chat_missing_text(app):
     from aiohttp.test_utils import TestClient, TestServer
 
     async with TestClient(TestServer(app)) as client:
-        resp = await client.post("/llm/chat", json={"conversation": [], "scope": "personal"})
+        resp = await client.post(
+            "/llm/chat", json={"conversation": [], "scope": "personal"}
+        )
         assert resp.status == 400
         body = await resp.json()
         assert "text" in body["error"].lower()
@@ -124,7 +130,9 @@ async def test_llm_chat_empty_text(app):
     from aiohttp.test_utils import TestClient, TestServer
 
     async with TestClient(TestServer(app)) as client:
-        resp = await client.post("/llm/chat", json={"text": "  ", "conversation": [], "scope": "personal"})
+        resp = await client.post(
+            "/llm/chat", json={"text": "  ", "conversation": [], "scope": "personal"}
+        )
         assert resp.status == 400
 
 
@@ -151,10 +159,14 @@ async def test_llm_chat_router_exception(app, mock_gateway):
     aiohttp = pytest.importorskip("aiohttp")
     from aiohttp.test_utils import TestClient, TestServer
 
-    mock_gateway.router.route_message = AsyncMock(side_effect=RuntimeError("LLM provider unavailable"))
+    mock_gateway.router.route_message = AsyncMock(
+        side_effect=RuntimeError("LLM provider unavailable")
+    )
 
     async with TestClient(TestServer(app)) as client:
-        resp = await client.post("/llm/chat", json={"text": "test", "conversation": [], "scope": "personal"})
+        resp = await client.post(
+            "/llm/chat", json={"text": "test", "conversation": [], "scope": "personal"}
+        )
         assert resp.status == 500
         body = await resp.json()
         assert body["ok"] is False

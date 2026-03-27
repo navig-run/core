@@ -20,6 +20,7 @@ Design goals
 * Optional ``on_event`` callback for observable execution (fires at ``spawn``,
   ``stdout``, ``stderr``, ``timeout``, ``exit``).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -42,6 +43,7 @@ AnyEventCallback = EventCallback | AsyncEventCallback
 
 
 # ── Options / Result ─────────────────────────────────────────────────────────
+
 
 @dataclass
 class ProcessOptions:
@@ -106,6 +108,7 @@ def _needs_cmd_wrapper(exe: str) -> bool:
     if sys.platform != "win32":
         return False
     from pathlib import Path
+
     return Path(exe).suffix.lower() in _WINDOWS_BATCH_EXTS
 
 
@@ -118,6 +121,7 @@ def _cmd_wrap_argv(exe: str, args: Sequence[str]) -> List[str]:
 
 
 # ── Shell helpers ─────────────────────────────────────────────────────────────
+
 
 def shell_argv(command: str) -> List[str]:
     """
@@ -136,6 +140,7 @@ def shell_argv(command: str) -> List[str]:
 
 
 # ── Output truncation ────────────────────────────────────────────────────────
+
 
 def _truncate_middle(text: str, cap: int) -> str:
     """Proportional middle-trim: keep first half + last half of *cap* chars."""
@@ -164,6 +169,7 @@ def _apply_cap(stdout: str, stderr: str, cap: int) -> tuple[str, str, bool]:
 
 # ── Event dispatch ────────────────────────────────────────────────────────────
 
+
 async def _emit(cb: Optional[AnyEventCallback], event: str, detail: str) -> None:
     if cb is None:
         return
@@ -176,6 +182,7 @@ async def _emit(cb: Optional[AnyEventCallback], event: str, detail: str) -> None
 
 
 # ── Core engine ───────────────────────────────────────────────────────────────
+
 
 async def run_process(
     argv: List[str],
@@ -219,7 +226,11 @@ async def run_process(
             if v is not None
         }
 
-    stdin_mode = asyncio.subprocess.PIPE if opts.input_data is not None else asyncio.subprocess.DEVNULL
+    stdin_mode = (
+        asyncio.subprocess.PIPE
+        if opts.input_data is not None
+        else asyncio.subprocess.DEVNULL
+    )
 
     t0 = time.monotonic()
 
@@ -232,7 +243,8 @@ async def run_process(
     _is_win_shell = (
         sys.platform == "win32"
         and os.path.basename(exe).lower() in ("cmd.exe", "cmd")
-        and args and args[0] in ("/c", "/s", "/d")
+        and args
+        and args[0] in ("/c", "/s", "/d")
     )
 
     if _is_win_shell:
@@ -279,7 +291,9 @@ async def run_process(
     if opts.no_output_timeout_s and opts.no_output_timeout_s > 0:
         no_output_deadline = time.monotonic() + opts.no_output_timeout_s
 
-    async def _read_stream(stream: asyncio.StreamReader, chunks: list[bytes], tag: str) -> None:
+    async def _read_stream(
+        stream: asyncio.StreamReader, chunks: list[bytes], tag: str
+    ) -> None:
         nonlocal no_output_deadline
         while True:
             chunk = await stream.read(4096)
@@ -293,9 +307,13 @@ async def run_process(
     async def _communicate() -> None:
         tasks = []
         if proc.stdout:
-            tasks.append(asyncio.create_task(_read_stream(proc.stdout, stdout_chunks, "stdout")))
+            tasks.append(
+                asyncio.create_task(_read_stream(proc.stdout, stdout_chunks, "stdout"))
+            )
         if proc.stderr:
-            tasks.append(asyncio.create_task(_read_stream(proc.stderr, stderr_chunks, "stderr")))
+            tasks.append(
+                asyncio.create_task(_read_stream(proc.stderr, stderr_chunks, "stderr"))
+            )
         if tasks:
             await asyncio.gather(*tasks)
         await proc.wait()
@@ -348,8 +366,11 @@ async def run_process(
     else:
         termination = "exit"
 
-    await _emit(opts.on_event, "exit" if termination == "exit" else termination,
-                str(proc.returncode))
+    await _emit(
+        opts.on_event,
+        "exit" if termination == "exit" else termination,
+        str(proc.returncode),
+    )
 
     stdout = b"".join(stdout_chunks).decode("utf-8", errors="replace")
     stderr = b"".join(stderr_chunks).decode("utf-8", errors="replace")
@@ -368,6 +389,7 @@ async def run_process(
 
 
 # ── Sync convenience wrapper ──────────────────────────────────────────────────
+
 
 def run_process_sync(
     argv: List[str],

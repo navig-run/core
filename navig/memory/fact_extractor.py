@@ -27,9 +27,11 @@ logger = logging.getLogger("navig.memory.fact_extractor")
 
 # ── Extraction Result ─────────────────────────────────────────
 
+
 @dataclass
 class ExtractionResult:
     """Facts extracted from a single conversation turn."""
+
     facts: List[KeyFact] = field(default_factory=list)
     source_turn: str = ""
     method: str = "rule"  # "rule" | "llm" | "hybrid"
@@ -46,36 +48,124 @@ class ExtractionResult:
 # Stored as (compiled_regex, category) pairs.
 _PREFERENCE_PATTERNS = [
     (re.compile(r"(?:i\s+)?prefer\s+(.+?)(?:\.|$)", re.IGNORECASE), "preference"),
-    (re.compile(r"(?:i\s+)?(?:always|usually|typically)\s+(?:use|work with|go with)\s+(.+?)(?:\.|$)", re.IGNORECASE), "preference"),
-    (re.compile(r"(?:i\s+)?like\s+(?:to\s+)?(?:use\s+)?(.+?)(?:\s+(?:for|when|because)|\.|$)", re.IGNORECASE), "preference"),
-    (re.compile(r"(?:my|our)\s+(?:preferred|default|standard)\s+(?:\w+\s+)?(?:is|are)\s+(.+?)(?:\.|$)", re.IGNORECASE), "preference"),
-    (re.compile(r"(?:i\s+)?(?:want|need)\s+(?:to\s+)?(.+?)(?:\s+(?:from now on|going forward))", re.IGNORECASE), "preference"),
+    (
+        re.compile(
+            r"(?:i\s+)?(?:always|usually|typically)\s+(?:use|work with|go with)\s+(.+?)(?:\.|$)",
+            re.IGNORECASE,
+        ),
+        "preference",
+    ),
+    (
+        re.compile(
+            r"(?:i\s+)?like\s+(?:to\s+)?(?:use\s+)?(.+?)(?:\s+(?:for|when|because)|\.|$)",
+            re.IGNORECASE,
+        ),
+        "preference",
+    ),
+    (
+        re.compile(
+            r"(?:my|our)\s+(?:preferred|default|standard)\s+(?:\w+\s+)?(?:is|are)\s+(.+?)(?:\.|$)",
+            re.IGNORECASE,
+        ),
+        "preference",
+    ),
+    (
+        re.compile(
+            r"(?:i\s+)?(?:want|need)\s+(?:to\s+)?(.+?)(?:\s+(?:from now on|going forward))",
+            re.IGNORECASE,
+        ),
+        "preference",
+    ),
 ]
 
 _DECISION_PATTERNS = [
-    (re.compile(r"(?:let'?s?|we(?:'ll| will| should)?|i(?:'ll| will)?)\s+(?:go with|use|switch to|adopt)\s+(.+?)(?:\.|$)", re.IGNORECASE), "decision"),
-    (re.compile(r"(?:decided|decision)\s+(?:to\s+|is\s+)?(.+?)(?:\.|$)", re.IGNORECASE), "decision"),
-    (re.compile(r"(?:from now on|going forward|henceforth)\s*[,:]?\s*(.+?)(?:\.|$)", re.IGNORECASE), "decision"),
+    (
+        re.compile(
+            r"(?:let'?s?|we(?:'ll| will| should)?|i(?:'ll| will)?)\s+(?:go with|use|switch to|adopt)\s+(.+?)(?:\.|$)",
+            re.IGNORECASE,
+        ),
+        "decision",
+    ),
+    (
+        re.compile(
+            r"(?:decided|decision)\s+(?:to\s+|is\s+)?(.+?)(?:\.|$)", re.IGNORECASE
+        ),
+        "decision",
+    ),
+    (
+        re.compile(
+            r"(?:from now on|going forward|henceforth)\s*[,:]?\s*(.+?)(?:\.|$)",
+            re.IGNORECASE,
+        ),
+        "decision",
+    ),
 ]
 
 _IDENTITY_PATTERNS = [
-    (re.compile(r"(?:my name is|i'?m called|call me)\s+(\w+(?:\s+\w+)?)", re.IGNORECASE), "identity"),
-    (re.compile(r"(?:i work (?:at|for)|i'?m (?:a|an|the))\s+(.+?)(?:\.|$)", re.IGNORECASE), "identity"),
-    (re.compile(r"(?:my (?:role|title|position) is)\s+(.+?)(?:\.|$)", re.IGNORECASE), "identity"),
-    (re.compile(r"(?:i'?m based in|i live in|my timezone is)\s+(.+?)(?:\.|$)", re.IGNORECASE), "identity"),
+    (
+        re.compile(
+            r"(?:my name is|i'?m called|call me)\s+(\w+(?:\s+\w+)?)", re.IGNORECASE
+        ),
+        "identity",
+    ),
+    (
+        re.compile(
+            r"(?:i work (?:at|for)|i'?m (?:a|an|the))\s+(.+?)(?:\.|$)", re.IGNORECASE
+        ),
+        "identity",
+    ),
+    (
+        re.compile(r"(?:my (?:role|title|position) is)\s+(.+?)(?:\.|$)", re.IGNORECASE),
+        "identity",
+    ),
+    (
+        re.compile(
+            r"(?:i'?m based in|i live in|my timezone is)\s+(.+?)(?:\.|$)", re.IGNORECASE
+        ),
+        "identity",
+    ),
 ]
 
 _TECHNICAL_PATTERNS = [
-    (re.compile(r"(?:(?:our|my|the) (?:stack|tech stack|setup) (?:is|includes|uses))\s+(.+?)(?:\.|$)", re.IGNORECASE), "technical"),
-    (re.compile(r"(?:(?:we|i) (?:run|deploy|host) (?:on|with|using))\s+(.+?)(?:\.|$)", re.IGNORECASE), "technical"),
-    (re.compile(r"(?:(?:our|the) (?:database|db|server|infra) (?:is|runs))\s+(.+?)(?:\.|$)", re.IGNORECASE), "technical"),
-    (re.compile(r"(?:(?:we|i) use)\s+(\w+(?:\s+\w+){0,3})\s+(?:for|as|to)\s+", re.IGNORECASE), "technical"),
+    (
+        re.compile(
+            r"(?:(?:our|my|the) (?:stack|tech stack|setup) (?:is|includes|uses))\s+(.+?)(?:\.|$)",
+            re.IGNORECASE,
+        ),
+        "technical",
+    ),
+    (
+        re.compile(
+            r"(?:(?:we|i) (?:run|deploy|host) (?:on|with|using))\s+(.+?)(?:\.|$)",
+            re.IGNORECASE,
+        ),
+        "technical",
+    ),
+    (
+        re.compile(
+            r"(?:(?:our|the) (?:database|db|server|infra) (?:is|runs))\s+(.+?)(?:\.|$)",
+            re.IGNORECASE,
+        ),
+        "technical",
+    ),
+    (
+        re.compile(
+            r"(?:(?:we|i) use)\s+(\w+(?:\s+\w+){0,3})\s+(?:for|as|to)\s+", re.IGNORECASE
+        ),
+        "technical",
+    ),
 ]
 
 _PROBLEM_SOLUTION_PATTERNS = [
-    re.compile(r"(?:getting|seeing|hitting|encountered?|ran? into)\s+(?:an?\s+)?(?:error|exception|bug|issue|problem):?\s+(.{10,200})", re.IGNORECASE),
+    re.compile(
+        r"(?:getting|seeing|hitting|encountered?|ran? into)\s+(?:an?\s+)?(?:error|exception|bug|issue|problem):?\s+(.{10,200})",
+        re.IGNORECASE,
+    ),
     re.compile(r"(?:error|exception|traceback)[:\s]+(.{10,200})", re.IGNORECASE),
-    re.compile(r"(?:fixed|resolved|solved|the fix (?:was|is)|solution (?:was|is)|fixed by|resolved by|the issue was)\s+(.{10,200})", re.IGNORECASE),
+    re.compile(
+        r"(?:fixed|resolved|solved|the fix (?:was|is)|solution (?:was|is)|fixed by|resolved by|the issue was)\s+(.{10,200})",
+        re.IGNORECASE,
+    ),
 ]
 
 ALL_PATTERNS = (
@@ -106,14 +196,16 @@ def extract_rules(
             if content in seen_contents:
                 continue
             seen_contents.add(content)
-            facts.append(KeyFact(
-                content=content,
-                category=category,
-                confidence=0.65,
-                source_conversation_id=source_conversation_id,
-                source_platform=source_platform,
-                tags=_auto_tags(content, category),
-            ))
+            facts.append(
+                KeyFact(
+                    content=content,
+                    category=category,
+                    confidence=0.65,
+                    source_conversation_id=source_conversation_id,
+                    source_platform=source_platform,
+                    tags=_auto_tags(content, category),
+                )
+            )
 
     # Problem-solution patterns: scan user and assistant text separately
     # (avoids string concatenation; assistant text often contains the resolution)
@@ -129,14 +221,16 @@ def extract_rules(
                 if content in seen_contents:
                     continue
                 seen_contents.add(content)
-                facts.append(KeyFact(
-                    content=content,
-                    category="problem_solution",
-                    confidence=0.9,
-                    source_conversation_id=source_conversation_id,
-                    source_platform=source_platform,
-                    tags=["problem_solution"] + _auto_tags(content, "technical"),
-                ))
+                facts.append(
+                    KeyFact(
+                        content=content,
+                        category="problem_solution",
+                        confidence=0.9,
+                        source_conversation_id=source_conversation_id,
+                        source_platform=source_platform,
+                        tags=["problem_solution"] + _auto_tags(content, "technical"),
+                    )
+                )
 
     return ExtractionResult(
         facts=facts,
@@ -153,7 +247,9 @@ def _normalize_fact_text(raw: str, category: str, context: str) -> str:
     if text and text[0].islower():
         text = text[0].upper() + text[1:]
     # Add "User" prefix for identity/preference facts
-    if category in ("preference", "identity") and not text.lower().startswith(("user", "the user")):
+    if category in ("preference", "identity") and not text.lower().startswith(
+        ("user", "the user")
+    ):
         text = f"User: {text}"
     return text
 
@@ -163,12 +259,37 @@ def _auto_tags(content: str, category: str) -> List[str]:
     tags = [category]
     # Common tech keywords
     tech_keywords = {
-        "python", "javascript", "typescript", "rust", "go", "java",
-        "docker", "kubernetes", "linux", "windows", "macos",
-        "postgresql", "mysql", "sqlite", "redis", "mongodb",
-        "react", "vue", "angular", "next", "django", "flask", "fastapi",
-        "aws", "gcp", "azure", "vercel", "netlify",
-        "git", "github", "gitlab",
+        "python",
+        "javascript",
+        "typescript",
+        "rust",
+        "go",
+        "java",
+        "docker",
+        "kubernetes",
+        "linux",
+        "windows",
+        "macos",
+        "postgresql",
+        "mysql",
+        "sqlite",
+        "redis",
+        "mongodb",
+        "react",
+        "vue",
+        "angular",
+        "next",
+        "django",
+        "flask",
+        "fastapi",
+        "aws",
+        "gcp",
+        "azure",
+        "vercel",
+        "netlify",
+        "git",
+        "github",
+        "gitlab",
     }
     words = set(re.findall(r"\b\w+\b", content.lower()))
     for kw in words & tech_keywords:
@@ -297,19 +418,22 @@ def _parse_llm_facts(
             tags = []
         tags = [str(t) for t in tags if isinstance(t, str)]
 
-        facts.append(KeyFact(
-            content=content,
-            category=category,
-            confidence=confidence,
-            tags=tags,
-            source_conversation_id=source_conversation_id,
-            source_platform=source_platform,
-        ))
+        facts.append(
+            KeyFact(
+                content=content,
+                category=category,
+                confidence=confidence,
+                tags=tags,
+                source_conversation_id=source_conversation_id,
+                source_platform=source_platform,
+            )
+        )
 
     return facts
 
 
 # ── Hybrid Extractor (Main Entry Point) ──────────────────────
+
 
 class FactExtractor:
     """
@@ -359,24 +483,29 @@ class FactExtractor:
         # Phase 1: Rule-based extraction (always runs)
         if self.mode in ("rule", "hybrid"):
             rule_result = extract_rules(
-                user_text, assistant_text,
-                source_conversation_id, source_platform,
+                user_text,
+                assistant_text,
+                source_conversation_id,
+                source_platform,
             )
             result.facts.extend(rule_result.facts)
             result.method = "rule"
 
         # Phase 2: LLM extraction (if enabled and rules didn't find much)
         if self.mode in ("llm", "hybrid") and self.llm_call:
-            should_llm = (
-                self.mode == "llm"
-                or (self.mode == "hybrid" and len(result.facts) == 0 and _is_high_signal(user_text))
+            should_llm = self.mode == "llm" or (
+                self.mode == "hybrid"
+                and len(result.facts) == 0
+                and _is_high_signal(user_text)
             )
             if should_llm:
                 try:
                     llm_result = await extract_llm(
-                        user_text, assistant_text,
+                        user_text,
+                        assistant_text,
                         self.llm_call,
-                        source_conversation_id, source_platform,
+                        source_conversation_id,
+                        source_platform,
                     )
                     result.facts.extend(llm_result.facts)
                     result.method = "hybrid" if result.method == "rule" else "llm"
@@ -385,7 +514,7 @@ class FactExtractor:
                     logger.warning("LLM extraction phase failed: %s", exc)
 
         # Limit total facts per turn
-        result.facts = result.facts[:self.max_facts_per_turn]
+        result.facts = result.facts[: self.max_facts_per_turn]
 
         # Persist to store
         if self.store and result.facts:
@@ -423,11 +552,13 @@ class FactExtractor:
             return ExtractionResult(source_turn=user_text[:200])
 
         result = extract_rules(
-            user_text, assistant_text,
-            source_conversation_id, source_platform,
+            user_text,
+            assistant_text,
+            source_conversation_id,
+            source_platform,
         )
 
-        result.facts = result.facts[:self.max_facts_per_turn]
+        result.facts = result.facts[: self.max_facts_per_turn]
 
         if self.store and result.facts:
             for fact in result.facts:
@@ -448,13 +579,33 @@ _LOW_SIGNAL_PATTERNS = [
 ]
 
 _HIGH_SIGNAL_KEYWORDS = {
-    "prefer", "always", "usually", "typically", "never",
-    "my name", "i work", "our stack", "we use", "i use",
-    "decided", "going forward", "from now on",
-    "timezone", "based in", "my role", "my team",
-    "don't like", "don't use", "don't want",
-    "remember", "keep in mind", "note that",
-    "standard", "convention", "rule", "policy",
+    "prefer",
+    "always",
+    "usually",
+    "typically",
+    "never",
+    "my name",
+    "i work",
+    "our stack",
+    "we use",
+    "i use",
+    "decided",
+    "going forward",
+    "from now on",
+    "timezone",
+    "based in",
+    "my role",
+    "my team",
+    "don't like",
+    "don't use",
+    "don't want",
+    "remember",
+    "keep in mind",
+    "note that",
+    "standard",
+    "convention",
+    "rule",
+    "policy",
 }
 
 

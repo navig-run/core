@@ -10,5 +10,3 @@ Common commands:
 Examples:
 - `navig mcp serve`
 - `navig mcp config vscode -o` (write config to file)
-
-

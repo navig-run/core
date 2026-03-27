@@ -2,24 +2,30 @@
 Tests for vault CLI commands.
 """
 
-from typer.testing import CliRunner
-from navig.cli import app, _register_external_commands
-from navig.vault import get_vault
 import pytest
+from typer.testing import CliRunner
+
+from navig.cli import _register_external_commands, app
+from navig.vault import get_vault
 
 # Register external commands (including cred/profile) for test discovery
 _register_external_commands(register_all=True)
 
 runner = CliRunner()
 
+
 @pytest.fixture(scope="module")
 def vault():
     return get_vault()
 
+
 def test_vault_cli_list(vault):
     result = runner.invoke(app, ["cred", "list"])
     assert result.exit_code == 0
-    assert "NAVIG Credentials Vault" in result.stdout or "Vault is empty" in result.stdout
+    assert (
+        "NAVIG Credentials Vault" in result.stdout or "Vault is empty" in result.stdout
+    )
+
 
 def test_vault_cli_add_delete(vault):
     # Clean up any leftover test credentials from previous runs
@@ -28,15 +34,27 @@ def test_vault_cli_add_delete(vault):
             vault.delete(c.id)
 
     # Add
-    result = runner.invoke(app, ["cred", "add", "openai", "--key", "sk-test-cli", "--label", "Test CLI Key", "--no-interactive"])
+    result = runner.invoke(
+        app,
+        [
+            "cred",
+            "add",
+            "openai",
+            "--key",
+            "sk-test-cli",
+            "--label",
+            "Test CLI Key",
+            "--no-interactive",
+        ],
+    )
     assert result.exit_code == 0
     assert "Credential added successfully" in result.stdout
-    
+
     # Get ID from output (or assume it's last created if using vault object)
     creds = vault.list()
     cred = next((c for c in creds if c.label == "Test CLI Key"), None)
     assert cred is not None
-    
+
     # List filtered — Rich may wrap "Test CLI Key" across lines, so check a stable substring
     result = runner.invoke(app, ["cred", "list", "--provider", "openai"])
     assert result.exit_code == 0
@@ -46,16 +64,18 @@ def test_vault_cli_add_delete(vault):
     result = runner.invoke(app, ["cred", "delete", cred.id, "--force"])
     assert result.exit_code == 0
     assert f"Credential {cred.id} deleted" in result.stdout
-    
+
     # Verify gone
     creds = vault.list()
     assert not any(c.id == cred.id for c in creds)
+
 
 def test_vault_cli_profile_list():
     result = runner.invoke(app, ["cred-profile", "list"])
     assert result.exit_code == 0
     assert "Available Profiles" in result.stdout
     assert "default" in result.stdout
+
 
 def test_vault_cli_show_nonexistent():
     result = runner.invoke(app, ["cred", "show", "nonexistent"])

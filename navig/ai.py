@@ -35,11 +35,11 @@ from navig.ai_context import get_ai_context_manager
 class AIAssistant:
     """
     Multi-provider AI integration for context-aware server assistance.
-    
+
     .. deprecated::
         Use ``navig.llm_generate.llm_generate()`` instead. This class is
         maintained for backward compatibility only.
-    
+
     Supports OpenRouter, OpenAI, Anthropic, and more via the providers system.
     Falls back automatically if a provider fails.
     """
@@ -59,7 +59,10 @@ class AIAssistant:
                 from pathlib import Path
 
                 from navig.memory.conversation import ConversationStore
-                AIAssistant._conv_store = ConversationStore(Path.home() / '.navig' / 'memory.db')
+
+                AIAssistant._conv_store = ConversationStore(
+                    Path.home() / ".navig" / "memory.db"
+                )
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
         return AIAssistant._conv_store
@@ -69,6 +72,7 @@ class AIAssistant:
         if self._fallback_manager is None:
             try:
                 from navig.providers import FallbackManager
+
                 self._fallback_manager = FallbackManager()
             except ImportError:
                 pass  # Providers not available, will use legacy mode
@@ -83,13 +87,13 @@ class AIAssistant:
     ) -> str:
         """
         Ask AI a question with server context.
-        
+
         Args:
             question: User's natural language question
             context: Server context (config, processes, logs, etc.)
             model_override: Override default model preference
             use_fallback: Use multi-provider fallback (default True)
-        
+
         Returns:
             AI response text
         """
@@ -104,18 +108,21 @@ class AIAssistant:
         def _fetch_kb() -> str:
             try:
                 from navig.memory.manager import get_memory_manager
+
                 _mgr = get_memory_manager()
                 _parts: list = []
                 _mem_ctx = ""
-                if hasattr(_mgr, 'get_context_for_query'):
+                if hasattr(_mgr, "get_context_for_query"):
                     _mem_ctx = _mgr.get_context_for_query(question, limit=5) or ""
-                elif hasattr(_mgr, 'knowledge_base') and _mgr.knowledge_base:
+                elif hasattr(_mgr, "knowledge_base") and _mgr.knowledge_base:
                     _results = _mgr.knowledge_base.text_search(_q, limit=5)
                     if _results:
-                        _mem_ctx = "\n".join(f"- {e.key}: {e.content[:150]}" for e in _results)
+                        _mem_ctx = "\n".join(
+                            f"- {e.key}: {e.content[:150]}" for e in _results
+                        )
                 if _mem_ctx:
                     _parts.append("\n\n## What I Know\n" + _mem_ctx)
-                if hasattr(_mgr, 'get_user_context'):
+                if hasattr(_mgr, "get_user_context"):
                     _profile = _mgr.get_user_context() or ""
                     if _profile:
                         _parts.append("\n\n## User Profile\n" + _profile)
@@ -126,6 +133,7 @@ class AIAssistant:
         def _fetch_kg() -> str:
             try:
                 from navig.memory.knowledge_graph import get_knowledge_graph
+
                 _kg = get_knowledge_graph()
                 _parts: list = []
                 _kg_facts = _kg.search_facts(_q, limit=10)
@@ -137,7 +145,10 @@ class AIAssistant:
                     _parts.append("\n\n## Known Facts (Graph)\n" + "\n".join(_lines))
                 _routines = _kg.get_routines(enabled_only=True)
                 if _routines:
-                    _rlines = [f"- {r.name}: {r.description or r.schedule}" for r in _routines[:5]]
+                    _rlines = [
+                        f"- {r.name}: {r.description or r.schedule}"
+                        for r in _routines[:5]
+                    ]
                     _parts.append("\n\n## Active Routines\n" + "\n".join(_rlines))
                 return "".join(_parts)
             except Exception:
@@ -154,18 +165,24 @@ class AIAssistant:
                 _pairs: list = []
                 _seen: set = set()
                 for _m in _past:
-                    if _m.role in ('user', 'assistant') and _m.session_key not in _seen:
+                    if _m.role in ("user", "assistant") and _m.session_key not in _seen:
                         _seen.add(_m.session_key)
                         _pairs.append(
                             f"[past session {_m.session_key[:8]}] {_m.role}: {_m.content[:200]}"
                         )
                         if len(_pairs) >= 3:
                             break
-                return ("\n\n## Relevant Past Sessions\n" + "\n".join(_pairs)) if _pairs else ""
+                return (
+                    ("\n\n## Relevant Past Sessions\n" + "\n".join(_pairs))
+                    if _pairs
+                    else ""
+                )
             except Exception:
                 return ""
 
-        with _cf.ThreadPoolExecutor(max_workers=3, thread_name_prefix="navig_mem") as _pool:
+        with _cf.ThreadPoolExecutor(
+            max_workers=3, thread_name_prefix="navig_mem"
+        ) as _pool:
             _f_kb, _f_kg, _f_ep = (
                 _pool.submit(_fetch_kb),
                 _pool.submit(_fetch_kg),
@@ -220,17 +237,20 @@ class AIAssistant:
         if model_override:
             model = model_override
         else:
-            models = self.config.global_config.get('ai_model_preference', [])
+            models = self.config.global_config.get("ai_model_preference", [])
             model = models[0] if models else "gpt-4o-mini"
 
         # Build fallback models
         fallback_models = []
         if not model_override:
-            all_models = self.config.global_config.get('ai_model_preference', [
-                'openrouter:deepseek/deepseek-coder-33b-instruct',
-                'openai:gpt-4o-mini',
-                'anthropic:claude-3-haiku-20240307',
-            ])
+            all_models = self.config.global_config.get(
+                "ai_model_preference",
+                [
+                    "openrouter:deepseek/deepseek-coder-33b-instruct",
+                    "openai:gpt-4o-mini",
+                    "anthropic:claude-3-haiku-20240307",
+                ],
+            )
             fallback_models = all_models[1:] if len(all_models) > 1 else []
 
         request = CompletionRequest(
@@ -258,7 +278,7 @@ class AIAssistant:
         model_override: Optional[str] = None,
     ) -> str:
         """Ask using legacy OpenRouter-only mode."""
-        api_key = self.config.global_config.get('openrouter_api_key')
+        api_key = self.config.global_config.get("openrouter_api_key")
         if not api_key:
             raise ValueError(
                 "OpenRouter API key not configured. "
@@ -269,12 +289,15 @@ class AIAssistant:
         if model_override:
             models = [model_override]
         else:
-            models = self.config.global_config.get('ai_model_preference', [
-                'deepseek/deepseek-coder-33b-instruct',
-                'google/gemini-flash-1.5',
-                'qwen/qwen-2.5-72b-instruct',
-                'meta-llama/llama-3.3-70b-instruct',
-            ])
+            models = self.config.global_config.get(
+                "ai_model_preference",
+                [
+                    "deepseek/deepseek-coder-33b-instruct",
+                    "google/gemini-flash-1.5",
+                    "qwen/qwen-2.5-72b-instruct",
+                    "meta-llama/llama-3.3-70b-instruct",
+                ],
+            )
 
         # Try each model in fallback chain
         for model in models:
@@ -297,29 +320,29 @@ class AIAssistant:
         """Build context string for AI from gathered information."""
         lines = ["CONTEXT:"]
 
-        if 'server' in context:
-            server = context['server']
+        if "server" in context:
+            server = context["server"]
             lines.append(f"Server: {server.get('name')} ({server.get('host')})")
             lines.append(f"User: {server.get('user')}")
 
-            if 'paths' in server:
-                paths = server['paths']
-                if paths.get('web_root'):
+            if "paths" in server:
+                paths = server["paths"]
+                if paths.get("web_root"):
                     lines.append(f"Web Root: {paths['web_root']}")
 
-        if 'directory' in context:
+        if "directory" in context:
             lines.append(f"Current Directory: {context['directory']}")
 
-        if 'processes' in context:
+        if "processes" in context:
             lines.append("\nRunning Services:")
-            for proc in context['processes']:
+            for proc in context["processes"]:
                 lines.append(f"- {proc}")
 
-        if 'logs' in context:
+        if "logs" in context:
             lines.append("\nRecent Logs:")
-            lines.append(context['logs'])
+            lines.append(context["logs"])
 
-        if 'disk' in context:
+        if "disk" in context:
             lines.append(f"\nDisk Usage: {context['disk']}")
 
         # Add recent error context for AI awareness
@@ -327,18 +350,26 @@ class AIAssistant:
             ai_context_mgr = get_ai_context_manager()
             error_summary = ai_context_mgr.get_error_summary(hours=24)
 
-            if error_summary['total_errors'] > 0:
-                lines.append(f"\nRecent Errors (Last 24h): {error_summary['total_errors']}")
+            if error_summary["total_errors"] > 0:
+                lines.append(
+                    f"\nRecent Errors (Last 24h): {error_summary['total_errors']}"
+                )
 
-                if error_summary['categories']:
+                if error_summary["categories"]:
                     lines.append("Error Categories:")
-                    for cat, count in sorted(error_summary['categories'].items(), key=lambda x: x[1], reverse=True):
+                    for cat, count in sorted(
+                        error_summary["categories"].items(),
+                        key=lambda x: x[1],
+                        reverse=True,
+                    ):
                         lines.append(f"  - {cat}: {count}")
 
-                if error_summary['common_errors']:
+                if error_summary["common_errors"]:
                     lines.append("\nMost Common Issues:")
-                    for i, err in enumerate(error_summary['common_errors'][:3], 1):
-                        lines.append(f"  {i}. [{err['category']}] {err['example'][:80]}...")
+                    for i, err in enumerate(error_summary["common_errors"][:3], 1):
+                        lines.append(
+                            f"  {i}. [{err['category']}] {err['example'][:80]}..."
+                        )
         except Exception:
             pass  # Don't fail if error context unavailable
 
@@ -376,13 +407,10 @@ class AIAssistant:
         response.raise_for_status()
         data = response.json()
 
-        return data['choices'][0]['message']['content']
+        return data["choices"][0]["message"]["content"]
 
     def analyze_error(
-        self,
-        command: str,
-        error_message: str,
-        context: Dict[str, Any]
+        self, command: str, error_message: str, context: Dict[str, Any]
     ) -> str:
         """
         Analyze error and suggest solutions using AI.
@@ -415,9 +443,7 @@ class AIAssistant:
             return f"AI analysis unavailable: {e}"
 
     def suggest_optimization(
-        self,
-        workflow_pattern: Dict[str, Any],
-        context: Dict[str, Any]
+        self, workflow_pattern: Dict[str, Any], context: Dict[str, Any]
     ) -> str:
         """
         Suggest workflow optimizations based on detected patterns.
@@ -441,10 +467,7 @@ class AIAssistant:
         except Exception as e:
             return f"AI suggestions unavailable: {e}"
 
-    def generate_context_summary(
-        self,
-        full_context: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def generate_context_summary(self, full_context: Dict[str, Any]) -> Dict[str, Any]:
         """
         Generate enhanced context summary for AI copilot.
 
@@ -463,27 +486,29 @@ def ask_ai_with_context(
     prompt: str,
     system_prompt: str = "",
     history: List[Dict[str, str]] = None,
-    model: Optional[str] = None
+    model: Optional[str] = None,
 ) -> str:
     """
     Simple function to ask AI with context - used by gateway server.
-    
+
     Args:
         prompt: User message/question
         system_prompt: System instructions
         history: Previous conversation messages
         model: Model to use (optional)
-    
+
     Returns:
         AI response text
     """
     from navig.config import get_config_manager
 
     config_mgr = get_config_manager()
-    ai_key = config_mgr.global_config.get('openrouter_api_key')
+    ai_key = config_mgr.global_config.get("openrouter_api_key")
 
     if not ai_key:
-        return "Error: OpenRouter API key not configured. Set it in ~/.navig/config.yaml"
+        return (
+            "Error: OpenRouter API key not configured. Set it in ~/.navig/config.yaml"
+        )
 
     # Build messages
     messages = []
@@ -500,7 +525,7 @@ def ask_ai_with_context(
 
     # Determine model
     if not model:
-        models = config_mgr.global_config.get('ai_model_preference', [])
+        models = config_mgr.global_config.get("ai_model_preference", [])
         model = models[0] if models else "google/gemini-2.5-flash"
 
     # Call OpenRouter API
@@ -518,12 +543,12 @@ def ask_ai_with_context(
                 "temperature": 0.7,
                 "max_tokens": 4096,
             },
-            timeout=120
+            timeout=120,
         )
         response.raise_for_status()
 
         data = response.json()
-        return data['choices'][0]['message']['content']
+        return data["choices"][0]["message"]["content"]
 
     except requests.exceptions.RequestException as e:
         return f"Error calling AI API: {e}"

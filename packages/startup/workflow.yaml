@@ -39,6 +39,3 @@ steps:
     description: "List recent CI/CD workflow runs"
     command: gh run list
     continue_on_error: true
-
-
-

@@ -58,7 +58,9 @@ def test_agent_component_restart_and_retry(monkeypatch):
             self._state[action_id]["reset_attempts"] = bool(reset_attempts)
             return True
 
-    monkeypatch.setattr("navig.agent.remediation.RemediationEngine", FakeRemediationEngine)
+    monkeypatch.setattr(
+        "navig.agent.remediation.RemediationEngine", FakeRemediationEngine
+    )
 
     handler = MCPProtocolHandler()
     restart = handler._execute_tool(
@@ -113,6 +115,7 @@ def test_agent_service_install_and_uninstall(monkeypatch):
 
 def test_agent_service_status_includes_capability_flags(monkeypatch):
     """Service status tool should include capability flags."""
+
     class FakeServiceInstaller:
         def __init__(self):
             self.system = "linux"

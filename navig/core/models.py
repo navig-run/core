@@ -10,20 +10,23 @@ class CommandParameter(BaseModel):
     default: Optional[Any] = None
     options: Optional[List[str]] = None
 
+
 class NavigCommand(BaseModel):
     name: str
     syntax: str
     description: str
-    risk: str = "safe" # safe, moderate, destructive
+    risk: str = "safe"  # safe, moderate, destructive
     confirmation_required: bool = False
     confirmation_msg: Optional[str] = None
     parameters: Optional[Dict[str, CommandParameter]] = None
     source_skill: Optional[str] = None
 
+
 class SkillExample(BaseModel):
     user: str
     thought: str
     command: str
+
 
 class SkillManifest(BaseModel):
     name: str
@@ -41,18 +44,20 @@ class SkillManifest(BaseModel):
     class Config:
         populate_by_name = True
 
+
 class PackStep(BaseModel):
     name: str = "unnamed-step"
     description: Optional[str] = None
     command: str
     continue_on_error: bool = False
 
+
 class NavigPack(BaseModel):
     name: str
     description: str
     version: str = "1.0.0"
     author: Optional[str] = "unknown"
-    type: str = "runbook" # runbook, checklist, workflow
+    type: str = "runbook"  # runbook, checklist, workflow
     tags: List[str] = []
     steps: List[PackStep] = []
 

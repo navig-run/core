@@ -29,6 +29,7 @@ logger = logging.getLogger("navig.tools.packs.api_pack")
 # Handlers
 # ──────────────────────────────────────────────────────────────
 
+
 def _api_get_json(
     url: str,
     headers: Optional[Dict[str, str]] = None,
@@ -70,7 +71,9 @@ def _api_get_json(
 
     except Exception as e:
         return ApiToolResult.from_error(
-            tool="web.api.get_json", error=str(e), endpoint=endpoint,
+            tool="web.api.get_json",
+            error=str(e),
+            endpoint=endpoint,
         ).to_dict()
 
 
@@ -108,7 +111,9 @@ def _api_post_json(
 
     except Exception as e:
         return ApiToolResult.from_error(
-            tool="web.api.post_json", error=str(e), endpoint=endpoint,
+            tool="web.api.post_json",
+            error=str(e),
+            endpoint=endpoint,
         ).to_dict()
 
 
@@ -175,6 +180,7 @@ def _infra_node_status(
     if host == "current":
         try:
             import shutil
+
             disk = shutil.disk_usage("/")
             normalized = {
                 "host": platform.node(),
@@ -210,6 +216,7 @@ def _infra_inventory(scope: str = "all", **kwargs) -> Dict[str, Any]:
     """List configured servers/hosts from navig host inventory."""
     try:
         from navig.config import get_config_manager
+
         cm = get_config_manager()
         hosts = cm.list_hosts() if hasattr(cm, "list_hosts") else []
         normalized = {"scope": scope, "hosts": hosts}
@@ -243,7 +250,11 @@ def register_tools(registry: "ToolRegistry") -> None:
             description="Fetch JSON from any HTTP GET endpoint.",
             safety=SafetyLevel.SAFE,
             parameters_schema={
-                "url": {"type": "string", "required": True, "description": "Target URL"},
+                "url": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Target URL",
+                },
                 "headers": {"type": "object", "description": "Optional HTTP headers"},
                 "params": {"type": "object", "description": "URL query parameters"},
                 "timeout": {"type": "integer", "default": 30},
@@ -278,7 +289,11 @@ def register_tools(registry: "ToolRegistry") -> None:
             description="Fetch OHLCV candle data for a trading pair.",
             safety=SafetyLevel.SAFE,
             parameters_schema={
-                "symbol": {"type": "string", "required": True, "description": "Trading pair (e.g. BTC/USDT)"},
+                "symbol": {
+                    "type": "string",
+                    "required": True,
+                    "description": "Trading pair (e.g. BTC/USDT)",
+                },
                 "timeframe": {"type": "string", "default": "1h"},
                 "limit": {"type": "integer", "default": 100},
                 "exchange": {"type": "string", "default": "auto"},
@@ -310,7 +325,11 @@ def register_tools(registry: "ToolRegistry") -> None:
             description="Get system metrics (CPU, memory, disk, uptime) for a host.",
             safety=SafetyLevel.SAFE,
             parameters_schema={
-                "host": {"type": "string", "default": "current", "description": "Host name or 'current'"},
+                "host": {
+                    "type": "string",
+                    "default": "current",
+                    "description": "Host name or 'current'",
+                },
             },
             tags=["infra", "metrics", "monitoring", "health"],
         ),

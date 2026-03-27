@@ -17,32 +17,32 @@ logger = get_debug_logger()
 class MCPClientManager:
     """
     Manages multiple MCP client connections.
-    
+
     Provides:
     - Unified tool registry across all connected servers
     - Auto-connect for configured servers
     - Reconnection handling
     - Tool routing to correct client
-    
+
     Example:
         manager = MCPClientManager()
-        
+
         # Add clients from config
         await manager.add_client(MCPClientConfig(
             id="filesystem",
             command="npx",
             args=["-y", "@anthropic/mcp-server-filesystem", "/tmp"],
         ))
-        
+
         await manager.start()
-        
+
         # Get all tools across clients
         for tool in manager.get_all_tools():
             print(f"{tool.server_id}/{tool.name}")
-        
+
         # Call a tool (automatically routes to correct client)
         result = await manager.call_tool("read_file", {"path": "/tmp/test.txt"})
-        
+
         await manager.stop()
     """
 
@@ -80,7 +80,7 @@ class MCPClientManager:
     def find_tool(self, name: str) -> Optional[Tuple[MCPClient, MCPTool]]:
         """
         Find tool by name across all clients.
-        
+
         Returns (client, tool) tuple or None if not found.
         """
         for client in self._clients.values():
@@ -93,14 +93,14 @@ class MCPClientManager:
     async def call_tool(self, name: str, arguments: Dict[str, Any] = None) -> Any:
         """
         Call a tool, routing to the correct client.
-        
+
         Args:
             name: Tool name
             arguments: Tool arguments
-        
+
         Returns:
             Tool result
-        
+
         Raises:
             ValueError: If tool not found in any client
         """
@@ -115,7 +115,7 @@ class MCPClientManager:
     async def add_client(self, config: MCPClientConfig) -> MCPClient:
         """
         Add a new MCP client.
-        
+
         If manager is already started and config.auto_connect is True,
         the client will be connected immediately.
         """
@@ -141,7 +141,7 @@ class MCPClientManager:
     async def start(self):
         """
         Start manager and auto-connect configured clients.
-        
+
         Loads client configs from self.config['mcp']['clients'].
         """
         if self._started:
@@ -150,10 +150,10 @@ class MCPClientManager:
         self._started = True
 
         # Load clients from config
-        mcp_config = self.config.get('mcp', {}).get('clients', {})
+        mcp_config = self.config.get("mcp", {}).get("clients", {})
 
         for client_id, client_cfg in mcp_config.items():
-            if not client_cfg.get('enabled', True):
+            if not client_cfg.get("enabled", True):
                 continue
 
             config = MCPClientConfig.from_dict(client_id, client_cfg)
@@ -186,7 +186,7 @@ class MCPClientManager:
     async def connect_client(self, client_id: str) -> bool:
         """
         Connect a specific client.
-        
+
         Returns True if connected successfully.
         """
         client = self._clients.get(client_id)
@@ -199,7 +199,7 @@ class MCPClientManager:
     async def disconnect_client(self, client_id: str) -> bool:
         """
         Disconnect a specific client.
-        
+
         Returns True if client was found and disconnected.
         """
         client = self._clients.get(client_id)
@@ -217,7 +217,7 @@ class MCPClientManager:
     async def reconnect_client(self, client_id: str) -> bool:
         """
         Reconnect a specific client.
-        
+
         Returns True if reconnected successfully.
         """
         client = self._clients.get(client_id)
@@ -231,18 +231,22 @@ class MCPClientManager:
     def get_status(self) -> Dict[str, Any]:
         """
         Get status of all clients.
-        
+
         Returns dict with client statuses.
         """
         clients = []
         for client_id, client in self._clients.items():
-            clients.append({
-                "id": client_id,
-                "connected": client.is_connected,
-                "tools_count": len(client.tools) if client.is_connected else 0,
-                "resources_count": len(client.resources) if client.is_connected else 0,
-                "server_info": client._server_info if client.is_connected else None,
-            })
+            clients.append(
+                {
+                    "id": client_id,
+                    "connected": client.is_connected,
+                    "tools_count": len(client.tools) if client.is_connected else 0,
+                    "resources_count": (
+                        len(client.resources) if client.is_connected else 0
+                    ),
+                    "server_info": client._server_info if client.is_connected else None,
+                }
+            )
 
         return {
             "clients": clients,
@@ -263,11 +267,15 @@ class MCPClientManager:
                 logger.info(f"MCP client {client.id} connected")
                 return
             except Exception as e:
-                logger.warning(f"MCP client {client.id} connect failed (attempt {attempt + 1}/{max_attempts}): {e}")
+                logger.warning(
+                    f"MCP client {client.id} connect failed (attempt {attempt + 1}/{max_attempts}): {e}"
+                )
                 if attempt < max_attempts - 1:
                     await asyncio.sleep(retry_delay * (attempt + 1))
 
-        logger.error(f"MCP client {client.id} failed to connect after {max_attempts} attempts")
+        logger.error(
+            f"MCP client {client.id} failed to connect after {max_attempts} attempts"
+        )
 
     async def _schedule_reconnect(self, client: MCPClient, delay: float = 30.0):
         """Schedule reconnection attempt for a client."""

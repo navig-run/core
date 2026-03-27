@@ -14,5 +14,3 @@ Common actions:
 
 Note:
 - For a single database backup, prefer `navig db dump <db> -o backup.sql`.
-
-

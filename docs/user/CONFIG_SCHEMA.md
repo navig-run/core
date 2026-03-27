@@ -183,7 +183,7 @@ app_name:
     version: string             # App version
     repository: string          # Git repository URL
     domain: string              # Primary domain name
-  
+
   # File system paths (OPTIONAL)
   paths:
     web_root: string            # Web server document root
@@ -217,7 +217,7 @@ app_name:
     config_test_command: string # Command to test configuration (e.g., "nginx -t")
     reload_command: string      # Command to reload configuration
     restart_command: string     # Command to restart service
-  
+
   # Template configurations (OPTIONAL)
   templates:
     enabled: array              # List of enabled template names
@@ -364,14 +364,14 @@ web:
     max_chars: 50000                 # Maximum characters to extract
     user_agent: "NAVIG/2.1"          # Custom User-Agent string (optional)
     cache_ttl_minutes: 15            # Cache TTL for fetched content
-    
+
   search:
     enabled: true                    # Enable/disable web search
     provider: brave                  # Search provider: brave, duckduckgo
     api_key: null                    # Brave Search API key (from https://brave.com/search/api/)
     max_results: 10                  # Maximum search results
     cache_ttl_minutes: 15            # Cache TTL for search results
-    
+
   docs:
     enabled: true                    # Enable documentation search
     include_paths:                   # Additional doc paths to search
@@ -469,6 +469,3 @@ navig config validate
 navig config show <host_name>
 navig config show <host_name>:<app_name>
 ```
-
-
-

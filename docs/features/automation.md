@@ -64,15 +64,15 @@ steps:
   - action: open_app
     args:
       target: "{{app_name}}"
-  
+
   - action: wait
     args:
       seconds: 1
-  
+
   - action: type
     args:
       text: "Hello from NAVIG!"
-  
+
   - action: snap_window
     args:
       selector: "{{app_name}}"
@@ -131,7 +131,7 @@ Use the `if` field with safe evaluation:
 steps:
   - action: get_focused_window
     capture: window_info
-  
+
   - action: type
     args:
       text: "Window is focused!"
@@ -146,7 +146,7 @@ Capture step outputs and use them in later steps:
 steps:
   - action: get_clipboard
     capture: clipboard_content
-  
+
   - action: type
     args:
       text: "You copied: {{clipboard_content}}"
@@ -223,5 +223,3 @@ Some features are platform-specific:
 - **window IDs**: Linux provides real IDs, macOS uses opaque references
 
 The WorkflowEngine gracefully handles missing features by skipping or warning.
-
-

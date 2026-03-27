@@ -48,13 +48,15 @@ def _webhook_handler(gw: "NavigGateway"):
         # Get the Telegram channel from the gateway
         telegram_channel = None
         try:
-            channels = getattr(gw, 'channels', {})
-            telegram_channel = channels.get('telegram')
+            channels = getattr(gw, "channels", {})
+            telegram_channel = channels.get("telegram")
             if telegram_channel is None:
                 # Try getting from channel registry
-                registry = getattr(gw, 'channel_registry', None)
+                registry = getattr(gw, "channel_registry", None)
                 if registry:
-                    telegram_channel = getattr(registry, 'telegram', None) or registry.get('telegram')
+                    telegram_channel = getattr(
+                        registry, "telegram", None
+                    ) or registry.get("telegram")
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
@@ -78,7 +80,9 @@ def _webhook_handler(gw: "NavigGateway"):
 
         # Forward to the channel
         try:
-            accepted = await telegram_channel.handle_webhook_update(update, secret_header)
+            accepted = await telegram_channel.handle_webhook_update(
+                update, secret_header
+            )
             if not accepted:
                 return web.json_response({"error": "Rejected"}, status=403)
         except Exception as e:

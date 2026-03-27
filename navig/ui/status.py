@@ -4,6 +4,7 @@ navig.ui.status — Compact single-line status header chip row.
 Renders a horizontal strip of colored status chips, e.g.:
   ◉ daemon  online   ·  ⬡ peers  3   ·  ⬛ host  prod
 """
+
 from __future__ import annotations
 
 import sys

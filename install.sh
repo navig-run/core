@@ -158,7 +158,7 @@ detect_os() {
             ;;
         MINGW*|MSYS*|CYGWIN*)
             echo -e "${ERROR}Error: Windows detected. Use install.ps1 instead.${NC}"
-            echo "  irm https://navig.run/install.ps1 | iex"
+            echo "  & ([scriptblock]::Create((irm https://navig.run/install.ps1)))"
             exit 1
             ;;
         *)

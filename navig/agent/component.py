@@ -45,23 +45,23 @@ class HealthStatus:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'healthy': self.healthy,
-            'state': self.state.name,
-            'message': self.message,
-            'last_check': self.last_check.isoformat(),
-            'details': self.details,
+            "healthy": self.healthy,
+            "state": self.state.name,
+            "message": self.message,
+            "last_check": self.last_check.isoformat(),
+            "details": self.details,
         }
 
 
 class Component(ABC):
     """
     Base class for all agent components.
-    
+
     All body parts (Brain, Eyes, Ears, Hands, Heart) inherit from this.
     Provides unified lifecycle management and health monitoring.
     """
 
-    def __init__(self, name: str, nervous_system: Optional['NervousSystem'] = None):
+    def __init__(self, name: str, nervous_system: Optional["NervousSystem"] = None):
         self.name = name
         self.nervous_system = nervous_system
         self._state = ComponentState.CREATED
@@ -102,10 +102,11 @@ class Component(ABC):
 
             if self.nervous_system:
                 from navig.agent.nervous_system import EventType
+
                 await self.nervous_system.emit(
                     EventType.COMPONENT_STARTED,
                     source=self.name,
-                    data={'component': self.name}
+                    data={"component": self.name},
                 )
         except Exception as e:
             self._state = ComponentState.ERROR
@@ -113,10 +114,11 @@ class Component(ABC):
 
             if self.nervous_system:
                 from navig.agent.nervous_system import EventType
+
                 await self.nervous_system.emit(
                     EventType.COMPONENT_ERROR,
                     source=self.name,
-                    data={'component': self.name, 'error': str(e)}
+                    data={"component": self.name, "error": str(e)},
                 )
             raise
 
@@ -133,10 +135,11 @@ class Component(ABC):
 
             if self.nervous_system:
                 from navig.agent.nervous_system import EventType
+
                 await self.nervous_system.emit(
                     EventType.COMPONENT_STOPPED,
                     source=self.name,
-                    data={'component': self.name}
+                    data={"component": self.name},
                 )
         except Exception as e:
             self._state = ComponentState.ERROR
@@ -158,7 +161,11 @@ class Component(ABC):
             status = HealthStatus(
                 healthy=self._state == ComponentState.RUNNING,
                 state=self._state,
-                message="OK" if self._state == ComponentState.RUNNING else f"State: {self._state.name}",
+                message=(
+                    "OK"
+                    if self._state == ComponentState.RUNNING
+                    else f"State: {self._state.name}"
+                ),
                 details=details,
             )
         except Exception as e:
@@ -166,39 +173,52 @@ class Component(ABC):
                 healthy=False,
                 state=self._state,
                 message=str(e),
-                details={'error': str(e)},
+                details={"error": str(e)},
             )
 
         self._last_health_check = status
         return status
 
-    def set_nervous_system(self, nervous_system: 'NervousSystem') -> None:
+    def set_nervous_system(self, nervous_system: "NervousSystem") -> None:
         """Set the nervous system for event communication."""
         self.nervous_system = nervous_system
 
-    async def emit(self, event_type: 'EventType', data: Optional[Dict[str, Any]] = None, priority: Optional['EventPriority'] = None) -> None:
+    async def emit(
+        self,
+        event_type: "EventType",
+        data: Optional[Dict[str, Any]] = None,
+        priority: Optional["EventPriority"] = None,
+    ) -> None:
         """Emit an event through the nervous system."""
         if self.nervous_system:
             from navig.agent.nervous_system import EventPriority
-            await self.nervous_system.emit(event_type, source=self.name, data=data or {}, priority=priority or EventPriority.NORMAL)
+
+            await self.nervous_system.emit(
+                event_type,
+                source=self.name,
+                data=data or {},
+                priority=priority or EventPriority.NORMAL,
+            )
 
     def get_status(self) -> Dict[str, Any]:
         """Get component status as dictionary."""
         return {
-            'name': self.name,
-            'state': self._state.name,
-            'running': self.is_running,
-            'uptime_seconds': self.uptime_seconds,
-            'restart_count': self._restart_count,
-            'error': str(self._error) if self._error else None,
-            'last_health': self._last_health_check.to_dict() if self._last_health_check else None,
+            "name": self.name,
+            "state": self._state.name,
+            "running": self.is_running,
+            "uptime_seconds": self.uptime_seconds,
+            "restart_count": self._restart_count,
+            "error": str(self._error) if self._error else None,
+            "last_health": (
+                self._last_health_check.to_dict() if self._last_health_check else None
+            ),
         }
 
     @abstractmethod
     async def _on_start(self) -> None:
         """
         Internal start implementation.
-        
+
         Override this in subclasses to implement component-specific
         initialization logic.
         """
@@ -208,7 +228,7 @@ class Component(ABC):
     async def _on_stop(self) -> None:
         """
         Internal stop implementation.
-        
+
         Override this in subclasses to implement component-specific
         cleanup logic.
         """
@@ -217,7 +237,7 @@ class Component(ABC):
     async def _on_health_check(self) -> Dict[str, Any]:
         """
         Internal health check implementation.
-        
+
         Override this in subclasses to provide component-specific
         health metrics.
         """

@@ -29,9 +29,11 @@ logger = logging.getLogger("navig.memory.fact_retriever")
 
 # ── Configuration ─────────────────────────────────────────────
 
+
 @dataclass
 class RetrievalConfig:
     """Controls retrieval behavior and ranking weights."""
+
     # Token budget for the key_facts context section
     max_tokens: int = 600
     # How many candidates to pre-fetch before ranking
@@ -47,13 +49,15 @@ class RetrievalConfig:
     # Recency half-life in days (facts lose 50% recency score after this many days)
     recency_half_life_days: float = 30.0
     # Category boost: multiply score for these categories
-    category_boosts: Dict[str, float] = field(default_factory=lambda: {
-        "identity": 1.3,
-        "preference": 1.2,
-        "decision": 1.1,
-        "technical": 1.0,
-        "context": 0.9,
-    })
+    category_boosts: Dict[str, float] = field(
+        default_factory=lambda: {
+            "identity": 1.3,
+            "preference": 1.2,
+            "decision": 1.1,
+            "technical": 1.0,
+            "context": 0.9,
+        }
+    )
 
 
 DEFAULT_CONFIG = RetrievalConfig()
@@ -61,9 +65,11 @@ DEFAULT_CONFIG = RetrievalConfig()
 
 # ── Ranked Fact ───────────────────────────────────────────────
 
+
 @dataclass
 class RankedFact:
     """A fact with its computed relevance scores."""
+
     fact: KeyFact
     combined_score: float = 0.0
     semantic_score: float = 0.0
@@ -78,9 +84,11 @@ class RankedFact:
 
 # ── Retrieval Result ──────────────────────────────────────────
 
+
 @dataclass
 class FactRetrievalResult:
     """Complete retrieval result with formatted output."""
+
     facts: List[RankedFact] = field(default_factory=list)
     formatted: str = ""
     token_estimate: int = 0
@@ -94,6 +102,7 @@ class FactRetrievalResult:
 
 
 # ── Fact Retriever ────────────────────────────────────────────
+
 
 class FactRetriever:
     """
@@ -178,7 +187,9 @@ class FactRetriever:
         Retrieve all active facts (no query-based filtering).
         Useful for "what do you remember about me?" queries.
         """
-        budget = max_tokens or self.config.max_tokens * 2  # Allow larger budget for "show all"
+        budget = (
+            max_tokens or self.config.max_tokens * 2
+        )  # Allow larger budget for "show all"
         facts = self.store.get_active(limit=200)
 
         if not facts:
@@ -303,15 +314,17 @@ class FactRetriever:
             combined *= boost
 
             if combined >= cfg.min_score:
-                ranked.append(RankedFact(
-                    fact=fact,
-                    combined_score=combined,
-                    semantic_score=vec_score,
-                    keyword_score=kw_score,
-                    recency_score=recency,
-                    confidence_score=confidence,
-                    access_score=access,
-                ))
+                ranked.append(
+                    RankedFact(
+                        fact=fact,
+                        combined_score=combined,
+                        semantic_score=vec_score,
+                        keyword_score=kw_score,
+                        recency_score=recency,
+                        confidence_score=confidence,
+                        access_score=access,
+                    )
+                )
 
         ranked.sort(key=lambda x: x.combined_score, reverse=True)
         return ranked
@@ -336,7 +349,9 @@ class FactRetriever:
                     # Try truncating content
                     remaining = max_tokens - used_tokens - overhead - 5
                     if remaining > 20:
-                        truncated = rf.fact.content[:remaining * 4]  # rough char estimate
+                        truncated = rf.fact.content[
+                            : remaining * 4
+                        ]  # rough char estimate
                         rf.fact.content = truncated + "…"
                         selected.append(rf)
                 break

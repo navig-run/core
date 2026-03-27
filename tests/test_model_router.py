@@ -1,19 +1,20 @@
 """Tests for navig.agent.model_router — HybridRouter, heuristic_route, config."""
 
 import pytest
+
 from navig.agent.model_router import (
+    HybridRouter,
+    ModelRouter,
+    ModelSlot,
+    RoutingConfig,
+    RoutingDecision,
     heuristic_route,
     needs_fallback,
     pick_fallback_tier,
-    RoutingConfig,
-    RoutingDecision,
-    ModelSlot,
-    HybridRouter,
-    ModelRouter,
 )
 
-
 # ---- RoutingConfig ----
+
 
 class TestRoutingConfig:
     def test_from_dict_new_schema(self):
@@ -21,8 +22,16 @@ class TestRoutingConfig:
             "enabled": True,
             "mode": "rules_then_fallback",
             "models": {
-                "small": {"provider": "ollama", "model": "qwen2.5:3b", "defaults": {"max_tokens": 200}},
-                "big": {"provider": "openrouter", "model": "gpt-4o", "defaults": {"max_tokens": 4096}},
+                "small": {
+                    "provider": "ollama",
+                    "model": "qwen2.5:3b",
+                    "defaults": {"max_tokens": 200},
+                },
+                "big": {
+                    "provider": "openrouter",
+                    "model": "gpt-4o",
+                    "defaults": {"max_tokens": 4096},
+                },
                 "coder_big": {"provider": "openrouter", "model": "deepseek-coder"},
             },
         }
@@ -52,7 +61,8 @@ class TestRoutingConfig:
 
     def test_slot_for_tier(self):
         cfg = RoutingConfig(
-            small=ModelSlot(model="s"), big=ModelSlot(model="b"),
+            small=ModelSlot(model="s"),
+            big=ModelSlot(model="b"),
             coder_big=ModelSlot(model="c"),
         )
         assert cfg.slot_for_tier("small").model == "s"
@@ -63,6 +73,7 @@ class TestRoutingConfig:
 
 # ---- Heuristic routing ----
 
+
 class TestHeuristicRoute:
     @pytest.fixture
     def cfg(self):
@@ -71,7 +82,9 @@ class TestHeuristicRoute:
             mode="rules_then_fallback",
             small=ModelSlot(provider="ollama", model="qwen:3b", max_tokens=200),
             big=ModelSlot(provider="openrouter", model="gpt-4o", max_tokens=4096),
-            coder_big=ModelSlot(provider="openrouter", model="deepseek-coder", max_tokens=8192),
+            coder_big=ModelSlot(
+                provider="openrouter", model="deepseek-coder", max_tokens=8192
+            ),
         )
 
     def test_code_fence_routes_coder(self, cfg):
@@ -119,6 +132,7 @@ class TestHeuristicRoute:
 
 # ---- Fallback logic ----
 
+
 class TestFallbackLogic:
     def test_needs_fallback_small_empty(self):
         assert needs_fallback("", "small") is True
@@ -133,7 +147,12 @@ class TestFallbackLogic:
         assert needs_fallback("I'm not sure", "big") is False
 
     def test_no_fallback_good_response(self):
-        assert needs_fallback("Here is the detailed answer to your question about Python.", "small") is False
+        assert (
+            needs_fallback(
+                "Here is the detailed answer to your question about Python.", "small"
+            )
+            is False
+        )
 
     def test_pick_fallback_tier_code(self):
         assert pick_fallback_tier("small", "fix this code bug") == "coder_big"
@@ -143,6 +162,7 @@ class TestFallbackLogic:
 
 
 # ---- HybridRouter ----
+
 
 class TestHybridRouter:
     def test_inactive_routes_to_big(self):
@@ -154,8 +174,10 @@ class TestHybridRouter:
 
     def test_tier_override(self):
         cfg = RoutingConfig(
-            enabled=True, mode="rules_then_fallback",
-            small=ModelSlot(model="s"), big=ModelSlot(model="b"),
+            enabled=True,
+            mode="rules_then_fallback",
+            small=ModelSlot(model="s"),
+            big=ModelSlot(model="b"),
             coder_big=ModelSlot(model="c"),
         )
         router = HybridRouter(cfg)
@@ -166,7 +188,8 @@ class TestHybridRouter:
 
     def test_status_summary(self):
         cfg = RoutingConfig(
-            enabled=True, mode="rules_then_fallback",
+            enabled=True,
+            mode="rules_then_fallback",
             small=ModelSlot(provider="ollama", model="qwen:3b"),
             big=ModelSlot(provider="openrouter", model="gpt-4o"),
             coder_big=ModelSlot(provider="openrouter", model="deepseek-coder"),
@@ -181,7 +204,9 @@ class TestHybridRouter:
         cfg = RoutingConfig(
             small=ModelSlot(provider="ollama", model="qwen:3b", max_tokens=200),
             big=ModelSlot(provider="openrouter", model="gpt-4o", max_tokens=4096),
-            coder_big=ModelSlot(provider="openrouter", model="deepseek-coder", max_tokens=8192),
+            coder_big=ModelSlot(
+                provider="openrouter", model="deepseek-coder", max_tokens=8192
+            ),
         )
         router = HybridRouter(cfg)
         table = router.models_table()
@@ -210,6 +235,7 @@ class TestHybridRouter:
 
 # ---- RoutingDecision ----
 
+
 class TestRoutingDecision:
     def test_defaults(self):
         d = RoutingDecision(tier="small", model="test-model")
@@ -219,8 +245,12 @@ class TestRoutingDecision:
 
     def test_custom_values(self):
         d = RoutingDecision(
-            tier="big", model="gpt-4o", provider="openai",
-            max_tokens=4096, temperature=0.5, reason="test",
+            tier="big",
+            model="gpt-4o",
+            provider="openai",
+            max_tokens=4096,
+            temperature=0.5,
+            reason="test",
         )
         assert d.reason == "test"
         assert d.max_tokens == 4096

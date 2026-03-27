@@ -17,7 +17,6 @@ from unittest.mock import patch
 
 import pytest
 
-
 # ── BaseStore tests ───────────────────────────────────────────
 
 
@@ -144,7 +143,9 @@ class TestBaseStore:
 
             def _migrate(self, conn, from_v, to_v):
                 if from_v == 1 and to_v == 2:
-                    conn.execute("ALTER TABLE items ADD COLUMN description TEXT DEFAULT ''")
+                    conn.execute(
+                        "ALTER TABLE items ADD COLUMN description TEXT DEFAULT ''"
+                    )
                     V2Store.migrated = True
 
         db_path = tmp_path / "migrate.db"
@@ -205,6 +206,7 @@ class TestAuditStore:
 
     def _make_store(self, tmp_path: Path):
         from navig.store.audit import AuditStore
+
         return AuditStore(tmp_path / "audit.db")
 
     def test_log_and_query(self, tmp_path):
@@ -321,6 +323,7 @@ class TestRuntimeStore:
 
     def _make_store(self, tmp_path: Path):
         from navig.store.runtime import RuntimeStore
+
         return RuntimeStore(tmp_path / "runtime.db")
 
     # -- Command Stats --
@@ -328,7 +331,14 @@ class TestRuntimeStore:
     def test_log_command(self, tmp_path):
         store = self._make_store(tmp_path)
         store.log_command("run", user_id=1, chat_id=1, duration_ms=150, success=True)
-        store.log_command("run", user_id=1, chat_id=1, duration_ms=200, success=False, error_message="timeout")
+        store.log_command(
+            "run",
+            user_id=1,
+            chat_id=1,
+            duration_ms=200,
+            success=False,
+            error_message="timeout",
+        )
 
         stats = store.get_command_stats()
         assert len(stats) == 1
@@ -372,9 +382,7 @@ class TestRuntimeStore:
     def test_daily_summary(self, tmp_path):
         store = self._make_store(tmp_path)
         store.save_daily_summary("2025-01-20", "Summary text", entry_count=5)
-        row = store._read_one(
-            "SELECT * FROM daily_summaries WHERE date = '2025-01-20'"
-        )
+        row = store._read_one("SELECT * FROM daily_summaries WHERE date = '2025-01-20'")
         assert row["summary"] == "Summary text"
         assert row["entry_count"] == 5
         store.close()
@@ -385,7 +393,9 @@ class TestRuntimeStore:
         store = self._make_store(tmp_path)
         now = datetime.now(timezone.utc)
         past = now - timedelta(minutes=5)
-        rid = store.create_reminder(user_id=1, chat_id=1, message="Call Bob", remind_at=past)
+        rid = store.create_reminder(
+            user_id=1, chat_id=1, message="Call Bob", remind_at=past
+        )
         assert rid > 0
 
         due = store.get_due_reminders()
@@ -399,7 +409,9 @@ class TestRuntimeStore:
     def test_cancel_reminder(self, tmp_path):
         store = self._make_store(tmp_path)
         future = datetime.now(timezone.utc) + timedelta(hours=1)
-        rid = store.create_reminder(user_id=1, chat_id=1, message="Later", remind_at=future)
+        rid = store.create_reminder(
+            user_id=1, chat_id=1, message="Later", remind_at=future
+        )
         assert store.cancel_reminder(rid, user_id=1) is True
         assert store.cancel_reminder(rid, user_id=1) is False  # already deleted
         store.close()
@@ -522,22 +534,26 @@ class TestRuntimeStore:
         # Create legacy DB with old schema
         legacy_db = bot_dir / "bot_data.db"
         conn = sqlite3.connect(str(legacy_db))
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE command_stats (
                 command TEXT PRIMARY KEY, count INTEGER DEFAULT 0,
                 last_used TEXT, total_duration_ms INTEGER DEFAULT 0, error_count INTEGER DEFAULT 0
             )
-        """)
+        """
+        )
         conn.execute(
             "INSERT INTO command_stats (command, count, last_used) VALUES ('run', 42, '2025-01-01')"
         )
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE notes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL, chat_id INTEGER NOT NULL,
                 text TEXT NOT NULL, created_at TEXT
             )
-        """)
+        """
+        )
         conn.execute(
             "INSERT INTO notes (user_id, chat_id, text) VALUES (1, 1, 'legacy note')"
         )
@@ -546,6 +562,7 @@ class TestRuntimeStore:
 
         # Create RuntimeStore — should auto-migrate
         from navig.store.runtime import RuntimeStore
+
         store = RuntimeStore(navig_dir / "runtime.db")
 
         # Verify migrated data
@@ -566,23 +583,27 @@ class TestRuntimeStore:
 
         legacy_db = navig_dir / "daily_log.db"
         conn = sqlite3.connect(str(legacy_db))
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE interactions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp TEXT NOT NULL, date TEXT NOT NULL,
                 session_id TEXT, role TEXT NOT NULL, content TEXT NOT NULL,
                 channel TEXT, server TEXT, command TEXT, metadata TEXT
             )
-        """)
+        """
+        )
         conn.execute(
             "INSERT INTO interactions (timestamp, date, role, content) VALUES ('2025-01-01T12:00:00Z', '2025-01-01', 'user', 'legacy interaction')"
         )
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE daily_summaries (
                 date TEXT PRIMARY KEY, summary TEXT NOT NULL,
                 entry_count INTEGER, topics TEXT, created_at TEXT NOT NULL
             )
-        """)
+        """
+        )
         conn.execute(
             "INSERT INTO daily_summaries (date, summary, entry_count, created_at) VALUES ('2025-01-01', 'Legacy summary', 5, '2025-01-01T23:59:00Z')"
         )
@@ -590,6 +611,7 @@ class TestRuntimeStore:
         conn.close()
 
         from navig.store.runtime import RuntimeStore
+
         store = RuntimeStore(navig_dir / "runtime.db")
 
         entries = store.get_interactions_for_date("2025-01-01")
@@ -613,13 +635,16 @@ class TestRuntimeStore:
 
         # Create legacy + marker
         conn = sqlite3.connect(str(legacy_db))
-        conn.execute("CREATE TABLE command_stats (command TEXT PRIMARY KEY, count INTEGER)")
+        conn.execute(
+            "CREATE TABLE command_stats (command TEXT PRIMARY KEY, count INTEGER)"
+        )
         conn.execute("INSERT INTO command_stats VALUES ('should_not_migrate', 99)")
         conn.commit()
         conn.close()
         migrated_marker.touch()
 
         from navig.store.runtime import RuntimeStore
+
         store = RuntimeStore(navig_dir / "runtime.db")
 
         stats = store.get_command_stats()

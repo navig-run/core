@@ -4,6 +4,7 @@ NAVIG AI Providers - Fallback and Retry Mechanism
 Implements model fallback with candidate resolution, cooldown tracking,
 and retry logic. Based on robust fallback architecture.
 """
+
 import asyncio
 import time
 from dataclasses import dataclass
@@ -25,6 +26,7 @@ T = TypeVar("T")
 @dataclass
 class FallbackCandidate:
     """A candidate model for fallback."""
+
     provider_name: str
     model: str
     priority: int = 0
@@ -34,6 +36,7 @@ class FallbackCandidate:
 @dataclass
 class FallbackResult:
     """Result of a fallback-enabled operation."""
+
     response: CompletionResponse
     provider_used: str
     model_used: str
@@ -44,6 +47,7 @@ class FallbackResult:
 @dataclass
 class CooldownEntry:
     """Cooldown state for a provider/model."""
+
     cooldown_until: float
     failure_count: int = 1
 
@@ -51,7 +55,7 @@ class CooldownEntry:
 class FallbackManager:
     """
     Manages model fallback with cooldown and retry logic.
-    
+
     Features:
     - Multiple fallback candidates with priority
     - Cooldown for rate-limited/failed providers
@@ -61,9 +65,9 @@ class FallbackManager:
 
     # Cooldown durations in seconds (exponential)
     COOLDOWN_DURATIONS = [
-        5 * 60,       # 5 minutes
-        15 * 60,      # 15 minutes
-        60 * 60,      # 1 hour
+        5 * 60,  # 5 minutes
+        15 * 60,  # 15 minutes
+        60 * 60,  # 1 hour
         5 * 60 * 60,  # 5 hours
     ]
     MAX_COOLDOWN = 24 * 60 * 60  # 24 hours max
@@ -107,7 +111,9 @@ class FallbackManager:
 
         return True
 
-    def get_cooldown_remaining(self, provider: str, model: Optional[str] = None) -> float:
+    def get_cooldown_remaining(
+        self, provider: str, model: Optional[str] = None
+    ) -> float:
         """Get remaining cooldown time in seconds."""
         key = self._get_cooldown_key(provider, model)
         entry = self._cooldowns.get(key)
@@ -122,11 +128,11 @@ class FallbackManager:
         self,
         provider: str,
         model: Optional[str] = None,
-        error: Optional[ProviderError] = None
+        error: Optional[ProviderError] = None,
     ):
         """
         Mark a provider/model as failed and apply cooldown.
-        
+
         Rate limit and billing errors get longer cooldowns.
         """
         key = self._get_cooldown_key(provider, model)
@@ -170,14 +176,14 @@ class FallbackManager:
     ) -> List[FallbackCandidate]:
         """
         Resolve ordered list of fallback candidates.
-        
+
         Args:
             primary_model: Primary model to use
             primary_provider: Primary provider (inferred if not specified)
             fallback_models: Additional fallback models (provider:model or model)
             allowlist: Only use these providers (if specified)
             blocklist: Exclude these providers
-        
+
         Returns:
             Ordered list of fallback candidates
         """
@@ -201,12 +207,14 @@ class FallbackManager:
 
             seen.add(key)
             config = self.get_provider(provider)
-            candidates.append(FallbackCandidate(
-                provider_name=provider,
-                model=model,
-                priority=priority,
-                config=config,
-            ))
+            candidates.append(
+                FallbackCandidate(
+                    provider_name=provider,
+                    model=model,
+                    priority=priority,
+                    config=config,
+                )
+            )
 
         # Parse model string (may include provider prefix)
         def parse_model_spec(spec: str) -> Tuple[Optional[str], str]:
@@ -266,7 +274,7 @@ class FallbackManager:
     ) -> BaseProviderClient:
         """
         Get or create a client for a provider.
-        
+
         Handles API key resolution automatically.
         """
         key = provider.lower()
@@ -296,7 +304,7 @@ class FallbackManager:
     ) -> FallbackResult:
         """
         Execute a completion request with automatic fallback.
-        
+
         Args:
             request: The completion request
             fallback_models: Additional models to try on failure
@@ -304,10 +312,10 @@ class FallbackManager:
             blocklist: Exclude these providers
             max_retries: Max retries per candidate
             retry_delay: Base delay between retries (exponential)
-        
+
         Returns:
             FallbackResult with response and metadata
-        
+
         Raises:
             ProviderError: If all candidates fail
         """
@@ -381,7 +389,7 @@ class FallbackManager:
 
                     # Retryable: wait and retry
                     if attempt < max_retries - 1:
-                        await asyncio.sleep(retry_delay * (2 ** attempt))
+                        await asyncio.sleep(retry_delay * (2**attempt))
                     else:
                         # Max retries reached
                         self.mark_failure(candidate.provider_name, candidate.model, e)
@@ -421,7 +429,7 @@ async def complete_with_fallback(
 ) -> FallbackResult:
     """
     Convenience function for completion with fallback.
-    
+
     Args:
         messages: Chat messages as dicts
         model: Primary model
@@ -429,7 +437,7 @@ async def complete_with_fallback(
         temperature: Sampling temperature
         max_tokens: Max response tokens
         tools: Optional tool definitions
-    
+
     Returns:
         FallbackResult
     """
@@ -438,10 +446,7 @@ async def complete_with_fallback(
     manager = get_fallback_manager()
 
     # Convert messages
-    msg_list = [
-        Message(role=m["role"], content=m["content"])
-        for m in messages
-    ]
+    msg_list = [Message(role=m["role"], content=m["content"]) for m in messages]
 
     # Convert tools
     tool_list = None

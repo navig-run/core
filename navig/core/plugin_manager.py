@@ -26,7 +26,7 @@ class PluginInstance:
             stderr=subprocess.PIPE,
             text=True,
             cwd=self.cwd,
-            bufsize=1
+            bufsize=1,
         )
         # Start reading stdout in a separate thread
         threading.Thread(target=self._read_stdout, daemon=True).start()
@@ -40,7 +40,9 @@ class PluginInstance:
                     message = json.loads(line)
                     self._handle_message(message)
                 except json.JSONDecodeError:
-                    self.logger.warning(f"Received non-JSON from plugin: {line.strip()}")
+                    self.logger.warning(
+                        f"Received non-JSON from plugin: {line.strip()}"
+                    )
 
     def _read_stderr(self):
         while self.process and self.process.poll() is None:
@@ -70,7 +72,7 @@ class PluginInstance:
             "jsonrpc": "2.0",
             "method": method,
             "params": params or {},
-            "id": req_id
+            "id": req_id,
         }
 
         future = concurrent.futures.Future()
@@ -82,7 +84,7 @@ class PluginInstance:
             else:
                 raise RuntimeError("Plugin process not running")
 
-        return future.result(timeout=10) # 10s timeout
+        return future.result(timeout=10)  # 10s timeout
 
     def stop(self):
         if self.process:
@@ -91,6 +93,7 @@ class PluginInstance:
                 self.process.wait(timeout=2)
             except subprocess.TimeoutExpired:
                 self.process.kill()
+
 
 class PluginManager:
     def __init__(self, plugin_dir: str):
@@ -109,11 +112,11 @@ class PluginManager:
 
     def _load_plugin(self, path: str, manifest_path: str):
         try:
-            with open(manifest_path, 'r') as f:
+            with open(manifest_path, "r") as f:
                 manifest = json.load(f)
 
-            name = manifest['name']
-            entrypoint = manifest['entrypoint']
+            name = manifest["name"]
+            entrypoint = manifest["entrypoint"]
 
             instance = PluginInstance(name, entrypoint, path)
             instance.start()

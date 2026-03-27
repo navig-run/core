@@ -13,10 +13,10 @@ Features:
 
 Quick Start:
     from navig.voice import speak
-    
+
     # Simple usage (async)
     audio_path = await speak("Hello world!")
-    
+
     # Sync usage
     from navig.voice import speak_sync
     audio_path = speak_sync("Hello world!")
@@ -42,37 +42,31 @@ Providers (STT):
 - whisper_local: Local Whisper model, requires openai-whisper package
 """
 
-from navig.voice.playback import (
-    # Classes
+from navig.voice.playback import (  # Classes; Functions
     NotificationSound,
     list_sounds,
     play_notification,
     play_notification_sync,
-    # Functions
     play_sound,
     play_sound_sync,
 )
-from navig.voice.stt import (
-    # Classes
+from navig.voice.stt import (  # Classes; Functions
     STT,
     STTConfig,
     STTProvider,
     STTResult,
     get_stt,
-    # Functions
     transcribe,
     transcribe_full,
     transcribe_sync,
 )
-from navig.voice.tts import (
-    # Classes
+from navig.voice.tts import (  # Classes; Functions
     TTS,
     TTSConfig,
     TTSProvider,
     TTSResult,
     TTSVoice,
     get_tts,
-    # Functions
     speak,
     speak_sync,
     synthesize,
@@ -89,7 +83,6 @@ __all__ = [
     "speak_sync",
     "synthesize",
     "get_tts",
-
     # STT
     "STT",
     "STTConfig",
@@ -99,7 +92,6 @@ __all__ = [
     "transcribe_full",
     "transcribe_sync",
     "get_stt",
-
     # Playback
     "NotificationSound",
     "play_sound",

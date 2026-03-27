@@ -1,7 +1,9 @@
 """Tests for navig.tools.router autodoc methods (to_markdown_summary, to_openapi_schema, ToolMeta.to_openapi_schema)."""
+
 from __future__ import annotations
 
 import json
+
 import pytest
 
 from navig.tools.router import (
@@ -13,7 +15,12 @@ from navig.tools.router import (
 )
 
 
-def _make_meta(name="test_tool", domain=ToolDomain.WEB, description="A test tool", output_schema=None):
+def _make_meta(
+    name="test_tool",
+    domain=ToolDomain.WEB,
+    description="A test tool",
+    output_schema=None,
+):
     return ToolMeta(
         name=name,
         domain=domain,

@@ -37,15 +37,18 @@ async def _get_aiohttp():
     global _aiohttp
     if _aiohttp is None:
         import aiohttp
+
         _aiohttp = aiohttp
     return _aiohttp
 
 
 # ── Response wrapper ────────────────────────────────────────────────
 
+
 @dataclass
 class LLMResponse:
     """Unified response from any provider."""
+
     content: str
     model: str = ""
     provider: str = ""
@@ -57,6 +60,7 @@ class LLMResponse:
 
 
 # ── Base class ──────────────────────────────────────────────────────
+
 
 class LLMProvider:
     """Abstract base for all LLM providers."""
@@ -119,6 +123,7 @@ class LLMProvider:
 
 # ── Ollama ──────────────────────────────────────────────────────────
 
+
 class OllamaProvider(LLMProvider):
     """Local Ollama via OpenAI-compatible /v1 endpoint."""
 
@@ -141,7 +146,9 @@ class OllamaProvider(LLMProvider):
 
         t0 = time.monotonic()
         aio = await _get_aiohttp()
-        async with session.post(url, json=payload, timeout=aio.ClientTimeout(total=45)) as resp:
+        async with session.post(
+            url, json=payload, timeout=aio.ClientTimeout(total=45)
+        ) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"Ollama error ({resp.status}): {text}")
@@ -164,13 +171,16 @@ class OllamaProvider(LLMProvider):
     async def is_available(self) -> bool:
         try:
             session = await self._get_session()
-            async with session.get(f"{self.base_url}/api/tags", timeout=_timeout(3)) as r:
+            async with session.get(
+                f"{self.base_url}/api/tags", timeout=_timeout(3)
+            ) as r:
                 return r.status == 200
         except Exception:
             return False
 
 
 # ── OpenRouter ──────────────────────────────────────────────────────
+
 
 class OpenRouterProvider(LLMProvider):
     """OpenRouter.ai — OpenAI-compatible remote gateway."""
@@ -205,7 +215,9 @@ class OpenRouterProvider(LLMProvider):
 
         t0 = time.monotonic()
         aio = await _get_aiohttp()
-        async with session.post(url, headers=headers, json=payload, timeout=aio.ClientTimeout(total=45)) as resp:
+        async with session.post(
+            url, headers=headers, json=payload, timeout=aio.ClientTimeout(total=45)
+        ) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"OpenRouter error ({resp.status}): {text}")
@@ -230,6 +242,7 @@ class OpenRouterProvider(LLMProvider):
 
 
 # ── OpenAI-compatible ───────────────────────────────────────────────
+
 
 class OpenAIProvider(LLMProvider):
     """Any OpenAI-compatible endpoint (OpenAI, Azure, self-hosted)."""
@@ -262,7 +275,9 @@ class OpenAIProvider(LLMProvider):
 
         t0 = time.monotonic()
         aio = await _get_aiohttp()
-        async with session.post(url, headers=headers, json=payload, timeout=aio.ClientTimeout(total=45)) as resp:
+        async with session.post(
+            url, headers=headers, json=payload, timeout=aio.ClientTimeout(total=45)
+        ) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"OpenAI error ({resp.status}): {text}")
@@ -288,6 +303,7 @@ class OpenAIProvider(LLMProvider):
 
 # ── llama.cpp HTTP server ───────────────────────────────────────────
 
+
 class LlamaCppProvider(LLMProvider):
     """llama.cpp server (--server mode), OpenAI-compatible."""
 
@@ -308,7 +324,9 @@ class LlamaCppProvider(LLMProvider):
 
         t0 = time.monotonic()
         aio = await _get_aiohttp()
-        async with session.post(url, json=payload, timeout=aio.ClientTimeout(total=45)) as resp:
+        async with session.post(
+            url, json=payload, timeout=aio.ClientTimeout(total=45)
+        ) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"llama.cpp error ({resp.status}): {text}")
@@ -339,6 +357,7 @@ class LlamaCppProvider(LLMProvider):
 
 # ── MCP Bridge (VS Code Copilot via MCP WebSocket) ──────────────────
 
+
 class McpBridgeProvider(LLMProvider):
     """
     LLM provider that calls VS Code Copilot via MCP protocol (WebSocket).
@@ -358,7 +377,9 @@ class McpBridgeProvider(LLMProvider):
     DEFAULT_URL = f"ws://127.0.0.1:{BRIDGE_DEFAULT_PORT}"
 
     def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
-        super().__init__(base_url=base_url or self.DEFAULT_URL, api_key=api_key, **kwargs)
+        super().__init__(
+            base_url=base_url or self.DEFAULT_URL, api_key=api_key, **kwargs
+        )
         self._ws = None
         self._request_id = 0
         self._initialized = False
@@ -381,6 +402,7 @@ class McpBridgeProvider(LLMProvider):
         # immediately instead of waiting for TCP/WebSocket timeout (~10 s).
         import socket as _socket
         from urllib.parse import urlparse as _urlparse
+
         _parsed = _urlparse(
             self.base_url.replace("ws://", "http://").replace("wss://", "https://")
         )
@@ -422,11 +444,13 @@ class McpBridgeProvider(LLMProvider):
                 raise RuntimeError(f"MCP initialize failed: {resp['error']}")
 
             # Send initialized notification (JSON-RPC notification — no id, no response expected)
-            await self._ws.send_json({
-                "jsonrpc": "2.0",
-                "method": "initialized",
-                "params": {},
-            })
+            await self._ws.send_json(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "initialized",
+                    "params": {},
+                }
+            )
             self._initialized = True
 
     async def _call_tool(self, tool_name: str, arguments: dict) -> dict:
@@ -445,7 +469,9 @@ class McpBridgeProvider(LLMProvider):
         resp = await self._ws.receive_json(timeout=120)
 
         if resp.get("error"):
-            raise RuntimeError(f"MCP tool error: {resp['error'].get('message', resp['error'])}")
+            raise RuntimeError(
+                f"MCP tool error: {resp['error'].get('message', resp['error'])}"
+            )
 
         result = resp.get("result", {})
         if result.get("isError"):
@@ -475,7 +501,9 @@ class McpBridgeProvider(LLMProvider):
         t0 = time.monotonic()
 
         tool_args: dict = {
-            "messages": [{"role": m["role"], "content": m["content"]} for m in messages],
+            "messages": [
+                {"role": m["role"], "content": m["content"]} for m in messages
+            ],
             "max_tokens": max_tokens,
         }
         if model:
@@ -506,12 +534,14 @@ class McpBridgeProvider(LLMProvider):
         try:
             await self._ensure_connection()
             self._request_id += 1
-            await self._ws.send_json({
-                "jsonrpc": "2.0",
-                "id": self._request_id,
-                "method": "ping",
-                "params": {},
-            })
+            await self._ws.send_json(
+                {
+                    "jsonrpc": "2.0",
+                    "id": self._request_id,
+                    "method": "ping",
+                    "params": {},
+                }
+            )
             resp = await self._ws.receive_json(timeout=5)
             return not resp.get("error")
         except Exception:
@@ -543,6 +573,7 @@ class McpBridgeProvider(LLMProvider):
 
 
 # ── GitHub Models (Azure AI Inference) ──────────────────────────────
+
 
 class GitHubModelsProvider(LLMProvider):
     """
@@ -632,10 +663,17 @@ class GitHubModelsProvider(LLMProvider):
         # Vault
         try:
             from navig.vault import get_vault
+
             vault = get_vault()
-            secret = vault.get_secret("github_models", "token", caller="github_models_provider")
+            secret = vault.get_secret(
+                "github_models", "token", caller="github_models_provider"
+            )
             if secret:
-                val = secret.reveal().strip() if hasattr(secret, "reveal") else str(secret).strip()
+                val = (
+                    secret.reveal().strip()
+                    if hasattr(secret, "reveal")
+                    else str(secret).strip()
+                )
                 if val:
                     return val
         except Exception:  # noqa: BLE001
@@ -643,6 +681,7 @@ class GitHubModelsProvider(LLMProvider):
         # Config file
         try:
             from navig.config import get_config_manager
+
             cfg = get_config_manager().global_config or {}
             token = cfg.get("github_models", {}).get("token", "")
             if token:
@@ -695,7 +734,8 @@ class GitHubModelsProvider(LLMProvider):
                 if attempt_model != (model or self.DEFAULT_MODEL):
                     logger.info(
                         "GitHub Models fallback: %s → %s (success)",
-                        model, attempt_model,
+                        model,
+                        attempt_model,
                     )
                 return result
 
@@ -713,7 +753,8 @@ class GitHubModelsProvider(LLMProvider):
                 self._fail_counts[attempt_model] += 1
                 logger.warning(
                     "GitHub Models server error on %s: %s, trying next...",
-                    attempt_model, e,
+                    attempt_model,
+                    e,
                 )
                 last_error = e
                 continue
@@ -744,7 +785,9 @@ class GitHubModelsProvider(LLMProvider):
         t0 = time.monotonic()
         aio = await _get_aiohttp()
         async with session.post(
-            url, headers=headers, json=payload,
+            url,
+            headers=headers,
+            json=payload,
             timeout=aio.ClientTimeout(total=60),
         ) as resp:
             if resp.status == 401:
@@ -754,14 +797,10 @@ class GitHubModelsProvider(LLMProvider):
                 )
             if resp.status == 429:
                 text = await resp.text()
-                raise _RateLimitError(
-                    f"Rate limited on {model}: {text}"
-                )
+                raise _RateLimitError(f"Rate limited on {model}: {text}")
             if resp.status >= 500:
                 text = await resp.text()
-                raise _ServerError(
-                    f"Server error {resp.status} on {model}: {text}"
-                )
+                raise _ServerError(f"Server error {resp.status} on {model}: {text}")
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"GitHub Models error ({resp.status}): {text}")
@@ -787,6 +826,7 @@ class GitHubModelsProvider(LLMProvider):
             # Also check config
             try:
                 from navig.config import get_config_manager
+
                 cfg = get_config_manager().global_config or {}
                 token = cfg.get("github_models", {}).get("token", "")
                 if token:
@@ -800,11 +840,13 @@ class GitHubModelsProvider(LLMProvider):
 
 class _RateLimitError(Exception):
     """Raised when GitHub Models returns 429."""
+
     pass
 
 
 class _ServerError(Exception):
     """Raised when GitHub Models returns 5xx."""
+
     pass
 
 
@@ -812,20 +854,26 @@ class _ServerError(Exception):
 # These providers all speak the OpenAI chat-completions protocol.
 # Each subclass only overrides name, default base_url, and env-var.
 
+
 class AnthropicProvider(OpenAIProvider):
     """Anthropic Claude via their OpenAI-compatible messages adapter."""
+
     name = "anthropic"
 
     def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
         super(OpenAIProvider, self).__init__(
             base_url=base_url or "https://api.anthropic.com/v1",
-            api_key=api_key or os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_API_KEY", ""),
+            api_key=api_key
+            or os.getenv("ANTHROPIC_API_KEY")
+            or os.getenv("CLAUDE_API_KEY", ""),
             **kwargs,
         )
 
     async def chat(self, model, messages, temperature=0.7, max_tokens=512, **kw):
         if not self.api_key:
-            raise RuntimeError("Anthropic API key not set (ANTHROPIC_API_KEY or CLAUDE_API_KEY)")
+            raise RuntimeError(
+                "Anthropic API key not set (ANTHROPIC_API_KEY or CLAUDE_API_KEY)"
+            )
         session = await self._get_session()
         url = f"{self.base_url}/chat/completions"
         headers = {
@@ -841,7 +889,9 @@ class AnthropicProvider(OpenAIProvider):
         }
         t0 = time.monotonic()
         aio = await _get_aiohttp()
-        async with session.post(url, headers=headers, json=payload, timeout=aio.ClientTimeout(total=45)) as resp:
+        async with session.post(
+            url, headers=headers, json=payload, timeout=aio.ClientTimeout(total=45)
+        ) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"Anthropic error ({resp.status}): {text}")
@@ -866,6 +916,7 @@ class AnthropicProvider(OpenAIProvider):
 
 class GroqProvider(OpenAIProvider):
     """Groq LPU inference — OpenAI-compatible endpoint."""
+
     name = "groq"
 
     def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
@@ -881,12 +932,16 @@ class GroqProvider(OpenAIProvider):
 
 class GoogleProvider(OpenAIProvider):
     """Google Gemini via OpenAI-compatible generative-language endpoint."""
+
     name = "google"
 
     def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
         super(OpenAIProvider, self).__init__(
-            base_url=base_url or "https://generativelanguage.googleapis.com/v1beta/openai",
-            api_key=api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY", ""),
+            base_url=base_url
+            or "https://generativelanguage.googleapis.com/v1beta/openai",
+            api_key=api_key
+            or os.getenv("GEMINI_API_KEY")
+            or os.getenv("GOOGLE_API_KEY", ""),
             **kwargs,
         )
 
@@ -896,12 +951,15 @@ class GoogleProvider(OpenAIProvider):
 
 class NvidiaProvider(OpenAIProvider):
     """NVIDIA NIM — OpenAI-compatible hosted inference, 40 RPM free tier."""
+
     name = "nvidia"
 
     def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
         super(OpenAIProvider, self).__init__(
             base_url=base_url or "https://integrate.api.nvidia.com/v1",
-            api_key=api_key or os.getenv("NVIDIA_API_KEY") or os.getenv("NIM_API_KEY", ""),
+            api_key=api_key
+            or os.getenv("NVIDIA_API_KEY")
+            or os.getenv("NIM_API_KEY", ""),
             **kwargs,
         )
 
@@ -911,6 +969,7 @@ class NvidiaProvider(OpenAIProvider):
 
 class XAIProvider(OpenAIProvider):
     """xAI Grok — OpenAI-compatible endpoint."""
+
     name = "xai"
 
     def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
@@ -926,6 +985,7 @@ class XAIProvider(OpenAIProvider):
 
 class MistralProvider(OpenAIProvider):
     """Mistral AI — OpenAI-compatible endpoint."""
+
     name = "mistral"
 
     def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
@@ -941,6 +1001,7 @@ class MistralProvider(OpenAIProvider):
 
 class CerebrasProvider(OpenAIProvider):
     """Cerebras wafer-scale inference — OpenAI-compatible."""
+
     name = "cerebras"
 
     def __init__(self, base_url: str = "", api_key: str = "", **kwargs):
@@ -962,6 +1023,7 @@ class BlockrunProvider(OpenAIProvider):
     No per-model API keys are required; the BLOCKRUN_WALLET_KEY funds the wallet.
     Derived from .lab/ClawRouter — see that directory for the full proxy implementation.
     """
+
     name = "blockrun"
     DEFAULT_URL = "https://blockrun.ai/api"  # Direct fallback; local proxy preferred
 
@@ -975,6 +1037,7 @@ class BlockrunProvider(OpenAIProvider):
     async def is_available(self) -> bool:
         # Prefer local proxy check; fall back to env key presence
         import socket as _sock
+
         try:
             s = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
             s.settimeout(0.3)
@@ -995,12 +1058,13 @@ class AirLLMProvider(LLMProvider):
     No API server required — model runs in-process via the `airllm` package.
     Falls back gracefully if airllm is not installed.
     """
+
     name = "airllm"
 
     def __init__(self, model: str = "", **kwargs):
         self.model = model or os.getenv("AIRLLM_MODEL", "")
         self.base_url = ""  # in-process, no base URL
-        self.api_key = ""   # no key needed
+        self.api_key = ""  # no key needed
         self._engine = None
 
     def _get_engine(self):
@@ -1008,13 +1072,12 @@ class AirLLMProvider(LLMProvider):
             return self._engine
         try:
             from airllm import AutoModel  # type: ignore[import]
+
             if not self.model:
                 raise ValueError("AIRLLM_MODEL env var or model= argument required")
             self._engine = AutoModel.from_pretrained(self.model)
         except ImportError as exc:
-            raise RuntimeError(
-                "AirLLM not installed. Run: pip install airllm"
-            ) from exc
+            raise RuntimeError("AirLLM not installed. Run: pip install airllm") from exc
         return self._engine
 
     async def chat(
@@ -1026,10 +1089,10 @@ class AirLLMProvider(LLMProvider):
         **kwargs,
     ) -> str:
         import asyncio
+
         engine = self._get_engine()
         prompt = "\n".join(
-            f"{m['role'].upper()}: {m.get('content','')}"
-            for m in messages
+            f"{m['role'].upper()}: {m.get('content','')}" for m in messages
         )
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
@@ -1047,12 +1110,15 @@ class AirLLMProvider(LLMProvider):
         **kwargs,
     ):
         # AirLLM has no native streaming; yield the full response as one chunk
-        text = await self.chat(messages, model=model, temperature=temperature, max_tokens=max_tokens)
+        text = await self.chat(
+            messages, model=model, temperature=temperature, max_tokens=max_tokens
+        )
         yield text
 
     async def is_available(self) -> bool:
         try:
             import importlib
+
             return importlib.util.find_spec("airllm") is not None
         except Exception:
             return False
@@ -1086,8 +1152,6 @@ _PROVIDER_MAP = {
 }
 
 
-
-
 def create_provider(name: str, **kwargs) -> LLMProvider:
     """
     Instantiate a provider by name.
@@ -1111,7 +1175,9 @@ def list_provider_names() -> List[str]:
 
 # ── Helpers ─────────────────────────────────────────────────────────
 
+
 def _timeout(seconds: float):
     """Create an aiohttp ClientTimeout."""
     import aiohttp
+
     return aiohttp.ClientTimeout(total=seconds)

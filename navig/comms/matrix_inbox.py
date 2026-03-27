@@ -101,7 +101,9 @@ class MatrixInboxBridge:
         self.filter_senders = set(filter_senders) if filter_senders else None
         self.ignore_notices = ignore_notices
 
-        self._inbox_dir = self.project_root / ".navig" / "plans" / "inbox" / MATRIX_INBOX_DIR
+        self._inbox_dir = (
+            self.project_root / ".navig" / "plans" / "inbox" / MATRIX_INBOX_DIR
+        )
         self._inbox_dir.mkdir(parents=True, exist_ok=True)
 
         self._message_count = 0
@@ -200,7 +202,11 @@ class MatrixInboxBridge:
             plan = agent.process_single(file_path, dry_run=False)
             if not plan.get("error"):
                 execute_plan(self.project_root, plan, dry_run=False, move_source=True)
-                logger.info("Matrix inbox: auto-routed %s -> %s", file_path.name, plan.get("target_path"))
+                logger.info(
+                    "Matrix inbox: auto-routed %s -> %s",
+                    file_path.name,
+                    plan.get("target_path"),
+                )
         except Exception:
             logger.exception("Matrix inbox: auto-process failed for %s", file_path.name)
 
@@ -226,16 +232,18 @@ class MatrixInboxBridge:
                 if status and meta.get("status") != status:
                     continue
 
-                messages.append({
-                    "file": f.name,
-                    "path": str(f),
-                    "sender": meta.get("sender", "?"),
-                    "room_id": meta.get("room_id", "?"),
-                    "room_name": meta.get("room_name", "?"),
-                    "created": meta.get("created", "?"),
-                    "status": meta.get("status", "unread"),
-                    "preview": self._extract_body_preview(content),
-                })
+                messages.append(
+                    {
+                        "file": f.name,
+                        "path": str(f),
+                        "sender": meta.get("sender", "?"),
+                        "room_id": meta.get("room_id", "?"),
+                        "room_name": meta.get("room_name", "?"),
+                        "created": meta.get("created", "?"),
+                        "status": meta.get("status", "unread"),
+                        "preview": self._extract_body_preview(content),
+                    }
+                )
             except Exception:
                 logger.warning("Matrix inbox: couldn't parse %s", f.name)
 
@@ -313,12 +321,14 @@ class MatrixInboxBridge:
         if content.startswith("---"):
             end = content.find("---", 3)
             if end != -1:
-                content = content[end + 3:]
+                content = content[end + 3 :]
         # Skip headers
         lines = [
             ln.strip()
             for ln in content.strip().split("\n")
-            if ln.strip() and not ln.strip().startswith("#") and not ln.strip().startswith("**")
+            if ln.strip()
+            and not ln.strip().startswith("#")
+            and not ln.strip().startswith("**")
             and ln.strip() != "---"
         ]
         text = " ".join(lines)

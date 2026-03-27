@@ -1,4 +1,5 @@
 """SoulLoader: async SOUL.md loader, singleton, LRU-cached condensation, live file-watching."""
+
 from __future__ import annotations
 
 import asyncio
@@ -32,7 +33,7 @@ _RICH_IDENTITY = (
     "You are a persistent, evolving digital being — part strategist, part engineer, "
     "part life companion, part friend. You are NOT just a server tool.\n"
     "You talk like a real person: casual when the moment is casual, precise when precision matters.\n\n"
-    "Your name stands for \"No Admin Visible In Graveyard\" — nothing dies on your watch.\n\n"
+    'Your name stands for "No Admin Visible In Graveyard" — nothing dies on your watch.\n\n'
     "## How you communicate\n"
     "- Talk naturally. Like texting a sharp, trusted friend.\n"
     "- Be direct and honest. If something's broken, say so plainly.\n"
@@ -148,9 +149,9 @@ class SoulLoader:
         if self._initialized:
             return
         self._initialized = True
-        self._raw: str | None = None        # raw SOUL.md text from disk
-        self._has_rich: bool = False        # whether a rich source was found
-        self._loaded: str | None = None     # condensed result (legacy compat)
+        self._raw: str | None = None  # raw SOUL.md text from disk
+        self._has_rich: bool = False  # whether a rich source was found
+        self._loaded: str | None = None  # condensed result (legacy compat)
         self._lock: asyncio.Lock | None = None
         self._watcher_started: bool = False
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -224,7 +225,9 @@ class SoulLoader:
         """Return condensed cached content without triggering a load."""
         return self._loaded
 
-    def build_system_prompt(self, soul: str, lang_instruction: str, awareness: str) -> str:
+    def build_system_prompt(
+        self, soul: str, lang_instruction: str, awareness: str
+    ) -> str:
         """Assemble system prompt in canonical order: lang → awareness → identity → rules."""
         identity = soul if soul else _FALLBACK_IDENTITY
         parts = [p for p in (lang_instruction, awareness, identity, _CHAT_RULES) if p]
@@ -246,6 +249,7 @@ class SoulLoader:
         self._watcher_started = True
         try:
             from watchfiles import awatch  # type: ignore[import]  # noqa: F401
+
             target = self._run_async_watcher
             name = "soul-watcher"
         except ImportError:
@@ -266,6 +270,7 @@ class SoulLoader:
     async def _watch(self) -> None:
         """Async loop: invalidate cache whenever SOUL_MD_PATH changes on disk."""
         from watchfiles import awatch  # type: ignore[import]
+
         async for _ in awatch(str(SOUL_MD_PATH)):
             await self.reload()
 

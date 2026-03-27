@@ -43,6 +43,7 @@ logger = logging.getLogger("navig.voice.session_manager")
 # Session State Machine
 # ---------------------------------------------------------------------------
 
+
 class SessionState(str, Enum):
     """Voice session states.
 
@@ -53,16 +54,18 @@ class SessionState(str, Enum):
         RESPONDING ──playback_done()──► IDLE
         Any ──error / interrupt()──► IDLE (with error logged)
     """
-    IDLE          = "idle"
+
+    IDLE = "idle"
     WAKE_DETECTED = "wake_detected"
-    LISTENING     = "listening"
-    PROCESSING    = "processing"
-    RESPONDING    = "responding"
-    ERROR         = "error"
+    LISTENING = "listening"
+    PROCESSING = "processing"
+    RESPONDING = "responding"
+    ERROR = "error"
 
 
 class SessionTransitionError(RuntimeError):
     """Raised when an illegal state transition is attempted."""
+
     pass
 
 
@@ -70,14 +73,16 @@ class SessionTransitionError(RuntimeError):
 # Data Containers
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SessionTiming:
     """Latency breakdown for diagnostics and guardrails."""
-    activated_at:   float = field(default_factory=time.monotonic)
-    listening_at:   Optional[float] = None
-    processing_at:  Optional[float] = None
-    responding_at:  Optional[float] = None
-    completed_at:   Optional[float] = None
+
+    activated_at: float = field(default_factory=time.monotonic)
+    listening_at: Optional[float] = None
+    processing_at: Optional[float] = None
+    responding_at: Optional[float] = None
+    completed_at: Optional[float] = None
 
     @property
     def wake_to_listen_ms(self) -> Optional[float]:
@@ -104,35 +109,36 @@ class VoiceSession:
 
     Do not mutate directly — VoiceSessionManager manages transitions.
     """
-    id:          str
-    state:       SessionState
-    keyword:     str
-    score:       float
-    timing:      SessionTiming = field(default_factory=SessionTiming)
+
+    id: str
+    state: SessionState
+    keyword: str
+    score: float
+    timing: SessionTiming = field(default_factory=SessionTiming)
 
     # Content accumulated during the session
-    audio_chunks:   List[bytes] = field(default_factory=list)
-    transcript:     Optional[str] = None
-    response_text:  Optional[str] = None
-    audio_path:     Optional[str] = None  # path to synthesised audio file
+    audio_chunks: List[bytes] = field(default_factory=list)
+    transcript: Optional[str] = None
+    response_text: Optional[str] = None
+    audio_path: Optional[str] = None  # path to synthesised audio file
 
     # Error details (only populated in ERROR state)
     error: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "id":            self.id,
-            "state":         self.state.value,
-            "keyword":       self.keyword,
-            "score":         self.score,
-            "transcript":    self.transcript,
+            "id": self.id,
+            "state": self.state.value,
+            "keyword": self.keyword,
+            "score": self.score,
+            "transcript": self.transcript,
             "response_text": self.response_text,
-            "audio_path":    self.audio_path,
-            "error":         self.error,
+            "audio_path": self.audio_path,
+            "error": self.error,
             "timing": {
                 "wake_to_listen_ms": self.timing.wake_to_listen_ms,
-                "stt_latency_ms":    self.timing.stt_latency_ms,
-                "total_ms":          self.timing.total_ms,
+                "stt_latency_ms": self.timing.stt_latency_ms,
+                "total_ms": self.timing.total_ms,
             },
         }
 
@@ -157,6 +163,7 @@ SessionCallback = Callable[[VoiceSession], Coroutine[Any, Any, None]]
 # ---------------------------------------------------------------------------
 # Session Manager Configuration
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class SessionConfig:
@@ -187,6 +194,7 @@ class SessionConfig:
 # ---------------------------------------------------------------------------
 # Voice Session Manager
 # ---------------------------------------------------------------------------
+
 
 class VoiceSessionManager:
     """
@@ -223,20 +231,20 @@ class VoiceSessionManager:
         on_session_complete: Optional[SessionCallback] = None,
         event_bridge: Optional[Any] = None,  # navig.event_bridge.EventBridge
     ):
-        self.config       = config or SessionConfig()
-        self._stt_fn      = stt_fn
-        self._llm_fn      = llm_fn
-        self._tts_fn      = tts_fn
-        self._on_state_change    = on_state_change
+        self.config = config or SessionConfig()
+        self._stt_fn = stt_fn
+        self._llm_fn = llm_fn
+        self._tts_fn = tts_fn
+        self._on_state_change = on_state_change
         self._on_session_complete = on_session_complete
         self._event_bridge = event_bridge
 
-        self._sessions:     Dict[str, VoiceSession] = {}
-        self._tasks:        Dict[str, asyncio.Task] = {}
-        self._lock          = asyncio.Lock()
+        self._sessions: Dict[str, VoiceSession] = {}
+        self._tasks: Dict[str, asyncio.Task] = {}
+        self._lock = asyncio.Lock()
         self._interrupt_events: Dict[str, asyncio.Event] = {}
-        self._audio_queues:    Dict[str, asyncio.Queue] = {}
-        self._running         = False
+        self._audio_queues: Dict[str, asyncio.Queue] = {}
+        self._running = False
 
     # ------------------------------------------------------------------ #
     # Lifecycle
@@ -245,7 +253,10 @@ class VoiceSessionManager:
     async def start(self) -> None:
         """Prepare the manager for accepting sessions."""
         self._running = True
-        logger.info("VoiceSessionManager started (max_concurrent=%d)", self.config.max_concurrent_sessions)
+        logger.info(
+            "VoiceSessionManager started (max_concurrent=%d)",
+            self.config.max_concurrent_sessions,
+        )
 
     async def stop(self, timeout: float = 3.0) -> None:
         """Stop all active sessions and shut down."""
@@ -266,7 +277,9 @@ class VoiceSessionManager:
     # Public API
     # ------------------------------------------------------------------ #
 
-    async def activate(self, keyword: str, score: float = 1.0) -> Optional[VoiceSession]:
+    async def activate(
+        self, keyword: str, score: float = 1.0
+    ) -> Optional[VoiceSession]:
         """Signal a wake-word detection and start a new session.
 
         Returns the new session, or None if max_concurrent_sessions exceeded.
@@ -277,12 +290,15 @@ class VoiceSessionManager:
 
         async with self._lock:
             active = sum(
-                1 for s in self._sessions.values()
+                1
+                for s in self._sessions.values()
                 if s.state not in (SessionState.IDLE, SessionState.ERROR)
             )
             if active >= self.config.max_concurrent_sessions:
                 logger.debug(
-                    "Wake-word '%s' ignored — %d session(s) already active", keyword, active
+                    "Wake-word '%s' ignored — %d session(s) already active",
+                    keyword,
+                    active,
                 )
                 return None
 
@@ -297,7 +313,9 @@ class VoiceSessionManager:
             self._interrupt_events[session_id] = asyncio.Event()
             self._audio_queues[session_id] = asyncio.Queue(maxsize=1024)
 
-        logger.info("Session %s activated — keyword=%r score=%.2f", session_id, keyword, score)
+        logger.info(
+            "Session %s activated — keyword=%r score=%.2f", session_id, keyword, score
+        )
         await self._emit_state_change(session)
         await self._notify_echo_bridge(session_id, keyword, score)
 
@@ -326,7 +344,11 @@ class VoiceSessionManager:
         try:
             q.put_nowait(chunk)
         except asyncio.QueueFull:
-            logger.warning("Session %s audio queue full — dropping chunk (%d bytes)", sid, len(chunk))
+            logger.warning(
+                "Session %s audio queue full — dropping chunk (%d bytes)",
+                sid,
+                len(chunk),
+            )
 
     async def stop_listening(self, session_id: Optional[str] = None) -> None:
         """Manually signal end-of-audio for the session (triggers STT)."""
@@ -368,7 +390,7 @@ class VoiceSessionManager:
         """Full pipeline coroutine for a single session."""
         session = self._sessions[session_id]
         interrupt = self._interrupt_events[session_id]
-        audio_q   = self._audio_queues[session_id]
+        audio_q = self._audio_queues[session_id]
 
         try:
             # ── 1. LISTENING ──────────────────────────────────────────
@@ -482,7 +504,7 @@ class VoiceSessionManager:
                     audio_q.get(),
                     timeout=min(self.config.silence_timeout_seconds, remaining),
                 )
-                if chunk is None:          # manual stop sentinel
+                if chunk is None:  # manual stop sentinel
                     logger.debug("Session %s: silence sentinel received", session_id)
                     break
                 chunks.append(chunk)
@@ -493,14 +515,21 @@ class VoiceSessionManager:
 
             except asyncio.TimeoutError:
                 # Silence timeout — enough audio collected
-                total_ms = (len(b"".join(chunks))) / 16000 * 1000  # rough estimate at 16kHz
+                total_ms = (
+                    (len(b"".join(chunks))) / 16000 * 1000
+                )  # rough estimate at 16kHz
                 if total_ms < self.config.min_audio_ms:
                     logger.debug(
                         "Session %s: silence timeout but audio too short (%.0fms), waiting",
-                        session_id, total_ms,
+                        session_id,
+                        total_ms,
                     )
                     continue
-                logger.debug("Session %s: silence timeout after %.0fms audio", session_id, total_ms)
+                logger.debug(
+                    "Session %s: silence timeout after %.0fms audio",
+                    session_id,
+                    total_ms,
+                )
                 break
 
         return b"".join(chunks)
@@ -538,18 +567,25 @@ class VoiceSessionManager:
     # Echo bridge notification (HTTP → navig-echo Tauri)
     # ------------------------------------------------------------------ #
 
-    async def _notify_echo_bridge(self, session_id: str, keyword: str, score: float) -> None:
+    async def _notify_echo_bridge(
+        self, session_id: str, keyword: str, score: float
+    ) -> None:
         """Notify navig-echo of wake-word detection via HTTP."""
         url = self.config.echo_bridge_url
         if not url:
             return
         try:
             import aiohttp
+
             async with aiohttp.ClientSession() as client:
                 await asyncio.wait_for(
                     client.post(
                         f"{url}/api/voice/wake",
-                        json={"session_id": session_id, "keyword": keyword, "score": score},
+                        json={
+                            "session_id": session_id,
+                            "keyword": keyword,
+                            "score": score,
+                        },
                     ),
                     timeout=self.config.echo_bridge_timeout,
                 )
@@ -586,7 +622,9 @@ class VoiceSessionManager:
 _manager: Optional[VoiceSessionManager] = None
 
 
-def get_session_manager(config: Optional[SessionConfig] = None, **kwargs) -> VoiceSessionManager:
+def get_session_manager(
+    config: Optional[SessionConfig] = None, **kwargs
+) -> VoiceSessionManager:
     """Return (or create) the global VoiceSessionManager singleton."""
     global _manager
     if _manager is None:

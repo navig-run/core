@@ -23,7 +23,7 @@ func TestNavBrowser_SelfHealingVaultLogin(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Randomly serve different DOM structures
 		htmlVer := rand.Intn(2)
-		
+
 		if r.Method == "POST" {
 			// Simulate a successful login redirect
 			fmt.Fprintln(w, `<html><body><h1>Dashboard</h1><button id="logout">Logout</button></body></html>`)
@@ -106,7 +106,7 @@ func TestNavBrowser_SelfHealingVaultLogin(t *testing.T) {
 
 			// Map inputs to the secure Vault
 			fills := pageintel.VaultMatch(analysis, operatorVault)
-			
+
 			// Ensure it found the 2 fields needed for login
 			if len(fills) < 2 {
 				t.Fatalf("VaultMatch failed to find username/password boxes. Only found: %d fills for URL %s", len(fills), analysis.URL)
@@ -124,7 +124,7 @@ func TestNavBrowser_SelfHealingVaultLogin(t *testing.T) {
 							el.dispatchEvent(new Event('change', {bubbles:true}));
 						}
 					})()`, selector, value)
-				
+
 				if err := chromedp.Run(ctx, chromedp.Evaluate(js, nil)); err != nil {
 					t.Fatalf("Failed to inject vault data natively: %v", err)
 				}

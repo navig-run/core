@@ -14,6 +14,7 @@ def get_gateway_status() -> Dict[str, Any]:
     """Get gateway status if running."""
     try:
         import requests
+
         response = requests.get("http://localhost:8789/status", timeout=2)
         if response.status_code == 200:
             data = response.json()

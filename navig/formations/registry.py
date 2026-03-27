@@ -3,6 +3,7 @@ Formation Registry Singleton
 
 Loads formations once at gateway startup to prevent redundant per-request disk scans.
 """
+
 import logging
 from pathlib import Path
 from typing import Dict, Optional
@@ -43,9 +44,13 @@ class FormationRegistry:
         self._active_formation = get_active_formation(workspace_dir)
 
         if self._active_formation:
-            logger.info(f"[FORMATION] Registry loaded active formation: {self._active_formation.name}")
+            logger.info(
+                f"[FORMATION] Registry loaded active formation: {self._active_formation.name}"
+            )
         else:
-            logger.warning("[FORMATION] Registry initialized but no active formation was found.")
+            logger.warning(
+                "[FORMATION] Registry initialized but no active formation was found."
+            )
 
         self._initialized = True
 

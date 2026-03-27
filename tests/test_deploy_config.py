@@ -1,19 +1,21 @@
 """Tests for navig.deploy.models — DeployConfig parsing and defaults merging."""
 
+from datetime import datetime, timezone
+
 import pytest
+
 from navig.deploy.models import (
     DeployConfig,
     DeployPhase,
-    PhaseResult,
     DeployResult,
+    PhaseResult,
     SnapshotRecord,
 )
-from datetime import datetime, timezone
-
 
 # ============================================================================
 # DeployConfig.from_dict
 # ============================================================================
+
 
 class TestDeployConfigFromDict:
     def test_minimal_config_push_required_fields(self):
@@ -77,7 +79,9 @@ class TestDeployConfigFromDict:
         assert cfg.restart.compose_file == "docker-compose.prod.yml"
 
     def test_command_adapter(self):
-        raw = {"restart": {"adapter": "command", "command": "supervisorctl restart myapp"}}
+        raw = {
+            "restart": {"adapter": "command", "command": "supervisorctl restart myapp"}
+        }
         cfg = DeployConfig.from_dict(raw)
         assert cfg.restart.adapter == "command"
         assert cfg.restart.command == "supervisorctl restart myapp"
@@ -86,10 +90,12 @@ class TestDeployConfigFromDict:
         raw = {"host": "production", "app": "myapi"}
         cfg = DeployConfig.from_dict(raw)
         assert cfg.host == "production"
-        assert cfg.app  == "myapi"
+        assert cfg.app == "myapi"
 
     def test_push_excludes_list(self):
-        raw = {"push": {"source": "./", "target": "/app/", "excludes": [".env", "tmp/"]}}
+        raw = {
+            "push": {"source": "./", "target": "/app/", "excludes": [".env", "tmp/"]}
+        }
         cfg = DeployConfig.from_dict(raw)
         assert ".env" in cfg.push.excludes
         assert "tmp/" in cfg.push.excludes
@@ -101,18 +107,18 @@ class TestDeployConfigFromDict:
 
 class TestDeployConfigMergeGlobalDefaults:
     def _base_cfg(self) -> DeployConfig:
-        return DeployConfig.from_dict({
-            "push": {"source": "./dist/", "target": "/app/"},
-        })
+        return DeployConfig.from_dict(
+            {
+                "push": {"source": "./dist/", "target": "/app/"},
+            }
+        )
 
     def test_push_excludes_merged_without_duplicates(self):
         cfg = self._base_cfg()
         cfg.push.excludes = [".env"]
-        cfg.merge_global_defaults({
-            "deploy": {
-                "default_push_excludes": [".env", "node_modules/", ".git/"]
-            }
-        })
+        cfg.merge_global_defaults(
+            {"deploy": {"default_push_excludes": [".env", "node_modules/", ".git/"]}}
+        )
         # ".env" should appear only once
         assert cfg.push.excludes.count(".env") == 1
         assert "node_modules/" in cfg.push.excludes
@@ -120,13 +126,15 @@ class TestDeployConfigMergeGlobalDefaults:
 
     def test_health_defaults_applied(self):
         cfg = self._base_cfg()
-        cfg.merge_global_defaults({
-            "deploy": {
-                "default_health_retries": 8,
-                "default_health_interval_seconds": 10,
-                "default_health_timeout_seconds": 60,
+        cfg.merge_global_defaults(
+            {
+                "deploy": {
+                    "default_health_retries": 8,
+                    "default_health_interval_seconds": 10,
+                    "default_health_timeout_seconds": 60,
+                }
             }
-        })
+        )
         assert cfg.health.retries == 8
         assert cfg.health.interval_seconds == 10
         assert cfg.health.timeout_seconds == 60
@@ -142,6 +150,7 @@ class TestDeployConfigMergeGlobalDefaults:
 # DeployResult
 # ============================================================================
 
+
 class TestDeployResult:
     def _make_result(self, *, success=True) -> DeployResult:
         started = datetime.now(tz=timezone.utc)
@@ -153,8 +162,12 @@ class TestDeployResult:
             finished_at=started,
         )
         result.phases = [
-            PhaseResult(phase=DeployPhase.PRE_CHECK, success=True, message="ok", elapsed=0.5),
-            PhaseResult(phase=DeployPhase.PUSH,      success=True, message="synced", elapsed=3.2),
+            PhaseResult(
+                phase=DeployPhase.PRE_CHECK, success=True, message="ok", elapsed=0.5
+            ),
+            PhaseResult(
+                phase=DeployPhase.PUSH, success=True, message="synced", elapsed=3.2
+            ),
         ]
         return result
 
@@ -179,7 +192,9 @@ class TestDeployResult:
 
     def test_snapshot_serialized(self):
         r = self._make_result()
-        r.snapshot = SnapshotRecord(path="/var/backups/myapp/20260317_142233", created_at="20260317_142233")
+        r.snapshot = SnapshotRecord(
+            path="/var/backups/myapp/20260317_142233", created_at="20260317_142233"
+        )
         d = r.to_dict()
         assert d["snapshot"]["path"] == "/var/backups/myapp/20260317_142233"
 

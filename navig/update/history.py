@@ -3,6 +3,7 @@
 Subclasses DeployHistory to reuse the JSONL pattern, but writes to
 ``update_history.jsonl`` and understands node_id-based filtering.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -21,6 +22,7 @@ class UpdateHistory:
         if cache_dir is None:
             try:
                 from navig.config import get_config_manager
+
                 cm = get_config_manager()
                 base = Path(cm.get("cache_dir", str(_cache_dir())))
             except Exception:
@@ -37,6 +39,7 @@ class UpdateHistory:
     def append(self, record: Dict[str, Any]) -> None:
         """Append a single record to history, pruning to ``_keep`` entries."""
         import json
+
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
         existing: List[str] = []
@@ -49,7 +52,7 @@ class UpdateHistory:
         existing.append(json.dumps(record, ensure_ascii=False))
         # Keep the most recent N entries
         if len(existing) > self._keep:
-            existing = existing[-self._keep:]
+            existing = existing[-self._keep :]
         self._path.write_text("\n".join(existing) + "\n", encoding="utf-8")
 
     # ------------------------------------------------------------------
@@ -64,6 +67,7 @@ class UpdateHistory:
     ) -> List[Dict[str, Any]]:
         """Return history entries, optionally filtered by node_id / host."""
         import json
+
         if not self._path.exists():
             return []
         try:

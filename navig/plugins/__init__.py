@@ -28,6 +28,7 @@ console = Console()
 @dataclass
 class PluginInfo:
     """Information about a discovered plugin."""
+
     name: str
     path: Path
     source: str  # 'builtin', 'user', 'project'
@@ -43,17 +44,18 @@ class PluginInfo:
 class PluginManager:
     """
     Discovers and loads NAVIG plugins.
-    
+
     Plugin Discovery Order:
     1. Built-in plugins (navig/plugins/)
     2. User plugins (~/.navig/plugins/)
     3. Project plugins (.navig/plugins/)
-    
+
     Later plugins can override earlier ones (same name).
     """
 
     def __init__(self):
         from navig.core import Config
+
         self.config = Config()
 
         # Plugin directories in order of priority (later overrides earlier)
@@ -69,7 +71,7 @@ class PluginManager:
     def discover_plugins(self) -> Dict[str, PluginInfo]:
         """
         Scan all plugin directories and discover available plugins.
-        
+
         Returns:
             Dict mapping plugin names to PluginInfo objects
         """
@@ -78,14 +80,17 @@ class PluginManager:
         cache_file = self.config.cache_dir / "plugins_cache.json"
         current_mtime = 0
         try:
-            current_mtime = max(p.stat().st_mtime for p in self.plugin_dirs if p.exists())
+            current_mtime = max(
+                p.stat().st_mtime for p in self.plugin_dirs if p.exists()
+            )
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
         if cache_file.exists():
             try:
                 import json
-                with open(cache_file, 'r', encoding='utf-8') as f:
+
+                with open(cache_file, "r", encoding="utf-8") as f:
                     cached_data = json.load(f)
                 if cached_data.get("mtime") == current_mtime:
                     for name, data in cached_data.get("plugins", {}).items():
@@ -103,7 +108,7 @@ class PluginManager:
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
-        sources = ['builtin', 'user', 'project']
+        sources = ["builtin", "user", "project"]
 
         for plugin_dir, source in zip(self.plugin_dirs, sources):
             if not plugin_dir.exists():
@@ -112,9 +117,9 @@ class PluginManager:
             for plugin_path in plugin_dir.iterdir():
                 if not plugin_path.is_dir():
                     continue
-                if plugin_path.name.startswith('_'):
+                if plugin_path.name.startswith("_"):
                     continue
-                if plugin_path.name == '__pycache__':
+                if plugin_path.name == "__pycache__":
                     continue
 
                 plugin_file = plugin_path / "plugin.py"
@@ -134,10 +139,8 @@ class PluginManager:
         # Save cache
         try:
             import json
-            cache_data = {
-                "mtime": current_mtime,
-                "plugins": {}
-            }
+
+            cache_data = {"mtime": current_mtime, "plugins": {}}
             for name, info in self._plugins.items():
                 cache_data["plugins"][name] = {
                     "name": info.name,
@@ -146,11 +149,11 @@ class PluginManager:
                     "version": info.version,
                     "description": info.description,
                     "dependencies": info.dependencies,
-                    "enabled": info.enabled
+                    "enabled": info.enabled,
                 }
 
             cache_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(cache_file, 'w', encoding='utf-8') as f:
+            with open(cache_file, "w", encoding="utf-8") as f:
                 json.dump(cache_data, f)
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
@@ -170,11 +173,12 @@ class PluginManager:
         if metadata_file.exists():
             try:
                 import yaml
-                with open(metadata_file, 'r', encoding='utf-8') as f:
+
+                with open(metadata_file, "r", encoding="utf-8") as f:
                     metadata = yaml.safe_load(f) or {}
-                info.version = metadata.get('version', '1.0.0')
-                info.description = metadata.get('description', '')
-                info.dependencies = metadata.get('dependencies', [])
+                info.version = metadata.get("version", "1.0.0")
+                info.description = metadata.get("description", "")
+                info.dependencies = metadata.get("dependencies", [])
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -182,8 +186,10 @@ class PluginManager:
         requirements_file = plugin_path / "requirements.txt"
         if requirements_file.exists():
             try:
-                deps = requirements_file.read_text().strip().split('\n')
-                info.dependencies = [d.strip() for d in deps if d.strip() and not d.startswith('#')]
+                deps = requirements_file.read_text().strip().split("\n")
+                info.dependencies = [
+                    d.strip() for d in deps if d.strip() and not d.startswith("#")
+                ]
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -192,10 +198,10 @@ class PluginManager:
     def load_plugin(self, name: str) -> Tuple[bool, Optional[str]]:
         """
         Load a single plugin.
-        
+
         Args:
             name: Plugin name
-        
+
         Returns:
             Tuple of (success, error_message)
         """
@@ -212,7 +218,7 @@ class PluginManager:
 
         try:
             # Determine module path based on source
-            if info.source == 'builtin':
+            if info.source == "builtin":
                 module_name = f"navig.plugins.{name}.plugin"
             else:
                 # For user/project plugins, we need to add to sys.path
@@ -260,13 +266,15 @@ class PluginManager:
             info.error = f"Load error: {e}"
             return (False, info.error)
 
-    def load_all_plugins(self, silent: bool = False) -> Tuple[List[str], List[Dict[str, str]]]:
+    def load_all_plugins(
+        self, silent: bool = False
+    ) -> Tuple[List[str], List[Dict[str, str]]]:
         """
         Load all discovered plugins.
-        
+
         Args:
             silent: If True, don't print warnings for failed plugins
-        
+
         Returns:
             Tuple of (loaded_names, failed_info)
             where failed_info is list of dicts with 'name' and 'reason'
@@ -283,16 +291,17 @@ class PluginManager:
             if success:
                 loaded.append(name)
             else:
-                failed.append({
-                    'name': name,
-                    'reason': error or 'Unknown error'
-                })
+                failed.append({"name": name, "reason": error or "Unknown error"})
 
         # Log failures
         if failed and not silent:
-            console.print("[yellow]⚠ Some plugins failed to load:[/yellow]", file=sys.stderr)
+            console.print(
+                "[yellow]⚠ Some plugins failed to load:[/yellow]", file=sys.stderr
+            )
             for plugin in failed:
-                console.print(f"  • {plugin['name']}: {plugin['reason']}", file=sys.stderr)
+                console.print(
+                    f"  • {plugin['name']}: {plugin['reason']}", file=sys.stderr
+                )
 
         return (loaded, failed)
 

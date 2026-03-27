@@ -34,7 +34,9 @@ class MatrixAdminClient:
         self.homeserver_url = homeserver_url.rstrip("/")
         self.admin_token = admin_token
         self.container_name = container_name
-        self._server_type: Optional[str] = None  # "conduit" | "synapse" | "dendrite" | None
+        self._server_type: Optional[str] = (
+            None  # "conduit" | "synapse" | "dendrite" | None
+        )
 
     async def _detect_server(self) -> str:
         """Detect which homeserver software is running."""
@@ -46,7 +48,9 @@ class MatrixAdminClient:
         # Try Conduit
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get(f"{self.homeserver_url}/_conduit/server_version")
+                resp = await client.get(
+                    f"{self.homeserver_url}/_conduit/server_version"
+                )
                 if resp.status_code == 200:
                     self._server_type = "conduit"
                     return "conduit"
@@ -132,8 +136,11 @@ class MatrixAdminClient:
             # Update the conduit.toml file
             subprocess.run(
                 [
-                    "docker", "exec", self.container_name,
-                    "sh", "-c",
+                    "docker",
+                    "exec",
+                    self.container_name,
+                    "sh",
+                    "-c",
                     f"sed -i 's/allow_registration = .*/allow_registration = {value}/' /config/conduit.toml",
                 ],
                 check=True,
@@ -172,6 +179,7 @@ class MatrixAdminClient:
                         data["uses_allowed"] = uses_allowed
                     if expiry_ms:
                         import time
+
                         data["expiry_time"] = int(time.time() * 1000) + expiry_ms
 
                     resp = await client.post(
@@ -349,6 +357,7 @@ def get_admin_client() -> MatrixAdminClient:
 
     try:
         from navig.core.config import get_global_config
+
         cfg = get_global_config()
         matrix_cfg = cfg.get("comms", {}).get("matrix", {})
         hs_cfg = matrix_cfg.get("homeserver", {})

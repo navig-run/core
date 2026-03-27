@@ -92,8 +92,10 @@ def _promote_pipe() -> None:
     try:
         _PROMOTED_FLAG.parent.mkdir(parents=True, exist_ok=True)
         _PROMOTED_FLAG.touch()
-        logger.info("IPC pipe fast-path promoted to primary after %d shadow matches",
-                    SHADOW_PROMOTE_AFTER)
+        logger.info(
+            "IPC pipe fast-path promoted to primary after %d shadow matches",
+            SHADOW_PROMOTE_AFTER,
+        )
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
 
@@ -112,6 +114,7 @@ def _log_shadow_anomaly(event: str, data: dict) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # IPCPipeClient — send a request to the daemon over the local pipe/socket
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class IPCPipeClient:
     """
@@ -145,6 +148,7 @@ class IPCPipeClient:
 
     def _send_windows(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         from multiprocessing.connection import Client as _Client
+
         conn = _Client(self.address, family="AF_PIPE")
         try:
             conn.send(json.dumps(payload).encode())
@@ -156,6 +160,7 @@ class IPCPipeClient:
 
     def _send_unix(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         import socket as _socket
+
         sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
         sock.settimeout(self.timeout)
         try:
@@ -187,6 +192,7 @@ def _recvall(sock, n: int) -> Optional[bytes]:
 # ─────────────────────────────────────────────────────────────────────────────
 # IPCPipeServer — receive requests in the daemon and dispatch to a handler
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class IPCPipeServer:
     """
@@ -233,6 +239,7 @@ class IPCPipeServer:
 
     def _serve_windows(self) -> None:
         from multiprocessing.connection import Listener as _Listener
+
         with _Listener(self.address, family="AF_PIPE") as listener:
             logger.info("IPC pipe server listening on %s", self.address)
             while not self._stop_event.is_set():
@@ -259,6 +266,7 @@ class IPCPipeServer:
 
     def _serve_unix(self) -> None:
         import socket as _socket
+
         # Clean up leftover socket file
         try:
             os.unlink(self.address)
@@ -306,6 +314,7 @@ class IPCPipeServer:
 # ShadowIPCBridge — the Aegis-approved safe wrapper
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class ShadowIPCBridge:
     """
     🛡️ AEGIS-APPROVED Shadow Execution wrapper for the IPC fast-path.
@@ -323,7 +332,9 @@ class ShadowIPCBridge:
 
     def __init__(
         self,
-        ws_send_fn: Optional[Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]] = None,
+        ws_send_fn: Optional[
+            Callable[[Dict[str, Any]], Optional[Dict[str, Any]]]
+        ] = None,
         pipe_address: Optional[str] = None,
     ):
         """
@@ -392,16 +403,22 @@ class ShadowIPCBridge:
             if fast_result == slow_result:
                 with _shadow_lock:
                     _shadow_match_count += 1
-                    if _shadow_match_count >= SHADOW_PROMOTE_AFTER and not self._promoted:
+                    if (
+                        _shadow_match_count >= SHADOW_PROMOTE_AFTER
+                        and not self._promoted
+                    ):
                         _promote_pipe()
                         self._promoted = True
             else:
                 # Mismatch — log anomaly, reset counter
-                _log_shadow_anomaly("result_mismatch", {
-                    "payload_cmd": payload.get("cmd"),
-                    "fast_keys": list(fast_result.keys()),
-                    "slow_keys": list(slow_result.keys()),
-                })
+                _log_shadow_anomaly(
+                    "result_mismatch",
+                    {
+                        "payload_cmd": payload.get("cmd"),
+                        "fast_keys": list(fast_result.keys()),
+                        "slow_keys": list(slow_result.keys()),
+                    },
+                )
                 with _shadow_lock:
                     _shadow_match_count = 0
 
@@ -412,6 +429,7 @@ class ShadowIPCBridge:
 # ─────────────────────────────────────────────────────────────────────────────
 # Convenience helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def get_pipe_status() -> Dict[str, Any]:
     """Return a diagnostics dict for `navig evolve status`."""

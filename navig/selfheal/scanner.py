@@ -12,6 +12,7 @@ Security constraints
 * Raw file paths are relativised before sending so installation-specific
   absolute paths are not leaked.
 """
+
 from __future__ import annotations
 
 import json
@@ -47,9 +48,7 @@ _FINDING_SCHEMA = """\
 _SYSTEM_PROMPT = (
     "You are a precise Python code reviewer. Analyse the provided source file "
     "and return a JSON array of findings. Each finding must match this schema "
-    "exactly:\n\n"
-    + _FINDING_SCHEMA
-    + "\n\n"
+    "exactly:\n\n" + _FINDING_SCHEMA + "\n\n"
     "Focus on: code smells, bare except clauses, missing error handling, "
     "redundant logic, missing docstrings and type hints, modularisation "
     "opportunities, and security anti-patterns.\n"
@@ -231,7 +230,9 @@ def scan_files(
     min_confidence: float = float(cfg.get("min_confidence", 0.80))
 
     py_files = _collect_py_files(install_path)
-    logger.info("Scanning {} Python files (min_confidence={})", len(py_files), min_confidence)
+    logger.info(
+        "Scanning {} Python files (min_confidence={})", len(py_files), min_confidence
+    )
 
     all_findings: list[ScanFinding] = []
 
@@ -284,5 +285,9 @@ def scan_files(
     # Sort: critical → high → medium → low, then by file
     _order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
     all_findings.sort(key=lambda f: (_order.get(f.severity, 4), f.file, f.line))
-    logger.info("Scan complete: {} findings (confidence >= {})", len(all_findings), min_confidence)
+    logger.info(
+        "Scan complete: {} findings (confidence >= {})",
+        len(all_findings),
+        min_confidence,
+    )
     return all_findings

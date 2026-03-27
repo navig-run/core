@@ -14,7 +14,9 @@ def main() -> None:
     except ImportError:
         missing.append("dnspython")
     if missing:
-        print(f"  WARN: missing packages: {missing} -- run: uv pip install {' '.join(missing)}")
+        print(
+            f"  WARN: missing packages: {missing} -- run: uv pip install {' '.join(missing)}"
+        )
     else:
         print("  All dependencies satisfied.")
 

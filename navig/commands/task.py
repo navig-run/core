@@ -9,6 +9,7 @@ Usage:
     navig task "Schedule a review for tomorrow" --dry-run
     navig task "Deploy staging" --json
 """
+
 from __future__ import annotations
 
 import typer
@@ -26,6 +27,7 @@ def task_callback(ctx: typer.Context) -> None:
     """task — run without subcommand to pass an instruction directly."""
     if ctx.invoked_subcommand is None and not ctx.args:
         from navig.cli import show_subcommand_help
+
         show_subcommand_help("task", ctx)
         raise typer.Exit()
 
@@ -34,8 +36,12 @@ def task_callback(ctx: typer.Context) -> None:
 @task_app.command()
 def task_run(
     ctx: typer.Context,
-    instruction: str = typer.Argument(..., help="Natural-language instruction to route"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Preview routing without executing"),
+    instruction: str = typer.Argument(
+        ..., help="Natural-language instruction to route"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview routing without executing"
+    ),
     json_out: bool = typer.Option(False, "--json", help="JSON output"),
 ) -> None:
     """Route a natural-language instruction through available task providers.
@@ -57,9 +63,19 @@ def task_run(
         # Just show which providers would handle this
         scores = [(p.name, p.can_handle(instruction)) for p in providers]
         scores.sort(key=lambda x: x[1], reverse=True)
-        rows = [{"Provider": name, "Score": f"{score:.2f}", "Would handle": "yes" if score > 0.1 else "no"}
-                for name, score in scores]
-        renderer.render_fleet_table(rows, title=f"[dry-run] Routing: {instruction[:50]}", columns=["Provider", "Score", "Would handle"])
+        rows = [
+            {
+                "Provider": name,
+                "Score": f"{score:.2f}",
+                "Would handle": "yes" if score > 0.1 else "no",
+            }
+            for name, score in scores
+        ]
+        renderer.render_fleet_table(
+            rows,
+            title=f"[dry-run] Routing: {instruction[:50]}",
+            columns=["Provider", "Score", "Would handle"],
+        )
         return
 
     ts = time.strftime("%H:%M:%S")
@@ -67,30 +83,44 @@ def task_run(
 
     if json_out:
         import json
-        print(json.dumps([{
-            "provider": r.provider,
-            "success": r.success,
-            "output": r.output,
-            "error": r.error,
-        } for r in results], indent=2))
+
+        print(
+            json.dumps(
+                [
+                    {
+                        "provider": r.provider,
+                        "success": r.success,
+                        "output": r.output,
+                        "error": r.error,
+                    }
+                    for r in results
+                ],
+                indent=2,
+            )
+        )
         return
 
     # Render as event timeline
     events = []
     for r in results:
         from navig.ui.models import Event as TimelineEvent
-        events.append(TimelineEvent(
-            timestamp=ts,
-            icon="✓" if r.success else "✗",
-            label=r.provider,
-            detail=r.output[:80] if r.success else (r.error or "failed"),
-            color="green" if r.success else "red",
-        ))
+
+        events.append(
+            TimelineEvent(
+                timestamp=ts,
+                icon="✓" if r.success else "✗",
+                label=r.provider,
+                detail=r.output[:80] if r.success else (r.error or "failed"),
+                color="green" if r.success else "red",
+            )
+        )
 
     if events:
         from navig.ui.timeline import render_event_timeline
+
         render_event_timeline(events, title=f"Task: {instruction[:50]}")
     else:
         from navig import console_helper as ch
+
         ch.warning("No providers available to handle this instruction.")
         ch.dim("  Install gateway channels or configure providers.")

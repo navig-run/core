@@ -29,64 +29,184 @@ RoutingProfile = Literal["auto", "eco", "premium", "agentic"]
 # ─── Keyword Lists (ported from ClawRouter config defaults) ────────────────────
 
 _CODE_KEYWORDS: list[str] = [
-    "code", "function", "class", "method", "bug", "error", "debug", "refactor",
-    "implement", "algorithm", "syntax", "compile", "test", "unit test", "api",
-    "endpoint", "database", "sql", "script", "module", "library", "import",
+    "code",
+    "function",
+    "class",
+    "method",
+    "bug",
+    "error",
+    "debug",
+    "refactor",
+    "implement",
+    "algorithm",
+    "syntax",
+    "compile",
+    "test",
+    "unit test",
+    "api",
+    "endpoint",
+    "database",
+    "sql",
+    "script",
+    "module",
+    "library",
+    "import",
 ]
 
 _REASONING_KEYWORDS: list[str] = [
-    "explain", "analyze", "compare", "evaluate", "step by step", "pros and cons",
-    "trade-off", "think through", "reasoning", "logic", "argument", "justify",
-    "assess", "critique", "consider",
+    "explain",
+    "analyze",
+    "compare",
+    "evaluate",
+    "step by step",
+    "pros and cons",
+    "trade-off",
+    "think through",
+    "reasoning",
+    "logic",
+    "argument",
+    "justify",
+    "assess",
+    "critique",
+    "consider",
 ]
 
 _TECHNICAL_KEYWORDS: list[str] = [
-    "architecture", "system", "infrastructure", "deployment", "configuration",
-    "performance", "scalability", "security", "authentication", "authorization",
-    "microservice", "docker", "kubernetes", "ci/cd", "pipeline", "cache",
-    "latency", "throughput", "concurrency",
+    "architecture",
+    "system",
+    "infrastructure",
+    "deployment",
+    "configuration",
+    "performance",
+    "scalability",
+    "security",
+    "authentication",
+    "authorization",
+    "microservice",
+    "docker",
+    "kubernetes",
+    "ci/cd",
+    "pipeline",
+    "cache",
+    "latency",
+    "throughput",
+    "concurrency",
 ]
 
 _CREATIVE_KEYWORDS: list[str] = [
-    "write", "create", "draft", "compose", "story", "poem", "essay", "content",
-    "creative", "generate", "brainstorm", "ideas",
+    "write",
+    "create",
+    "draft",
+    "compose",
+    "story",
+    "poem",
+    "essay",
+    "content",
+    "creative",
+    "generate",
+    "brainstorm",
+    "ideas",
 ]
 
 _SIMPLE_KEYWORDS: list[str] = [
-    "what is", "define", "list", "summarize", "translate", "convert",
-    "calculate", "format", "rename", "show me", "tell me",
+    "what is",
+    "define",
+    "list",
+    "summarize",
+    "translate",
+    "convert",
+    "calculate",
+    "format",
+    "rename",
+    "show me",
+    "tell me",
 ]
 
 _AGENTIC_KEYWORDS: list[str] = [
-    "plan", "execute", "loop", "orchestrate", "workflow", "subtask",
-    "delegate", "spawn", "tool_call", "function_call", "automated",
-    "pipeline", "agent", "step by step do", "iterate", "continuously",
-    "monitor and", "schedule", "batch",
+    "plan",
+    "execute",
+    "loop",
+    "orchestrate",
+    "workflow",
+    "subtask",
+    "delegate",
+    "spawn",
+    "tool_call",
+    "function_call",
+    "automated",
+    "pipeline",
+    "agent",
+    "step by step do",
+    "iterate",
+    "continuously",
+    "monitor and",
+    "schedule",
+    "batch",
 ]
 
 _IMPERATIVE_VERBS: list[str] = [
-    "build", "deploy", "migrate", "optimize", "automate", "integrate",
-    "restructure", "redesign", "implement", "refactor",
+    "build",
+    "deploy",
+    "migrate",
+    "optimize",
+    "automate",
+    "integrate",
+    "restructure",
+    "redesign",
+    "implement",
+    "refactor",
 ]
 
 _CONSTRAINT_INDICATORS: list[str] = [
-    "must", "should", "cannot", "without", "avoid", "ensure", "require",
-    "constraint", "limitation", "only if", "unless",
+    "must",
+    "should",
+    "cannot",
+    "without",
+    "avoid",
+    "ensure",
+    "require",
+    "constraint",
+    "limitation",
+    "only if",
+    "unless",
 ]
 
 _OUTPUT_FORMAT_KEYWORDS: list[str] = [
-    "json", "xml", "markdown", "table", "list", "csv", "structured",
-    "format as", "output format",
+    "json",
+    "xml",
+    "markdown",
+    "table",
+    "list",
+    "csv",
+    "structured",
+    "format as",
+    "output format",
 ]
 
 _NEGATION_KEYWORDS: list[str] = [
-    "not", "don't", "never", "no ", "without", "except", "exclude", "ignore",
+    "not",
+    "don't",
+    "never",
+    "no ",
+    "without",
+    "except",
+    "exclude",
+    "ignore",
 ]
 
 _DOMAIN_KEYWORDS: list[str] = [
-    "blockchain", "machine learning", "neural network", "llm", "embedding",
-    "vector database", "transformer", "attention mechanism", "fine-tuning",
-    "rag", "retrieval", "reinforcement learning",
+    "blockchain",
+    "machine learning",
+    "neural network",
+    "llm",
+    "embedding",
+    "vector database",
+    "transformer",
+    "attention mechanism",
+    "fine-tuning",
+    "rag",
+    "retrieval",
+    "reinforcement learning",
 ]
 
 # Multi-step patterns (regex)
@@ -99,31 +219,32 @@ _MULTI_STEP_PATTERNS: list[re.Pattern[str]] = [
 # ─── Dimension Weights (matching ClawRouter defaults) ──────────────────────────
 
 _DIMENSION_WEIGHTS: dict[str, float] = {
-    "tokenCount":          0.20,
-    "codePresence":        0.15,
-    "reasoningMarkers":    0.20,
-    "technicalTerms":      0.10,
-    "creativeMarkers":     0.05,
-    "simpleIndicators":    0.15,
-    "multiStepPatterns":   0.05,
-    "questionComplexity":  0.05,
-    "imperativeVerbs":     0.05,
-    "constraintCount":     0.05,
-    "outputFormat":        0.05,
+    "tokenCount": 0.20,
+    "codePresence": 0.15,
+    "reasoningMarkers": 0.20,
+    "technicalTerms": 0.10,
+    "creativeMarkers": 0.05,
+    "simpleIndicators": 0.15,
+    "multiStepPatterns": 0.05,
+    "questionComplexity": 0.05,
+    "imperativeVerbs": 0.05,
+    "constraintCount": 0.05,
+    "outputFormat": 0.05,
     "referenceComplexity": 0.03,
-    "negationComplexity":  0.02,
-    "domainSpecificity":   0.10,
-    "agenticTask":         0.20,
+    "negationComplexity": 0.02,
+    "domainSpecificity": 0.10,
+    "agenticTask": 0.20,
 }
 
 # Tier score boundaries (lower → higher complexity)
 _TIER_BOUNDARIES = {
-    "simple_medium":   0.10,
-    "medium_complex":  0.35,
+    "simple_medium": 0.10,
+    "medium_complex": 0.35,
     "complex_reasoning": 0.65,
 }
 
 # ─── Dataclasses ───────────────────────────────────────────────────────────────
+
 
 @dataclass
 class ClassificationResult:
@@ -150,7 +271,10 @@ class ClassificationResult:
 
 # ─── Dimension Scorers ─────────────────────────────────────────────────────────
 
-def _score_token_count(tokens: int, simple_threshold: int = 500, complex_threshold: int = 2000) -> tuple[float, Optional[str]]:
+
+def _score_token_count(
+    tokens: int, simple_threshold: int = 500, complex_threshold: int = 2000
+) -> tuple[float, Optional[str]]:
     if tokens < simple_threshold:
         return -1.0, f"short ({tokens} tokens)"
     if tokens > complex_threshold:
@@ -213,6 +337,7 @@ def _calibrate_confidence(distance: float, steepness: float = 8.0) -> float:
 
 # ─── Main Classifier ───────────────────────────────────────────────────────────
 
+
 def classify_request(
     messages: list[dict[str, Any]],
     *,
@@ -262,7 +387,8 @@ def classify_request(
     if estimated_tokens > max_tokens_force_complex:
         logger.debug(
             "routing_strategy: force COMPLEX — {} tokens > {}",
-            estimated_tokens, max_tokens_force_complex,
+            estimated_tokens,
+            max_tokens_force_complex,
         )
         return ClassificationResult(
             tier="COMPLEX",
@@ -278,19 +404,41 @@ def classify_request(
     dimensions: dict[str, tuple[float, Optional[str]]] = {}
 
     dimensions["tokenCount"] = _score_token_count(estimated_tokens)
-    dimensions["codePresence"] = _score_keywords(ut, _CODE_KEYWORDS, 1, 2, 0.0, 0.5, 1.0, "code")
-    dimensions["reasoningMarkers"] = _score_keywords(ut, _REASONING_KEYWORDS, 1, 2, 0.0, 0.7, 1.0, "reasoning")
-    dimensions["technicalTerms"] = _score_keywords(ut, _TECHNICAL_KEYWORDS, 2, 4, 0.0, 0.5, 1.0, "technical")
-    dimensions["creativeMarkers"] = _score_keywords(ut, _CREATIVE_KEYWORDS, 1, 2, 0.0, 0.5, 0.7, "creative")
-    dimensions["simpleIndicators"] = _score_keywords(ut, _SIMPLE_KEYWORDS, 1, 2, 0.0, -1.0, -1.0, "simple")
+    dimensions["codePresence"] = _score_keywords(
+        ut, _CODE_KEYWORDS, 1, 2, 0.0, 0.5, 1.0, "code"
+    )
+    dimensions["reasoningMarkers"] = _score_keywords(
+        ut, _REASONING_KEYWORDS, 1, 2, 0.0, 0.7, 1.0, "reasoning"
+    )
+    dimensions["technicalTerms"] = _score_keywords(
+        ut, _TECHNICAL_KEYWORDS, 2, 4, 0.0, 0.5, 1.0, "technical"
+    )
+    dimensions["creativeMarkers"] = _score_keywords(
+        ut, _CREATIVE_KEYWORDS, 1, 2, 0.0, 0.5, 0.7, "creative"
+    )
+    dimensions["simpleIndicators"] = _score_keywords(
+        ut, _SIMPLE_KEYWORDS, 1, 2, 0.0, -1.0, -1.0, "simple"
+    )
     dimensions["multiStepPatterns"] = _score_multi_step(ut)
     dimensions["questionComplexity"] = _score_question_complexity(user_text)
-    dimensions["imperativeVerbs"] = _score_keywords(ut, _IMPERATIVE_VERBS, 1, 2, 0.0, 0.3, 0.5, "imperative")
-    dimensions["constraintCount"] = _score_keywords(ut, _CONSTRAINT_INDICATORS, 1, 3, 0.0, 0.3, 0.7, "constraints")
-    dimensions["outputFormat"] = _score_keywords(ut, _OUTPUT_FORMAT_KEYWORDS, 1, 2, 0.0, 0.4, 0.7, "format")
-    dimensions["referenceComplexity"] = _score_keywords(ut, _REASONING_KEYWORDS, 1, 2, 0.0, 0.3, 0.5, "references")
-    dimensions["negationComplexity"] = _score_keywords(ut, _NEGATION_KEYWORDS, 2, 3, 0.0, 0.3, 0.5, "negation")
-    dimensions["domainSpecificity"] = _score_keywords(ut, _DOMAIN_KEYWORDS, 1, 2, 0.0, 0.5, 0.8, "domain-specific")
+    dimensions["imperativeVerbs"] = _score_keywords(
+        ut, _IMPERATIVE_VERBS, 1, 2, 0.0, 0.3, 0.5, "imperative"
+    )
+    dimensions["constraintCount"] = _score_keywords(
+        ut, _CONSTRAINT_INDICATORS, 1, 3, 0.0, 0.3, 0.7, "constraints"
+    )
+    dimensions["outputFormat"] = _score_keywords(
+        ut, _OUTPUT_FORMAT_KEYWORDS, 1, 2, 0.0, 0.4, 0.7, "format"
+    )
+    dimensions["referenceComplexity"] = _score_keywords(
+        ut, _REASONING_KEYWORDS, 1, 2, 0.0, 0.3, 0.5, "references"
+    )
+    dimensions["negationComplexity"] = _score_keywords(
+        ut, _NEGATION_KEYWORDS, 2, 3, 0.0, 0.3, 0.5, "negation"
+    )
+    dimensions["domainSpecificity"] = _score_keywords(
+        ut, _DOMAIN_KEYWORDS, 1, 2, 0.0, 0.5, 0.8, "domain-specific"
+    )
 
     agentic_dim_score, agentic_signal, agentic_score = _score_agentic(ut)
     dimensions["agenticTask"] = (agentic_dim_score, agentic_signal)
@@ -361,14 +509,19 @@ def classify_request(
     if confidence < confidence_threshold:
         logger.debug(
             "routing_strategy: ambiguous (score={:.3f}, conf={:.3f}) → MEDIUM",
-            weighted_score, confidence,
+            weighted_score,
+            confidence,
         )
         tier = "MEDIUM"
         confidence = 0.5
 
     logger.debug(
         "routing_strategy: {} | score={:.3f} conf={:.3f} tokens={} signals=[{}]",
-        tier, weighted_score, confidence, estimated_tokens, ", ".join(signals[:5]),
+        tier,
+        weighted_score,
+        confidence,
+        estimated_tokens,
+        ", ".join(signals[:5]),
     )
 
     return ClassificationResult(
@@ -382,6 +535,7 @@ def classify_request(
 
 
 # ─── Convenience helpers ───────────────────────────────────────────────────────
+
 
 def classify_prompt(
     prompt: str,
@@ -408,4 +562,6 @@ def classify_prompt(
 
 def tier_rank(tier: Optional[RequestTier]) -> int:
     """Numeric rank for tier comparison (SIMPLE=0, MEDIUM=1, COMPLEX=2, REASONING=3, AGENTIC=4)."""
-    return {"SIMPLE": 0, "MEDIUM": 1, "COMPLEX": 2, "REASONING": 3, "AGENTIC": 4}.get(tier or "MEDIUM", 1)
+    return {"SIMPLE": 0, "MEDIUM": 1, "COMPLEX": 2, "REASONING": 3, "AGENTIC": 4}.get(
+        tier or "MEDIUM", 1
+    )

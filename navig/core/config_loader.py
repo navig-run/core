@@ -28,11 +28,13 @@ MAX_INCLUDE_DEPTH = 10
 
 class ConfigLoaderError(Exception):
     """Base exception for config loading errors."""
+
     pass
 
 
 class CircularDependencyError(ConfigLoaderError):
     """Raised when circular includes are detected."""
+
     pass
 
 
@@ -40,17 +42,17 @@ def load_config(
     path: Union[str, Path],
     schema_type: Optional[str] = None,
     context: Optional[Dict[str, Any]] = None,
-    strict: bool = False
+    strict: bool = False,
 ) -> Dict[str, Any]:
     """
     Load configuration from a file with advanced features.
-    
+
     Args:
         path: Path to the config file
         schema_type: Optional schema to validate against ('global', 'host')
         context: Optional variables for substitution
         strict: Whether schema validation should be strict
-        
+
     Returns:
         Loaded and processed configuration dictionary
     """
@@ -70,15 +72,17 @@ def load_config(
     config = substitute_env_vars(config, env=env, strict=strict)
 
     # 3. Validate against schema if requested
-    if schema_type == 'global':
+    if schema_type == "global":
         from navig.core.config_schema import validate_global_config
+
         validated = validate_global_config(config, strict=strict)
         if validated:
             # If Pydantic model returned, convert back to dict for older code compatibility
             # In future, we should return the model instance
             return validated.model_dump()
-    elif schema_type == 'host':
+    elif schema_type == "host":
         from navig.core.config_schema import validate_host_config
+
         validated = validate_host_config(config, host_name=path.stem, strict=strict)
         if validated:
             return validated.model_dump()
@@ -86,11 +90,7 @@ def load_config(
     return config
 
 
-def _load_yaml_recursive(
-    path: Path,
-    seen_paths: Set[Path],
-    depth: int = 0
-) -> Any:
+def _load_yaml_recursive(path: Path, seen_paths: Set[Path], depth: int = 0) -> Any:
     """
     Recursively load YAML and resolve includes.
     """
@@ -103,7 +103,7 @@ def _load_yaml_recursive(
 
     seen_paths.add(path)
 
-    with open(path, 'r', encoding='utf-8') as f:
+    with open(path, "r", encoding="utf-8") as f:
         try:
             data = yaml.safe_load(f) or {}
         except yaml.YAMLError as e:
@@ -114,10 +114,7 @@ def _load_yaml_recursive(
 
 
 def _process_includes(
-    data: Any,
-    base_dir: Path,
-    seen_paths: Set[Path],
-    depth: int
+    data: Any, base_dir: Path, seen_paths: Set[Path], depth: int
 ) -> Any:
     """
     Traverse data structure and resolve $include directives.
@@ -125,8 +122,8 @@ def _process_includes(
     if isinstance(data, dict):
         # 1. Check for $include
         included_data = {}
-        if '$include' in data:
-            includes = data.pop('$include')
+        if "$include" in data:
+            includes = data.pop("$include")
             if isinstance(includes, str):
                 includes = [includes]
 
@@ -140,7 +137,9 @@ def _process_includes(
                 content = _load_yaml_recursive(inc_path, seen_paths.copy(), depth + 1)
 
                 if not isinstance(content, dict):
-                    raise ConfigLoaderError(f"Included file {inc_path} must be a dictionary")
+                    raise ConfigLoaderError(
+                        f"Included file {inc_path} must be a dictionary"
+                    )
 
                 included_data = _deep_merge(included_data, content)
 
@@ -154,10 +153,7 @@ def _process_includes(
         return _deep_merge(included_data, processed_data)
 
     elif isinstance(data, list):
-        return [
-            _process_includes(item, base_dir, seen_paths, depth)
-            for item in data
-        ]
+        return [_process_includes(item, base_dir, seen_paths, depth) for item in data]
 
     return data
 
@@ -180,4 +176,3 @@ def _deep_merge(base: Any, override: Any) -> Any:
         return base + override
 
     return override
-

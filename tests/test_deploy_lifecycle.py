@@ -5,10 +5,13 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
+
 import pytest
 
 from navig.deploy.engine import DeployEngine
+from navig.deploy.health import HealthChecker
+from navig.deploy.history import DeployHistory
 from navig.deploy.models import (
     ApplyConfig,
     BackupConfig,
@@ -21,9 +24,6 @@ from navig.deploy.models import (
     SnapshotRecord,
 )
 from navig.deploy.rollback import RollbackManager
-from navig.deploy.health import HealthChecker
-from navig.deploy.history import DeployHistory
-
 
 # ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -64,8 +64,12 @@ def _make_config(
         push=PushConfig(source="./dist/", target="/var/www/myapp/"),
         apply=ApplyConfig(commands=apply_cmds or []),
         restart=RestartConfig(adapter=adapter, service=service),
-        health=HealthConfig(url=health_url, retries=1, interval_seconds=0, timeout_seconds=5),
-        backup=BackupConfig(enabled=backup_enabled, remote_path="/var/backups", keep_last=3),
+        health=HealthConfig(
+            url=health_url, retries=1, interval_seconds=0, timeout_seconds=5
+        ),
+        backup=BackupConfig(
+            enabled=backup_enabled, remote_path="/var/backups", keep_last=3
+        ),
         host="prod",
         app="myapp",
     )
@@ -86,6 +90,7 @@ def _make_engine(config, remote_ops, cache_dir, project_root=None) -> DeployEngi
 # DeployEngine — dry-run mode
 # ============================================================================
 
+
 class TestDeployEngineDryRun:
     def test_dry_run_returns_success(self, tmp_path):
         remote = MagicMock()
@@ -99,7 +104,9 @@ class TestDeployEngineDryRun:
         engine = _make_engine(config, remote, tmp_path, project_root=tmp_path)
 
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="sent 100 bytes  received 10 bytes", stderr="")
+            mock_run.return_value = MagicMock(
+                returncode=0, stdout="sent 100 bytes  received 10 bytes", stderr=""
+            )
             result = engine.run(dry_run=True)
 
         assert result.dry_run is True
@@ -122,15 +129,19 @@ class TestDeployEngineDryRun:
 
         # In dry-run mode, rsync should never be called
         rsync_calls = [
-            c for c in mock_run.call_args_list
+            c
+            for c in mock_run.call_args_list
             if c.args and isinstance(c.args[0], list) and "rsync" in c.args[0][0]
         ]
-        assert rsync_calls == [], f"rsync was called during dry-run: {mock_run.call_args_list}"
+        assert (
+            rsync_calls == []
+        ), f"rsync was called during dry-run: {mock_run.call_args_list}"
 
 
 # ============================================================================
 # DeployEngine — phase sequencing
 # ============================================================================
+
 
 class TestDeployEnginePhases:
     def _run_engine(self, tmp_path, remote, *, skip_backup=False):
@@ -157,12 +168,14 @@ class TestDeployEnginePhases:
         # Use a function so the mock never runs out; health check returns "200",
         # everything else returns ok.
         call_count = {"n": 0}
+
         def _smart_return(cmd, *args, **kwargs):
             call_count["n"] += 1
             # health checker fires curl which expects a status code
             if "curl" in str(cmd):
                 return _ok_proc("200")
             return _ok_proc("ok")
+
         remote.execute_command.side_effect = _smart_return
 
         result, _ = self._run_engine(tmp_path, remote)
@@ -191,11 +204,11 @@ class TestDeployEnginePhases:
     def test_skip_backup_marks_phase_skipped(self, tmp_path):
         remote = MagicMock()
         remote.execute_command.side_effect = [
-            _ok_proc("navig-ping"),   # pre_check SSH
-            _ok_proc("50"),           # pre_check disk
-            _ok_proc(),               # restart
-            _ok_proc("200"),          # health
-            _ok_proc(""),             # cleanup
+            _ok_proc("navig-ping"),  # pre_check SSH
+            _ok_proc("50"),  # pre_check disk
+            _ok_proc(),  # restart
+            _ok_proc("200"),  # health
+            _ok_proc(""),  # cleanup
         ]
 
         config = _make_config()
@@ -204,7 +217,9 @@ class TestDeployEnginePhases:
         engine = _make_engine(config, remote, tmp_path, project_root=tmp_path)
 
         with patch("subprocess.run") as mock_rsync:
-            mock_rsync.return_value = MagicMock(returncode=0, stdout="sent 1 bytes  received 1 bytes", stderr="")
+            mock_rsync.return_value = MagicMock(
+                returncode=0, stdout="sent 1 bytes  received 1 bytes", stderr=""
+            )
             result = engine.run(skip_backup=True)
 
         backup_phase = result.phase(DeployPhase.BACKUP)
@@ -216,6 +231,7 @@ class TestDeployEnginePhases:
 # HealthChecker
 # ============================================================================
 
+
 class TestHealthChecker:
     def _remote(self):
         remote = MagicMock()
@@ -225,8 +241,14 @@ class TestHealthChecker:
         remote = self._remote()
         remote.execute_command.return_value = _ok_proc("200")
 
-        cfg = HealthConfig(url="http://localhost/health", method="GET",
-                           expected_status=200, retries=1, interval_seconds=0, timeout_seconds=5)
+        cfg = HealthConfig(
+            url="http://localhost/health",
+            method="GET",
+            expected_status=200,
+            retries=1,
+            interval_seconds=0,
+            timeout_seconds=5,
+        )
         checker = HealthChecker(cfg, SERVER, remote)
         ok, msg = checker.check()
         assert ok is True
@@ -236,8 +258,14 @@ class TestHealthChecker:
         remote = self._remote()
         remote.execute_command.return_value = _ok_proc("503")
 
-        cfg = HealthConfig(url="http://localhost/health", method="GET",
-                           expected_status=200, retries=1, interval_seconds=0, timeout_seconds=5)
+        cfg = HealthConfig(
+            url="http://localhost/health",
+            method="GET",
+            expected_status=200,
+            retries=1,
+            interval_seconds=0,
+            timeout_seconds=5,
+        )
         checker = HealthChecker(cfg, SERVER, remote)
         ok, msg = checker.check()
         assert ok is False
@@ -247,7 +275,12 @@ class TestHealthChecker:
         remote = self._remote()
         remote.execute_command.return_value = _ok_proc("502")
 
-        cfg = HealthConfig(url="http://localhost/health", retries=2, interval_seconds=0, timeout_seconds=5)
+        cfg = HealthConfig(
+            url="http://localhost/health",
+            retries=2,
+            interval_seconds=0,
+            timeout_seconds=5,
+        )
         checker = HealthChecker(cfg, SERVER, remote)
         ok, msg = checker.check()
         assert ok is False
@@ -257,7 +290,12 @@ class TestHealthChecker:
         remote = self._remote()
         remote.execute_command.return_value = _ok_proc()
 
-        cfg = HealthConfig(command="php artisan health:check", retries=1, interval_seconds=0, timeout_seconds=5)
+        cfg = HealthConfig(
+            command="php artisan health:check",
+            retries=1,
+            interval_seconds=0,
+            timeout_seconds=5,
+        )
         checker = HealthChecker(cfg, SERVER, remote)
         ok, _ = checker.check()
         assert ok is True
@@ -266,7 +304,9 @@ class TestHealthChecker:
         remote = self._remote()
         remote.execute_command.return_value = _fail_proc("service down")
 
-        cfg = HealthConfig(command="curl -sf http://localhost/health", retries=1, interval_seconds=0)
+        cfg = HealthConfig(
+            command="curl -sf http://localhost/health", retries=1, interval_seconds=0
+        )
         checker = HealthChecker(cfg, SERVER, remote)
         ok, _ = checker.check()
         assert ok is False
@@ -293,9 +333,12 @@ class TestHealthChecker:
 # RollbackManager
 # ============================================================================
 
+
 class TestRollbackManager:
     def _mgr(self, tmp_path, remote, *, backup_enabled=True, dry_run=False):
-        cfg = BackupConfig(enabled=backup_enabled, remote_path="/var/backups", keep_last=3)
+        cfg = BackupConfig(
+            enabled=backup_enabled, remote_path="/var/backups", keep_last=3
+        )
         return RollbackManager(
             backup_cfg=cfg,
             deploy_target="/var/www/myapp",
@@ -329,7 +372,9 @@ class TestRollbackManager:
     def test_save_and_load_state(self, tmp_path):
         remote = MagicMock()
         mgr = self._mgr(tmp_path, remote)
-        rec = SnapshotRecord(path="/var/backups/myapp/20260317_142233", created_at="20260317_142233")
+        rec = SnapshotRecord(
+            path="/var/backups/myapp/20260317_142233", created_at="20260317_142233"
+        )
         mgr.save_state(rec)
         loaded = mgr.load_state()
         assert loaded is not None
@@ -346,7 +391,9 @@ class TestRollbackManager:
         remote.execute_command.return_value = _ok_proc()
 
         mgr = self._mgr(tmp_path, remote)
-        rec = SnapshotRecord(path="/var/backups/myapp/20260317_142233", created_at="20260317_142233")
+        rec = SnapshotRecord(
+            path="/var/backups/myapp/20260317_142233", created_at="20260317_142233"
+        )
         ok, msg = mgr.restore_snapshot(rec)
 
         assert ok is True
@@ -372,10 +419,13 @@ class TestRollbackManager:
 # DeployHistory
 # ============================================================================
 
+
 class TestDeployHistory:
     def test_append_and_read(self, tmp_path):
         h = DeployHistory(cache_dir=tmp_path, keep=10)
-        h.append({"app": "myapp", "host": "prod", "success": True, "elapsed_seconds": 5.0})
+        h.append(
+            {"app": "myapp", "host": "prod", "success": True, "elapsed_seconds": 5.0}
+        )
         entries = h.read()
         assert len(entries) == 1
         assert entries[0]["app"] == "myapp"
@@ -404,5 +454,5 @@ class TestDeployHistory:
         h.append({"app": "myapp", "success": True, "seq": 1})
         h.append({"app": "myapp", "success": True, "seq": 2})
         entries = h.read(limit=2)
-        assert entries[0]["seq"] == 2   # newest first
+        assert entries[0]["seq"] == 2  # newest first
         assert entries[1]["seq"] == 1

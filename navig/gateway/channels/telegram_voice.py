@@ -20,6 +20,7 @@ Public surface:
   _send_audio_bytes          write bytes → temp file → _send_voice_file
   _send_voice_file           upload local audio file to Telegram
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -39,8 +40,19 @@ _af_cache: dict = {}
 
 # Keywords in title/filename that strongly suggest a speech recording
 _SPEECH_INDICATORS = (
-    "voice", "memo", "recording", "voicemail", "lecture", "interview",
-    "podcast", "speech", "talk", "meeting", "call", "note", "dictation",
+    "voice",
+    "memo",
+    "recording",
+    "voicemail",
+    "lecture",
+    "interview",
+    "podcast",
+    "speech",
+    "talk",
+    "meeting",
+    "call",
+    "note",
+    "dictation",
 )
 
 # MIME types that are exclusively used for Telegram voice notes / speech
@@ -82,30 +94,20 @@ def _classify_audio(audio: dict) -> dict:
 # ── Session management ───────────────────────────────────────────────────────
 try:
     from navig.gateway.channels.telegram_sessions import get_session_manager
+
     _HAS_SESSIONS = True
 except ImportError:
     _HAS_SESSIONS = False
 
 # ── Voice STT/TTS pipeline ────────────────────────────────────────────────────
 try:
-    from navig.voice.stt import (
-        STT as _STT,
-    )
-    from navig.voice.stt import (
-        STTConfig as _STTConfig,
-    )
-    from navig.voice.stt import (
-        STTProvider as _STTProvider,
-    )
-    from navig.voice.tts import (
-        TTS as _TTS,
-    )
-    from navig.voice.tts import (
-        TTSConfig as _TTSConfig,
-    )
-    from navig.voice.tts import (
-        TTSProvider as _TTSProvider,
-    )
+    from navig.voice.stt import STT as _STT
+    from navig.voice.stt import STTConfig as _STTConfig
+    from navig.voice.stt import STTProvider as _STTProvider
+    from navig.voice.tts import TTS as _TTS
+    from navig.voice.tts import TTSConfig as _TTSConfig
+    from navig.voice.tts import TTSProvider as _TTSProvider
+
     _HAS_VOICE = True
 except ImportError:
     _HAS_VOICE = False
@@ -113,20 +115,27 @@ except ImportError:
 
 # ── Module-level language tables (DUP-4 fix: single source) ──────────────────
 
+
 def _detect_lang(text: str) -> str:
     """Return ISO-639-1 code based on dominant Unicode script and accent chars."""
     cyrillic = sum(1 for c in text if "\u0400" <= c <= "\u04FF")
-    arabic   = sum(1 for c in text if "\u0600" <= c <= "\u06FF")
-    cjk      = sum(1 for c in text if "\u4E00" <= c <= "\u9FFF")
+    arabic = sum(1 for c in text if "\u0600" <= c <= "\u06FF")
+    cjk = sum(1 for c in text if "\u4E00" <= c <= "\u9FFF")
     fr_chars = sum(1 for c in text if c in "àâæçéèêëîïôùûüÿœÀÂÆÇÉÈÊËÎÏÔÙÛÜŸŒ")
     de_chars = sum(1 for c in text if c in "äöüÄÖÜß")
     es_chars = sum(1 for c in text if c in "ñáéíóúÑÁÉÍÓÚ¿¡")
-    if cyrillic > 3:  return "ru"
-    if arabic > 3:    return "ar"
-    if cjk > 3:       return "zh"
-    if fr_chars > 2:  return "fr"
-    if de_chars > 2:  return "de"
-    if es_chars > 2:  return "es"
+    if cyrillic > 3:
+        return "ru"
+    if arabic > 3:
+        return "ar"
+    if cjk > 3:
+        return "zh"
+    if fr_chars > 2:
+        return "fr"
+    if de_chars > 2:
+        return "de"
+    if es_chars > 2:
+        return "es"
     return "en"
 
 
@@ -169,6 +178,7 @@ class TelegramVoiceMixin:
                 return val
         try:
             from navig.vault import get_vault_v2 as _gv2
+
             return _gv2().get_secret(vault_key) or None
         except Exception:
             return None
@@ -207,7 +217,9 @@ class TelegramVoiceMixin:
 
         file_id = voice_data.get("file_id") if voice_data else None
         if not file_id:
-            await self.send_message(chat_id, "🎙️ Couldn't read the voice message.", parse_mode=None)
+            await self.send_message(
+                chat_id, "🎙️ Couldn't read the voice message.", parse_mode=None
+            )
             return None, ""
 
         # ── Rate-limit: max 1 transcription per 2 s per user ─────────────────
@@ -215,7 +227,9 @@ class TelegramVoiceMixin:
             _now = _time.monotonic()
             _last = self._voice_last.get(user_id, 0.0)
             if _now - _last < 2.0:
-                logger.debug("Voice rate-limit hit for user_id=%s — skipping burst", user_id)
+                logger.debug(
+                    "Voice rate-limit hit for user_id=%s — skipping burst", user_id
+                )
                 return None, ""
             self._voice_last[user_id] = _now
 
@@ -234,7 +248,9 @@ class TelegramVoiceMixin:
         stt_provider = None
         fallback_providers: list = []
 
-        dg_key = self._resolve_api_key(["DEEPGRAM_KEY", "DEEPGRAM_API_KEY"], "deepgram/api-key")
+        dg_key = self._resolve_api_key(
+            ["DEEPGRAM_KEY", "DEEPGRAM_API_KEY"], "deepgram/api-key"
+        )
         if dg_key and _HAS_VOICE:
             stt_provider = _STTProvider.DEEPGRAM
 
@@ -247,6 +263,7 @@ class TelegramVoiceMixin:
 
         try:
             from navig.voice.stt import whisper_local_available as _wla
+
             _has_local = _wla()
         except Exception:
             _has_local = False
@@ -271,26 +288,36 @@ class TelegramVoiceMixin:
         tmp_path: str | None = None
         _recording_task: asyncio.Task | None = None
         try:
-            await self._api_call("sendChatAction", {"chat_id": chat_id, "action": "record_voice"})
+            await self._api_call(
+                "sendChatAction", {"chat_id": chat_id, "action": "record_voice"}
+            )
             _recording_task = asyncio.create_task(self._keep_recording(chat_id))
 
             file_info = await self._api_call("getFile", {"file_id": file_id})
             if not file_info:
-                await self.send_message(chat_id, "🎙️ Couldn't retrieve the voice file.", parse_mode=None)
+                await self.send_message(
+                    chat_id, "🎙️ Couldn't retrieve the voice file.", parse_mode=None
+                )
                 return None, ""
             file_path = file_info.get("file_path", "")
             if not file_path:
-                await self.send_message(chat_id, "🎙️ Couldn't retrieve the voice file.", parse_mode=None)
+                await self.send_message(
+                    chat_id, "🎙️ Couldn't retrieve the voice file.", parse_mode=None
+                )
                 return None, ""
 
             dl_url = f"https://api.telegram.org/file/bot{self._bot_token}/{file_path}"
             if not self._session:
-                await self.send_message(chat_id, "🎙️ Internal error: no HTTP session.", parse_mode=None)
+                await self.send_message(
+                    chat_id, "🎙️ Internal error: no HTTP session.", parse_mode=None
+                )
                 return None, ""
 
             async with self._session.get(dl_url) as dl_resp:
                 if dl_resp.status != 200:
-                    await self.send_message(chat_id, "🎙️ Failed to download voice message.", parse_mode=None)
+                    await self.send_message(
+                        chat_id, "🎙️ Failed to download voice message.", parse_mode=None
+                    )
                     return None, ""
                 audio_bytes = await dl_resp.read()
 
@@ -298,6 +325,7 @@ class TelegramVoiceMixin:
             # .oga explicitly signals OGG Audio (OPUS codec) to Whisper/Deepgram,
             # avoiding the ambiguity of .ogg (which may be rejected as OGG Vorbis).
             import os as _os2
+
             _tg_suffix = _os2.path.splitext(file_path)[1] or ".oga"
             logger.info(
                 "Voice download: %d bytes  magic=%s  tg_suffix=%s",
@@ -306,7 +334,9 @@ class TelegramVoiceMixin:
                 _tg_suffix,
             )
             if not audio_bytes:
-                await self.send_message(chat_id, "🎙️ Voice file is empty — try again.", parse_mode=None)
+                await self.send_message(
+                    chat_id, "🎙️ Voice file is empty — try again.", parse_mode=None
+                )
                 return None, ""
 
             with tempfile.NamedTemporaryFile(suffix=_tg_suffix, delete=False) as tmp:
@@ -322,19 +352,32 @@ class TelegramVoiceMixin:
 
             if not result.success or not result.text:
                 raw_err = result.error or ""
-                logger.warning("STT transcription failed (provider=%s): %s", stt_provider, raw_err)
-                if "whisper not installed" in raw_err or "No module named 'whisper'" in raw_err:
+                logger.warning(
+                    "STT transcription failed (provider=%s): %s", stt_provider, raw_err
+                )
+                if (
+                    "whisper not installed" in raw_err
+                    or "No module named 'whisper'" in raw_err
+                ):
                     user_msg = (
                         "🎙️ Transcription failed: local Whisper is not installed.\n"
                         "Run `pip install openai-whisper`, or add `DEEPGRAM_KEY` / "
                         "`OPENAI_API_KEY` to `~/.navig/.env`."
                     )
-                elif "API key" in raw_err or "not set" in raw_err or "not configured" in raw_err:
+                elif (
+                    "API key" in raw_err
+                    or "not set" in raw_err
+                    or "not configured" in raw_err
+                ):
                     user_msg = "🎙️ Transcription failed: no STT API key — type your message instead."
                 elif "timeout" in raw_err.lower():
-                    user_msg = "🎙️ Transcription timed out — try a shorter clip or type it out."
+                    user_msg = (
+                        "🎙️ Transcription timed out — try a shorter clip or type it out."
+                    )
                 elif "too large" in raw_err:
-                    user_msg = f"🎙️ Audio file too large — {raw_err.split(':', 1)[-1].strip()}"
+                    user_msg = (
+                        f"🎙️ Audio file too large — {raw_err.split(':', 1)[-1].strip()}"
+                    )
                 else:
                     user_msg = "🎙️ Couldn't transcribe audio — try again or type it out."
                 await self.send_message(chat_id, user_msg, parse_mode=None)
@@ -351,26 +394,35 @@ class TelegramVoiceMixin:
                         _sess.processed_voice_ids = set()
                     _sess.processed_voice_ids.add(file_id)
                     if len(_sess.processed_voice_ids) > 100:
-                        _sess.processed_voice_ids = set(list(_sess.processed_voice_ids)[-100:])
+                        _sess.processed_voice_ids = set(
+                            list(_sess.processed_voice_ids)[-100:]
+                        )
                     _sm._save_session(_sess)
                 except Exception as _e:
                     logger.debug("Could not mark voice as processed: %s", _e)
 
             # "Heard" echo — only in /trace debug mode
-            _debug_active = any(uid in getattr(self, "_debug_users", set()) for uid in self.allowed_users)
+            _debug_active = any(
+                uid in getattr(self, "_debug_users", set())
+                for uid in self.allowed_users
+            )
             if _debug_active:
-                heard_kb = [[
-                    {"text": "💡 Process",      "callback_data": "heard_process"},
-                    {"text": "🔁 Re-transcribe", "callback_data": "heard_retry"},
-                    {"text": "📝 Edit",          "callback_data": "heard_edit"},
-                ]]
+                heard_kb = [
+                    [
+                        {"text": "💡 Process", "callback_data": "heard_process"},
+                        {"text": "🔁 Re-transcribe", "callback_data": "heard_retry"},
+                        {"text": "📝 Edit", "callback_data": "heard_edit"},
+                    ]
+                ]
                 await self.send_message(
                     chat_id,
                     f"🎙️ *Heard:* _{transcript}_",
                     parse_mode="Markdown",
                     keyboard=heard_kb,
                 )
-            detected_lang = (result.language or "") if hasattr(result, "language") else ""
+            detected_lang = (
+                (result.language or "") if hasattr(result, "language") else ""
+            )
             return transcript, detected_lang
 
         except Exception as e:
@@ -409,29 +461,34 @@ class TelegramVoiceMixin:
             from navig.llm_generate import run_llm
 
             prompt = f"Extract or generate a 2-4 word title for this text. Reply ONLY with the title without any quotes or punctuation.\n\nText: {text[:1000]}"
+
             def _get():
                 res = run_llm(
                     messages=[{"role": "user", "content": prompt}],
                     mode="fast",
                     temperature=0.3,
                     max_tokens=15,
-                    timeout=5.0
+                    timeout=5.0,
                 )
                 if res and res.content:
-                    return res.content.strip(' "\'\n*\r\t.-')
+                    return res.content.strip(" \"'\n*\r\t.-")
                 return "NAVIG Voice"
 
             title = await asyncio.to_thread(_get)
             return title if title else "NAVIG Voice"
         except Exception as e:
             import logging
-            logging.getLogger("navig.telegram_voice").warning(f"Failed to generate audio title: {e}")
+
+            logging.getLogger("navig.telegram_voice").warning(
+                f"Failed to generate audio title: {e}"
+            )
             return "NAVIG Voice"
 
     @staticmethod
     def _prepare_for_tts(text: str, max_chars: int = 500) -> str:
         """Strip markdown/code/URLs from *text* before sending to TTS."""
         import re
+
         text = re.sub(r"```[\s\S]*?```", "", text)
         text = re.sub(r"`[^`]+`", "", text)
         text = re.sub(r"https?://\S+", "", text)
@@ -470,15 +527,19 @@ class TelegramVoiceMixin:
                     tts_text = self._prepare_for_tts(text)
                     if tts_text:
                         await self._api_call(
-                            "sendChatAction", {"chat_id": chat_id, "action": "record_voice"}
+                            "sendChatAction",
+                            {"chat_id": chat_id, "action": "record_voice"},
                         )
                         title = await self._generate_audio_title(tts_text)
-                        success = await self._send_voice_reply(chat_id, tts_text, session, title=title)
+                        success = await self._send_voice_reply(
+                            chat_id, tts_text, session, title=title
+                        )
                         if success:
                             return True
                         logger.warning(
                             "Voice reply failed for chat_id=%s provider=%s",
-                            chat_id, getattr(session, "tts_provider", "auto"),
+                            chat_id,
+                            getattr(session, "tts_provider", "auto"),
                         )
                     return False
                 if force_reply is False:
@@ -515,7 +576,11 @@ class TelegramVoiceMixin:
                 return False
 
             audio_data: bytes | None = tts_result.audio_data
-            if audio_data is None and tts_result.audio_path and tts_result.audio_path.exists():
+            if (
+                audio_data is None
+                and tts_result.audio_path
+                and tts_result.audio_path.exists()
+            ):
                 audio_data = tts_result.audio_path.read_bytes()
 
             if not audio_data:
@@ -523,7 +588,9 @@ class TelegramVoiceMixin:
                 return False
 
             title = await self._generate_audio_title(tts_text)
-            await self.send_voice(chat_id, audio_data, title=title, performer="NAVIG AI")
+            await self.send_voice(
+                chat_id, audio_data, title=title, performer="NAVIG AI"
+            )
             return True
 
         except Exception as e:
@@ -531,12 +598,18 @@ class TelegramVoiceMixin:
             return False
         finally:
             try:
-                if tts_result and tts_result.audio_path and tts_result.audio_path.exists():
+                if (
+                    tts_result
+                    and tts_result.audio_path
+                    and tts_result.audio_path.exists()
+                ):
                     tts_result.audio_path.unlink(missing_ok=True)
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
-    async def _send_voice_reply(self, chat_id: int, text: str, session: Any, title: str = "NAVIG Voice") -> bool:
+    async def _send_voice_reply(
+        self, chat_id: int, text: str, session: Any, title: str = "NAVIG Voice"
+    ) -> bool:
         """Synthesize *text* to audio and send as a Telegram voice message.
 
         Dispatch order (provider-aware):
@@ -562,6 +635,7 @@ class TelegramVoiceMixin:
             else:
                 try:
                     import httpx
+
                     async with httpx.AsyncClient(timeout=30) as client:
                         resp = await client.post(
                             "https://api.deepgram.com/v1/speak?model=aura-asteria-en",
@@ -572,15 +646,24 @@ class TelegramVoiceMixin:
                             json={"text": text[:4000]},
                         )
                         resp.raise_for_status()
-                    return await self._send_audio_bytes(chat_id, resp.content, suffix=".mp3", title=title, performer="NAVIG AI")
+                    return await self._send_audio_bytes(
+                        chat_id,
+                        resp.content,
+                        suffix=".mp3",
+                        title=title,
+                        performer="NAVIG AI",
+                    )
                 except Exception as exc:
-                    logger.warning("Deepgram TTS failed, falling back to Edge TTS: %s", exc)
+                    logger.warning(
+                        "Deepgram TTS failed, falling back to Edge TTS: %s", exc
+                    )
                 provider = "auto"
 
         # ── Google Cloud TTS ──────────────────────────────────────────────────
         if provider == "google_cloud":
             try:
                 from google.cloud import texttospeech  # type: ignore
+
                 client = texttospeech.TextToSpeechAsyncClient()
                 google_lang = _GOOGLE_LANG.get(lang, lang + "-" + lang.upper())
                 response = await client.synthesize_speech(
@@ -593,9 +676,17 @@ class TelegramVoiceMixin:
                         audio_encoding=texttospeech.AudioEncoding.OGG_OPUS
                     ),
                 )
-                return await self._send_audio_bytes(chat_id, response.audio_content, suffix=".ogg", title=title, performer="NAVIG AI")
+                return await self._send_audio_bytes(
+                    chat_id,
+                    response.audio_content,
+                    suffix=".ogg",
+                    title=title,
+                    performer="NAVIG AI",
+                )
             except Exception as exc:
-                logger.warning("Google Cloud TTS failed, falling back to Edge TTS: %s", exc)
+                logger.warning(
+                    "Google Cloud TTS failed, falling back to Edge TTS: %s", exc
+                )
                 provider = "auto"
 
         # ── OpenAI TTS ────────────────────────────────────────────────────────
@@ -606,6 +697,7 @@ class TelegramVoiceMixin:
                 return False
             try:
                 import httpx
+
                 async with httpx.AsyncClient(timeout=30) as client:
                     resp = await client.post(
                         "https://api.openai.com/v1/audio/speech",
@@ -613,7 +705,13 @@ class TelegramVoiceMixin:
                         json={"model": "tts-1", "input": text[:4096], "voice": "nova"},
                     )
                     resp.raise_for_status()
-                return await self._send_audio_bytes(chat_id, resp.content, suffix=".mp3", title=title, performer="NAVIG AI")
+                return await self._send_audio_bytes(
+                    chat_id,
+                    resp.content,
+                    suffix=".mp3",
+                    title=title,
+                    performer="NAVIG AI",
+                )
             except Exception as exc:
                 logger.warning("OpenAI TTS failed, falling back to Edge TTS: %s", exc)
                 provider = "auto"
@@ -621,13 +719,16 @@ class TelegramVoiceMixin:
         # ── Edge TTS (default / auto) ─────────────────────────────────────────
         try:
             import edge_tts  # type: ignore
+
             voice_name = _EDGE_VOICE.get(lang, "en-US-AriaNeural")
             communicate = edge_tts.Communicate(text[:4000], voice_name)
             with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
                 tmp_path = f.name
             try:
                 await communicate.save(tmp_path)
-                await self._send_voice_file(chat_id, tmp_path, title=title, performer="NAVIG AI")
+                await self._send_voice_file(
+                    chat_id, tmp_path, title=title, performer="NAVIG AI"
+                )
                 return True
             finally:
                 try:
@@ -642,7 +743,12 @@ class TelegramVoiceMixin:
             return False
 
     async def _send_audio_bytes(
-        self, chat_id: int, audio_bytes: bytes, suffix: str = ".mp3", title: str = "NAVIG", performer: str = "Voice Reply"
+        self,
+        chat_id: int,
+        audio_bytes: bytes,
+        suffix: str = ".mp3",
+        title: str = "NAVIG",
+        performer: str = "Voice Reply",
     ) -> bool:
         """Write *audio_bytes* to a temp file and send via ``_send_voice_file``.
 
@@ -653,7 +759,9 @@ class TelegramVoiceMixin:
             f.write(audio_bytes)
             tmp_path = f.name
         try:
-            await self._send_voice_file(chat_id, tmp_path, title=title, performer=performer)
+            await self._send_voice_file(
+                chat_id, tmp_path, title=title, performer=performer
+            )
             return True
         except Exception as exc:
             logger.warning("_send_audio_bytes failed: %s", exc)
@@ -691,6 +799,7 @@ class TelegramVoiceMixin:
         kind = classification["kind"]
 
         import uuid
+
         short_id = uuid.uuid4().hex[:12]
 
         # Cache metadata for the callback handler
@@ -730,7 +839,12 @@ class TelegramVoiceMixin:
             {"text": "ℹ️ Info", "callback_data": f"audmsg:info:{short_id}"},
         ]
         if is_speech:
-            row2.append({"text": "🌐 Detect Language", "callback_data": f"audmsg:lang:{short_id}"})
+            row2.append(
+                {
+                    "text": "🌐 Detect Language",
+                    "callback_data": f"audmsg:lang:{short_id}",
+                }
+            )
         # Third row: Dismiss
         row3 = [
             {"text": "❌ Dismiss", "callback_data": f"audmsg:dismiss:{short_id}"},
@@ -763,6 +877,7 @@ class TelegramVoiceMixin:
         (the caller is responsible for sending an error reply).
         """
         from navig.gateway.channels.task_card import StepState, update_task_card
+
         if task_view:
             task_view.set_step("download", StepState.ACTIVE, "Locating file...")
             task_view.recompute_percent()
@@ -772,7 +887,9 @@ class TelegramVoiceMixin:
             file_path = await self._get_file_path(file_id)
         except Exception as exc:
             if task_view:
-                task_view.set_step("download", StepState.FAILED, "File path resolution failed")
+                task_view.set_step(
+                    "download", StepState.FAILED, "File path resolution failed"
+                )
                 await update_task_card(self, chat_id, task_view, force=True)
             logger.warning("_transcribe_audio_file: get_file_path failed: %s", exc)
             return None
@@ -781,6 +898,7 @@ class TelegramVoiceMixin:
         import tempfile
 
         import aiohttp
+
         dl_url = self._build_file_url(file_path)
         suffix = "." + file_path.rsplit(".", 1)[-1] if "." in file_path else ".audio"
 
@@ -789,7 +907,9 @@ class TelegramVoiceMixin:
 
         try:
             if task_view:
-                task_view.set_step("download", StepState.ACTIVE, "Downloading from Telegram...")
+                task_view.set_step(
+                    "download", StepState.ACTIVE, "Downloading from Telegram..."
+                )
                 task_view.recompute_percent()
                 await update_task_card(self, chat_id, task_view)
 
@@ -797,9 +917,17 @@ class TelegramVoiceMixin:
                 async with sess.get(dl_url) as resp:
                     if resp.status != 200:
                         if task_view:
-                            task_view.set_step("download", StepState.FAILED, f"Download HTTP {resp.status}")
+                            task_view.set_step(
+                                "download",
+                                StepState.FAILED,
+                                f"Download HTTP {resp.status}",
+                            )
                             await update_task_card(self, chat_id, task_view, force=True)
-                        logger.warning("_transcribe_audio_file: download %s -> %s", dl_url, resp.status)
+                        logger.warning(
+                            "_transcribe_audio_file: download %s -> %s",
+                            dl_url,
+                            resp.status,
+                        )
                         return None
                     with open(tmp_path, "wb") as fh:
                         fh.write(await resp.read())
@@ -811,11 +939,14 @@ class TelegramVoiceMixin:
                 await update_task_card(self, chat_id, task_view, force=True)
 
             from navig.voice.stt import STT as _STT2
+
             stt = _STT2()
             result = await stt.transcribe(tmp_path, is_voice=is_voice)
 
             if task_view:
-                task_view.set_step("stt", StepState.DONE if result.success else StepState.FAILED)
+                task_view.set_step(
+                    "stt", StepState.DONE if result.success else StepState.FAILED
+                )
                 task_view.set_step("finalize", StepState.ACTIVE)
                 task_view.recompute_percent()
                 await update_task_card(self, chat_id, task_view, force=True)
@@ -833,7 +964,13 @@ class TelegramVoiceMixin:
             except OSError:
                 pass  # best-effort cleanup
 
-    async def _send_voice_file(self, chat_id: int, file_path: str, title: str = "NAVIG", performer: str = "Voice Reply") -> None:
+    async def _send_voice_file(
+        self,
+        chat_id: int,
+        file_path: str,
+        title: str = "NAVIG",
+        performer: str = "Voice Reply",
+    ) -> None:
         """Upload a local audio file to Telegram as a voice message.
 
         Falls back to ``sendAudio`` when the user has restricted voice note
@@ -867,11 +1004,21 @@ class TelegramVoiceMixin:
                 logger.info("sendVoice blocked by privacy — falling back to sendAudio")
                 result2 = await self._api_call_multipart(
                     "sendAudio",
-                    data={"chat_id": str(chat_id), "title": title, "performer": performer},
-                    files={"audio": (f"navig_reply{ext or '.mp3'}", audio_data, mime_type)},
+                    data={
+                        "chat_id": str(chat_id),
+                        "title": title,
+                        "performer": performer,
+                    },
+                    files={
+                        "audio": (f"navig_reply{ext or '.mp3'}", audio_data, mime_type)
+                    },
                 )
                 if not result2 or not result2.get("ok"):
-                    desc2 = result2.get("description", "no response") if result2 else "no response"
+                    desc2 = (
+                        result2.get("description", "no response")
+                        if result2
+                        else "no response"
+                    )
                     raise RuntimeError(f"sendAudio fallback failed: {desc2}")
             else:
                 raise RuntimeError(f"sendVoice failed: {desc}")

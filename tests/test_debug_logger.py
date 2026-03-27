@@ -10,21 +10,23 @@ Tests cover:
 - Error logging with context
 """
 
-import pytest
-import tempfile
 import os
+import tempfile
 from pathlib import Path
-from navig.debug_logger import DebugLogger
 
+import pytest
+
+from navig.debug_logger import DebugLogger
 
 # ============================================================================
 # FIXTURES
 # ============================================================================
 
+
 @pytest.fixture
 def temp_log_path():
     """Create a temporary log file path."""
-    with tempfile.NamedTemporaryFile(suffix='.log', delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=".log", delete=False) as f:
         path = f.name
     yield path
     # Cleanup is handled by debug_logger fixture
@@ -47,6 +49,7 @@ def debug_logger(temp_log_path):
 # ============================================================================
 # INITIALIZATION TESTS
 # ============================================================================
+
 
 class TestDebugLoggerInit:
     """Test DebugLogger initialization."""
@@ -71,6 +74,7 @@ class TestDebugLoggerInit:
 # ============================================================================
 # SENSITIVE DATA REDACTION TESTS
 # ============================================================================
+
 
 class TestSensitiveDataRedaction:
     """Test sensitive data redaction patterns."""
@@ -116,27 +120,30 @@ class TestSensitiveDataRedaction:
 # LOG FORMAT TESTS
 # ============================================================================
 
+
 class TestLogFormat:
     """Test log format and structure."""
 
     def test_command_start_format(self, debug_logger, temp_log_path):
         """Test command start log format."""
         debug_logger.log_command_start("navig host list", {"verbose": True})
-        
-        with open(temp_log_path, 'r') as f:
+
+        with open(temp_log_path, "r") as f:
             content = f.read()
-        
+
         assert "COMMAND START" in content
         assert "navig host list" in content
         assert "=" * 80 in content  # Separator
 
     def test_ssh_command_format(self, debug_logger, temp_log_path):
         """Test SSH command log format."""
-        debug_logger.log_ssh_command("localhost", 22, "root", "echo hello", "subprocess")
-        
-        with open(temp_log_path, 'r') as f:
+        debug_logger.log_ssh_command(
+            "localhost", 22, "root", "echo hello", "subprocess"
+        )
+
+        with open(temp_log_path, "r") as f:
             content = f.read()
-        
+
         assert "SSH COMMAND" in content
         assert "root@localhost:22" in content
         assert "echo hello" in content
@@ -144,10 +151,10 @@ class TestLogFormat:
     def test_ssh_result_format(self, debug_logger, temp_log_path):
         """Test SSH result log format."""
         debug_logger.log_ssh_result(True, "hello world", "", 50.5)
-        
-        with open(temp_log_path, 'r') as f:
+
+        with open(temp_log_path, "r") as f:
             content = f.read()
-        
+
         assert "SSH RESULT: SUCCESS" in content
         assert "50.50ms" in content
         assert "hello world" in content
@@ -155,11 +162,10 @@ class TestLogFormat:
     def test_error_format(self, debug_logger, temp_log_path):
         """Test error log format."""
         debug_logger.log_error(Exception("Test error"), "Testing context")
-        
-        with open(temp_log_path, 'r') as f:
+
+        with open(temp_log_path, "r") as f:
             content = f.read()
-        
+
         assert "ERROR" in content
         assert "Test error" in content
         assert "Testing context" in content
-

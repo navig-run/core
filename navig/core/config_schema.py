@@ -18,10 +18,10 @@ Usage:
         GlobalConfig,
         HostConfig,
     )
-    
+
     # Validate and get typed config
     config = validate_global_config(raw_dict)
-    
+
     # Access typed fields
     print(config.log_level)
     print(config.execution.mode)
@@ -34,8 +34,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 try:
-    from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+    from pydantic import BaseModel, ConfigDict, Field
     from pydantic import ValidationError as PydanticValidationError
+    from pydantic import field_validator, model_validator
+
     PYDANTIC_AVAILABLE = True
 except ImportError:
     PYDANTIC_AVAILABLE = False
@@ -47,8 +49,10 @@ except ImportError:
 # Enums
 # =============================================================================
 
+
 class LogLevel(str, Enum):
     """Log level options."""
+
     DEBUG = "DEBUG"
     INFO = "INFO"
     WARNING = "WARNING"
@@ -58,19 +62,22 @@ class LogLevel(str, Enum):
 
 class ExecutionMode(str, Enum):
     """Command execution mode."""
+
     INTERACTIVE = "interactive"
     AUTO = "auto"
 
 
 class ConfirmationLevel(str, Enum):
     """Confirmation level for destructive operations."""
+
     CRITICAL = "critical"  # Only confirm critical operations
     STANDARD = "standard"  # Confirm standard operations
-    VERBOSE = "verbose"    # Confirm all operations
+    VERBOSE = "verbose"  # Confirm all operations
 
 
 class AuthMethod(str, Enum):
     """SSH authentication method."""
+
     KEY = "key"
     PASSWORD = "password"
     AGENT = "agent"
@@ -81,8 +88,10 @@ class AuthMethod(str, Enum):
 # =============================================================================
 
 if PYDANTIC_AVAILABLE:
+
     class ExecutionConfig(BaseModel):
         """Execution mode configuration."""
+
         mode: ExecutionMode = ExecutionMode.INTERACTIVE
         confirmation_level: ConfirmationLevel = ConfirmationLevel.STANDARD
         auto_confirm_safe: bool = False
@@ -90,6 +99,7 @@ if PYDANTIC_AVAILABLE:
 
     class AIModelSlotConfig(BaseModel):
         """Per-slot (small/big/coder_big) model configuration."""
+
         provider: str = ""
         model: str = ""
         base_url: Optional[str] = None
@@ -100,6 +110,7 @@ if PYDANTIC_AVAILABLE:
 
     class AIModelsConfig(BaseModel):
         """Container for the three model slots."""
+
         small: AIModelSlotConfig = Field(default_factory=AIModelSlotConfig)
         big: AIModelSlotConfig = Field(default_factory=AIModelSlotConfig)
         coder_big: AIModelSlotConfig = Field(default_factory=AIModelSlotConfig)
@@ -111,8 +122,12 @@ if PYDANTIC_AVAILABLE:
 
         Supports both the new 'models' schema and legacy flat keys.
         """
+
         enabled: bool = False
-        mode: str = Field(default="single", pattern=r"^(single|heuristic|router|rules_then_fallback|router_llm_json)$")
+        mode: str = Field(
+            default="single",
+            pattern=r"^(single|heuristic|router|rules_then_fallback|router_llm_json)$",
+        )
         prefer_local: bool = True
         fallback_enabled: bool = True
         # New: nested model slots
@@ -135,23 +150,27 @@ if PYDANTIC_AVAILABLE:
 
     class AIConfig(BaseModel):
         """AI/LLM configuration."""
+
         default_provider: Optional[str] = None
-        model_preference: List[str] = Field(default_factory=lambda: [
-            "deepseek/deepseek-coder-33b-instruct",
-            "google/gemini-flash-1.5",
-            "qwen/qwen-2.5-72b-instruct",
-        ])
+        model_preference: List[str] = Field(
+            default_factory=lambda: [
+                "deepseek/deepseek-coder-33b-instruct",
+                "google/gemini-flash-1.5",
+                "qwen/qwen-2.5-72b-instruct",
+            ]
+        )
         temperature: float = Field(default=0.7, ge=0.0, le=2.0)
         max_tokens: int = Field(default=4096, ge=1, le=128000)
         api_key: Optional[str] = None  # Should use ${ENV_VAR} syntax
         routing: AIRoutingConfig = Field(default_factory=AIRoutingConfig)
 
-        @field_validator('api_key')
+        @field_validator("api_key")
         @classmethod
         def check_api_key_security(cls, v: Optional[str]) -> Optional[str]:
             """Warn if API key appears to be hardcoded."""
-            if v and not v.startswith('${') and len(v) > 20:
+            if v and not v.startswith("${") and len(v) > 20:
                 import warnings
+
                 warnings.warn(
                     "API key appears to be hardcoded. "
                     "Consider using environment variables: ${OPENROUTER_API_KEY}"
@@ -160,11 +179,12 @@ if PYDANTIC_AVAILABLE:
 
     class TunnelConfig(BaseModel):
         """SSH tunnel configuration."""
+
         auto_cleanup: bool = True
         port_range: tuple[int, int] = Field(default=(3307, 3399))
         default_timeout: int = Field(default=300, ge=30, le=86400)
 
-        @field_validator('port_range')
+        @field_validator("port_range")
         @classmethod
         def validate_port_range(cls, v):
             """Ensure port range is valid."""
@@ -179,6 +199,7 @@ if PYDANTIC_AVAILABLE:
 
     class LoggingConfig(BaseModel):
         """Logging configuration."""
+
         level: LogLevel = LogLevel.INFO
         file_enabled: bool = True
         console_enabled: bool = True
@@ -188,6 +209,7 @@ if PYDANTIC_AVAILABLE:
 
     class MemoryConfig(BaseModel):
         """Memory system configuration."""
+
         enabled: bool = True
         index_on_startup: bool = False
         embedding_provider: str = "openai"
@@ -205,6 +227,7 @@ if PYDANTIC_AVAILABLE:
 
     class GatewayConfig(BaseModel):
         """Gateway configuration."""
+
         enabled: bool = False
         port: int = Field(default=8765, ge=1024, le=65535)
         host: str = "127.0.0.1"
@@ -213,24 +236,28 @@ if PYDANTIC_AVAILABLE:
 
     class DeckConfig(BaseModel):
         """Deck Mini App configuration (tightly coupled to Telegram bot)."""
+
         enabled: bool = True
         port: int = Field(default=3080, ge=1024, le=65535)
         bind: str = "127.0.0.1"
         static_dir: Optional[str] = Field(
             default=None,
-            description="Override path to Deck SPA build (auto-detected if None)"
+            description="Override path to Deck SPA build (auto-detected if None)",
         )
         auth_max_age: int = Field(
-            default=3600, ge=60, le=86400,
-            description="Max age for Telegram initData auth_date (seconds)"
+            default=3600,
+            ge=60,
+            le=86400,
+            description="Max age for Telegram initData auth_date (seconds)",
         )
         dev_mode: bool = Field(
             default=False,
-            description="Allow X-Telegram-User fallback header (DISABLE in production)"
+            description="Allow X-Telegram-User fallback header (DISABLE in production)",
         )
 
     class TelegramConfig(BaseModel):
         """Telegram bot configuration."""
+
         model_config = ConfigDict(extra="allow")
 
         bot_token: Optional[str] = None
@@ -243,24 +270,25 @@ if PYDANTIC_AVAILABLE:
 
     class ToolsConfig(BaseModel):
         """Tool Router & Registry configuration."""
+
         enabled: bool = True
         max_calls_per_turn: int = Field(default=10, ge=1, le=50)
         blocked_tools: List[str] = Field(
             default_factory=list,
-            description="Tool names to block entirely (e.g. ['code_sandbox'])"
+            description="Tool names to block entirely (e.g. ['code_sandbox'])",
         )
         require_confirmation: List[str] = Field(
             default_factory=list,
-            description="Tool names requiring human confirmation before execution"
+            description="Tool names requiring human confirmation before execution",
         )
         enabled_domains: List[str] = Field(
             default_factory=lambda: ["web", "image", "code", "system", "data"],
-            description="Enabled tool domains"
+            description="Enabled tool domains",
         )
         safety_mode: str = Field(
             default="standard",
             pattern=r"^(permissive|standard|strict)$",
-            description="Safety policy: permissive|standard|strict"
+            description="Safety policy: permissive|standard|strict",
         )
 
         model_config = ConfigDict(extra="allow")
@@ -272,22 +300,21 @@ if PYDANTIC_AVAILABLE:
     class GlobalConfig(BaseModel):
         """
         Global NAVIG configuration schema.
-        
+
         Located at: ~/.navig/config.yaml
         """
+
         # Config Version
         version: str = "1.0"
 
         # API Keys (should use env vars)
         openrouter_api_key: Optional[str] = Field(
-            default=None,
-            description="OpenRouter API key (use ${OPENROUTER_API_KEY})"
+            default=None, description="OpenRouter API key (use ${OPENROUTER_API_KEY})"
         )
 
         # Default server
         default_server: Optional[str] = Field(
-            default=None,
-            description="Default server to use when none specified"
+            default=None, description="Default server to use when none specified"
         )
 
         # Logging
@@ -325,7 +352,7 @@ if PYDANTIC_AVAILABLE:
         debug_mode: bool = False
         allow_insecure: bool = False
 
-        @model_validator(mode='after')
+        @model_validator(mode="after")
         def handle_legacy_fields(self):
             """Migrate legacy field names."""
             # Migrate ai_model_preference to ai.model_preference
@@ -333,24 +360,24 @@ if PYDANTIC_AVAILABLE:
                 self.ai.model_preference = self.ai_model_preference
             return self
 
-        @field_validator('openrouter_api_key')
+        @field_validator("openrouter_api_key")
         @classmethod
         def check_openrouter_key(cls, v):
             """Validate OpenRouter API key format."""
-            if v and not v.startswith('${'):
-                if not v.startswith('sk-or-'):
+            if v and not v.startswith("${"):
+                if not v.startswith("sk-or-"):
                     import warnings
-                    warnings.warn(
-                        "OpenRouter API keys typically start with 'sk-or-'"
-                    )
+
+                    warnings.warn("OpenRouter API keys typically start with 'sk-or-'")
             return v
 
     class HostConfig(BaseModel):
         """
         Host/Server configuration schema.
-        
+
         Located at: ~/.navig/hosts/<name>.yaml
         """
+
         # Connection
         hostname: str = Field(..., description="SSH hostname or IP")
         port: int = Field(default=22, ge=1, le=65535)
@@ -359,12 +386,10 @@ if PYDANTIC_AVAILABLE:
         # Authentication
         auth_method: AuthMethod = AuthMethod.KEY
         ssh_key: Optional[str] = Field(
-            default=None,
-            description="Path to SSH private key"
+            default=None, description="Path to SSH private key"
         )
         password: Optional[str] = Field(
-            default=None,
-            description="SSH password (use ${ENV_VAR} or key auth)"
+            default=None, description="SSH password (use ${ENV_VAR} or key auth)"
         )
 
         # Display
@@ -383,48 +408,52 @@ if PYDANTIC_AVAILABLE:
         # OS/Platform
         os_type: str = "linux"
 
-        @field_validator('ssh_key')
+        @field_validator("ssh_key")
         @classmethod
         def validate_ssh_key(cls, v):
             """Validate SSH key path exists."""
-            if v and not v.startswith('${'):
+            if v and not v.startswith("${"):
                 expanded = Path(v).expanduser()
                 if not expanded.exists():
                     import logging
-                    logging.getLogger('navig.config').debug(f"SSH key not found: {expanded}")
+
+                    logging.getLogger("navig.config").debug(
+                        f"SSH key not found: {expanded}"
+                    )
             return v
 
-        @field_validator('password')
+        @field_validator("password")
         @classmethod
         def warn_hardcoded_password(cls, v):
             """Warn about hardcoded passwords."""
-            if v and not v.startswith('${'):
+            if v and not v.startswith("${"):
                 import warnings
+
                 warnings.warn(
                     "Hardcoded password detected. "
                     "Consider using SSH keys or ${SSH_PASSWORD} syntax."
                 )
             return v
 
-        @model_validator(mode='after')
+        @model_validator(mode="after")
         def validate_auth(self):
             """Ensure at least one auth method is configured."""
             if self.auth_method == AuthMethod.KEY and not self.ssh_key:
                 import warnings
+
                 warnings.warn(
                     "Key auth selected but no ssh_key specified. "
                     "Will try default locations (~/.ssh/id_rsa, etc.)"
                 )
             if self.auth_method == AuthMethod.PASSWORD and not self.password:
-                raise ValueError(
-                    "Password auth selected but no password specified"
-                )
+                raise ValueError("Password auth selected but no password specified")
             return self
 
 
 # =============================================================================
 # Validation Functions
 # =============================================================================
+
 
 class ConfigValidationError(Exception):
     """Configuration validation error with detailed context."""
@@ -440,31 +469,29 @@ class ConfigValidationError(Exception):
             msg = error.get("msg", "Unknown error")
             messages.append(f"  - {loc}: {msg}")
 
-        super().__init__(
-            f"Invalid {config_type}:\n" + "\n".join(messages)
-        )
+        super().__init__(f"Invalid {config_type}:\n" + "\n".join(messages))
 
 
 def validate_global_config(
-    raw: Dict[str, Any],
-    strict: bool = False
+    raw: Dict[str, Any], strict: bool = False
 ) -> Optional[GlobalConfig]:
     """
     Validate global configuration.
-    
+
     Args:
         raw: Raw configuration dictionary
         strict: If True, raise on validation errors. If False, return None.
-        
+
     Returns:
         Validated GlobalConfig or None if validation fails and not strict
-        
+
     Raises:
         ConfigValidationError: If strict=True and validation fails
     """
     if not PYDANTIC_AVAILABLE:
         # Pydantic not installed - return raw dict as-is
         import warnings
+
         warnings.warn(
             "Pydantic not installed. Config validation disabled. "
             "Install with: pip install pydantic"
@@ -480,21 +507,19 @@ def validate_global_config(
 
 
 def validate_host_config(
-    raw: Dict[str, Any],
-    host_name: str = "host",
-    strict: bool = False
+    raw: Dict[str, Any], host_name: str = "host", strict: bool = False
 ) -> Optional[HostConfig]:
     """
     Validate host configuration.
-    
+
     Args:
         raw: Raw configuration dictionary
         host_name: Name of the host (for error messages)
         strict: If True, raise on validation errors.
-        
+
     Returns:
         Validated HostConfig or None if validation fails
-        
+
     Raises:
         ConfigValidationError: If strict=True and validation fails
     """
@@ -512,12 +537,12 @@ def validate_host_config(
 def get_config_schema(config_type: str = "global") -> Optional[Dict[str, Any]]:
     """
     Get JSON schema for configuration.
-    
+
     Useful for documentation and IDE autocompletion.
-    
+
     Args:
         config_type: "global" or "host"
-        
+
     Returns:
         JSON Schema dict or None if Pydantic not available
     """
@@ -533,18 +558,17 @@ def get_config_schema(config_type: str = "global") -> Optional[Dict[str, Any]]:
 
 
 def validate_config_dict(
-    config: Dict[str, Any],
-    show_warnings: bool = True
+    config: Dict[str, Any], show_warnings: bool = True
 ) -> tuple[bool, List[str]]:
     """
     Quick validation check that returns issues as strings.
-    
+
     Useful for CLI feedback without raising exceptions.
-    
+
     Args:
         config: Configuration dictionary to validate
         show_warnings: Include warnings in output
-        
+
     Returns:
         Tuple of (is_valid, list of issue strings)
     """

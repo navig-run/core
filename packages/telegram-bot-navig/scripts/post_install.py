@@ -19,6 +19,7 @@ def main() -> int:
     # Verify python-telegram-bot is available (installed from plugin.json pip dep)
     try:
         import telegram  # noqa: F401
+
         print(f"  ✅ python-telegram-bot found (version: {telegram.__version__})")
     except ImportError:
         print(

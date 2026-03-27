@@ -8,7 +8,7 @@ TileWindows() {
     ; Get visible windows
     windows := WinGetList("", , "Program Manager")
     visibleWindows := []
-    
+
     for hwnd in windows {
         if WinExist("ahk_id " hwnd) {
             style := WinGetStyle("ahk_id " hwnd)
@@ -21,30 +21,30 @@ TileWindows() {
             }
         }
     }
-    
+
     if visibleWindows.Length = 0 {
         return
     }
-    
+
     ; Get screen dimensions of primary monitor
     MonitorGetWorkArea(1, &left, &top, &right, &bottom)
     w := right - left
     h := bottom - top
-    
+
     ; Calculate grid
     cols := Ceil(Sqrt(visibleWindows.Length))
     rows := Ceil(visibleWindows.Length / cols)
-    
+
     cellW := w // cols
     cellH := h // rows
-    
+
     for i, hwnd in visibleWindows {
         col := Mod(i - 1, cols)
         row := (i - 1) // cols
-        
+
         posX := left + (col * cellW)
         posY := top + (row * cellH)
-        
+
         try {
             WinMove(posX, posY, cellW, cellH, "ahk_id " hwnd)
         }

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fix docker-compose.yml: restore from backup and add Conduit service."""
-import os
 import glob
+import os
 import subprocess
 
 COMPOSE_FILE = "/opt/navig/docker-compose.yml"
@@ -73,13 +73,26 @@ result = "\n".join(new_lines).rstrip() + "\n" + conduit_block
 with open("/tmp/docker-compose-fixed.yml", "w") as f:
     f.write(result)
 
-subprocess.run(["sudo", "cp", "/tmp/docker-compose-fixed.yml", COMPOSE_FILE], check=True)
+subprocess.run(
+    ["sudo", "cp", "/tmp/docker-compose-fixed.yml", COMPOSE_FILE], check=True
+)
 print("Compose file updated with Conduit")
 
 # Step 6: Validate
 r = subprocess.run(
-    ["sudo", "docker", "compose", "-f", COMPOSE_FILE, "--env-file", "/opt/navig/.env", "config", "--quiet"],
-    capture_output=True, text=True
+    [
+        "sudo",
+        "docker",
+        "compose",
+        "-f",
+        COMPOSE_FILE,
+        "--env-file",
+        "/opt/navig/.env",
+        "config",
+        "--quiet",
+    ],
+    capture_output=True,
+    text=True,
 )
 if r.returncode == 0:
     print("COMPOSE_VALID")

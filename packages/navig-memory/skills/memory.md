@@ -10,7 +10,7 @@ navig-commands:
   - name: "recall"
     syntax: "navig memory recall <query>"
     description: "Search the knowledge graph for related facts, decisions, or files."
-  
+
   - name: "memorize"
     syntax: "navig memory remember <content> --type <type>"
     description: "Store a new memory into the vault."
@@ -43,5 +43,3 @@ A superior, graph-based memory system that integrates tightly with the NAVIG wor
 - **Graph-Based**: Uses vector embeddings AND graph correlations, not just file search.
 - **Zero-Config**: Uses the `.navig/memory` folder automatically.
 - **Auto-Tagging**: analyzing the content to automatically apply `tags` and `entities`.
-
-

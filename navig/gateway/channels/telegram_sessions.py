@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SessionMessage:
     """A message in session history."""
+
     role: str  # 'user' or 'assistant'
     content: str
     timestamp: str
@@ -31,11 +32,12 @@ class SessionMessage:
 class TelegramSession:
     """
     Session state for a Telegram user or group.
-    
+
     Session key format:
     - DM: telegram:user:<user_id>
     - Group: telegram:group:<group_id>
     """
+
     session_key: str
     user_id: int
     chat_id: int
@@ -56,16 +58,18 @@ class TelegramSession:
         role: str,
         content: str,
         message_id: Optional[int] = None,
-        reply_to: Optional[int] = None
+        reply_to: Optional[int] = None,
     ):
         """Add a message to session history."""
-        self.messages.append(SessionMessage(
-            role=role,
-            content=content,
-            timestamp=datetime.now().isoformat(),
-            message_id=message_id,
-            reply_to=reply_to
-        ))
+        self.messages.append(
+            SessionMessage(
+                role=role,
+                content=content,
+                timestamp=datetime.now().isoformat(),
+                message_id=message_id,
+                reply_to=reply_to,
+            )
+        )
         self.message_count += 1
         self.last_active = datetime.now().isoformat()
 
@@ -104,11 +108,9 @@ class TelegramSession:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'TelegramSession':
+    def from_dict(cls, data: Dict[str, Any]) -> "TelegramSession":
         """Create session from dictionary."""
-        messages = [
-            SessionMessage(**m) for m in data.get("messages", [])
-        ]
+        messages = [SessionMessage(**m) for m in data.get("messages", [])]
         return cls(
             session_key=data["session_key"],
             user_id=data["user_id"],
@@ -130,7 +132,7 @@ class TelegramSession:
 class SessionManager:
     """
     Manages Telegram sessions with persistence.
-    
+
     Features:
     - Per-user session isolation
     - Per-group session isolation
@@ -142,7 +144,7 @@ class SessionManager:
         self,
         storage_dir: Optional[Path] = None,
         max_messages: int = 100,
-        session_timeout_days: int = 7
+        session_timeout_days: int = 7,
     ):
         self.storage_dir = storage_dir or (Path.home() / ".navig" / "telegram_sessions")
         self.storage_dir.mkdir(parents=True, exist_ok=True)
@@ -170,7 +172,7 @@ class SessionManager:
         """Load all sessions from disk."""
         for session_file in self.storage_dir.glob("*.json"):
             try:
-                with open(session_file, 'r', encoding='utf-8') as f:
+                with open(session_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 session = TelegramSession.from_dict(data)
                 self._sessions[session.session_key] = session
@@ -181,17 +183,13 @@ class SessionManager:
         """Save session to disk."""
         session_file = self._get_session_file(session.session_key)
         try:
-            with open(session_file, 'w', encoding='utf-8') as f:
+            with open(session_file, "w", encoding="utf-8") as f:
                 json.dump(session.to_dict(), f, indent=2)
         except Exception as e:
             logger.error(f"Failed to save session: {e}")
 
     def get_or_create_session(
-        self,
-        chat_id: int,
-        user_id: int,
-        is_group: bool = False,
-        username: str = ""
+        self, chat_id: int, user_id: int, is_group: bool = False, username: str = ""
     ) -> TelegramSession:
         """
         Get existing session or create new one.
@@ -204,7 +202,7 @@ class SessionManager:
                 user_id=user_id,
                 chat_id=chat_id,
                 is_group=is_group,
-                username=username
+                username=username,
             )
 
         return self._sessions[session_key]
@@ -217,7 +215,7 @@ class SessionManager:
         message_id: Optional[int] = None,
         reply_to: Optional[int] = None,
         is_group: bool = False,
-        username: str = ""
+        username: str = "",
     ) -> TelegramSession:
         """Add a user message to session."""
         session = self.get_or_create_session(chat_id, user_id, is_group, username)
@@ -225,7 +223,7 @@ class SessionManager:
 
         # Trim old messages
         if len(session.messages) > self.max_messages:
-            session.messages = session.messages[-self.max_messages:]
+            session.messages = session.messages[-self.max_messages :]
 
         self._save_session(session)
         return session
@@ -236,7 +234,7 @@ class SessionManager:
         user_id: int,
         text: str,
         message_id: Optional[int] = None,
-        is_group: bool = False
+        is_group: bool = False,
     ) -> TelegramSession:
         """Add an assistant response to session."""
         session = self.get_or_create_session(chat_id, user_id, is_group)
@@ -245,21 +243,13 @@ class SessionManager:
         return session
 
     def get_session(
-        self,
-        chat_id: int,
-        user_id: int,
-        is_group: bool = False
+        self, chat_id: int, user_id: int, is_group: bool = False
     ) -> Optional[TelegramSession]:
         """Get session if it exists."""
         session_key = self._get_session_key(chat_id, user_id, is_group)
         return self._sessions.get(session_key)
 
-    def clear_session(
-        self,
-        chat_id: int,
-        user_id: int,
-        is_group: bool = False
-    ):
+    def clear_session(self, chat_id: int, user_id: int, is_group: bool = False):
         """Clear a session's message history."""
         session_key = self._get_session_key(chat_id, user_id, is_group)
 
@@ -287,7 +277,7 @@ class SessionManager:
     def prune_inactive(self) -> int:
         """
         Remove sessions inactive for longer than timeout.
-        
+
         Returns number of sessions removed.
         """
         cutoff = datetime.now() - timedelta(days=self.session_timeout_days)
@@ -309,7 +299,7 @@ class SessionManager:
 class MentionGate:
     """
     Handles mention-based activation in groups.
-    
+
     Modes:
     - "mention": Only respond when @mentioned or replied to
     - "always": Respond to all messages
@@ -320,7 +310,7 @@ class MentionGate:
         self,
         bot_username: str,
         mode: str = "mention",
-        admin_users: Optional[List[int]] = None
+        admin_users: Optional[List[int]] = None,
     ):
         self.bot_username = bot_username.lower().lstrip("@")
         self.mode = mode
@@ -333,11 +323,11 @@ class MentionGate:
         is_group: bool,
         is_reply_to_bot: bool = False,
         session: Optional[TelegramSession] = None,
-        reply_to_message_id: Optional[int] = None
+        reply_to_message_id: Optional[int] = None,
     ) -> bool:
         """
         Determine if the bot should respond to this message.
-        
+
         Args:
             text: Message text
             user_id: Sender's user ID
@@ -345,7 +335,7 @@ class MentionGate:
             is_reply_to_bot: Whether this is a reply to a bot message
             session: Optional session for reply chain checking
             reply_to_message_id: ID of message being replied to
-            
+
         Returns:
             True if bot should respond
         """
@@ -380,6 +370,7 @@ class MentionGate:
     def strip_mention(self, text: str) -> str:
         """Remove bot mention from text."""
         import re
+
         pattern = rf"@{re.escape(self.bot_username)}\s*"
         return re.sub(pattern, "", text, flags=re.IGNORECASE).strip()
 

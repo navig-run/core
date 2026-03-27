@@ -26,7 +26,7 @@ type Bookmark struct {
 // It explicitly avoids private files and focuses on OS identity and standard browser bookmarks.
 func ExtractNodeIntelligence() NodeIntelligence {
 	host, _ := os.Hostname()
-	
+
 	intel := NodeIntelligence{
 		OS:       runtime.GOOS,
 		Arch:     runtime.GOARCH,
@@ -42,15 +42,15 @@ func ExtractNodeIntelligence() NodeIntelligence {
 
 func extractChromeBookmarks() []Bookmark {
 	var bmarks []Bookmark
-	
+
 	// Example Windows path for Chrome bookmarks
 	userProfile := os.Getenv("USERPROFILE")
 	if userProfile == "" {
 		return bmarks
 	}
-	
+
 	bookmarkPath := filepath.Join(userProfile, "AppData", "Local", "Google", "Chrome", "User Data", "Default", "Bookmarks")
-	
+
 	data, err := os.ReadFile(bookmarkPath)
 	if err != nil {
 		return bmarks

@@ -22,6 +22,7 @@ CURRENT_VERSION = "1.0"
 @dataclass
 class Migration:
     """Definition of a configuration migration."""
+
     from_version: str
     to_version: str
     description: str
@@ -37,12 +38,14 @@ class MigrationManager:
 
     def _register_core_migrations(self):
         """Register built-in migrations."""
-        self.register(Migration(
-            from_version="0.9",
-            to_version="1.0",
-            description="Migrate legacy AI fields",
-            apply=self._migrate_0_9_to_1_0
-        ))
+        self.register(
+            Migration(
+                from_version="0.9",
+                to_version="1.0",
+                description="Migrate legacy AI fields",
+                apply=self._migrate_0_9_to_1_0,
+            )
+        )
 
     def register(self, migration: Migration):
         """Register a new migration."""
@@ -77,7 +80,7 @@ class MigrationManager:
     def apply_migrations(self, config: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
         """
         Apply all pending migrations to the configuration.
-        
+
         Returns:
             Tuple of (migrated_config, was_modified)
         """
@@ -100,13 +103,16 @@ class MigrationManager:
         modified = False
         migrated_config = config.copy()
 
-
         # Log to stderr to allow clean stdout for JSON output
-        stderr_console.print(f"[blue]ℹ[/blue] Applying {len(pending)} configuration migrations...")
+        stderr_console.print(
+            f"[blue]ℹ[/blue] Applying {len(pending)} configuration migrations..."
+        )
 
         for migration in pending:
             try:
-                stderr_console.print(f"[dim]  - [{migration.from_version} -> {migration.to_version}] {migration.description}[/dim]")
+                stderr_console.print(
+                    f"[dim]  - [{migration.from_version} -> {migration.to_version}] {migration.description}[/dim]"
+                )
                 migrated_config = migration.apply(migrated_config)
                 migrated_config["version"] = migration.to_version
                 modified = True
@@ -125,7 +131,7 @@ class MigrationManager:
     def _migrate_0_9_to_1_0(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Migrate from v0.9 (Legacy) to v1.0.
-        
+
         Changes:
         - Moves 'ai_model_preference' -> 'ai.model_preference'
         """

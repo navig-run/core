@@ -27,6 +27,7 @@ _DEFAULT_MODE = "builder"
 # Data structures
 # ---------------------------------------------------------------------------
 
+
 class ModeProfile:
     """Parsed representation of one mode entry from builtin.yaml."""
 
@@ -64,8 +65,15 @@ def _load_registry() -> Dict[str, ModeProfile]:
     except ImportError:
         # Fallback: return a minimal NODE-only registry if PyYAML not available
         _registry = {
-            "node": ModeProfile("node", {"label": "NODE", "icon": "⬡",
-                                         "description": "Default", "tool_tier": "safe"}),
+            "node": ModeProfile(
+                "node",
+                {
+                    "label": "NODE",
+                    "icon": "⬡",
+                    "description": "Default",
+                    "tool_tier": "safe",
+                },
+            ),
         }
         return _registry
 
@@ -73,8 +81,7 @@ def _load_registry() -> Dict[str, ModeProfile]:
         raw = yaml.safe_load(f)
 
     _registry = {
-        name: ModeProfile(name, data)
-        for name, data in raw.get("modes", {}).items()
+        name: ModeProfile(name, data) for name, data in raw.get("modes", {}).items()
     }
     return _registry
 
@@ -90,6 +97,7 @@ def get_mode(name: str) -> Optional[ModeProfile]:
 # ---------------------------------------------------------------------------
 # Config helpers
 # ---------------------------------------------------------------------------
+
 
 def _navig_home() -> Path:
     return Path.home() / ".navig"
@@ -110,6 +118,7 @@ def get_active_mode_name() -> str:
         return _DEFAULT_MODE
     try:
         import yaml  # type: ignore[import-untyped]
+
         with open(cfg, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
         return data.get("active_mode", _DEFAULT_MODE)
@@ -159,6 +168,7 @@ def _write_mode_key_fallback(cfg: Path, name: str) -> None:
 # PIN management
 # ---------------------------------------------------------------------------
 
+
 def _hash_pin(pin: str) -> str:
     return hashlib.sha256(pin.strip().encode()).hexdigest()
 
@@ -193,6 +203,7 @@ def prompt_pin(purpose: str = "switching to a privileged mode") -> bool:
         return True  # First-time: allow but nudge
 
     import getpass
+
     print(f"\n🔐  PIN required for {purpose}.")
     for attempt in range(3):
         try:

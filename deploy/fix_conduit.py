@@ -21,8 +21,12 @@ log = "warn,rocket::launch=info"
 subprocess.run(["sudo", "mkdir", "-p", "/opt/navig/config"], check=True)
 with open("/tmp/conduit.toml", "w") as f:
     f.write(conduit_config)
-subprocess.run(["sudo", "cp", "/tmp/conduit.toml", "/opt/navig/config/conduit.toml"], check=True)
-subprocess.run(["sudo", "chown", "navig:navig", "/opt/navig/config/conduit.toml"], check=True)
+subprocess.run(
+    ["sudo", "cp", "/tmp/conduit.toml", "/opt/navig/config/conduit.toml"], check=True
+)
+subprocess.run(
+    ["sudo", "chown", "navig:navig", "/opt/navig/config/conduit.toml"], check=True
+)
 print("Conduit config written to /opt/navig/config/conduit.toml")
 
 # Step 2: Update docker-compose.yml to mount config and add CONDUIT_CONFIG env
@@ -92,14 +96,22 @@ if old_conduit in content:
     content = content.replace(old_conduit, new_conduit)
     with open("/tmp/docker-compose-fixed2.yml", "w") as f:
         f.write(content)
-    subprocess.run(["sudo", "cp", "/tmp/docker-compose-fixed2.yml", "/opt/navig/docker-compose.yml"], check=True)
+    subprocess.run(
+        [
+            "sudo",
+            "cp",
+            "/tmp/docker-compose-fixed2.yml",
+            "/opt/navig/docker-compose.yml",
+        ],
+        check=True,
+    )
     print("Docker-compose updated with CONDUIT_CONFIG mount")
 else:
     print("WARNING: Could not find conduit block to replace, trying manual fix...")
     # Fallback: just replace the environment section
     content = content.replace(
         'CONDUIT_SERVER_NAME: "navig.local"',
-        'CONDUIT_CONFIG: "/etc/conduit/conduit.toml"'
+        'CONDUIT_CONFIG: "/etc/conduit/conduit.toml"',
     )
     # Remove redundant env vars
     for env_line in [
@@ -117,17 +129,36 @@ else:
     # Add config mount
     content = content.replace(
         "      - conduit_data:/var/lib/matrix-conduit",
-        "      - conduit_data:/var/lib/matrix-conduit\n      - ./config/conduit.toml:/etc/conduit/conduit.toml:ro"
+        "      - conduit_data:/var/lib/matrix-conduit\n      - ./config/conduit.toml:/etc/conduit/conduit.toml:ro",
     )
     with open("/tmp/docker-compose-fixed2.yml", "w") as f:
         f.write(content)
-    subprocess.run(["sudo", "cp", "/tmp/docker-compose-fixed2.yml", "/opt/navig/docker-compose.yml"], check=True)
+    subprocess.run(
+        [
+            "sudo",
+            "cp",
+            "/tmp/docker-compose-fixed2.yml",
+            "/opt/navig/docker-compose.yml",
+        ],
+        check=True,
+    )
     print("Docker-compose updated (fallback method)")
 
 # Validate
 r = subprocess.run(
-    ["sudo", "docker", "compose", "-f", "/opt/navig/docker-compose.yml", "--env-file", "/opt/navig/.env", "config", "--quiet"],
-    capture_output=True, text=True
+    [
+        "sudo",
+        "docker",
+        "compose",
+        "-f",
+        "/opt/navig/docker-compose.yml",
+        "--env-file",
+        "/opt/navig/.env",
+        "config",
+        "--quiet",
+    ],
+    capture_output=True,
+    text=True,
 )
 if r.returncode == 0:
     print("COMPOSE_VALID")

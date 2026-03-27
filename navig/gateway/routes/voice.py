@@ -2,6 +2,7 @@
 
 Routes: /api/voice/transcribe, /api/voice/synthesize, /api/voice/poll_wake, /api/command
 """
+
 from __future__ import annotations
 
 import base64
@@ -24,7 +25,11 @@ if TYPE_CHECKING:
     from navig.gateway.server import NavigGateway  # noqa: F401
 
 from navig.debug_logger import get_debug_logger
-from navig.gateway.routes.common import json_error_response, json_ok, require_bearer_auth
+from navig.gateway.routes.common import (
+    json_error_response,
+    json_ok,
+    require_bearer_auth,
+)
 from navig.voice.stt import get_stt
 from navig.voice.tts import get_tts
 from navig.voice.wake_word import WakeWordDetection
@@ -34,13 +39,13 @@ logger = get_debug_logger()
 # Global queue for wake word events detected by the backend engine (polled by rust bridge)
 PENDING_WAKES: deque[WakeWordDetection] = deque(maxlen=10)
 
+
 def register(app, gateway):
     app.router.add_post("/api/voice/transcribe", _transcribe(gateway))
     app.router.add_post("/api/voice/synthesize", _synthesize(gateway))
     app.router.add_post("/api/command", _command(gateway))
     app.router.add_get("/api/voice/poll_wake", _poll_wake(gateway))
     app.router.add_get("/api/voice/events", _events(gateway))
-
 
 
 def _transcribe(gw):
@@ -55,11 +60,11 @@ def _transcribe(gw):
             part = await reader.next()
             if part is None:
                 break
-            if part.name == 'audio':
+            if part.name == "audio":
                 audio_bytes = await part.read()
-            elif part.name == 'is_voice':
+            elif part.name == "is_voice":
                 val = await part.read()
-                is_voice = (val.decode('utf-8').strip().lower() == 'true')
+                is_voice = val.decode("utf-8").strip().lower() == "true"
 
         if not audio_bytes:
             return json_error_response("Missing audio part", status=400)
@@ -80,15 +85,17 @@ def _transcribe(gw):
                     details={"error": result.error},
                     status=500,
                 )
-            return json_ok({
-                "text": result.text or "",
-                "confidence": result.confidence or 1.0,
-                "provider": (
-                    result.provider.value
-                    if result.provider
-                    else stt.config.provider.value
-                ),
-            })
+            return json_ok(
+                {
+                    "text": result.text or "",
+                    "confidence": result.confidence or 1.0,
+                    "provider": (
+                        result.provider.value
+                        if result.provider
+                        else stt.config.provider.value
+                    ),
+                }
+            )
         except Exception as e:
             logger.exception("Transcribe failed")
             return json_error_response(
@@ -124,17 +131,21 @@ def _synthesize(gw):
             with open(result.audio_path, "rb") as f:
                 b64 = base64.b64encode(f.read()).decode("utf-8")
 
-            return json_ok({
-                "audio_b64": b64,
-                "provider": (
-                    result.provider.value
-                    if result.provider
-                    else tts.config.provider.value
-                ),
-            })
+            return json_ok(
+                {
+                    "audio_b64": b64,
+                    "provider": (
+                        result.provider.value
+                        if result.provider
+                        else tts.config.provider.value
+                    ),
+                }
+            )
         except Exception as e:
             logger.exception("Synthesize failed")
-            return json_error_response("Synthesis failed", details={"error": str(e)}, status=500)
+            return json_error_response(
+                "Synthesis failed", details={"error": str(e)}, status=500
+            )
 
     return h
 
@@ -152,19 +163,23 @@ def _command(gw):
                 channel="desktop_voice",
                 user_id="local",
                 message=text,
-                metadata={"source": "voice_command"}
+                metadata={"source": "voice_command"},
             )
             model = "unknown"
             if isinstance(resp, dict) and "model" in resp:
                 model = resp["model"]
-            return json_ok({
-                "response": str(resp),
-                "model": model,
-                "latency_ms": (time.monotonic() - start_ts) * 1000
-            })
+            return json_ok(
+                {
+                    "response": str(resp),
+                    "model": model,
+                    "latency_ms": (time.monotonic() - start_ts) * 1000,
+                }
+            )
         except Exception as e:
             logger.exception("Command failed")
-            return json_error_response("Command failed", details={"error": str(e)}, status=500)
+            return json_error_response(
+                "Command failed", details={"error": str(e)}, status=500
+            )
 
     return h
 
@@ -174,11 +189,13 @@ def _poll_wake(gw):
         # Pop the oldest wake if any
         if PENDING_WAKES:
             wake = PENDING_WAKES.popleft()
-            return json_ok({
-                "keyword": wake.keyword,
-                "score": wake.score,
-                "timestamp": wake.timestamp
-            })
+            return json_ok(
+                {
+                    "keyword": wake.keyword,
+                    "score": wake.score,
+                    "timestamp": wake.timestamp,
+                }
+            )
         else:
             # 404 means no wake event pending this poll
             return web.json_response({"status": "no_event"}, status=404)
@@ -189,10 +206,12 @@ def _poll_wake(gw):
 class _SSEClient:
     def __init__(self):
         import asyncio
+
         self.queue = asyncio.Queue()
 
     async def send(self, data: str) -> None:
         await self.queue.put(data)
+
 
 def _events(gw):
     async def h(r: web.Request):
@@ -200,27 +219,29 @@ def _events(gw):
         import json
 
         from aiohttp import web
+
         response = web.StreamResponse(
             status=200,
-            reason='OK',
+            reason="OK",
             headers={
-                'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'Access-Control-Allow-Origin': '*',
-            }
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+            },
         )
         await response.prepare(r)
 
         client = _SSEClient()
-        event_bridge = getattr(gw, 'event_bridge', None)
+        event_bridge = getattr(gw, "event_bridge", None)
 
         if event_bridge:
             from navig.event_bridge import SubscriptionFilter
-            filt = SubscriptionFilter(topics={'voice.session.*'})
+
+            filt = SubscriptionFilter(topics={"voice.session.*"})
             event_bridge.register_client(client, filt)
         else:
-            logger.warning('EventBridge not available on gateway')
+            logger.warning("EventBridge not available on gateway")
 
         try:
             while True:
@@ -228,12 +249,12 @@ def _events(gw):
                     msg = await client.queue.get()
                     try:
                         parsed = json.loads(msg)
-                        if 'params' in parsed and 'data' in parsed['params']:
-                            data_block = parsed['params']['data']
+                        if "params" in parsed and "data" in parsed["params"]:
+                            data_block = parsed["params"]["data"]
                             sse_msg = f"data: {json.dumps(data_block)}\n\n"
-                            await response.write(sse_msg.encode('utf-8'))
+                            await response.write(sse_msg.encode("utf-8"))
                     except Exception as e:
-                        logger.debug('Failed to process SSE message: %s', e)
+                        logger.debug("Failed to process SSE message: %s", e)
                 else:
                     await asyncio.sleep(10)
                     await response.write(b": keepalive\n\n")
@@ -241,10 +262,11 @@ def _events(gw):
         except asyncio.CancelledError:
             pass  # task cancelled; expected during shutdown
         except Exception as e:
-            logger.error('SSE connection error: %s', e)
+            logger.error("SSE connection error: %s", e)
         finally:
             if event_bridge:
                 event_bridge.unregister_client(client)
 
         return response
+
     return h

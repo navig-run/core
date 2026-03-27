@@ -66,14 +66,16 @@ from typing import Dict, Optional
 @dataclass(frozen=True)
 class CommandHelp:
     """Help text for a command or command group."""
-    short_help: str          # One-line summary (shown in parent --help)
-    description: str         # Full description (shown in command --help header)
+
+    short_help: str  # One-line summary (shown in parent --help)
+    description: str  # Full description (shown in command --help header)
     epilog: Optional[str] = None  # Examples/notes (shown at bottom after options)
 
 
 @dataclass(frozen=True)
 class OptionHelp:
     """Help text for a command option/flag."""
+
     text: str  # Description shown next to the option
 
 
@@ -95,7 +97,7 @@ Examples:
   navig host use production        Switch to production host
   navig host test myserver         Test SSH connection
   navig host discover-local        Detect local development environment
-"""
+""",
 )
 
 HOST_LIST = CommandHelp(
@@ -136,7 +138,7 @@ Examples:
   navig tunnel run                 Start tunnel for active host
   navig tunnel show                Show tunnel status
   navig tunnel remove              Stop and remove tunnel
-"""
+""",
 )
 
 TUNNEL_RUN = CommandHelp(
@@ -172,7 +174,7 @@ Examples:
   navig local show                 Show system information
   navig local ports                List open ports
   navig local audit                Security audit of local machine
-"""
+""",
 )
 
 LOCAL_SHOW = CommandHelp(
@@ -218,7 +220,7 @@ Examples:
   navig hosts view                 View hosts file
   navig hosts add 10.0.0.1 myhost  Add hosts entry
   navig hosts edit                 Edit hosts file
-"""
+""",
 )
 
 HOSTS_VIEW = CommandHelp(
@@ -249,7 +251,7 @@ Examples:
   navig app add myapp              Add a new app interactively
   navig app use myapp              Switch to myapp as active
   navig app show myapp             Show app configuration
-"""
+""",
 )
 
 APP_LIST = CommandHelp(
@@ -301,7 +303,7 @@ Examples:
   navig docker ps --all            List all containers
   navig docker logs nginx          View nginx container logs
   navig docker exec nginx "nginx -t"  Execute command in container
-"""
+""",
 )
 
 DOCKER_PS = CommandHelp(
@@ -358,7 +360,7 @@ Examples:
   navig web test                   Test server configuration
   navig web enable mysite          Enable a site
   navig web reload                 Reload server configuration
-"""
+""",
 )
 
 WEB_VHOSTS = CommandHelp(
@@ -415,7 +417,7 @@ Examples:
   navig db query "SELECT 1"        Execute SQL query
   navig db dump mydb               Export database backup
   navig db restore mydb backup.sql Restore from backup
-"""
+""",
 )
 
 DB_LIST = CommandHelp(
@@ -477,7 +479,7 @@ Examples:
   navig file add local.txt /tmp/   Upload file to remote
   navig file get /var/log/syslog   Download file
   navig file edit /etc/nginx/nginx.conf  Edit remote file
-"""
+""",
 )
 
 FILE_LIST = CommandHelp(
@@ -517,7 +519,7 @@ LOG = CommandHelp(
 Examples:
   navig log show /var/log/syslog   View log file
   navig log run /var/log/nginx/access.log  Tail log in real-time
-"""
+""",
 )
 
 LOG_SHOW = CommandHelp(
@@ -538,7 +540,7 @@ Examples:
   navig backup export              Export config to backup file
   navig backup import backup.tar.gz  Import config from backup
   navig backup show                List available backups
-"""
+""",
 )
 
 BACKUP_EXPORT = CommandHelp(
@@ -574,7 +576,7 @@ Examples:
   navig flow run deploy            Execute the deploy flow
   navig flow add myflow            Create a new flow
   navig flow test myflow           Validate flow syntax
-"""
+""",
 )
 
 FLOW_LIST = CommandHelp(
@@ -613,7 +615,7 @@ Examples:
   navig browser screenshot output.png       Capture screenshot
   navig browser status                      Check browser status
   navig browser stop                        Stop browser session
-"""
+""",
 )
 
 BROWSER_OPEN = CommandHelp(
@@ -659,7 +661,7 @@ Examples:
   navig start --foreground         Start with visible logs
   navig start --no-bot             Start gateway only
   navig start --no-gateway         Start bot only (standalone)
-"""
+""",
 )
 
 GATEWAY = CommandHelp(
@@ -672,7 +674,7 @@ Examples:
   navig gateway stop               Stop gateway gracefully
   navig gateway status             Check if gateway is running
   navig gateway session list       List active sessions
-"""
+""",
 )
 
 GATEWAY_START = CommandHelp(
@@ -704,7 +706,7 @@ Examples:
   navig heartbeat trigger          Run immediate health check
   navig heartbeat history          View heartbeat history
   navig heartbeat configure --interval 15  Set 15-minute interval
-"""
+""",
 )
 
 HEARTBEAT_STATUS = CommandHelp(
@@ -737,7 +739,7 @@ Examples:
   navig cron run job_1             Run job immediately
   navig cron enable job_1          Enable a disabled job
   navig cron remove job_1          Remove a job
-"""
+""",
 )
 
 CRON_LIST = CommandHelp(
@@ -793,7 +795,7 @@ Examples:
   navig agent logs --follow        Follow agent log output
   navig agent personality list     List available personalities
   navig agent goal add "Deploy app" Execute autonomous goal
-"""
+""",
 )
 
 AGENT_INSTALL = CommandHelp(
@@ -862,7 +864,7 @@ Examples:
   navig memory stats               Show memory statistics
   navig memory knowledge list      List knowledge entries
   navig memory knowledge add       Add knowledge entry
-"""
+""",
 )
 
 MEMORY_SESSIONS = CommandHelp(
@@ -900,7 +902,7 @@ Examples:
   navig task show task_123         Show task details
   navig task cancel task_123       Cancel a pending task
   navig task stats                 Show queue statistics
-"""
+""",
 )
 
 TASK_LIST = CommandHelp(
@@ -938,7 +940,7 @@ Examples:
   navig approve no req_123         Deny a request
   navig approve policy             Show approval policy
   navig approve policy --edit      Edit approval policy
-"""
+""",
 )
 
 APPROVE_LIST = CommandHelp(
@@ -969,7 +971,7 @@ Examples:
   navig ai ask "How do I restart nginx?"
   navig ai explain "iptables -L"
   navig ai diagnose                Diagnose server issues
-"""
+""",
 )
 
 AI_ASK = CommandHelp(
@@ -1016,7 +1018,7 @@ Examples:
   navig config edit myhost         Edit host configuration
   navig config settings            Show NAVIG settings
   navig config test                Validate all configurations
-"""
+""",
 )
 
 CONFIG_SHOW = CommandHelp(
@@ -1090,7 +1092,7 @@ Flags:
   --stdin, -s  Read command from stdin
   --file, -f   Read command from file
   -i           Open interactive editor
-"""
+""",
 )
 
 INIT = CommandHelp(
@@ -1124,6 +1126,7 @@ OPT_FORCE = OptionHelp(text="force operation without confirmation")
 # =============================================================================
 # HELP TEXT LOOKUP (for HELP_REGISTRY compatibility)
 # =============================================================================
+
 
 def get_group_help(group_name: str) -> Dict[str, str]:
     """Get help text for a command group in HELP_REGISTRY format."""

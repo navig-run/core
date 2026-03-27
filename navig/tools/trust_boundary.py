@@ -24,6 +24,7 @@ Usage
     if is_externally_wrapped(safe):
         inner = unwrap_external(safe)
 """
+
 from __future__ import annotations
 
 import re
@@ -37,9 +38,9 @@ __all__ = [
 ]
 
 # Sentinel tokens — kept distinct from any plausible web content
-_OPEN_TMPL  = "[EXTERNAL CONTENT: {source}]"
-_CLOSE_TAG  = "[/EXTERNAL CONTENT]"
-_OPEN_RE    = re.compile(r"^\[EXTERNAL CONTENT: .+?\]", re.DOTALL)
+_OPEN_TMPL = "[EXTERNAL CONTENT: {source}]"
+_CLOSE_TAG = "[/EXTERNAL CONTENT]"
+_OPEN_RE = re.compile(r"^\[EXTERNAL CONTENT: .+?\]", re.DOTALL)
 
 
 class TrustBoundaryError(ValueError):
@@ -49,6 +50,7 @@ class TrustBoundaryError(ValueError):
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def wrap_external(content: str, source: str = "unknown") -> str:
     """
@@ -108,6 +110,7 @@ def extract_source(content: str) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _sanitise_source(source: str) -> str:
     """

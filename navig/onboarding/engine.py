@@ -7,6 +7,7 @@ Design decisions:
 - Parallel execution is opt-in, strictly guarded by independent=True on BOTH steps.
 - Engine never touches stdout — all output goes to the renderer via StepResult.
 """
+
 from __future__ import annotations
 
 import json
@@ -37,6 +38,7 @@ class StepResult:
 @dataclass
 class StepRecord:
     """Serialisable record — written into onboarding.json."""
+
     id: str
     title: str
     status: Literal["completed", "skipped", "failed"]
@@ -44,7 +46,6 @@ class StepRecord:
     duration_ms: int
     output: dict
     error: Optional[str] = None
-
 
 
 def _verify_always_run() -> bool:
@@ -64,6 +65,7 @@ class OnboardingStep:
     `phase` separates bootstrap (workspace/config/ssh) from configuration
     (ai-provider/vault/host/integrations) — Phase 2 steps are TTY-gated.
     """
+
     id: str
     title: str
     run: Callable[[], StepResult]
@@ -86,6 +88,7 @@ class EngineConfig:
 @dataclass
 class EngineState:
     """Full mutable state. Serialised to the artifact after each step."""
+
     version: int = ARTIFACT_VERSION
     node_id: str = ""
     started_at: str = ""
@@ -146,7 +149,9 @@ class OnboardingEngine:
 
             if already_done:
                 record = StepRecord(
-                    id=step.id, title=step.title, status="skipped",
+                    id=step.id,
+                    title=step.title,
+                    status="skipped",
                     completed_at=_now(),
                     duration_ms=int((time.monotonic() - t0) * 1000),
                     output={},
@@ -156,7 +161,9 @@ class OnboardingEngine:
 
             result = self._execute(step)
             record = StepRecord(
-                id=step.id, title=step.title, status=result.status,
+                id=step.id,
+                title=step.title,
+                status=result.status,
                 completed_at=_now(),
                 duration_ms=result.duration_ms,
                 output=result.output,
@@ -190,19 +197,25 @@ class OnboardingEngine:
 
         if already_done:
             record = StepRecord(
-                id=step.id, title=step.title, status="skipped",
+                id=step.id,
+                title=step.title,
+                status="skipped",
                 completed_at=_now(),
                 duration_ms=int((time.monotonic() - t0) * 1000),
                 output={},
             )
             self._record(record)
-            result = StepResult(status="skipped", output={}, duration_ms=record.duration_ms)
+            result = StepResult(
+                status="skipped", output={}, duration_ms=record.duration_ms
+            )
             return True, result
 
         result = self._execute(step)
         result_duration = result.duration_ms
         record = StepRecord(
-            id=step.id, title=step.title, status=result.status,
+            id=step.id,
+            title=step.title,
+            status=result.status,
             completed_at=_now(),
             duration_ms=result_duration,
             output=result.output,
@@ -236,34 +249,44 @@ class OnboardingEngine:
                     return result
                 except Exception as exc2:  # noqa: BLE001
                     return StepResult(
-                        status="failed", output={},
+                        status="failed",
+                        output={},
                         duration_ms=int((time.monotonic() - t0) * 1000),
                         error=str(exc2),
                     )
             elif step.on_failure == "skip":
                 return StepResult(
-                    status="skipped", output={},
+                    status="skipped",
+                    output={},
                     duration_ms=int((time.monotonic() - t0) * 1000),
                     error=str(exc),
                 )
             else:
                 return StepResult(
-                    status="failed", output={},
+                    status="failed",
+                    output={},
                     duration_ms=int((time.monotonic() - t0) * 1000),
                     error=str(exc),
                 )
 
     def _dry_run(self) -> EngineState:
         for step in self._steps:
-            self._state.steps.append(StepRecord(
-                id=step.id, title=step.title, status="skipped",
-                completed_at="", duration_ms=0,
-                output={"dry_run": "true"},
-            ))
+            self._state.steps.append(
+                StepRecord(
+                    id=step.id,
+                    title=step.title,
+                    status="skipped",
+                    completed_at="",
+                    duration_ms=0,
+                    output={"dry_run": "true"},
+                )
+            )
         return self._state
 
     def _already_completed(self, step_id: str) -> bool:
-        return any(r.id == step_id and r.status == "completed" for r in self._state.steps)
+        return any(
+            r.id == step_id and r.status == "completed" for r in self._state.steps
+        )
 
     def _record(self, record: StepRecord) -> None:
         """Replace any existing record for this step ID, then flush immediately."""

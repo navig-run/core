@@ -34,14 +34,14 @@ class PragmaProfile:
     journal_mode: str = "WAL"
     synchronous: str = "NORMAL"
     temp_store: str = "MEMORY"
-    cache_size_kb: int = 8192       # negative KiB for SQLite PRAGMA
-    mmap_size: int = 0              # bytes; 0 = disabled
+    cache_size_kb: int = 8192  # negative KiB for SQLite PRAGMA
+    mmap_size: int = 0  # bytes; 0 = disabled
     foreign_keys: bool = True
     wal_autocheckpoint: int = 1000  # pages
-    busy_timeout: int = 5000        # ms
-    page_size: int = 4096           # only effective on new databases
+    busy_timeout: int = 5000  # ms
+    page_size: int = 4096  # only effective on new databases
     locking_mode: str = "NORMAL"
-    auto_vacuum: str = "NONE"       # NONE | FULL | INCREMENTAL
+    auto_vacuum: str = "NONE"  # NONE | FULL | INCREMENTAL
 
     def to_pragma_dict(self) -> Dict[str, Any]:
         """Return ``{pragma_name: value}`` ready for ``PRAGMA x = y`` execution."""
@@ -67,16 +67,16 @@ class PragmaProfile:
 FAST = PragmaProfile(
     name="FAST",
     journal_mode="WAL",
-    synchronous="OFF",              # No fsync — OS buffer only
+    synchronous="OFF",  # No fsync — OS buffer only
     temp_store="MEMORY",
-    cache_size_kb=16384,            # 16 MB — generous for hot cache tables
-    mmap_size=67108864,             # 64 MB mmap (Linux/macOS only; auto-disabled on Windows)
+    cache_size_kb=16384,  # 16 MB — generous for hot cache tables
+    mmap_size=67108864,  # 64 MB mmap (Linux/macOS only; auto-disabled on Windows)
     foreign_keys=True,
-    wal_autocheckpoint=2000,        # Less frequent checkpointing
-    busy_timeout=2000,              # Short timeout — ephemeral data
+    wal_autocheckpoint=2000,  # Less frequent checkpointing
+    busy_timeout=2000,  # Short timeout — ephemeral data
     page_size=4096,
     locking_mode="NORMAL",
-    auto_vacuum="NONE",             # No auto-vacuum overhead
+    auto_vacuum="NONE",  # No auto-vacuum overhead
 )
 
 # ── BALANCED ──────────────────────────────────────────────────
@@ -87,13 +87,13 @@ FAST = PragmaProfile(
 BALANCED = PragmaProfile(
     name="BALANCED",
     journal_mode="WAL",
-    synchronous="NORMAL",           # fsync on WAL checkpoint, not every commit
+    synchronous="NORMAL",  # fsync on WAL checkpoint, not every commit
     temp_store="MEMORY",
-    cache_size_kb=32768,            # 32 MB — heavy-read workload
-    mmap_size=268435456,            # 256 MB mmap for large index.db
+    cache_size_kb=32768,  # 32 MB — heavy-read workload
+    mmap_size=268435456,  # 256 MB mmap for large index.db
     foreign_keys=True,
-    wal_autocheckpoint=1000,        # Standard checkpoint interval
-    busy_timeout=5000,              # Moderate patience
+    wal_autocheckpoint=1000,  # Standard checkpoint interval
+    busy_timeout=5000,  # Moderate patience
     page_size=4096,
     locking_mode="NORMAL",
     auto_vacuum="NONE",
@@ -106,16 +106,16 @@ BALANCED = PragmaProfile(
 DURABLE = PragmaProfile(
     name="DURABLE",
     journal_mode="WAL",
-    synchronous="FULL",             # fsync on EVERY commit
+    synchronous="FULL",  # fsync on EVERY commit
     temp_store="MEMORY",
-    cache_size_kb=4096,             # 4 MB — small, rarely read at scale
-    mmap_size=0,                    # No mmap — vault security, audit safety
+    cache_size_kb=4096,  # 4 MB — small, rarely read at scale
+    mmap_size=0,  # No mmap — vault security, audit safety
     foreign_keys=True,
-    wal_autocheckpoint=500,         # Frequent checkpointing — limit WAL size
-    busy_timeout=10000,             # Patient — audit writes must not fail
+    wal_autocheckpoint=500,  # Frequent checkpointing — limit WAL size
+    busy_timeout=10000,  # Patient — audit writes must not fail
     page_size=4096,
     locking_mode="NORMAL",
-    auto_vacuum="INCREMENTAL",      # Reclaim space incrementally (append-heavy)
+    auto_vacuum="INCREMENTAL",  # Reclaim space incrementally (append-heavy)
 )
 
 # ── Database → Profile mapping ────────────────────────────────

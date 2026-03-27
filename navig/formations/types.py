@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 @dataclass
 class AgentSpec:
     """A single agent definition loaded from .agent.json."""
+
     id: str
     name: str
     role: str
@@ -28,7 +29,9 @@ class AgentSpec:
     source_path: Optional[Path] = None
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], source_path: Optional[Path] = None) -> "AgentSpec":
+    def from_dict(
+        cls, data: Dict[str, Any], source_path: Optional[Path] = None
+    ) -> "AgentSpec":
         return cls(
             id=data["id"],
             name=data["name"],
@@ -63,6 +66,7 @@ class AgentSpec:
 @dataclass
 class ApiConnector:
     """Placeholder for external API connectors (Phase 2)."""
+
     name: str
     type: str  # "rest_api", "graphql", etc.
     url_pattern: str
@@ -83,6 +87,7 @@ class ApiConnector:
 @dataclass
 class Formation:
     """A formation manifest loaded from formation.json."""
+
     id: str
     name: str
     version: str
@@ -91,12 +96,16 @@ class Formation:
     default_agent: str
     aliases: List[str] = field(default_factory=list)
     api_connectors: List[ApiConnector] = field(default_factory=list)
-    brief_templates: list = field(default_factory=list)  # List[str] or List[dict] — both formats supported
+    brief_templates: list = field(
+        default_factory=list
+    )  # List[str] or List[dict] — both formats supported
     source_path: Optional[Path] = None
     loaded_agents: Dict[str, AgentSpec] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any], source_path: Optional[Path] = None) -> "Formation":
+    def from_dict(
+        cls, data: Dict[str, Any], source_path: Optional[Path] = None
+    ) -> "Formation":
         connectors = [ApiConnector.from_dict(c) for c in data.get("api_connectors", [])]
         return cls(
             id=data["id"],
@@ -121,8 +130,13 @@ class Formation:
             "default_agent": self.default_agent,
             "aliases": self.aliases,
             "api_connectors": [
-                {"name": c.name, "type": c.type, "url_pattern": c.url_pattern,
-                 "auth_type": c.auth_type, "description": c.description}
+                {
+                    "name": c.name,
+                    "type": c.type,
+                    "url_pattern": c.url_pattern,
+                    "auth_type": c.auth_type,
+                    "description": c.description,
+                }
                 for c in self.api_connectors
             ],
             "brief_templates": self.brief_templates,
@@ -132,6 +146,7 @@ class Formation:
 @dataclass
 class ProfileConfig:
     """Workspace profile configuration from .navig/profile.json."""
+
     version: int
     profile: str
     overrides: Dict[str, Any] = field(default_factory=dict)

@@ -4,6 +4,7 @@ Each function takes immutable inputs (provider_id, model_id, page, cfg)
 and returns a list[list[dict]] suitable for Telegram's inline_keyboard.
 No side effects, no I/O.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -19,6 +20,7 @@ def _chk(active: bool) -> str:
 
 # ── Screen A — Provider List ────────────────────────────────────────
 
+
 def screen_a_keyboard(cfg: AudioConfig) -> list[list[dict[str, Any]]]:
     """Screen A: one button per provider, active one has ✅.
 
@@ -27,10 +29,14 @@ def screen_a_keyboard(cfg: AudioConfig) -> list[list[dict[str, Any]]]:
     rows: list[list[dict[str, Any]]] = []
     for pid, pdata in PROVIDERS.items():
         active = cfg.provider == pid and cfg.active
-        rows.append([{
-            "text": f"{_chk(active)}{pdata['label']}",
-            "callback_data": f"audio:models:{pid}",
-        }])
+        rows.append(
+            [
+                {
+                    "text": f"{_chk(active)}{pdata['label']}",
+                    "callback_data": f"audio:models:{pid}",
+                }
+            ]
+        )
     rows.append([{"text": "✕ Close", "callback_data": "audio:close"}])
     return rows
 
@@ -42,6 +48,7 @@ def screen_a_text(cfg: AudioConfig) -> str:
 
 
 # ── Screen B — Model List ───────────────────────────────────────────
+
 
 def screen_b_keyboard(provider_id: str, cfg: AudioConfig) -> list[list[dict[str, Any]]]:
     """Screen B: models under a provider. Active model has ✅.
@@ -56,10 +63,14 @@ def screen_b_keyboard(provider_id: str, cfg: AudioConfig) -> list[list[dict[str,
     rows: list[list[dict[str, Any]]] = []
     for mid, mdata in models.items():
         active = cfg.provider == provider_id and cfg.model == mid and cfg.active
-        rows.append([{
-            "text": f"{_chk(active)}{mdata['label']}",
-            "callback_data": f"audio:settings:{provider_id}:{mid}",
-        }])
+        rows.append(
+            [
+                {
+                    "text": f"{_chk(active)}{mdata['label']}",
+                    "callback_data": f"audio:settings:{provider_id}:{mid}",
+                }
+            ]
+        )
     rows.append([{"text": "⬅️ Back", "callback_data": "audio:providers"}])
     return rows
 
@@ -70,6 +81,7 @@ def screen_b_text(provider_id: str, cfg: AudioConfig) -> str:
 
 
 # ── Screen C — Model Settings Panel ────────────────────────────────
+
 
 def screen_c_keyboard(
     provider_id: str,
@@ -83,30 +95,53 @@ def screen_c_keyboard(
     pdata = PROVIDERS.get(provider_id, {})
     mdata = pdata.get("models", {}).get(model_id, {})
     has_voices: bool = bool(mdata.get("voices"))
-    is_active: bool = cfg.provider == provider_id and cfg.model == model_id and cfg.active
+    is_active: bool = (
+        cfg.provider == provider_id and cfg.model == model_id and cfg.active
+    )
 
     rows: list[list[dict[str, Any]]] = []
 
     if has_voices:
-        rows.append([{
-            "text": f"🎙 Voice: {cfg.voice}",
-            "callback_data": f"audio:voice_pick:{provider_id}:{model_id}:0",
-        }])
+        rows.append(
+            [
+                {
+                    "text": f"🎙 Voice: {cfg.voice}",
+                    "callback_data": f"audio:voice_pick:{provider_id}:{model_id}:0",
+                }
+            ]
+        )
 
-    rows.append([{
-        "text": f"⚡ Speed: {cfg.speed}x",
-        "callback_data": f"audio:speed:{provider_id}:{model_id}",
-    }])
-    rows.append([{
-        "text": f"🎚 Format: {cfg.format}",
-        "callback_data": f"audio:format:{provider_id}:{model_id}",
-    }])
+    rows.append(
+        [
+            {
+                "text": f"⚡ Speed: {cfg.speed}x",
+                "callback_data": f"audio:speed:{provider_id}:{model_id}",
+            }
+        ]
+    )
+    rows.append(
+        [
+            {
+                "text": f"🎚 Format: {cfg.format}",
+                "callback_data": f"audio:format:{provider_id}:{model_id}",
+            }
+        ]
+    )
 
     auto_lbl = "🤖 Auto: ON ✅" if cfg.auto else "🤖 Auto: OFF"
-    rows.append([{"text": auto_lbl, "callback_data": f"audio:auto:{provider_id}:{model_id}"}])
+    rows.append(
+        [{"text": auto_lbl, "callback_data": f"audio:auto:{provider_id}:{model_id}"}]
+    )
 
     activate_lbl = "☑️ Active" if is_active else "✅ Set as Active"
-    rows.append([{"text": activate_lbl, "callback_data": f"audio:activate:{provider_id}:{model_id}"}])
+    rows.append(
+        [
+            {
+                "text": activate_lbl,
+                "callback_data": f"audio:activate:{provider_id}:{model_id}",
+            }
+        ]
+    )
 
     rows.append([{"text": "⬅️ Back", "callback_data": f"audio:models:{provider_id}"}])
     return rows
@@ -125,6 +160,7 @@ def screen_c_text(provider_id: str, model_id: str, cfg: AudioConfig) -> str:
 
 
 # ── Screen D — Voice Picker ─────────────────────────────────────────
+
 
 def screen_d_keyboard(
     provider_id: str,
@@ -146,21 +182,42 @@ def screen_d_keyboard(
 
     rows: list[list[dict[str, Any]]] = []
     for v in current_voices:
-        rows.append([{
-            "text": f"{_chk(cfg.voice == v)}{v}",
-            "callback_data": f"audio:voice_set:{provider_id}:{model_id}:{v}",
-        }])
+        rows.append(
+            [
+                {
+                    "text": f"{_chk(cfg.voice == v)}{v}",
+                    "callback_data": f"audio:voice_set:{provider_id}:{model_id}:{v}",
+                }
+            ]
+        )
 
     # Pagination row
     nav: list[dict[str, Any]] = []
     if page > 0:
-        nav.append({"text": "◀ Prev", "callback_data": f"audio:voice_pick:{provider_id}:{model_id}:{page - 1}"})
+        nav.append(
+            {
+                "text": "◀ Prev",
+                "callback_data": f"audio:voice_pick:{provider_id}:{model_id}:{page - 1}",
+            }
+        )
     if page < total_pages - 1:
-        nav.append({"text": "Next ▶", "callback_data": f"audio:voice_pick:{provider_id}:{model_id}:{page + 1}"})
+        nav.append(
+            {
+                "text": "Next ▶",
+                "callback_data": f"audio:voice_pick:{provider_id}:{model_id}:{page + 1}",
+            }
+        )
     if nav:
         rows.append(nav)
 
-    rows.append([{"text": "⬅️ Back", "callback_data": f"audio:settings:{provider_id}:{model_id}"}])
+    rows.append(
+        [
+            {
+                "text": "⬅️ Back",
+                "callback_data": f"audio:settings:{provider_id}:{model_id}",
+            }
+        ]
+    )
     return rows
 
 
@@ -175,6 +232,7 @@ def screen_d_text(provider_id: str, model_id: str, page: int, cfg: AudioConfig) 
 
 
 # ── Screen E — Speed Picker ─────────────────────────────────────────
+
 
 def screen_e_keyboard(
     provider_id: str,
@@ -193,7 +251,12 @@ def screen_e_keyboard(
     return [
         row1,
         row2,
-        [{"text": "⬅️ Back", "callback_data": f"audio:settings:{provider_id}:{model_id}"}],
+        [
+            {
+                "text": "⬅️ Back",
+                "callback_data": f"audio:settings:{provider_id}:{model_id}",
+            }
+        ],
     ]
 
 
@@ -202,6 +265,7 @@ def screen_e_text(provider_id: str, model_id: str, cfg: AudioConfig) -> str:
 
 
 # ── Screen F — Format Picker ────────────────────────────────────────
+
 
 def screen_f_keyboard(
     provider_id: str,
@@ -220,7 +284,12 @@ def screen_f_keyboard(
     return [
         row1,
         row2,
-        [{"text": "⬅️ Back", "callback_data": f"audio:settings:{provider_id}:{model_id}"}],
+        [
+            {
+                "text": "⬅️ Back",
+                "callback_data": f"audio:settings:{provider_id}:{model_id}",
+            }
+        ],
     ]
 
 

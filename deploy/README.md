@@ -7,13 +7,15 @@ Stack deployment files for NAVIG infrastructure.
 ### User Install (CLI only)
 
 **Linux / macOS:**
+
 ```bash
 curl -fsSL https://navig.run/install.sh | bash
 ```
 
 **Windows (PowerShell):**
+
 ```powershell
-irm https://navig.run/install.ps1 | iex
+& ([scriptblock]::Create((irm https://navig.run/install.ps1)))
 ```
 
 ### Server Bootstrap (Full Stack)
@@ -25,6 +27,7 @@ curl -fsSL https://navig.run/bootstrap.sh | sudo bash
 ```
 
 Or clone and run:
+
 ```bash
 git clone https://github.com/navig-run/core.git
 cd navig/navig-core
@@ -67,6 +70,7 @@ docker compose up -d
 ### GPU Support (Ollama)
 
 Uncomment the `deploy` section in `docker-compose.yml`:
+
 ```yaml
 deploy:
   resources:
@@ -82,6 +86,7 @@ Requires [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-nat
 ## systemd Services
 
 Install the services:
+
 ```bash
 sudo cp navig.service /etc/systemd/system/
 sudo cp navig-stack.service /etc/systemd/system/
@@ -105,7 +110,7 @@ sudo systemctl start navig-stack
 
 ## Directory Layout (Server)
 
-```
+```text
 /opt/navig/          # Home directory
 /opt/navig/stack/    # Docker Compose files
 /etc/navig/          # Configuration
@@ -184,7 +189,7 @@ human-in-the-loop approval gates. Located in `deploy/operational-factory/`.
 | **worker** | — | Background task processing (Redis queue) |
 | **dashboard** | 8088 | Approval UI, audit viewer |
 
-### Quick Start
+### Quick Start (Operational Factory)
 
 ```bash
 cd deploy/operational-factory

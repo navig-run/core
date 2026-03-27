@@ -9,6 +9,7 @@ No business logic lives here. This file only:
 To add a new command: add it to navig-commands-core/commands/ and register
 a cmd_<name> function here that parses args and calls the handler.
 """
+
 from __future__ import annotations
 
 import logging
@@ -29,6 +30,7 @@ def _get_handler(command_name: str):
     """
     try:
         from navig.commands._registry import CommandRegistry  # noqa: PLC0415
+
         return CommandRegistry.get(command_name)
     except (ImportError, AttributeError):
         pass
@@ -39,10 +41,15 @@ def _get_handler(command_name: str):
         if core_commands not in sys.path:
             sys.path.insert(0, str(core_commands))
         # Try parent dir (authoring mode — navig-core/packages/)
-        auth_commands = Path(__file__).parent.parent.parent.parent / "navig-commands-core" / "commands"
+        auth_commands = (
+            Path(__file__).parent.parent.parent.parent
+            / "navig-commands-core"
+            / "commands"
+        )
         if auth_commands.is_dir() and str(auth_commands) not in sys.path:
             sys.path.insert(0, str(auth_commands))
         from __init__ import COMMANDS  # noqa: PLC0415
+
         return COMMANDS.get(command_name)
     except Exception as exc:  # noqa: BLE001
         logger.error("Cannot resolve handler for %r: %s", command_name, exc)
@@ -51,7 +58,9 @@ def _get_handler(command_name: str):
 
 def _format_checkdomain(result: dict[str, Any]) -> str:
     """Format a checkdomain result dict into a Telegram Markdown reply."""
-    icon = {"available": "✅", "taken": "❌", "error": "⚠️"}.get(result.get("status", "error"), "❓")
+    icon = {"available": "✅", "taken": "❌", "error": "⚠️"}.get(
+        result.get("status", "error"), "❓"
+    )
     domain = result.get("domain", "")
     details = result.get("details", "No details.")
     return f"{icon} *{domain}*\n{details}"
@@ -70,11 +79,15 @@ async def cmd_checkdomain(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     domain = args[0].lower().strip("./")
-    status_msg = await update.message.reply_text(f"🔍 Checking `{domain}`…", parse_mode="Markdown")
+    status_msg = await update.message.reply_text(
+        f"🔍 Checking `{domain}`…", parse_mode="Markdown"
+    )
 
     handler = _get_handler("checkdomain")
     if handler is None:
-        await status_msg.edit_text("⚠️ checkdomain handler not found. Is navig-commands-core installed?")
+        await status_msg.edit_text(
+            "⚠️ checkdomain handler not found. Is navig-commands-core installed?"
+        )
         return
 
     try:

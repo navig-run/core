@@ -5,6 +5,7 @@ A sealed bundle cannot be appended to.  The seal is represented by a
 incident investigation: seal the state at the time of the incident,
 then export for analysis.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -33,6 +34,7 @@ def seal_bundle(
     """
     if blackbox_dir is None:
         from navig.platform.paths import blackbox_dir as _bbdir
+
         blackbox_dir = _bbdir()
 
     blackbox_dir.mkdir(parents=True, exist_ok=True)
@@ -47,6 +49,7 @@ def is_sealed(blackbox_dir: Optional[Path] = None) -> bool:
     """Return True if the blackbox directory is currently sealed."""
     if blackbox_dir is None:
         from navig.platform.paths import blackbox_dir as _bbdir
+
         blackbox_dir = _bbdir()
     return (blackbox_dir / _SEAL_MARKER).exists()
 
@@ -58,6 +61,7 @@ def unseal(blackbox_dir: Optional[Path] = None) -> bool:
     """
     if blackbox_dir is None:
         from navig.platform.paths import blackbox_dir as _bbdir
+
         blackbox_dir = _bbdir()
     marker = blackbox_dir / _SEAL_MARKER
     if marker.exists():

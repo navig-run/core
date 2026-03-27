@@ -76,6 +76,3 @@ task context none
 1. **Use IDs**: Always list tasks first to get the ID, then operate on that ID. IDs change as tasks are completed!
 2. **Projects**: Organize tasks into projects (`project:name`) for better filtering.
 3. **Tags**: Use `+tag` to add tags and `-tag` to remove them.
-
-
-

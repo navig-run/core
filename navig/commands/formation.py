@@ -27,6 +27,7 @@ def formation_callback(ctx: typer.Context):
     """Formation commands - run without subcommand for help."""
     if ctx.invoked_subcommand is None:
         from navig.cli import show_subcommand_help
+
         show_subcommand_help("formation", ctx)
         raise typer.Exit()
 
@@ -128,11 +129,15 @@ def formation_show(
         return
 
     ch.console.print()
-    ch.console.print(f"[bold cyan]{formation.name}[/bold cyan] [dim]({formation.id} v{formation.version})[/dim]")
+    ch.console.print(
+        f"[bold cyan]{formation.name}[/bold cyan] [dim]({formation.id} v{formation.version})[/dim]"
+    )
     ch.console.print(f"[dim]{formation.description}[/dim]")
     ch.console.print()
     ch.console.print(f"  Default agent: [yellow]{formation.default_agent}[/yellow]")
-    ch.console.print(f"  Aliases: {', '.join(formation.aliases) if formation.aliases else '-'}")
+    ch.console.print(
+        f"  Aliases: {', '.join(formation.aliases) if formation.aliases else '-'}"
+    )
     ch.console.print()
 
     from rich.table import Table

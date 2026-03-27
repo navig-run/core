@@ -10,18 +10,22 @@ from pathlib import Path
 
 import pytest
 
-
 # ── Store ────────────────────────────────────────────────────
+
 
 class TestInboxStore:
     def setup_method(self):
         self.tmp = tempfile.mkdtemp()
         from navig.inbox.store import InboxStore
+
         self.store = InboxStore(db_path=Path(self.tmp) / "inbox_test.db")
 
     def test_insert_and_get_event(self):
         from navig.inbox.store import InboxEvent
-        event = InboxEvent(source_path="/tmp/test.md", filename="test.md", source_type="file")
+
+        event = InboxEvent(
+            source_path="/tmp/test.md", filename="test.md", source_type="file"
+        )
         eid = self.store.insert_event(event)
         assert eid > 0
         fetched = self.store.get_event(eid)
@@ -31,6 +35,7 @@ class TestInboxStore:
 
     def test_update_event_status(self):
         from navig.inbox.store import InboxEvent
+
         event = InboxEvent(source_path="/tmp/x.md", filename="x.md")
         eid = self.store.insert_event(event)
         self.store.update_event_status(eid, "routed")
@@ -39,6 +44,7 @@ class TestInboxStore:
 
     def test_insert_decision(self):
         from navig.inbox.store import InboxEvent, RoutingDecision
+
         event = InboxEvent(source_path="/tmp/a.md", filename="a.md")
         eid = self.store.insert_event(event)
 
@@ -60,10 +66,15 @@ class TestInboxStore:
 
     def test_list_events_by_status(self):
         from navig.inbox.store import InboxEvent
+
         for i in range(3):
-            e = InboxEvent(source_path=f"/tmp/f{i}.md", filename=f"f{i}.md", status="pending")
+            e = InboxEvent(
+                source_path=f"/tmp/f{i}.md", filename=f"f{i}.md", status="pending"
+            )
             self.store.insert_event(e)
-        e = InboxEvent(source_path="/tmp/routed.md", filename="routed.md", status="routed")
+        e = InboxEvent(
+            source_path="/tmp/routed.md", filename="routed.md", status="routed"
+        )
         self.store.insert_event(e)
 
         pending = self.store.list_events(status="pending")
@@ -71,9 +82,12 @@ class TestInboxStore:
 
     def test_stats(self):
         from navig.inbox.store import InboxEvent, RoutingDecision
+
         e = InboxEvent(source_path="/tmp/b.md", filename="b.md", status="routed")
         eid = self.store.insert_event(e)
-        d = RoutingDecision(event_id=eid, category="wiki/technical", mode="copy", destination="/x")
+        d = RoutingDecision(
+            event_id=eid, category="wiki/technical", mode="copy", destination="/x"
+        )
         self.store.insert_decision(d)
 
         stats = self.store.stats()
@@ -82,9 +96,12 @@ class TestInboxStore:
 
     def test_mark_decision_executed(self):
         from navig.inbox.store import InboxEvent, RoutingDecision
+
         e = InboxEvent(source_path="/tmp/c.md", filename="c.md")
         eid = self.store.insert_event(e)
-        d = RoutingDecision(event_id=eid, category="hub/tasks", mode="copy", destination="/x")
+        d = RoutingDecision(
+            event_id=eid, category="hub/tasks", mode="copy", destination="/x"
+        )
         did = self.store.insert_decision(d)
         self.store.mark_decision_executed(did, "/target/c.md")
         decisions = self.store.decisions_for_event(eid)
@@ -94,9 +111,11 @@ class TestInboxStore:
 
 # ── Classifier ───────────────────────────────────────────────
 
+
 class TestClassifier:
     def setup_method(self):
         from navig.inbox.classifier import Classifier
+
         self.clf = Classifier(use_llm=False)
 
     def test_classify_returns_result(self):
@@ -160,10 +179,12 @@ class TestClassifier:
 
 # ── Router ────────────────────────────────────────────────────
 
+
 class TestInboxRouter:
     def setup_method(self):
         self.tmp = Path(tempfile.mkdtemp())
-        from navig.inbox.router import InboxRouter, RouteMode, ConflictStrategy
+        from navig.inbox.router import ConflictStrategy, InboxRouter, RouteMode
+
         self.router = InboxRouter(
             project_root=self.tmp,
             mode=RouteMode.COPY,
@@ -178,6 +199,7 @@ class TestInboxRouter:
 
     def _classify(self, category: str, confidence: float = 0.8):
         from navig.inbox.classifier import ClassifyResult
+
         return ClassifyResult(category=category, confidence=confidence)
 
     def test_route_copies_file(self):
@@ -199,7 +221,9 @@ class TestInboxRouter:
 
     def test_route_low_confidence_ignored(self):
         src = self._make_file("low.md")
-        result = self.router.route(src, self._classify("wiki/knowledge", confidence=0.1))
+        result = self.router.route(
+            src, self._classify("wiki/knowledge", confidence=0.1)
+        )
         assert result.status == "ignored"
 
     def test_route_ignore_category(self):
@@ -209,6 +233,7 @@ class TestInboxRouter:
 
     def test_conflict_rename(self):
         from navig.inbox.router import ConflictStrategy
+
         dest_dir = self.tmp / "out" / "knowledge"
         dest_dir.mkdir(parents=True, exist_ok=True)
         # Pre-create the would-be destination
@@ -223,6 +248,7 @@ class TestInboxRouter:
 
     def test_conflict_skip(self):
         from navig.inbox.router import ConflictStrategy
+
         dest_dir = self.tmp / "out" / "knowledge"
         dest_dir.mkdir(parents=True, exist_ok=True)
         (dest_dir / "note.md").write_text("existing", encoding="utf-8")
@@ -247,13 +273,16 @@ class TestInboxRouter:
 
 # ── Hooks ────────────────────────────────────────────────────
 
+
 class TestHookSystem:
     def setup_method(self):
         from navig.inbox.hooks import HookSystem
+
         self.hooks = HookSystem()
 
     def _make_event(self, stage="before_classify"):
         from navig.inbox.hooks import HookEvent
+
         return HookEvent(
             stage=stage,
             source_path="/tmp/test.md",

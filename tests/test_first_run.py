@@ -9,6 +9,7 @@ Covers:
 - Runs (calls engine.run) when artifact is absent
 - Phase 2 steps are skipped (not hung) in a non-TTY environment
 """
+
 from __future__ import annotations
 
 import sys
@@ -18,20 +19,26 @@ import pytest
 
 import navig.main as _nm
 
-
 # ---------------------------------------------------------------------------
 # Env isolation — strip opt-out vars before each test
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch):
-    for var in ("NAVIG_SKIP_ONBOARDING", "_NAVIG_COMPLETE", "COMP_WORDS", "_TYPER_COMPLETE"):
+    for var in (
+        "NAVIG_SKIP_ONBOARDING",
+        "_NAVIG_COMPLETE",
+        "COMP_WORDS",
+        "_TYPER_COMPLETE",
+    ):
         monkeypatch.delenv(var, raising=False)
 
 
 # ---------------------------------------------------------------------------
 # Skip-condition tests
 # ---------------------------------------------------------------------------
+
 
 class TestFirstRunSkipConditions:
     """_check_first_run() must return immediately without touching the engine."""
@@ -61,7 +68,9 @@ class TestFirstRunSkipConditions:
             _nm._check_first_run()
         engine_cls.assert_not_called()
 
-    @pytest.mark.parametrize("var", ["_NAVIG_COMPLETE", "COMP_WORDS", "_TYPER_COMPLETE"])
+    @pytest.mark.parametrize(
+        "var", ["_NAVIG_COMPLETE", "COMP_WORDS", "_TYPER_COMPLETE"]
+    )
     def test_skips_for_completion_probe(self, monkeypatch, var):
         """Shell-completion env vars → no engine instantiation."""
         monkeypatch.setenv(var, "1")
@@ -70,7 +79,9 @@ class TestFirstRunSkipConditions:
             _nm._check_first_run()
         engine_cls.assert_not_called()
 
-    @pytest.mark.parametrize("cmd", ["onboard", "quickstart", "service", "update", "version"])
+    @pytest.mark.parametrize(
+        "cmd", ["onboard", "quickstart", "service", "update", "version"]
+    )
     def test_skips_for_guarded_subcommands(self, tmp_path, cmd):
         """Commands listed in _SKIP_CMDS must not trigger onboarding."""
         (tmp_path / ".navig").mkdir(parents=True, exist_ok=True)  # no artifact
@@ -87,6 +98,7 @@ class TestFirstRunSkipConditions:
 # ---------------------------------------------------------------------------
 # Trigger tests
 # ---------------------------------------------------------------------------
+
 
 class TestFirstRunTriggersEngine:
     """engine.run() must be called when no skip conditions apply."""
@@ -123,7 +135,10 @@ class TestFirstRunTriggersEngine:
         with (
             patch("pathlib.Path.home", return_value=tmp_path),
             patch.object(sys, "argv", ["navig", "status"]),
-            patch("navig.onboarding.EngineConfig", side_effect=RuntimeError("simulated crash")),
+            patch(
+                "navig.onboarding.EngineConfig",
+                side_effect=RuntimeError("simulated crash"),
+            ),
             patch("socket.gethostname", return_value="test-host"),
             patch("navig.main._eprint"),
         ):
@@ -133,6 +148,7 @@ class TestFirstRunTriggersEngine:
 # ---------------------------------------------------------------------------
 # Non-TTY / CI safety
 # ---------------------------------------------------------------------------
+
 
 class TestFirstRunNonTTY:
     def test_phase2_skipped_not_hung_in_non_tty(self, tmp_path, monkeypatch):
@@ -156,7 +172,10 @@ class TestFirstRunNonTTY:
 
         # Phase 2 steps must be skipped (non-TTY → _tty_check returns skipped)
         phase2_ids = {
-            "ai-provider", "vault-init", "first-host", "telegram-bot",
+            "ai-provider",
+            "vault-init",
+            "first-host",
+            "telegram-bot",
             "skills-activation",
         }
         for record in state.steps:

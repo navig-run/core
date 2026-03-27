@@ -82,6 +82,3 @@ Use `--json` and `jq` for powerful automation.
 # Get URL of the latest release
 gh release view --json url --jq .url
 ```
-
-
-

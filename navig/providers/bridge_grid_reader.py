@@ -20,6 +20,7 @@ We consider the entry valid if:
   - Process `pid` is still alive (best-effort; skipped on platforms that
     cannot probe other processes)
 """
+
 from __future__ import annotations
 
 import json
@@ -61,9 +62,6 @@ def read_bridge_grid(*, force: bool = False) -> Optional[dict]:
     return _cached_result
 
 
-
-
-
 def _read_and_validate() -> Optional[dict]:
     try:
         text = _bridge_grid_path.read_text(encoding="utf-8")
@@ -101,9 +99,6 @@ def is_bridge_grid_alive(*, force: bool = False) -> bool:
     return read_bridge_grid(force=force) is not None
 
 
-
-
-
 def get_llm_port(*, force: bool = False) -> Optional[int]:
     """Return the live LlmServer WebSocket port, or ``None``."""
     data = read_bridge_grid(force=force)
@@ -128,12 +123,13 @@ def invalidate_cache() -> None:
 
 # ── Platform-safe PID probe ───────────────────────────────────────────────────
 
+
 def _is_pid_alive(pid: int) -> bool:
     """Cross-platform best-effort PID liveness check."""
     if pid <= 0:
         return False
     try:
-        os.kill(pid, 0)   # Signal 0 = probe; raises OSError if dead/no perms
+        os.kill(pid, 0)  # Signal 0 = probe; raises OSError if dead/no perms
         return True
     except OSError:
         return False

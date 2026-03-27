@@ -44,10 +44,10 @@ T = TypeVar("T")
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-SAMPLE_EVERY: int = 100         # Profile 1 in every N calls
-TOP_FUNCTIONS: int = 20         # Number of hot functions to store per sample
+SAMPLE_EVERY: int = 100  # Profile 1 in every N calls
+TOP_FUNCTIONS: int = 20  # Number of hot functions to store per sample
 PERF_DIR: Path = Path.home() / ".navig" / "perf"
-REGRESSION_THRESHOLD_PCT: float = 20.0   # Alert if cumtime grows by > this %
+REGRESSION_THRESHOLD_PCT: float = 20.0  # Alert if cumtime grows by > this %
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Invocation counter (per-process; reset on daemon restart)
@@ -69,6 +69,7 @@ def _should_profile() -> bool:
 # ─────────────────────────────────────────────────────────────────────────────
 # Core profiling helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def profile_call(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
     """
@@ -112,14 +113,16 @@ def _extract_and_store(profiler: cProfile.Profile, elapsed_ms: float) -> None:
         hot_functions: List[Dict[str, Any]] = []
         profiler.create_stats()
         for (filename, lineno, funcname), (cc, nc, tt, ct, _) in profiler.stats.items():  # type: ignore[union-attr]
-            hot_functions.append({
-                "fn":       funcname,
-                "file":     _strip_prefix(filename),
-                "line":     lineno,
-                "calls":    nc,
-                "tottime":  round(tt * 1000, 3),   # ms
-                "cumtime":  round(ct * 1000, 3),   # ms
-            })
+            hot_functions.append(
+                {
+                    "fn": funcname,
+                    "file": _strip_prefix(filename),
+                    "line": lineno,
+                    "calls": nc,
+                    "tottime": round(tt * 1000, 3),  # ms
+                    "cumtime": round(ct * 1000, 3),  # ms
+                }
+            )
 
         # Sort by cumtime descending, keep top N
         hot_functions.sort(key=lambda x: x["cumtime"], reverse=True)
@@ -127,10 +130,10 @@ def _extract_and_store(profiler: cProfile.Profile, elapsed_ms: float) -> None:
 
         argv_safe = _safe_argv()
         entry = {
-            "ts":          time.time(),
-            "cmd":         argv_safe,
-            "elapsed_ms":  round(elapsed_ms, 2),
-            "top_fns":     hot_functions,
+            "ts": time.time(),
+            "cmd": argv_safe,
+            "elapsed_ms": round(elapsed_ms, 2),
+            "top_fns": hot_functions,
         }
 
         log_file = PERF_DIR / f"{date.today().isoformat()}.jsonl"
@@ -165,12 +168,14 @@ def _safe_argv() -> str:
 # Regression detection & reporting (used by `navig evolve status`)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def load_recent_samples(days: int = 7) -> List[Dict[str, Any]]:
     """Load all profile samples from the last *days* days."""
     samples: List[Dict[str, Any]] = []
     today = date.today()
     for i in range(days):
         from datetime import timedelta
+
         day = today - timedelta(days=i)
         log_file = PERF_DIR / f"{day.isoformat()}.jsonl"
         if not log_file.exists():
@@ -186,7 +191,9 @@ def load_recent_samples(days: int = 7) -> List[Dict[str, Any]]:
     return samples
 
 
-def detect_regressions(samples: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+def detect_regressions(
+    samples: Optional[List[Dict[str, Any]]] = None
+) -> List[Dict[str, Any]]:
     """
     Detect performance regressions in the last 7 days of profile data.
 
@@ -223,13 +230,15 @@ def detect_regressions(samples: Optional[List[Dict[str, Any]]] = None) -> List[D
                 culprit = ""
                 if new_entry.get("top_fns"):
                     culprit = new_entry["top_fns"][0].get("fn", "")
-                regressions.append({
-                    "cmd":        cmd,
-                    "fn":         culprit,
-                    "old_ms":     round(old_ms, 1),
-                    "new_ms":     round(new_ms, 1),
-                    "delta_pct":  round(delta_pct, 1),
-                })
+                regressions.append(
+                    {
+                        "cmd": cmd,
+                        "fn": culprit,
+                        "old_ms": round(old_ms, 1),
+                        "new_ms": round(new_ms, 1),
+                        "delta_pct": round(delta_pct, 1),
+                    }
+                )
 
     return sorted(regressions, key=lambda r: r["delta_pct"], reverse=True)
 
@@ -243,7 +252,9 @@ def suggest_optimizations(samples: Optional[List[Dict[str, Any]]] = None) -> Lis
         samples = load_recent_samples()
 
     if not samples:
-        return ["No profile data available yet. Run some NAVIG commands to collect data."]
+        return [
+            "No profile data available yet. Run some NAVIG commands to collect data."
+        ]
 
     # Aggregate cumtime by function across all samples
     fn_cumtime: Dict[str, float] = {}
@@ -282,6 +293,7 @@ def suggest_optimizations(samples: Optional[List[Dict[str, Any]]] = None) -> Lis
 # ─────────────────────────────────────────────────────────────────────────────
 # Convenience decorator
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def auto_profile(fn: Callable[..., T]) -> Callable[..., T]:
     """

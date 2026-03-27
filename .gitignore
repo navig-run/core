@@ -217,6 +217,7 @@ scripts/*
 !scripts/install_matrix_synapse_windows.ps1
 !scripts/navig_quick_setup.ps1
 !scripts/navig_quick_setup.sh
+!scripts/precommit_navig_security.sh
 !scripts/navig-tunnel.service
 !scripts/navig-tunnel.sh
 !scripts/bridge-tunnel.service
@@ -395,6 +396,7 @@ scripts/**
 !scripts/install_matrix_synapse_windows.ps1
 !scripts/navig_quick_setup.ps1
 !scripts/navig_quick_setup.sh
+!scripts/precommit_navig_security.sh
 !scripts/navig-tunnel.service
 !scripts/navig-tunnel.sh
 !scripts/bridge-tunnel.service

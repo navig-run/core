@@ -14,6 +14,7 @@ Usage::
     if not ok:
         print(TIER_GUIDE)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -28,11 +29,12 @@ from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 # Result type
 # ---------------------------------------------------------------------------
 
+
 class ProbeResult(NamedTuple):
     reachable: bool
-    tier: str           # e.g. "T0 • Ollama"
-    model: str          # e.g. "llama3:8b"
-    note: str           # short human-readable note
+    tier: str  # e.g. "T0 • Ollama"
+    model: str  # e.g. "llama3:8b"
+    note: str  # short human-readable note
 
 
 # ---------------------------------------------------------------------------
@@ -115,9 +117,18 @@ async def _probe_ollama() -> ProbeResult | None:
 def _pick_chat_model(models: list[str]) -> str:
     """Pick the most suitable chat model from an Ollama model list."""
     priority_patterns = [
-        "llama3.2:3b", "llama3.2", "llama3:8b", "llama3",
-        "mistral:7b", "mistral", "phi3:mini", "phi3",
-        "gemma2:2b", "gemma2", "qwen2.5:7b", "qwen2.5",
+        "llama3.2:3b",
+        "llama3.2",
+        "llama3:8b",
+        "llama3",
+        "mistral:7b",
+        "mistral",
+        "phi3:mini",
+        "phi3",
+        "gemma2:2b",
+        "gemma2",
+        "qwen2.5:7b",
+        "qwen2.5",
     ]
     for pat in priority_patterns:
         for m in models:
@@ -132,10 +143,20 @@ def _pick_chat_model(models: list[str]) -> str:
 
 _FREE_CLOUD_PROVIDERS: list[tuple[str, str, str, str]] = [
     # (env_var, tier_label, model_hint, human_name)
-    ("GROQ_API_KEY",       "T1", "llama-3.3-70b-versatile", "Groq (free tier)"),
-    ("GITHUB_TOKEN",       "T1", "gpt-4o-mini",              "GitHub Models (free)"),
-    ("SILICONFLOW_API_KEY","T1", "deepseek-ai/DeepSeek-V3",  "SiliconFlow (free credits)"),
-    ("TOGETHER_API_KEY",   "T1", "meta-llama/Meta-Llama-3-8B-Instruct-Turbo", "Together AI (free)"),
+    ("GROQ_API_KEY", "T1", "llama-3.3-70b-versatile", "Groq (free tier)"),
+    ("GITHUB_TOKEN", "T1", "gpt-4o-mini", "GitHub Models (free)"),
+    (
+        "SILICONFLOW_API_KEY",
+        "T1",
+        "deepseek-ai/DeepSeek-V3",
+        "SiliconFlow (free credits)",
+    ),
+    (
+        "TOGETHER_API_KEY",
+        "T1",
+        "meta-llama/Meta-Llama-3-8B-Instruct-Turbo",
+        "Together AI (free)",
+    ),
 ]
 
 
@@ -187,11 +208,11 @@ async def _probe_bridge() -> ProbeResult | None:
 # ---------------------------------------------------------------------------
 
 _PAID_PROVIDERS: list[tuple[str, str, str, str]] = [
-    ("OPENAI_API_KEY",    "T3", "gpt-4o-mini",       "OpenAI"),
-    ("ANTHROPIC_API_KEY", "T3", "claude-3-haiku",     "Anthropic"),
-    ("DEEPSEEK_API_KEY",  "T3", "deepseek-chat",      "DeepSeek"),
-    ("XAI_API_KEY",       "T3", "grok-3-mini-fast",   "xAI Grok"),
-    ("MISTRAL_API_KEY",   "T3", "mistral-small-latest","Mistral"),
+    ("OPENAI_API_KEY", "T3", "gpt-4o-mini", "OpenAI"),
+    ("ANTHROPIC_API_KEY", "T3", "claude-3-haiku", "Anthropic"),
+    ("DEEPSEEK_API_KEY", "T3", "deepseek-chat", "DeepSeek"),
+    ("XAI_API_KEY", "T3", "grok-3-mini-fast", "xAI Grok"),
+    ("MISTRAL_API_KEY", "T3", "mistral-small-latest", "Mistral"),
 ]
 
 
@@ -213,10 +234,12 @@ def _probe_paid() -> ProbeResult | None:
 # Config helper
 # ---------------------------------------------------------------------------
 
+
 def _read_navig_config_key(env_var: str) -> str:
     """Read an API key from navig config if not in environment."""
     try:
         from navig.config import get as cfg_get
+
         return cfg_get(f"providers.{env_var.lower()}", "") or ""
     except Exception:
         return ""
@@ -225,6 +248,7 @@ def _read_navig_config_key(env_var: str) -> str:
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
+
 
 async def probe_llm(prefer_local: bool = True) -> ProbeResult:
     """Run all tier probes and return the highest-priority available backend.
@@ -259,7 +283,9 @@ async def probe_llm(prefer_local: bool = True) -> ProbeResult:
         if result is not None and result.reachable:
             logger.debug(
                 "llm_probe: {} reachable — {} ({})",
-                result.tier, result.model, result.note,
+                result.tier,
+                result.model,
+                result.note,
             )
             return result
 
@@ -279,6 +305,7 @@ def probe_llm_sync(prefer_local: bool = True) -> ProbeResult:
         if loop.is_running():
             # Already in an event loop — run in a new thread
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
                 future = ex.submit(asyncio.run, probe_llm(prefer_local))
                 return future.result(timeout=5)

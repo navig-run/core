@@ -58,7 +58,7 @@ class FileWatcher:
 class ConfigWatcher:
     """
     Watches configuration files and triggers reloads.
-    
+
     Monitors:
     - Global config
     - Project configs
@@ -66,11 +66,7 @@ class ConfigWatcher:
     - Agent configurations
     """
 
-    def __init__(
-        self,
-        gateway: 'NavigGateway',
-        poll_interval: float = 5.0
-    ):
+    def __init__(self, gateway: "NavigGateway", poll_interval: float = 5.0):
         self.gateway = gateway
         self.poll_interval = poll_interval
 
@@ -82,9 +78,9 @@ class ConfigWatcher:
 
         # Callbacks by file type
         self._callbacks: Dict[str, List[Callable]] = {
-            'config': [],
-            'workspace': [],
-            'agents': [],
+            "config": [],
+            "workspace": [],
+            "agents": [],
         }
 
         # Initialize watchers
@@ -95,38 +91,44 @@ class ConfigWatcher:
         config_manager = self.gateway.config_manager
 
         # Global config
-        global_config_path = config_manager.global_config_dir / 'config.yaml'
+        global_config_path = config_manager.global_config_dir / "config.yaml"
         if global_config_path.exists():
-            self._watchers['global_config'] = FileWatcher(global_config_path)
+            self._watchers["global_config"] = FileWatcher(global_config_path)
             logger.debug(f"Watching global config: {global_config_path}")
 
         # Workspace files
-        workspace_path = config_manager.global_config_dir / 'workspace'
+        workspace_path = config_manager.global_config_dir / "workspace"
         if workspace_path.exists():
-            for ws_file in ['AGENTS.md', 'SOUL.md', 'USER.md', 'TOOLS.md',
-                           'HEARTBEAT.md', 'MEMORY.md']:
+            for ws_file in [
+                "AGENTS.md",
+                "SOUL.md",
+                "USER.md",
+                "TOOLS.md",
+                "HEARTBEAT.md",
+                "MEMORY.md",
+            ]:
                 file_path = workspace_path / ws_file
                 if file_path.exists():
-                    self._watchers[f'ws_{ws_file}'] = FileWatcher(file_path)
+                    self._watchers[f"ws_{ws_file}"] = FileWatcher(file_path)
                     logger.debug(f"Watching workspace file: {file_path}")
 
         # Project config (if in project context)
-        project_config_path = Path('.navig/config.yaml')
+        project_config_path = Path(".navig/config.yaml")
         if project_config_path.exists():
-            self._watchers['project_config'] = FileWatcher(project_config_path)
+            self._watchers["project_config"] = FileWatcher(project_config_path)
             logger.debug(f"Watching project config: {project_config_path}")
 
     def on_config_change(self, callback: Callable[[], None]) -> None:
         """Register callback for config changes."""
-        self._callbacks['config'].append(callback)
+        self._callbacks["config"].append(callback)
 
     def on_workspace_change(self, callback: Callable[[str], None]) -> None:
         """Register callback for workspace file changes."""
-        self._callbacks['workspace'].append(callback)
+        self._callbacks["workspace"].append(callback)
 
     def on_agents_change(self, callback: Callable[[], None]) -> None:
         """Register callback for agent configuration changes."""
-        self._callbacks['agents'].append(callback)
+        self._callbacks["agents"].append(callback)
 
     async def start(self) -> None:
         """Start watching for changes."""
@@ -171,9 +173,9 @@ class ConfigWatcher:
             if watcher.has_changed():
                 logger.info(f"Detected change: {name}")
 
-                if name.endswith('_config'):
+                if name.endswith("_config"):
                     config_changed = True
-                elif name.startswith('ws_'):
+                elif name.startswith("ws_"):
                     ws_file = name[3:]  # Remove 'ws_' prefix
                     workspace_changed.add(ws_file)
 
@@ -195,7 +197,7 @@ class ConfigWatcher:
         self.gateway._load_config()
 
         # Call registered callbacks
-        for callback in self._callbacks['config']:
+        for callback in self._callbacks["config"]:
             try:
                 if asyncio.iscoroutinefunction(callback):
                     await callback()
@@ -207,8 +209,7 @@ class ConfigWatcher:
         # Emit system event
         if self.gateway.event_queue:
             await self.gateway.event_queue.emit(
-                'config_reloaded',
-                {'source': 'config_watcher'}
+                "config_reloaded", {"source": "config_watcher"}
             )
 
     async def _handle_workspace_change(self, filename: str) -> None:
@@ -216,17 +217,18 @@ class ConfigWatcher:
         logger.info(f"Workspace file changed: {filename}")
 
         # Read new content
-        workspace_path = self.gateway.config_manager.global_config_dir / 'workspace'
+        workspace_path = self.gateway.config_manager.global_config_dir / "workspace"
         file_path = workspace_path / filename
 
         content = ""
         if file_path.exists():
-            content = file_path.read_text(encoding='utf-8')
+            content = file_path.read_text(encoding="utf-8")
 
         # Sync USER.md changes to UserProfile
-        if filename == 'USER.md':
+        if filename == "USER.md":
             try:
                 from navig.workspace import WorkspaceManager
+
                 wm = WorkspaceManager()
                 if wm.sync_to_user_profile():
                     logger.info("Synced USER.md preferences to UserProfile")
@@ -234,7 +236,7 @@ class ConfigWatcher:
                 logger.warning(f"Failed to sync USER.md to UserProfile: {e}")
 
         # Call registered callbacks
-        for callback in self._callbacks['workspace']:
+        for callback in self._callbacks["workspace"]:
             try:
                 if asyncio.iscoroutinefunction(callback):
                     await callback(filename)
@@ -246,11 +248,11 @@ class ConfigWatcher:
         # Emit system event
         if self.gateway.event_queue:
             await self.gateway.event_queue.emit(
-                'workspace_file_changed',
+                "workspace_file_changed",
                 {
-                    'filename': filename,
-                    'content_length': len(content),
-                }
+                    "filename": filename,
+                    "content_length": len(content),
+                },
             )
 
     def add_watch(self, path: Path, name: str) -> None:
@@ -269,7 +271,7 @@ class ConfigWatcher:
 class WorkspaceManager:
     """
     Manages workspace context files.
-    
+
     These files provide persistent context for the AI agent:
     - AGENTS.md - Agent capabilities and bindings
     - SOUL.md - Agent personality and behavior
@@ -280,7 +282,7 @@ class WorkspaceManager:
     """
 
     DEFAULT_FILES = {
-        'AGENTS.md': '''# NAVIG Agents
+        "AGENTS.md": """# NAVIG Agents
 
 ## Available Agents
 
@@ -289,7 +291,7 @@ The primary NAVIG assistant. Handles system operations (infrastructure,
 databases, Docker, deployments) and life operations (tasks, knowledge,
 routines, productivity workflows).
 
-### monitor  
+### monitor
 Background monitoring agent. Checks host health, disk space,
 certificate expiry, and other automated checks.
 
@@ -303,8 +305,8 @@ agents:
       peer: "12345678"
       agentId: default
 ```
-''',
-        'SOUL.md': '''# Agent Soul
+""",
+        "SOUL.md": """# Agent Soul
 
 ## Personality
 I am NAVIG, an operations assistant for both systems and life management.
@@ -322,8 +324,8 @@ I help manage remote hosts, applications, databases, workflows, and personal pro
 - Format command outputs in code blocks
 - Summarize long outputs
 - Offer next steps when helpful
-''',
-        'USER.md': '''# User Context
+""",
+        "USER.md": """# User Context
 
 ## Preferences
 - Notify on errors only (not successes)
@@ -335,8 +337,8 @@ I help manage remote hosts, applications, databases, workflows, and personal pro
 
 ## Quick Notes
 (User can add notes here)
-''',
-        'TOOLS.md': '''# Available Tools
+""",
+        "TOOLS.md": """# Available Tools
 
 ## NAVIG Commands
 - `host list` - List all configured hosts
@@ -348,8 +350,8 @@ I help manage remote hosts, applications, databases, workflows, and personal pro
 
 ## Shortcuts
 (Define custom shortcuts in config.yaml)
-''',
-        'HEARTBEAT.md': '''# Heartbeat Instructions
+""",
+        "HEARTBEAT.md": """# Heartbeat Instructions
 
 ## What to Check
 1. Host connectivity (ping each configured host)
@@ -376,8 +378,8 @@ heartbeat:
   interval: 30m
   enabled: true
 ```
-''',
-        'MEMORY.md': '''# Long-term Memory
+""",
+        "MEMORY.md": """# Long-term Memory
 
 ## Important Events
 (Agent records significant events here)
@@ -390,11 +392,11 @@ heartbeat:
 
 ---
 Last updated: Never
-''',
+""",
     }
 
     def __init__(self, base_path: Path):
-        self.base_path = base_path / 'workspace'
+        self.base_path = base_path / "workspace"
 
     def ensure_files(self) -> None:
         """Ensure all workspace files exist with defaults."""
@@ -403,21 +405,21 @@ Last updated: Never
         for filename, content in self.DEFAULT_FILES.items():
             file_path = self.base_path / filename
             if not file_path.exists():
-                file_path.write_text(content, encoding='utf-8')
+                file_path.write_text(content, encoding="utf-8")
                 logger.info(f"Created workspace file: {filename}")
 
     def read_file(self, filename: str) -> str:
         """Read a workspace file."""
         file_path = self.base_path / filename
         if file_path.exists():
-            return file_path.read_text(encoding='utf-8')
+            return file_path.read_text(encoding="utf-8")
         return ""
 
     def write_file(self, filename: str, content: str) -> None:
         """Write to a workspace file."""
         self.base_path.mkdir(parents=True, exist_ok=True)
         file_path = self.base_path / filename
-        file_path.write_text(content, encoding='utf-8')
+        file_path.write_text(content, encoding="utf-8")
         logger.debug(f"Updated workspace file: {filename}")
 
     def append_to_file(self, filename: str, content: str) -> None:
@@ -443,19 +445,16 @@ Last updated: Never
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
         entry_line = f"- [{timestamp}] {entry}"
 
-        memory = self.read_file('MEMORY.md')
+        memory = self.read_file("MEMORY.md")
 
         # Insert before "---" line if it exists
-        if '---' in memory:
-            parts = memory.split('---', 1)
+        if "---" in memory:
+            parts = memory.split("---", 1)
             memory = parts[0] + entry_line + "\n\n---" + parts[1]
         else:
             memory += f"\n{entry_line}"
 
         # Update last updated timestamp
-        memory = memory.replace(
-            "Last updated: Never",
-            f"Last updated: {timestamp}"
-        )
+        memory = memory.replace("Last updated: Never", f"Last updated: {timestamp}")
 
-        self.write_file('MEMORY.md', memory)
+        self.write_file("MEMORY.md", memory)

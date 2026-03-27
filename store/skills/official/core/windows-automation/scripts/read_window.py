@@ -6,16 +6,17 @@ Usage: py read_window.py "Window Title"
        py read_window.py "Notepad"
        py read_window.py "Visual Studio Code"
 """
-import sys
 import io
+import sys
+
 from pywinauto import Desktop
 from pywinauto.findwindows import ElementNotFoundError
 
 # Fix Windows console encoding
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 if len(sys.argv) < 2:
-    print("Usage: py read_window.py \"Window Title\"")
+    print('Usage: py read_window.py "Window Title"')
     sys.exit(1)
 
 window_title = sys.argv[1]
@@ -23,17 +24,17 @@ window_title = sys.argv[1]
 try:
     # Get all windows
     desktop = Desktop(backend="uia")
-    
+
     # Find window by partial title match
     windows = desktop.windows()
     matching_window = None
-    
+
     for window in windows:
         title = window.window_text()
         if window_title.lower() in title.lower():
             matching_window = window
             break
-    
+
     if not matching_window:
         print(f"Error: Window containing '{window_title}' not found")
         print("\nAvailable windows:")
@@ -41,7 +42,7 @@ try:
             if w.window_text():  # Only show windows with titles
                 print(f"  - {w.window_text()}")
         sys.exit(1)
-    
+
     # Get all text from the window
     texts = []
     try:
@@ -55,7 +56,7 @@ try:
                 pass  # best-effort; suppress all errors
     except Exception:  # noqa: BLE001
         pass  # best-effort; suppress all errors
-    
+
     if texts:
         # Remove duplicates while preserving order
         seen = set()
@@ -64,11 +65,11 @@ try:
             if t not in seen:
                 seen.add(t)
                 unique_texts.append(t)
-        
+
         print("\n".join(unique_texts))
     else:
         print(f"No text found in window: {matching_window.window_text()}")
-    
+
 except ElementNotFoundError:
     print(f"Error: Window '{window_title}' not found")
     sys.exit(1)

@@ -1,12 +1,10 @@
 """Tests for navig.tools.output_validator."""
+
 from __future__ import annotations
 
 import pytest
 
-from navig.tools.output_validator import (
-    OutputValidationError,
-    validate_output,
-)
+from navig.tools.output_validator import OutputValidationError, validate_output
 
 
 class TestValidateOutput:

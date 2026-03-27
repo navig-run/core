@@ -82,12 +82,12 @@ def clear_formations_roots() -> None:
 
 def discover_formations() -> Dict[str, Path]:
     """Scan all formation roots and build a map of profile_name → formation_dir.
-    
+
     Discovers formations dynamically:
     - Each subdirectory containing formation.json is a valid formation
     - The formation's "id" field is the primary key
     - The "aliases" field (if present) adds additional lookup keys
-    
+
     Returns dict mapping profile names (ids + aliases) to formation directories.
     """
     formation_map: Dict[str, Path] = {}
@@ -133,10 +133,10 @@ def discover_formations() -> Dict[str, Path]:
 
 def read_profile(workspace_dir: Optional[Path] = None) -> Optional[ProfileConfig]:
     """Read .navig/profile.json from workspace directory.
-    
+
     Args:
         workspace_dir: Workspace root. Defaults to cwd.
-    
+
     Returns:
         ProfileConfig if profile.json exists and is valid, None otherwise.
     """
@@ -165,11 +165,11 @@ def resolve_formation(
     formation_map: Optional[Dict[str, Path]] = None,
 ) -> Optional[Path]:
     """Resolve a profile name to a formation directory.
-    
+
     Args:
         profile: Profile name from profile.json
         formation_map: Pre-built map (discovers if None)
-    
+
     Returns:
         Path to formation directory, or None if not found.
     """
@@ -191,13 +191,14 @@ def resolve_formation(
 # Directory-based agent profiles (hybrid format)
 # ---------------------------------------------------------------------------
 
+
 def _read_doc(agent_dir: Path, doc_path: str) -> str:
     """Read a linked markdown document from an agent profile directory.
-    
+
     Args:
         agent_dir: Agent profile directory
         doc_path: Relative path from agent.json (e.g. "./SOUL.md")
-    
+
     Returns:
         File content as string, or empty string if not found.
     """
@@ -219,17 +220,17 @@ def _compose_system_prompt(
     playbook: str,
 ) -> str:
     """Compose a full system prompt from markdown profile documents.
-    
+
     Merges SOUL (identity/values), PERSONALITY (speech/tone/quirks),
     and PLAYBOOK (contextual behavior rules) into a single coherent prompt.
-    
+
     Args:
         name: Agent display name
         role: Agent role title
         soul: Content of SOUL.md
         personality: Content of PERSONALITY.md
         playbook: Content of PLAYBOOK.md
-    
+
     Returns:
         Composed system prompt string.
     """
@@ -253,7 +254,7 @@ def _compose_system_prompt(
 
 def _load_agent_from_directory(agent_dir: Path) -> Optional[AgentSpec]:
     """Load an agent from a directory-based hybrid profile.
-    
+
     Expected structure:
         agent_dir/
             agent.json      — structured config & doc links
@@ -261,13 +262,13 @@ def _load_agent_from_directory(agent_dir: Path) -> Optional[AgentSpec]:
             PERSONALITY.md  — tone, speech patterns, quirks, vocabulary
             PLAYBOOK.md     — contextual behavior rules (council, briefs, etc.)
             MEMORY.md       — curated memories & key facts (grows over time)
-    
+
     The system_prompt is composed from the markdown docs at load time.
     The personality field uses the 'summary' from agent.json.
-    
+
     Args:
         agent_dir: Path to agent profile directory
-    
+
     Returns:
         AgentSpec if successful, None on failure.
     """
@@ -285,9 +286,7 @@ def _load_agent_from_directory(agent_dir: Path) -> Optional[AgentSpec]:
     required = ["id", "name", "role"]
     missing = [f for f in required if f not in data]
     if missing:
-        logger.error(
-            f"[FORMATION] Agent {manifest} missing required fields: {missing}"
-        )
+        logger.error(f"[FORMATION] Agent {manifest} missing required fields: {missing}")
         return None
 
     # Read linked markdown docs
@@ -337,9 +336,7 @@ def _load_agent_from_directory(agent_dir: Path) -> Optional[AgentSpec]:
 
     # Extract flags (council_weight, etc.)
     flags = data.get("flags", {})
-    council_weight = flags.get(
-        "council_weight", data.get("council_weight", 1.0)
-    )
+    council_weight = flags.get("council_weight", data.get("council_weight", 1.0))
 
     return AgentSpec(
         id=data["id"],
@@ -359,10 +356,10 @@ def _load_agent_from_directory(agent_dir: Path) -> Optional[AgentSpec]:
 
 def load_formation(formation_dir: Path) -> Optional[Formation]:
     """Load and validate a formation from its directory.
-    
+
     Args:
         formation_dir: Path to formation directory containing formation.json
-    
+
     Returns:
         Loaded Formation with all agents, or None on failure.
     """
@@ -429,16 +426,16 @@ DEFAULT_PROFILE = "app_project"
 
 def get_active_formation(workspace_dir: Optional[Path] = None) -> Optional[Formation]:
     """Full resolution chain: workspace → profile → formation → agents.
-    
+
     This is the main entry point. Call this to get the currently active
     formation for a workspace.
-    
+
     If no profile exists or the configured profile cannot be resolved,
     falls back to the default profile ('app_project').
-    
+
     Args:
         workspace_dir: Workspace root. Defaults to cwd.
-    
+
     Returns:
         Loaded Formation or None (only if even the fallback fails).
     """
@@ -463,7 +460,7 @@ def get_active_formation(workspace_dir: Optional[Path] = None) -> Optional[Forma
 
 def list_available_formations() -> List[Formation]:
     """List all discovered formations with basic metadata.
-    
+
     Loads formation.json from each discovered formation directory
     but does NOT load agents (lightweight).
     """

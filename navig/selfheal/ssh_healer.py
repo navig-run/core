@@ -10,6 +10,7 @@ loop or auto-modifying SSH config files:
 Every public method returns a :class:`HealResult` — callers never need to do
 their own error handling.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -35,9 +36,9 @@ class HealResult:
     """Outcome of a single auto-fix attempt."""
 
     status: HealStatus
-    message: str            # sanitized, safe to display to end users
-    should_retry: bool = False   # True iff the original command can now be retried
-    detail: str = ""        # developer-facing extra info (not shown to user)
+    message: str  # sanitized, safe to display to end users
+    should_retry: bool = False  # True iff the original command can now be retried
+    detail: str = ""  # developer-facing extra info (not shown to user)
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +106,11 @@ class SSHHealer:
                 tmp_path = tmp.name
 
             proc = await asyncio.create_subprocess_exec(
-                "ssh-keyscan", "-H", "-T", str(_KEYSCAN_TIMEOUT), host,
+                "ssh-keyscan",
+                "-H",
+                "-T",
+                str(_KEYSCAN_TIMEOUT),
+                host,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -198,9 +203,12 @@ class SSHHealer:
         try:
             proc = await asyncio.create_subprocess_exec(
                 "ssh-keygen",
-                "-t", "ed25519",
-                "-N", "",           # empty passphrase — automated use
-                "-f", str(_DEFAULT_SSH_KEY_PATH),
+                "-t",
+                "ed25519",
+                "-N",
+                "",  # empty passphrase — automated use
+                "-f",
+                str(_DEFAULT_SSH_KEY_PATH),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -288,13 +296,18 @@ class SSHHealer:
         # `-o ConnectTimeout=8` is generous but bounded.
         probe_cmd = [
             "ssh",
-            "-o", "BatchMode=yes",
-            "-o", "ConnectTimeout=8",
-            "-o", "ServerAliveInterval=5",
-            "-o", "ServerAliveCountMax=1",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=8",
+            "-o",
+            "ServerAliveInterval=5",
+            "-o",
+            "ServerAliveCountMax=1",
             "-v",
-            "-p", str(port),
-            f"probe@{host}",     # user doesn't matter for transport diagnosis
+            "-p",
+            str(port),
+            f"probe@{host}",  # user doesn't matter for transport diagnosis
             "exit 0",
         ]
         try:
@@ -310,9 +323,11 @@ class SSHHealer:
             # but if the transport succeeded we see "Authenticated" or "Permission" in output.
             transport_ok = any(
                 sig in verbose_output
-                for sig in ("debug1: Authentications that can continue",
-                            "Permission denied",
-                            "Authenticated")
+                for sig in (
+                    "debug1: Authentications that can continue",
+                    "Permission denied",
+                    "Authenticated",
+                )
             )
 
             if transport_ok:
@@ -385,13 +400,26 @@ class SSHHealer:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _sanitize_ssh_verbose(output: str) -> str:
     """Strip verbose debug1 lines, keep only the substantive lines."""
     lines = output.splitlines()
     key_lines = [
-        line for line in lines
+        line
+        for line in lines
         if not line.startswith("debug1: ")
-        or any(kw in line for kw in ("Connecting", "connect", "cipher", "Authentications",
-                                      "Permission", "Error", "Warning", "failed"))
+        or any(
+            kw in line
+            for kw in (
+                "Connecting",
+                "connect",
+                "cipher",
+                "Authentications",
+                "Permission",
+                "Error",
+                "Warning",
+                "failed",
+            )
+        )
     ]
     return "\n".join(key_lines[-15:])  # last 15 significant lines

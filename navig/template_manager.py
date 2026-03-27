@@ -18,8 +18,16 @@ from navig import console_helper as ch
 class TemplateSchema:
     """Schema for template metadata validation (supports both JSON and YAML)."""
 
-    REQUIRED_FIELDS = ['name', 'version', 'description', 'author']
-    OPTIONAL_FIELDS = ['dependencies', 'enabled', 'paths', 'services', 'commands', 'env_vars', 'hooks']
+    REQUIRED_FIELDS = ["name", "version", "description", "author"]
+    OPTIONAL_FIELDS = [
+        "dependencies",
+        "enabled",
+        "paths",
+        "services",
+        "commands",
+        "env_vars",
+        "hooks",
+    ]
 
     @staticmethod
     def validate(metadata: Dict[str, Any]) -> tuple[bool, Optional[str]]:
@@ -30,18 +38,18 @@ class TemplateSchema:
                 return False, f"Missing required field: {field}"
 
         # Validate version format
-        version = metadata.get('version', '')
+        version = metadata.get("version", "")
         if not version or not isinstance(version, str):
             return False, "Invalid version format"
 
         # Validate dependencies
-        if 'dependencies' in metadata:
-            if not isinstance(metadata['dependencies'], list):
+        if "dependencies" in metadata:
+            if not isinstance(metadata["dependencies"], list):
                 return False, "Dependencies must be a list"
 
         # Validate enabled flag
-        if 'enabled' in metadata:
-            if not isinstance(metadata['enabled'], bool):
+        if "enabled" in metadata:
+            if not isinstance(metadata["enabled"], bool):
                 return False, "Enabled field must be boolean"
 
         return True, None
@@ -61,7 +69,7 @@ class Template:
     def _find_metadata_file(self) -> tuple[Path, str]:
         """
         Find template metadata file, preferring YAML over JSON.
-        
+
         Returns:
             Tuple of (file_path, format) where format is 'yaml' or 'json'
         """
@@ -70,9 +78,9 @@ class Template:
 
         # Prefer YAML format
         if yaml_file.exists():
-            return yaml_file, 'yaml'
+            return yaml_file, "yaml"
         elif json_file.exists():
-            return json_file, 'json'
+            return json_file, "json"
         else:
             raise FileNotFoundError(
                 f"Template metadata not found in {self.template_dir}. "
@@ -81,8 +89,8 @@ class Template:
 
     def _load_metadata(self) -> Dict[str, Any]:
         """Load template metadata from YAML or JSON file."""
-        with open(self.metadata_file, 'r', encoding='utf-8') as f:
-            if self.metadata_format == 'yaml':
+        with open(self.metadata_file, "r", encoding="utf-8") as f:
+            if self.metadata_format == "yaml":
                 metadata = yaml.safe_load(f)
             else:
                 metadata = json.load(f)
@@ -96,38 +104,38 @@ class Template:
 
     def save_metadata(self):
         """Save template metadata to file (preserving original format)."""
-        with open(self.metadata_file, 'w', encoding='utf-8') as f:
-            if self.metadata_format == 'yaml':
+        with open(self.metadata_file, "w", encoding="utf-8") as f:
+            if self.metadata_format == "yaml":
                 yaml.dump(self.metadata, f, default_flow_style=False, sort_keys=False)
             else:
                 json.dump(self.metadata, f, indent=2)
 
     def is_enabled(self) -> bool:
         """Check if template is enabled."""
-        return self.metadata.get('enabled', False)
+        return self.metadata.get("enabled", False)
 
     def enable(self):
         """Enable the template."""
         if not self.is_enabled():
-            self.metadata['enabled'] = True
-            self.metadata['last_enabled'] = datetime.now().isoformat()
+            self.metadata["enabled"] = True
+            self.metadata["last_enabled"] = datetime.now().isoformat()
             self.save_metadata()
-            self._call_hook('onEnable')
+            self._call_hook("onEnable")
 
     def disable(self):
         """Disable the template."""
         if self.is_enabled():
-            self.metadata['enabled'] = False
-            self.metadata['last_disabled'] = datetime.now().isoformat()
+            self.metadata["enabled"] = False
+            self.metadata["last_disabled"] = datetime.now().isoformat()
             self.save_metadata()
-            self._call_hook('onDisable')
+            self._call_hook("onDisable")
 
     def load(self):
         """Load the template into memory."""
         if self._loaded:
             return
 
-        self._call_hook('onLoad')
+        self._call_hook("onLoad")
         self._loaded = True
 
     def unload(self):
@@ -135,7 +143,7 @@ class Template:
         if not self._loaded:
             return
 
-        self._call_hook('onUnload')
+        self._call_hook("onUnload")
         self._loaded = False
 
     def register_hook(self, hook_name: str, callback: Callable):
@@ -152,23 +160,25 @@ class Template:
 
     def get_paths(self) -> Dict[str, str]:
         """Get server paths defined by this template."""
-        return self.metadata.get('paths', {})
+        return self.metadata.get("paths", {})
 
     def get_services(self) -> Dict[str, str]:
         """Get services defined by this template."""
-        return self.metadata.get('services', {})
+        return self.metadata.get("services", {})
 
     def get_commands(self) -> List[Dict[str, str]]:
         """Get common commands defined by this template."""
-        return self.metadata.get('commands', [])
+        return self.metadata.get("commands", [])
 
     def get_env_vars(self) -> Dict[str, str]:
         """Get environment variables defined by this template."""
-        return self.metadata.get('env_vars', {})
+        return self.metadata.get("env_vars", {})
 
-    def check_dependencies(self, available_templates: List[str]) -> tuple[bool, List[str]]:
+    def check_dependencies(
+        self, available_templates: List[str]
+    ) -> tuple[bool, List[str]]:
         """Check if all dependencies are met."""
-        dependencies = self.metadata.get('dependencies', [])
+        dependencies = self.metadata.get("dependencies", [])
         missing = [dep for dep in dependencies if dep not in available_templates]
         return len(missing) == 0, missing
 
@@ -176,7 +186,7 @@ class Template:
 class TemplateManager:
     """
     Manages template lifecycle, discovery, and state.
-    
+
     Directory Structure:
         store/templates/
         ├── hestiacp/
@@ -195,10 +205,13 @@ class TemplateManager:
         if templates_dir is None:
             try:
                 from navig.platform.paths import builtin_store_dir
+
                 templates_dir = builtin_store_dir() / "templates"
             except Exception:
                 # Fallback: resolve relative to this file (navig/ → repo root → store/)
-                templates_dir = Path(__file__).resolve().parent.parent / "store" / "templates"
+                templates_dir = (
+                    Path(__file__).resolve().parent.parent / "store" / "templates"
+                )
 
         self.templates_dir = templates_dir
         self.templates: Dict[str, Template] = {}
@@ -221,7 +234,9 @@ class TemplateManager:
             json_file = template_dir / "template.json"
 
             if not yaml_file.exists() and not json_file.exists():
-                ch.warning(f"Skipping '{template_dir.name}': no template.yaml or template.json found")
+                ch.warning(
+                    f"Skipping '{template_dir.name}': no template.yaml or template.json found"
+                )
                 continue
 
             try:
@@ -242,7 +257,7 @@ class TemplateManager:
         templates = list(self.templates.values())
         if enabled_only:
             templates = [a for a in templates if a.is_enabled()]
-        return sorted(templates, key=lambda a: a.metadata['name'])
+        return sorted(templates, key=lambda a: a.metadata["name"])
 
     def enable_template(self, name: str) -> bool:
         """Enable an template with dependency checking."""
@@ -260,7 +275,9 @@ class TemplateManager:
         deps_met, missing_deps = template.check_dependencies(available_templates)
 
         if not deps_met:
-            ch.error(f"Cannot enable '{name}': missing dependencies: {', '.join(missing_deps)}")
+            ch.error(
+                f"Cannot enable '{name}': missing dependencies: {', '.join(missing_deps)}"
+            )
             return False
 
         # Enable template
@@ -289,12 +306,14 @@ class TemplateManager:
         for other_template in self.list_templates(enabled_only=True):
             if other_template.name == name:
                 continue
-            deps = other_template.metadata.get('dependencies', [])
+            deps = other_template.metadata.get("dependencies", [])
             if name in deps:
                 dependents.append(other_template.name)
 
         if dependents:
-            ch.warning(f"Warning: The following templates depend on '{name}': {', '.join(dependents)}")
+            ch.warning(
+                f"Warning: The following templates depend on '{name}': {', '.join(dependents)}"
+            )
             if not ch.confirm_action(f"Disable '{name}' anyway?"):
                 return False
 
@@ -334,23 +353,23 @@ class TemplateManager:
             # Merge paths
             template_paths = template.get_paths()
             if template_paths:
-                if 'paths' not in server_config:
-                    server_config['paths'] = {}
-                server_config['paths'].update(template_paths)
+                if "paths" not in server_config:
+                    server_config["paths"] = {}
+                server_config["paths"].update(template_paths)
 
             # Merge services
             template_services = template.get_services()
             if template_services:
-                if 'services' not in server_config:
-                    server_config['services'] = {}
-                server_config['services'].update(template_services)
+                if "services" not in server_config:
+                    server_config["services"] = {}
+                server_config["services"].update(template_services)
 
             # Add env vars
             template_env = template.get_env_vars()
             if template_env:
-                if 'env_vars' not in server_config:
-                    server_config['env_vars'] = {}
-                server_config['env_vars'].update(template_env)
+                if "env_vars" not in server_config:
+                    server_config["env_vars"] = {}
+                server_config["env_vars"].update(template_env)
 
         return server_config
 

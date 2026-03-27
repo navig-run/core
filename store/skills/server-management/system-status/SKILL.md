@@ -139,5 +139,3 @@ Overall: All systems healthy! 🚀
 - **Host not found**: "I don't have a server called '{name}'. Available hosts: {list}"
 - **Connection failed**: "Can't reach {host}. Is it online? Try: `navig host test`"
 - **Timeout**: "Commands are timing out. Server might be overloaded."
-
-

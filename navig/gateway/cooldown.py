@@ -22,6 +22,7 @@ Design decisions:
   - Keys are strings of the form "<action_slug>[:<target>]".
   - Separate per-actor tracking to allow global or per-user limits.
 """
+
 from __future__ import annotations
 
 import logging
@@ -36,10 +37,11 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CooldownEntry:
     """State for a single cooldown key."""
-    last_used: float = 0.0          # time.monotonic() of last allow
-    cooldown_s: float = 60.0        # seconds to wait before next allow
-    call_count: int = 0             # total usages since tracker start
-    deny_count: int = 0             # total denials since tracker start
+
+    last_used: float = 0.0  # time.monotonic() of last allow
+    cooldown_s: float = 60.0  # seconds to wait before next allow
+    call_count: int = 0  # total usages since tracker start
+    deny_count: int = 0  # total denials since tracker start
 
 
 class CooldownTracker:
@@ -55,10 +57,10 @@ class CooldownTracker:
     DEFAULT_COOLDOWNS: Dict[str, float] = {
         # Dangerous runtime mutations get longer cooldowns
         "mission.complete": 10.0,
-        "node.register":    5.0,
+        "node.register": 5.0,
         "system.shutdown": 120.0,
-        "system.restart":  120.0,
-        "system.stop":      60.0,
+        "system.restart": 120.0,
+        "system.stop": 60.0,
     }
 
     def __init__(self, default_cooldown_seconds: float = 30.0) -> None:
@@ -95,7 +97,9 @@ class CooldownTracker:
                 entry.deny_count += 1
                 logger.debug(
                     "CooldownTracker DENY key=%s actor=%s wait=%.1fs",
-                    key, actor, wait,
+                    key,
+                    actor,
+                    wait,
                 )
                 return False, wait
 
@@ -103,7 +107,9 @@ class CooldownTracker:
             entry.call_count += 1
             logger.debug(
                 "CooldownTracker ALLOW key=%s actor=%s (call #%d)",
-                key, actor, entry.call_count,
+                key,
+                actor,
+                entry.call_count,
             )
             return True, 0.0
 

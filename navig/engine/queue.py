@@ -21,6 +21,7 @@ Usage
     await q.drain()                        # wait for all lanes to finish
     await q.shutdown()                     # cancel everything and clean up
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -112,12 +113,15 @@ class TaskHandle:
         return False
 
     def __repr__(self) -> str:  # pragma: no cover
-        return f"TaskHandle(id={self.task_id[:8]}… lane={self.lane!r} state={self._state})"
+        return (
+            f"TaskHandle(id={self.task_id[:8]}… lane={self.lane!r} state={self._state})"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Internal lane worker
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class _LaneState:
@@ -147,9 +151,7 @@ class _LaneState:
             except asyncio.CancelledError:
                 handle._state = TaskState.CANCELLED
                 if not handle._future.done():
-                    handle._future.set_exception(
-                        LaneClearedError(handle.lane)
-                    )
+                    handle._future.set_exception(LaneClearedError(handle.lane))
                 raise
             except Exception as exc:
                 handle._state = TaskState.ERROR
@@ -304,7 +306,8 @@ class CommandQueue:
         Raises asyncio.TimeoutError if not drained within *timeout* seconds.
         """
         targets = (
-            [self._lanes[lane]] if lane and lane in self._lanes
+            [self._lanes[lane]]
+            if lane and lane in self._lanes
             else list(self._lanes.values())
         )
         waits = [ls.queue.join() for ls in targets]

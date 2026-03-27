@@ -4,26 +4,27 @@ Tests for Unicode-safe monitoring output helpers.
 Ensures that _traffic_light, _disk_status, and _health_icon return sensible
 strings even when the terminal cannot encode emoji (Windows cp1252 / charmap).
 """
+
+import importlib
 import sys
 import types
-import importlib
-from unittest.mock import patch, MagicMock
-
+from unittest.mock import MagicMock, patch
 
 # ---------------------------------------------------------------------------
 # Helpers to import monitoring module with Rich mocked out
 # ---------------------------------------------------------------------------
 
+
 def _import_monitoring():
     """Import monitoring module with its Rich + navig dependencies stubbed."""
-    stub_rich_table    = types.ModuleType("rich.table")
-    stub_rich_panel    = types.ModuleType("rich.panel")
+    stub_rich_table = types.ModuleType("rich.table")
+    stub_rich_panel = types.ModuleType("rich.panel")
     stub_rich_progress = types.ModuleType("rich.progress")
-    stub_rich_table.Table      = MagicMock
-    stub_rich_panel.Panel      = MagicMock
-    stub_rich_progress.Progress      = MagicMock
+    stub_rich_table.Table = MagicMock
+    stub_rich_panel.Panel = MagicMock
+    stub_rich_progress.Progress = MagicMock
     stub_rich_progress.SpinnerColumn = MagicMock
-    stub_rich_progress.TextColumn    = MagicMock
+    stub_rich_progress.TextColumn = MagicMock
 
     stub_cfg = types.ModuleType("navig.config")
     stub_cfg.get_config_manager = MagicMock
@@ -40,11 +41,11 @@ def _import_monitoring():
     stub_ch._safe_symbol = _fake_safe_symbol
 
     mocks = {
-        "rich.table":    stub_rich_table,
-        "rich.panel":    stub_rich_panel,
+        "rich.table": stub_rich_table,
+        "rich.panel": stub_rich_panel,
         "rich.progress": stub_rich_progress,
-        "navig.config":  stub_cfg,
-        "navig.remote":  stub_remote,
+        "navig.config": stub_cfg,
+        "navig.remote": stub_remote,
         "navig.console_helper": stub_ch,
     }
     with patch.dict("sys.modules", mocks):
@@ -60,6 +61,7 @@ def _import_monitoring():
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 def test_traffic_light_ok():
     mod = _import_monitoring()
@@ -173,9 +175,11 @@ def test_console_helper_load_reconfigures_stdout_on_windows():
             reconfigure_called.append(kwargs)
 
     lazy = ch._LazyConsole()
-    with patch("sys.platform", "win32"), \
-         patch("sys.stdout", FakeStdout()), \
-         patch("navig.console_helper._Console", return_value=MagicMock()):
+    with (
+        patch("sys.platform", "win32"),
+        patch("sys.stdout", FakeStdout()),
+        patch("navig.console_helper._Console", return_value=MagicMock()),
+    ):
         lazy._load()
 
     assert reconfigure_called, "reconfigure() was not called on Windows"

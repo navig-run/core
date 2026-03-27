@@ -28,19 +28,19 @@ class RollbackManager:
     def __init__(
         self,
         backup_cfg: BackupConfig,
-        deploy_target: str,          # e.g. /var/www/myapp
+        deploy_target: str,  # e.g. /var/www/myapp
         app_name: str,
         server_config: Dict[str, Any],
         remote_ops: Any,
         cache_dir: Path,
         dry_run: bool = False,
     ):
-        self._bcfg     = backup_cfg
-        self._target   = deploy_target.rstrip("/")
-        self._app      = app_name
-        self._server   = server_config
-        self._remote   = remote_ops
-        self._dry_run  = dry_run
+        self._bcfg = backup_cfg
+        self._target = deploy_target.rstrip("/")
+        self._app = app_name
+        self._server = server_config
+        self._remote = remote_ops
+        self._dry_run = dry_run
         self._state_path = cache_dir / f"last_deploy_{app_name}.json"
 
         # Build remote snapshot base dir: e.g. /var/backups/myapp
@@ -71,7 +71,9 @@ class RollbackManager:
         mkdir_cmd = f"mkdir -p {self._snapshot_base}"
         r = self._remote.execute_command(mkdir_cmd, self._server)
         if r.returncode != 0:
-            raise RuntimeError(f"Could not create snapshot dir {self._snapshot_base}: {r.stderr}")
+            raise RuntimeError(
+                f"Could not create snapshot dir {self._snapshot_base}: {r.stderr}"
+            )
 
         # Create snapshot (cp, not rsync — same disk = fast)
         cp_cmd = f"cp -r {self._target} {snap_path}"
@@ -83,7 +85,9 @@ class RollbackManager:
         logger.info("Snapshot created: %s", snap_path)
         return record
 
-    def restore_snapshot(self, snapshot: Optional[SnapshotRecord] = None) -> tuple[bool, str]:
+    def restore_snapshot(
+        self, snapshot: Optional[SnapshotRecord] = None
+    ) -> tuple[bool, str]:
         """
         Restore from the given snapshot (or load from last_deploy state file).
 
@@ -151,5 +155,7 @@ class RollbackManager:
             data = json.loads(self._state_path.read_text(encoding="utf-8"))
             return SnapshotRecord(path=data["path"], created_at=data["created_at"])
         except Exception as exc:
-            logger.warning("Could not read deploy state file %s: %s", self._state_path, exc)
+            logger.warning(
+                "Could not read deploy state file %s: %s", self._state_path, exc
+            )
             return None

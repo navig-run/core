@@ -25,6 +25,7 @@ def _debug_log(message: str) -> None:
     """Simple debug logging wrapper."""
     try:
         from navig.debug_logger import DebugLogger
+
         logger = DebugLogger()
         logger.log_operation("memory", {"message": message})
     except Exception:  # noqa: BLE001
@@ -63,35 +64,35 @@ class IndexResult:
 class MemoryIndexer:
     """
     Indexes Markdown files into searchable chunks.
-    
+
     Features:
     - Smart chunking that respects document structure
     - Content hashing for incremental updates
     - Embedding generation with caching
     - Progress tracking
-    
+
     Usage:
         indexer = MemoryIndexer(storage, embedding_provider)
         result = indexer.index_directory(Path.home() / '.navig' / 'memory')
     """
 
     # File patterns to index
-    SUPPORTED_EXTENSIONS = {'.md', '.markdown', '.txt'}
+    SUPPORTED_EXTENSIONS = {".md", ".markdown", ".txt"}
 
     # Patterns to skip
     SKIP_PATTERNS = {
-        'index.db',
-        'index.db-wal',
-        'index.db-shm',
-        '.git',
-        '__pycache__',
-        '.DS_Store',
+        "index.db",
+        "index.db-wal",
+        "index.db-shm",
+        ".git",
+        "__pycache__",
+        ".DS_Store",
     }
 
     def __init__(
         self,
-        storage: 'MemoryStorage',
-        embedding_provider: Optional['EmbeddingProvider'] = None,
+        storage: "MemoryStorage",
+        embedding_provider: Optional["EmbeddingProvider"] = None,
         config: Optional[ChunkConfig] = None,
     ):
         self.storage = storage
@@ -107,18 +108,19 @@ class MemoryIndexer:
     ) -> IndexResult:
         """
         Index all supported files in a directory.
-        
+
         Args:
             directory: Directory to scan
             force_reindex: Re-index even unchanged files
             embed: Generate embeddings for chunks
             progress_callback: Optional callback(file_path, status)
-            
+
         Returns:
             IndexResult with statistics
         """
         import time
         from concurrent.futures import ThreadPoolExecutor, as_completed
+
         start_time = time.time()
         result = IndexResult()
 
@@ -129,8 +131,12 @@ class MemoryIndexer:
         # Find all supported files
         files = self._find_files(directory)
 
-        chunks_to_embed: List['MemoryChunk'] = []
-        batch_size = getattr(self.embedding_provider, 'batch_size', 32) if self.embedding_provider else 32
+        chunks_to_embed: List["MemoryChunk"] = []
+        batch_size = (
+            getattr(self.embedding_provider, "batch_size", 32)
+            if self.embedding_provider
+            else 32
+        )
 
         # Phase 1: Pure parsing and chunking. Decoupled from embedding mathematically heavy steps.
         for file_path in files:
@@ -139,22 +145,26 @@ class MemoryIndexer:
 
                 # Check if file needs reindexing
                 file_hash = self._compute_file_hash(file_path)
-                if not force_reindex and not self.storage.file_needs_reindex(rel_path, file_hash):
+                if not force_reindex and not self.storage.file_needs_reindex(
+                    rel_path, file_hash
+                ):
                     result.files_skipped += 1
                     if progress_callback:
                         progress_callback(rel_path, "skipped")
                     continue
 
                 # Index the file (parsing, sqlite storing chunks)
-                file_result = self._index_file(file_path, directory, file_hash, embed=False)
+                file_result = self._index_file(
+                    file_path, directory, file_hash, embed=False
+                )
 
                 result.files_processed += 1
-                result.chunks_created += file_result['chunks']
-                result.total_tokens += file_result['tokens']
+                result.chunks_created += file_result["chunks"]
+                result.total_tokens += file_result["tokens"]
 
                 # Queue chunks for batch-embedding later
                 if embed and self.embedding_provider:
-                    chunks_to_embed.extend(file_result.get('chunks_obj', []))
+                    chunks_to_embed.extend(file_result.get("chunks_obj", []))
 
                 if progress_callback:
                     progress_callback(rel_path, "indexed")
@@ -169,11 +179,19 @@ class MemoryIndexer:
 
         # Phase 2: Parallel Batch Embedding Processing
         if chunks_to_embed and embed and self.embedding_provider:
-            batches = [chunks_to_embed[i:i + batch_size] for i in range(0, len(chunks_to_embed), batch_size)]
+            batches = [
+                chunks_to_embed[i : i + batch_size]
+                for i in range(0, len(chunks_to_embed), batch_size)
+            ]
 
             # Bound threads to 4 to prevent out-of-memory or system starvation
-            with ThreadPoolExecutor(max_workers=min(4, max(1, len(batches)))) as executor:
-                futures = [executor.submit(self._process_embedding_batch, batch) for batch in batches]
+            with ThreadPoolExecutor(
+                max_workers=min(4, max(1, len(batches)))
+            ) as executor:
+                futures = [
+                    executor.submit(self._process_embedding_batch, batch)
+                    for batch in batches
+                ]
 
                 for future in as_completed(futures):
                     try:
@@ -190,13 +208,14 @@ class MemoryIndexer:
 
         return result
 
-    def _process_embedding_batch(self, chunks: List['MemoryChunk']) -> int:
+    def _process_embedding_batch(self, chunks: List["MemoryChunk"]) -> int:
         """Process a batch of chunks for embedding."""
         if not chunks or not self.embedding_provider:
             return 0
 
         from navig.memory.storage import MemoryStorage
-        model_name = getattr(self.embedding_provider, 'model_name', 'unknown')
+
+        model_name = getattr(self.embedding_provider, "model_name", "unknown")
 
         # 1. Check cache first
         to_embed = []
@@ -254,6 +273,7 @@ class MemoryIndexer:
         Index a single file.
         """
         import time
+
         start_time = time.time()
         result = IndexResult()
 
@@ -269,12 +289,12 @@ class MemoryIndexer:
             # Index without embedding first
             file_result = self._index_file(file_path, base_dir, file_hash, embed=False)
             result.files_processed = 1
-            result.chunks_created = file_result['chunks']
-            result.total_tokens = file_result['tokens']
+            result.chunks_created = file_result["chunks"]
+            result.total_tokens = file_result["tokens"]
 
             # Embed if requested
             if embed and self.embedding_provider:
-                chunks = file_result.get('chunks_obj', [])
+                chunks = file_result.get("chunks_obj", [])
                 if chunks:
                     result.chunks_embedded = self._process_embedding_batch(chunks)
 
@@ -298,7 +318,7 @@ class MemoryIndexer:
         rel_path = file_path.relative_to(base_directory).as_posix()
 
         # Read file content
-        content = file_path.read_text(encoding='utf-8', errors='replace')
+        content = file_path.read_text(encoding="utf-8", errors="replace")
 
         # Delete existing chunks for this file
         self.storage.delete_chunks_for_file(rel_path)
@@ -326,27 +346,27 @@ class MemoryIndexer:
             embedded_count = self._process_embedding_batch(chunks)
 
         return {
-            'chunks': len(chunks),
-            'tokens': total_tokens,
-            'embedded': embedded_count,
-            'chunks_obj': chunks,  # Return objects for batch processing
+            "chunks": len(chunks),
+            "tokens": total_tokens,
+            "embedded": embedded_count,
+            "chunks_obj": chunks,  # Return objects for batch processing
         }
 
     def _chunk_text(
         self,
         text: str,
         file_path: str,
-    ) -> Generator['MemoryChunk', None, None]:
+    ) -> Generator["MemoryChunk", None, None]:
         """
         Chunk text with overlap while respecting structure.
-        
+
         Chunking strategy:
         1. Split into blocks (headers, paragraphs, code blocks)
         2. Merge small blocks, split large blocks
         3. Add overlap between chunks
         """
 
-        lines = text.split('\n')
+        lines = text.split("\n")
         blocks = self._extract_blocks(lines)
 
         current_chunk_lines = []
@@ -358,9 +378,12 @@ class MemoryIndexer:
             block_tokens = self._estimate_tokens(block_text)
 
             # If adding this block would exceed max, flush current chunk
-            if current_chunk_tokens + block_tokens > self.config.max_chunk_tokens and current_chunk_lines:
+            if (
+                current_chunk_tokens + block_tokens > self.config.max_chunk_tokens
+                and current_chunk_lines
+            ):
                 # Create chunk from current content
-                chunk_content = '\n'.join(current_chunk_lines)
+                chunk_content = "\n".join(current_chunk_lines)
                 chunk_end_line = current_start_line + len(current_chunk_lines) - 1
 
                 yield self._create_chunk(
@@ -386,13 +409,13 @@ class MemoryIndexer:
                 current_start_line = chunk_end_line - len(overlap_buffer) + 1
 
             # Add block to current chunk
-            block_lines = block_text.split('\n')
+            block_lines = block_text.split("\n")
             current_chunk_lines.extend(block_lines)
             current_chunk_tokens += block_tokens
 
         # Flush remaining content
         if current_chunk_lines and current_chunk_tokens >= self.config.min_chunk_tokens:
-            chunk_content = '\n'.join(current_chunk_lines)
+            chunk_content = "\n".join(current_chunk_lines)
             chunk_end_line = current_start_line + len(current_chunk_lines) - 1
 
             yield self._create_chunk(
@@ -408,7 +431,7 @@ class MemoryIndexer:
     ) -> List[Tuple[int, int, str]]:
         """
         Extract logical blocks from lines.
-        
+
         Returns list of (start_line, end_line, text) tuples.
         """
         blocks = []
@@ -418,26 +441,20 @@ class MemoryIndexer:
 
         for i, line in enumerate(lines, 1):
             # Track code blocks
-            if line.strip().startswith('```'):
+            if line.strip().startswith("```"):
                 if in_code_block:
                     # End of code block
                     current_block_lines.append(line)
-                    blocks.append((
-                        current_start,
-                        i,
-                        '\n'.join(current_block_lines)
-                    ))
+                    blocks.append((current_start, i, "\n".join(current_block_lines)))
                     current_block_lines = []
                     current_start = i + 1
                     in_code_block = False
                 else:
                     # Start of code block - flush current
                     if current_block_lines:
-                        blocks.append((
-                            current_start,
-                            i - 1,
-                            '\n'.join(current_block_lines)
-                        ))
+                        blocks.append(
+                            (current_start, i - 1, "\n".join(current_block_lines))
+                        )
                     current_block_lines = [line]
                     current_start = i
                     in_code_block = True
@@ -448,13 +465,11 @@ class MemoryIndexer:
                 continue
 
             # Headers start new blocks
-            if line.startswith('#'):
+            if line.startswith("#"):
                 if current_block_lines:
-                    blocks.append((
-                        current_start,
-                        i - 1,
-                        '\n'.join(current_block_lines)
-                    ))
+                    blocks.append(
+                        (current_start, i - 1, "\n".join(current_block_lines))
+                    )
                 current_block_lines = [line]
                 current_start = i
                 continue
@@ -470,11 +485,7 @@ class MemoryIndexer:
 
         # Flush remaining
         if current_block_lines:
-            blocks.append((
-                current_start,
-                len(lines),
-                '\n'.join(current_block_lines)
-            ))
+            blocks.append((current_start, len(lines), "\n".join(current_block_lines)))
 
         return blocks
 
@@ -484,7 +495,7 @@ class MemoryIndexer:
         file_path: str,
         line_start: int,
         line_end: int,
-    ) -> 'MemoryChunk':
+    ) -> "MemoryChunk":
         """Create a MemoryChunk instance."""
         from navig.memory.storage import MemoryChunk, MemoryStorage
 
@@ -500,14 +511,14 @@ class MemoryIndexer:
             token_count=token_count,
         )
 
-    def _embed_chunks(self, chunks: List['MemoryChunk']) -> int:
+    def _embed_chunks(self, chunks: List["MemoryChunk"]) -> int:
         """Generate embeddings for chunks using cache."""
         if not self.embedding_provider:
             return 0
 
         from navig.memory.storage import MemoryStorage
 
-        model_name = getattr(self.embedding_provider, 'model_name', 'unknown')
+        model_name = getattr(self.embedding_provider, "model_name", "unknown")
         embedded = 0
 
         # Check cache first
@@ -542,7 +553,7 @@ class MemoryIndexer:
     def _compute_file_hash(self, file_path: Path) -> str:
         """Compute SHA256 hash of file content."""
         hasher = hashlib.sha256()
-        with open(file_path, 'rb') as f:
+        with open(file_path, "rb") as f:
             while chunk := f.read(8192):
                 hasher.update(chunk)
         return hasher.hexdigest()[:16]
@@ -551,7 +562,7 @@ class MemoryIndexer:
         """Find all indexable files in directory."""
         files = []
 
-        for path in directory.rglob('*'):
+        for path in directory.rglob("*"):
             # Skip directories and hidden files
             if path.is_dir():
                 continue

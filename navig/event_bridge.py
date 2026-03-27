@@ -33,16 +33,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Protocol,
-    Set,
-    runtime_checkable,
-)
+from typing import Any, Callable, Dict, List, Optional, Protocol, Set, runtime_checkable
 from uuid import uuid4
 
 logger = logging.getLogger("navig.event_bridge")
@@ -51,8 +42,10 @@ logger = logging.getLogger("navig.event_bridge")
 # Severity classification (unified across both event systems)
 # ---------------------------------------------------------------------------
 
+
 class Severity(str, Enum):
     """Unified severity levels for bridged events."""
+
     DEBUG = "debug"
     INFO = "info"
     WARNING = "warning"
@@ -64,6 +57,7 @@ class Severity(str, Enum):
 # EventEnvelope — canonical wire format for all bridged events
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True, slots=True)
 class EventEnvelope:
     """
@@ -72,13 +66,14 @@ class EventEnvelope:
     Every event from NervousSystem or SystemEventQueue is converted into
     this envelope before filtering and broadcast.
     """
+
     id: str
-    topic: str            # dot-delimited, e.g. "agent.heartbeat", "host.disk_warning"
-    source: str           # originating component, e.g. "heart", "cron_service"
+    topic: str  # dot-delimited, e.g. "agent.heartbeat", "host.disk_warning"
+    source: str  # originating component, e.g. "heart", "cron_service"
     severity: Severity
     timestamp: datetime
     data: Dict[str, Any]
-    origin: str           # "nervous_system" | "system_event_queue" | "direct"
+    origin: str  # "nervous_system" | "system_event_queue" | "direct"
 
     # ---- serialisation helpers ------------------------------------------
 
@@ -114,6 +109,7 @@ class EventEnvelope:
 # SubscriptionFilter — per-client filter specification
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SubscriptionFilter:
     """
@@ -122,6 +118,7 @@ class SubscriptionFilter:
     Fields use *include-set* semantics — an empty set means "accept all".
     Topic patterns support simple globs: ``agent.*`` matches ``agent.heartbeat``.
     """
+
     topics: Set[str] = field(default_factory=set)
     severities: Set[Severity] = field(default_factory=set)
     sources: Set[str] = field(default_factory=set)
@@ -184,9 +181,11 @@ class SubscriptionFilter:
 # WebSocket client protocol (duck-typed)
 # ---------------------------------------------------------------------------
 
+
 @runtime_checkable
 class WebSocketLike(Protocol):
     """Minimal protocol a WebSocket object must satisfy."""
+
     async def send(self, data: str) -> None: ...
 
 
@@ -277,6 +276,7 @@ _EVENT_TYPE_SEVERITY_HINTS: Dict[str, Severity] = {
 # EventBridge — the core unifier
 # ---------------------------------------------------------------------------
 
+
 class EventBridge:
     """
     Central event bridge that unifies NervousSystem, SystemEventQueue, and
@@ -305,8 +305,10 @@ class EventBridge:
         self.broadcast_timeout = broadcast_timeout
         self.enable_ipc_offload = enable_ipc_offload
         import sys
+
         self.ipc_socket_path = ipc_socket_path or (
-            r"\\.\pipe\navig-sysd.sock" if sys.platform == "win32"
+            r"\\.\pipe\navig-sysd.sock"
+            if sys.platform == "win32"
             else "/tmp/navig-sysd.sock"
         )
 
@@ -314,8 +316,8 @@ class EventBridge:
         self._clients: Dict[int, tuple[WebSocketLike, SubscriptionFilter]] = {}
 
         # Recent envelopes (for debounce + dedup)
-        self._recent: Dict[str, float] = {}   # topic → last_emit_time
-        self._dedup_window: float = 0.3        # seconds
+        self._recent: Dict[str, float] = {}  # topic → last_emit_time
+        self._dedup_window: float = 0.3  # seconds
 
         # History ring buffer
         self._history: List[EventEnvelope] = []
@@ -448,7 +450,7 @@ class EventBridge:
         # Store in history
         self._history.append(envelope)
         if len(self._history) > self._max_history:
-            self._history = self._history[-self._max_history:]
+            self._history = self._history[-self._max_history :]
 
         # No clients → skip broadcast
         if not self._clients:
@@ -544,13 +546,16 @@ class EventBridge:
             return
 
         import sys
+
         try:
             if sys.platform == "win32":
                 # Named pipe connection
                 reader, writer = await asyncio.open_connection(self.ipc_socket_path)
             else:
                 # Unix domain socket connection
-                reader, writer = await asyncio.open_unix_connection(self.ipc_socket_path)
+                reader, writer = await asyncio.open_unix_connection(
+                    self.ipc_socket_path
+                )
 
             writer.write(payload.encode("utf-8") + b"\n")
             await writer.drain()

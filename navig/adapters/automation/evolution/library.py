@@ -1,6 +1,7 @@
 """
 Script Library for AHK Automation
 """
+
 import json
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -20,6 +21,7 @@ class ScriptEntry:
 
     def to_dict(self):
         return asdict(self)
+
 
 class ScriptLibrary:
     def __init__(self, storage_dir: Optional[Path] = None):
@@ -41,7 +43,7 @@ class ScriptLibrary:
     def _load_index(self):
         if self.index_file.exists():
             try:
-                with open(self.index_file, 'r', encoding='utf-8') as f:
+                with open(self.index_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     for k, v in data.items():
                         self._index[k] = ScriptEntry(**v)
@@ -50,7 +52,7 @@ class ScriptLibrary:
 
     def _save_index(self):
         data = {k: v.to_dict() for k, v in self._index.items()}
-        with open(self.index_file, 'w', encoding='utf-8') as f:
+        with open(self.index_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
     def save_script(self, goal: str, script: str, tags: List[str] = None) -> str:
@@ -67,12 +69,12 @@ class ScriptLibrary:
             created_at=datetime.now().isoformat(),
             success_count=0,
             last_used=datetime.now().isoformat(),
-            tags=tags or []
+            tags=tags or [],
         )
 
         # Save script file
         script_path = self.storage_dir / "scripts" / f"{script_id}.ahk"
-        with open(script_path, 'w', encoding='utf-8') as f:
+        with open(script_path, "w", encoding="utf-8") as f:
             f.write(script)
 
         # Update index
@@ -86,6 +88,7 @@ class ScriptLibrary:
         # AUDIT: MANUAL REVIEW REQUIRED — fuzzy retrieval strategy requires benchmarked ranking design and corpus migration.
         # Consider fuzzy match or semantic embeddings here for larger libraries
         import hashlib
+
         script_id = hashlib.md5(goal.lower().encode()).hexdigest()[:8]
         return self._index.get(script_id)
 
