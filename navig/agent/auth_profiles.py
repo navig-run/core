@@ -11,11 +11,11 @@ Configuration
     auth:
       profiles:
         - name: primary
-          api_key: "sk-…"
+          api_key: "<your-openai-key>"
           provider: openai
           weight: 2
         - name: backup
-          api_key: "sk-…"
+          api_key: "<your-openai-key>"
           provider: openai
           weight: 1
 
