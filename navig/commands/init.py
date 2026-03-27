@@ -622,6 +622,8 @@ def run_init(dry_run: bool = False, no_genesis: bool = False, name: str = "") ->
 
     try:
         _ensure_dirs()
+        # Seed the default space so `navig space list` always shows something
+        (_DEFAULT_NAVIG_DIR / "spaces" / "default").mkdir(parents=True, exist_ok=True)
     except PermissionError as e:
         _write_init_log(f"init failed: {e}")
         raise click.exceptions.Exit(1) from e

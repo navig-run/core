@@ -100,3 +100,14 @@
 # ── Update channel ───────────────────────────────────────────────────────────
 # update:
 #   channel: stable               # stable | beta | nightly
+
+
+# ── Spaces ───────────────────────────────────────────────────────────────────
+# Spaces live under ~/.navig/spaces/<name>/ and give you separate named
+# contexts (e.g. homelab, client-x) within a single NAVIG install.
+#
+# The 'default' space is created automatically — no configuration needed.
+# Switch spaces: navig space switch homelab
+# Override per-command: NAVIG_SPACE=homelab navig <command>
+#
+# active_space: default
