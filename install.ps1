@@ -100,6 +100,24 @@ function sym { param([string]$n)
 $script:LW = 52
 $script:LB = 12
 
+$script:Taglines = @(
+    "Your servers are in good hands now.",
+    "No admin visible in graveyard? Perfect.",
+    "SSH tunnels, remote ops - all in one CLI.",
+    "Because server management shouldn't feel like surgery.",
+    "ctrl+c to exit. But why would you?",
+    "Keeping uptime personal since 2024.",
+    "One CLI to rule them all.",
+    "Servers don't sleep, and neither does NAVIG.",
+    "Remote ops, local comfort.",
+    "Born in the terminal. Lives in the cloud.",
+    "Your devops sidekick. No cape required.",
+    "Deploy, manage, survive. Repeat.",
+    "Less SSH, more SHH - it just works.",
+    "The quiet guardian of your infrastructure.",
+    "Admin by day, daemon by night."
+)
+
 function hline { param([int]$w) return (sym "hz") * $w }
 
 function Print-Header {
@@ -110,7 +128,8 @@ function Print-Header {
     clr "  $tl$line$tr" "DarkGray"; nl
     clr "  $vt" "DarkGray"; nl
     clr "  $vt" "DarkGray"; clr "   NAVIG" "Cyan"; nl
-    clr "  $vt" "DarkGray"; clr "   quiet operator tooling for real systems" "DarkGray"; nl
+    $tagline = $script:Taglines | Get-Random
+    clr "  $vt" "DarkGray"; clr "   $tagline" "DarkGray"; nl
     clr "  $vt" "DarkGray"; nl
     clr "  $bl$line$br" "DarkGray"; nl
     nl
