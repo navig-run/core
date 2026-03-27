@@ -1111,9 +1111,16 @@ For conversation, respond naturally without JSON.
             return adapter.set_clipboard(params.get("text", ""))
 
         elif action == "command":
-            cmd = params.get("cmd", "")
+            cmd_str = params.get("cmd", "")
+            import platform
+
+            if platform.system().lower() == "windows":
+                cmd_args = ["cmd.exe", "/c", cmd_str]
+            else:
+                cmd_args = ["bash", "-c", cmd_str]
+
             result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=60
+                cmd_args, capture_output=True, text=True, timeout=60
             )
             if result.returncode != 0:
                 raise RuntimeError(result.stderr or f"Exit code: {result.returncode}")

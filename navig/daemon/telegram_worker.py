@@ -289,7 +289,7 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
             if (
                 gateway.mcp_client_manager
                 and gateway.mcp_client_manager.clients.get("vscode-copilot", None)
-                and gateway.mcp_client_manager.clients["vscode-copilot"].connected
+                and gateway.mcp_client_manager.clients["vscode-copilot"].is_connected
             )
             else "pending"
         ),

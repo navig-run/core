@@ -143,6 +143,31 @@ navig --help
 
 ---
 
+## No server? Start here (local mode)
+
+If you don't have a remote server available yet, NAVIG works on localhost too:
+
+```bash
+# Install
+pip install navig
+
+# Discover your local machine as a host
+navig host discover-local
+
+# Run your first command (on this machine)
+navig run "echo hello from NAVIG && uname -a"
+
+# Explore files
+navig file list ~ --tree --depth 2
+
+# Ask the AI operator layer something
+navig ask ask "what process is using the most CPU right now?"
+```
+
+That's a complete first run — no remote server required.
+
+---
+
 ## Quick start
 
 ```bash

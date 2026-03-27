@@ -22,7 +22,6 @@ core_events  = { path = "../core_events" }
 core_auth    = { path = "../core_auth" }
 core_api     = { path = "../core_api" }
 core_plugins = { path = "../core_plugins" }
-core_tray    = { path = "../core_tray" }
 core_os      = { path = "../core_os" }
 
 [target.'cfg(unix)'.dependencies]
@@ -33,7 +32,6 @@ signal-hook-tokio = { version = "0.3", features = ["futures-v0_3"] }
 # Windows: graceful shutdown via ctrl-c (tokio handles this natively)
 
 [features]
-default         = ["tray"]
-tray            = ["core_tray/tray"]
+default         = ["headless"]
 debug-endpoints = ["core_api/debug-endpoints"]
 headless        = []

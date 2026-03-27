@@ -64,7 +64,9 @@ class TestMemoryRemember:
             patch("navig.mcp_server._memory_store", return_value=_make_store()),
             patch("navig.memory.fact_extractor.FactExtractor") as MockExtractor,
         ):
-            MockExtractor.return_value.extract_and_store.return_value = 3
+            from unittest.mock import AsyncMock
+
+            MockExtractor.return_value.extract_and_store = AsyncMock(return_value=3)
             from navig.mcp_server import memory_remember
 
             result = await memory_remember(text="I prefer dark mode", source="mcp")
@@ -77,7 +79,9 @@ class TestMemoryRemember:
             patch("navig.memory.fact_extractor.FactExtractor") as MockExtractor,
         ):
             instance = MockExtractor.return_value
-            instance.extract_and_store.return_value = 1
+            from unittest.mock import AsyncMock
+
+            instance.extract_and_store = AsyncMock(return_value=1)
             from navig.mcp_server import memory_remember
 
             await memory_remember(text="hello")

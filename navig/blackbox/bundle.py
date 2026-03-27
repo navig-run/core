@@ -182,9 +182,9 @@ def write_bundle(bundle: Bundle, output: Path) -> Path:
 
 def _default_log_files() -> list[Path]:
     """Default log files to include in bundles."""
-    from navig.platform.paths import local_log_dir
+    from navig.platform.paths import log_dir as _log_dir
 
-    log_dir = local_log_dir()
+    log_dir = _log_dir()
     return [
         log_dir / "debug.log",
         log_dir / "navig.log",

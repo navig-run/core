@@ -9,6 +9,8 @@ on 2026-02-18.
 - **FROZEN** — no new features or fixes.
 - Retained for reference during the Go rewrite.
 - Will be deleted once the Go host in `navig-core/host/` reaches parity.
+- Archived GUI tray dependencies are excluded from the frozen workspace to avoid
+  stale lockfile security noise.
 
 ## Building (reference only)
 

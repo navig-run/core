@@ -602,7 +602,7 @@ class TestBugFixRegressions:
 
         src = inspect.getsource(Soul.get_mood)
         # The annotation should reference Tuple properly
-        assert "Tuple" in src
+        assert "tuple[" in src
         # The shadow function should NOT exist
         # Check that 'Tuple' at module level is from typing (not a function)
         from typing import Tuple

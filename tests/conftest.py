@@ -197,3 +197,51 @@ def capture_output(monkeypatch):
     monkeypatch.setattr("builtins.print", mock_print)
 
     return output
+
+
+@pytest.fixture
+def log_messages():
+    """Capture log records emitted by the navig logger tree.
+
+    Because ``navig.core.logging`` configures the root ``navig`` logger with
+    ``propagate = False`` and stores ``sys.stderr`` at handler-creation time,
+    neither ``caplog``, ``capsys``, nor ``capfd`` see these messages.  This
+    fixture attaches a temporary ``ListHandler`` directly to ``logging.getLogger
+    ("navig")`` so tests can assert on log text without relying on fd-level or
+    sys.stderr-level capture.
+    """
+    import logging
+
+    records: list[str] = []
+
+    class _ListHandler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record.getMessage())
+
+    handler = _ListHandler(level=logging.DEBUG)
+    # Attach to both "navig" and "navig.daemon": the supervisor sets
+    # navig.daemon.propagate = False via _make_logger(), so if any test
+    # creates a NavigDaemon instance before this fixture runs the message
+    # from navig.daemon.telegram_worker would never reach the "navig"
+    # handler.  Attaching directly to "navig.daemon" covers that path.
+    navig_logger = logging.getLogger("navig")
+    daemon_logger = logging.getLogger("navig.daemon")
+    # Ensure a permissive level so INFO records are not silently dropped when
+    # _configure_root_logger() has not yet been called (e.g., when these tests
+    # run in isolation the effective level would otherwise fall back to the
+    # root logger's WARNING default).
+    original_level = navig_logger.level
+    if navig_logger.level == logging.NOTSET:
+        navig_logger.setLevel(logging.DEBUG)
+    navig_logger.addHandler(handler)
+    daemon_logger.addHandler(handler)
+    try:
+        yield records
+    finally:
+        navig_logger.removeHandler(handler)
+        daemon_logger.removeHandler(handler)
+        navig_logger.setLevel(original_level)
+
+
+# Keep navig_log_capture as an alias so existing tests using either name work.
+navig_log_capture = log_messages

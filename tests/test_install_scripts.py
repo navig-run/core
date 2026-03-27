@@ -22,7 +22,12 @@ def run_cmd(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
 
 @pytest.fixture(scope="session")
 def bash_cmd() -> str | None:
-    return shutil.which("bash")
+    cmd = shutil.which("bash")
+    if cmd and "system32\\bash" in cmd.lower():
+        # Prefer Git Bash on Windows to avoid WSL translation bugs
+        git_bash = shutil.which("bash", path=r"C:\Program Files\Git\bin")
+        return git_bash if git_bash else None
+    return cmd
 
 
 @pytest.fixture(scope="session")

@@ -12,6 +12,7 @@ This module provides comprehensive security management including:
 Migrated from: security-manager.ps1 (400 lines)
 """
 
+import ipaddress
 import json
 import re
 
@@ -23,6 +24,30 @@ from navig.config import get_config_manager
 from navig.remote import RemoteOperations
 
 console = Console()
+
+
+def _validate_firewall_rule_params(port, protocol):
+    """
+    Validate and sanitize firewall rule parameters.
+    Ensures:
+    - port is an integer between 1 and 65535
+    - protocol is 'tcp' or 'udp' (case-insensitive)
+    Returns:
+        Tuple (port_str, protocol_str) if valid, otherwise (None, None).
+    """
+    try:
+        port_int = int(str(port))
+    except (TypeError, ValueError):
+        console.print("[red]✗[/red] Invalid port or protocol")
+        return None, None
+    if not (1 <= port_int <= 65535):
+        console.print("[red]✗[/red] Invalid port or protocol")
+        return None, None
+    protocol_str = str(protocol).lower()
+    if protocol_str not in {"tcp", "udp"}:
+        console.print("[red]✗[/red] Invalid port or protocol")
+        return None, None
+    return str(port_int), protocol_str
 
 
 def firewall_status(options):
@@ -110,22 +135,28 @@ def firewall_add_rule(port, protocol, allow_from, options):
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(server_config)
 
-    if not re.match(r"^\d+$", str(port)) or not re.match(r"^(tcp|udp)$", str(protocol)):
-        console.print("[red]✗[/red] Invalid port or protocol")
+    port_str, protocol_str = _validate_firewall_rule_params(port, protocol)
+    if port_str is None:
         return
 
     # Build UFW command
-    if allow_from == "any":
-        command = f"sudo ufw allow {port}/{protocol}"
-        rule_desc = f"{port}/{protocol} from any"
+    allow_from_str = str(allow_from).strip()
+    if allow_from_str == "any":
+        command = f"sudo ufw allow {port_str}/{protocol_str}"
+        rule_desc = f"{port_str}/{protocol_str} from any"
     else:
-        if not re.match(r"^[\da-fA-F\.\/:_-]+$", str(allow_from)):
-            console.print("[red]✗[/red] Invalid allow_from address")
-            return
-        command = (
-            f"sudo ufw allow from {allow_from} to any port {port} proto {protocol}"
-        )
-        rule_desc = f"{port}/{protocol} from {allow_from}"
+        # Strictly validate allow_from as an IP address or network (IPv4/IPv6)
+        try:
+            # Try network first (supports CIDR as well as single IP when strict=False)
+            ipaddress.ip_network(allow_from_str, strict=False)
+        except ValueError:
+            try:
+                ipaddress.ip_address(allow_from_str)
+            except ValueError:
+                console.print("[red]✗[/red] Invalid allow_from address")
+                return
+        command = f"sudo ufw allow from {allow_from_str} to any port {port_str} proto {protocol_str}"
+        rule_desc = f"{port_str}/{protocol_str} from {allow_from_str}"
 
     if options.get("dry_run"):
         console.print(f"[yellow]DRY RUN:[/yellow] Would add firewall rule: {rule_desc}")
@@ -165,12 +196,12 @@ def firewall_remove_rule(port, protocol, options):
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(server_config)
 
-    if not re.match(r"^\d+$", str(port)) or not re.match(r"^(tcp|udp)$", str(protocol)):
-        console.print("[red]✗[/red] Invalid port or protocol")
+    port_str, protocol_str = _validate_firewall_rule_params(port, protocol)
+    if port_str is None:
         return
 
-    command = f"sudo ufw delete allow {port}/{protocol}"
-    rule_desc = f"{port}/{protocol}"
+    command = f"sudo ufw delete allow {port_str}/{protocol_str}"
+    rule_desc = f"{port_str}/{protocol_str}"
 
     if options.get("dry_run"):
         console.print(
@@ -396,12 +427,15 @@ def fail2ban_unban(ip_address, jail, options):
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(server_config)
 
-    if not re.match(r"^[\da-fA-F\.\/:-]+$", str(ip_address)):
+    try:
+        # Validate IP address (supports IPv4 and IPv6)
+        ipaddress.ip_address(str(ip_address))
+    except ValueError:
         console.print("[red]✗[/red] Invalid IP address")
         return
 
     if jail:
-        if not re.match(r"^[\w-]+$", str(jail)):
+        if not re.match(r"^[a-zA-Z0-9_-]+$", str(jail)):
             console.print("[red]✗[/red] Invalid jail name")
             return
         command = f"sudo fail2ban-client set {jail} unbanip {ip_address}"

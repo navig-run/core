@@ -185,7 +185,9 @@ async def test_memory_handlers(mock_store):
     with patch("navig.memory.fact_extractor.FactExtractor") as ec:
         ext_inst = MagicMock()
         ec.return_value = ext_inst
-        ext_inst.extract_and_store.return_value = 1
+        from unittest.mock import AsyncMock
+
+        ext_inst.extract_and_store = AsyncMock(return_value=1)
 
         res = await memory_remember("hello")
         assert res["added"] == 1

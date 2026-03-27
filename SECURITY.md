@@ -60,9 +60,20 @@ For a confirmed issue:
 4. Publish fixed version + advisory.
 5. Notify users and update changelog.
 
+## Third-Party Dependency Advisories
+
+- `requirements.lock` is the canonical committed Python lockfile for this repo.
+   Auxiliary lockfiles that duplicate the same dependency graph should not be kept
+   in sync in parallel.
+- If an upstream package has no published fixed release yet, keep the dependency
+   surface minimal, document the constraint, and remove duplicate lockfile noise
+   until a real patched version is available.
+- Archived or reference-only subtrees should be excluded from active dependency
+   graphs whenever possible so security tooling reflects shipped surfaces.
+
 ## Security Contact
 
 - Primary: security@navig.run
 - Advisory portal: GitHub Security Advisories
 
-_Last updated: 2026-03-12_
+_Last updated: 2026-03-27_

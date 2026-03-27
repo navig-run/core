@@ -74,7 +74,9 @@ def test_vault_cli_profile_list():
     result = runner.invoke(app, ["cred-profile", "list"])
     assert result.exit_code == 0
     assert "Available Profiles" in result.stdout
-    assert "default" in result.stdout
+    # Use the actual active profile name to be environment-agnostic
+    active = get_vault().get_active_profile()
+    assert active in result.stdout
 
 
 def test_vault_cli_show_nonexistent():

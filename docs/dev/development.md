@@ -32,6 +32,9 @@ uv pip install -e ".[dev]"
 
 NAVIG supports modern Python tooling for faster development workflows.
 
+`requirements.lock` is the single committed lockfile for Python dependency sync.
+Use `uv` as the installer, but do not add a separate `uv.lock` for this repo.
+
 ### Option 1: uv (Fastest pip replacement)
 
 [uv](https://github.com/astral-sh/uv) is a Rust-based package installer that's 10-100x faster than pip.

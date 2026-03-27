@@ -103,7 +103,7 @@ class TraySettings:
                     **{k: v for k, v in data.items() if k in cls.__dataclass_fields__}
                 )
             except Exception:  # noqa: BLE001
-                pass  # Intentionally ignored  # best-effort; failure is non-critical
+                pass  # best-effort; failure is non-critical
         return cls()
 
 
@@ -300,7 +300,7 @@ class NavigTray:
                     )
                     log.info(f"Killed orphan bot process PID {pid}")
                 except Exception:  # noqa: BLE001
-                    pass  # Intentionally ignored  # best-effort; failure is non-critical
+                    pass  # best-effort; failure is non-critical
             if pids:
                 log.info(f"Cleaned up {len(pids)} orphan bot process(es)")
         except Exception as e:
@@ -361,7 +361,7 @@ class NavigTray:
                 if pid_file.exists():
                     daemon_pid = int(pid_file.read_text().strip())
             except Exception:  # noqa: BLE001
-                pass  # Intentionally ignored  # best-effort; failure is non-critical
+                pass  # best-effort; failure is non-critical
 
         if daemon_pid:
             log.info(f"Stopping daemon PID {daemon_pid} gracefully...")
@@ -402,7 +402,7 @@ class NavigTray:
                         creationflags=subprocess.CREATE_NO_WINDOW,
                     )
                 except Exception:  # noqa: BLE001
-                    pass  # Intentionally ignored  # best-effort; failure is non-critical
+                    pass  # best-effort; failure is non-critical
 
         # Clean up tracked state
         self.daemon.process = None
@@ -415,7 +415,7 @@ class NavigTray:
                 p = Path.home() / ".navig" / "daemon" / f
                 p.unlink(missing_ok=True)
             except Exception:  # noqa: BLE001
-                pass  # Intentionally ignored  # best-effort; failure is non-critical
+                pass  # best-effort; failure is non-critical
 
     def stop_daemon(self):
         """Stop the NAVIG daemon and all its children."""
@@ -443,7 +443,7 @@ class NavigTray:
                         kernel32.CloseHandle(handle)
                         return True
         except Exception:  # noqa: BLE001
-            pass  # Intentionally ignored  # best-effort; failure is non-critical
+            pass  # best-effort; failure is non-critical
         return False
 
     # --- Auto-start ---

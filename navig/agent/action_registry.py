@@ -190,10 +190,16 @@ def _register_core_actions(reg: ActionRegistry) -> None:
             .global_config.get("executor", {})
             .get("command_timeout_seconds", 60)
         )
-        cmd = params.get("cmd", "")
-        res = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True, timeout=timeout
-        )
+        cmd_str = params.get("cmd", "")
+
+        import platform
+
+        if platform.system().lower() == "windows":
+            cmd_args = ["cmd.exe", "/c", cmd_str]
+        else:
+            cmd_args = ["bash", "-c", cmd_str]
+
+        res = subprocess.run(cmd_args, capture_output=True, text=True, timeout=timeout)
         if res.returncode != 0:
             raise RuntimeError(res.stderr or f"Exit code: {res.returncode}")
         return res.stdout

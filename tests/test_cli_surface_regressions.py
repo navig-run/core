@@ -28,6 +28,9 @@ def _run_cli(args: list[str], *, tmp_path: Path) -> subprocess.CompletedProcess[
 
 
 def test_gateway_session_handles_missing_gateway_without_invalid_url(tmp_path: Path):
+    navig_dir = tmp_path / ".navig"
+    navig_dir.mkdir()
+    (navig_dir / "config.yaml").write_text("gateway:\n  port: 58789\n")
     result = _run_cli(["gateway", "session", "list"], tmp_path=tmp_path)
     combined = result.stdout + result.stderr
 
@@ -37,6 +40,9 @@ def test_gateway_session_handles_missing_gateway_without_invalid_url(tmp_path: P
 
 
 def test_heartbeat_status_handles_missing_gateway_without_invalid_url(tmp_path: Path):
+    navig_dir = tmp_path / ".navig"
+    navig_dir.mkdir(exist_ok=True)
+    (navig_dir / "config.yaml").write_text("gateway:\n  port: 58789\n")
     result = _run_cli(["heartbeat", "status"], tmp_path=tmp_path)
     combined = result.stdout + result.stderr
 

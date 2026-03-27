@@ -6,6 +6,9 @@ This folder contains the **host supervisor** component of NAVIG.
 
 The host supervisor is being **rewritten from Rust to Go**.
 
+The archived Rust workspace is kept deliberately minimal. Security-sensitive GUI
+tray dependencies are no longer part of the frozen workspace or lockfile.
+
 | Subfolder | Purpose |
 |---|---|
 | `_rust_legacy/` | Original Rust scaffolding (frozen, reference) |
