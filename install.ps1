@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 # ─────────────────────────────────────────────────────────────
 # NAVIG Installer — Windows (PowerShell 5.1+)
 # No Admin Visible In Graveyard · Keep your servers alive. Forever.
