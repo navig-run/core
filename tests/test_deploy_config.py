@@ -2,8 +2,6 @@
 
 from datetime import datetime, timezone
 
-import pytest
-
 from navig.deploy.models import (
     DeployConfig,
     DeployPhase,

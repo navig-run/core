@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Fix docker-compose.yml: restore from backup and add Conduit service."""
 import glob
-import os
 import subprocess
 
 COMPOSE_FILE = "/opt/navig/docker-compose.yml"

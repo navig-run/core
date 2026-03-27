@@ -6,8 +6,7 @@ from unittest.mock import MagicMock, patch
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from navig.memory.indexer import ChunkConfig, MemoryIndexer
-from navig.memory.storage import FileMetadata, MemoryChunk, MemoryStorage
+from navig.memory.indexer import MemoryIndexer
 
 
 class MockEmbeddingProvider:

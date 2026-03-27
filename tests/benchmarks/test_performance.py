@@ -9,7 +9,6 @@ Usage:
     python tests/benchmarks/test_performance.py
 """
 
-import os
 import sys
 import time
 from pathlib import Path
@@ -56,7 +55,6 @@ def measure_time(
 def benchmark_import():
     """Benchmark import time for navig.cli module."""
     # Need to reload to get accurate import time
-    import importlib
 
     # Clear cached modules
     modules_to_clear = [m for m in sys.modules if m.startswith("navig")]
@@ -64,7 +62,6 @@ def benchmark_import():
         del sys.modules[m]
 
     start = time.perf_counter()
-    import navig.cli
 
     elapsed = (time.perf_counter() - start) * 1000
 

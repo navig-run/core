@@ -1,10 +1,8 @@
 import asyncio
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from navig.voice.session_manager import SessionConfig, SessionState, VoiceSessionManager
+from navig.voice.session_manager import SessionConfig, VoiceSessionManager
 
 
 @pytest.fixture

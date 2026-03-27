@@ -5,7 +5,7 @@ Tests for ServerDiscovery.discover_all() return values.
 Verifies the structure and types of the discovery result dictionary.
 """
 
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import patch
 
 import pytest
 

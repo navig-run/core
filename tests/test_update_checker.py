@@ -5,10 +5,8 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from navig.update.checker import VersionChecker
-from navig.update.sources import LocalFileSource, SourceError
+from navig.update.sources import SourceError
 
 
 def _make_source(version: str = "2.5.0"):

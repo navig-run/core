@@ -3,8 +3,6 @@
 import os
 from unittest.mock import patch
 
-import pytest
-
 
 class TestBackwardCompat:
     """Config with no llm_modes key → system uses NAVIG_AI_MODEL env var as before."""
@@ -53,7 +51,7 @@ class TestBackwardCompat:
         """resolve_llm() works even without config."""
         # Reset singleton
         import navig.llm_router as mod
-        from navig.llm_router import _router_instance, resolve_llm
+        from navig.llm_router import resolve_llm
 
         old = mod._router_instance
         mod._router_instance = None

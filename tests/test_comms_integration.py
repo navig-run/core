@@ -1,22 +1,11 @@
 """Integration tests for the unified comms + identity stack."""
 
-import asyncio
-import tempfile
-from pathlib import Path
-
 import pytest
 
 from navig.comms import dispatch
-from navig.comms.types import (
-    CommsChannel,
-    DeliveryPriority,
-    DeliveryResult,
-    FanoutResult,
-    NotificationOptions,
-    NotificationTarget,
-)
+from navig.comms.types import DeliveryResult, FanoutResult, NotificationTarget
 from navig.identity.models import SocialLink, UserProfile
-from navig.identity.store import IdentityStore, get_user_preferred_channel
+from navig.identity.store import IdentityStore
 
 # ── Fixtures ──────────────────────────────────────────────────────────
 

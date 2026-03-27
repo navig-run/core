@@ -8,10 +8,6 @@ Verifies that:
 - Auto-generated /help text covers all visible commands
 """
 
-import inspect
-import sys
-import types
-
 import pytest
 
 # ---------------------------------------------------------------------------

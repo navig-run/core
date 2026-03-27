@@ -19,7 +19,6 @@ Covers:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import tempfile
@@ -35,7 +34,7 @@ from navig.mesh.auth import (
     verify_payload,
 )
 from navig.mesh.discovery import MeshDiscovery, _build_packet, _parse_packet
-from navig.mesh.registry import NodeRecord, NodeRegistry
+from navig.mesh.registry import NodeRegistry
 
 # ── Imports under test ───────────────────────────────────────────────────────
 

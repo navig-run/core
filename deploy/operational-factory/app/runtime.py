@@ -17,7 +17,6 @@ from app.settings import (
     TOOL_GATEWAY_URL,
 )
 from fastapi import FastAPI, HTTPException
-from sqlalchemy import text
 
 app = FastAPI(title="NAVIG Runtime", version="0.1.0")
 

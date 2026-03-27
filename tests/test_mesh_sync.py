@@ -47,7 +47,6 @@ def test_import():
         DEFAULT_BROADCAST_INTERVAL_S,
         PULL_DEBOUNCE_S,
         PULL_TIMEOUT_S,
-        SyncManager,
     )
 
     assert DEFAULT_BROADCAST_INTERVAL_S == 10

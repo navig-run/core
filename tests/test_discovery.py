@@ -6,7 +6,7 @@ These tests use mocking to avoid actual SSH connections.
 For integration tests with real servers, use scripts/test_discovery_live.py
 """
 
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import patch
 
 import pytest
 

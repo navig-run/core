@@ -99,7 +99,6 @@ def test_shell_argv_posix():
 def test_shell_argv_windows_uses_comspec(monkeypatch):
     if sys.platform != "win32":
         pytest.skip("Windows-only test")
-    import os
 
     monkeypatch.setenv("ComSpec", "C:\\Windows\\System32\\cmd.exe")
     from navig.tools.proc import shell_argv

@@ -1,10 +1,5 @@
 """Unit tests for the task queue module."""
 
-import asyncio
-import json
-import tempfile
-from pathlib import Path
-
 import pytest
 
 from navig.tasks import (

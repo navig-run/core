@@ -3,7 +3,6 @@
 import hashlib
 import hmac
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -13,7 +12,6 @@ from navig.webhooks.signatures import (
     extract_event_type,
     verify_github_signature,
     verify_signature,
-    verify_stripe_signature,
 )
 
 

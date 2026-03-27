@@ -4,14 +4,12 @@ Unit tests for the memory module.
 Tests conversation storage, embeddings, knowledge base, and RAG pipeline.
 """
 
-import tempfile
 from datetime import datetime, timedelta
-from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
-from navig.memory.conversation import ConversationStore, Message, SessionInfo
+from navig.memory.conversation import ConversationStore, Message
 from navig.memory.knowledge_base import KnowledgeBase, KnowledgeEntry
 from navig.memory.rag import ContextWindow, RAGConfig, RAGPipeline, RetrievalResult
 

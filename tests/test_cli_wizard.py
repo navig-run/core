@@ -1,17 +1,9 @@
-import os
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from navig.cli.wizard import (
-    SetupWizard,
-    _install_launchd,
-    _install_systemd,
-    install_daemon,
-    run_wizard,
-)
+from navig.cli.wizard import SetupWizard, install_daemon, run_wizard
 
 
 @pytest.fixture

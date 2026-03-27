@@ -13,8 +13,6 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 # ─── ToolRegistry tests ────────────────────────────────────────────────────────
 
 
@@ -66,7 +64,7 @@ class TestToolRegistry:
 
     def test_run_tool_exception_is_isolated(self):
         """Tool that raises must return ToolResult(success=False), not propagate."""
-        from navig.tools.registry import BaseTool, ToolRegistry, ToolResult
+        from navig.tools.registry import BaseTool, ToolRegistry
 
         class BoomTool(BaseTool):
             name = "boom"
@@ -97,7 +95,6 @@ class TestToolRegistry:
         reg.register(SlowTool())
 
         # Patch the timeout to 0.1s for speed
-        import navig.tools.registry as reg_mod
 
         orig = asyncio.wait_for
 
@@ -303,18 +300,14 @@ class TestStatusRenderer:
         return StatusRenderer(channel, chat_id=123, message_id=456)
 
     def test_initial_frame_shows_bar(self):
-        from navig.gateway.channels.telegram_renderer import (
-            _EMPTY,
-            _FILLED,
-            StatusRenderer,
-        )
+        from navig.gateway.channels.telegram_renderer import _EMPTY
 
         r = self._make_renderer()
         frame = r._build_frame()
         assert _EMPTY in frame
 
     def test_progress_bar_fills_proportionally(self):
-        from navig.gateway.channels.telegram_renderer import _FILLED, StatusRenderer
+        from navig.gateway.channels.telegram_renderer import _FILLED
 
         r = self._make_renderer()
         r._current_progress = 5
@@ -322,7 +315,7 @@ class TestStatusRenderer:
         assert bar.count(_FILLED) == 5
 
     def test_conclude_shows_filled_bar(self):
-        from navig.gateway.channels.telegram_renderer import _FILLED, StatusRenderer
+        from navig.gateway.channels.telegram_renderer import _FILLED
 
         r = self._make_renderer()
         r._current_progress = 10
@@ -332,7 +325,6 @@ class TestStatusRenderer:
         assert "CONCLUSION" in frame
 
     def test_steps_accumulate(self):
-        from navig.gateway.channels.telegram_renderer import StatusRenderer
 
         r = self._make_renderer()
         r._steps.append(
@@ -366,10 +358,7 @@ class TestStatusRenderer:
         assert "Step A" in frame
 
     def test_frame_truncated_at_limit(self):
-        from navig.gateway.channels.telegram_renderer import (
-            _MAX_MESSAGE_LEN,
-            StatusRenderer,
-        )
+        from navig.gateway.channels.telegram_renderer import _MAX_MESSAGE_LEN
 
         r = self._make_renderer()
         # Inject a huge conclusion block
@@ -377,7 +366,6 @@ class TestStatusRenderer:
         assert len(frame) <= _MAX_MESSAGE_LEN + 30  # fudge for truncation suffix
 
     def test_warn_step_has_warning_icon(self):
-        from navig.gateway.channels.telegram_renderer import StatusRenderer
 
         r = self._make_renderer()
         r._steps.append(

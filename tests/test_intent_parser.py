@@ -4,9 +4,6 @@ Tests for NAVIG Bot Intent Parser
 Tests natural language → command mapping accuracy.
 """
 
-import asyncio
-from unittest.mock import MagicMock, patch
-
 import pytest
 
 from navig.bot.command_tools import (

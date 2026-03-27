@@ -7,7 +7,6 @@ import tempfile
 from pathlib import Path
 
 import pytest
-import yaml
 
 from navig.config import ConfigManager
 

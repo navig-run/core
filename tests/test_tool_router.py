@@ -14,9 +14,8 @@ from __future__ import annotations
 
 import json
 import platform
-from pathlib import Path
 from typing import Any, Dict
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -31,7 +30,6 @@ from navig.tools.router import (
 )
 from navig.tools.schemas import (
     ActionType,
-    LLMAction,
     MultiStepAction,
     RespondAction,
     ToolCallAction,

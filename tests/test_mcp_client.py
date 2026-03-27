@@ -1,7 +1,6 @@
 """Unit tests for the MCP client module."""
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

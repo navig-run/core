@@ -14,13 +14,12 @@ Approach:
 
 import asyncio
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from navig.mesh.discovery import MeshDiscovery, _build_packet, _parse_packet
-from navig.mesh.registry import NodeRecord, NodeRegistry
+from navig.mesh.discovery import MeshDiscovery, _build_packet
+from navig.mesh.registry import NodeRegistry
 
 
 def _make_registry(tmp_path: Path, node_suffix: str) -> NodeRegistry:

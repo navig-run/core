@@ -3,10 +3,8 @@
 Test suite for ConnectionAdapter classes (LocalConnection, SSHConnection).
 """
 
-import os
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -15,7 +13,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from navig.core.connection import (
     CommandResult,
-    ConnectionAdapter,
     LocalConnection,
     SSHConnection,
     get_connection,

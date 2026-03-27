@@ -9,19 +9,13 @@ Tests all four modules:
 """
 
 import json
-import tempfile
-from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock
 
 import pytest
 
 from navig.assistant_utils import ensure_navig_directory, get_navig_directory
-from navig.config import ConfigManager
-from navig.modules.auto_detection import AutoDetection
-from navig.modules.context_generator import ContextGenerator
-from navig.modules.error_resolution import ErrorResolution, Solution
-from navig.modules.proactive_display import ProactiveDisplay
+from navig.modules.error_resolution import Solution
 from navig.proactive_assistant import ProactiveAssistant
 
 

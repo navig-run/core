@@ -1,4 +1,3 @@
-import json
 from datetime import datetime, timezone
 
 from app.db import db_session, fetch_one_dict

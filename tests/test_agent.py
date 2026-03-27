@@ -14,9 +14,6 @@ Tests the autonomous agent system components:
 """
 
 import asyncio
-import tempfile
-from datetime import datetime
-from pathlib import Path
 
 import pytest
 
@@ -38,7 +35,7 @@ from navig.agent.eyes import Alert, Eyes, SystemMetrics
 from navig.agent.hands import CommandResult, CommandStatus, Hands
 from navig.agent.heart import Heart
 from navig.agent.nervous_system import Event, EventPriority, EventType, NervousSystem
-from navig.agent.soul import BUILTIN_PROFILES, Mood, PersonalityProfile, Soul
+from navig.agent.soul import BUILTIN_PROFILES, Mood, Soul
 
 # ============================================================================
 # CONFIG TESTS

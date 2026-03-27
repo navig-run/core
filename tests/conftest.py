@@ -8,7 +8,6 @@ This module provides common fixtures used across all test files:
 - Sample data factories
 """
 
-import os
 import tempfile
 from pathlib import Path
 from typing import Any, Dict

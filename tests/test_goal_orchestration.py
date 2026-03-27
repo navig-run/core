@@ -12,14 +12,10 @@ Covers:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import tempfile
-from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

@@ -1,4 +1,3 @@
-import os
 import sys
 import unittest
 from pathlib import Path
@@ -7,7 +6,7 @@ from unittest.mock import MagicMock, patch
 # Ensure navig on path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from navig.adapters.automation.ahk import AHKAdapter, ExecutionResult, WindowInfo
+from navig.adapters.automation.ahk import AHKAdapter
 
 
 class TestAHKAdapter(unittest.TestCase):

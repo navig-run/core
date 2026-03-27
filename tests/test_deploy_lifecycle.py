@@ -1,13 +1,8 @@
 """Tests for navig.deploy.engine and navig.deploy.rollback."""
 
 import subprocess
-import time
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from navig.deploy.engine import DeployEngine
 from navig.deploy.health import HealthChecker
@@ -18,7 +13,6 @@ from navig.deploy.models import (
     DeployConfig,
     DeployPhase,
     HealthConfig,
-    PhaseResult,
     PushConfig,
     RestartConfig,
     SnapshotRecord,

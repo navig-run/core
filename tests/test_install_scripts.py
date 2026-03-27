@@ -5,7 +5,6 @@ These tests ensure the scripts pass syntax checks and can execute
 a dry-run successfully without throwing errors.
 """
 
-import os
 import shutil
 import subprocess
 from pathlib import Path

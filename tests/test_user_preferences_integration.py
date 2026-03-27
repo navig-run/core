@@ -1,4 +1,3 @@
-import os
 import shutil
 import tempfile
 import unittest
@@ -6,7 +5,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 # We need to mock user_profile import since it uses global state and paths
-import navig.memory.user_profile
 from navig.workspace import WorkspaceManager
 
 

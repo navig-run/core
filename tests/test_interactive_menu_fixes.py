@@ -5,16 +5,13 @@ This test file specifically tests the bug fixes for parameter passing
 in the interactive menu system.
 """
 
-from pathlib import Path
-from unittest.mock import MagicMock, Mock, call, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
 from navig.commands.interactive import (
     MenuState,
-    execute_app_clone,
     execute_app_edit,
-    execute_app_info,
     execute_host_clone,
     execute_host_edit,
     execute_host_info,

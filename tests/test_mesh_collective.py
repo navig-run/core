@@ -3,8 +3,7 @@ LeaderAggregator, MeshCollective."""
 
 from __future__ import annotations
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -13,14 +12,7 @@ import pytest
 
 def test_import():
     from navig.mesh import collective  # noqa: F401
-    from navig.mesh.collective import (
-        MAX_PARALLEL_SUBTASKS,
-        SUBTASK_TIMEOUT_S,
-        LeaderAggregator,
-        MeshCollective,
-        PartialResultBus,
-        TaskDecomposer,
-    )
+    from navig.mesh.collective import MAX_PARALLEL_SUBTASKS, SUBTASK_TIMEOUT_S
 
     assert SUBTASK_TIMEOUT_S > 0
     assert MAX_PARALLEL_SUBTASKS >= 2

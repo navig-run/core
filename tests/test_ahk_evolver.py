@@ -2,10 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from navig.adapters.automation.ahk import AHKAdapter
-from navig.adapters.automation.ahk_ai import AHKAIGenerator
-from navig.adapters.automation.evolution.evolver import EvolutionResult, Evolver
-from navig.adapters.automation.evolution.library import ScriptLibrary
+from navig.adapters.automation.evolution.evolver import Evolver
 
 
 @pytest.fixture

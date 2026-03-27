@@ -11,11 +11,7 @@ Covers:
   - Context builder integration
 """
 
-import asyncio
 import json
-import os
-import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -31,7 +27,7 @@ from navig.memory.fact_retriever import (
     FactRetriever,
     RetrievalConfig,
 )
-from navig.memory.key_facts import VALID_CATEGORIES, KeyFact, KeyFactStore, _utcnow
+from navig.memory.key_facts import KeyFact, KeyFactStore, _utcnow
 
 # ── Fixtures ──────────────────────────────────────────────────
 

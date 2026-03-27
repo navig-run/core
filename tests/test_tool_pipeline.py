@@ -2,7 +2,6 @@
 Tests for navig.engine.pipeline — ToolPipeline composable chaining.
 """
 
-import asyncio
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
