@@ -685,8 +685,16 @@ function Test-SSH {
 
 # ── Install via pip (with live spinner) ───────────────────────────────────
 function Find-Pipx {
-    if (Get-Command pipx -ErrorAction SilentlyContinue) { return $true }
-    return $false
+    param([string]$PipCmd)
+    if (Get-Command pipx -ErrorAction SilentlyContinue) { return "pipx" }
+    
+    $pipParts = $PipCmd -split ' '
+    $exe = $pipParts[0]
+    try {
+        & $exe -m pipx --version 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) { return "$exe -m pipx" }
+    } catch {}
+    return $null
 }
 
 function Install-Pipx {
@@ -700,14 +708,14 @@ function Install-Pipx {
     $code = Invoke-WithSpinner -Label "Installing pipx" -Exe $exe -ArgList $fullArgs
     if ($code -ne 0) {
         Write-NavHint "pipx installation failed, falling back to pip --user"
-        return $false
+        return $null
     }
 
     try {
         & pipx ensurepath 2>$null
     } catch {}
 
-    return $true
+    return "$exe -m pipx"
 }
 
 function Install-NavigPip {
@@ -717,17 +725,19 @@ function Install-NavigPip {
     if ($Version) { $installSpec = "navig==$Version" }
     if ($Extras)  { $installSpec = "navig[$Extras]"; if ($Version) { $installSpec = "navig[$Extras]==$Version" } }
 
-    $usePipx = Find-Pipx
+    $usePipx = Find-Pipx -PipCmd $PipCmd
     if (-not $usePipx) {
         $usePipx = Install-Pipx -PipCmd $PipCmd
     }
 
     if ($usePipx) {
-        $exe = "pipx"
-        $fullArgs = @("install", $installSpec, "--force")
+        $pipxParts = $usePipx -split ' '
+        $exe      = $pipxParts[0]
+        $baseArgs = if ($pipxParts.Length -gt 1) { $pipxParts[1..($pipxParts.Length-1)] } else { @() }
+        $fullArgs = $baseArgs + @("install", $installSpec, "--force")
         $code = Invoke-WithSpinner -Label "Installing NAVIG via pipx ($installSpec)" -Exe $exe -ArgList $fullArgs
         if ($code -ne 0) {
-            Write-NavHint "Manual fallback:  pipx install $installSpec"
+            Write-NavHint "Manual fallback:  $usePipx install $installSpec"
             exit 1
         }
     } else {
