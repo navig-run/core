@@ -16,6 +16,7 @@ Plugin Loading:
 5. All enabled plugins with satisfied dependencies are registered
 """
 
+import shutil
 import sys
 from typing import Dict, List
 
@@ -259,11 +260,11 @@ def _should_skip_plugin_loading(argv: List[str]) -> bool:
     if not args:
         return True
 
-    if any(a in {"--help", "--version"} for a in args):
+    if len(args) == 1 and args[0] in {"--help", "--version"}:
         return True
 
     # In-app help command.
-    if args and args[0] == "help":
+    if len(args) == 1 and args[0] == "help":
         return True
 
     # Core built-in commands that never use plugins.
@@ -322,7 +323,17 @@ def _should_skip_plugin_loading(argv: List[str]) -> bool:
             with open(cache_file, "r", encoding="utf-8") as f:
                 cached_data = json.load(f)
             plugins = cached_data.get("plugins", {})
-            if args[0] not in plugins:
+            cached_names = set(plugins.keys())
+            for plugin_data in plugins.values():
+                plugin_name = plugin_data.get("name")
+                if isinstance(plugin_name, str) and plugin_name:
+                    cached_names.add(plugin_name)
+
+                plugin_path = plugin_data.get("path")
+                if isinstance(plugin_path, str) and plugin_path:
+                    cached_names.add(Path(plugin_path).name)
+
+            if args[0] not in cached_names:
                 return True
     except json.JSONDecodeError:
         # P1-6: Corrupted plugin cache — log a warning instead of silently ignoring
@@ -363,6 +374,13 @@ def add_plugin_commands(app) -> None:
         no_args_is_help=True,
     )
 
+    def _plugin_identifiers(info) -> List[str]:
+        identifiers: List[str] = []
+        for candidate in (info.name, info.path.name):
+            if candidate and candidate not in identifiers:
+                identifiers.append(candidate)
+        return identifiers
+
     @plugin_app.command("list")
     def plugin_list(
         all_plugins: bool = typer.Option(
@@ -390,7 +408,7 @@ def add_plugin_commands(app) -> None:
         table.add_column("Status", style="bold")
         table.add_column("Description")
 
-        for name, info in plugins.items():
+        for info in sorted(plugins.values(), key=lambda plugin: plugin.name.lower()):
             if not all_plugins and not info.enabled:
                 continue
 
@@ -411,7 +429,7 @@ def add_plugin_commands(app) -> None:
             source = f"{source_icons.get(info.source, '?')}"
 
             table.add_row(
-                name,
+                info.name,
                 info.version,
                 source,
                 status,
@@ -482,8 +500,10 @@ def add_plugin_commands(app) -> None:
             ch.error(f"Plugin '{name}' not found")
             raise typer.Exit(1)
 
-        config.enable_plugin(name)
-        ch.success(f"Plugin '{name}' enabled")
+        for plugin_name in _plugin_identifiers(info):
+            config.enable_plugin(plugin_name)
+
+        ch.success(f"Plugin '{info.name}' enabled")
         ch.dim("Restart NAVIG to load the plugin")
 
     @plugin_app.command("disable")
@@ -502,8 +522,10 @@ def add_plugin_commands(app) -> None:
             ch.error(f"Plugin '{name}' not found")
             raise typer.Exit(1)
 
-        config.disable_plugin(name)
-        ch.success(f"Plugin '{name}' disabled")
+        for plugin_name in _plugin_identifiers(info):
+            config.disable_plugin(plugin_name)
+
+        ch.success(f"Plugin '{info.name}' disabled")
         ch.dim("Restart NAVIG to unload the plugin")
 
     @plugin_app.command("install")
@@ -511,34 +533,67 @@ def add_plugin_commands(app) -> None:
         path: str = typer.Argument(..., help="Path to plugin directory or Git URL"),
     ):
         """Install a plugin from local path or Git URL."""
-        import shutil
+        import os
         from pathlib import Path
 
         from navig.core import Config
 
         config = Config()
-        source_path = Path(path)
+        source_path = Path(path).expanduser()
 
         if source_path.exists() and source_path.is_dir():
+            try:
+                source_path = source_path.resolve(strict=True)
+            except OSError as exc:
+                ch.error("Invalid plugin path", str(exc))
+                raise typer.Exit(1) from exc
+
+            if source_path.is_symlink():
+                ch.error(
+                    "Invalid plugin path",
+                    "Plugin source directories cannot be symbolic links.",
+                )
+                raise typer.Exit(1)
+
+            linked_entry = next((entry for entry in source_path.rglob("*") if entry.is_symlink()), None)
+            if linked_entry is not None:
+                ch.error(
+                    "Invalid plugin path",
+                    f"Plugin source contains a symbolic link: {linked_entry}",
+                )
+                raise typer.Exit(1)
+
             # Local directory installation
             plugin_file = source_path / "plugin.py"
             if not plugin_file.exists():
                 ch.error("Invalid plugin", "Directory must contain plugin.py")
                 raise typer.Exit(1)
 
-            plugin_name = source_path.name
+            plugin_name = os.path.basename(str(source_path.resolve(strict=False)))
 
             # P1-9: Validate plugin name — prevent path traversal via crafted names
             import re as _re
 
-            if not _re.match(r"^[a-zA-Z0-9_-]+$", plugin_name):
+            if plugin_name in {"", ".", ".."} or not _re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9_-]*", plugin_name
+            ):
                 ch.error(
                     f"Invalid plugin name: '{plugin_name}'",
                     "Plugin names must contain only letters, digits, underscores, or hyphens.",
                 )
                 raise typer.Exit(1)
 
-            dest_path = config.plugins_dir / plugin_name
+            dest_root = config.plugins_dir.resolve()
+            dest_path = (dest_root / plugin_name).resolve()
+
+            try:
+                dest_path.relative_to(dest_root)
+            except ValueError:
+                ch.error(
+                    "Invalid plugin destination",
+                    "Resolved plugin path escapes the NAVIG plugins directory.",
+                )
+                raise typer.Exit(1)
 
             if dest_path.exists():
                 ch.error(f"Plugin '{plugin_name}' already exists")
@@ -588,12 +643,12 @@ def add_plugin_commands(app) -> None:
             raise typer.Exit(1)
 
         if not force:
-            confirm = typer.confirm(f"Uninstall plugin '{name}'?")
+            confirm = typer.confirm(f"Uninstall plugin '{info.name}'?")
             if not confirm:
                 raise typer.Abort()
 
         shutil.rmtree(info.path)
-        ch.success(f"Uninstalled plugin '{name}'")
+        ch.success(f"Uninstalled plugin '{info.name}'")
 
     # Register plugin commands
     app.add_typer(plugin_app, name="plugin")

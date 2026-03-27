@@ -5,15 +5,15 @@
 #
 # Usage:
 #   curl -fsSL https://navig.run/install.sh | bash
-#   curl -fsSL https://navig.run/install.sh | bash -s -- --version 2.3.0
+#   curl -fsSL https://navig.run/install.sh | bash -s -- --version <release>
 #   curl -fsSL https://navig.run/install.sh | bash -s -- --dev
 #
 # Environment variables:
-#   NAVIG_VERSION          Pin version (e.g. "2.3.0")
+#   NAVIG_VERSION          Pin version (e.g. "2.4.14")
 #   NAVIG_INSTALL_METHOD   "pip" (default) or "git"
 #   NAVIG_NO_CONFIRM       "1" to skip prompts
 #   NAVIG_EXTRAS           Comma-separated extras (e.g. "voice,keyring")
-#   NAVIG_TELEGRAM_BOT_TOKEN  Telegram bot token for automatic bot setup
+#   NAVIG_INSTALL_PROFILE  Install profile: node, operator, architect (default: operator)
 # ─────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -41,7 +41,7 @@ PIP_CMD=""
 VERSION="${NAVIG_VERSION:-}"
 INSTALL_METHOD="${NAVIG_INSTALL_METHOD:-pip}"
 EXTRAS="${NAVIG_EXTRAS:-}"
-TELEGRAM_TOKEN="${NAVIG_TELEGRAM_BOT_TOKEN:-${TELEGRAM_BOT_TOKEN:-}}"
+INSTALL_PROFILE="${NAVIG_INSTALL_PROFILE:-operator}"
 GIT_DIR="${HOME}/navig-core"
 GIT_UPDATE=1
 NO_CONFIRM="${NAVIG_NO_CONFIRM:-0}"
@@ -99,11 +99,12 @@ print_usage() {
     echo "  curl -fsSL https://navig.run/install.sh | bash -s -- [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --version <ver>   Install specific version (e.g. 2.3.0)"
+    echo "  --version <ver>   Install specific version (e.g. 2.4.14)"
+    echo "  --method <mode>   Install via pip or git (default: pip)"
     echo "  --dev             Install from git source (dev mode)"
     echo "  --git-dir <path>  Git checkout directory (default: ~/navig-core)"
     echo "  --extras <list>   Comma-separated extras: voice,keyring,dev"
-    echo "  --telegram-token  Telegram bot token for auto-configuration"
+    echo "  --profile <name>  Install profile: node, operator, architect (default: operator)"
     echo "  --no-confirm      Skip interactive prompts"
     echo "  --dry-run         Preview actions without executing"
     echo "  --verbose         Show detailed output"
@@ -114,7 +115,7 @@ print_usage() {
     echo "  NAVIG_INSTALL_METHOD   pip (default) or git"
     echo "  NAVIG_NO_CONFIRM       1 to skip prompts"
     echo "  NAVIG_EXTRAS           Comma-separated extras"
-    echo "  NAVIG_TELEGRAM_BOT_TOKEN  Telegram bot token for auto setup"
+    echo "  NAVIG_INSTALL_PROFILE  Install profile (default: operator)"
 }
 
 # ── Argument parsing ──────────────────────────────────────────
@@ -122,10 +123,11 @@ parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --version)    VERSION="$2"; shift 2 ;;
+            --method)     INSTALL_METHOD="$2"; shift 2 ;;
             --dev)        INSTALL_METHOD="git"; DEV_MODE=1; shift ;;
             --git-dir)    GIT_DIR="$2"; shift 2 ;;
             --extras)     EXTRAS="$2"; shift 2 ;;
-            --telegram-token) TELEGRAM_TOKEN="$2"; shift 2 ;;
+            --profile)    INSTALL_PROFILE="$2"; shift 2 ;;
             --no-confirm) NO_CONFIRM=1; shift ;;
             --dry-run)    DRY_RUN=1; shift ;;
             --verbose)    VERBOSE=1; shift ;;
@@ -499,55 +501,6 @@ setup_navig_config() {
     echo -e "${SUCCESS}✓${NC} Config directory: ${INFO}${config_dir}${NC}"
 }
 
-setup_telegram() {
-    [[ -z "$TELEGRAM_TOKEN" ]] && return 0
-
-    local config_dir="$HOME/.navig"
-    local env_file="$config_dir/.env"
-    local config_file="$config_dir/config.yaml"
-
-    mkdir -p "$config_dir"
-
-    if [[ -f "$env_file" ]]; then
-        grep -v '^TELEGRAM_BOT_TOKEN=' "$env_file" > "${env_file}.tmp" || true
-        mv "${env_file}.tmp" "$env_file"
-    fi
-    printf 'TELEGRAM_BOT_TOKEN=%s\n' "$TELEGRAM_TOKEN" >> "$env_file"
-    chmod 600 "$env_file"
-
-    if [[ ! -f "$config_file" ]] || ! grep -q 'bot_token:' "$config_file"; then
-        cat > "$config_file" <<EOF
-telegram:
-  bot_token: "$TELEGRAM_TOKEN"
-  allowed_users: []
-  allowed_groups: []
-  session_isolation: true
-  group_activation_mode: "mention"
-EOF
-    fi
-
-    export TELEGRAM_BOT_TOKEN="$TELEGRAM_TOKEN"
-    echo -e "${SUCCESS}✓${NC} Telegram token configured"
-}
-
-start_telegram_daemon() {
-    [[ -z "$TELEGRAM_TOKEN" ]] && return 0
-
-    if ! command -v navig &>/dev/null; then
-        return 0
-    fi
-
-    navig service install --bot --gateway --scheduler --no-start >/dev/null 2>&1 || true
-    navig service start >/dev/null 2>&1 || true
-    sleep 2
-    if navig service status 2>/dev/null | grep -qiE "running|active|started"; then
-        echo -e "${SUCCESS}✓${NC} Telegram daemon is running"
-    else
-        echo -e "${WARN}!${NC} Daemon did not start automatically"
-        echo -e "  Run manually: ${INFO}navig service start${NC}"
-    fi
-}
-
 # ── Check existing installation ───────────────────────────────
 check_existing_navig() {
     if command -v navig &>/dev/null; then
@@ -618,7 +571,7 @@ main() {
         echo -e "  Install method:   ${INSTALL_METHOD}"
         echo -e "  Version:          ${VERSION:-latest}"
         echo -e "  Extras:           ${EXTRAS:-none}"
-        echo -e "  Telegram:         $( [[ -n "$TELEGRAM_TOKEN" ]] && echo enabled || echo disabled )"
+        echo -e "  Profile:          ${INSTALL_PROFILE}"
         echo -e "  Git dir:          ${GIT_DIR}"
         echo -e "${DIM}Dry run complete.${NC}"
         return 0
@@ -683,25 +636,11 @@ main() {
     # Step 7: Setup config directory
     setup_navig_config
 
-    # Step 7.5: Optional Telegram setup
-    setup_telegram
-
-    # Step 7.6: Optional daemon start
-    start_telegram_daemon
-
     # Step 8: Verify installation
     local installed_version
     verify_install || true
     installed_version="$(resolve_navig_version)"
 
-    # Step 8.1: Store Telegram token in vault (requires navig on PATH; non-fatal)
-    if [[ -n "$TELEGRAM_TOKEN" ]] && command -v navig &>/dev/null; then
-        if navig vault set telegram_bot_token "$TELEGRAM_TOKEN" 2>/dev/null; then
-            echo -e "${SUCCESS}✓${NC} Telegram token stored in vault (dual-write complete)"
-        else
-            echo -e "${DIM}i${NC} Vault write skipped — token saved to .env and config.yaml"
-        fi
-    fi
 
     # ── Success ───────────────────────────────────────────────
     echo ""
@@ -737,8 +676,8 @@ main() {
     echo -e "  ${INFO}navig host add${NC}                  Add your first server"
     echo -e "  ${INFO}navig help${NC}                      Show available commands"
     echo ""
-    echo -e "First-run setup wizard auto-starts on next invocation."
-    echo -e "  To skip: ${INFO}NAVIG_SKIP_ONBOARDING=1 navig${NC}"
+    echo -e "Run ${INFO}navig init${NC} to complete first-time setup and configuration."
+    echo -e "  Run with a profile: ${INFO}navig init --profile ${INSTALL_PROFILE}${NC}"
     echo ""
 
     if [[ "$INSTALL_METHOD" == "git" ]]; then

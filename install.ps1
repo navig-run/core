@@ -5,20 +5,20 @@
 #
 # Usage:
 #   & ([scriptblock]::Create((irm https://navig.run/install.ps1)))
-#   .\install.ps1 -Version 2.3.0
+#   .\install.ps1 -Version <release>
 #   .\install.ps1 -Dev
 #
 # Environment variables:
-#   NAVIG_VERSION             Pin version (e.g. "2.3.0")
+#   NAVIG_VERSION             Pin version (e.g. "2.4.14")
 #   NAVIG_INSTALL_METHOD      "pip" (default) or "git"
 #   NAVIG_EXTRAS              Comma-separated extras (e.g. "voice,keyring")
-#   NAVIG_TELEGRAM_BOT_TOKEN  Telegram bot token for automatic bot setup
+#   NAVIG_INSTALL_PROFILE     Install profile: node, operator, architect (default: operator)
 # ─────────────────────────────────────────────────────────────
 # ── Parameter Parsing (friendly for `irm | iex`) ─────────────
 $Version = $env:NAVIG_VERSION
 $InstallMethod = if ([string]::IsNullOrEmpty($env:NAVIG_INSTALL_METHOD)) { "pip" } else { $env:NAVIG_INSTALL_METHOD }
 $Extras = $env:NAVIG_EXTRAS
-$TelegramToken = if ([string]::IsNullOrEmpty($env:NAVIG_TELEGRAM_BOT_TOKEN)) { $env:TELEGRAM_BOT_TOKEN } else { $env:NAVIG_TELEGRAM_BOT_TOKEN }
+$InstallProfile = if ([string]::IsNullOrEmpty($env:NAVIG_INSTALL_PROFILE)) { "operator" } else { $env:NAVIG_INSTALL_PROFILE }
 $GitDir = "$HOME\navig-core"
 $Dev = $args -contains "-Dev" -or $args -contains "/Dev"
 $Production = $args -contains "-Production" -or $args -contains "/Production"
@@ -26,13 +26,13 @@ $DryRun = $args -contains "-DryRun" -or $args -contains "/DryRun"
 $NoConfirm = $args -contains "-NoConfirm" -or $args -contains "/NoConfirm"
 $Help = $args -contains "-Help" -or $args -contains "/Help"
 
-# Parse values with associated arguments (e.g. -Version 2.3.0)
+# Parse values with associated arguments (e.g. -Version 2.4.14)
 for ($i = 0; $i -lt $args.Length - 1; $i++) {
     switch ($args[$i]) {
         "-Version" { $Version = $args[$i+1] }
         "-InstallMethod" { $InstallMethod = $args[$i+1] }
         "-Extras" { $Extras = $args[$i+1] }
-        "-TelegramToken" { $TelegramToken = $args[$i+1] }
+        "-InstallProfile" { $InstallProfile = $args[$i+1] }
         "-GitDir" { $GitDir = $args[$i+1] }
     }
 }
@@ -214,11 +214,11 @@ Usage:
     .\install.ps1 [OPTIONS]
 
 Options:
-  -Version <ver>    Install specific version (e.g. 2.3.0)
+  -Version <ver>    Install specific version (e.g. 2.4.14)
   -Dev              Install from git source (dev mode)
   -GitDir <path>    Git checkout directory (default: $HOME\navig-core)
   -Extras <list>    Comma-separated extras: voice,keyring,dev
-  -TelegramToken    Telegram bot token for auto-configuration
+  -InstallProfile   Install profile: node, operator, architect (default: operator)
   -NoConfirm        Skip interactive prompts
   -DryRun           Preview actions without executing
   -Verbose          Show detailed output
@@ -228,7 +228,7 @@ Environment variables:
   NAVIG_VERSION             Pin version
   NAVIG_INSTALL_METHOD      pip (default) or git
   NAVIG_EXTRAS              Comma-separated extras
-  NAVIG_TELEGRAM_BOT_TOKEN  Telegram bot token for auto setup
+  NAVIG_INSTALL_PROFILE     Install profile (default: operator)
 "@
 }
 
@@ -437,38 +437,6 @@ function Initialize-NavigConfig {
     Write-NavOk "Config directory ready at $configDir\"
 }
 
-function Configure-Telegram {
-    if (-not $TelegramToken) { return }
-    $configDir = "$env:USERPROFILE\.navig"
-    New-Item -ItemType Directory -Force -Path $configDir | Out-Null
-
-    $envFile = Join-Path $configDir ".env"
-    "TELEGRAM_BOT_TOKEN=$TelegramToken" | Set-Content -Encoding UTF8 $envFile
-
-    [Environment]::SetEnvironmentVariable("TELEGRAM_BOT_TOKEN", $TelegramToken, "User")
-    $env:TELEGRAM_BOT_TOKEN = $TelegramToken
-
-    $configFile = Join-Path $configDir "config.yaml"
-    if (-not (Test-Path $configFile)) {
-@"
-telegram:
-  bot_token: "$TelegramToken"
-  allowed_users: []
-  allowed_groups: []
-  session_isolation: true
-  group_activation_mode: "mention"
-"@ | Set-Content -Encoding UTF8 $configFile
-    }
-    Write-NavOk "Telegram token configured"
-}
-
-function Start-TelegramDaemon {
-    if (-not $TelegramToken) { return }
-    try { navig service install --bot --gateway --scheduler --no-start | Out-Null } catch {}
-    try { navig service start | Out-Null } catch {}
-    Write-NavOk "Telegram daemon start attempted"
-}
-
 # ── Existing installation check ───────────────────────────────────────────
 function Test-ExistingNavig {
     if (Get-Command navig -ErrorAction SilentlyContinue) {
@@ -547,7 +515,7 @@ function Main {
         Write-Host "  Install method:  $InstallMethod"                                     -ForegroundColor DarkGray
         Write-Host "  Version:         $(if ($Version) { $Version } else { 'latest' })"   -ForegroundColor DarkGray
         Write-Host "  Extras:          $(if ($Extras)  { $Extras  } else { 'none'   })"   -ForegroundColor DarkGray
-        Write-Host "  Telegram:        $(if ($TelegramToken) { 'enabled' } else { 'disabled' })" -ForegroundColor DarkGray
+        Write-Host "  Profile:         $InstallProfile"                                            -ForegroundColor DarkGray
         Write-Host "  Git dir:         $GitDir"                                             -ForegroundColor DarkGray
         Write-Host "  Config dir:      $env:USERPROFILE\.navig\"                           -ForegroundColor DarkGray
         Write-Host ""
@@ -608,19 +576,21 @@ function Main {
     # Step 7: Config directory
     Initialize-NavigConfig
 
-    # Step 8: Optional Telegram
-    Configure-Telegram
-    Start-TelegramDaemon
-
-    # Step 9: Verify PATH
+    # Step 8: Verify PATH
     Test-NavigInstall | Out-Null
 
-    # Step 10: Success
+    # Step 9: Success
     $installedVer = Get-NavigVersion
     Show-SuccessBanner -InstalledVersion $installedVer
 
     $gitSource = if ($InstallMethod -eq "git") { $GitDir } else { $null }
     Show-GetStarted -PipCmd $pipCmd -GitSource $gitSource
+
+    Write-Host "  Run " -NoNewline -ForegroundColor White
+    Write-Host "navig init" -NoNewline -ForegroundColor Yellow
+    Write-Host " to complete first-time setup.  Profile: " -NoNewline -ForegroundColor White
+    Write-Host $InstallProfile -ForegroundColor Cyan
+    Write-Host ""
 }
 
 # ── Entry point ───────────────────────────────────────────────────────────

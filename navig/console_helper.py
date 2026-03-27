@@ -248,6 +248,11 @@ def header(title: str, subtitle: Optional[str] = None):
     console.print()
 
 
+def heading(title: str, subtitle: Optional[str] = None):
+    """Backward-compatible alias for :func:`header`."""
+    header(title, subtitle)
+
+
 def subheader(title: str):
     """Print subsection header."""
     console.print(f"[{Colors.ACCENT}]{title}[/{Colors.ACCENT}]")

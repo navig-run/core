@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 
 
 def run(cmd: list[str]) -> subprocess.CompletedProcess:
@@ -39,3 +40,17 @@ def test_help_flag():
     assert (
         "usage" in combined or "navig" in combined
     ), f"Expected 'usage' or 'navig' in help output, got:\n{combined[:500]}"
+
+
+def test_package_version_matches_pyproject():
+    """navig.__version__ should stay in sync with pyproject.toml."""
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        import tomli as tomllib
+
+    from navig import __version__
+
+    pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    assert __version__ == data["project"]["version"]

@@ -14,6 +14,7 @@ Each plugin must contain:
 - Optional: plugin.yaml with metadata
 """
 
+import ast
 import sys
 from dataclasses import dataclass, field
 from importlib import import_module
@@ -103,6 +104,10 @@ class PluginManager:
                         info.description = data.get("description", "")
                         info.dependencies = data.get("dependencies", [])
                         info.enabled = data.get("enabled", True)
+                        if self.config.is_plugin_disabled(
+                            info.name
+                        ) or self.config.is_plugin_disabled(info.path.name):
+                            info.enabled = False
                         self._plugins[name] = info
                     return self._plugins
             except Exception:  # noqa: BLE001
@@ -130,7 +135,9 @@ class PluginManager:
                 info = self._get_plugin_info(plugin_path, source)
 
                 # Check if disabled
-                if self.config.is_plugin_disabled(info.name):
+                if self.config.is_plugin_disabled(
+                    info.name
+                ) or self.config.is_plugin_disabled(plugin_path.name):
                     info.enabled = False
 
                 # Later sources override earlier (same name)
@@ -182,6 +189,14 @@ class PluginManager:
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
+        source_metadata = self._extract_plugin_source_metadata(plugin_path / "plugin.py")
+        if source_metadata.get("name"):
+            info.name = source_metadata["name"]
+        if source_metadata.get("version"):
+            info.version = source_metadata["version"]
+        if source_metadata.get("description"):
+            info.description = source_metadata["description"]
+
         # Try to read requirements.txt
         requirements_file = plugin_path / "requirements.txt"
         if requirements_file.exists():
@@ -194,6 +209,44 @@ class PluginManager:
                 pass  # best-effort; failure is non-critical
 
         return info
+
+    def _extract_plugin_source_metadata(self, plugin_file: Path) -> Dict[str, str]:
+        """Read simple string metadata from ``plugin.py`` without importing it."""
+
+        metadata: Dict[str, str] = {}
+
+        try:
+            tree = ast.parse(plugin_file.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            return metadata
+
+        for node in tree.body:
+            target_name: Optional[str] = None
+            value_node = None
+
+            if (
+                isinstance(node, ast.Assign)
+                and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+            ):
+                target_name = node.targets[0].id
+                value_node = node.value
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                target_name = node.target.id
+                value_node = node.value
+
+            if target_name not in {"name", "version", "description"} or value_node is None:
+                continue
+
+            try:
+                value = ast.literal_eval(value_node)
+            except Exception:  # noqa: BLE001
+                continue
+
+            if isinstance(value, str) and value.strip():
+                metadata[target_name] = value.strip()
+
+        return metadata
 
     def load_plugin(self, name: str) -> Tuple[bool, Optional[str]]:
         """
@@ -218,14 +271,15 @@ class PluginManager:
 
         try:
             # Determine module path based on source
+            package_name = info.path.name
             if info.source == "builtin":
-                module_name = f"navig.plugins.{name}.plugin"
+                module_name = f"navig.plugins.{package_name}.plugin"
             else:
                 # For user/project plugins, we need to add to sys.path
                 plugin_parent = info.path.parent
                 if str(plugin_parent) not in sys.path:
                     sys.path.insert(0, str(plugin_parent))
-                module_name = f"{name}.plugin"
+                module_name = f"{package_name}.plugin"
 
             # Import plugin module
             plugin_module = import_module(module_name)
@@ -248,7 +302,8 @@ class PluginManager:
                 return (False, info.error)
 
             # Store loaded app
-            self._loaded_apps[plugin_module.name] = plugin_module.app
+            info.name = str(plugin_module.name)
+            self._loaded_apps[info.name] = plugin_module.app
             info.loaded = True
 
             # Update info from module if available
@@ -289,9 +344,9 @@ class PluginManager:
             success, error = self.load_plugin(name)
 
             if success:
-                loaded.append(name)
+                loaded.append(info.name)
             else:
-                failed.append({"name": name, "reason": error or "Unknown error"})
+                failed.append({"name": info.name, "reason": error or "Unknown error"})
 
         # Log failures
         if failed and not silent:
@@ -311,7 +366,15 @@ class PluginManager:
 
     def get_plugin_info(self, name: str) -> Optional[PluginInfo]:
         """Get info about a specific plugin."""
-        return self._plugins.get(name)
+        info = self._plugins.get(name)
+        if info is not None:
+            return info
+
+        for plugin in self._plugins.values():
+            if plugin.name == name or plugin.path.name == name:
+                return plugin
+
+        return None
 
     def list_plugins(self) -> Dict[str, PluginInfo]:
         """Get all discovered plugins."""

@@ -1,0 +1,32 @@
+{
+  "tool_id": "speedtest",
+  "version": "1.0.0",
+  "description": "Dual-method internet speed test: speedtest-cli (Ookla) + iperf3. Measures download, upload, latency, and jitter.",
+  "os": ["windows", "linux", "mac"],
+  "dependencies": {
+    "pip": ["speedtest-cli"],
+    "system": {
+      "linux":   "sudo apt install iperf3",
+      "mac":     "brew install iperf3",
+      "windows": "https://iperf.fr/iperf-download.php"
+    }
+  },
+  "entrypoints": {
+    "worker": "worker.py",
+    "cli":    "tool.py",
+    "native": null
+  },
+  "permissions": {
+    "admin_maybe":  false,
+    "writes_files": false,
+    "network":      true
+  },
+  "timeouts": { "default_sec": 120 },
+  "commands": [
+    {
+      "id": "run",
+      "cli": ["net", "speedtest"],
+      "summary": "Run dual-method speed test (speedtest-cli + iperf3)"
+    }
+  ]
+}

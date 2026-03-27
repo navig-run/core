@@ -89,21 +89,51 @@ cd core
 pip install -e .
 ```
 
-### Installer with automatic Telegram bot setup
+### Installer profiles
 
-Provide `NAVIG_TELEGRAM_BOT_TOKEN` during install to automatically:
-- write token config under `~/.navig/`
-- configure Telegram bot settings
-- attempt daemon start with bot + gateway
+After running `install.sh` / `install.ps1`, finalize setup with:
 
 ```bash
-NAVIG_TELEGRAM_BOT_TOKEN="<your-bot-token>" bash install.sh
+navig init                        # interactive wizard (default)
+navig init --profile operator     # silent, non-interactive (recommended for automation)
+navig init --profile node         # bare minimum: dirs + CLI check only
+navig init --profile architect    # operator + MCP config
+navig init --profile system_standard  # operator + system service
+navig init --profile system_deep  # system_standard + Windows tray
+navig init --profile operator --dry-run   # preview without changes
+```
+
+**Profile overview**
+
+| Profile | Modules applied |
+|---------|----------------|
+| `node` | config dirs, CLI verify, legacy migration |
+| `operator` | + shell PATH, vault init, Telegram token |
+| `architect` | + MCP config file |
+| `system_standard` | + system service registration |
+| `system_deep` | + Windows tray install |
+
+**Telegram token** — set `NAVIG_TELEGRAM_BOT_TOKEN` before running to have it
+stored automatically (vault + `.env` + `config.yaml`). If absent, the step is
+silently skipped; reconfigure later with `navig init` (interactive).
+
+```bash
+NAVIG_TELEGRAM_BOT_TOKEN="<token>" navig init --profile operator   # Linux/macOS
 ```
 
 ```powershell
-$env:NAVIG_TELEGRAM_BOT_TOKEN="<your-bot-token>"
-.\install.ps1
+$env:NAVIG_TELEGRAM_BOT_TOKEN="<token>"; navig init --profile operator  # Windows
 ```
+
+### Roll back the last installer run
+
+```bash
+navig init-rollback               # undo most recent run
+navig init-rollback --dry-run     # preview without changing anything
+navig init-rollback --profile operator  # undo last operator run specifically
+```
+
+The manifest lives in `~/.navig/history/install_<profile>_<ts>.jsonl`.
 
 ### Basic Workflow
 
