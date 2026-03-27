@@ -25,6 +25,7 @@ _MARKER = "# navig shell integration"
 
 # ─────────────────────── plan ─────────────────────────────────────────────────
 
+
 def plan(ctx: InstallerContext) -> List[Action]:
     if sys.platform == "win32":
         return []  # No-op on Windows
@@ -54,6 +55,7 @@ def plan(ctx: InstallerContext) -> List[Action]:
 
 # ─────────────────────── apply ────────────────────────────────────────────────
 
+
 def apply(action: Action, ctx: InstallerContext) -> Result:
     rc = Path(action.data["rc"])
     bin_dir = action.data["bin_dir"]
@@ -78,6 +80,7 @@ def apply(action: Action, ctx: InstallerContext) -> Result:
 
 # ─────────────────────── rollback ─────────────────────────────────────────────
 
+
 def rollback(action: Action, result: Result, ctx: InstallerContext) -> None:
     rc_path = result.undo_data.get("rc", "")
     snippet = result.undo_data.get("snippet", "")
@@ -94,6 +97,7 @@ def rollback(action: Action, result: Result, ctx: InstallerContext) -> None:
 
 
 # ─────────────────────── helpers ──────────────────────────────────────────────
+
 
 def _shell_rc_candidates() -> List[Path]:
     home = Path.home()

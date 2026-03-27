@@ -6,19 +6,19 @@ Migrates all configuration files from Documents\.navig to ~/.navig
 and consolidates into a single directory structure.
 """
 
-import sys
-import shutil
-import hashlib
-from pathlib import Path
-from datetime import datetime
 import argparse
+import hashlib
+import shutil
+import sys
+from datetime import datetime
+from pathlib import Path
 
 
 def get_file_hash(file_path):
     """Calculate MD5 hash of a file."""
     md5 = hashlib.md5()
-    with open(file_path, 'rb') as f:
-        for chunk in iter(lambda: f.read(4096), b''):
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
             md5.update(chunk)
     return md5.hexdigest()
 
@@ -27,7 +27,7 @@ def print_header(text):
     """Print a section header."""
     print(f"\n{'=' * 80}")
     print(text)
-    print('=' * 80)
+    print("=" * 80)
 
 
 def print_success(text):
@@ -57,16 +57,18 @@ def migrate_config(dry_run=False, force=False):
     home = Path.home()
     source_dir = home / "Documents" / ".navig"
     dest_dir = home / ".navig"
-    backup_dir = dest_dir / "backups" / f"migration_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    backup_dir = (
+        dest_dir / "backups" / f"migration_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    )
 
     # Migration report
     report = {
-        'files_scanned': 0,
-        'files_copied': 0,
-        'files_skipped': 0,
-        'files_backed_up': 0,
-        'conflicts': [],
-        'errors': []
+        "files_scanned": 0,
+        "files_copied": 0,
+        "files_skipped": 0,
+        "files_backed_up": 0,
+        "conflicts": [],
+        "errors": [],
     }
 
     print_header("NAVIG Configuration Migration Tool")
@@ -145,9 +147,6 @@ def migrate_config(dry_run=False, force=False):
         print_info("  apps/ directory not found (OK)")
         dest_app_files = []
 
-
-
-
     # Step 4: Analyze files
     print_header("Step 4: Analyzing Files")
 
@@ -155,7 +154,7 @@ def migrate_config(dry_run=False, force=False):
     host_unique = []
 
     for source_file in source_host_files:
-        report['files_scanned'] += 1
+        report["files_scanned"] += 1
         dest_file = dest_hosts / source_file.name
 
         if dest_file.exists():
@@ -164,20 +163,30 @@ def migrate_config(dry_run=False, force=False):
             dest_hash = get_file_hash(dest_file)
 
             if source_hash == dest_hash:
-                print_info(f"  [IDENTICAL] {source_file.name} - files are identical, will skip")
-                report['files_skipped'] += 1
+                print_info(
+                    f"  [IDENTICAL] {source_file.name} - files are identical, will skip"
+                )
+                report["files_skipped"] += 1
             else:
-                print_warning(f"  [CONFLICT] {source_file.name} - different versions exist")
-                host_conflicts.append({
-                    'name': source_file.name,
-                    'source_path': source_file,
-                    'dest_path': dest_file,
-                    'source_size': source_file.stat().st_size,
-                    'dest_size': dest_file.stat().st_size,
-                    'source_modified': datetime.fromtimestamp(source_file.stat().st_mtime),
-                    'dest_modified': datetime.fromtimestamp(dest_file.stat().st_mtime)
-                })
-                report['conflicts'].append(source_file.name)
+                print_warning(
+                    f"  [CONFLICT] {source_file.name} - different versions exist"
+                )
+                host_conflicts.append(
+                    {
+                        "name": source_file.name,
+                        "source_path": source_file,
+                        "dest_path": dest_file,
+                        "source_size": source_file.stat().st_size,
+                        "dest_size": dest_file.stat().st_size,
+                        "source_modified": datetime.fromtimestamp(
+                            source_file.stat().st_mtime
+                        ),
+                        "dest_modified": datetime.fromtimestamp(
+                            dest_file.stat().st_mtime
+                        ),
+                    }
+                )
+                report["conflicts"].append(source_file.name)
         else:
             # Unique file - only exists in source
             print_success(f"  [NEW] {source_file.name} - will copy to destination")
@@ -186,7 +195,7 @@ def migrate_config(dry_run=False, force=False):
     # Check app files
     app_unique = []
     for source_file in source_app_files:
-        report['files_scanned'] += 1
+        report["files_scanned"] += 1
         dest_file = dest_apps / source_file.name
 
         if dest_file.exists():
@@ -194,11 +203,15 @@ def migrate_config(dry_run=False, force=False):
             dest_hash = get_file_hash(dest_file)
 
             if source_hash == dest_hash:
-                print_info(f"  [IDENTICAL] {source_file.name} - files are identical, will skip")
-                report['files_skipped'] += 1
+                print_info(
+                    f"  [IDENTICAL] {source_file.name} - files are identical, will skip"
+                )
+                report["files_skipped"] += 1
             else:
-                print_warning(f"  [CONFLICT] {source_file.name} - different versions exist")
-                report['conflicts'].append(source_file.name)
+                print_warning(
+                    f"  [CONFLICT] {source_file.name} - different versions exist"
+                )
+                report["conflicts"].append(source_file.name)
         else:
             print_success(f"  [NEW] {source_file.name} - will copy to destination")
             app_unique.append(source_file)
@@ -217,7 +230,7 @@ def migrate_config(dry_run=False, force=False):
             print(f"    Modified:  {conflict['dest_modified']}")
 
             # Use newer file by default
-            use_source = conflict['source_modified'] > conflict['dest_modified']
+            use_source = conflict["source_modified"] > conflict["dest_modified"]
 
             if use_source:
                 print_info("  → Source is newer, will use source version")
@@ -225,30 +238,32 @@ def migrate_config(dry_run=False, force=False):
                 print_info("  → Destination is newer, will keep destination version")
 
             if not force and not dry_run:
-                choice = input("  Use [S]ource, [D]estination, or [K]eep destination? (default: {}) ".format(
-                    'S' if use_source else 'D'
-                ))
-                if choice.upper() == 'S':
+                choice = input(
+                    "  Use [S]ource, [D]estination, or [K]eep destination? (default: {}) ".format(
+                        "S" if use_source else "D"
+                    )
+                )
+                if choice.upper() == "S":
                     use_source = True
-                elif choice.upper() == 'D' or choice.upper() == 'K':
+                elif choice.upper() == "D" or choice.upper() == "K":
                     use_source = False
 
             if use_source:
                 print_info("  → Backing up destination version...")
                 if not dry_run:
-                    backup_path = backup_dir / "hosts" / conflict['name']
+                    backup_path = backup_dir / "hosts" / conflict["name"]
                     backup_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(conflict['dest_path'], backup_path)
-                    report['files_backed_up'] += 1
+                    shutil.copy2(conflict["dest_path"], backup_path)
+                    report["files_backed_up"] += 1
 
                 print_info("  → Copying source version to destination...")
                 if not dry_run:
-                    shutil.copy2(conflict['source_path'], conflict['dest_path'])
-                    report['files_copied'] += 1
+                    shutil.copy2(conflict["source_path"], conflict["dest_path"])
+                    report["files_copied"] += 1
                 print_success("  Resolved: Using source version")
             else:
                 print_success("  Resolved: Keeping destination version")
-                report['files_skipped'] += 1
+                report["files_skipped"] += 1
     else:
         print_header("Step 5: Resolving Conflicts")
         print_success("No conflicts found!")
@@ -265,11 +280,11 @@ def migrate_config(dry_run=False, force=False):
             if not dry_run:
                 try:
                     shutil.copy2(file, dest_hosts / file.name)
-                    report['files_copied'] += 1
+                    report["files_copied"] += 1
                     print_success("  Copied successfully")
                 except Exception as e:
                     print_error(f"  Failed to copy: {e}")
-                    report['errors'].append(f"Failed to copy {file.name}: {e}")
+                    report["errors"].append(f"Failed to copy {file.name}: {e}")
 
         # Copy unique app files
         for file in app_unique:
@@ -279,11 +294,11 @@ def migrate_config(dry_run=False, force=False):
                     if not dest_apps.exists():
                         dest_apps.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(file, dest_apps / file.name)
-                    report['files_copied'] += 1
+                    report["files_copied"] += 1
                     print_success("  Copied successfully")
                 except Exception as e:
                     print_error(f"  Failed to copy: {e}")
-                    report['errors'].append(f"Failed to copy {file.name}: {e}")
+                    report["errors"].append(f"Failed to copy {file.name}: {e}")
 
     # Step 7: Verify migration
     print_header("Step 7: Verifying Migration")
@@ -312,15 +327,19 @@ def migrate_config(dry_run=False, force=False):
     if dry_run:
         print_warning(f"Would delete: {source_dir}")
     else:
-        if report['errors']:
-            print_error("Migration had errors - NOT deleting source directory for safety")
+        if report["errors"]:
+            print_error(
+                "Migration had errors - NOT deleting source directory for safety"
+            )
             print_warning("Please review errors and run migration again")
         else:
             print_warning(f"About to delete: {source_dir}")
 
             if not force:
-                confirm = input("Are you sure you want to delete the source directory? [y/N] ")
-                if confirm.lower() != 'y':
+                confirm = input(
+                    "Are you sure you want to delete the source directory? [y/N] "
+                )
+                if confirm.lower() != "y":
                     print_info("Skipping deletion - source directory preserved")
                     print_info("You can manually delete it later if needed")
                 else:
@@ -343,22 +362,24 @@ def migrate_config(dry_run=False, force=False):
     print(f"  Conflicts found:  {len(report['conflicts'])}")
     print(f"  Errors:           {len(report['errors'])}")
 
-    if report['conflicts']:
+    if report["conflicts"]:
         print("\nConflicts resolved:")
-        for conflict in report['conflicts']:
+        for conflict in report["conflicts"]:
             print(f"  - {conflict}")
 
-    if report['errors']:
+    if report["errors"]:
         print("\nErrors encountered:")
-        for error in report['errors']:
+        for error in report["errors"]:
             print(f"  - {error}")
 
-    if not dry_run and report['files_backed_up'] > 0:
+    if not dry_run and report["files_backed_up"] > 0:
         print("\nBackups saved to:")
         print(f"  {backup_dir}")
 
     print("\nDirectories:")
-    print(f"  Source:      {source_dir} {'[EXISTS]' if source_dir.exists() else '[DELETED]'}")
+    print(
+        f"  Source:      {source_dir} {'[EXISTS]' if source_dir.exists() else '[DELETED]'}"
+    )
     print(f"  Destination: {dest_dir} [ACTIVE]")
 
     if dry_run:
@@ -380,9 +401,9 @@ def migrate_config(dry_run=False, force=False):
             print_info("  2. Test host configurations")
             print_info(f"  3. All done! Configuration consolidated to: {dest_dir}")
 
-    print('=' * 80)
+    print("=" * 80)
 
-    return 0 if not report['errors'] else 1
+    return 0 if not report["errors"] else 1
 
 
 if __name__ == "__main__":
@@ -390,14 +411,12 @@ if __name__ == "__main__":
         description="Migrate NAVIG configuration from Documents\\.navig to ~/.navig"
     )
     parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help="Show what would be done without making any changes"
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done without making any changes",
     )
     parser.add_argument(
-        '--force',
-        action='store_true',
-        help="Skip confirmation prompts"
+        "--force", action="store_true", help="Skip confirmation prompts"
     )
 
     args = parser.parse_args()

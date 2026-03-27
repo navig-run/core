@@ -110,12 +110,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\synapse_windows_up.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\synapse_windows_down.ps1
 ```
 
-### Automatic Telegram setup during install
-
-If you provide a token, installers now auto-configure Telegram and attempt to start the NAVIG daemon with bot + gateway.
+### Automatic Telegram setup
 
 ```bash
-# Linux / macOS
+# Platform-specific script installers
 export NAVIG_TELEGRAM_BOT_TOKEN="<your-bot-token>"
 bash scripts/install_navig_linux.sh
 # or
@@ -123,20 +121,20 @@ bash scripts/install_navig_macos.sh
 ```
 
 ```powershell
-# Windows
+# Platform-specific Windows installer
 $env:NAVIG_TELEGRAM_BOT_TOKEN="<your-bot-token>"
 powershell -ExecutionPolicy Bypass -File .\scripts\install_navig_windows.ps1
 ```
 
-Main installers support the same variable:
+For the root installers (`install.sh`, `install.ps1`), install first and then run the installer profile:
 
 ```bash
-NAVIG_TELEGRAM_BOT_TOKEN="<your-bot-token>" bash install.sh
+NAVIG_TELEGRAM_BOT_TOKEN="<your-bot-token>" navig init --profile operator
 ```
 
 ```powershell
 $env:NAVIG_TELEGRAM_BOT_TOKEN="<your-bot-token>"
-.\install.ps1
+navig init --profile operator
 ```
 
 ---

@@ -28,6 +28,7 @@ TEMP = Path(tempfile.mkdtemp(prefix="navig_upgrade_"))
 
 # ── Output helpers ────────────────────────────────────────────────────────────
 
+
 def progress(label: str, msg: str) -> None:
     print(f"  [{label}] {msg}")
 
@@ -48,6 +49,7 @@ def skip(label: str, reason: str) -> None:
 
 
 # ── Download ──────────────────────────────────────────────────────────────────
+
 
 def download(label: str, url: str, dest: Path | str) -> Path | None:
     """
@@ -77,13 +79,17 @@ def download(label: str, url: str, dest: Path | str) -> Path | None:
 
 # ── Extract ───────────────────────────────────────────────────────────────────
 
+
 def extract_single(label: str, archive: Path, match: str, target: Path) -> bool:
     """Extract the first entry whose basename matches *match* into *target*."""
     target.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive) as z:
         hits = [n for n in z.namelist() if Path(n).name.lower() == match.lower()]
         if not hits:
-            warn(label, f"'{match}' not found in zip (contents: {[Path(n).name for n in z.namelist()[:12]]})")
+            warn(
+                label,
+                f"'{match}' not found in zip (contents: {[Path(n).name for n in z.namelist()[:12]]})",
+            )
             return False
         src = hits[0]
         progress(label, f"Extracting {src} → {target}")
@@ -140,6 +146,7 @@ def extract_all_into(
 
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
+
 
 def cleanup() -> None:
     """Remove the shared TEMP directory."""

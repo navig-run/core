@@ -1750,8 +1750,7 @@ def init_command(
             import typer as _t
 
             _t.echo(
-                f"Unknown profile '{profile}'. "
-                f"Valid: {', '.join(VALID_PROFILES)}",
+                f"Unknown profile '{profile}'. " f"Valid: {', '.join(VALID_PROFILES)}",
                 err=True,
             )
             raise SystemExit(1)

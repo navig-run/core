@@ -72,7 +72,9 @@ class InstallerModule(Protocol):
     def plan(self, ctx: InstallerContext) -> List[Action]:  # pragma: no cover
         ...
 
-    def apply(self, action: Action, ctx: InstallerContext) -> Result:  # pragma: no cover
+    def apply(
+        self, action: Action, ctx: InstallerContext
+    ) -> Result:  # pragma: no cover
         ...
 
     def rollback(

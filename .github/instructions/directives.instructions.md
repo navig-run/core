@@ -4,11 +4,11 @@ applyTo: '**'
 
 # AI Dev Directives — Lightweight, Auto-Complete Workflow
 
-These directives define a simple, non-noisy workflow for this project.  
+These directives define a simple, non-noisy workflow for this project.
 Optimize for **fast fixes, minimal docs, and reliable automation**.
 
 ## Scope & Structure (Keep It Lean)
-- Do **not** invent new architecture, folder trees, or random files and do not put a trash files , logs in the root of the repository. 
+- Do **not** invent new architecture, folder trees, or random files and do not put a trash files , logs in the root of the repository.
 - Use the project’s **existing structure**.
 - Only rely on these standard areas when needed:
   - `docs/` for dev documentation (`HANDBOOK.md` is the primary doc)
@@ -117,6 +117,3 @@ If a NAVIG debug log is present or referenced, you must:
 - Tests updated when needed.
 - Docs updated **only if important**.
 - No structural noise added.
-
-
-

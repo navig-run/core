@@ -189,7 +189,9 @@ class PluginManager:
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
-        source_metadata = self._extract_plugin_source_metadata(plugin_path / "plugin.py")
+        source_metadata = self._extract_plugin_source_metadata(
+            plugin_path / "plugin.py"
+        )
         if source_metadata.get("name"):
             info.name = source_metadata["name"]
         if source_metadata.get("version"):
@@ -235,7 +237,10 @@ class PluginManager:
                 target_name = node.target.id
                 value_node = node.value
 
-            if target_name not in {"name", "version", "description"} or value_node is None:
+            if (
+                target_name not in {"name", "version", "description"}
+                or value_node is None
+            ):
                 continue
 
             try:

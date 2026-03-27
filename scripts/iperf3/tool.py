@@ -1,4 +1,5 @@
 """tool.py — CLI fallback for iperf3 (spawn-per-call)."""
+
 import argparse
 import json
 import sys
@@ -15,7 +16,9 @@ TOOL = "iperf3"
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="navig net iperf3", description="iperf3 network speed test")
+    parser = argparse.ArgumentParser(
+        prog="navig net iperf3", description="iperf3 network speed test"
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_client = sub.add_parser("client", help="Run iperf3 client test")

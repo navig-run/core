@@ -65,6 +65,7 @@ def apply(action: Action, ctx: InstallerContext) -> Result:
 
 # ─────────────────────── helpers ──────────────────────────────────────────────
 
+
 def _navig_version() -> str:
     try:
         import importlib.metadata

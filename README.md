@@ -104,11 +104,17 @@ pip install navig
 
 | Option | Example | Description |
 |---|---|---|
-| `--version` | `bash -s -- --version 2.4.14` | Pin a specific version |
+| `--version` | `bash -s -- --version <release>` | Pin a specific version |
 | `--dev` | `bash -s -- --dev` | Include development extras |
 | `--method git` | `bash -s -- --method git` | Install from source instead of PyPI |
 | `NAVIG_EXTRAS` | `NAVIG_EXTRAS=voice,keyring` | Enable optional extras |
-| `NAVIG_TELEGRAM_BOT_TOKEN` | `export NAVIG_TELEGRAM_BOT_TOKEN=...` | Pre-configure Telegram during install |
+| `NAVIG_INSTALL_PROFILE` | `NAVIG_INSTALL_PROFILE=operator` | Choose the first-run bootstrap profile |
+
+Telegram bootstrap is available through the installer pipeline after install:
+
+```bash
+NAVIG_TELEGRAM_BOT_TOKEN="<your-bot-token>" navig init --profile operator
+```
 
 ### Development Install
 

@@ -18,10 +18,10 @@
 
 .EXAMPLE
     .\fix-navig-permissions.ps1 -Diagnose
-    
+
 .EXAMPLE
     .\fix-navig-permissions.ps1 -Fix
-    
+
 .EXAMPLE
     .\fix-navig-permissions.ps1 -Delete
 #>
@@ -88,14 +88,14 @@ if ($Diagnose) {
 # Fix permissions
 if ($Fix) {
     Write-Host "`n--- Fixing Permissions ---" -ForegroundColor Cyan
-    
+
     try {
         # Grant full control to current user
         $username = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
         Write-Host "[*] Granting full control to: $username" -ForegroundColor Gray
-        
+
         icacls $navigDir /grant "${username}:(OI)(CI)F" /T /Q
-        
+
         if ($LASTEXITCODE -eq 0) {
             Write-Host "[+] Permissions fixed successfully!" -ForegroundColor Green
             Write-Host "[i] Try running 'navig menu' again." -ForegroundColor Gray
@@ -107,7 +107,7 @@ if ($Fix) {
         Write-Host "[!] ERROR: $_" -ForegroundColor Red
         Write-Host "[i] Try running this script as Administrator or use -Delete option." -ForegroundColor Yellow
     }
-    
+
     exit 0
 }
 
@@ -116,32 +116,32 @@ if ($Delete) {
     Write-Host "`n--- Deleting and Recreating .navig ---" -ForegroundColor Cyan
     Write-Host "[!] WARNING: This will delete all app-local configuration!" -ForegroundColor Yellow
     Write-Host "[i] Global configuration in ~/.navig will NOT be affected." -ForegroundColor Gray
-    
+
     $confirm = Read-Host "`nAre you sure? (yes/no)"
     if ($confirm -ne "yes") {
         Write-Host "[*] Cancelled." -ForegroundColor Gray
         exit 0
     }
-    
+
     try {
         Write-Host "[*] Deleting $navigDir..." -ForegroundColor Gray
         Remove-Item -Path $navigDir -Recurse -Force -ErrorAction Stop
         Write-Host "[+] Deleted successfully." -ForegroundColor Green
-        
+
         Write-Host "[*] Recreating with proper permissions..." -ForegroundColor Gray
         New-Item -Path $navigDir -ItemType Directory -Force | Out-Null
-        
+
         # Set permissions
         $username = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
         icacls $navigDir /grant "${username}:(OI)(CI)F" /T /Q | Out-Null
-        
+
         Write-Host "[+] Recreated successfully!" -ForegroundColor Green
         Write-Host "[i] Run 'navig init' to initialize the directory." -ForegroundColor Gray
     } catch {
         Write-Host "[!] ERROR: $_" -ForegroundColor Red
         Write-Host "[i] Try running this script as Administrator." -ForegroundColor Yellow
     }
-    
+
     exit 0
 }
 
@@ -152,4 +152,3 @@ Write-Host "  .\fix-navig-permissions.ps1 -Diagnose    # Check permissions" -For
 Write-Host "  .\fix-navig-permissions.ps1 -Fix         # Fix permissions" -ForegroundColor Gray
 Write-Host "  .\fix-navig-permissions.ps1 -Delete      # Delete and recreate" -ForegroundColor Gray
 Write-Host ""
-
