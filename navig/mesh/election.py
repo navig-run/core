@@ -307,8 +307,7 @@ class ElectionManager:
         self._yield_event = asyncio.Event()
         self._registry.set_my_role("yielding", self._current_epoch)
         logger.info(
-            f"[election] Graceful yield initiated "
-            f"(target={target_node_id or 'auto'})"
+            f"[election] Graceful yield initiated (target={target_node_id or 'auto'})"
         )
 
         await self._discovery.send_election_packet(
@@ -384,8 +383,7 @@ class ElectionManager:
         if self._yield_event and not self._yield_event.is_set():
             self._yield_event.set()
             logger.info(
-                f"[election] Received PROMOTE from {record.node_id} "
-                f"— yield confirmed"
+                f"[election] Received PROMOTE from {record.node_id} — yield confirmed"
             )
 
         # Update own role if we were a candidate or standby
@@ -396,9 +394,7 @@ class ElectionManager:
             self._current_epoch = max(self._current_epoch, incoming_epoch)
             self._proposed_this_epoch = False
 
-        logger.info(
-            f"[election] New leader: {record.node_id} " f"(epoch={incoming_epoch})"
-        )
+        logger.info(f"[election] New leader: {record.node_id} (epoch={incoming_epoch})")
 
     async def _on_yield(self, record: NodeRecord, raw: dict) -> None:
         """

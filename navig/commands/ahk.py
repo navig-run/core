@@ -1197,7 +1197,7 @@ def ahk_dashboard(
 
 
 @ahk_app.command("clipboard")
-def ahk_clipboard(
+def ahk_clipboard(  # noqa: F811
     text: str | None = typer.Argument(
         None, help="Text to copy (if omitted, prints clipboard)"
     ),
@@ -1471,7 +1471,7 @@ def ahk_generate(
 
 
 @ahk_app.command("evolve")
-def ahk_evolve(
+def ahk_evolve(  # noqa: F811
     goal: str = typer.Argument(..., help="Goal in natural language"),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show generated script without executing"

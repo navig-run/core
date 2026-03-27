@@ -1,4 +1,4 @@
-﻿"""
+"""
 Tool Router & Registry - Central dispatch for LLM-requested tool calls.
 
 Mirrors the ChannelRegistry pattern (navig.gateway.channels.registry)

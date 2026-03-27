@@ -98,7 +98,7 @@ class NavigKernel:
         print(f"   {pack.description}")
 
         for i, step in enumerate(pack.steps):
-            print(f"\n➡️  Step {i+1}: {step.description or step.name}")
+            print(f"\n➡️  Step {i + 1}: {step.description or step.name}")
             print(f"   Command: {step.command}")
 
             # Here we resolve the command in the kernel to check for safety!

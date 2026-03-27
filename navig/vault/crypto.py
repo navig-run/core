@@ -167,10 +167,7 @@ class CryptoEngine:
     def kdf_info() -> str:
         """Human-readable description of the active KDF (for navig vault doctor)."""
         if _HAS_ARGON2:
-            return (
-                f"Argon2id  m={_A2_MEMORY_COST // 1024}MiB  "
-                f"t={_A2_TIME_COST}  p={_A2_PARALLELISM}"
-            )
+            return f"Argon2id  m={_A2_MEMORY_COST // 1024}MiB  t={_A2_TIME_COST}  p={_A2_PARALLELISM}"
         return f"PBKDF2-HMAC-SHA256  iter={_PBKDF2_ITERS:,}  (install argon2-cffi for Argon2id)"
 
     # ── AES-256-GCM primitives ────────────────────────────────────────────────

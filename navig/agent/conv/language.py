@@ -173,10 +173,10 @@ def _script_detect(text: str) -> str:
     Returns one of: ``'ru'``, ``'zh'``, ``'en'``, ``'fr'``, ``'mixed'``.
     Never raises.
     """
-    has_cyrillic = any("\u0400" <= ch <= "\u04FF" for ch in text)
-    has_cjk = any("\u4E00" <= ch <= "\u9FFF" for ch in text)
+    has_cyrillic = any("\u0400" <= ch <= "\u04ff" for ch in text)
+    has_cjk = any("\u4e00" <= ch <= "\u9fff" for ch in text)
     has_latin = any(("A" <= ch <= "Z") or ("a" <= ch <= "z") for ch in text)
-    has_arabic = any("\u0600" <= ch <= "\u06FF" for ch in text)
+    has_arabic = any("\u0600" <= ch <= "\u06ff" for ch in text)
 
     if has_cyrillic and not has_cjk:
         return "ru"

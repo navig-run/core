@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-
     from navig.gateway.server import NavigGateway  # noqa: F401
 
 from navig.debug_logger import get_debug_logger

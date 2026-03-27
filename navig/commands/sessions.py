@@ -604,7 +604,7 @@ def _cmd_search(
                 if rel_idx >= 0:
                     snippet = (
                         snippet[:rel_idx]
-                        + f"[bold bright_yellow]{snippet[rel_idx:rel_idx+ql]}[/bold bright_yellow]"
+                        + f"[bold bright_yellow]{snippet[rel_idx : rel_idx + ql]}[/bold bright_yellow]"
                         + snippet[rel_idx + ql :]
                     )
                 results.append((sess, turn, snippet))
@@ -619,7 +619,7 @@ def _cmd_search(
 
     ch.console.print()
     ch.console.print(
-        f"[bold cyan]Search: '{query}'[/]  [dim]({len(results)} match{'es' if len(results)!=1 else ''})[/]"
+        f"[bold cyan]Search: '{query}'[/]  [dim]({len(results)} match{'es' if len(results) != 1 else ''})[/]"
     )
     ch.console.print()
 

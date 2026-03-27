@@ -144,7 +144,7 @@ def build_adapter(
     if cls is None:
         known = ", ".join(sorted(_ADAPTERS))
         raise ValueError(
-            f"Unknown restart adapter '{adapter_name}'. " f"Valid options: {known}"
+            f"Unknown restart adapter '{adapter_name}'. Valid options: {known}"
         )
 
     kwargs = dict(server_config=server_config, remote_ops=remote_ops, dry_run=dry_run)

@@ -36,6 +36,8 @@ def docker_ps(
 
     host_config = config_manager.load_host_config(host_name)
 
+    import shlex
+
     # Build docker ps command
     if format == "json":
         docker_format = '--format "{{json .}}"'
@@ -51,7 +53,8 @@ def docker_ps(
         cmd = f"docker ps -a {docker_format}"
 
     if filter:
-        cmd = f"{cmd} | grep -E '{filter}'"
+        filter_safe = shlex.quote(filter)
+        cmd = f"{cmd} | grep -E {filter_safe}"
 
     if not options.get("quiet"):
         ch.info(f"Containers on {host_name}:")
@@ -91,11 +94,13 @@ def docker_logs(
 
     host_config = config_manager.load_host_config(host_name)
 
+    import shlex
+
     # Build docker logs command
     cmd_parts = ["docker logs"]
 
     if tail:
-        cmd_parts.append(f"--tail {tail}")
+        cmd_parts.append(f"--tail {int(tail)}")
     elif not follow:
         cmd_parts.append("--tail 50")  # Default to last 50 lines
 
@@ -103,9 +108,9 @@ def docker_logs(
         cmd_parts.append("-f")
 
     if since:
-        cmd_parts.append(f"--since {since}")
+        cmd_parts.append(f"--since {shlex.quote(since)}")
 
-    cmd_parts.append(container)
+    cmd_parts.append(shlex.quote(container))
     cmd = " ".join(cmd_parts)
 
     # Add stderr redirect for combined output
@@ -151,6 +156,8 @@ def docker_exec(
 
     host_config = config_manager.load_host_config(host_name)
 
+    import shlex
+
     # Build docker exec command
     cmd_parts = ["docker exec"]
 
@@ -158,13 +165,15 @@ def docker_exec(
         cmd_parts.append("-it")
 
     if user:
-        cmd_parts.append(f"-u {user}")
+        cmd_parts.append(f"-u {shlex.quote(user)}")
 
     if workdir:
-        cmd_parts.append(f"-w {workdir}")
+        cmd_parts.append(f"-w {shlex.quote(workdir)}")
 
-    cmd_parts.append(container)
-    cmd_parts.append(command)
+    cmd_parts.append(shlex.quote(container))
+    # We must quote the actual command payload so SSH transmits it correctly as arguments
+    # but still allow it to execute inside the docker container
+    cmd_parts.append(shlex.quote(command))
     cmd = " ".join(cmd_parts)
 
     if not options.get("quiet"):
@@ -227,14 +236,16 @@ def docker_compose(
         )
         return
 
+    import shlex
+
     # Build compose command
     cmd_parts = []
 
     if path:
-        cmd_parts.append(f"cd {path} &&")
+        cmd_parts.append(f"cd {shlex.quote(path)} &&")
 
     cmd_parts.append("docker compose")
-    cmd_parts.append(action)
+    cmd_parts.append(shlex.quote(action))
 
     # Action-specific options
     if action == "up":
@@ -249,7 +260,7 @@ def docker_compose(
 
     # Add specific services if provided
     if services:
-        cmd_parts.extend(services)
+        cmd_parts.extend([shlex.quote(s) for s in services])
 
     cmd = " ".join(cmd_parts)
 
@@ -302,10 +313,14 @@ def docker_inspect(
 
     host_config = config_manager.load_host_config(host_name)
 
+    import shlex
+
+    container_safe = shlex.quote(container)
     if format:
-        cmd = f"docker inspect --format '{format}' {container}"
+        format_safe = shlex.quote(format)
+        cmd = f"docker inspect --format {format_safe} {container_safe}"
     else:
-        cmd = f"docker inspect {container}"
+        cmd = f"docker inspect {container_safe}"
 
     result = remote_ops.execute_command(cmd, host_config, capture_output=False)
 
@@ -349,7 +364,9 @@ def docker_restart(
         ch.warning("Cancelled.")
         return
 
-    cmd = f"docker restart -t {timeout} {container}"
+    import shlex
+
+    cmd = f"docker restart -t {int(timeout)} {shlex.quote(container)}"
 
     if not options.get("quiet"):
         with ch.create_spinner(f"Restarting {container}..."):
@@ -388,8 +405,10 @@ def docker_stop(container: str, options: dict[str, Any], timeout: int = 10):
         ch.warning("Cancelled.")
         return
 
+    import shlex
+
     result = remote_ops.execute_command(
-        f"docker stop -t {timeout} {container}", host_config
+        f"docker stop -t {int(timeout)} {shlex.quote(container)}", host_config
     )
 
     if result.returncode == 0:
@@ -413,7 +432,11 @@ def docker_start(container: str, options: dict[str, Any]):
 
     host_config = config_manager.load_host_config(host_name)
 
-    result = remote_ops.execute_command(f"docker start {container}", host_config)
+    import shlex
+
+    result = remote_ops.execute_command(
+        f"docker start {shlex.quote(container)}", host_config
+    )
 
     if result.returncode == 0:
         ch.success(f"✓ Container {container} started")
@@ -438,11 +461,13 @@ def docker_stats(
 
     host_config = config_manager.load_host_config(host_name)
 
+    import shlex
+
     cmd = "docker stats"
     if no_stream:
         cmd += " --no-stream"
     if container:
-        cmd += f" {container}"
+        cmd += f" {shlex.quote(container)}"
 
     if not options.get("quiet"):
         ch.info("Container resource usage:")

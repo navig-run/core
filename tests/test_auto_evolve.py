@@ -32,7 +32,6 @@ from navig.gateway.audit_log import AuditLog
 
 
 class TestAutoEvolvePolicy:
-
     def _policy(self, enabled: bool = True) -> ApprovalPolicy:
         p = ApprovalPolicy()
         p.auto_evolve_enabled = enabled
@@ -96,7 +95,6 @@ class TestAutoEvolvePolicy:
 
 
 class TestAutoEvolvePolicyFromConfig:
-
     def test_defaults_when_no_auto_evolve_key(self):
         policy = ApprovalPolicy.from_config({})
         assert policy.auto_evolve_enabled is False
@@ -119,7 +117,6 @@ class TestAutoEvolvePolicyFromConfig:
 
 
 class TestApprovalManagerSetAutoEvolve:
-
     def _manager_with_live_log(self) -> tuple[ApprovalManager, Path]:
         with tempfile.TemporaryDirectory() as tmp:
             log_path = Path(tmp) / "audit.jsonl"
@@ -173,7 +170,6 @@ class TestApprovalManagerSetAutoEvolve:
 
 
 class TestApprovalManagerAutoEvolveApproval:
-
     def _manager_auto_evolve_on(self) -> ApprovalManager:
         with tempfile.TemporaryDirectory() as tmp:
             audit = AuditLog(path=Path(tmp) / "audit.jsonl")
@@ -275,7 +271,6 @@ def _build_auto_evolve_app(mgr: ApprovalManager):
 
 
 class TestAutoEvolveRoutes:
-
     @pytest.mark.asyncio
     async def test_get_status_disabled(self):
         pytest.importorskip("aiohttp")

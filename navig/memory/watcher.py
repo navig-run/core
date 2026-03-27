@@ -286,7 +286,10 @@ def _create_watchdog_watcher(
     Returns None if watchdog is not installed.
     """
     try:
-        from watchdog.events import FileModifiedEvent, FileSystemEventHandler  # noqa: F401
+        from watchdog.events import (  # noqa: F401
+            FileModifiedEvent,
+            FileSystemEventHandler,
+        )
         from watchdog.observers import Observer  # noqa: F401
 
         return WatchdogWatcher(manager, debounce_seconds, on_indexed)

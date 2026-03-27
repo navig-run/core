@@ -10,7 +10,6 @@ from navig.adapters.automation.ahk import AHKAdapter
 
 
 class TestAHKAdapter(unittest.TestCase):
-
     @patch("shutil.which")
     def test_detection(self, mock_which):
         mock_which.return_value = "C:/Program Files/AutoHotkey/v2/AutoHotkey64.exe"

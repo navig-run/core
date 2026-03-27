@@ -46,12 +46,12 @@ def _disk_status(usage: float, threshold: int) -> str:
 def _health_icon(health: str) -> str:
     """Return Rich-markup health icon with ASCII fallback for narrow terminals."""
     if health == "healthy":
-        return f"[green]{_safe_symbol(chr(0x1f7e2), 'OK')} healthy[/green]"
+        return f"[green]{_safe_symbol(chr(0x1F7E2), 'OK')} healthy[/green]"
     if health == "stopped":
-        return f"[red]{_safe_symbol(chr(0x1f534), '!!')} stopped[/red]"
+        return f"[red]{_safe_symbol(chr(0x1F534), '!!')} stopped[/red]"
     if health == "not-installed":
-        return f"[dim]{_safe_symbol(chr(0x26aa), '--')} N/A[/dim]"
-    return f"[yellow]{_safe_symbol(chr(0x1f7e1), '?')} unknown[/yellow]"
+        return f"[dim]{_safe_symbol(chr(0x26AA), '--')} N/A[/dim]"
+    return f"[yellow]{_safe_symbol(chr(0x1F7E1), '?')} unknown[/yellow]"
 
 
 def monitor_resources(options: dict[str, Any]) -> None:
@@ -83,7 +83,7 @@ def monitor_resources(options: dict[str, Any]) -> None:
         return
 
     console.print(
-        f"\n[cyan]{_safe_symbol(chr(0x1f4ca), '>>')} Monitoring Resources:[/cyan] {app_name}\n"
+        f"\n[cyan]{_safe_symbol(chr(0x1F4CA), '>>')} Monitoring Resources:[/cyan] {app_name}\n"
     )
 
     metrics = {}
@@ -229,7 +229,7 @@ def monitor_resources(options: dict[str, Any]) -> None:
         # Display alerts
         if alerts:
             console.print(
-                f"\n[yellow]{_safe_symbol(chr(0x26a0), '!')} Alerts ({len(alerts)}):[/yellow]"
+                f"\n[yellow]{_safe_symbol(chr(0x26A0), '!')} Alerts ({len(alerts)}):[/yellow]"
             )
             for alert in alerts:
                 console.print(f"  [yellow]•[/yellow] {alert}")
@@ -262,7 +262,7 @@ def monitor_disk(threshold: int, options: dict[str, Any]) -> None:
         return
 
     console.print(
-        f"\n[cyan]{_safe_symbol(chr(0x1f4be), '>>')} Disk Space Monitoring:[/cyan] {app_name}\n"
+        f"\n[cyan]{_safe_symbol(chr(0x1F4BE), '>>')} Disk Space Monitoring:[/cyan] {app_name}\n"
     )
 
     # Get all disk partitions
@@ -338,7 +338,7 @@ def monitor_disk(threshold: int, options: dict[str, Any]) -> None:
 
         if alerts:
             console.print(
-                f"\n[red]{_safe_symbol(chr(0x26a0), '!')} {len(alerts)} Alert(s):[/red]"
+                f"\n[red]{_safe_symbol(chr(0x26A0), '!')} {len(alerts)} Alert(s):[/red]"
             )
             for alert in alerts:
                 console.print(f"  [red]•[/red] {alert}")
@@ -370,7 +370,7 @@ def monitor_services(options: dict[str, Any]) -> None:
         return
 
     console.print(
-        f"\n[cyan]{_safe_symbol(chr(0x1f527), '>>')} Service Health Check:[/cyan] {app_name}\n"
+        f"\n[cyan]{_safe_symbol(chr(0x1F527), '>>')} Service Health Check:[/cyan] {app_name}\n"
     )
 
     # Critical services to monitor
@@ -477,7 +477,7 @@ def monitor_services(options: dict[str, Any]) -> None:
 
         if inactive_services:
             console.print(
-                f"\n[yellow]{_safe_symbol(chr(0x26a0), '!')} {len(inactive_services)} service(s) inactive:[/yellow]"
+                f"\n[yellow]{_safe_symbol(chr(0x26A0), '!')} {len(inactive_services)} service(s) inactive:[/yellow]"
             )
             for svc in inactive_services:
                 console.print(f"  [yellow]•[/yellow] {svc}")
@@ -515,7 +515,7 @@ def monitor_network(options: dict[str, Any]) -> None:
         return
 
     console.print(
-        f"\n[cyan]{_safe_symbol(chr(0x1f310), '>>')} Network Statistics:[/cyan] {app_name}\n"
+        f"\n[cyan]{_safe_symbol(chr(0x1F310), '>>')} Network Statistics:[/cyan] {app_name}\n"
     )
 
     metrics = {}
@@ -624,7 +624,7 @@ def health_check(options: dict[str, Any]) -> None:
         return
 
     console.print(
-        f"\n[bold cyan]{_safe_symbol(chr(0x1f3e5), '>>')} Comprehensive Health Check:[/bold cyan] {app_name}\n"
+        f"\n[bold cyan]{_safe_symbol(chr(0x1F3E5), '>>')} Comprehensive Health Check:[/bold cyan] {app_name}\n"
     )
 
     # Run all monitoring checks
@@ -807,7 +807,7 @@ def generate_report(options: dict[str, Any]) -> None:
     console.print(f"  • Alerts: {len(report['alerts'])}")
 
     if report["alerts"]:
-        console.print(f"\n[yellow]{_safe_symbol(chr(0x26a0), '!')} Alerts:[/yellow]")
+        console.print(f"\n[yellow]{_safe_symbol(chr(0x26A0), '!')} Alerts:[/yellow]")
         for alert in report["alerts"]:
             console.print(f"  [yellow]•[/yellow] {alert}")
     else:

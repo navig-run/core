@@ -197,8 +197,8 @@ class ToolPipeline:
             t_step = time.monotonic()
             status_log: list[str] = []
 
-            def _on_status(msg: str) -> None:  # noqa: B023
-                status_log.append(msg)
+            def _on_status(msg: str) -> None:
+                status_log.append(msg)  # noqa: B023
 
             try:
                 tool_result = await self._registry.run_tool(

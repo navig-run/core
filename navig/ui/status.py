@@ -22,8 +22,7 @@ def render_status_header(chips: list[StatusChip], *, sep: str = "  ·  ") -> Non
             color = COLOR_STYLE.get(chip.color, chip.color)
             if chip.value is not None:
                 parts.append(
-                    f"[{color}]{ico} {chip.label}[/{color}]"
-                    f"  [{color}]{chip.value}[/{color}]"
+                    f"[{color}]{ico} {chip.label}[/{color}]  [{color}]{chip.value}[/{color}]"
                 )
             else:
                 parts.append(f"[{color}]{ico} {chip.label}[/{color}]")

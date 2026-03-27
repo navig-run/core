@@ -76,7 +76,7 @@ KRAKEN_FRAMES = [
     " ~    ~    ~",
 ]
 
-KRAKEN_MINI = " ◉‿◉\n" " /||\\\n" " ~  ~"
+KRAKEN_MINI = " ◉‿◉\n /||\\\n ~  ~"
 
 NAVIG_BANNER = (
     "    ███╗   ██╗ █████╗ ██╗   ██╗██╗ ██████╗\n"
@@ -87,7 +87,7 @@ NAVIG_BANNER = (
     "    ╚═╝  ╚═══╝╚═╝  ╚═╝  ╚═══╝  ╚═╝ ╚═════╝"
 )
 
-NAVIG_BANNER_MINI = " ╔═╗╔═╗╦  ╦╦╔═╗\n" " ║║║╠═╣╚╗╔╝║║ ╦\n" " ╝╚╝╩ ╩ ╚╝ ╩╚═╝"
+NAVIG_BANNER_MINI = " ╔═╗╔═╗╦  ╦╦╔═╗\n ║║║╠═╣╚╗╔╝║║ ╦\n ╝╚╝╩ ╩ ╚╝ ╩╚═╝"
 
 TENTACLE_TIPS = [
     "The Kraken sees all ports, hears all logs.",

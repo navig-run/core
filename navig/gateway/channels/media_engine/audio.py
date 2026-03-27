@@ -332,7 +332,7 @@ def _build_audio_card(
         s = int(metadata["duration_sec"])
         info_bits.append(f"{s // 60}:{s % 60:02d}")
     if metadata.get("bitrate"):
-        info_bits.append(f"{metadata['bitrate']//1000} kbps")
+        info_bits.append(f"{metadata['bitrate'] // 1000} kbps")
     if info_bits:
         parts.append("📊 " + " · ".join(info_bits))
 

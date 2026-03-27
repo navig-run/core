@@ -1,4 +1,4 @@
-﻿"""
+"""
 NAVIG Onboarding Command — Animated, keyboard-first CLI setup wizard.
 
 Provides two modes:
@@ -701,7 +701,9 @@ def _handle_provider_selection(
             try:
                 input("  Press Enter when ready (or Ctrl+C to cancel)... ")
             except KeyboardInterrupt:
-                raise SystemExit("Setup cancelled. Re-run navig init to try again.")
+                raise SystemExit(
+                    "Setup cancelled. Re-run navig init to try again."
+                ) from None
 
             # Re-probe with generous 2 s timeout
             re_detected = detect_providers(timeout_ms=2000)
@@ -725,7 +727,9 @@ def _handle_provider_selection(
                             "Setup cancelled. Re-run navig init to try again."
                         )
                 except KeyboardInterrupt:
-                    raise SystemExit("Setup cancelled. Re-run navig init to try again.")
+                    raise SystemExit(
+                        "Setup cancelled. Re-run navig init to try again."
+                    ) from None
         return (provider.id, "")
 
     # ── Cloud provider ────────────────────────────────────────────────────────

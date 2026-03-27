@@ -250,11 +250,11 @@ def main():
             f"  batch({len(BATCH_50)} texts) total          {py_batch_m:>8.1f}  {nat_batch_m:>8.1f} {speedup_tag(py_batch_m, nat_batch_m)}"
         )
         print(
-            f"  per-text amortised             {py_batch_m/len(BATCH_50):>8.1f}  {nat_batch_m/len(BATCH_50):>8.1f}"
+            f"  per-text amortised             {py_batch_m / len(BATCH_50):>8.1f}  {nat_batch_m / len(BATCH_50):>8.1f}"
         )
     else:
         print(f"  batch({len(BATCH_50)} texts) py total       {py_batch_m:>8.1f}")
-        print(f"  per-text amortised             {py_batch_m/len(BATCH_50):>8.1f}")
+        print(f"  per-text amortised             {py_batch_m / len(BATCH_50):>8.1f}")
 
     # ── 5. is_low_signal ──────────────────────────────────────────────────
     print(f"\n  [5] is_low_signal — all texts (boolean, no Python object allocation)")

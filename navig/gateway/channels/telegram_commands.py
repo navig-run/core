@@ -526,8 +526,7 @@ class TelegramCommandsMixin:
             for mid, mp in MOOD_REGISTRY.items():
                 active_marker = " <b>- active</b>" if mid == current else ""
                 lines.append(
-                    f"{mp.emoji} <code>{mid}</code>{active_marker}\n"
-                    f"<i>{mp.character}</i>"
+                    f"{mp.emoji} <code>{mid}</code>{active_marker}\n<i>{mp.character}</i>"
                 )
             lines.append(
                 "\n<code>/mode &lt;name&gt;</code> to switch  -  "

@@ -498,7 +498,7 @@ _ACTION_PROMPTS: dict[str, str] = {
         "Please provide a better, more complete answer."
     ),
     "summarize": (
-        "Summarize the following response in 2-3 concise sentences:\n\n" "{ai_response}"
+        "Summarize the following response in 2-3 concise sentences:\n\n{ai_response}"
     ),
     "translate": (
         "Translate the following text to the user's other language "
@@ -512,26 +512,22 @@ _ACTION_PROMPTS: dict[str, str] = {
     ),
     "copy_code": None,  # special handler — extracts code blocks
     "add_tests": (
-        "Given the following code, write comprehensive unit tests for it:\n\n"
-        "{ai_response}"
+        "Given the following code, write comprehensive unit tests for it:\n\n{ai_response}"
     ),
     "table_fmt": (
-        "Reformat the following comparison into a clear markdown table:\n\n"
-        "{ai_response}"
+        "Reformat the following comparison into a clear markdown table:\n\n{ai_response}"
     ),
     "expand": None,  # special handler — shows full text as edit
     # Navigation
     "nav_pros": (
-        "From the following comparison, extract and list ONLY the advantages/pros:\n\n"
-        "{ai_response}"
+        "From the following comparison, extract and list ONLY the advantages/pros:\n\n{ai_response}"
     ),
     "nav_cons": (
         "From the following comparison, extract and list ONLY the disadvantages/cons:\n\n"
         "{ai_response}"
     ),
     "nav_bottom": (
-        "From the following comparison, give a concise bottom-line recommendation:\n\n"
-        "{ai_response}"
+        "From the following comparison, give a concise bottom-line recommendation:\n\n{ai_response}"
     ),
     "nav_top": (
         "From the following list, pick the top 3 most important items and explain why:\n\n"

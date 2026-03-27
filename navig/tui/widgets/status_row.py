@@ -47,8 +47,7 @@ class StatusRow(Static):
             cta = f"\n     [dim #64748b]→ [e] Configure {section}[/dim #64748b]"
 
         self.update(
-            f"  {prefix}[{color}]{sym}[/{color}]  "
-            f"[white]{badge.label:<22}[/white]{detail}{cta}"
+            f"  {prefix}[{color}]{sym}[/{color}]  [white]{badge.label:<22}[/white]{detail}{cta}"
         )
 
     @property

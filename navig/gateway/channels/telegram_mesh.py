@@ -105,7 +105,7 @@ class TelegramMeshMixin:
                 return
 
             is_me = " *(this node)*" if my_role == "leader" else ""
-            msg = f"*current leader:* `{leader}`{is_me}\n" f"*epoch:* {epoch}"
+            msg = f"*current leader:* `{leader}`{is_me}\n*epoch:* {epoch}"
             await self.send_message(chat_id, msg, parse_mode="Markdown")
 
         except Exception as exc:
@@ -184,8 +184,7 @@ class TelegramMeshMixin:
             if accepted:
                 await self.send_message(
                     chat_id,
-                    f"✅ handoff requested → `{target_out}`\n"
-                    "_new leader will activate within 15s_",
+                    f"✅ handoff requested → `{target_out}`\n_new leader will activate within 15s_",
                     parse_mode="Markdown",
                 )
             else:

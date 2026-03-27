@@ -198,6 +198,6 @@ class WriteBatcher:
     def __repr__(self) -> str:
         return (
             f"<WriteBatcher batch_size={self._batch_size} "
-            f"interval={self._flush_interval_s*1000:.0f}ms "
+            f"interval={self._flush_interval_s * 1000:.0f}ms "
             f"pending={self.pending}>"
         )

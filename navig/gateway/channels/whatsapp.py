@@ -173,8 +173,7 @@ class WhatsAppChannel:
         """
         if not AIOHTTP_AVAILABLE:
             raise ImportError(
-                "aiohttp is required for WhatsApp channel. "
-                "Install: pip install aiohttp"
+                "aiohttp is required for WhatsApp channel. Install: pip install aiohttp"
             )
 
         self.config = config
@@ -330,8 +329,7 @@ class WhatsAppChannel:
         """Connect to bridge WebSocket for receiving messages."""
         if not WEBSOCKETS_AVAILABLE:
             logger.warning(
-                "websockets not available, using polling mode. "
-                "Install: pip install websockets"
+                "websockets not available, using polling mode. Install: pip install websockets"
             )
             return
 

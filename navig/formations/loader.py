@@ -120,8 +120,7 @@ def discover_formations() -> dict[str, Path]:
                         formation_map[alias] = subdir
                     else:
                         logger.debug(
-                            f"[FORMATION] Alias '{alias}' already mapped, "
-                            f"skipping from {subdir}"
+                            f"[FORMATION] Alias '{alias}' already mapped, skipping from {subdir}"
                         )
 
             except (json.JSONDecodeError, KeyError) as e:
@@ -399,8 +398,7 @@ def load_formation(formation_dir: Path) -> Formation | None:
                 logger.debug(f"[FORMATION] Loaded agent: {agent.name} ({agent.id})")
             else:
                 logger.warning(
-                    f"[FORMATION] Agent '{agent_id}' not found at "
-                    f"{agent_dir} or {agent_file}"
+                    f"[FORMATION] Agent '{agent_id}' not found at {agent_dir} or {agent_file}"
                 )
         except FormationValidationError as e:
             logger.warning(f"[FORMATION] Skipping agent '{agent_id}': {e}")

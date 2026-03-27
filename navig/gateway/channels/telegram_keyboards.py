@@ -485,22 +485,18 @@ _ACTION_PROMPTS: dict[str, str] = {
         "Your previous answer was not satisfactory. "
         "Provide a better, more complete answer."
     ),
-    "summarize": (
-        "Summarize the following in 2-3 concise sentences:\n\n" "{ai_response}"
-    ),
+    "summarize": ("Summarize the following in 2-3 concise sentences:\n\n{ai_response}"),
     "elaborate": (
         'The user asked: "{user_message}"\n'
         'Your answer was: "{ai_response_short}"\n'
         "Elaborate with more detail, examples, and depth."
     ),
-    "explain": (
-        "Explain the following code clearly and concisely:\n\n" "{ai_response}"
-    ),
+    "explain": ("Explain the following code clearly and concisely:\n\n{ai_response}"),
     "show_steps": (
-        "Rewrite the following as a clear numbered step-by-step:\n\n" "{ai_response}"
+        "Rewrite the following as a clear numbered step-by-step:\n\n{ai_response}"
     ),
     "table_fmt": (
-        "Reformat the following comparison into a clear table:\n\n" "{ai_response}"
+        "Reformat the following comparison into a clear table:\n\n{ai_response}"
     ),
     "recommend": (
         "From the following comparison, give a clear recommendation "
@@ -1561,7 +1557,9 @@ class CallbackHandler:
             "st_tts_d": lambda _: "🎙 TTS: Deepgram (API key required)",
             "st_vrv_text": lambda _: "🎤 Voice messages will get text replies",
             "st_vrv_voice": lambda _: "🎤 Voice messages will get voice replies",
-            "st_vrv_auto": lambda s: f"🎤 Voice messages set to auto ({'voice' if s.voice_replies else 'text'} fallback)",
+            "st_vrv_auto": lambda s: (
+                f"🎤 Voice messages set to auto ({'voice' if s.voice_replies else 'text'} fallback)"
+            ),
             "st_vrt_text": lambda _: "⌨️ Text messages will get text replies",
             "st_vrt_voice": lambda _: "⌨️ Text messages will get voice replies",
             "st_vrt_off": lambda _: "⌨️ Text-triggered replies are now off",

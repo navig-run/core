@@ -1,4 +1,4 @@
-﻿"""
+"""
 NAVIG CLI - No Admin Visible In Graveyard
 
 Keep your servers alive. Forever.
@@ -1765,7 +1765,7 @@ def init_command(
             import typer as _t
 
             _t.echo(
-                f"Unknown profile '{profile}'. " f"Valid: {', '.join(VALID_PROFILES)}",
+                f"Unknown profile '{profile}'. Valid: {', '.join(VALID_PROFILES)}",
                 err=True,
             )
             raise SystemExit(1)
@@ -4368,7 +4368,7 @@ def install_search(
     if plain:
         for asset in results:
             ch.print(
-                f"{asset.get('type','?')}:{asset.get('repo', asset.get('name','?'))}"
+                f"{asset.get('type', '?')}:{asset.get('repo', asset.get('name', '?'))}"
                 f"  — {asset.get('description', '')}"
             )
         return
@@ -4383,7 +4383,7 @@ def install_search(
 
     for asset in results:
         install_spec = (
-            f"{asset.get('type','?')}:{asset.get('repo', asset.get('name',''))}"
+            f"{asset.get('type', '?')}:{asset.get('repo', asset.get('name', ''))}"
         )
         table.add_row(
             asset.get("type", "?"),
@@ -4436,7 +4436,7 @@ def install_browse(
     if plain:
         for asset in assets:
             ch.print(
-                f"{asset.get('type','?')}  {asset.get('name','?')}  "
+                f"{asset.get('type', '?')}  {asset.get('name', '?')}  "
                 f"{asset.get('description', '')}"
             )
         return
@@ -6838,7 +6838,7 @@ def addon_run(
 
 
 @addon_app.command("deploy", hidden=True)
-def addon_run(
+def addon_run(  # noqa: F811
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Template name to run/deploy"),
     dry_run: bool = typer.Option(
@@ -10308,7 +10308,7 @@ def memory_history(
 
 
 @memory_app.command("clear")
-def memory_clear(
+def memory_clear(  # noqa: F811
     session: str = typer.Option(None, "--session", "-s", help="Clear specific session"),
     all_sessions: bool = typer.Option(False, "--all", help="Clear all sessions"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
@@ -11707,74 +11707,6 @@ def email_setup(
 
 
 # ============================================================================
-# PROACTIVE ASSISTANCE ENGINE
-# ============================================================================
-
-proactive_app = typer.Typer(
-    name="proactive",
-    help="Proactive assistance engine (calendar, email, alerts).",
-    no_args_is_help=True,
-)
-app.add_typer(proactive_app, name="proactive")
-
-
-@proactive_app.command("status")
-def proactive_status():
-    """Show proactive engine status."""
-    try:
-        from navig.agent.proactive import ProactiveEngine  # noqa: F401
-        from navig.config import get_config_manager
-
-        cm = get_config_manager()
-
-        ch.console.print("\n[bold]Proactive Assistance Status[/bold]\n")
-
-        # Calendar
-        calendar_config = cm.global_config.get("calendar", {})
-        if calendar_config.get("provider"):
-            ch.console.print(
-                f"  📅 Calendar: [green]{calendar_config.get('provider')}[/green]"
-            )
-        else:
-            ch.console.print("  📅 Calendar: [dim]Not configured[/dim]")
-
-        # Email
-        email_config = cm.global_config.get("email", {})
-        if email_config.get("address"):
-            ch.console.print(
-                f"  📧 Email: [green]{email_config.get('address')}[/green]"
-            )
-        else:
-            ch.console.print("  📧 Email: [dim]Not configured[/dim]")
-
-        # Engine status
-        ch.console.print("\n  ⚙️  Engine: [yellow]Starts with gateway[/yellow]")
-        ch.dim("\n  Run 'navig gateway start' to activate proactive assistance.")
-
-    except Exception as e:
-        ch.error(f"Error: {e}")
-
-
-@proactive_app.command("test")
-def proactive_test():
-    """Run a test check for upcoming events/emails."""
-    import asyncio
-
-    try:
-        from navig.agent.proactive.engine import get_proactive_engine
-
-        ch.info("Running proactive check...")
-
-        engine = get_proactive_engine()
-        asyncio.run(engine.run_checks(None))
-
-        ch.success("Proactive check complete!")
-
-    except Exception as e:
-        ch.error(f"Error: {e}")
-
-
-# ============================================================================
 # DEFERRED COMMAND MODULE REGISTRATION
 # ============================================================================
 # External command modules are NOT imported at module level.
@@ -11909,6 +11841,9 @@ _EXTERNAL_CMD_MAP = {
     "system": ("navig.commands.system_cmd", "system_app"),
     # ── Mount: NTFS junction registry + PowerShell helper generation ──────────
     "mount": ("navig.commands.mount", "mount_app"),
+    # ── Phase 5 modularization ────────────────────────────────────────────────
+    "update": ("navig.commands.update", "update_app"),
+    "proactive": ("navig.commands.proactive", "proactive_app"),
 }
 
 
@@ -12136,36 +12071,6 @@ def restore_backup_cmd(
 # ============================================================================
 # MONITORING & HEALTH CHECKS (Unified 'monitor' group)
 # ============================================================================
-
-# ============================================================================
-# SELF-UPDATE
-# ============================================================================
-
-
-@app.command("update")
-def update_cmd(
-    check: bool = typer.Option(
-        False, "--check", "-c", help="Check for updates only — do not apply."
-    ),
-    force: bool = typer.Option(
-        False, "--force", "-f", help="Apply even if already on latest."
-    ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Show what would happen, no changes."
-    ),
-    channel: str | None = typer.Option(
-        None, "--channel", help="Update channel: stable or beta.", hidden=True
-    ),
-) -> None:
-    """Check for and apply NAVIG self-updates.
-
-    Preserves all user data across every update and runs pending
-    data-root migrations automatically after upgrading.
-    """
-    from navig.commands.update import _run_update  # noqa: PLC0415
-
-    _run_update(check=check, force=force, dry_run=dry_run)
-
 
 # ============================================================================
 # ENTRY POINT

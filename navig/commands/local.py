@@ -9,7 +9,6 @@ Provides:
 - system info: Display local system information
 """
 
-
 from navig import console_helper as ch
 
 # Lazy imports for heavy modules
@@ -440,7 +439,7 @@ Security Checks:
 {chr(10).join(f"- {c.category}: {c.status} - {c.message}" for c in checks)}
 
 Open Ports:
-{ports_result.stdout[:1500] if ports_result.exit_code == 0 else 'Not available'}
+{ports_result.stdout[:1500] if ports_result.exit_code == 0 else "Not available"}
 """
 
         prompt = """Analyze this local system security audit and provide:

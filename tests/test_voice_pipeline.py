@@ -30,7 +30,6 @@ async def test_process_audio_file(pipeline):
         patch("navig.voice.pipeline.VoicePipeline._call_llm") as mock_llm,
         patch("navig.voice.pipeline.VoicePipeline._call_tts") as mock_tts,
     ):
-
         mock_result = MagicMock()
         mock_result.success = True
         mock_result.text = "Hello world"

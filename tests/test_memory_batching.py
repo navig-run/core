@@ -40,7 +40,6 @@ class TestMemoryBatching(unittest.TestCase):
             patch("pathlib.Path.read_text"),
             patch("pathlib.Path.stat"),
         ):
-
             # Simulate 12 files
             mock_files = []
             for i in range(12):

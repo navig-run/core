@@ -437,8 +437,7 @@ class RemediationEngine:
         action.timestamp = datetime.now()
         self._save_actions()
         self._log(
-            f"Requeued remediation action {action_id} "
-            f"(reset_attempts={reset_attempts})"
+            f"Requeued remediation action {action_id} (reset_attempts={reset_attempts})"
         )
         return True
 

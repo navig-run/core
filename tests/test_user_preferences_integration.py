@@ -9,7 +9,6 @@ from navig.workspace import WorkspaceManager
 
 
 class TestUserPreferencesIntegration(unittest.TestCase):
-
     def setUp(self):
         self.test_dir = tempfile.mkdtemp()
         self.workspace_path = Path(self.test_dir) / "workspace"

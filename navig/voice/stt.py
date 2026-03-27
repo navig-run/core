@@ -165,8 +165,7 @@ class STT:
             return STTResult(
                 success=False,
                 error=(
-                    f"Audio file too large: {size_mb:.1f}MB"
-                    f" (max {self.config.max_audio_size_mb}MB)"
+                    f"Audio file too large: {size_mb:.1f}MB (max {self.config.max_audio_size_mb}MB)"
                 ),
             )
 

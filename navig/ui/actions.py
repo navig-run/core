@@ -39,9 +39,7 @@ def render_actions(
                 else ""
             )
             console.print(
-                f"  [bold cyan]{item.index}.[/bold cyan]  "
-                f"{item.description}"
-                f"{val_str}"
+                f"  [bold cyan]{item.index}.[/bold cyan]  {item.description}{val_str}"
             )
     except Exception:
         try:

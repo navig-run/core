@@ -104,8 +104,7 @@ class EmbeddingProvider(ABC):
         """
         if not HAS_NUMPY:
             raise ImportError(
-                "numpy is required for vector similarity. "
-                "Install it with: pip install numpy"
+                "numpy is required for vector similarity. Install it with: pip install numpy"
             )
         a = np.array(vec1)
         b = np.array(vec2)

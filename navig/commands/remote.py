@@ -155,7 +155,9 @@ def run_remote_command(
         )
         ch.dim(f"Would execute: {preview}")
         if "\n" in final_command:
-            ch.dim(f"(Multi-line command with {final_command.count(chr(10))+1} lines)")
+            ch.dim(
+                f"(Multi-line command with {final_command.count(chr(10)) + 1} lines)"
+            )
         return
 
     # Check if command requires confirmation based on configured level

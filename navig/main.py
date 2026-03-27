@@ -594,7 +594,7 @@ def add_plugin_commands(app) -> None:
                     "Invalid plugin destination",
                     "Resolved plugin path escapes the NAVIG plugins directory.",
                 )
-                raise typer.Exit(1)
+                raise typer.Exit(1) from None
 
             if dest_path.exists():
                 ch.error(f"Plugin '{plugin_name}' already exists")

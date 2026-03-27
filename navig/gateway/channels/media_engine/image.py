@@ -383,7 +383,7 @@ def _build_image_card(
 
     # ---- Header
     if landmarks:
-        parts.append(f'🏛 <b>{landmarks[0]["name"]}</b>')
+        parts.append(f"🏛 <b>{landmarks[0]['name']}</b>")
     elif description:
         first_line = description.split(".")[0][:60]
         parts.append(f"🖼 <b>{first_line}</b>")
@@ -393,20 +393,20 @@ def _build_image_card(
     # ---- Dimensions / format
     info_bits = []
     if classify.get("width") and classify.get("height"):
-        info_bits.append(f'{classify["width"]}×{classify["height"]}')
+        info_bits.append(f"{classify['width']}×{classify['height']}")
     if classify.get("format"):
         info_bits.append(classify["format"])
     if classify.get("camera"):
-        info_bits.append(f'📷 {classify["camera"]}')
+        info_bits.append(f"📷 {classify['camera']}")
     if info_bits:
         parts.append("📊 " + " · ".join(info_bits))
 
     # ---- Taken at / GPS
     if classify.get("taken_at"):
-        parts.append(f'📅 {classify["taken_at"]}')
+        parts.append(f"📅 {classify['taken_at']}")
     if classify.get("gps"):
         g = classify["gps"]
-        maps_url = f'https://maps.google.com/?q={g["lat"]},{g["lon"]}'
+        maps_url = f"https://maps.google.com/?q={g['lat']},{g['lon']}"
         parts.append(f'📍 <a href="{maps_url}">{g["lat"]}, {g["lon"]}</a>')
 
     # ---- Description
@@ -425,9 +425,9 @@ def _build_image_card(
             loc = lm.get("location")
             loc_str = ""
             if loc:
-                maps_url = f'https://maps.google.com/?q={loc["lat"]},{loc["lon"]}'
+                maps_url = f"https://maps.google.com/?q={loc['lat']},{loc['lon']}"
                 loc_str = f' — <a href="{maps_url}">map</a>'
-            parts.append(f'🏛 {lm["name"]} ({score_pct}%){loc_str}')
+            parts.append(f"🏛 {lm['name']} ({score_pct}%){loc_str}")
 
     # ---- Reverse search matches
     if serp_matches:

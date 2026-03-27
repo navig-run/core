@@ -1,4 +1,4 @@
-﻿"""
+"""
 Tests for Section 18 — JSON API & Memory Integration.
 
 Covers:

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Tests for navig.tools — Tool Router, Registry, Schemas, and Packs.
 
 Test structure:

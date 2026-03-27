@@ -4,7 +4,6 @@ import json
 
 
 class TestAgentConfigLoader:
-
     def test_agent_with_json(self, tmp_path):
         """Agent with agent.json → llm_mode correctly loaded."""
         from navig.agent_config_loader import clear_agent_cache, load_agent_json

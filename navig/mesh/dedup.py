@@ -117,7 +117,7 @@ class HandoffQueue:
         deadline = now + ttl
         self._queue.append((message, now, deadline))
         logger.debug(
-            f"[handoff] Queued message (queue_depth={len(self._queue)}, " f"ttl={ttl}s)"
+            f"[handoff] Queued message (queue_depth={len(self._queue)}, ttl={ttl}s)"
         )
 
     def is_empty(self) -> bool:
@@ -150,8 +150,7 @@ class HandoffQueue:
             if now > deadline:
                 age = now - enqueued_at
                 logger.warning(
-                    f"[handoff] Dropping queued message (age={age:.1f}s "
-                    f"> ttl — deadline expired)"
+                    f"[handoff] Dropping queued message (age={age:.1f}s > ttl — deadline expired)"
                 )
                 dropped += 1
                 continue
@@ -165,7 +164,6 @@ class HandoffQueue:
 
         if delivered or dropped:
             logger.info(
-                f"[handoff] Drain complete: {delivered} delivered, "
-                f"{dropped} dropped"
+                f"[handoff] Drain complete: {delivered} delivered, {dropped} dropped"
             )
         return delivered, dropped

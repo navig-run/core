@@ -232,7 +232,7 @@ class TestA11yRefParsing:
         ctrl = BrowserController(BrowserConfig())
         ctrl.get_a11y_tree = AsyncMock(
             return_value=(
-                '- link "home"\n' "  - /url: https://example.com/\n" '- button "Go"\n'
+                '- link "home"\n  - /url: https://example.com/\n- button "Go"\n'
             )
         )
 
@@ -260,7 +260,6 @@ GENERIC_YAML = (
 
 
 class TestTemplateRunner:
-
     def _make_runner(self):
         from navig.browser.template_runner import TemplateRunner
 

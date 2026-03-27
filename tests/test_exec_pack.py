@@ -1,4 +1,4 @@
-﻿"""tests/test_exec_pack.py — Tests for the bash_exec tool pack."""
+"""tests/test_exec_pack.py — Tests for the bash_exec tool pack."""
 
 from __future__ import annotations
 

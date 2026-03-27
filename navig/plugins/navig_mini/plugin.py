@@ -127,7 +127,7 @@ def cmd_status(
 
     console.print(
         f"\n  [bold green]✓[/bold green]  NAVIG Mini "
-        f"[cyan]v{s.get('version','?')}[/cyan] — [bold]{s.get('hostname','?')}[/bold]"
+        f"[cyan]v{s.get('version', '?')}[/cyan] — [bold]{s.get('hostname', '?')}[/bold]"
     )
     t = Table(show_header=False, box=None, padding=(0, 2))
     t.add_column(style="dim")
@@ -135,11 +135,11 @@ def cmd_status(
     t.add_row("URL", aurl)
     t.add_row("Uptime", f"{s.get('uptime_sec', '?')}s")
     t.add_row(
-        "RAM", f"{s.get('ram_free_mb','?')} MB free / {s.get('ram_total_mb','?')} MB"
+        "RAM", f"{s.get('ram_free_mb', '?')} MB free / {s.get('ram_total_mb', '?')} MB"
     )
     t.add_row(
         "Disk",
-        f"{s.get('disk_pct','?')} used — {s.get('disk_free','?')} free  [{s.get('disk_path','?')}]",
+        f"{s.get('disk_pct', '?')} used — {s.get('disk_free', '?')} free  [{s.get('disk_path', '?')}]",
     )
     t.add_row("Load", str(s.get("load", "?")))
     t.add_row("Python", str(s.get("python", "?")))
@@ -398,7 +398,7 @@ def cmd_list(
         if check:
             p = _ping(a.get("url", ""), timeout=2)
             row.append(
-                f"[green]✓ up ({p.get('uptime',0)}s)[/green]"
+                f"[green]✓ up ({p.get('uptime', 0)}s)[/green]"
                 if p
                 else "[red]✗ unreachable[/red]"
             )

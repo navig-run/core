@@ -282,8 +282,7 @@ class CircuitBreaker:
                     self.success_count = 0
                 else:
                     raise CircuitBreakerOpenError(
-                        f"Circuit breaker is OPEN. "
-                        f"Retry in {self.recovery_timeout - elapsed:.0f}s"
+                        f"Circuit breaker is OPEN. Retry in {self.recovery_timeout - elapsed:.0f}s"
                     )
 
         try:
@@ -328,8 +327,7 @@ class CircuitBreaker:
         elif self.state == "CLOSED":
             if self.failure_count >= self.failure_threshold:
                 ch.error(
-                    f"Circuit breaker: Too many failures "
-                    f"({self.failure_count}) - Opening circuit"
+                    f"Circuit breaker: Too many failures ({self.failure_count}) - Opening circuit"
                 )
                 self.state = "OPEN"
 

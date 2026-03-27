@@ -1,4 +1,4 @@
-﻿from functools import cache
+from functools import cache
 
 from navig.platform.paths import builtin_store_dir
 

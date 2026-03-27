@@ -129,7 +129,10 @@ def _configure_root_logger(log_file: Path | None = None, level: int = logging.IN
     if log_file:
         log_file.parent.mkdir(parents=True, exist_ok=True)
         file_handler = RotatingFileHandler(
-            log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"  # 10MB
+            log_file,
+            maxBytes=10 * 1024 * 1024,
+            backupCount=5,
+            encoding="utf-8",  # 10MB
         )
         file_handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT))
         file_handler.setLevel(logging.DEBUG)  # Always log DEBUG to file

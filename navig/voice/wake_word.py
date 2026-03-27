@@ -358,7 +358,7 @@ class WakeWordEngine:
             logger.info("openWakeWord model loaded: %s", self.config.keyword)
         except ImportError:
             logger.error(
-                "openWakeWord not installed. Install with: " "pip install openwakeword"
+                "openWakeWord not installed. Install with: pip install openwakeword"
             )
         except Exception as exc:
             logger.error("openWakeWord model load failed: %s", exc)

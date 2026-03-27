@@ -188,7 +188,7 @@ class MatrixHitLChannel(HitLChannel):
         self, question: str, options: list[str], timeout: int = 300
     ) -> str:
         """Present numbered choices. User replies with the number."""
-        numbered = "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(options))
+        numbered = "\n".join(f"{i + 1}. {opt}" for i, opt in enumerate(options))
         full_q = f"{question}\n\n{numbered}\n\n_Reply with the number of your choice._"
         reply = await self.ask(full_q, timeout=timeout)
         if reply.isdigit():
@@ -336,7 +336,7 @@ class SMSHitLChannel(HitLChannel):
     async def choose(
         self, question: str, options: list[str], timeout: int = 300
     ) -> str:
-        numbered = " | ".join(f"{i+1}:{opt}" for i, opt in enumerate(options))
+        numbered = " | ".join(f"{i + 1}:{opt}" for i, opt in enumerate(options))
         await self._send_sms(f"NAVIG: {question} [{numbered}] Reply via dashboard.")
         return ""
 
@@ -573,8 +573,7 @@ def get_comms_router() -> CommsRouter:
 
     if not channels:
         logger.warning(
-            "CommsRouter: no channels configured. "
-            "Set up Matrix, Telegram, or Twilio credentials."
+            "CommsRouter: no channels configured. Set up Matrix, Telegram, or Twilio credentials."
         )
 
     # Prefer the channel that was last used successfully (from KG)

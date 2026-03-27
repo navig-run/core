@@ -88,7 +88,7 @@ def tmp_repo(tmp_path: Path) -> Path:
     src = tmp_path / "navig" / "commands"
     src.mkdir(parents=True)
     (src / "example.py").write_text(
-        "def foo():\n" "    try:\n" "        pass\n" "    except:\n" "        pass\n",
+        "def foo():\n    try:\n        pass\n    except:\n        pass\n",
         encoding="utf-8",
     )
     return tmp_path
