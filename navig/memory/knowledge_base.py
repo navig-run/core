@@ -28,8 +28,9 @@ def _debug_log(message: str) -> None:
 
         logger = DebugLogger()
         logger.log_operation("memory", {"message": message})
-    except Exception:
-        pass  # Fail silently if logging unavailable
+    except Exception as _e:  # noqa: BLE001
+        import sys
+        print(f"[navig/memory/knowledge_base] logger init failed ({type(_e).__name__}): {_e}", file=sys.stderr)
 
 
 @dataclass

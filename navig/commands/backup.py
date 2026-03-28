@@ -148,7 +148,7 @@ def backup_system_config(name: str | None, options: dict[str, Any]):
         return
 
     server_config = config_manager.load_server_config(server_name)
-    remote_ops = RemoteOperations(server_config)
+    remote_ops = RemoteOperations(config_manager)
 
     # Generate backup name
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -444,7 +444,7 @@ def backup_hestia(name: str | None, options: dict[str, Any]):
         return
 
     server_config = config_manager.load_server_config(server_name)
-    remote_ops = RemoteOperations(server_config)
+    remote_ops = RemoteOperations(config_manager)
 
     # Check if HestiaCP is installed
     check_cmd = 'command -v v-list-users >/dev/null 2>&1 && echo "installed" || echo "missing"'
@@ -603,7 +603,7 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
         return
 
     server_config = config_manager.load_server_config(server_name)
-    remote_ops = RemoteOperations(server_config)
+    remote_ops = RemoteOperations(config_manager)
 
     # Generate backup name
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

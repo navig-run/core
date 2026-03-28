@@ -8,6 +8,7 @@ This module provides common fixtures used across all test files:
 - Sample data factories
 """
 
+import os
 import tempfile
 from pathlib import Path
 from typing import Any, Dict
@@ -245,3 +246,60 @@ def log_messages():
 
 # Keep navig_log_capture as an alias so existing tests using either name work.
 navig_log_capture = log_messages
+
+
+# ---------------------------------------------------------------------------
+# Test isolation: prevent ConfigManager singleton and platform path cache from
+# leaking real project config (~/.navig or .navig/) into unit tests.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _isolate_navig_config_dir(tmp_path_factory):
+    """Point NAVIG_CONFIG_DIR at an empty temp directory for the whole session.
+
+    Without this, ConfigManager._find_app_root() walks up from CWD and finds the
+    real project .navig/ directory, causing tests that run after a config-loading
+    test to receive production config in their ConfigManager instances.
+    """
+    isolated = tmp_path_factory.mktemp("navig_cfg_isolated")
+    old_value = os.environ.get("NAVIG_CONFIG_DIR")
+    os.environ["NAVIG_CONFIG_DIR"] = str(isolated)
+    yield isolated
+    # Restore previous value (or remove if it wasn't set before the session).
+    if old_value is None:
+        os.environ.pop("NAVIG_CONFIG_DIR", None)
+    else:
+        os.environ["NAVIG_CONFIG_DIR"] = old_value
+
+
+@pytest.fixture(autouse=True)
+def _reset_navig_singletons():
+    """Reset module-level singletons before and after every test.
+
+    - ConfigManager singleton: prevents a real ConfigManager created by test A
+      from being returned by ``get_config_manager()`` in test B.
+    - ``navig.platform.paths._DETECTED_OS``: prevents the OS-detection cache
+      set during one test from affecting path calculations in subsequent tests.
+    """
+    try:
+        from navig.config import reset_config_manager
+        reset_config_manager()
+    except Exception:  # noqa: BLE001 — never block test collection
+        pass
+    try:
+        import navig.platform.paths as _paths
+        _paths._DETECTED_OS = None
+    except Exception:  # noqa: BLE001
+        pass
+    yield
+    try:
+        from navig.config import reset_config_manager
+        reset_config_manager()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import navig.platform.paths as _paths
+        _paths._DETECTED_OS = None
+    except Exception:  # noqa: BLE001
+        pass
