@@ -2130,6 +2130,13 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
         console.print("\n[bold]Syncing to environment...[/bold]")
         sync_to_env(config, console)
 
+        try:
+            from navig.commands.init import _prompt_local_discovery
+
+            _prompt_local_discovery(Path.home() / ".navig")
+        except Exception:  # noqa: BLE001
+            pass
+
         console.print()
         console.rule(
             "[bold #2c8bb7]✅ Onboarding Complete![/bold #2c8bb7]", style="#2c8bb7"
