@@ -340,11 +340,11 @@ fix_path() {
         *":$bin_dir:"*) ;;
         *) export PATH="$bin_dir:$PATH" ;;
     esac
-    # Persist
+    # Persist — tag lines with '# navig' so uninstall can remove them precisely
     for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
         [ -f "$rc" ] || continue
         if ! grep -qF "$bin_dir" "$rc" 2>/dev/null; then
-            printf '\nexport PATH="%s:$PATH"\n' "$bin_dir" >> "$rc"
+            printf '\nexport PATH="%s:$PATH" # navig\n' "$bin_dir" >> "$rc"
             log_verbose "Appended to $rc"
         fi
     done
@@ -395,35 +395,107 @@ setup_config() {
     log_verbose "Config: $base/"
 }
 
+# ── Stop background processes / services ─────────────────────
+_stop_navig_background() {
+    pkill -f 'navig' 2>/dev/null || true
+    if command -v systemctl > /dev/null 2>&1; then
+        for unit in navig-daemon navig-tunnel navig; do
+            systemctl stop    "${unit}.service" 2>/dev/null || true
+            systemctl disable "${unit}.service" 2>/dev/null || true
+        done
+    fi
+}
+
 # ── Uninstall ─────────────────────────────────────────────────
 uninstall_navig() {
     local preserve_data="${1:-0}"
     local version="${2:-}"
     local _nav_str="NAVIG"
     [ -n "$version" ] && _nav_str="NAVIG $version"
+
+    # Confirmation prompt (skip when -y/--yes or called for reinstall)
+    if [ "${_YES:-0}" != "1" ] && [ "${preserve_data}" != "1" ]; then
+        printf "\n  %b%s%b  Really uninstall %s? [y/N] " "$_YLW" "$(_sym warn)" "$_RST" "$_nav_str"
+        read -r _uninst_reply < /dev/tty || _uninst_reply="n"
+        case "$_uninst_reply" in
+            [Yy]*) ;;
+            *) printf "  Cancelled.\n"; return 0 ;;
+        esac
+    fi
+
     row_step "Removing" "$_nav_str"
+    _uninstall_ok=1
+    _removed_items=""
+
+    # 1. Stop background processes and services
+    _stop_navig_background
+    log_verbose "Stopped background processes / services"
+
+    # 2. Uninstall pip package
+    local _pip_removed=0
     if [ -n "${PIP_EXE:-}" ]; then
-        $PIP_EXE uninstall navig -y > /dev/null 2>&1 || true
+        if $PIP_EXE uninstall navig -y > /dev/null 2>&1; then
+            _pip_removed=1
+        fi
     else
         for pip_cmd in pip3 pip; do
             if command -v "$pip_cmd" > /dev/null 2>&1; then
-                $pip_cmd uninstall navig -y > /dev/null 2>&1 || true
+                if $pip_cmd uninstall navig -y > /dev/null 2>&1; then
+                    _pip_removed=1
+                fi
                 break
             fi
         done
     fi
-    if [ "$preserve_data" != "1" ] && [ -d "$HOME/.navig" ]; then
-        rm -rf "$HOME/.navig" && log_verbose "Removed $HOME/.navig"
+    if [ "$_pip_removed" = "1" ]; then
+        row_ok  "pip"    "package removed"
+    else
+        row_warn "pip"   "not found or already removed"
     fi
-    # Remove PATH lines from rc files
+
+    # 3. Remove config / data directory
+    if [ "$preserve_data" != "1" ]; then
+        if [ -d "$HOME/.navig" ]; then
+            if rm -rf "$HOME/.navig" 2>/dev/null; then
+                row_ok "Config dir" "removed: $HOME/.navig"
+            else
+                row_warn "Config dir" "could not remove $HOME/.navig"
+                _uninstall_ok=0
+            fi
+        else
+            row_warn "Config dir" "not found — skipping"
+        fi
+    else
+        row_warn "Config dir" "preserved (reinstall mode)"
+    fi
+
+    # 4. Remove install marker
+    rm -f "$HOME/.navig/install.marker" 2>/dev/null || true
+
+    # 5. Clean PATH entries from shell profiles (only lines tagged '# navig')
+    local _rc_cleaned=0
     for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
         [ -f "$rc" ] || continue
-        if grep -q "navig\|\.local/bin" "$rc" 2>/dev/null; then
-            sed -i.bak '/navig\|\.local\/bin/d' "$rc" 2>/dev/null || true
-            log_verbose "Cleaned $rc"
+        if grep -q '# navig' "$rc" 2>/dev/null; then
+            sed -i.bak '/# navig$/d' "$rc" 2>/dev/null || true
+            _rc_cleaned=1
+            log_verbose "Cleaned PATH entries from $rc"
         fi
     done
-    row_ok "Done" "NAVIG removed."
+    if [ "$_rc_cleaned" = "1" ]; then
+        row_ok  "Shell profiles" "PATH entries removed"
+        row_warn "Note"          "open a new terminal to apply PATH changes"
+    else
+        row_warn "Shell profiles" "no tagged entries found — skipping"
+    fi
+
+    # 6. Done
+    if [ "${_uninstall_ok}" = "1" ]; then
+        row_ok "Done" "$_nav_str fully uninstalled."
+    else
+        row_warn "Done" "$_nav_str removed with warnings — check output above."
+    fi
+    return 0
 }
 
 # ── Argument defaults ─────────────────────────────────────────
@@ -438,6 +510,8 @@ _HELP=0
 _parse_args() {
     while [ $# -gt 0 ]; do
         case "$1" in
+            # Bare positional subcommand: install | uninstall | reinstall | repair
+            install|uninstall|reinstall|repair) _ACTION="$1" ;;
             -v|--version)    shift; _VERSION="${1:-}"  ;;
             -a|--action)     shift; _ACTION="${1:-}"   ;;
             -y|--yes)        _YES=1                     ;;
@@ -467,10 +541,8 @@ show_usage() {
 main() {
     [ "${NAVIG_INSTALL_SH_NO_RUN:-0}" = "1" ] && return
 
-    # Parse args if called as script (not piped)
-    if [ -n "${BASH_SOURCE[0]:-}" ]; then
-        _parse_args "$@"
-    fi
+    # Always parse args — works both as a script and when piped via curl | bash -s -- uninstall
+    _parse_args "$@"
 
     if [ "$_HELP" = "1" ]; then show_usage; return; fi
     if [ "$_DRY_RUN" = "1" ]; then
@@ -566,6 +638,11 @@ main() {
         fi
         local clean_ver; clean_ver=$(echo "$nav_ver" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "$nav_ver")
         row_ok "navig" "$clean_ver"
+
+        # Write install marker so reinstall detection works
+        mkdir -p "$HOME/.navig"
+        printf "%s\n" "${clean_ver}" > "$HOME/.navig/install.marker"
+        log_verbose "Wrote install marker: $HOME/.navig/install.marker"
 
         # ── Done ──────────────────────────────────────────────
         print_done "$clean_ver"
