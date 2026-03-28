@@ -87,8 +87,12 @@ class ImageGenerationConfig:
     default_quality: ImageQuality = ImageQuality.STANDARD
     default_style: ImageStyle = ImageStyle.VIVID
 
-    # Output settings
-    output_dir: str = "~/.navig/images"
+    # Output settings — respects NAVIG_DATA_DIR and expands ~ correctly.
+    output_dir: str = field(
+        default_factory=lambda: str(
+            Path(os.environ.get("NAVIG_DATA_DIR", "~/.navig")).expanduser() / "images"
+        )
+    )
     save_locally: bool = True
 
     # Rate limiting

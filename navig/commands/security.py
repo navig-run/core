@@ -71,7 +71,7 @@ def firewall_status(options):
         return
 
     server_config = config_manager.load_server_config(server_name)
-    remote_ops = RemoteOperations(server_config)
+    remote_ops = RemoteOperations(config_manager)
 
     if options.get("dry_run"):
         console.print("[yellow]DRY RUN:[/yellow] Would check firewall status")
@@ -131,7 +131,7 @@ def firewall_add_rule(port, protocol, allow_from, options):
         return
 
     server_config = config_manager.load_server_config(server_name)
-    remote_ops = RemoteOperations(server_config)
+    remote_ops = RemoteOperations(config_manager)
 
     port_str, protocol_str = _validate_firewall_rule_params(port, protocol)
     if port_str is None:
@@ -194,7 +194,7 @@ def firewall_remove_rule(port, protocol, options):
         return
 
     server_config = config_manager.load_server_config(server_name)
-    remote_ops = RemoteOperations(server_config)
+    remote_ops = RemoteOperations(config_manager)
 
     port_str, protocol_str = _validate_firewall_rule_params(port, protocol)
     if port_str is None:
@@ -237,7 +237,7 @@ def firewall_enable(options):
         return
 
     server_config = config_manager.load_server_config(server_name)
-    remote_ops = RemoteOperations(server_config)
+    remote_ops = RemoteOperations(config_manager)
 
     if options.get("dry_run"):
         console.print("[yellow]DRY RUN:[/yellow] Would enable UFW firewall")
@@ -272,7 +272,7 @@ def firewall_disable(options):
         return
 
     server_config = config_manager.load_server_config(server_name)
-    remote_ops = RemoteOperations(server_config)
+    remote_ops = RemoteOperations(config_manager)
 
     if options.get("dry_run"):
         console.print("[yellow]DRY RUN:[/yellow] Would disable UFW firewall")
@@ -312,7 +312,7 @@ def fail2ban_status(options):
         return
 
     server_config = config_manager.load_server_config(server_name)
-    remote_ops = RemoteOperations(server_config)
+    remote_ops = RemoteOperations(config_manager)
 
     if options.get("dry_run"):
         console.print("[yellow]DRY RUN:[/yellow] Would check Fail2Ban status")
@@ -417,7 +417,7 @@ def fail2ban_unban(ip_address, jail, options):
         return
 
     server_config = config_manager.load_server_config(server_name)
-    remote_ops = RemoteOperations(server_config)
+    remote_ops = RemoteOperations(config_manager)
 
     try:
         # Validate IP address (supports IPv4 and IPv6)
@@ -473,7 +473,7 @@ def ssh_audit(options):
         return
 
     server_config = config_manager.load_server_config(server_name)
-    remote_ops = RemoteOperations(server_config)
+    remote_ops = RemoteOperations(config_manager)
 
     if options.get("dry_run"):
         console.print("[yellow]DRY RUN:[/yellow] Would audit SSH configuration")
@@ -580,7 +580,7 @@ def check_security_updates(options):
         return
 
     server_config = config_manager.load_server_config(server_name)
-    remote_ops = RemoteOperations(server_config)
+    remote_ops = RemoteOperations(config_manager)
 
     if options.get("dry_run"):
         console.print("[yellow]DRY RUN:[/yellow] Would check for security updates")
@@ -634,7 +634,7 @@ def audit_connections(options):
         return
 
     server_config = config_manager.load_server_config(server_name)
-    remote_ops = RemoteOperations(server_config)
+    remote_ops = RemoteOperations(config_manager)
 
     if options.get("dry_run"):
         console.print("[yellow]DRY RUN:[/yellow] Would audit network connections")

@@ -30,6 +30,7 @@ Usage:
 """
 
 from .core import CredentialsVault
+from .core_v2 import get_vault_v2
 from .secret_str import SecretStr
 from .types import Credential, CredentialInfo, CredentialType, TestResult
 
@@ -41,6 +42,7 @@ __all__ = [
     "TestResult",
     "SecretStr",
     "get_vault",
+    "get_vault_v2",
 ]
 
 # Global vault singleton

@@ -308,7 +308,7 @@ def probe_llm_sync(prefer_local: bool = True) -> ProbeResult:
             import concurrent.futures
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-                future = ex.submit(asyncio.run, probe_llm(prefer_local))
+                future = ex.submit(lambda: asyncio.run(probe_llm(prefer_local)))
                 return future.result(timeout=5)
         except RuntimeError:
             # No running event loop — safe to use asyncio.run() directly.
