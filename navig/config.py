@@ -45,11 +45,18 @@ def _log_shadow_anomaly(event_type: str, data: dict) -> None:
 def _atomic_write_yaml(data: Any, filepath: Path, allow_unicode: bool = False) -> None:
     """Safely write YAML data to disk atomically to prevent truncation during crashes."""
     import sys
+    import tempfile
     import time
 
-    tmp_path = filepath.with_suffix(".tmp.yaml")
+    filepath = Path(filepath)
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+
+    # Use a unique temp file in the same directory to avoid name collisions and
+    # Windows Defender locking a stale config.tmp.yaml from a prior aborted run.
+    fd, tmp_name = tempfile.mkstemp(dir=filepath.parent, prefix=".tmp_yaml_", suffix=".yaml")
+    tmp_path = Path(tmp_name)
     try:
-        with open(tmp_path, "w", encoding="utf-8") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             yaml.dump(
                 data, f, default_flow_style=False, sort_keys=False, allow_unicode=allow_unicode
             )
@@ -65,11 +72,10 @@ def _atomic_write_yaml(data: Any, filepath: Path, allow_unicode: bool = False) -
                     raise
                 time.sleep(0.05 * (attempt + 1))
     except Exception:
-        if tmp_path.exists():
-            try:
-                tmp_path.unlink()
-            except OSError:
-                pass
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
         raise
 
 
