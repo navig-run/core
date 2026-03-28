@@ -652,7 +652,7 @@ class TelegramChannel:
                     await self._handle_models_command(chat_id, user_id)
                     return
                 if cmd in ("/providers", "/provider"):
-                    await self._handle_providers(chat_id)
+                    await self._handle_providers(chat_id, user_id)
                     return
                 if cmd == "/debug":
                     await self._handle_debug(chat_id)
@@ -1539,6 +1539,15 @@ class TelegramChannel:
 
         return ""
 
+    @staticmethod
+    def _fmt_provider(name: str) -> str:
+        """Normalise provider name for display — renames legacy aliases to canonical."""
+        return {
+            "forge_copilot": "bridge",
+            "bridge_copilot": "bridge",
+            "mcp_bridge": "bridge",
+        }.get(name, name)
+
     async def _handle_models_command(self, chat_id: int, user_id: int = 0):
         """Show active model config with interactive switcher keyboard."""
         try:
@@ -1547,112 +1556,79 @@ class TelegramChannel:
             client = get_ai_client()
             router = client.model_router
 
-            lines = ["🧠 *Model Routing*\n"]
-
-            # ── Section 1: Detected provider ──
-            best = (
+            # ── Active provider ──
+            best_raw = (
                 client._detect_best_provider()
                 if hasattr(client, "_detect_best_provider")
                 else "unknown"
             )
-            lines.append(f"🏷 Best provider: `{best}`")
+            best = self._fmt_provider(best_raw)
 
-            # ── Section 2: LLM Mode Router ──
+            lines = ["🧠 *Model Routing*", f"🎯 Active provider: `{best}`", ""]
+
+            # ── User-facing tiers (small_talk / big_tasks / coding only) ──
             try:
                 from navig.llm_router import get_llm_router
 
                 llm_router = get_llm_router()
                 if llm_router:
-                    lines.append("\n*LLM Mode Router* (primary):")
-                    mode_icons = {
-                        "small_talk": "💬",
-                        "big_tasks": "🧠",
-                        "coding": "💻",
-                        "summarize": "📝",
-                        "research": "🔍",
-                    }
-                    for mode_name in (
-                        "small_talk",
-                        "big_tasks",
-                        "coding",
-                        "summarize",
-                        "research",
-                    ):
+                    lines.append("*Your AI Tiers:*")
+                    user_modes = [
+                        ("⚡", "Small",   "small_talk"),
+                        ("🧠", "Big",     "big_tasks"),
+                        ("💻", "Code",    "coding"),
+                    ]
+                    for icon, label, mode_name in user_modes:
                         mc = llm_router.modes.get_mode(mode_name)
                         if mc:
-                            icon = mode_icons.get(mode_name, "•")
-                            display_name = mode_name.replace("_", " ")
-                            lines.append(f"  {icon} {display_name}: `{mc.provider}:{mc.model}`")
+                            prov = self._fmt_provider(mc.provider)
+                            lines.append(f"{icon} *{label}*   `{prov}:{mc.model}`")
                             if mc.fallback_provider:
-                                lines.append(
-                                    f"      ↳ fb: `{mc.fallback_provider}:{mc.fallback_model}`"
-                                )
+                                fb_prov = self._fmt_provider(mc.fallback_provider)
+                                lines.append(f"     ↳ fallback: `{fb_prov}:{mc.fallback_model}`")
                 else:
-                    lines.append("\n_LLM Mode Router: not active_")
+                    lines.append("_Tier config unavailable_")
             except Exception:
-                lines.append("\n_LLM Mode Router: unavailable_")
+                lines.append("_Tier config unavailable_")
 
-            # ── Section 3: Hybrid Router (tier-based fallback) ──
+            # ── Bridge tiers (when Bridge is connected) ──
             if router and router.is_active:
                 cfg = router.cfg
-                lines.append(f"\n*Hybrid Router* (fallback, mode=`{cfg.mode}`):")
+                lines.append("")
+                lines.append("*Bridge Tiers (when Bridge is connected):*")
                 user_pref = self._user_model_prefs.get(user_id, "")
                 pref_label = {
                     "small": "⚡ Small",
                     "big": "🧠 Big",
                     "coder_big": "💻 Coder",
                 }.get(user_pref, "🔄 Auto")
-                lines.append(f"  Your preset: *{pref_label}*")
-                for label, slot in [
-                    ("⚡ small", cfg.small),
-                    ("🧠 big", cfg.big),
-                    ("💻 coder", cfg.coder_big),
+                lines.append(f"  Preset: *{pref_label}*")
+                for icon, label, slot in [
+                    ("⚡", "small", cfg.small),
+                    ("🧠", "big",   cfg.big),
+                    ("💻", "code",  cfg.coder_big),
                 ]:
-                    lines.append(f"  {label}: `{slot.provider or '—'}:{slot.model or '—'}`")
-            else:
-                lines.append("\n_Hybrid Router: disabled_")
-
-            # ── Section 4: GitHub Models fallback chains ──
-            try:
-                from navig.agent.llm_providers import GitHubModelsProvider
-
-                lines.append("\n*GitHub Models chains:*")
-                for chain_name, models in GitHubModelsProvider.FALLBACK_CHAINS.items():
-                    model_list = " → ".join(m.split(":")[-1] for m in models)
-                    lines.append(f"  {chain_name.replace('_', ' ')}: {model_list}")
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+                    prov = self._fmt_provider(slot.provider or "—")
+                    model = slot.model or "—"
+                    lines.append(f"  {icon} {label}: `{prov}:{model}`")
 
             text = "\n".join(lines)
 
-            # Build inline keyboard
+            # ── Inline keyboard ──
             user_pref = self._user_model_prefs.get(user_id, "")
             check = lambda t: " ✓" if user_pref == t else ""
             keyboard = [
                 [
-                    {
-                        "text": f"⚡ Small{check('small')}",
-                        "callback_data": "ms_tier_small",
-                    },
-                    {"text": f"🧠 Big{check('big')}", "callback_data": "ms_tier_big"},
-                    {
-                        "text": f"💻 Code{check('coder_big')}",
-                        "callback_data": "ms_tier_coder",
-                    },
+                    {"text": f"⚡ Small{check('small')}",    "callback_data": "ms_tier_small"},
+                    {"text": f"🧠 Big{check('big')}",        "callback_data": "ms_tier_big"},
+                    {"text": f"💻 Code{check('coder_big')}", "callback_data": "ms_tier_coder"},
                 ],
                 [
                     {"text": f"🔄 Auto{check('')}", "callback_data": "ms_tier_auto"},
-                    {"text": "📊 Full table", "callback_data": "ms_info"},
+                    {"text": "📊 Full table",        "callback_data": "ms_info"},
                 ],
                 [
-                    {
-                        "text": f"⚡ xAI/Grok{check('xai')}",
-                        "callback_data": "ms_prov_xai",
-                    },
-                    {
-                        "text": f"🤖 OpenAI{check('openai')}",
-                        "callback_data": "ms_prov_openai",
-                    },
+                    {"text": "🔌 Providers →", "callback_data": "open_providers"},
                 ],
             ]
             await self.send_message(chat_id, text, keyboard=keyboard)
@@ -1661,7 +1637,7 @@ class TelegramChannel:
             text = f"⚠️ Could not read routing info: {e}"
             await self.send_message(chat_id, text)
 
-    async def _handle_providers(self, chat_id: int) -> None:
+    async def _handle_providers(self, chat_id: int, user_id: int = 0) -> None:
         """AI Provider Hub — live registry status, Bridge probe, interactive keyboard."""
         import socket as _socket
 
@@ -1672,10 +1648,9 @@ class TelegramChannel:
                 BRIDGE_DEFAULT_PORT,
                 get_llm_port,
             )
-
             bridge_port = get_llm_port() or BRIDGE_DEFAULT_PORT
         except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
+            pass
         try:
             _s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
             _s.settimeout(1.0)
@@ -1684,67 +1659,94 @@ class TelegramChannel:
         except Exception:
             bridge_online = False
 
+        # ── Active provider (for the "Now using" line) ──
+        try:
+            from navig.agent.ai_client import get_ai_client
+            client = get_ai_client()
+            best_raw = (
+                client._detect_best_provider()
+                if hasattr(client, "_detect_best_provider")
+                else "unknown"
+            )
+            active_provider = self._fmt_provider(best_raw)
+        except Exception:
+            active_provider = "bridge" if bridge_online else "unknown"
+
         # ── Load live provider list from registry ──
         try:
             from navig.providers.registry import list_enabled_providers
             from navig.providers.verifier import verify_provider
-
             providers = list_enabled_providers()
         except Exception:
             providers = []
 
-        # ── Build status lines ──
-        lines = ["🤖 *AI Provider Hub*\n"]
+        # ── Header ──
+        bridge_tag = "online ✓" if bridge_online else "offline"
+        lines = [
+            "🔌 *AI Providers*",
+            f"🎯 Now using: `{active_provider}` · Bridge {bridge_tag}",
+            "",
+        ]
+
+        # ── Bridge section ──
         if bridge_online:
-            lines.append("⚡ *Bridge* — online (`bridge_copilot`)")
-            lines.append("_Non-Bridge providers are fallback only while bridge is connected._")
+            lines.append("⚡ *Bridge* — online")
+            lines.append("_When connected, Bridge models take priority over cloud providers._")
         else:
             lines.append("⚡ *Bridge* — offline")
-            lines.append("_Connect VS Code + navig-bridge to activate bridge._")
+            lines.append("_Open VS Code with navig-bridge extension to activate._")
         lines.append("")
 
+        # ── Cloud & local providers ──
+        cloud_lines: list[str] = []
+        local_lines: list[str] = []
+
         keyboard_rows: list = [
-            [
-                {
-                    "text": f"⚡ Bridge — {'online ✓' if bridge_online else 'offline'}",
-                    "callback_data": "prov_bridge",
-                }
-            ],
+            [{"text": f"⚡ Bridge — {bridge_tag}", "callback_data": "prov_bridge"}],
         ]
         button_row: list = []
 
         for manifest in providers:
             if manifest.id == "mcp_bridge":
-                # Already rendered as the bridge row above
-                continue
+                continue  # already rendered as Bridge section above
+
+            # ── Determine status ──
+            status_icon = "⚙️"
+            status_label = ""
             try:
                 result = verify_provider(manifest)
                 if manifest.tier == "local" and manifest.local_probe:
                     if result.local_probe_ok:
                         status_icon = "✅"
                         status_label = "running"
-                    elif result.local_probe_ok is False:
+                    else:
                         status_icon = "⬜"
                         status_label = "not detected"
-                    else:
-                        status_icon = "⬜"
-                        status_label = ""
                 elif manifest.requires_key:
-                    status_icon = "✅" if result.key_detected else "⬜"
                     if result.key_detected:
-                        status_label = "key configured"
+                        status_icon = "✅"
+                        # Mark if it's the active one
+                        if manifest.id == active_provider or manifest.id.replace("_", "") == active_provider.replace("_", ""):
+                            status_label = "active"
+                        else:
+                            status_label = "configured"
                     else:
-                        env_hint = manifest.env_vars[0] if manifest.env_vars else "—"
-                        status_label = f"set {env_hint}"
+                        status_icon = "⚙️"
+                        env_hint = manifest.env_vars[0] if manifest.env_vars else ""
+                        status_label = f"set {env_hint}" if env_hint else "not configured"
                 else:
                     status_icon = "✅"
                     status_label = "no key needed"
             except Exception:
-                status_icon = "⬜"
-                status_label = ""
+                status_icon = "⚙️"
+                status_label = "not configured"
 
-            extra = f" · {status_label}" if status_label else ""
-            lines.append(f"  {manifest.emoji} {manifest.display_name}  {status_icon}{extra}")
+            extra = f"  {status_icon} {status_label}" if status_label else f"  {status_icon}"
+            entry = f"  {manifest.emoji} *{manifest.display_name}*{extra}"
+            if manifest.tier == "local":
+                local_lines.append(entry)
+            else:
+                cloud_lines.append(entry)
 
             btn = {
                 "text": f"{manifest.emoji} {manifest.display_name}",
@@ -1758,9 +1760,18 @@ class TelegramChannel:
         if button_row:
             keyboard_rows.append(list(button_row))
 
-        lines.append("\n_Tap a provider button for setup details._")
+        if cloud_lines:
+            lines.append("☁️ *Cloud Providers:*")
+            lines.extend(cloud_lines)
+            lines.append("")
+        if local_lines:
+            lines.append("🖥 *Local Providers:*")
+            lines.extend(local_lines)
+            lines.append("")
 
-        # Control row — always pinned at bottom
+        lines.append("_Tap a provider to configure or assign models._")
+
+        # ── Control row pinned at bottom ──
         keyboard_rows.append([{"text": "🚫 No AI (raw mode)", "callback_data": "prov_noai"}])
         keyboard_rows.append([{"text": "❌ Close", "callback_data": "prov_close"}])
 

@@ -954,30 +954,20 @@ class CallbackHandler:
                 await self._answer(cb_id, f"Error: {e}")
             return
 
-        if cb_data == "ms_providers":
-            await self._answer(cb_id, "⚡ Provider Hub")
-            await self.channel._handle_providers(chat_id)
+        if cb_data in ("ms_providers", "open_providers"):
+            await self._answer(cb_id, "🔌 Providers")
+            await self.channel._handle_providers(chat_id, user_id)
             return
 
-        # ── Provider-force shortcuts (ms_prov_*) ──
+        # ── Provider-force shortcuts (ms_prov_*) — redirect to provider model picker ──
         prov_map = {
-            "ms_prov_xai": ("xai", "⚡ xAI/Grok"),
-            "ms_prov_openai": ("openai", "🤖 OpenAI"),
+            "ms_prov_xai": "xai",
+            "ms_prov_openai": "openai",
         }
         if cb_data in prov_map:
-            prov_key, prov_label = prov_map[cb_data]
-            self.channel._user_model_prefs[user_id] = prov_key
-            await self._answer(cb_id, f"✅ Provider preference: {prov_label}")
-            try:
-                await self.channel._handle_models_command(chat_id, user_id)
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
-            await self.channel.send_message(
-                chat_id,
-                f"✅ Provider locked to *{prov_label}*\n"
-                f"The system will prefer this provider for your messages.",
-                parse_mode="Markdown",
-            )
+            prov_id = prov_map[cb_data]
+            await self._answer(cb_id, "")
+            await self.channel._show_provider_model_picker(chat_id, prov_id)
             return
 
         await self._answer(cb_id, "⚠️ Unknown model action")
@@ -1015,7 +1005,7 @@ class CallbackHandler:
 
         if cb_data == "prov_back":
             await self._answer(cb_id, "")
-            await self.channel._handle_providers(chat_id)
+            await self.channel._handle_providers(chat_id, user_id)
             return
 
         # Providers that open a full model↔tier picker
@@ -1208,7 +1198,7 @@ class CallbackHandler:
                 logger.debug("Trace refresh failed: %s", exc)
         elif cb_data == "trace_providers":
             await self._answer(cb_id, "")
-            await self.channel._handle_providers(chat_id)
+            await self.channel._handle_providers(chat_id, user_id)
         elif cb_data == "trace_model":
             await self._answer(cb_id, "")
             await self.channel._handle_models_command(chat_id, user_id)
