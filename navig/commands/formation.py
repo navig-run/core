@@ -25,10 +25,16 @@ formation_app = typer.Typer(
 def formation_callback(ctx: typer.Context):
     """Formation commands - run without subcommand for help."""
     if ctx.invoked_subcommand is None:
-        from navig.cli import show_subcommand_help
+        import os as _os  # noqa: PLC0415
 
-        show_subcommand_help("formation", ctx)
-        raise typer.Exit()
+        if _os.environ.get("NAVIG_LAUNCHER", "fuzzy") == "legacy":
+            from navig.cli import show_subcommand_help  # noqa: PLC0415
+
+            show_subcommand_help("formation", ctx)
+            raise typer.Exit()
+        from navig.cli.launcher import smart_launch  # noqa: PLC0415
+
+        smart_launch("formation", formation_app)
 
 
 @formation_app.command("list")

@@ -125,9 +125,6 @@ def download_file_cmd(remote: str, local: Path | None, options: dict[str, Any]):
         ch.info("  4. Network timeout: Check connection with 'navig tunnel status'")
 
 
-from pathlib import Path
-from typing import Any
-
 import typer
 
 from navig.cli import show_subcommand_help
@@ -143,8 +140,14 @@ file_app = typer.Typer(
 def file_callback(ctx: typer.Context):
     """File operations - run without subcommand for help."""
     if ctx.invoked_subcommand is None:
-        show_subcommand_help("file", ctx)
-        raise typer.Exit()
+        import os as _os  # noqa: PLC0415
+
+        if _os.environ.get("NAVIG_LAUNCHER", "fuzzy") == "legacy":
+            show_subcommand_help("file", ctx)
+            raise typer.Exit()
+        from navig.cli.launcher import smart_launch  # noqa: PLC0415
+
+        smart_launch("file", file_app)
 
 
 @file_app.command("add")

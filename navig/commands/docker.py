@@ -486,8 +486,14 @@ docker_app = _t.Typer(
 def _docker_callback(ctx: _t.Context):
     """Docker management — run without subcommand for help."""
     if ctx.invoked_subcommand is None:
-        print(ctx.get_help())
-        raise _t.Exit()
+        import os as _os  # noqa: PLC0415
+
+        if _os.environ.get("NAVIG_LAUNCHER", "fuzzy") == "legacy":
+            print(ctx.get_help())
+            raise _t.Exit()
+        from navig.cli.launcher import smart_launch  # noqa: PLC0415
+
+        smart_launch("docker", docker_app)
 
 
 @docker_app.command("ps")

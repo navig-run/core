@@ -22,8 +22,14 @@ mode_app = typer.Typer(
 def mode_callback(ctx: typer.Context):
     """LLM Mode Router — run without subcommand to show modes."""
     if ctx.invoked_subcommand is None:
-        _show_modes()
-        raise typer.Exit()
+        import os as _os  # noqa: PLC0415
+
+        if _os.environ.get("NAVIG_LAUNCHER", "fuzzy") == "legacy":
+            _show_modes()
+            raise typer.Exit()
+        from navig.cli.launcher import smart_launch  # noqa: PLC0415
+
+        smart_launch("mode", mode_app)
 
 
 # ── navig mode show ──────────────────────────────────────

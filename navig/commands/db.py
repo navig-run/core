@@ -1025,8 +1025,14 @@ db_app = typer.Typer(
 def db_callback(ctx: typer.Context):
     """Database management - run without subcommand for help."""
     if ctx.invoked_subcommand is None:
-        show_subcommand_help("db", ctx)
-        raise typer.Exit()
+        import os as _os  # noqa: PLC0415
+
+        if _os.environ.get("NAVIG_LAUNCHER", "fuzzy") == "legacy":
+            show_subcommand_help("db", ctx)
+            raise typer.Exit()
+        from navig.cli.launcher import smart_launch  # noqa: PLC0415
+
+        smart_launch("db", db_app)
 
 
 @db_app.command("show")

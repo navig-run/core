@@ -12,16 +12,16 @@ log_app = typer.Typer(
 
 @log_app.callback()
 def log_callback(ctx: typer.Context):
-    """Log management command group."""
-    if ctx.invoked_subcommand is None:
-        # If run without subcommand, default to listing logs or showing help
-        # For now, just show help
-        pass
-
     """Log operations - run without subcommand for help."""
     if ctx.invoked_subcommand is None:
-        show_subcommand_help("log", ctx)
-        raise typer.Exit()
+        import os as _os  # noqa: PLC0415
+
+        if _os.environ.get("NAVIG_LAUNCHER", "fuzzy") == "legacy":
+            show_subcommand_help("log", ctx)
+            raise typer.Exit()
+        from navig.cli.launcher import smart_launch  # noqa: PLC0415
+
+        smart_launch("log", log_app)
 
 
 @log_app.command("show")

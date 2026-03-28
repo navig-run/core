@@ -78,6 +78,11 @@ desktop = [
 farmore = [
   "farmore>=0.9.0",
 ]
+interactive = [
+  # Optional: enables arrow-key selector in `navig <domain>` fuzzy launcher.
+  # Falls back to numbered prompt when absent.
+  "readchar>=3.0",
+]
 finance = [
   "beancount>=3.0.0",
 ]
