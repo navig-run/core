@@ -159,6 +159,11 @@ def _check_first_run() -> None:
     if os.getenv("NAVIG_SKIP_ONBOARDING") == "1":
         return
 
+    # Re-entry guard: prevents recursive onboarding when a step (e.g. _step_first_host)
+    # spawns a navig sub-process that would otherwise re-enter this function.
+    if os.getenv("NAVIG_ONBOARDING_ACTIVE") == "1":
+        return
+
     # Shell-completion probes — must never block or print
     if any(
         v in os.environ for v in ("_NAVIG_COMPLETE", "COMP_WORDS", "_TYPER_COMPLETE")
@@ -194,13 +199,22 @@ def _check_first_run() -> None:
         )
         genesis = load_or_create(navig_dir, name=socket.gethostname())
         steps = build_step_registry(cfg, genesis)
-        engine = OnboardingEngine(cfg, steps)
+
+        def _progress(step: object) -> None:
+            sys.stdout.write(f"  · {getattr(step, 'title', step)}...\n")
+            sys.stdout.flush()
+
+        engine = OnboardingEngine(cfg, steps, on_step_start=_progress)
 
         sys.stdout.write("\n  Welcome to NAVIG — running first-time setup.\n")
         sys.stdout.write("  Set NAVIG_SKIP_ONBOARDING=1 to skip.\n\n")
         sys.stdout.flush()
 
-        engine.run()
+        os.environ["NAVIG_ONBOARDING_ACTIVE"] = "1"
+        try:
+            engine.run()
+        finally:
+            os.environ.pop("NAVIG_ONBOARDING_ACTIVE", None)
 
         sys.stdout.write("\n  Setup complete. Run 'navig --help' to get started.\n\n")
         sys.stdout.flush()

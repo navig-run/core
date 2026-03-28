@@ -80,7 +80,9 @@ def _machine_id() -> str | None:
                 timeout=5,
             )
             # Output has a header line "UUID" then the value on line [1]
-            lines = [ln.strip() for ln in result.stdout.strip().splitlines() if ln.strip()]
+            lines = [
+                ln.strip() for ln in result.stdout.strip().splitlines() if ln.strip()
+            ]
             if len(lines) >= 2:
                 return lines[1]  # lines[0] == "UUID" (header), lines[1] == actual value
             return None
@@ -100,7 +102,7 @@ def _machine_id() -> str | None:
                 ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=2,
             )
             for line in result.stdout.splitlines():
                 if "IOPlatformUUID" in line:

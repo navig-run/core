@@ -107,9 +107,16 @@ class OnboardingEngine:
     The renderer decides how to display it.
     """
 
-    def __init__(self, config: EngineConfig, steps: list[OnboardingStep]) -> None:
+    def __init__(
+        self,
+        config: EngineConfig,
+        steps: list[OnboardingStep],
+        *,
+        on_step_start: Callable[[OnboardingStep], None] | None = None,
+    ) -> None:
         self._config = config
         self._steps = steps
+        self._on_step_start = on_step_start
         self._artifact = config.navig_dir / ARTIFACT_FILENAME
         self._state = self._load_or_init_state()
 
@@ -160,6 +167,11 @@ class OnboardingEngine:
                 self._record(record)
                 continue
 
+            if self._on_step_start is not None:
+                try:
+                    self._on_step_start(step)
+                except Exception:  # noqa: BLE001
+                    pass
             result = self._execute(step)
             record = StepRecord(
                 id=step.id,
@@ -206,7 +218,9 @@ class OnboardingEngine:
                 output={},
             )
             self._record(record)
-            result = StepResult(status="skipped", output={}, duration_ms=record.duration_ms)
+            result = StepResult(
+                status="skipped", output={}, duration_ms=record.duration_ms
+            )
             return True, result
 
         result = self._execute(step)
@@ -283,7 +297,9 @@ class OnboardingEngine:
         return self._state
 
     def _already_completed(self, step_id: str) -> bool:
-        return any(r.id == step_id and r.status == "completed" for r in self._state.steps)
+        return any(
+            r.id == step_id and r.status == "completed" for r in self._state.steps
+        )
 
     def _record(self, record: StepRecord) -> None:
         """Replace any existing record for this step ID, then flush immediately."""
