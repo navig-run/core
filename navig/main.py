@@ -88,7 +88,7 @@ def _maybe_handle_fast_path(argv: list[str]) -> bool:
         sys.stdout.write(_fast_help_text(__version__) + "\n")
         return True
 
-    if len(args) == 1 and args[0] in {"--version"}:
+    if len(args) == 1 and args[0] in {"--version", "-v"}:
         from navig import __version__
 
         sys.stdout.write(__version__ + "\n")
@@ -160,7 +160,9 @@ def _check_first_run() -> None:
         return
 
     # Shell-completion probes — must never block or print
-    if any(v in os.environ for v in ("_NAVIG_COMPLETE", "COMP_WORDS", "_TYPER_COMPLETE")):
+    if any(
+        v in os.environ for v in ("_NAVIG_COMPLETE", "COMP_WORDS", "_TYPER_COMPLETE")
+    ):
         return
 
     navig_dir = Path.home() / ".navig"
@@ -169,7 +171,12 @@ def _check_first_run() -> None:
     if (navig_dir / "onboarding.json").exists():
         return
 
-    # Avoid double-run when the user explicitly invokes onboarding sub-commands
+    # Skip for version/help flags and explicit onboarding sub-commands.
+    # This ensures `navig -v` / `navig --version` / `navig --help` always
+    # work immediately on a fresh install, regardless of platform.
+    _SKIP_FLAGS = {"-v", "--version", "-h", "--help"}
+    if sys.argv[1:2] and sys.argv[1] in _SKIP_FLAGS:
+        return
     _SKIP_CMDS = {"onboard", "quickstart", "service", "update", "version"}
     if any(cmd in sys.argv[1:2] for cmd in _SKIP_CMDS):
         return
@@ -231,7 +238,9 @@ def load_plugins_into_app(app) -> None:
             try:
                 app.add_typer(plugin_app, name=name)
             except Exception as e:
-                _failed_plugins.append({"name": name, "reason": f"Failed to register: {e}"})
+                _failed_plugins.append(
+                    {"name": name, "reason": f"Failed to register: {e}"}
+                )
 
     except Exception as e:
         # Plugin system failure should not break NAVIG
@@ -421,7 +430,9 @@ def _should_skip_plugin_loading(argv: list[str]) -> bool:
     except Exception as e:
         import logging as _logging
 
-        _logging.getLogger(__name__).debug("Plugin check exception: %s", e, exc_info=True)
+        _logging.getLogger(__name__).debug(
+            "Plugin check exception: %s", e, exc_info=True
+        )
         pass
 
     return False
@@ -456,7 +467,9 @@ def add_plugin_commands(app) -> None:
 
     @plugin_app.command("list")
     def plugin_list(
-        all_plugins: bool = typer.Option(False, "--all", "-a", help="Include disabled plugins"),
+        all_plugins: bool = typer.Option(
+            False, "--all", "-a", help="Include disabled plugins"
+        ),
     ):
         """List all installed plugins."""
         from rich.table import Table
@@ -504,7 +517,11 @@ def add_plugin_commands(app) -> None:
                 info.version,
                 source,
                 status,
-                (info.description[:50] + "..." if len(info.description) > 50 else info.description),
+                (
+                    info.description[:50] + "..."
+                    if len(info.description) > 50
+                    else info.description
+                ),
             )
 
         ch.console.print(table)
@@ -677,7 +694,9 @@ def add_plugin_commands(app) -> None:
         elif path.startswith(("http://", "https://", "git@")):
             # Git URL installation
             ch.error("Git URL installation not yet implemented")
-            ch.dim("Clone the repository manually and use: navig plugin install ./path/to/plugin")
+            ch.dim(
+                "Clone the repository manually and use: navig plugin install ./path/to/plugin"
+            )
             raise typer.Exit(1)
 
         else:
@@ -745,13 +764,16 @@ def main() -> None:
         if no_cache_requested:
             reset_config_manager()
 
-        # First-run onboarding — fires when ~/.navig/onboarding.json is absent.
-        # Placed before the fast-path so bare `navig` on a fresh install shows
-        # the welcome wizard rather than just help text.
-        _check_first_run()
-
+        # Fast-path: handle --version / -v / --help / bare invocation without
+        # importing the full CLI.  Must run BEFORE first-run onboarding so that
+        # these flags always work on a fresh install on every platform.
         if _maybe_handle_fast_path(sys.argv):
             return
+
+        # First-run onboarding — fires when ~/.navig/onboarding.json is absent.
+        # Runs after the fast-path so that -v / --version / --help are never
+        # blocked by the onboarding wizard (macOS and other platforms included).
+        _check_first_run()
 
         # Import the existing CLI app (maintains all current functionality)
         from navig.cli import _register_external_commands, app
@@ -805,25 +827,127 @@ def main() -> None:
 def _suggest_did_you_mean(unknown: str) -> None:
     """Print 'Did you mean?' suggestions for misspelled top-level commands."""
     _KNOWN_COMMANDS = [
-        "host", "h", "app", "a", "run", "r", "db", "database", "file", "f",
-        "docker", "tunnel", "t", "web", "backup", "config", "status", "version",
-        "log", "l", "local", "mcp", "profile", "security", "monitor", "index",
-        "skills", "skill", "flow", "workflow", "wiki", "scaffold", "migrate",
-        "server-template", "template", "hestia", "bridge", "farmore", "copilot",
-        "inbox", "sync", "agent", "service", "stack", "tray", "formation",
-        "council", "auto", "evolve", "script", "calendar", "mode", "email",
-        "voice", "crash", "telegram", "tg", "matrix", "mx", "store", "cred",
-        "cred-profile", "flux", "fx", "cortex", "desktop", "net", "server",
-        "s", "links", "kg", "knowledge", "webhook", "webhooks", "cron", "doctor",
-        "prompts", "browser", "dispatch", "contacts", "ct", "paths", "radar",
-        "watch", "mesh", "debug", "memory", "spaces", "telemetry", "wut", "eval",
-        "agents", "webdash", "explain", "snapshot", "replay", "cloud", "benchmark",
-        "finance", "work", "origin", "user", "node", "boot", "space", "blueprint",
-        "deck", "portable", "system", "mount", "update", "proactive", "package",
-        "pack", "packs", "plugin", "help",
+        "host",
+        "h",
+        "app",
+        "a",
+        "run",
+        "r",
+        "db",
+        "database",
+        "file",
+        "f",
+        "docker",
+        "tunnel",
+        "t",
+        "web",
+        "backup",
+        "config",
+        "status",
+        "version",
+        "log",
+        "l",
+        "local",
+        "mcp",
+        "profile",
+        "security",
+        "monitor",
+        "index",
+        "skills",
+        "skill",
+        "flow",
+        "workflow",
+        "wiki",
+        "scaffold",
+        "migrate",
+        "server-template",
+        "template",
+        "hestia",
+        "bridge",
+        "farmore",
+        "copilot",
+        "inbox",
+        "sync",
+        "agent",
+        "service",
+        "stack",
+        "tray",
+        "formation",
+        "council",
+        "auto",
+        "evolve",
+        "script",
+        "calendar",
+        "mode",
+        "email",
+        "voice",
+        "crash",
+        "telegram",
+        "tg",
+        "matrix",
+        "mx",
+        "store",
+        "cred",
+        "cred-profile",
+        "flux",
+        "fx",
+        "cortex",
+        "desktop",
+        "net",
+        "server",
+        "s",
+        "links",
+        "kg",
+        "knowledge",
+        "webhook",
+        "webhooks",
+        "cron",
+        "doctor",
+        "prompts",
+        "browser",
+        "dispatch",
+        "contacts",
+        "ct",
+        "paths",
+        "radar",
+        "watch",
+        "mesh",
+        "debug",
+        "memory",
+        "spaces",
+        "telemetry",
+        "wut",
+        "eval",
+        "agents",
+        "webdash",
+        "explain",
+        "snapshot",
+        "replay",
+        "cloud",
+        "benchmark",
+        "finance",
+        "work",
+        "origin",
+        "user",
+        "node",
+        "boot",
+        "space",
+        "blueprint",
+        "deck",
+        "portable",
+        "system",
+        "mount",
+        "update",
+        "proactive",
+        "package",
+        "pack",
+        "packs",
+        "plugin",
+        "help",
     ]
     try:
         from navig.cli.recovery import did_you_mean
+
         suggestions = did_you_mean(unknown, _KNOWN_COMMANDS)
         if suggestions:
             _eprint("\n[yellow]Did you mean?[/yellow]")
@@ -878,7 +1002,9 @@ def _handle_powershell_parsing_error(argv: list[str]) -> None:
     sys.stderr.write("[!] PowerShell Quoting Error Detected\n")
     sys.stderr.write("-" * 70 + "\n\n")
     sys.stderr.write("PowerShell broke your command before it reached navig.\n")
-    sys.stderr.write("Special characters like quotes, parentheses, and braces cause this.\n\n")
+    sys.stderr.write(
+        "Special characters like quotes, parentheses, and braces cause this.\n\n"
+    )
     sys.stderr.write("Solution 1: Use stdin (recommended)\n\n")
     sys.stderr.write("  @'\n")
     sys.stderr.write("  your complex command here\n")
@@ -890,7 +1016,9 @@ def _handle_powershell_parsing_error(argv: list[str]) -> None:
     sys.stderr.write("  navig run --b64 --file cmd.txt\n\n")
     sys.stderr.write("Solution 3: Interactive editor\n\n")
     sys.stderr.write("  navig run -i\n\n")
-    sys.stderr.write("Tip: PowerShell here-strings @'...'@ preserve everything exactly.\n")
+    sys.stderr.write(
+        "Tip: PowerShell here-strings @'...'@ preserve everything exactly.\n"
+    )
     sys.stderr.write("-" * 70 + "\n\n")
 
 
