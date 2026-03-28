@@ -16,8 +16,22 @@ ch = lazy_import("navig.console_helper")
 agent_app = typer.Typer(
     name="agent",
     help="Manage autonomous agent mode",
-    no_args_is_help=True,
+    invoke_without_command=True,
+    no_args_is_help=False,
 )
+
+
+@agent_app.callback()
+def _agent_callback(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand is None:
+        import os as _os  # noqa: PLC0415
+
+        if _os.environ.get("NAVIG_LAUNCHER", "fuzzy") == "legacy":
+            print(ctx.get_help())
+            raise typer.Exit()
+        from navig.cli.launcher import smart_launch  # noqa: PLC0415
+
+        smart_launch("agent", agent_app)
 
 
 def _get_agent_config_dir() -> Path:

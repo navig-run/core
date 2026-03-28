@@ -41,8 +41,21 @@ matrix_app = typer.Typer(
     name="matrix",
     help="Matrix messaging operations (login, send, rooms, admin)",
     invoke_without_command=True,
-    no_args_is_help=True,
+    no_args_is_help=False,
 )
+
+
+@matrix_app.callback()
+def _matrix_callback(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand is None:
+        import os as _os  # noqa: PLC0415
+
+        if _os.environ.get("NAVIG_LAUNCHER", "fuzzy") == "legacy":
+            print(ctx.get_help())
+            raise typer.Exit()
+        from navig.cli.launcher import smart_launch  # noqa: PLC0415
+
+        smart_launch("matrix", matrix_app)
 
 
 # ============================================================================
@@ -89,7 +102,14 @@ def _run_async(coro):
         import concurrent.futures
 
         with concurrent.futures.ThreadPoolExecutor() as pool:
-            return pool.submit(asyncio.run, coro).result()
+            future = pool.submit(asyncio.run, coro)
+            while not future.done():
+                try:
+                    # Timeout allows main thread to yield and hook SIGINT
+                    return future.result(timeout=0.1)
+                except concurrent.futures.TimeoutError:
+                    pass
+            return future.result()
     return asyncio.run(coro)
 
 

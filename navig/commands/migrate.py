@@ -19,8 +19,22 @@ migrate_app = typer.Typer(
     name="migrate",
     help="Run configuration and data migrations.",
     invoke_without_command=True,
-    no_args_is_help=True,
+    no_args_is_help=False,
 )
+
+
+@migrate_app.callback()
+def _migrate_callback(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand is None:
+        import os as _os  # noqa: PLC0415
+
+        if _os.environ.get("NAVIG_LAUNCHER", "fuzzy") == "legacy":
+            print(ctx.get_help())
+            raise typer.Exit()
+        from navig.cli.launcher import smart_launch  # noqa: PLC0415
+
+        smart_launch("migrate", migrate_app)
+
 
 # ── Ordered pipeline ─────────────────────────────────────────────────────────
 

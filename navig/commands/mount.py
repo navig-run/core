@@ -34,8 +34,21 @@ mount_app = typer.Typer(
     name="mount",
     help="Manage drive junctions (Windows NTFS) via a persistent registry",
     invoke_without_command=True,
-    no_args_is_help=True,
+    no_args_is_help=False,
 )
+
+
+@mount_app.callback()
+def _mount_callback(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand is None:
+        import os as _os  # noqa: PLC0415
+
+        if _os.environ.get("NAVIG_LAUNCHER", "fuzzy") == "legacy":
+            print(ctx.get_help())
+            raise typer.Exit()
+        from navig.cli.launcher import smart_launch  # noqa: PLC0415
+
+        smart_launch("mount", mount_app)
 
 
 # ── Registry path helpers ────────────────────────────────────

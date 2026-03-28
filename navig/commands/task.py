@@ -26,10 +26,16 @@ task_app = typer.Typer(
 def task_callback(ctx: typer.Context) -> None:
     """task — run without subcommand to pass an instruction directly."""
     if ctx.invoked_subcommand is None and not ctx.args:
-        from navig.cli import show_subcommand_help
+        import os as _os  # noqa: PLC0415
 
-        show_subcommand_help("task", ctx)
-        raise typer.Exit()
+        if _os.environ.get("NAVIG_LAUNCHER", "fuzzy") == "legacy":
+            from navig.cli import show_subcommand_help  # noqa: PLC0415
+
+            show_subcommand_help("task", ctx)
+            raise typer.Exit()
+        from navig.cli.launcher import smart_launch  # noqa: PLC0415
+
+        smart_launch("task", task_app)
 
 
 @task_app.command("run", hidden=True)
