@@ -20,9 +20,7 @@ logger = logging.getLogger(__name__)
 
 class SiteCheckTool(BaseTool):
     name = "site_check"
-    description = (
-        "Check if a URL/domain is reachable. Returns status code, latency, redirect chain."
-    )
+    description = "Check if a URL/domain is reachable. Returns status code, latency, redirect chain."
 
     async def run(
         self,
@@ -37,12 +35,16 @@ class SiteCheckTool(BaseTool):
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
 
-        await self._emit(on_status, "Resolving DNS…", f"target: {urlparse(url).netloc}", 20)
+        await self._emit(
+            on_status, "Resolving DNS…", f"target: {urlparse(url).netloc}", 20
+        )
 
         try:
             import httpx
         except ImportError:
-            return ToolResult(name=self.name, success=False, error="httpx not installed")
+            return ToolResult(
+                name=self.name, success=False, error="httpx not installed"
+            )
 
         t0 = time.monotonic()
         redirect_chain: list[str] = []
@@ -117,7 +119,9 @@ async def _get_cert_expiry(hostname: str) -> str | None:
     def _sync_check() -> str | None:
         ctx = ssl.create_default_context()
         try:
-            with ctx.wrap_socket(__import__("socket").socket(), server_hostname=hostname) as s:
+            with ctx.wrap_socket(
+                __import__("socket").socket(), server_hostname=hostname
+            ) as s:
                 s.settimeout(5.0)
                 s.connect((hostname, 443))
                 cert = s.getpeercert()
@@ -129,4 +133,4 @@ async def _get_cert_expiry(hostname: str) -> str | None:
             pass  # best-effort; failure is non-critical
         return None
 
-    return await asyncio.get_event_loop().run_in_executor(None, _sync_check)
+    return await asyncio.get_running_loop().run_in_executor(None, _sync_check)

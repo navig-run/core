@@ -154,7 +154,7 @@ class WakeWordEngine:
             logger.warning("WakeWordEngine already running")
             return
 
-        self._loop = asyncio.get_event_loop()
+        self._loop = asyncio.get_running_loop()
         self._stop_event.clear()
 
         # pre-load models (CPU-bound, run in thread)
@@ -224,12 +224,14 @@ class WakeWordEngine:
             )
             return
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         # Use an asyncio.Queue to bridge the sounddevice callback thread → event loop
         audio_queue: asyncio.Queue = asyncio.Queue(maxsize=64)
 
-        def _audio_callback(indata: np.ndarray, frames: int, t: Any, status: Any) -> None:
+        def _audio_callback(
+            indata: np.ndarray, frames: int, t: Any, status: Any
+        ) -> None:
             if status:
                 logger.debug("Mic stream status: %s", status)
             # Copy to avoid data race (sounddevice reuses buffer)
@@ -260,7 +262,9 @@ class WakeWordEngine:
 
                     # Score in thread executor to keep event loop free
                     if self.config.use_thread_executor:
-                        score = await loop.run_in_executor(None, self._score_chunk, chunk)
+                        score = await loop.run_in_executor(
+                            None, self._score_chunk, chunk
+                        )
                     else:
                         score = self._score_chunk(chunk)
 
@@ -340,7 +344,9 @@ class WakeWordEngine:
 
             self._oww_model = OWWModel(
                 wakeword_models=(
-                    [self.config.keyword] if not self.config.keyword.endswith(".tflite") else None
+                    [self.config.keyword]
+                    if not self.config.keyword.endswith(".tflite")
+                    else None
                 ),
                 custom_verifier_models=(
                     {}
@@ -351,7 +357,9 @@ class WakeWordEngine:
             )
             logger.info("openWakeWord model loaded: %s", self.config.keyword)
         except ImportError:
-            logger.error("openWakeWord not installed. Install with: pip install openwakeword")
+            logger.error(
+                "openWakeWord not installed. Install with: pip install openwakeword"
+            )
         except Exception as exc:
             logger.error("openWakeWord model load failed: %s", exc)
 
@@ -370,7 +378,9 @@ class WakeWordEngine:
                 self._vad_model = vad_model
                 logger.info("Silero VAD pre-filter loaded")
             except Exception as vad_exc:
-                logger.warning("Silero VAD unavailable (%s) — scoring all frames", vad_exc)
+                logger.warning(
+                    "Silero VAD unavailable (%s) — scoring all frames", vad_exc
+                )
                 self._vad_model = None
 
     # ------------------------------------------------------------------ #

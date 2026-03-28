@@ -172,7 +172,9 @@ class TaskWorker:
                 # Wait for available slot
                 async with self._semaphore:
                     # Get next task
-                    task = await self.queue.get_next(wait=True, timeout=self.config.poll_interval)
+                    task = await self.queue.get_next(
+                        wait=True, timeout=self.config.poll_interval
+                    )
 
                     if task:
                         # Start execution
@@ -204,7 +206,7 @@ class TaskWorker:
                     )
                 else:
                     # Run sync handler in thread pool
-                    loop = asyncio.get_event_loop()
+                    loop = asyncio.get_running_loop()
                     result = await asyncio.wait_for(
                         loop.run_in_executor(None, handler, task.params),
                         timeout=timeout,
@@ -260,7 +262,7 @@ class TaskWorker:
                     timeout=timeout,
                 )
             else:
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 result = await asyncio.wait_for(
                     loop.run_in_executor(None, handler, task.params),
                     timeout=timeout,
@@ -283,7 +285,9 @@ class TaskWorker:
         return {
             "running": self._running,
             "started_at": (
-                self._stats["started_at"].isoformat() if self._stats["started_at"] else None
+                self._stats["started_at"].isoformat()
+                if self._stats["started_at"]
+                else None
             ),
             "active_tasks": self.active_tasks,
             "max_concurrent": self.config.max_concurrent,

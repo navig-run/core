@@ -100,7 +100,9 @@ class ElectionManager:
 
         # Proposal tracking — resets each election cycle
         self._current_epoch: int = 0
-        self._proposed_this_epoch: bool = False  # dedupe: one proposal per node per epoch
+        self._proposed_this_epoch: bool = (
+            False  # dedupe: one proposal per node per epoch
+        )
         self._received_proposals: dict[str, int] = {}  # node_id → tiebreaker_score
         self._proposal_window_task: asyncio.Task | None = None
 
@@ -119,13 +121,19 @@ class ElectionManager:
         if self._running:
             return
         self._running = True
-        self._loop = asyncio.get_event_loop()
+        self._loop = asyncio.get_running_loop()
 
         # If a leader is already healthy, enter standby silently
         leader = self._registry.get_leader()
-        if leader and not leader.is_self and leader.last_heartbeat_age_s() < self._ttl_seconds:
+        if (
+            leader
+            and not leader.is_self
+            and leader.last_heartbeat_age_s() < self._ttl_seconds
+        ):
             self._registry.set_my_role("standby", self._current_epoch)
-            logger.info(f"[election] Leader {leader.node_id} is healthy — entering standby")
+            logger.info(
+                f"[election] Leader {leader.node_id} is healthy — entering standby"
+            )
         else:
             # No known leader: wait one TTL for HELLO packets to settle, then propose
             await asyncio.sleep(2)
@@ -204,7 +212,9 @@ class ElectionManager:
                             f"[election] Watchdog: leader {leader.node_id} TTL expired "
                             f"(age={age:.1f}s ≥ {self._ttl_seconds}s)"
                         )
-                        asyncio.create_task(self._propose_candidacy(reason="ttl_expiry"))
+                        asyncio.create_task(
+                            self._propose_candidacy(reason="ttl_expiry")
+                        )
         except asyncio.CancelledError:
             pass  # task cancelled; expected during shutdown
 
@@ -248,7 +258,9 @@ class ElectionManager:
         await asyncio.sleep(PROPOSAL_WINDOW_S)
 
         # Determine winner — highest tiebreaker wins; deterministic
-        winner_id = max(self._received_proposals, key=lambda nid: self._received_proposals[nid])
+        winner_id = max(
+            self._received_proposals, key=lambda nid: self._received_proposals[nid]
+        )
         winner_score = self._received_proposals[winner_id]
 
         if winner_id == my_node_id:
@@ -294,7 +306,9 @@ class ElectionManager:
 
         self._yield_event = asyncio.Event()
         self._registry.set_my_role("yielding", self._current_epoch)
-        logger.info(f"[election] Graceful yield initiated (target={target_node_id or 'auto'})")
+        logger.info(
+            f"[election] Graceful yield initiated (target={target_node_id or 'auto'})"
+        )
 
         await self._discovery.send_election_packet(
             ELECT_YIELD,
@@ -306,7 +320,9 @@ class ElectionManager:
 
         # Wait for a new leader's ELECT_PROMOTE to arrive
         try:
-            await asyncio.wait_for(self._yield_event.wait(), timeout=YIELD_ACK_TIMEOUT_S)
+            await asyncio.wait_for(
+                self._yield_event.wait(), timeout=YIELD_ACK_TIMEOUT_S
+            )
             logger.info("[election] Yield ACK received — new leader confirmed")
         except asyncio.TimeoutError:
             logger.warning(
@@ -366,7 +382,9 @@ class ElectionManager:
         # Signal the yield-event if we were waiting for confirmation
         if self._yield_event and not self._yield_event.is_set():
             self._yield_event.set()
-            logger.info(f"[election] Received PROMOTE from {record.node_id} — yield confirmed")
+            logger.info(
+                f"[election] Received PROMOTE from {record.node_id} — yield confirmed"
+            )
 
         # Update own role if we were a candidate or standby
         own_role = self._registry.self_record.role

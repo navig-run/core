@@ -17,7 +17,7 @@ def show_subcommand_help(name: str, ctx: typer.Context | None = None):
     from rich.console import Console
     from rich.table import Table
 
-    console = Console(legacy_windows=True)
+    console = Console()
 
     if name not in HELP_REGISTRY:
         return False
@@ -25,10 +25,14 @@ def show_subcommand_help(name: str, ctx: typer.Context | None = None):
     info = HELP_REGISTRY[name]
 
     console.print()
-    console.print(f"[bold cyan]navig {name}[/bold cyan] [dim]-[/dim] [white]{info['desc']}[/white]")
+    console.print(
+        f"[bold cyan]navig {name}[/bold cyan] [dim]-[/dim] [white]{info['desc']}[/white]"
+    )
     console.print("[dim]" + "=" * 75 + "[/dim]")
 
-    cmd_table = Table(box=None, show_header=False, padding=(0, 2), collapse_padding=True)
+    cmd_table = Table(
+        box=None, show_header=False, padding=(0, 2), collapse_padding=True
+    )
     cmd_table.add_column("Command", style="cyan", min_width=12)
     cmd_table.add_column("Description", style="dim")
 
@@ -37,7 +41,9 @@ def show_subcommand_help(name: str, ctx: typer.Context | None = None):
 
     console.print(cmd_table)
     console.print("[dim]" + "=" * 75 + "[/dim]")
-    console.print(f"[yellow]navig {name} <cmd> --help[/yellow] [dim]for command details[/dim]")
+    console.print(
+        f"[yellow]navig {name} <cmd> --help[/yellow] [dim]for command details[/dim]"
+    )
     console.print()
 
     return True
@@ -64,7 +70,9 @@ def show_compact_help():
             from rich.console import Console as _Console
             from rich.markdown import Markdown as _MD
 
-            _Console(legacy_windows=True).print(_MD(_help_index.read_text(encoding="utf-8")))
+            _Console(legacy_windows=True).print(
+                _MD(_help_index.read_text(encoding="utf-8"))
+            )
             raise typer.Exit()
         except typer.Exit:
             raise
