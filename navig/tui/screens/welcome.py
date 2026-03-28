@@ -94,7 +94,7 @@ class WelcomeScreen(Screen):  # type: ignore[type-arg]
         from navig.tui.config_model import DEFAULT_CONFIG_FILE, DEFAULT_WORKSPACE_DIR
 
         console = get_console()
-        cfg_dict = await asyncio.get_event_loop().run_in_executor(
+        cfg_dict = await asyncio.get_running_loop().run_in_executor(
             None, functools.partial(run_quickstart, console)
         )
         try:

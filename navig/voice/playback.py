@@ -95,7 +95,7 @@ async def _play_windows(path: Path) -> bool:
         try:
             import winsound
 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             await loop.run_in_executor(
                 None, lambda: winsound.PlaySound(str(path), winsound.SND_FILENAME)
             )

@@ -97,7 +97,9 @@ class ProactiveEngine:
                 self.provider_status["calendar"] = "checking"
                 try:
                     now = datetime.now()
-                    events = await self.calendar.list_events(now, now + timedelta(hours=2))
+                    events = await self.calendar.list_events(
+                        now, now + timedelta(hours=2)
+                    )
                     self.provider_status["calendar"] = "ok"
                     if events:
                         for evt in events:
@@ -214,7 +216,7 @@ class ProactiveEngine:
                 # Schedule as a tracked task so it cannot be silently GC'd.
                 import asyncio
 
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 task = loop.create_task(
                     trigger_hook(
                         "proactive:engagement",
@@ -242,14 +244,18 @@ class ProactiveEngine:
             self._engagement = EngagementCoordinator()
         return self._engagement
 
-    def record_user_message(self, message_type: str = "chat", command: str | None = None):
+    def record_user_message(
+        self, message_type: str = "chat", command: str | None = None
+    ):
         """
         Record a user interaction for engagement tracking.
         Call from message handlers to keep the state tracker updated.
         """
         try:
             coordinator = self._get_engagement_coordinator()
-            coordinator.state.record_interaction(message_type=message_type, command=command)
+            coordinator.state.record_interaction(
+                message_type=message_type, command=command
+            )
         except Exception:
             pass  # Non-critical
 

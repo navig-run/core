@@ -43,7 +43,9 @@ class WatchConfig:
     patterns: list[str] = field(default_factory=list)  # e.g., ["*.py", "*.json"]
     ignore_patterns: list[str] = field(default_factory=list)
     recursive: bool = True
-    events: list[str] = field(default_factory=lambda: ["created", "modified", "deleted", "moved"])
+    events: list[str] = field(
+        default_factory=lambda: ["created", "modified", "deleted", "moved"]
+    )
     debounce_seconds: float = 0.5  # Debounce rapid changes
 
 
@@ -157,7 +159,9 @@ class _NavigFileHandler:
 
         # Call callback in event loop
         if self._loop:
-            asyncio.run_coroutine_threadsafe(self._call_callback(file_event), self._loop)
+            asyncio.run_coroutine_threadsafe(
+                self._call_callback(file_event), self._loop
+            )
         else:
             # Synchronous fallback
             try:
@@ -258,10 +262,10 @@ class FileWatcher:
 
         # Get event loop for async callbacks
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             handler.set_loop(loop)
         except RuntimeError:
-            pass  # no event loop yet; safe to ignore
+            pass  # no running event loop; callbacks will be sync-only
 
         # Create watchdog handler wrapper
         class WatchdogHandler(watchdog["FileSystemEventHandler"]):
@@ -337,7 +341,9 @@ class FileWatcher:
             "watched_paths": [
                 {
                     "path": path,
-                    "alive": (observer.is_alive() if hasattr(observer, "is_alive") else False),
+                    "alive": (
+                        observer.is_alive() if hasattr(observer, "is_alive") else False
+                    ),
                 }
                 for path, observer in self._observers.items()
             ],

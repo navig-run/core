@@ -1159,7 +1159,7 @@ def info_host(options: dict[str, Any]) -> None:
         ch.dim(f"Configuration: {host_file}")
 
 
-from typing import Any
+from typing import Any, Optional
 
 import typer
 
@@ -1214,11 +1214,24 @@ def host_list(
 @host_app.command("use")
 def host_use(
     ctx: typer.Context,
-    name: str = typer.Argument(..., help="Host name to activate"),
+    name: Optional[str] = typer.Argument(None, help="Host name to activate"),
     default: bool = typer.Option(False, "--default", "-d", help="Also set as default host"),
 ):
     """Switch active host context (global)."""
     from navig.commands.host import set_default_host, use_host
+
+    if name is None:
+        hosts = config_manager.list_hosts()
+        if not hosts:
+            ch.error(
+                "No hosts configured. Run 'navig host add' or 'navig host discover-local' first."
+            )
+            raise typer.Exit(1)
+        if len(hosts) == 1:
+            name = hosts[0]
+            ch.dim(f"Auto-selected: {name}")
+        else:
+            name = ch.prompt_choice("Select host to activate", choices=hosts)
 
     use_host(name, ctx.obj)
     if default:

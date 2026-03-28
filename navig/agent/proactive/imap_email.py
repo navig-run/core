@@ -115,7 +115,7 @@ class IMAPEmailProvider(EmailProvider):
 
             return messages
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _fetch)
 
     async def draft_email(self, to: list[str], subject: str, body: str) -> str:
@@ -160,7 +160,7 @@ class IMAPEmailProvider(EmailProvider):
 
                 return f"draft-{datetime.now().timestamp()}"
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _create_draft)
 
     async def send_email(
@@ -195,7 +195,7 @@ class IMAPEmailProvider(EmailProvider):
 
             return True
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _send)
 
     def _extract_snippet(self, msg, max_length: int = 150) -> str:
@@ -207,7 +207,9 @@ class IMAPEmailProvider(EmailProvider):
                 content_type = part.get_content_type()
                 if content_type == "text/plain":
                     try:
-                        body = part.get_payload(decode=True).decode("utf-8", errors="replace")
+                        body = part.get_payload(decode=True).decode(
+                            "utf-8", errors="replace"
+                        )
                         break
                     except Exception:
                         continue
