@@ -55,5 +55,7 @@ def export_crash_report(
         raise typer.Exit(1) from e
 
 
+crash_app = app  # alias expected by _EXTERNAL_CMD_MAP in navig/cli/__init__.py
+
 if __name__ == "__main__":
     app()
