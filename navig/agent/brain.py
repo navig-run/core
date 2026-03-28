@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
@@ -200,10 +201,10 @@ Guidelines:
         self.agent_config = agent_config
         self._soul = soul  # Soul component for personality injection
 
-        # State
-        self._thoughts: list[Thought] = []
+        # State (deque with fixed maxlen avoids O(n) trim on append)
+        self._thoughts: deque[Thought] = deque(maxlen=100)
         self._plans: list[Plan] = []
-        self._decisions: list[Decision] = []
+        self._decisions: deque[Decision] = deque(maxlen=50)
         self._context: dict[str, Any] = {}
 
         # Processing
@@ -289,12 +290,8 @@ Guidelines:
         self._context["last_metrics"] = metrics
 
     def _record_thought(self, thought: Thought) -> None:
-        """Record a thought."""
+        """Record a thought (deque auto-evicts oldest at maxlen=100)."""
         self._thoughts.append(thought)
-
-        # Keep last 100 thoughts
-        if len(self._thoughts) > 100:
-            self._thoughts = self._thoughts[-100:]
 
     async def think(
         self,

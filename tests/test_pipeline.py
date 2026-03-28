@@ -238,10 +238,10 @@ class TestSelectTools:
 
         return select_tools_for_text(text)
 
-    def test_url_gives_site_check_and_web_fetch(self):
+    def test_url_gives_site_check_and_browser_fetch(self):
         tools = self._select("check google.com")
         assert "site_check" in tools
-        assert "web_fetch" in tools
+        assert "browser_fetch" in tools
 
     def test_https_url(self):
         tools = self._select("fetch https://example.com/page")

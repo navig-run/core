@@ -199,7 +199,9 @@ def prune_sessions(
             if last < cutoff:
                 to_prune.append(s)
         except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
+            # In cases of deeply corrupted or legacy metadata, forcefully
+            # prune the session to prevent permanent retention leaks.
+            to_prune.append(s)
 
     if not to_prune:
         ch.info(f"No sessions inactive for more than {days} days")

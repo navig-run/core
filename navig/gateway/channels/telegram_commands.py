@@ -1773,6 +1773,30 @@ class TelegramCommandsMixin:
                 # -- Normal path ---------------------------------------------
                 if len(response) > 4000:
                     response = response[:3950] + "\n-(truncated)"
+
+                # -- Natural Language Formatting -----------------------------
+                try:
+                    prompt = (
+                        f"I just executed the server command '{navig_cmd}' and got this raw output:\n"
+                        f"{response}\n\n"
+                        "Please summarize this naturally and concisely in 1-2 sentences. "
+                        "Talk like a helpful friend. Do not regurgitate the raw output block, just tell me what was achieved or what the status is."
+                    )
+                    nl_response = await self.on_message(
+                        channel="telegram",
+                        user_id=str(user_id),
+                        message=prompt,
+                        metadata=metadata,
+                    )
+                    if nl_response and not nl_response.startswith("Command exited with code"):
+                        response = nl_response
+                except Exception as _nl_err:
+                    import logging as _log
+
+                    _log.getLogger(__name__).warning(
+                        "NLP formatting failed for cli command: %s", _nl_err
+                    )
+
                 await self.send_message(chat_id, response, parse_mode=None)
             else:
                 await self.send_message(chat_id, "-no output.", parse_mode=None)

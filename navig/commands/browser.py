@@ -21,6 +21,14 @@ def _gateway_unavailable() -> None:
     ch.info("Start with: navig gateway start")
 
 
+def _safe_get_error(response) -> str:
+    try:
+        data = response.json()
+        return data.get("error", "Unknown error")
+    except Exception:
+        return f"Gateway format invalid (HTTP {response.status_code})"
+
+
 @browser_app.command("status")
 def browser_status() -> None:
     """Show browser status."""
@@ -68,7 +76,7 @@ def browser_open(
         elif response.status_code == 503:
             ch.warning("Browser module not available")
         else:
-            ch.error(f"Failed: {response.json().get('error', 'Unknown error')}")
+            ch.error(f"Failed: {_safe_get_error(response)}")
     except requests.exceptions.ConnectionError:
         _gateway_unavailable()
     except Exception as exc:
@@ -96,7 +104,7 @@ def browser_screenshot(
         elif response.status_code == 503:
             ch.warning("Browser module not available")
         else:
-            ch.error(f"Failed: {response.json().get('error', 'Unknown error')}")
+            ch.error(f"Failed: {_safe_get_error(response)}")
     except requests.exceptions.ConnectionError:
         _gateway_unavailable()
     except Exception as exc:
@@ -122,7 +130,7 @@ def browser_click(
         elif response.status_code == 503:
             ch.warning("Browser module not available")
         else:
-            ch.error(f"Failed: {response.json().get('error', 'Unknown error')}")
+            ch.error(f"Failed: {_safe_get_error(response)}")
     except requests.exceptions.ConnectionError:
         _gateway_unavailable()
     except Exception as exc:
@@ -149,7 +157,7 @@ def browser_fill(
         elif response.status_code == 503:
             ch.warning("Browser module not available")
         else:
-            ch.error(f"Failed: {response.json().get('error', 'Unknown error')}")
+            ch.error(f"Failed: {_safe_get_error(response)}")
     except requests.exceptions.ConnectionError:
         _gateway_unavailable()
     except Exception as exc:
@@ -172,7 +180,7 @@ def browser_stop() -> None:
         elif response.status_code == 503:
             ch.warning("Browser module not available")
         else:
-            ch.error(f"Failed: {response.json().get('error', 'Unknown error')}")
+            ch.error(f"Failed: {_safe_get_error(response)}")
     except requests.exceptions.ConnectionError:
         _gateway_unavailable()
     except Exception as exc:

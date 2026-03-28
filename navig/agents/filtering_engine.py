@@ -231,11 +231,16 @@ class FilteringEngine:
             )
             return result
 
-        # Write in-place
+        # Write atomically via a .tmp sibling to prevent partial-write corruption
+        # if the process is interrupted (SIGINT, disk-full) mid-write.
         try:
+            import os
+
             if self.on_change:
                 self.on_change(path)
-            path.write_text(processed, encoding="utf-8")
+            tmp_path = path.with_suffix(".tmp.md")
+            tmp_path.write_text(processed, encoding="utf-8")
+            os.replace(tmp_path, path)
             result.changed = True
             logger.info(
                 "[FilteringEngine] Updated %s (rules: %s)",
@@ -243,6 +248,11 @@ class FilteringEngine:
                 result.rules_applied,
             )
         except OSError as exc:
+            # Clean up the tmp file if the rename failed
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
             result.error = str(exc)
             logger.error("[FilteringEngine] Write error %s: %s", path, exc)
 

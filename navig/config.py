@@ -42,6 +42,37 @@ def _log_shadow_anomaly(event_type: str, data: dict) -> None:
         pass  # Logging failure must never affect the main code path
 
 
+def _atomic_write_yaml(data: Any, filepath: Path, allow_unicode: bool = False) -> None:
+    """Safely write YAML data to disk atomically to prevent truncation during crashes."""
+    import sys
+    import time
+
+    tmp_path = filepath.with_suffix(".tmp.yaml")
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            yaml.dump(
+                data, f, default_flow_style=False, sort_keys=False, allow_unicode=allow_unicode
+            )
+        # On Windows, antivirus scanners can briefly lock a newly-written
+        # file, causing os.replace() to raise PermissionError (WinError 5).
+        # Retry up to 3 times with a short back-off before giving up.
+        for attempt in range(3):
+            try:
+                os.replace(tmp_path, filepath)
+                break
+            except PermissionError:
+                if attempt == 2 or sys.platform != "win32":
+                    raise
+                time.sleep(0.05 * (attempt + 1))
+    except Exception:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+        raise
+
+
 class ConfigManager:
     """
     Manages NAVIG configuration files and server profiles.
@@ -446,8 +477,7 @@ Context provided with each query:
         self.hosts_dir.mkdir(parents=True, exist_ok=True)
 
         # Write configuration
-        with open(local_host_file, "w", encoding="utf-8") as f:
-            yaml.dump(local_config, f, default_flow_style=False, sort_keys=False)
+        _atomic_write_yaml(local_config, local_host_file)
 
         return local_host_file
 
@@ -598,8 +628,7 @@ Context provided with each query:
                     # We need to be careful not to overwrite comments if possible,
                     # but PyYAML default dumper doesn't preserve them without ruamel.yaml.
                     # For now, we accept comment loss on migration.
-                    with open(global_config_file, "w", encoding="utf-8") as f:  # P1-3
-                        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+                    _atomic_write_yaml(config, global_config_file)
                     if self.verbose:
                         from navig import console_helper as ch
 
@@ -701,8 +730,7 @@ Context provided with each query:
         """Save global configuration to file (always to ~/.navig/config.yaml)."""
         global_config_file = self.global_config_dir / "config.yaml"
         self.global_config_dir.mkdir(parents=True, exist_ok=True)
-        with open(global_config_file, "w", encoding="utf-8") as f:  # P1-3
-            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+        _atomic_write_yaml(config, global_config_file)
         # QUANTUM VELOCITY K2: Refresh pickle cache immediately after every write
         # so the next cold boot reads the fresh cache instead of re-parsing YAML.
         try:
@@ -1009,8 +1037,7 @@ Context provided with each query:
         local_dir.mkdir(parents=True, exist_ok=True)
         local_config_file = local_dir / "config.yaml"
         try:
-            with open(local_config_file, "w", encoding="utf-8") as f:
-                yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+            _atomic_write_yaml(data, local_config_file)
         except Exception as e:
             logger.error("Failed to write local config %s: %s", local_config_file, e)
             raise PermissionError(f"Cannot write local config file: {e}") from e
@@ -1775,8 +1802,7 @@ Context provided with each query:
         # Ensure hosts directory exists
         host_file.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(host_file, "w", encoding="utf-8") as f:
-            yaml.dump(config, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        _atomic_write_yaml(config, host_file, allow_unicode=True)
 
         if self.verbose:
             from navig import console_helper as ch
@@ -2022,8 +2048,7 @@ Context provided with each query:
         app_config["metadata"]["updated"] = datetime.now().isoformat()
 
         # Save to file
-        with open(app_file, "w", encoding="utf-8") as f:
-            yaml.dump(app_config, f, default_flow_style=False, sort_keys=False)
+        _atomic_write_yaml(app_config, app_file)
 
         if self.verbose:
             from navig import console_helper as ch

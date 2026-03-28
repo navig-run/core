@@ -136,27 +136,35 @@ def require_human_confirmation_if_destructive(
         logger.debug("Guard pass (censored model): %s", _truncate(planned_action))
         return True
 
-    # Check for destructive patterns
+    # Check for destructive patterns — applies to ALL models (censored or not).
+    # Censored models can still emit harmful commands if jailbroken or via
+    # prompt injection; the guard must be a hard last-resort line of defence.
     match = DESTRUCTIVE_PATTERNS.search(planned_action)
     if not match:
-        # Check for risky (non-blocking) patterns
-        risky = RISKY_PATTERNS.search(planned_action)
-        if risky:
-            logger.info(
-                "Guard NOTICE (risky, uncensored): pattern='%s' action='%s'",
-                risky.group(),
-                _truncate(planned_action),
-            )
+        # Not destructive — only skip non-destructive risky check for censored models
+        if is_uncensored:
+            risky = RISKY_PATTERNS.search(planned_action)
+            if risky:
+                logger.info(
+                    "Guard NOTICE (risky, uncensored): pattern='%s' action='%s'",
+                    risky.group(),
+                    _truncate(planned_action),
+                )
+            else:
+                logger.debug("Guard pass (no destructive pattern): %s", _truncate(planned_action))
         else:
-            logger.debug("Guard pass (no destructive pattern): %s", _truncate(planned_action))
+            logger.debug(
+                "Guard pass (censored model, no destructive pattern): %s", _truncate(planned_action)
+            )
         return True
 
-    # Destructive action detected
+    # Destructive action detected — always escalate regardless of model type
     logger.warning(
-        "Guard TRIGGERED: destructive pattern='%s' action='%s' context='%s'",
+        "Guard TRIGGERED: destructive pattern='%s' action='%s' context='%s' uncensored=%s",
         match.group(),
         _truncate(planned_action),
         context or "none",
+        is_uncensored,
     )
 
     if auto_approve:

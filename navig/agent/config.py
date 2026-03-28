@@ -387,7 +387,14 @@ class AgentConfig:
 
     @classmethod
     def load(cls, config_path: Path | None = None) -> AgentConfig:
-        """Load configuration from ConfigManager."""
+        """Load configuration from ConfigManager or from an explicit file path."""
+        if config_path is not None:
+            import yaml
+
+            with open(config_path, encoding="utf-8") as fh:
+                agent_data = yaml.safe_load(fh) or {}
+            return cls.from_dict(agent_data)
+
         from navig.config import get_config_manager
 
         # Use ConfigManager to get the 'agent' section from global config
@@ -397,7 +404,16 @@ class AgentConfig:
         return cls.from_dict(agent_data)
 
     def save(self, config_path: Path | None = None) -> None:
-        """Save configuration to ConfigManager."""
+        """Save configuration to an explicit file path or into ConfigManager."""
+        if config_path is not None:
+            import yaml
+
+            config_path = Path(config_path)
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(config_path, "w", encoding="utf-8") as fh:
+                yaml.safe_dump(self.to_dict(), fh, default_flow_style=False)
+            return
+
         from navig.config import get_config_manager
 
         manager = get_config_manager()

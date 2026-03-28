@@ -712,7 +712,7 @@ async def memory_retrieve(query: str, limit: int = 10, token_budget: int = 2000)
     from navig.memory.fact_retriever import FactRetriever
 
     retriever = FactRetriever(_memory_store())
-    facts = retriever.retrieve(query=query, limit=limit, max_tokens=token_budget)
+    facts = retriever.retrieve(query=query, limit=limit, token_budget=token_budget)
     return {"facts": [f.model_dump() if hasattr(f, "model_dump") else vars(f) for f in facts]}
 
 

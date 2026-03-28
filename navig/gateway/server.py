@@ -938,7 +938,7 @@ class NavigGateway:
 
         # Call AI
         try:
-            response = await asyncio.get_event_loop().run_in_executor(
+            response = await asyncio.get_running_loop().run_in_executor(
                 None,
                 lambda: ask_ai_with_context(
                     prompt=message,

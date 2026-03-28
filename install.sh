@@ -402,12 +402,16 @@ uninstall_navig() {
     local _nav_str="NAVIG"
     [ -n "$version" ] && _nav_str="NAVIG $version"
     row_step "Removing" "$_nav_str"
-    for pip_cmd in pip3 pip; do
-        if command -v "$pip_cmd" > /dev/null 2>&1; then
-            $pip_cmd uninstall navig -y > /dev/null 2>&1 || true
-            break
-        fi
-    done
+    if [ -n "${PIP_EXE:-}" ]; then
+        $PIP_EXE uninstall navig -y > /dev/null 2>&1 || true
+    else
+        for pip_cmd in pip3 pip; do
+            if command -v "$pip_cmd" > /dev/null 2>&1; then
+                $pip_cmd uninstall navig -y > /dev/null 2>&1 || true
+                break
+            fi
+        done
+    fi
     if [ "$preserve_data" != "1" ] && [ -d "$HOME/.navig" ]; then
         rm -rf "$HOME/.navig" && log_verbose "Removed $HOME/.navig"
     fi
@@ -480,6 +484,8 @@ main() {
 
     # ── Uninstall path ────────────────────────────────────────
     if [ "$_ACTION" = "uninstall" ]; then
+        detect_python >/dev/null 2>&1 || true
+        detect_pip >/dev/null 2>&1 || true
         _inst_ver=$(navig --version 2>&1 | grep -oE '[0-9]+[.][0-9.]+' | head -1 || true)
         uninstall_navig 0 "${_inst_ver:-}"
         return

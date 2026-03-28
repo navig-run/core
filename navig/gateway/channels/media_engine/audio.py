@@ -403,7 +403,7 @@ class AudioEngine:
         result: dict[str, Any] = {"cached": False}
         try:
             # Stage 1 — metadata (sync, no API)
-            metadata = await asyncio.get_event_loop().run_in_executor(
+            metadata = await asyncio.get_running_loop().run_in_executor(
                 None, _stage_metadata, file_bytes
             )
             result.update(metadata)

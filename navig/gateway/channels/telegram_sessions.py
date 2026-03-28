@@ -181,11 +181,20 @@ class SessionManager:
 
     def _save_session(self, session: TelegramSession):
         """Save session to disk."""
+        import os
+
         session_file = self._get_session_file(session.session_key)
+        tmp_file = session_file.with_suffix(".tmp.json")
         try:
-            with open(session_file, "w", encoding="utf-8") as f:
+            with open(tmp_file, "w", encoding="utf-8") as f:
                 json.dump(session.to_dict(), f, indent=2)
+            os.replace(tmp_file, session_file)
         except Exception as e:
+            if tmp_file.exists():
+                try:
+                    tmp_file.unlink()
+                except OSError:
+                    pass
             logger.error(f"Failed to save session: {e}")
 
     def get_or_create_session(

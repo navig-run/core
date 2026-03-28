@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
@@ -148,8 +149,8 @@ class Hands(Component):
         self._pending_actions: dict[str, PendingAction] = {}
         self._approval_callbacks: dict[str, asyncio.Event] = {}
 
-        # History
-        self._command_history: list[CommandResult] = []
+        # History (deque auto-evicts oldest at maxlen)
+        self._command_history: deque[CommandResult] = deque(maxlen=100)
         self._max_history = 100
 
     async def _on_start(self) -> None:
@@ -328,10 +329,8 @@ class Hands(Component):
                 duration_seconds=duration,
             )
 
-        # Store in history
+        # Store in history (deque auto-evicts oldest)
         self._command_history.append(result)
-        if len(self._command_history) > self._max_history:
-            self._command_history = self._command_history[-self._max_history :]
 
         # Emit completion event
         event_type = EventType.COMMAND_COMPLETED if result.success else EventType.COMMAND_FAILED

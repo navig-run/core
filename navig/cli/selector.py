@@ -111,7 +111,7 @@ def _arrow_selector(
     idx = 0
     try:
         while True:
-            os.system("cls" if os.name == "nt" else "clear")  # noqa: S605
+            subprocess.run(["cmd", "/c", "cls"] if os.name == "nt" else ["clear"], check=False)
             print(f"\n  {prompt}\n")
             for i, cmd in enumerate(commands):
                 marker = "▶" if i == idx else " "

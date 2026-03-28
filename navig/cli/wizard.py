@@ -617,7 +617,7 @@ WantedBy=multi-user.target
         print(f"  Writing {service_path}...")
 
         # Use sudo if not root
-        if os.geteuid() != 0:
+        if hasattr(os, "geteuid") and os.geteuid() != 0:
             subprocess.run(
                 ["sudo", "tee", str(service_path)],
                 input=service_content.encode(),

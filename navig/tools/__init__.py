@@ -145,29 +145,52 @@ def get_pipeline_registry():
     """Get the global pipeline ToolRegistry singleton (lazy, pre-seeded)."""
     global _pipeline_registry
     if _pipeline_registry is None:
-        from .registry import BaseTool, ToolRegistry, ToolResult  # type: ignore[import]
-
-        class _StubTool(BaseTool):
-            description: str = ""
-
-            async def run(self, args, on_status=None):  # type: ignore[override]
-                return ToolResult(name=self.name, success=True)
-
-        def _make(tool_name: str) -> BaseTool:
-            t = _StubTool.__new__(_StubTool)
-            t.name = tool_name
-            t.description = tool_name.replace("_", " ").title()
-            return t
+        from .registry import ToolRegistry  # type: ignore[import]
 
         reg = ToolRegistry()
-        for _name in (
-            "site_check",
-            "browser_fetch",
-            "search",
-            "code_exec_sandbox",
-            "skill_run",
-        ):
-            reg.register(_make(_name))
+
+        try:
+            from .site_check import SiteCheckTool
+
+            reg.register(SiteCheckTool())
+        except ImportError:
+            pass
+
+        try:
+            from .browser_fetch import BrowserFetchTool
+
+            reg.register(BrowserFetchTool())
+        except ImportError:
+            pass
+
+        try:
+            from .search import SearchTool
+
+            reg.register(SearchTool())
+        except ImportError:
+            pass
+
+        try:
+            from .web_fetch import WebFetchTool
+
+            reg.register(WebFetchTool())
+        except ImportError:
+            pass
+
+        try:
+            from .code_exec_sandbox import CodeExecSandboxTool
+
+            reg.register(CodeExecSandboxTool())
+        except ImportError:
+            pass
+
+        try:
+            from .skill_runner import SkillRunTool
+
+            reg.register(SkillRunTool())
+        except ImportError:
+            pass
+
         _pipeline_registry = reg
     return _pipeline_registry
 

@@ -512,14 +512,17 @@ def _check_ollama_models(base_url: str = "http://127.0.0.1:11434") -> dict[str, 
                 # Also index without tag (e.g. "dolphin-llama3" from "dolphin-llama3:8b")
                 base = name.split(":")[0]
                 models[base] = True
+            # Only cache on a real successful response — never cache empty/failure so
+            # transient timeouts don't black-hole uncensored routing for 5 minutes.
             _ollama_model_cache = models
             _ollama_cache_ts = now
             return models
+        # Non-200 response: fall through, do NOT write to cache
     except Exception:  # noqa: BLE001
-        pass  # best-effort; failure is non-critical
+        # Network/timeout error: return empty but do NOT cache — caller will retry next invocation
+        logger.debug("Ollama probe failed — skipping cache update to allow immediate retry")
+        return {}
 
-    _ollama_model_cache = {}
-    _ollama_cache_ts = now
     return {}
 
 

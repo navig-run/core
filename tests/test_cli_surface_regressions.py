@@ -14,6 +14,10 @@ def _cli_env(tmp_path: Path) -> dict[str, str]:
     env["HOME"] = str(tmp_path)
     env["USERPROFILE"] = str(tmp_path)
     env["NAVIG_SKIP_ONBOARDING"] = "1"
+    # Force UTF-8 encoding so Rich's box-drawing characters don't cause a
+    # UnicodeDecodeError when the system locale is non-UTF-8 (e.g. cp1251).
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
     return env
 
 
@@ -23,6 +27,7 @@ def _run_cli(args: list[str], *, tmp_path: Path) -> subprocess.CompletedProcess[
         cwd=ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=_cli_env(tmp_path),
     )
 

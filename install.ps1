@@ -509,14 +509,27 @@ function Main {
 
     $installState = Get-NavigInstallState
 
+    # ── Dry-run mode ─────────────────────────────────────────
+    if ($DryRun) {
+        Write-Host "  Dry run mode: no changes will be made."
+        nl
+        $verTarget = if ($Version) { $Version } elseif ($env:NAVIG_VERSION) { $env:NAVIG_VERSION } else { "latest" }
+        Write-Host "  Would install: NAVIG $verTarget"
+        Write-Host "  Would configure: PATH, shell completions"
+        Write-Host ""
+        Write-Host "  Dry run complete."
+        return
+    }
+
     # ── Uninstall ─────────────────────────────────────────────
     if ($normalizedAction -eq "uninstall") {
-        $result = Invoke-NavigUninstall
+        $ver = $installState.Metadata.Version
+        $result = Invoke-NavigUninstall -Version $ver
         exit $(if ($result.Success) { 0 } else { 1 })
     }
 
     # ── Already-installed menu ────────────────────────────────
-    if ($installState.IsInstalled -and $normalizedAction -eq "" -and -not $NoConfirm) {
+    if ($installState.IsInstalled -and $normalizedAction -eq "" -and -not $NoConfirm -and -not $DryRun) {
         $ver  = $installState.Metadata.Version
         $vStr = if ($ver) { " $ver" } else { "" }
         clr "  NAVIG$vStr is already installed." "Cyan"; nl

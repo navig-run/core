@@ -690,10 +690,23 @@ def execute_plan(
 
     target.parent.mkdir(parents=True, exist_ok=True)
     transformed = plan.get("transformed_content", "")
-    target.write_text(transformed, encoding="utf-8")
-    result["status"] = "written"
-    result["target"] = str(target)
-    result["content_type"] = plan.get("content_type")
+
+    # Write atomically via temp file to prevent corruption on crash
+    import os
+
+    tmp_target = target.with_suffix(".tmp.md")
+    try:
+        tmp_target.write_text(transformed, encoding="utf-8")
+        os.replace(tmp_target, target)
+        result["status"] = "written"
+        result["target"] = str(target)
+        result["content_type"] = plan.get("content_type")
+    except Exception as e:
+        if tmp_target.exists():
+            tmp_target.unlink(missing_ok=True)
+        result["status"] = "error"
+        result["error"] = f"Failed to write file: {e}"
+        return result
 
     if move_source and plan.get("source_file"):
         source = Path(plan["source_file"])
@@ -701,7 +714,8 @@ def execute_plan(
             processed_dir = source.parent / ".processed"
             processed_dir.mkdir(exist_ok=True)
             dest = processed_dir / source.name
-            source.rename(dest)
+            # replace() instead of rename() avoids FileExistsError on Windows
+            source.replace(dest)
             result["source_moved"] = str(dest)
 
     return result
