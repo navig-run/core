@@ -54,6 +54,10 @@ def get_domain_commands(domain: str, app: "typer.Typer") -> list[CommandEntry]:
         # derive from the function name (Typer convention: underscores → dashes)
         name: str = cmd_info.name or cb.__name__.replace("_", "-")
 
+        # Skip hidden commands — they should not appear in the interactive launcher.
+        if getattr(cmd_info, "hidden", False):
+            continue
+
         # Prefer the stored help string; fall back to the first line of the docstring.
         help_text: str = ""
         if getattr(cmd_info, "help", None):
