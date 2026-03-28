@@ -1163,7 +1163,7 @@ from typing import Any
 
 import typer
 
-from navig.cli import deprecation_warning, show_subcommand_help
+from navig.cli import show_subcommand_help
 
 # ============================================================================
 # HOST MANAGEMENT COMMANDS
@@ -1225,27 +1225,6 @@ def host_use(
         set_default_host(name, ctx.obj)
 
 
-@host_app.command("current", hidden=True)
-def host_current(ctx: typer.Context):
-    """[DEPRECATED: Use 'navig host show --current'] Show currently active host."""
-    deprecation_warning("navig host current", "navig host show --current")
-    from navig.commands.host import show_current_host
-
-    show_current_host(ctx.obj)
-
-
-@host_app.command("default", hidden=True)
-def host_default(
-    ctx: typer.Context,
-    name: str = typer.Argument(..., help="Host name to set as default"),
-):
-    """[DEPRECATED: Use 'navig host use --default'] Set default host."""
-    deprecation_warning("navig host default", "navig host use <name> --default")
-    from navig.commands.host import set_default_host
-
-    set_default_host(name, ctx.obj)
-
-
 @host_app.command("add")
 def host_add(
     ctx: typer.Context,
@@ -1263,21 +1242,6 @@ def host_add(
         from navig.commands.host import add_host
 
         add_host(name, ctx.obj)
-
-
-@host_app.command("clone", hidden=True)
-def host_clone(
-    ctx: typer.Context,
-    source: str = typer.Argument(..., help="Source host name to clone"),
-    new_name: str = typer.Argument(..., help="New host name"),
-):
-    """[DEPRECATED: Use 'navig host add <name> --from <source>'] Clone host."""
-    deprecation_warning("navig host clone", "navig host add <name> --from <source>")
-    from navig.commands.host import clone_host
-
-    ctx.obj["source_name"] = source
-    ctx.obj["new_name"] = new_name
-    clone_host(ctx.obj)
 
 
 @host_app.command("discover-local")
@@ -1314,15 +1278,6 @@ def host_discover_local(
     )
 
 
-@host_app.command("inspect", hidden=True)
-def host_inspect(ctx: typer.Context):
-    """[DEPRECATED: Use 'navig host show --inspect'] Auto-discover host details."""
-    deprecation_warning("navig host inspect", "navig host show --inspect")
-    from navig.commands.host import inspect_host
-
-    inspect_host(ctx.obj)
-
-
 @host_app.command("test")
 def host_test(
     ctx: typer.Context,
@@ -1335,7 +1290,10 @@ def host_test(
 
     if name:
         ctx.obj["host_name"] = name
-    test_host(ctx.obj)
+    try:
+        test_host(ctx.obj)
+    except RuntimeError:
+        raise typer.Exit(1)
 
 
 @host_app.command("show")
@@ -1363,22 +1321,6 @@ def host_show(
         if name:
             ctx.obj["host_name"] = name
         info_host(ctx.obj)
-
-
-@host_app.command("info", hidden=True)
-def host_info(
-    ctx: typer.Context,
-    name: str | None = typer.Argument(
-        None, help="Host name to show info for (uses active host if not specified)"
-    ),
-):
-    """[DEPRECATED: Use 'navig host show'] Show detailed host information."""
-    deprecation_warning("navig host info", "navig host show")
-    from navig.commands.host import info_host
-
-    if name:
-        ctx.obj["host_name"] = name
-    info_host(ctx.obj)
 
 
 # ============================================================================
