@@ -477,10 +477,16 @@ def server_callback(ctx: typer.Context):
     """Server management - DEPRECATED, use 'navig host'."""
     deprecation_warning("navig server", "navig host")
     if ctx.invoked_subcommand is None:
-        from navig.commands.interactive import launch_web_menu
+        import os as _os  # noqa: PLC0415
 
-        launch_web_menu()
-        raise typer.Exit()
+        if _os.environ.get("NAVIG_LAUNCHER", "fuzzy") == "legacy":
+            from navig.commands.interactive import launch_web_menu  # noqa: PLC0415
+
+            launch_web_menu()
+            raise typer.Exit()
+        from navig.cli.launcher import smart_launch  # noqa: PLC0415
+
+        smart_launch("server", server_app)
 
 
 @server_app.command("list")

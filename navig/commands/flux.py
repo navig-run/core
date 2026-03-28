@@ -33,8 +33,22 @@ flux_app = typer.Typer(
     name="flux",
     help="Mesh topology management — peers, targets, LAN discovery, remote install.",
     invoke_without_command=True,
-    no_args_is_help=True,
+    no_args_is_help=False,
 )
+
+
+@flux_app.callback()
+def _flux_callback(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand is None:
+        import os as _os  # noqa: PLC0415
+
+        if _os.environ.get("NAVIG_LAUNCHER", "fuzzy") == "legacy":
+            print(ctx.get_help())
+            raise typer.Exit()
+        from navig.cli.launcher import smart_launch  # noqa: PLC0415
+
+        smart_launch("flux", flux_app)
+
 
 _GW = "http://127.0.0.1:8789"
 

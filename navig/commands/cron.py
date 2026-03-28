@@ -15,8 +15,22 @@ ch = lazy_import("navig.console_helper")
 cron_app = typer.Typer(
     name="cron",
     help="Persistent job scheduling",
-    no_args_is_help=True,
+    invoke_without_command=True,
+    no_args_is_help=False,
 )
+
+
+@cron_app.callback()
+def _cron_callback(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand is None:
+        import os as _os  # noqa: PLC0415
+
+        if _os.environ.get("NAVIG_LAUNCHER", "fuzzy") == "legacy":
+            print(ctx.get_help())
+            raise typer.Exit()
+        from navig.cli.launcher import smart_launch  # noqa: PLC0415
+
+        smart_launch("cron", cron_app)
 
 
 def _check_gateway() -> bool:
