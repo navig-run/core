@@ -112,8 +112,14 @@ def _validate_slug(name: str) -> bool:
 @space_app.callback()
 def _space_callback(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is None:
-        _space_list()
-        raise typer.Exit()
+        import os as _os  # noqa: PLC0415
+
+        if _os.environ.get("NAVIG_LAUNCHER", "fuzzy") == "legacy":
+            _space_list()
+            raise typer.Exit()
+        from navig.cli.launcher import smart_launch  # noqa: PLC0415
+
+        smart_launch("space", space_app)
 
 
 # ── Commands ──────────────────────────────────────────────────────────────────

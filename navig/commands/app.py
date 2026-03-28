@@ -1111,8 +1111,14 @@ app_app = typer.Typer(
 def app_callback(ctx: typer.Context):
     """App management - run without subcommand for help."""
     if ctx.invoked_subcommand is None:
-        show_subcommand_help("app", ctx)
-        raise typer.Exit()
+        import os as _os  # noqa: PLC0415
+
+        if _os.environ.get("NAVIG_LAUNCHER", "fuzzy") == "legacy":
+            show_subcommand_help("app", ctx)
+            raise typer.Exit()
+        from navig.cli.launcher import smart_launch  # noqa: PLC0415
+
+        smart_launch("app", app_app)
 
 
 @app_app.command("list")

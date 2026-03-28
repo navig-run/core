@@ -1180,8 +1180,14 @@ host_app = typer.Typer(
 def host_callback(ctx: typer.Context):
     """Host management - run without subcommand for help."""
     if ctx.invoked_subcommand is None:
-        show_subcommand_help("host", ctx)
-        raise typer.Exit()
+        import os as _os  # noqa: PLC0415
+
+        if _os.environ.get("NAVIG_LAUNCHER", "fuzzy") == "legacy":
+            show_subcommand_help("host", ctx)
+            raise typer.Exit()
+        from navig.cli.launcher import smart_launch  # noqa: PLC0415
+
+        smart_launch("host", host_app)
 
 
 @host_app.command("list")
