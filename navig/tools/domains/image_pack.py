@@ -20,14 +20,15 @@ def _sync_generate(**kwargs):
 
     gen = ImageGenerator()
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            import concurrent.futures
+        asyncio.get_running_loop()
+        # Running inside an active event loop — use a thread to avoid blocking it
+        import concurrent.futures
 
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                result = pool.submit(asyncio.run, gen.generate(**kwargs)).result()
-        else:
-            result = asyncio.run(gen.generate(**kwargs))
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            result = pool.submit(asyncio.run, gen.generate(**kwargs)).result()
+    except RuntimeError:
+        # No running loop — safe to call asyncio.run() directly
+        result = asyncio.run(gen.generate(**kwargs))
     finally:
         asyncio.run(gen.close())
     return [
