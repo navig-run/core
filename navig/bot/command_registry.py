@@ -1,4 +1,8 @@
-"""CommandRegistry: extensible registry for bot command schemas.
+"""CommandRegistry: extensible registry for AI/bot LLM tool-call schemas.
+
+Note: This registry is for **AI function-call schemas** (LLM tool definitions).
+It is NOT the pack command dispatch registry.  For pack command dispatch see:
+    navig.commands._registry.CommandRegistry
 
 Provides the architectural pattern for registering bot commands.
 The canonical schemas currently live in ``navig.bot.command_tools``
@@ -85,7 +89,9 @@ class CommandRegistry:
     # Registration API
     # ------------------------------------------------------------------
 
-    def add(self, schema: dict[str, Any], *, tags: list[str] | None = None) -> BotCommand:
+    def add(
+        self, schema: dict[str, Any], *, tags: list[str] | None = None
+    ) -> BotCommand:
         """Register a raw command schema dict (mirrors the ``COMMAND_TOOLS`` list entry format).
 
         Parameters
@@ -111,7 +117,9 @@ class CommandRegistry:
         self._commands[name] = cmd
         return cmd
 
-    def register(self, fn: Callable[[], dict[str, Any]]) -> Callable[[], dict[str, Any]]:
+    def register(
+        self, fn: Callable[[], dict[str, Any]]
+    ) -> Callable[[], dict[str, Any]]:
         """Decorator: call ``fn()`` to get the schema, then register it.
 
         The decorated function is returned unchanged so it can still be called

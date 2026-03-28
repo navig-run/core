@@ -250,8 +250,8 @@ def builtin_store_dir() -> Path:
 
 
 def builtin_packages_dir() -> Path:
-    """Built-in packs bundled with NAVIG (packs/ in the project root)."""
-    return Path(__file__).resolve().parent.parent.parent / "packs"
+    """Built-in packages bundled with NAVIG (packages/ in the project root)."""
+    return Path(__file__).resolve().parent.parent.parent / "packages"
 
 
 def store_dir() -> Path:
@@ -455,7 +455,9 @@ def check_docker() -> dict[str, Any]:
     }
 
     try:
-        proc = _sp.run(["docker", "--version"], capture_output=True, text=True, timeout=5)
+        proc = _sp.run(
+            ["docker", "--version"], capture_output=True, text=True, timeout=5
+        )
         if proc.returncode == 0:
             result["available"] = True
             # "Docker version 29.2.1, build a5c7197"

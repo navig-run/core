@@ -1,6 +1,6 @@
 {
   "schema_version": "2.0",
-  "generated_at": "2026-03-15T00:00:00Z",
+  "generated_at": "2026-03-28T00:00:00Z",
   "catalog": [
     {
       "id": "navig-commands-core",
@@ -111,30 +111,6 @@
       "license": "MIT",
       "source": "github:navig-run/core",
       "installed": true
-    },
-    {
-      "id": "runbook-plugin",
-      "version": "1.0.0",
-      "type": "workflows",
-      "name": "Runbook Plugin",
-      "description": "Structured ops runbooks for common infrastructure tasks.",
-      "author": "navig",
-      "license": "MIT",
-      "tags": ["ops", "runbooks", "infrastructure"],
-      "source": "github:navig-run/core",
-      "installed": false
-    },
-    {
-      "id": "security-auditor-soul",
-      "version": "1.0.0",
-      "type": "agents",
-      "name": "Security Auditor Soul",
-      "description": "Expert security-focused persona — audits code, configs, and infra.",
-      "author": "navig",
-      "license": "MIT",
-      "tags": ["security", "audit", "devsecops"],
-      "source": "github:navig-run/core",
-      "installed": false
     }
   ]
 }

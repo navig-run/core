@@ -51,10 +51,11 @@ def on_load(ctx: dict[str, Any]) -> None:
     _CHAT_ID = cfg.get("telegram_chat_id") or _environ("TELEGRAM_CHAT_ID")
 
     if not _BOT_TOKEN:
-        raise RuntimeError(
-            "telegram-bot-navig: TELEGRAM_BOT_TOKEN not set. "
-            "Add it to ~/.navig/config.yaml or export as env var."
+        _logger.warning(
+            "telegram-bot-navig: TELEGRAM_BOT_TOKEN not set — pack loaded but inactive. "
+            "Add it to ~/.navig/config.yaml or export as TELEGRAM_BOT_TOKEN env var."
         )
+        return  # degrade gracefully; on_message will no-op via _send guard
 
     _logger.info("telegram-bot-navig loaded (chat_id=%s)", _CHAT_ID or "(broadcast)")
 

@@ -92,9 +92,15 @@ def _load_package(name: str) -> tuple[dict | None, Path | None, str]:
 def package_list(
     json_out: bool = typer.Option(False, "--json", help="Output as JSON"),
     plain: bool = typer.Option(False, "--plain", help="Plain text output"),
-    builtin_only: bool = typer.Option(False, "--builtin", help="Show only built-in packages"),
-    user_only: bool = typer.Option(False, "--user", help="Show only user-installed packages"),
-    status: bool = typer.Option(False, "--status", "-s", help="Show runtime load status"),
+    builtin_only: bool = typer.Option(
+        False, "--builtin", help="Show only built-in packages"
+    ),
+    user_only: bool = typer.Option(
+        False, "--user", help="Show only user-installed packages"
+    ),
+    status: bool = typer.Option(
+        False, "--status", "-s", help="Show runtime load status"
+    ),
 ):
     """List all available packages."""
     packages = _discover_packages()
@@ -135,7 +141,9 @@ def package_list(
             }
             if status and pkg_id in loaded_state:
                 info = loaded_state[pkg_id]
-                entry["loaded"] = getattr(info, "state", getattr(info, "loaded", False)) in (
+                entry["loaded"] = getattr(
+                    info, "state", getattr(info, "loaded", False)
+                ) in (
                     "enabled",
                     "loaded",
                     True,
@@ -296,7 +304,9 @@ def package_install(
     dest = dest_root / pkg_id
     if dest.exists():
         if not force:
-            ch.error(f"Package '{pkg_id}' already installed at {dest}. Use --force to overwrite.")
+            ch.error(
+                f"Package '{pkg_id}' already installed at {dest}. Use --force to overwrite."
+            )
             raise typer.Exit(1)
         shutil.rmtree(dest)
 
@@ -314,7 +324,9 @@ def package_install(
         import subprocess
         import sys as _sys
 
-        ch.info(f"Installing {len(pip_deps)} pip dependenc{'y' if len(pip_deps) == 1 else 'ies'}…")
+        ch.info(
+            f"Installing {len(pip_deps)} pip dependenc{'y' if len(pip_deps) == 1 else 'ies'}…"
+        )
         try:
             # Prefer uv for speed and PEP-668 compliance if available
             uv_path = shutil.which("uv")
@@ -371,3 +383,118 @@ def package_remove(
 
     shutil.rmtree(path)
     ch.success(f"Removed package '{name}'.")
+
+
+# ── Runtime lifecycle ──────────────────────────────────────────────────────────
+
+
+def _invoke_handler(pkg_id: str, path: Path, lifecycle_fn: str) -> bool:
+    """Import a pack's handler.py and call *lifecycle_fn*(ctx). Returns True on success.
+
+    The function:
+    - Prepends the pack directory to sys.path so that local sub-packages
+      (e.g. ``commands/``, ``src/``) resolve correctly.
+    - Builds a ``types.SimpleNamespace`` ctx so packs can use both attribute
+      access (``ctx.pack_id``) and dict-style access (``ctx.config.get(...)``).
+    """
+    import importlib.util
+    import logging
+    import sys
+
+    handler_file = path / "handler.py"
+    if not handler_file.exists():
+        ch.info(f"Package '{pkg_id}' has no handler.py — skipping lifecycle call.")
+        return True  # workflow-only packs are fine
+
+    # Prepend pack dir so relative imports (e.g. `from commands import COMMANDS`) work
+    pack_str = str(path)
+    if pack_str not in sys.path:
+        sys.path.insert(0, pack_str)
+
+    module_name = f"_navig_pack_{pkg_id.replace('-', '_')}"
+    try:
+        spec = importlib.util.spec_from_file_location(module_name, handler_file)
+        if spec is None or spec.loader is None:
+            ch.error(f"Cannot load spec for {handler_file}")
+            return False
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)  # type: ignore[attr-defined]
+    except Exception as exc:  # noqa: BLE001
+        ch.error(f"Failed to import handler.py for '{pkg_id}': {exc}")
+        return False
+
+    fn = getattr(module, lifecycle_fn, None)
+    if fn is None:
+        ch.dim(f"handler.py in '{pkg_id}' has no {lifecycle_fn}() — skipping.")
+        return True
+
+    try:
+        from navig.platform.paths import config_dir as _config_dir
+
+        store_dir = _config_dir() / "store" / pkg_id
+    except Exception:
+        store_dir = Path.home() / ".navig" / "store" / pkg_id
+
+    store_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build ctx as a dual-access namespace: supports both ctx.attr and ctx.get("attr").
+    # Some packs use attribute style (ctx.pack_id), others use dict style (ctx.get("config")).
+    class _PackCtx(dict):  # type: ignore[type-arg]
+        """Dict subclass with attribute access, forwarding both access patterns."""
+
+        def __getattr__(self, item: str) -> object:
+            try:
+                return self[item]
+            except KeyError:
+                raise AttributeError(item) from None
+
+    ctx = _PackCtx(
+        plugin_id=pkg_id,
+        pack_id=pkg_id,
+        plugin_dir=path,
+        store_path=path,
+        store_dir=store_dir,
+        config={},
+        logger=logging.getLogger(f"navig.pack.{pkg_id}"),
+        version="1.0.0",
+    )
+
+    try:
+        fn(ctx)  # type: ignore[call-arg]
+        return True
+    except Exception as exc:  # noqa: BLE001
+        ch.error(f"{lifecycle_fn}() raised in '{pkg_id}': {exc}")
+        return False
+
+
+@package_app.command("load")
+def package_load(
+    name: str = typer.Argument(..., help="Package ID to load"),
+):
+    """Call on_load() on a package's handler.py — activates its commands at runtime."""
+    manifest, path, _ = _load_package(name)
+    if manifest is None:
+        ch.error(f"Package '{name}' not found.")
+        raise typer.Exit(1)
+
+    ok = _invoke_handler(name, path, "on_load")
+    if ok:
+        ch.success(f"Package '{name}' loaded.")
+    else:
+        raise typer.Exit(1)
+
+
+@package_app.command("unload")
+def package_unload(
+    name: str = typer.Argument(..., help="Package ID to unload"),
+):
+    """Call on_unload() on a package's handler.py — deactivates its commands."""
+    manifest, path, _ = _load_package(name)
+    if manifest is None:
+        ch.error(f"Package '{name}' not found.")
+        raise typer.Exit(1)
+
+    ok = _invoke_handler(name, path, "on_unload")
+    if ok:
+        ch.success(f"Package '{name}' unloaded.")

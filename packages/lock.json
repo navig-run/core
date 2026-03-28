@@ -1,5 +1,6 @@
 {
   "schema_version": "1.0",
-  "generated_at": "2025-01-01T00:00:00Z",
+  "generated_at": "2026-03-28T00:00:00Z",
+  "note": "Lock generation not yet implemented. Run 'navig package install --lock' once the feature is available to pin resolved versions.",
   "resolved": []
 }

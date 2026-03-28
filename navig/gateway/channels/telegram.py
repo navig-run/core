@@ -41,9 +41,9 @@ except ImportError:
 
 # Session management
 try:
+    from navig.gateway.channels.telegram_sessions import MentionGate  # noqa: F401
+    from navig.gateway.channels.telegram_sessions import SessionManager  # noqa: F401
     from navig.gateway.channels.telegram_sessions import (
-        MentionGate,  # noqa: F401
-        SessionManager,  # noqa: F401
         get_mention_gate,
         get_session_manager,
     )
@@ -226,13 +226,17 @@ class TelegramChannel:
                 # Auth status
                 if self.require_auth:
                     if self.allowed_users:
-                        logger.info("Auth ENFORCED: %d allowed users", len(self.allowed_users))
+                        logger.info(
+                            "Auth ENFORCED: %d allowed users", len(self.allowed_users)
+                        )
                     else:
                         logger.warning(
                             "Auth ENFORCED but allowed_users is EMPTY — all DMs will be blocked!"
                         )
                 else:
-                    logger.warning("Auth DISABLED (require_auth=false) — bot is open to everyone")
+                    logger.warning(
+                        "Auth DISABLED (require_auth=false) — bot is open to everyone"
+                    )
 
                 # Register slash commands with Telegram
                 await self._register_commands()
@@ -372,7 +376,9 @@ class TelegramChannel:
             self._use_webhook = False
             self._poll_task = asyncio.create_task(self._poll_updates())
 
-    async def handle_webhook_update(self, update: dict, secret_header: str = "") -> bool:
+    async def handle_webhook_update(
+        self, update: dict, secret_header: str = ""
+    ) -> bool:
         """
         Process a webhook update pushed by Telegram.
 
@@ -408,7 +414,9 @@ class TelegramChannel:
             cb_user_id = cb_user.get("id")
             cb_chat = (callback_query.get("message") or {}).get("chat", {})
             cb_is_group = cb_chat.get("type") in ("group", "supergroup")
-            if not self._is_user_authorized(cb_user_id, cb_chat.get("id", 0), cb_is_group):
+            if not self._is_user_authorized(
+                cb_user_id, cb_chat.get("id", 0), cb_is_group
+            ):
                 logger.warning("Unauthorized callback: user_id=%s", cb_user_id)
                 return
             try:
@@ -633,7 +641,9 @@ class TelegramChannel:
                     if HAS_SESSIONS:
                         sm = get_session_manager()
                         sm.set_voice_enabled(chat_id, user_id, True, is_group=is_group)
-                    await self.send_message(chat_id, "🔊 Voice replies enabled.", parse_mode=None)
+                    await self.send_message(
+                        chat_id, "🔊 Voice replies enabled.", parse_mode=None
+                    )
                     return
                 if cmd == "/voiceoff":
                     if HAS_SESSIONS:
@@ -685,7 +695,9 @@ class TelegramChannel:
 
                 # ── /restart: daemon (systemd) vs container (docker) ──
                 if cmd.startswith("/restart"):
-                    restart_arg = text.strip()[8:].strip()  # preserve case for container names
+                    restart_arg = text.strip()[
+                        8:
+                    ].strip()  # preserve case for container names
                     await self._handle_restart(chat_id, user_id, metadata, restart_arg)
                     return
 
@@ -697,7 +709,9 @@ class TelegramChannel:
                 # ── Server / infra commands → navig CLI ──
                 cli_result = self._match_cli_command(text.strip())
                 if cli_result:
-                    await self._handle_cli_command(chat_id, user_id, metadata, cli_result)
+                    await self._handle_cli_command(
+                        chat_id, user_id, metadata, cli_result
+                    )
                     return
 
                 # ── Cinematic mode dispatch ──
@@ -866,7 +880,9 @@ class TelegramChannel:
         is_group: bool,
     ) -> None:
         """REASON mode — send placeholder, fill with numbered CoT + bold conclusion."""
-        placeholder = await self.send_message(chat_id, "🧠 Reasoning...", parse_mode=None)
+        placeholder = await self.send_message(
+            chat_id, "🧠 Reasoning...", parse_mode=None
+        )
         placeholder_id = (placeholder or {}).get("message_id")
 
         typing_task = asyncio.create_task(self._keep_typing(chat_id))
@@ -888,12 +904,16 @@ class TelegramChannel:
             return
 
         # Only append model footer in debug/trace mode — keep normal replies clean
-        model_name = self._resolve_model_name(metadata) if self._is_debug_mode(user_id) else ""
+        model_name = (
+            self._resolve_model_name(metadata) if self._is_debug_mode(user_id) else ""
+        )
         footer = f"\n\n`· {model_name}`" if model_name else ""
         final_text = f"{response}{footer}"
         final_text = self._strip_internal_tags(final_text)
 
-        self._record_assistant_msg(session, session_manager, chat_id, user_id, response, is_group)
+        self._record_assistant_msg(
+            session, session_manager, chat_id, user_id, response, is_group
+        )
 
         keyboard = None
         if self._kb_builder:
@@ -908,11 +928,15 @@ class TelegramChannel:
 
         if placeholder_id:
             try:
-                await self.edit_message(chat_id, placeholder_id, final_text, keyboard=keyboard)
+                await self.edit_message(
+                    chat_id, placeholder_id, final_text, keyboard=keyboard
+                )
                 return
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
-        await self._send_response(chat_id, final_text, text, user_id=user_id, is_group=is_group)
+        await self._send_response(
+            chat_id, final_text, text, user_id=user_id, is_group=is_group
+        )
 
     async def _handle_code(
         self,
@@ -954,12 +978,16 @@ class TelegramChannel:
 
         if self._is_debug_mode(user_id):
             model_name = self._resolve_model_name(metadata)
-            suffix = f"\n\n✅ Done · Model: {model_name}" if model_name else "\n\n✅ Done"
+            suffix = (
+                f"\n\n✅ Done · Model: {model_name}" if model_name else "\n\n✅ Done"
+            )
         else:
             suffix = "\n\n✅ Done"
         final_text = f"{response}{suffix}"
 
-        self._record_assistant_msg(session, session_manager, chat_id, user_id, response, is_group)
+        self._record_assistant_msg(
+            session, session_manager, chat_id, user_id, response, is_group
+        )
 
         if intro_id:
             try:
@@ -967,7 +995,9 @@ class TelegramChannel:
                 return
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
-        await self._send_response(chat_id, final_text, text, user_id=user_id, is_group=is_group)
+        await self._send_response(
+            chat_id, final_text, text, user_id=user_id, is_group=is_group
+        )
 
     async def _handle_act(
         self,
@@ -1035,9 +1065,9 @@ class TelegramChannel:
                 elif tool_name == "code_exec_sandbox":
                     import re as _re
 
-                    code_m = _re.search(r"`{3}[\w]*\n([\s\S]+?)\n`{3}", text) or _re.search(
-                        r"`([^`]+)`", text
-                    )
+                    code_m = _re.search(
+                        r"`{3}[\w]*\n([\s\S]+?)\n`{3}", text
+                    ) or _re.search(r"`([^`]+)`", text)
                     if code_m:
                         args["code"] = code_m.group(1)
                         args["language"] = "python"
@@ -1049,7 +1079,9 @@ class TelegramChannel:
                 progress_val = 2 + round((idx + 1) / total * 6)
 
                 async def _status(step, detail="", progress=0, _tn=tool_name):
-                    await renderer.update(step, detail=detail, progress=progress, icon="⚙️")
+                    await renderer.update(
+                        step, detail=detail, progress=progress, icon="⚙️"
+                    )
 
                 result = await registry.run_tool(tool_name, args, on_status=_status)
                 tool_names_run.append(tool_name)
@@ -1196,7 +1228,9 @@ class TelegramChannel:
 
         file_id = voice_data.get("file_id") if voice_data else None
         if not file_id:
-            await self.send_message(chat_id, "🎙️ Couldn't read the voice message.", parse_mode=None)
+            await self.send_message(
+                chat_id, "🎙️ Couldn't read the voice message.", parse_mode=None
+            )
             return None, ""
 
         # ── Resolve which STT provider to use based on available keys ────────
@@ -1259,7 +1293,9 @@ class TelegramChannel:
         try:
             # Signal immediately that we're processing audio — closest Bot API
             # equivalent to a read receipt for voice messages.
-            await self._api_call("sendChatAction", {"chat_id": chat_id, "action": "record_voice"})
+            await self._api_call(
+                "sendChatAction", {"chat_id": chat_id, "action": "record_voice"}
+            )
             _recording_task = asyncio.create_task(self._keep_recording(chat_id))
 
             # Ask Telegram for the file path
@@ -1310,18 +1346,29 @@ class TelegramChannel:
             if not result.success or not result.text:
                 # Map internal error strings to clean, user-friendly messages
                 raw_err = result.error or ""
-                if "whisper not installed" in raw_err or "No module named 'whisper'" in raw_err:
+                if (
+                    "whisper not installed" in raw_err
+                    or "No module named 'whisper'" in raw_err
+                ):
                     user_msg = (
                         "🎙️ Transcription failed: local Whisper is not installed.\n"
                         "Run `pip install openai-whisper` on the server, or add a "
                         "`DEEPGRAM_KEY` / `OPENAI_API_KEY` to `~/.navig/.env`."
                     )
-                elif "API key" in raw_err or "not set" in raw_err or "not configured" in raw_err:
+                elif (
+                    "API key" in raw_err
+                    or "not set" in raw_err
+                    or "not configured" in raw_err
+                ):
                     user_msg = "🎙️ Transcription failed: no STT API key configured — type your message instead."
                 elif "timeout" in raw_err.lower():
-                    user_msg = "🎙️ Transcription timed out — try a shorter clip or type it out."
+                    user_msg = (
+                        "🎙️ Transcription timed out — try a shorter clip or type it out."
+                    )
                 elif "too large" in raw_err:
-                    user_msg = f"🎙️ Audio file too large — {raw_err.split(':', 1)[-1].strip()}"
+                    user_msg = (
+                        f"🎙️ Audio file too large — {raw_err.split(':', 1)[-1].strip()}"
+                    )
                 else:
                     user_msg = "🎙️ Couldn't transcribe audio — try again or type it out."
                 await self.send_message(chat_id, user_msg, parse_mode=None)
@@ -1335,7 +1382,8 @@ class TelegramChannel:
             _user_from_voice = getattr(voice_data, "from_user_id", None)
             # We don't have user_id here directly — determine from chat_id
             _debug_active = any(
-                uid in getattr(self, "_debug_users", set()) for uid in self.allowed_users
+                uid in getattr(self, "_debug_users", set())
+                for uid in self.allowed_users
             )
             if _debug_active:
                 heard_kb = [
@@ -1351,7 +1399,9 @@ class TelegramChannel:
                 parse_mode="Markdown",
                 keyboard=heard_kb,
             )
-            detected_lang = (result.language or "") if hasattr(result, "language") else ""
+            detected_lang = (
+                (result.language or "") if hasattr(result, "language") else ""
+            )
             return transcript, detected_lang
 
         except Exception as e:
@@ -1412,7 +1462,11 @@ class TelegramChannel:
                 return
 
             audio_data: bytes | None = tts_result.audio_data
-            if audio_data is None and tts_result.audio_path and tts_result.audio_path.exists():
+            if (
+                audio_data is None
+                and tts_result.audio_path
+                and tts_result.audio_path.exists()
+            ):
                 audio_data = tts_result.audio_path.read_bytes()
 
             if not audio_data:
@@ -1425,7 +1479,11 @@ class TelegramChannel:
             logger.warning("Voice reply failed (non-fatal): %s", e)
         finally:
             try:
-                if tts_result and tts_result.audio_path and tts_result.audio_path.exists():
+                if (
+                    tts_result
+                    and tts_result.audio_path
+                    and tts_result.audio_path.exists()
+                ):
                     tts_result.audio_path.unlink(missing_ok=True)
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
@@ -1468,7 +1526,9 @@ class TelegramChannel:
             try:
                 from navig.agent.proactive.user_state import get_user_state_tracker
 
-                verbosity = get_user_state_tracker().get_preference("verbosity", "normal")
+                verbosity = get_user_state_tracker().get_preference(
+                    "verbosity", "normal"
+                )
             except Exception:
                 verbosity = "normal"
             fmt = enforce_response_limits(response, verbosity=verbosity)
@@ -1486,7 +1546,11 @@ class TelegramChannel:
             except Exception as kb_err:
                 logger.debug("Keyboard build failed: %s", kb_err)
         if extra_krow:
-            if keyboard and isinstance(keyboard, dict) and "inline_keyboard" in keyboard:
+            if (
+                keyboard
+                and isinstance(keyboard, dict)
+                and "inline_keyboard" in keyboard
+            ):
                 keyboard["inline_keyboard"].append(extra_krow)
             else:
                 keyboard = {"inline_keyboard": [extra_krow]}
@@ -1494,12 +1558,16 @@ class TelegramChannel:
         if parts and len(parts) > 1:
             for i, part in enumerate(parts):
                 is_last = i == len(parts) - 1
-                await self.send_message(chat_id, part, keyboard=keyboard if is_last else None)
+                await self.send_message(
+                    chat_id, part, keyboard=keyboard if is_last else None
+                )
         elif len(response) > 4000:
             chunks = [response[i : i + 4000] for i in range(0, len(response), 4000)]
             for i, chunk in enumerate(chunks):
                 is_last = i == len(chunks) - 1
-                await self.send_message(chat_id, chunk, keyboard=keyboard if is_last else None)
+                await self.send_message(
+                    chat_id, chunk, keyboard=keyboard if is_last else None
+                )
         else:
             await self.send_message(chat_id, response, keyboard=keyboard)
 
@@ -1574,9 +1642,9 @@ class TelegramChannel:
                 if llm_router:
                     lines.append("*Your AI Tiers:*")
                     user_modes = [
-                        ("⚡", "Small",   "small_talk"),
-                        ("🧠", "Big",     "big_tasks"),
-                        ("💻", "Code",    "coding"),
+                        ("⚡", "Small", "small_talk"),
+                        ("🧠", "Big", "big_tasks"),
+                        ("💻", "Code", "coding"),
                     ]
                     for icon, label, mode_name in user_modes:
                         mc = llm_router.modes.get_mode(mode_name)
@@ -1585,7 +1653,9 @@ class TelegramChannel:
                             lines.append(f"{icon} *{label}*   `{prov}:{mc.model}`")
                             if mc.fallback_provider:
                                 fb_prov = self._fmt_provider(mc.fallback_provider)
-                                lines.append(f"     ↳ fallback: `{fb_prov}:{mc.fallback_model}`")
+                                lines.append(
+                                    f"     ↳ fallback: `{fb_prov}:{mc.fallback_model}`"
+                                )
                 else:
                     lines.append("_Tier config unavailable_")
             except Exception:
@@ -1605,8 +1675,8 @@ class TelegramChannel:
                 lines.append(f"  Preset: *{pref_label}*")
                 for icon, label, slot in [
                     ("⚡", "small", cfg.small),
-                    ("🧠", "big",   cfg.big),
-                    ("💻", "code",  cfg.coder_big),
+                    ("🧠", "big", cfg.big),
+                    ("💻", "code", cfg.coder_big),
                 ]:
                     prov = self._fmt_provider(slot.provider or "—")
                     model = slot.model or "—"
@@ -1619,13 +1689,19 @@ class TelegramChannel:
             check = lambda t: " ✓" if user_pref == t else ""
             keyboard = [
                 [
-                    {"text": f"⚡ Small{check('small')}",    "callback_data": "ms_tier_small"},
-                    {"text": f"🧠 Big{check('big')}",        "callback_data": "ms_tier_big"},
-                    {"text": f"💻 Code{check('coder_big')}", "callback_data": "ms_tier_coder"},
+                    {
+                        "text": f"⚡ Small{check('small')}",
+                        "callback_data": "ms_tier_small",
+                    },
+                    {"text": f"🧠 Big{check('big')}", "callback_data": "ms_tier_big"},
+                    {
+                        "text": f"💻 Code{check('coder_big')}",
+                        "callback_data": "ms_tier_coder",
+                    },
                 ],
                 [
                     {"text": f"🔄 Auto{check('')}", "callback_data": "ms_tier_auto"},
-                    {"text": "📊 Full table",        "callback_data": "ms_info"},
+                    {"text": "📊 Full table", "callback_data": "ms_info"},
                 ],
                 [
                     {"text": "🔌 Providers →", "callback_data": "open_providers"},
@@ -1648,6 +1724,7 @@ class TelegramChannel:
                 BRIDGE_DEFAULT_PORT,
                 get_llm_port,
             )
+
             bridge_port = get_llm_port() or BRIDGE_DEFAULT_PORT
         except Exception:  # noqa: BLE001
             pass
@@ -1662,6 +1739,7 @@ class TelegramChannel:
         # ── Active provider (for the "Now using" line) ──
         try:
             from navig.agent.ai_client import get_ai_client
+
             client = get_ai_client()
             best_raw = (
                 client._detect_best_provider()
@@ -1676,6 +1754,7 @@ class TelegramChannel:
         try:
             from navig.providers.registry import list_enabled_providers
             from navig.providers.verifier import verify_provider
+
             providers = list_enabled_providers()
         except Exception:
             providers = []
@@ -1691,7 +1770,9 @@ class TelegramChannel:
         # ── Bridge section ──
         if bridge_online:
             lines.append("⚡ *Bridge* — online")
-            lines.append("_When connected, Bridge models take priority over cloud providers._")
+            lines.append(
+                "_When connected, Bridge models take priority over cloud providers._"
+            )
         else:
             lines.append("⚡ *Bridge* — offline")
             lines.append("_Open VS Code with navig-bridge extension to activate._")
@@ -1710,6 +1791,11 @@ class TelegramChannel:
             if manifest.id == "mcp_bridge":
                 continue  # already rendered as Bridge section above
 
+            # ── Is this the currently active provider? ──
+            is_active = manifest.id == active_provider or manifest.id.replace(
+                "_", ""
+            ) == active_provider.replace("_", "")
+
             # ── Determine status ──
             status_icon = "⚙️"
             status_label = ""
@@ -1725,15 +1811,13 @@ class TelegramChannel:
                 elif manifest.requires_key:
                     if result.key_detected:
                         status_icon = "✅"
-                        # Mark if it's the active one
-                        if manifest.id == active_provider or manifest.id.replace("_", "") == active_provider.replace("_", ""):
-                            status_label = "active"
-                        else:
-                            status_label = "configured"
+                        status_label = "configured"
                     else:
                         status_icon = "⚙️"
                         env_hint = manifest.env_vars[0] if manifest.env_vars else ""
-                        status_label = f"set {env_hint}" if env_hint else "not configured"
+                        status_label = (
+                            f"set {env_hint}" if env_hint else "not configured"
+                        )
                 else:
                     status_icon = "✅"
                     status_label = "no key needed"
@@ -1741,15 +1825,24 @@ class TelegramChannel:
                 status_icon = "⚙️"
                 status_label = "not configured"
 
-            extra = f"  {status_icon} {status_label}" if status_label else f"  {status_icon}"
-            entry = f"  {manifest.emoji} *{manifest.display_name}*{extra}"
+            # Active provider marker — always shown regardless of key detection
+            active_tag = "  ★ *in use*" if is_active else ""
+            extra = (
+                f"  {status_icon} {status_label}"
+                if status_label
+                else f"  {status_icon}"
+            )
+            entry = f"  {manifest.emoji} *{manifest.display_name}*{extra}{active_tag}"
             if manifest.tier == "local":
                 local_lines.append(entry)
             else:
                 cloud_lines.append(entry)
 
+            btn_label = (
+                f"{'★ ' if is_active else ''}{manifest.emoji} {manifest.display_name}"
+            )
             btn = {
-                "text": f"{manifest.emoji} {manifest.display_name}",
+                "text": btn_label,
                 "callback_data": f"prov_{manifest.id}",
             }
             button_row.append(btn)
@@ -1772,7 +1865,9 @@ class TelegramChannel:
         lines.append("_Tap a provider to configure or assign models._")
 
         # ── Control row pinned at bottom ──
-        keyboard_rows.append([{"text": "🚫 No AI (raw mode)", "callback_data": "prov_noai"}])
+        keyboard_rows.append(
+            [{"text": "🚫 No AI (raw mode)", "callback_data": "prov_noai"}]
+        )
         keyboard_rows.append([{"text": "❌ Close", "callback_data": "prov_close"}])
 
         await self.send_message(chat_id, "\n".join(lines), keyboard=keyboard_rows)
@@ -1798,7 +1893,9 @@ class TelegramChannel:
             try:
                 import urllib.request
 
-                with urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=2) as r:
+                with urllib.request.urlopen(
+                    "http://127.0.0.1:11434/api/tags", timeout=2
+                ) as r:
                     data = _json.loads(r.read())
                     live = [m["name"] for m in data.get("models", []) if m.get("name")]
                     if live:
@@ -1811,7 +1908,9 @@ class TelegramChannel:
         models = models[:8]  # cap at 8
 
         if not models:
-            await self.send_message(chat_id, f"\u26a0\ufe0f No models found for `{prov_id}`.")
+            await self.send_message(
+                chat_id, f"\u26a0\ufe0f No models found for `{prov_id}`."
+            )
             return
 
         # Current router assignment for this provider
@@ -2018,8 +2117,12 @@ class TelegramChannel:
                             try:
                                 entry = _json.loads(raw)
                                 role = entry.get("role") or entry.get("type", "?")
-                                content = entry.get("content") or entry.get("text") or ""
-                                session_messages.append({"role": role, "content": content})
+                                content = (
+                                    entry.get("content") or entry.get("text") or ""
+                                )
+                                session_messages.append(
+                                    {"role": role, "content": content}
+                                )
                             except Exception:  # noqa: BLE001
                                 pass  # best-effort; failure is non-critical
                 except Exception:  # noqa: BLE001
@@ -2052,7 +2155,9 @@ class TelegramChannel:
                 if ts_raw:
                     try:
                         if isinstance(ts_raw, (int, float)):
-                            ts_prefix = _dt.utcfromtimestamp(ts_raw).strftime("%H:%M") + " "
+                            ts_prefix = (
+                                _dt.utcfromtimestamp(ts_raw).strftime("%H:%M") + " "
+                            )
                         else:
                             ts_prefix = str(ts_raw)[:5] + " "
                     except Exception:  # noqa: BLE001
@@ -2088,14 +2193,18 @@ class TelegramChannel:
                 _sk = f"agent:default:telegram:default:dm:{user_id}"
                 _s = sm.sessions.get(_sk)
                 if _s is not None:
-                    voice_label = "on" if _s.metadata.get("voice_enabled", False) else "off"
+                    voice_label = (
+                        "on" if _s.metadata.get("voice_enabled", False) else "off"
+                    )
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
         lines.append(
             f"⚙️  *Session* — tier: `{tier_label}` · host: `{active_host}` · voice: `{voice_label}`"
         )
-        lines.append(f"🛡  Voice pipeline: {'🟢 active' if HAS_VOICE else '⚫ inactive'}")
+        lines.append(
+            f"🛡  Voice pipeline: {'🟢 active' if HAS_VOICE else '⚫ inactive'}"
+        )
         lines.append(SEP)
 
         # ── Daemon log warnings ────────────────────────────────────────────────
@@ -2120,7 +2229,9 @@ class TelegramChannel:
                     "failed",
                     "critical",
                 )
-                daemon_issues = [ln.strip() for ln in _tail if any(kw in ln.lower() for kw in _kw)]
+                daemon_issues = [
+                    ln.strip() for ln in _tail if any(kw in ln.lower() for kw in _kw)
+                ]
                 break
             except OSError:
                 pass  # best-effort cleanup
@@ -2212,7 +2323,9 @@ class TelegramChannel:
 
         if target in DAEMON_ALIASES:
             # Self-restart: schedule via subprocess with delay so reply goes out first
-            await self.send_message(chat_id, "🔄 Restarting navig-daemon in 3s…", parse_mode=None)
+            await self.send_message(
+                chat_id, "🔄 Restarting navig-daemon in 3s…", parse_mode=None
+            )
             sudo_pass = _os.environ.get("SUDO_PASS", "")
             if sudo_pass:
                 bash_cmd = f"sleep 3 && echo '{sudo_pass}' | sudo -S systemctl restart navig-daemon"
@@ -2226,7 +2339,9 @@ class TelegramChannel:
             )
         else:
             # Docker container restart — route through CLI
-            await self._handle_cli_command(chat_id, user_id, metadata, f"docker restart {arg}")
+            await self._handle_cli_command(
+                chat_id, user_id, metadata, f"docker restart {arg}"
+            )
 
     async def _handle_settings_menu(
         self, chat_id: int, user_id: int, is_group: bool = False
@@ -2464,7 +2579,9 @@ class TelegramChannel:
                 else:
                     await self.send_message(chat_id, "…no output.", parse_mode=None)
             else:
-                await self.send_message(chat_id, "…gateway not connected.", parse_mode=None)
+                await self.send_message(
+                    chat_id, "…gateway not connected.", parse_mode=None
+                )
         finally:
             typing_task.cancel()
             try:
@@ -2558,7 +2675,9 @@ class TelegramChannel:
 
             # ── Server uptime ──
             try:
-                up = _sp.run(["uptime", "-p"], capture_output=True, text=True, timeout=2)
+                up = _sp.run(
+                    ["uptime", "-p"], capture_output=True, text=True, timeout=2
+                )
                 lines.append(f"⏱ *Server:* {up.stdout.strip()}")
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
@@ -2575,7 +2694,9 @@ class TelegramChannel:
                 if len(dfl) >= 2:
                     parts = dfl[1].split()
                     if len(parts) >= 3:
-                        lines.append(f"💾 *Disk:* {parts[0]} used, {parts[1]} free ({parts[2]})")
+                        lines.append(
+                            f"💾 *Disk:* {parts[0]} used, {parts[1]} free ({parts[2]})"
+                        )
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -2591,8 +2712,12 @@ class TelegramChannel:
                             try:
                                 e = _json.loads(raw)
                                 role = e.get("role") or e.get("type", "")
-                                content = str(e.get("content") or e.get("text") or "")[:60]
-                                if role in ("user", "human") and content.startswith("/"):
+                                content = str(e.get("content") or e.get("text") or "")[
+                                    :60
+                                ]
+                                if role in ("user", "human") and content.startswith(
+                                    "/"
+                                ):
                                     recent.append(f"  • `{content}`")
                             except Exception:  # noqa: BLE001
                                 pass  # best-effort; failure is non-critical
@@ -2700,12 +2825,18 @@ class TelegramChannel:
             if result.success:
                 output_text = ""
                 if isinstance(result.output, dict):
-                    output_text = result.output.get("output") or result.output.get("info") or ""
+                    output_text = (
+                        result.output.get("output") or result.output.get("info") or ""
+                    )
                 else:
                     output_text = str(result.output or "")
 
                 header = f"🧩 **{skill_name}**" + (f" › `{command}`" if command else "")
-                msg = f"{header}\n\n{output_text[:3800]}" if output_text else f"{header}\n✅ Done."
+                msg = (
+                    f"{header}\n\n{output_text[:3800]}"
+                    if output_text
+                    else f"{header}\n✅ Done."
+                )
                 await self.send_message(chat_id, msg)
             else:
                 await self.send_message(
@@ -2713,7 +2844,9 @@ class TelegramChannel:
                 )
 
         except Exception as exc:  # noqa: BLE001
-            await self.send_message(chat_id, f"❌ /skill crashed: {exc}", parse_mode=None)
+            await self.send_message(
+                chat_id, f"❌ /skill crashed: {exc}", parse_mode=None
+            )
 
     async def _skill_list(self, chat_id: int) -> None:
         """Send a paginated list of all available skills."""
@@ -2722,7 +2855,9 @@ class TelegramChannel:
 
             skills = load_all_skills()
         except Exception as exc:
-            await self.send_message(chat_id, f"❌ Could not load skills: {exc}", parse_mode=None)
+            await self.send_message(
+                chat_id, f"❌ Could not load skills: {exc}", parse_mode=None
+            )
             return
 
         if not skills:
@@ -2747,7 +2882,9 @@ class TelegramChannel:
                 )
                 lines.append(f"  {safety_icon} `{s.id}` — {s.name}")
 
-        lines.append("\n\nUsage: `/skill <id>` for info · `/skill <id> <command>` to run")
+        lines.append(
+            "\n\nUsage: `/skill <id>` for info · `/skill <id> <command>` to run"
+        )
 
         await self.send_message(chat_id, "\n".join(lines))
 
