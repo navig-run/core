@@ -16,11 +16,8 @@ tunnel_manager = TunnelManager(config_manager)
 
 def start_tunnel(options: dict[str, Any]):
     """Start SSH tunnel for active server."""
-    server_name = options.get("app") or config_manager.get_active_server()
-
-    if not server_name:
-        ch.error("No active server. Use 'navig server use <name>' first.")
-        return
+    from navig.cli.recovery import require_active_server
+    server_name = require_active_server(options, config_manager)
 
     if options.get("verbose"):
         ch.dim(f"Starting tunnel for: {server_name}")
@@ -52,11 +49,8 @@ def start_tunnel(options: dict[str, Any]):
 
 def stop_tunnel(options: dict[str, Any]):
     """Stop SSH tunnel."""
-    server_name = options.get("app") or config_manager.get_active_server()
-
-    if not server_name:
-        ch.error("No active server.")
-        return
+    from navig.cli.recovery import require_active_server
+    server_name = require_active_server(options, config_manager)
 
     try:
         success = tunnel_manager.stop_tunnel(server_name)
@@ -73,11 +67,8 @@ def stop_tunnel(options: dict[str, Any]):
 
 def restart_tunnel(options: dict[str, Any]):
     """Restart tunnel."""
-    server_name = options.get("app") or config_manager.get_active_server()
-
-    if not server_name:
-        ch.error("No active server.")
-        return
+    from navig.cli.recovery import require_active_server
+    server_name = require_active_server(options, config_manager)
 
     try:
         ch.info("Restarting tunnel...")
@@ -93,11 +84,8 @@ def restart_tunnel(options: dict[str, Any]):
 
 def show_tunnel_status(options: dict[str, Any]):
     """Show tunnel status."""
-    server_name = options.get("app") or config_manager.get_active_server()
-
-    if not server_name:
-        ch.error("No active server.")
-        return
+    from navig.cli.recovery import require_active_server
+    server_name = require_active_server(options, config_manager)
 
     tunnel_info = tunnel_manager.get_tunnel_status(server_name)
 

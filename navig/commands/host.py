@@ -107,7 +107,8 @@ def list_hosts(options: dict[str, Any]):
     hosts = config_manager.list_hosts()
 
     if not hosts:
-        ch.warning("No hosts configured", "Use 'navig host add <name>' to add one.")
+        from navig.cli.recovery import empty_list_recovery
+        empty_list_recovery("host", "host add")
         return
 
     # Fast path for plain/raw output — just names, no config loading needed
@@ -120,10 +121,6 @@ def list_hosts(options: dict[str, Any]):
     default_host = config_manager.global_config.get("default_host")
     show_all = options.get("all", False)
     output_format = options.get("format", "table")
-
-    if not hosts:
-        ch.warning("No hosts configured", "Use 'navig host add <name>' to add one.")
-        return
 
     # Collect host data
     host_data = []

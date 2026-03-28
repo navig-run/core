@@ -45,10 +45,8 @@ def execute_sql(query: str, options: dict[str, Any]):
     config_manager = get_config_manager()
     tunnel_manager = TunnelManager(config_manager)
 
-    server_name = options.get("app") or config_manager.get_active_server()
-    if not server_name:
-        ch.error("No active server.")
-        return
+    from navig.cli.recovery import require_active_server
+    server_name = require_active_server(options, config_manager)
 
     dry_run = options.get("dry_run", False)
     json_enabled = options.get("json", False)
@@ -149,10 +147,8 @@ def backup_database(path: Path | None, options: dict[str, Any]):
     config_manager = get_config_manager()
     tunnel_manager = TunnelManager(config_manager)
 
-    server_name = options.get("app") or config_manager.get_active_server()
-    if not server_name:
-        ch.error("No active server.")
-        return
+    from navig.cli.recovery import require_active_server
+    server_name = require_active_server(options, config_manager)
 
     dry_run = options.get("dry_run", False)
     json_enabled = options.get("json", False)
@@ -261,10 +257,8 @@ def restore_database(file: Path, options: dict[str, Any]):
     config_manager = get_config_manager()
     tunnel_manager = TunnelManager(config_manager)
 
-    server_name = options.get("app") or config_manager.get_active_server()
-    if not server_name:
-        ch.error("No active server.")
-        return
+    from navig.cli.recovery import require_active_server
+    server_name = require_active_server(options, config_manager)
 
     dry_run = options.get("dry_run", False)
     json_enabled = options.get("json", False)

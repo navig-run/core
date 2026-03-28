@@ -289,13 +289,10 @@ def db_containers_cmd(options: dict[str, Any]):
     """
     from navig.config import get_config_manager
     from navig.discovery import ServerDiscovery
+    from navig.cli.recovery import require_active_host
 
     config_manager = get_config_manager()
-    host_name = options.get("host") or config_manager.get_active_host()
-
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
     if not host_config:
@@ -366,13 +363,10 @@ def db_query_cmd(
     """
     from navig.config import get_config_manager
     from navig.discovery import ServerDiscovery
+    from navig.cli.recovery import require_active_host
 
     config_manager = get_config_manager()
-    host_name = options.get("host") or config_manager.get_active_host()
-
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
     if not host_config:
@@ -550,13 +544,10 @@ def db_list_cmd(
     """
     from navig.config import get_config_manager
     from navig.discovery import ServerDiscovery
+    from navig.cli.recovery import require_active_host
 
     config_manager = get_config_manager()
-    host_name = options.get("host") or config_manager.get_active_host()
-
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
     if not host_config:
@@ -700,13 +691,10 @@ def db_tables_cmd(
     """
     from navig.config import get_config_manager
     from navig.discovery import ServerDiscovery
+    from navig.cli.recovery import require_active_host
 
     config_manager = get_config_manager()
-    host_name = options.get("host") or config_manager.get_active_host()
-
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
     if not host_config:

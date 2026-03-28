@@ -29,10 +29,8 @@ def docker_ps(
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get("host") or config_manager.get_active_host()
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return
+    from navig.cli.recovery import require_active_host
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
 
@@ -85,10 +83,8 @@ def docker_logs(
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get("host") or config_manager.get_active_host()
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return
+    from navig.cli.recovery import require_active_host
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
 
@@ -147,10 +143,8 @@ def docker_exec(
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get("host") or config_manager.get_active_host()
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return
+    from navig.cli.recovery import require_active_host
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
 
@@ -209,10 +203,8 @@ def docker_compose(
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get("host") or config_manager.get_active_host()
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return
+    from navig.cli.recovery import require_active_host
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
 
@@ -302,10 +294,8 @@ def docker_inspect(
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get("host") or config_manager.get_active_host()
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return
+    from navig.cli.recovery import require_active_host
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
 
@@ -342,10 +332,8 @@ def docker_restart(
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get("host") or config_manager.get_active_host()
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return
+    from navig.cli.recovery import require_active_host
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
 
@@ -384,10 +372,8 @@ def docker_stop(container: str, options: dict[str, Any], timeout: int = 10):
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get("host") or config_manager.get_active_host()
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return
+    from navig.cli.recovery import require_active_host
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
 
@@ -421,10 +407,8 @@ def docker_start(container: str, options: dict[str, Any]):
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get("host") or config_manager.get_active_host()
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return
+    from navig.cli.recovery import require_active_host
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
 
@@ -446,10 +430,8 @@ def docker_stats(options: dict[str, Any], container: str | None = None, no_strea
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get("host") or config_manager.get_active_host()
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return
+    from navig.cli.recovery import require_active_host
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
 

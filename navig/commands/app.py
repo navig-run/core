@@ -133,16 +133,10 @@ def list_apps(options: dict[str, Any]) -> None:
             ch.print_table(table)
         return
 
-    # Get active host if not specified
+    # Get active host if not specified — interactive recovery if missing
     if not host_name:
-        host_name = config_manager.get_active_host()
-
-    if not host_name:
-        ch.error(
-            "No active host configured",
-            "Use 'navig host use <name>' to set active host.",
-        )
-        return
+        from navig.cli.recovery import require_active_host
+        host_name = require_active_host({"host": None}, config_manager)
 
     # Verify host exists
     if not config_manager.host_exists(host_name):
@@ -163,10 +157,8 @@ def list_apps(options: dict[str, Any]) -> None:
         return
 
     if not apps:
-        ch.warning(
-            f"No apps configured on host '{host_name}'",
-            f"Use 'navig app add <name> --host {host_name}' to add one.",
-        )
+        from navig.cli.recovery import empty_list_recovery
+        empty_list_recovery("app", f"app add --host {host_name}")
         return
 
     # Collect app data
@@ -366,16 +358,12 @@ def current_app(options: dict[str, Any]) -> None:
         return
 
     if not active_host:
-        ch.warning(
-            "No active host configured",
-            "Use 'navig host use <name>' to set active host.",
-        )
-        return
+        from navig.cli.recovery import require_active_host
+        active_host = require_active_host({}, config_manager)
 
     if not active_app:
-        ch.warning(
-            "No active app configured", "Use 'navig app use <name>' to set active app."
-        )
+        from navig.cli.recovery import empty_list_recovery
+        empty_list_recovery("app", "app add")
         return
 
     # Map source to display format

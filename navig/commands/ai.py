@@ -20,8 +20,8 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
 
     server_name = options.get("app") or config_manager.get_active_server()
     if not server_name:
-        ch.error("No active server. AI needs context.")
-        return
+        from navig.cli.recovery import require_active_server
+        server_name = require_active_server(options, config_manager)
 
     # Gather context
     ch.dim("The Schema's engines are analyzing...\n")

@@ -791,12 +791,46 @@ def main() -> None:
         # Catch Typer/Click parsing errors that indicate PowerShell mangled the input
         if e.code != 0 and len(sys.argv) >= 2:
             _handle_powershell_parsing_error(sys.argv)
+        # "Did you mean?" suggestions for misspelled top-level commands
+        if e.code == 2 and len(sys.argv) >= 2 and not sys.argv[1].startswith("-"):
+            _suggest_did_you_mean(sys.argv[1])
         raise
     except Exception as e:
         # Use our robust crash handler
         from navig.core.crash_handler import crash_handler
 
         crash_handler.handle_exception(e)
+
+
+def _suggest_did_you_mean(unknown: str) -> None:
+    """Print 'Did you mean?' suggestions for misspelled top-level commands."""
+    _KNOWN_COMMANDS = [
+        "host", "h", "app", "a", "run", "r", "db", "database", "file", "f",
+        "docker", "tunnel", "t", "web", "backup", "config", "status", "version",
+        "log", "l", "local", "mcp", "profile", "security", "monitor", "index",
+        "skills", "skill", "flow", "workflow", "wiki", "scaffold", "migrate",
+        "server-template", "template", "hestia", "bridge", "farmore", "copilot",
+        "inbox", "sync", "agent", "service", "stack", "tray", "formation",
+        "council", "auto", "evolve", "script", "calendar", "mode", "email",
+        "voice", "crash", "telegram", "tg", "matrix", "mx", "store", "cred",
+        "cred-profile", "flux", "fx", "cortex", "desktop", "net", "server",
+        "s", "links", "kg", "knowledge", "webhook", "webhooks", "cron", "doctor",
+        "prompts", "browser", "dispatch", "contacts", "ct", "paths", "radar",
+        "watch", "mesh", "debug", "memory", "spaces", "telemetry", "wut", "eval",
+        "agents", "webdash", "explain", "snapshot", "replay", "cloud", "benchmark",
+        "finance", "work", "origin", "user", "node", "boot", "space", "blueprint",
+        "deck", "portable", "system", "mount", "update", "proactive", "package",
+        "pack", "packs", "plugin", "help",
+    ]
+    try:
+        from navig.cli.recovery import did_you_mean
+        suggestions = did_you_mean(unknown, _KNOWN_COMMANDS)
+        if suggestions:
+            _eprint("\n[yellow]Did you mean?[/yellow]")
+            for s in suggestions[:3]:
+                _eprint(f"  navig {s}")
+    except Exception:
+        pass  # Never let suggestion logic crash the process
 
 
 def _handle_powershell_parsing_error(argv: list[str]) -> None:
