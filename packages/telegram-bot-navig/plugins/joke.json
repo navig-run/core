@@ -1,9 +1,0 @@
-﻿{
-  "id": "joke",
-  "version": "1.0.0",
-  "description": "Fetch a random joke.",
-  "provides": [],
-  "depends": {
-    "pip": []
-  }
-}

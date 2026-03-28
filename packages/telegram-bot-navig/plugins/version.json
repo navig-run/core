@@ -1,9 +1,0 @@
-{
-  "id": "version",
-  "version": "1.0.0",
-  "description": "Adds /version command — replies with the current NAVIG version.",
-  "provides": ["bot.version"],
-  "depends": {
-    "pip": []
-  }
-}

@@ -1,9 +1,0 @@
-﻿{
-  "id": "quote",
-  "version": "1.0.0",
-  "description": "Save and retrieve favourite quotes.",
-  "provides": [],
-  "depends": {
-    "pip": []
-  }
-}

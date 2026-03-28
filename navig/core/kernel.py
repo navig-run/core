@@ -233,18 +233,14 @@ class NavigKernel:
     def _dispatch_registry(self, method: str, params: dict):
         """Dispatch *method* via CommandRegistry; fall back to plugin_manager if not found."""
         try:
-            import asyncio
-
             from navig.commands._registry import CommandRegistry
 
-            handler = CommandRegistry.get(method)
-            if handler is not None:
-                if asyncio.iscoroutinefunction(handler):
-                    result = asyncio.run(handler(params, None))
-                else:
-                    result = handler(params, None)
+            try:
+                result = CommandRegistry.run(method, params, ctx=None)
                 print(f"✨ Result: {result}")
                 return
+            except KeyError:
+                pass  # Fall through to legacy fallback Below
         except Exception as exc:  # noqa: BLE001
             print(f"❌ CommandRegistry dispatch failed: {exc}")
         # Fallback: old plugin manager

@@ -1,9 +1,0 @@
-﻿{
-  "id": "nlp_aliases",
-  "version": "1.0.0",
-  "description": "Natural-language command aliases via LLM API.",
-  "provides": [],
-  "depends": {
-    "pip": []
-  }
-}

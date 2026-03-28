@@ -51,13 +51,13 @@ def _get_token(config: dict[str, Any]) -> str:
 
 def _load_pack_handlers(app: Any, pack_dir: Path) -> int:
     """
-    Look for telegram/handlers.py in a pack directory.
+    Look for tg_handlers.py in a pack directory.
     Import it and register all cmd_* functions as CommandHandlers.
     Returns count of handlers registered.
     """
     from telegram.ext import CommandHandler  # noqa: PLC0415
 
-    handlers_file = pack_dir / "telegram" / "handlers.py"
+    handlers_file = pack_dir / "tg_handlers.py"
     if not handlers_file.is_file():
         return 0
 

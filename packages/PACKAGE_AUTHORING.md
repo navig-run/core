@@ -151,10 +151,10 @@ def on_event(event: str, ctx: dict) -> dict | None:
 
 ## 4. Telegram Transport Layer
 
-**Place in: `telegram/handlers.py`**
+**Place in: `tg_handlers.py`**
 
 ```python
-# telegram/handlers.py
+# tg_handlers.py
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -194,7 +194,7 @@ TELEGRAM_COMMANDS: dict[str, callable] = {
 }
 ```
 
-**Rule:** Never put business logic in telegram/handlers.py — only arg parsing and transport adaption. All logic lives in commands/.
+**Rule:** Never put business logic in `tg_handlers.py` — only arg parsing and transport adaption. All logic lives in `commands/`.
 
 ---
 

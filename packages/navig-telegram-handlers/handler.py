@@ -35,12 +35,9 @@ class PluginEvent:
 
 def on_load(ctx: PluginContext) -> None:
     """Register formatters and menu builders with navig-telegram if available."""
-    # Add our telegram/ directory to path so sibling imports work
-    sys.path.insert(0, str(ctx.store_path / "telegram"))
-
     try:
-        from formatters import FORMATTERS  # noqa: PLC0415
-        from menus import MENUS  # noqa: PLC0415
+        from navig_tg.formatters import FORMATTERS  # noqa: PLC0415
+        from navig_tg.menus import MENUS  # noqa: PLC0415
 
         # Attempt to register with navig-telegram's handler registry
         try:
@@ -70,7 +67,7 @@ def on_load(ctx: PluginContext) -> None:
 def on_unload(ctx: PluginContext) -> None:
     """Deregister formatters on removal; must not raise."""
     try:
-        from formatters import FORMATTERS  # noqa: PLC0415
+        from navig_tg.formatters import FORMATTERS  # noqa: PLC0415
 
         try:
             from navig_telegram import handler_registry  # noqa: PLC0415
