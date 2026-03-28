@@ -112,6 +112,29 @@ class _CommandRegistry:
         with self._lock:
             return len(self._handlers)
 
+    def run(
+        self,
+        name: str,
+        args: dict[str, Any] | None = None,
+        ctx: Any = None,
+    ) -> Any:
+        """Dispatch command *name* synchronously, handling async handlers transparently.
+
+        Callers can always use this method without knowing whether the underlying
+        handler is ``async def`` or a plain function.
+
+        Raises:
+            KeyError: if *name* is not registered.
+        """
+        import asyncio
+
+        handler = self.get(name)
+        if handler is None:
+            raise KeyError(f"No command registered under '{name}'")
+        if asyncio.iscoroutinefunction(handler):
+            return asyncio.run(handler(args or {}, ctx))
+        return handler(args or {}, ctx)
+
     def __repr__(self) -> str:  # pragma: no cover
         return f"<CommandRegistry commands={self.names()}>"
 

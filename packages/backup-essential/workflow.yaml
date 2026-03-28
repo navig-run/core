@@ -5,8 +5,8 @@ type: runbook
 
 steps:
   - name: list-config
-    command: navig fs list /etc/navig
+    command: navig file list /etc/navig
   - name: read-config
-    command: navig fs read /etc/navig/config.yaml
+    command: navig file show /etc/navig/config.yaml
   - name: check-git
-    command: navig git status
+    command: navig run "git status"

@@ -116,6 +116,33 @@ class WorkflowManager:
         if builtin_workflows.exists():
             locations.append(builtin_workflows)
 
+        # 4. Workflow-type packages in the built-in packages directory
+        try:
+            import json as _json
+
+            from navig.platform.paths import builtin_packages_dir
+
+            pkg_root = builtin_packages_dir()
+            if pkg_root.exists():
+                for pkg_dir in sorted(pkg_root.iterdir()):
+                    if not pkg_dir.is_dir() or pkg_dir.name.startswith("_"):
+                        continue
+                    manifest_file = pkg_dir / "navig.package.json"
+                    if not manifest_file.exists():
+                        continue
+                    try:
+                        manifest = _json.loads(
+                            manifest_file.read_text(encoding="utf-8")
+                        )
+                    except Exception:
+                        continue
+                    pkg_type = manifest.get("type", "")
+                    pkg_provides = manifest.get("provides", [])
+                    if pkg_type == "workflows" or "workflows" in pkg_provides:
+                        locations.append(pkg_dir)
+        except Exception:  # noqa: BLE001
+            pass  # non-critical; built-in packages not required at this point
+
         return locations
 
     def discover_workflows(self) -> dict[str, Path]:

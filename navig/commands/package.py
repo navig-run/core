@@ -18,6 +18,10 @@ import typer
 from navig import console_helper as ch
 from navig.platform.paths import config_dir
 
+# Module-level set: tracks which packs have been successfully loaded in this process.
+# Reset on each fresh Python invocation (not persisted).
+_loaded_packs: set[str] = set()
+
 package_app = typer.Typer(
     name="package",
     help="Manage NAVIG packages (list, show, install, remove, validate)",
@@ -478,8 +482,21 @@ def package_load(
         ch.error(f"Package '{name}' not found.")
         raise typer.Exit(1)
 
+    # Enforce declared package dependencies
+    deps_block = manifest.get("depends_on") or {}
+    if isinstance(deps_block, dict):
+        dep_pkgs = list(deps_block.get("packages", {}).keys())
+        missing = [dep for dep in dep_pkgs if dep not in _loaded_packs]
+        if missing:
+            ch.error(
+                f"Package '{name}' requires: {', '.join(missing)}. "
+                f"Load them first:  navig package load <id>"
+            )
+            raise typer.Exit(1)
+
     ok = _invoke_handler(name, path, "on_load")
     if ok:
+        _loaded_packs.add(name)
         ch.success(f"Package '{name}' loaded.")
     else:
         raise typer.Exit(1)
@@ -497,4 +514,105 @@ def package_unload(
 
     ok = _invoke_handler(name, path, "on_unload")
     if ok:
+        _loaded_packs.discard(name)
         ch.success(f"Package '{name}' unloaded.")
+
+
+# ── Autoload ──────────────────────────────────────────────────────────────────────
+
+_AUTOLOAD_FILE = "packages_autoload.json"  # relative to config_dir()
+
+
+def _autoload_path() -> Path:
+    return config_dir() / _AUTOLOAD_FILE
+
+
+def _read_autoload() -> list[str]:
+    p = _autoload_path()
+    if not p.exists():
+        return []
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        return [str(x) for x in data] if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _write_autoload(ids: list[str]) -> None:
+    p = _autoload_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(sorted(set(ids)), indent=2), encoding="utf-8")
+
+
+autoload_app = typer.Typer(
+    name="autoload",
+    help="Manage packages that load automatically at NAVIG boot",
+    no_args_is_help=True,
+)
+package_app.add_typer(autoload_app, name="autoload")
+
+
+@autoload_app.command("list")
+def autoload_list():
+    """Show packages configured to auto-load at boot."""
+    ids = _read_autoload()
+    if not ids:
+        ch.info("No packages configured for auto-load.")
+        return
+    for pkg_id in ids:
+        print(pkg_id)
+
+
+@autoload_app.command("add")
+def autoload_add(
+    name: str = typer.Argument(..., help="Package ID to add to auto-load list"),
+):
+    """Add a package to the auto-load list."""
+    manifest, _, _ = _load_package(name)
+    if manifest is None:
+        ch.error(f"Package '{name}' not found.")
+        raise typer.Exit(1)
+    ids = _read_autoload()
+    if name in ids:
+        ch.info(f"'{name}' is already in the auto-load list.")
+        return
+    ids.append(name)
+    _write_autoload(ids)
+    ch.success(
+        f"Added '{name}' to auto-load list. It will be loaded on next 'navig' invocation."
+    )
+
+
+@autoload_app.command("remove")
+def autoload_remove(
+    name: str = typer.Argument(..., help="Package ID to remove from auto-load list"),
+):
+    """Remove a package from the auto-load list."""
+    ids = _read_autoload()
+    if name not in ids:
+        ch.info(f"'{name}' is not in the auto-load list.")
+        return
+    _write_autoload([i for i in ids if i != name])
+    ch.success(f"Removed '{name}' from auto-load list.")
+
+
+def autoload_packages() -> None:
+    """Boot hook: load all packages listed in the auto-load config.
+
+    Called once from ``navig.main.main()`` after the CLI is set up.
+    Silently skips packages that are no longer installed or fail to load.
+    """
+    import logging as _logging
+
+    _log = _logging.getLogger(__name__)
+    for pkg_id in _read_autoload():
+        manifest, path, _ = _load_package(pkg_id)
+        if path is None:
+            _log.warning("autoload: package '%s' not found — skipping", pkg_id)
+            continue
+        ok = _invoke_handler(pkg_id, path, "on_load")
+        if ok:
+            _loaded_packs.add(pkg_id)
+            _log.debug("autoload: loaded '%s'", pkg_id)
+        else:
+            _log.warning("autoload: '%s' on_load() failed — see above", pkg_id)

@@ -817,6 +817,18 @@ def main() -> None:
             # This avoids importing rich/console_helper during `navig --help`.
             add_plugin_commands(app)
 
+            # Auto-load packages listed in ~/.navig/packages_autoload.json
+            try:
+                from navig.commands.package import autoload_packages
+
+                autoload_packages()
+            except Exception as _e:  # noqa: BLE001
+                import logging as _logging
+
+                _logging.getLogger(__name__).debug(
+                    "autoload_packages() failed (non-critical): %s", _e
+                )
+
         # Run the CLI
         app()
 

@@ -3,6 +3,7 @@ description: "Personal life operating system — daily workflows, routines, and 
 version: "1.0.0"
 author: navig
 type: runbook
+status: draft  # Commands are aspirational; not yet wired to real CLI handlers
 
 steps:
   - name: morning-priorities

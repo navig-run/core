@@ -198,15 +198,12 @@ class NavigKernel:
 
         parts = cmd.syntax.split()
         if len(parts) >= 3 and parts[0] == "navig" and parts[1] == "memory":
-            plugin_name = "navig-memory"
             method = parts[2]
             params = {"query": " ".join(args)} if args else {}
-            self._exec_plugin(plugin_name, method, params)
+            self._dispatch_registry(method, params)
 
         elif cmd.source_skill == "windows-automation":
-            plugin_name = "navig-windows-automation"
-            # Map command name to plugin method
-            # cmd.name is "window-list", plugin method is "window-list"
+            # Map command name to AHK registry handler
             method = cmd.name
 
             # Simple arg parsing for prototype
@@ -228,14 +225,35 @@ class NavigKernel:
                     params["x"] = args[0]
                     params["y"] = args[1]
 
-            self._exec_plugin(plugin_name, method, params)
+            self._dispatch_registry(method, params)
 
         else:
             print(f"🖥️  (System Command Simulation): {cmd.syntax}")
 
-    def _exec_plugin(self, plugin_name, method, params):
+    def _dispatch_registry(self, method: str, params: dict):
+        """Dispatch *method* via CommandRegistry; fall back to plugin_manager if not found."""
         try:
-            result = self.plugin_manager.execute_skill(plugin_name, method, params)
+            import asyncio
+
+            from navig.commands._registry import CommandRegistry
+
+            handler = CommandRegistry.get(method)
+            if handler is not None:
+                if asyncio.iscoroutinefunction(handler):
+                    result = asyncio.run(handler(params, None))
+                else:
+                    result = handler(params, None)
+                print(f"✨ Result: {result}")
+                return
+        except Exception as exc:  # noqa: BLE001
+            print(f"❌ CommandRegistry dispatch failed: {exc}")
+        # Fallback: old plugin manager
+        self._exec_plugin_legacy(method, params)
+
+    def _exec_plugin_legacy(self, method, params):
+        """Legacy fallback — executes via plugin_manager.execute_skill."""
+        try:
+            result = self.plugin_manager.execute_skill(method, method, params)
             print(f"✨ Plugin Result: {result}")
         except Exception as e:
             print(f"❌ Plugin execution failed: {e}")

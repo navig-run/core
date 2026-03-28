@@ -9,9 +9,12 @@ so the pack works even without the full agent stack.
 from __future__ import annotations
 
 import json
+import logging
 import pathlib
 import time
 from typing import Any
+
+_logger = logging.getLogger(__name__)
 
 # ── Lifecycle ──────────────────────────────────────────────────────────────────
 
@@ -24,8 +27,11 @@ def on_load(ctx: dict) -> None:
         CommandRegistry.register("memory_store", cmd_memory_store)
         CommandRegistry.register("memory_search", cmd_memory_search)
         CommandRegistry.register("memory_clear", cmd_memory_clear)
-    except ImportError:
-        pass  # optional dependency not installed; feature disabled
+    except ImportError as exc:
+        _logger.warning(
+            "navig-memory: CommandRegistry unavailable — commands not registered: %s",
+            exc,
+        )
 
 
 def on_unload(ctx: dict) -> None:
@@ -35,8 +41,10 @@ def on_unload(ctx: dict) -> None:
 
         for name in ("memory_store", "memory_search", "memory_clear"):
             CommandRegistry.deregister(name)
-    except ImportError:
-        pass  # optional dependency not installed; feature disabled
+    except ImportError as exc:
+        _logger.warning(
+            "navig-memory: CommandRegistry unavailable — could not deregister: %s", exc
+        )
 
 
 def on_event(event: str, ctx: dict) -> dict | None:
@@ -63,9 +71,9 @@ def _store_path(ctx: Any = None) -> pathlib.Path:
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
     try:
-        from navig.space.paths import get_global_root
+        from navig.platform.paths import config_dir
 
-        return get_global_root() / "store" / "memory" / "memories.json"
+        return config_dir() / "store" / "memory" / "memories.json"
     except Exception:
         return pathlib.Path.home() / ".navig" / "store" / "memory" / "memories.json"
 

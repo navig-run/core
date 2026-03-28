@@ -9,7 +9,7 @@
   "type": "commands",
   "entry": "handler.py",
   "provides": ["commands"],
-  "hooks": ["startup"],
+  "hooks": ["on_load", "on_unload"],
   "depends_on": {
     "packages": {},
     "skills": [],

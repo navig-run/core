@@ -9,10 +9,11 @@ Windows-only: commands silently no-op on other platforms.
 from __future__ import annotations
 
 import platform
-import sys
 from typing import Any
 
 _IS_WIN = platform.system() == "Windows"
+_PACKAGE_DIR = None  # set in on_load from ctx, or lazily from __file__
+_adapter_instance = None  # cached AHKAdapter — instantiated once per process
 
 
 # ── Lifecycle ──────────────────────────────────────────────────────────────────
@@ -20,25 +21,39 @@ _IS_WIN = platform.system() == "Windows"
 
 def on_load(ctx: dict) -> None:
     """Register commands into CommandRegistry on pack activation."""
+    global _PACKAGE_DIR
+    _PACKAGE_DIR = ctx.get("store_path") or ctx.get("plugin_dir")
     try:
         from navig.commands._registry import CommandRegistry
 
         CommandRegistry.register("ahk_run", cmd_ahk_run)
         CommandRegistry.register("ahk_type", cmd_ahk_type)
         CommandRegistry.register("ahk_click", cmd_ahk_click)
-    except ImportError:
-        pass  # standalone / authoring mode
+    except ImportError as exc:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "navig-windows-automation: CommandRegistry unavailable — commands not registered: %s",
+            exc,
+        )
 
 
 def on_unload(ctx: dict) -> None:
     """Deregister commands on pack deactivation."""
+    global _adapter_instance
+    _adapter_instance = None
     try:
         from navig.commands._registry import CommandRegistry
 
         for name in ("ahk_run", "ahk_type", "ahk_click"):
             CommandRegistry.deregister(name)
-    except ImportError:
-        pass  # optional dependency not installed; feature disabled
+    except ImportError as exc:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "navig-windows-automation: CommandRegistry unavailable — could not deregister: %s",
+            exc,
+        )
 
 
 def on_event(event: str, ctx: dict) -> dict | None:
@@ -49,21 +64,28 @@ def on_event(event: str, ctx: dict) -> dict | None:
 
 
 def _get_adapter():
-    """Lazy import of AHKAdapter — deferred so startup is instant."""
+    """Lazy import and cache of AHKAdapter — instantiated once per process."""
+    global _adapter_instance
+    if _adapter_instance is not None:
+        return _adapter_instance
     if not _IS_WIN:
         raise RuntimeError("navig-windows-automation requires Windows")
-    plugin_dir = sys.modules[__name__].__file__
+    import importlib.util
     import pathlib
 
-    src = pathlib.Path(plugin_dir).parent / "src" / "ahk_engine.py"
-    import importlib.util
-
+    # Resolve package dir robustly: prefer ctx-set value, fall back to __file__
+    if _PACKAGE_DIR is not None:
+        base = pathlib.Path(_PACKAGE_DIR)
+    else:
+        base = pathlib.Path(__file__).parent
+    src = base / "src" / "ahk_engine.py"
     spec = importlib.util.spec_from_file_location("ahk_engine", src)
     if spec is None or spec.loader is None:
         raise ImportError(f"Cannot load ahk_engine from {src}")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # type: ignore[union-attr]
-    return mod.AHKAdapter()
+    _adapter_instance = mod.AHKAdapter()
+    return _adapter_instance
 
 
 # ── Commands ───────────────────────────────────────────────────────────────────
