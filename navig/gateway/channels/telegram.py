@@ -1077,8 +1077,10 @@ class TelegramChannel:
         for r in tool_results:
             if isinstance(r.output, dict):
                 for k, v in r.output.items():
-                    if k != "content":  # skip large content blobs for LLM context
-                        tool_context += f"{r.name}.{k}={v}\n"
+                    if k.startswith("_"):
+                        continue
+                    # WebFetchTool natively trims output to 5000 chars, safe to include.
+                    tool_context += f"{r.name}.{k}={v}\n"
             else:
                 tool_context += f"{r.name}: {r.output}\n"
 
@@ -1136,6 +1138,19 @@ class TelegramChannel:
             n_tools=len(tool_names_run),
             model_name=model_name,
         )
+
+        # ── Step 4: Visual Artifacts ──
+        for r in tool_results:
+            if isinstance(r.output, dict) and "_screenshot" in r.output:
+                caption_text = r.output.get("url", r.name)
+                try:
+                    await self.send_photo(
+                        chat_id=chat_id,
+                        photo_data=r.output["_screenshot"],
+                        caption=f"📸 {caption_text}",
+                    )
+                except Exception as _ep:
+                    logger.warning("Failed to send screenshot artifact: %s", _ep)
 
         if llm_response:
             self._record_assistant_msg(
@@ -2944,6 +2959,41 @@ class TelegramChannel:
                 return None
         except Exception as e:
             logger.warning("send_voice failed: %s", e)
+            return None
+
+    async def send_photo(
+        self,
+        chat_id: int,
+        photo_data: bytes,
+        caption: str | None = None,
+        reply_to_message_id: int | None = None,
+    ) -> dict | None:
+        """Send a photo message to a chat."""
+        if not self._session or not aiohttp:
+            return None
+        url = f"{self.base_url}/sendPhoto"
+        try:
+            form = aiohttp.FormData()
+            form.add_field("chat_id", str(chat_id))
+            form.add_field(
+                "photo",
+                photo_data,
+                filename="image.jpeg",
+                content_type="image/jpeg",
+            )
+            if caption:
+                form.add_field("caption", caption)
+            if reply_to_message_id:
+                form.add_field("reply_to_message_id", str(reply_to_message_id))
+
+            async with self._session.post(url, data=form) as resp:
+                result = await resp.json()
+                if result.get("ok"):
+                    return result.get("result")
+                logger.warning("sendPhoto API error: %s", result.get("description"))
+                return None
+        except Exception as e:
+            logger.warning("send_photo failed: %s", e)
             return None
 
 

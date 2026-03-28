@@ -64,16 +64,21 @@ class VaultEncryption:
 
     def _get_machine_id(self) -> str:
         """
-        Get a unique machine identifier.
+        Get a unique machine identifier scoped to the current OS user.
 
-        Combines several system properties to create a consistent
-        machine fingerprint that survives reboots.
+        Combines system properties with the running user's account name so that
+        the derived vault key is unique per (machine, user) pair.  This prevents
+        any local user on a shared workstation from replicating another user's
+        master key simply from publicly visible OS metrics.
         """
+        import getpass
+
         components = [
             platform.node(),  # Hostname
             socket.gethostname(),  # Network hostname
             platform.system(),  # OS name
             platform.machine(),  # CPU architecture
+            getpass.getuser(),  # Current OS user — isolates key per account
         ]
 
         # Try to get more stable identifiers on Windows

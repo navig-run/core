@@ -231,6 +231,17 @@ class TunnelManager:
             # Wait a moment for the tunnel to establish
             time.sleep(2)
 
+            # The -f flag causes ssh to fork into the background and the launcher
+            # process exits.  Close the inherited pipe handles on the parent side
+            # immediately so we don't accumulate file descriptors if the PID
+            # search below raises or the process object is never GC-collected.
+            for pipe in (process.stdout, process.stderr, process.stdin):
+                if pipe is not None:
+                    try:
+                        pipe.close()
+                    except OSError:
+                        pass
+
             # Get the PID (for -f backgrounded ssh, we need to find it)
             # The process we started will fork and exit, so we need to find the actual tunnel process
             pid = self._find_tunnel_process(local_port, server_config["host"])

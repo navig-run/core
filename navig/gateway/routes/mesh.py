@@ -74,16 +74,18 @@ def _ping(gw: NavigGateway):
         try:
             body = await r.json()
         except Exception:
-            return json_error_response("Invalid JSON body", status=400)
+            return json_error_response("Invalid JSON body", status=400, code="bad_request")
 
         url = (body.get("gateway_url") or "").rstrip("/")
         if not url:
-            return json_error_response("gateway_url required", status=400)
+            return json_error_response("gateway_url required", status=400, code="bad_request")
 
         result = await _bootstrap_peer(url, gw)
         if result:
             return json_ok({"bootstrapped": True, "peer": result})
-        return json_error_response("Could not reach peer at " + url, status=502)
+        return json_error_response(
+            "Could not reach peer at " + url, status=502, code="peer_unreachable"
+        )
 
     return h
 
@@ -146,7 +148,7 @@ def _route(gw: NavigGateway):
         try:
             body = await r.json()
         except Exception:
-            return json_error_response("Invalid JSON body", status=400)
+            return json_error_response("Invalid JSON body", status=400, code="bad_request")
 
         target_node_id = body.pop("target_node_id", None)
         capability = body.pop("capability", None)
@@ -178,7 +180,9 @@ def _route(gw: NavigGateway):
                 }
             )
         except Exception as e:
-            return json_error_response(f"Local fallback failed: {e}", status=500)
+            return json_error_response(
+                f"Local fallback failed: {e}", status=500, code="internal_error"
+            )
 
     return h
 
@@ -197,11 +201,11 @@ def _set_target(gw: NavigGateway):
         try:
             body = await r.json()
         except Exception:
-            return json_error_response("Invalid JSON body", status=400)
+            return json_error_response("Invalid JSON body", status=400, code="bad_request")
 
         node_id = (body.get("node_id") or "").strip()
         if not node_id:
-            return json_error_response("node_id required", status=400)
+            return json_error_response("node_id required", status=400, code="bad_request")
 
         registry = get_registry(gw.storage_dir)
         match = registry.get_peer(node_id)  # type: ignore[attr-defined]
@@ -210,7 +214,7 @@ def _set_target(gw: NavigGateway):
             all_peers = registry.list_peers()  # type: ignore[attr-defined]
             match = next((p for p in all_peers if p.node_id.startswith(node_id)), None)
         if match is None:
-            return json_error_response(f"Peer '{node_id}' not found", status=404)
+            return json_error_response(f"Peer '{node_id}' not found", status=404, code="not_found")
 
         # Mark as current target in registry
         registry.set_target(match.node_id)  # type: ignore[attr-defined]

@@ -68,9 +68,12 @@ class MCPServer:
 
             self.process = subprocess.Popen(
                 full_command,
-                env=full_env,  # Use merged environment instead of only custom env
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                env=full_env,
+                # Redirect to DEVNULL rather than PIPE — MCP servers are long-lived
+                # daemons; collecting their output via PIPE with no reader causes
+                # the OS pipe buffer to fill and the process to deadlock silently.
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
 
             ch.success(f"MCP server '{self.name}' started (PID: {self.process.pid})")
@@ -163,12 +166,13 @@ class MCPManager:
             self.servers = {}
 
     def _save_servers(self):
-        """Save MCP servers to configuration file."""
+        """Save MCP servers to configuration file (atomic write)."""
         try:
             servers_config = {name: server.config for name, server in self.servers.items()}
 
-            with open(self.servers_file, "w", encoding="utf-8") as f:
-                json.dump(servers_config, f, indent=2)
+            tmp_path = self.servers_file.with_suffix(".tmp.json")
+            tmp_path.write_text(json.dumps(servers_config, indent=2), encoding="utf-8")
+            tmp_path.replace(self.servers_file)
 
             ch.dim(f"Saved {len(self.servers)} MCP server(s)")
 

@@ -234,9 +234,9 @@ class ApprovalManager:
 
         self._pending[request_id] = request
 
-        # Create future for async waiting
-        loop = asyncio.get_event_loop()
-        future = loop.create_future()
+        # Create future for async waiting — get_running_loop() is the correct
+        # API inside an async function (get_event_loop is deprecated in 3.10+).
+        future = asyncio.get_running_loop().create_future()
         self._futures[request_id] = future
 
         # Notify callbacks

@@ -30,6 +30,7 @@ import json
 import logging
 import re
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -318,8 +319,8 @@ class EventBridge:
         self._recent: dict[str, float] = {}  # topic → last_emit_time
         self._dedup_window: float = 0.3  # seconds
 
-        # History ring buffer
-        self._history: list[EventEnvelope] = []
+        # History ring buffer — deque(maxlen) is O(1) on append and auto-evicts
+        self._history: deque[EventEnvelope] = deque(maxlen=500)
         self._max_history: int = 500
 
         # Attached sources
@@ -444,10 +445,8 @@ class EventBridge:
         """
         self._stats["events_received"] += 1
 
-        # Store in history
+        # Store in history (deque auto-evicts oldest when maxlen is reached)
         self._history.append(envelope)
-        if len(self._history) > self._max_history:
-            self._history = self._history[-self._max_history :]
 
         # No clients → skip broadcast
         if not self._clients:
@@ -619,7 +618,7 @@ class EventBridge:
         limit: int = 50,
     ) -> list[EventEnvelope]:
         """Query bridge event history with optional filters."""
-        events = self._history
+        events: list[EventEnvelope] = list(self._history)
 
         if topic:
             pat = re.compile("^" + re.escape(topic).replace(r"\*", ".*") + "$")

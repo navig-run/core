@@ -284,22 +284,26 @@ def _reset_navig_singletons():
     """
     try:
         from navig.config import reset_config_manager
+
         reset_config_manager()
     except Exception:  # noqa: BLE001 — never block test collection
         pass
     try:
         import navig.platform.paths as _paths
+
         _paths._DETECTED_OS = None
     except Exception:  # noqa: BLE001
         pass
     yield
     try:
         from navig.config import reset_config_manager
+
         reset_config_manager()
     except Exception:  # noqa: BLE001
         pass
     try:
         import navig.platform.paths as _paths
+
         _paths._DETECTED_OS = None
     except Exception:  # noqa: BLE001
         pass

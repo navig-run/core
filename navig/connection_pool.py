@@ -238,22 +238,38 @@ class SSHConnectionPool:
         return SSHConnection(client, host, port, user)
 
     def _cleanup_expired(self):
-        """Remove expired and dead connections."""
-        to_remove = []
+        """Remove expired and dead connections.
 
-        for key, conn in self._connections.items():
-            if (
-                conn.age_seconds > self.max_age_seconds
-                or conn.idle_seconds > self.max_idle_seconds
-                or not conn.is_alive()
-            ):
-                to_remove.append(key)
+        Liveness checks (is_alive) can block on the underlying socket, so we
+        snapshot candidates under the lock, probe them *without* holding it,
+        then acquire the lock again briefly to evict confirmed dead entries.
+        """
+        # Phase 1: collect keys that are definitely expired by time alone (no I/O)
+        expired_by_time = []
+        maybe_dead = []
 
-        for key in to_remove:
-            conn = self._connections.pop(key, None)
-            if conn:
-                conn.close()
-                self._stats["connections_closed"] += 1
+        with self._lock:
+            for key, conn in list(self._connections.items()):
+                if (
+                    conn.age_seconds > self.max_age_seconds
+                    or conn.idle_seconds > self.max_idle_seconds
+                ):
+                    expired_by_time.append(key)
+                else:
+                    maybe_dead.append((key, conn))
+
+        # Phase 2: probe liveness *outside* the lock so slow socket checks
+        # don't block all threads trying to borrow connections.
+        confirmed_dead = [key for key, conn in maybe_dead if not conn.is_alive()]
+
+        # Phase 3: evict under the lock
+        to_remove = expired_by_time + confirmed_dead
+        with self._lock:
+            for key in to_remove:
+                conn = self._connections.pop(key, None)
+                if conn:
+                    conn.close()
+                    self._stats["connections_closed"] += 1
 
     def _evict_oldest(self):
         """Remove the oldest (LRU) connection if at capacity."""

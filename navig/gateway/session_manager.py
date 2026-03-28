@@ -348,7 +348,7 @@ Conversation:
 
 Summary:"""
 
-            summary = await asyncio.get_event_loop().run_in_executor(
+            summary = await asyncio.get_running_loop().run_in_executor(
                 None, lambda: ask_ai(prompt, model="fast")
             )
 

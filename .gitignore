@@ -345,3 +345,6 @@ host/crates/**/target/
 # Local workspace
 .local/
 $null
+
+# pytest local temp dirs
+.pytest_tmp/

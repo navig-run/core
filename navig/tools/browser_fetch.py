@@ -126,8 +126,10 @@ def _extract_text(html: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def _browser_fetch(url: str, on_status: StatusCallback | None) -> tuple[str, str]:
-    """Use navig BrowserController to render the page.  Returns (html, method_used)."""
+async def _browser_fetch(
+    url: str, on_status: StatusCallback | None
+) -> tuple[str, str, bytes | None]:
+    """Use navig BrowserController to render the page.  Returns (html, method_used, screenshot)."""
     if on_status:
         await on_status("Launching browser…", "Playwright headless", 55)
 
@@ -145,7 +147,14 @@ async def _browser_fetch(url: str, on_status: StatusCallback | None) -> tuple[st
         await browser.start()
         await browser._page.goto(url, wait_until="networkidle")
         html = await browser._page.content()
-        return html, "playwright"
+        screenshot_bytes = None
+        try:
+            screenshot_bytes = await browser._page.screenshot(
+                type="jpeg", quality=60, full_page=False
+            )
+        except Exception as _e:
+            logger.debug("Failed to take screenshot: %s", _e)
+        return html, "playwright", screenshot_bytes
     except Exception as exc:
         raise RuntimeError(f"Playwright failed: {exc}") from exc
     finally:
@@ -217,12 +226,14 @@ class BrowserFetchTool(BaseTool):
             40,
         )
 
+        screenshot_bytes: bytes | None = None
+
         # Stage 2 — upgrade to Playwright if JS-gated
         if _is_js_gated(html):
             await self._emit(on_status, "JS-gated — launching browser…", url[:70], 50)
             try:
                 t0 = time.monotonic()
-                html, method_used = await _browser_fetch(url, on_status)
+                html, method_used, screenshot_bytes = await _browser_fetch(url, on_status)
                 elapsed_ms += (time.monotonic() - t0) * 1000
                 final_url = url
                 logger.debug("browser_fetch: upgraded to Playwright for %s", url)
@@ -234,14 +245,19 @@ class BrowserFetchTool(BaseTool):
 
         text = _extract_text(html)[:_MAX_CHARS]
 
+        output = {
+            "url": final_url,
+            "content": text,
+            "method": method_used,
+            "elapsed_ms": round(elapsed_ms, 1),
+            "chars": len(text),
+        }
+
+        if screenshot_bytes:
+            output["_screenshot"] = screenshot_bytes
+
         return ToolResult(
             name=self.name,
             success=True,
-            output={
-                "url": final_url,
-                "content": text,
-                "method": method_used,
-                "elapsed_ms": round(elapsed_ms, 1),
-                "chars": len(text),
-            },
+            output=output,
         )

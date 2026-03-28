@@ -28,8 +28,8 @@ _CODE_PATTERNS = re.compile(
 
 # ── ACT signals — actions on external systems / search / check ─────────────
 _ACT_PATTERNS = re.compile(
-    r"\b(check|run|test|ping|fetch|search|find|look up|look for|scan|deploy|"
-    r"restart|show me|get|download|visit|open|call|query|monitor|verify|"
+    r"\b(ping|check|fetch|search|find|look up|look for|scan|"
+    r"download|visit|query|"
     r"is .{1,20} (up|down|online|running|alive)|curl|wget|head|request|"
     r"what(\'s| is) .{1,30} (ip|status|version|price|weather|time|rate))\b",
     re.IGNORECASE,
@@ -150,7 +150,7 @@ def select_tools_for_text(text: str) -> list[str]:
     )
     if url_pattern.search(text):
         tools.append("site_check")
-        tools.append("web_fetch")
+        tools.append("browser_fetch")
 
     # Explicit search intent
     if re.search(r"\b(search|find|look up|look for|google|results for)\b", lower):

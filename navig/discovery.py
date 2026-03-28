@@ -67,9 +67,11 @@ class ServerDiscovery:
         """Build SSH command with proper authentication."""
         cmd = ["ssh", "-p", str(self.port)]
 
-        # Disable strict host key checking for automation
-        cmd.extend(["-o", "StrictHostKeyChecking=no"])
-        cmd.extend(["-o", "UserKnownHostsFile=/dev/null"])
+        # accept-new: accept first-time host keys, reject mismatches for known hosts.
+        # This prevents MITM attacks on hosts we've connected to before while still
+        # allowing automation to connect to new servers without manual intervention.
+        # 'no' (disabled verification) would make every probe an open MITM vector.
+        cmd.extend(["-o", "StrictHostKeyChecking=accept-new"])
         cmd.extend(["-o", "LogLevel=ERROR"])  # Suppress warnings
 
         if self.ssh_key:

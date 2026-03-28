@@ -41,6 +41,7 @@ PENDING_WAKES: deque[WakeWordDetection] = deque(maxlen=10)
 def _route_helpers():
     """Return (json_ok, json_error_response, require_bearer_auth) lazily."""
     from navig.gateway.routes.common import (  # noqa: PLC0415
+        _get_web,
         json_error_response,
         json_ok,
         require_bearer_auth,
@@ -83,7 +84,7 @@ def _transcribe(gw):
 
         if not audio_bytes:
             _, json_error_response, _ = _route_helpers()
-            return json_error_response("Missing audio part", status=400)
+            return json_error_response("Missing audio part", status=400, code="bad_request")
 
         # Write bytes to a temp file; STT.transcribe() requires a Path.
         tmp_path: Path | None = None
@@ -103,6 +104,7 @@ def _transcribe(gw):
                     "Transcription failed",
                     details={"error": result.error},
                     status=500,
+                    code="transcription_error",
                 )
             return json_ok(
                 {
@@ -117,7 +119,10 @@ def _transcribe(gw):
             logger.exception("Transcribe failed")
             _, json_error_response, _ = _route_helpers()
             return json_error_response(
-                "Transcription failed", details={"error": str(e)}, status=500
+                "Transcription failed",
+                details={"error": str(e)},
+                status=500,
+                code="transcription_error",
             )
         finally:
             if tmp_path is not None:
@@ -135,7 +140,7 @@ def _synthesize(gw):
         text = data.get("text")
         if not text:
             _, json_error_response, _ = _route_helpers()
-            return json_error_response("Missing 'text'", status=400)
+            return json_error_response("Missing 'text'", status=400, code="bad_request")
 
         try:
             from navig.voice.tts import get_tts  # noqa: PLC0415
@@ -148,6 +153,7 @@ def _synthesize(gw):
                     "TTS returned no audio",
                     details={"error": result.error},
                     status=500,
+                    code="tts_error",
                 )
 
             with open(result.audio_path, "rb") as f:
@@ -164,7 +170,9 @@ def _synthesize(gw):
         except Exception as e:
             logger.exception("Synthesize failed")
             _, json_error_response, _ = _route_helpers()
-            return json_error_response("Synthesis failed", details={"error": str(e)}, status=500)
+            return json_error_response(
+                "Synthesis failed", details={"error": str(e)}, status=500, code="tts_error"
+            )
 
     return h
 
@@ -175,7 +183,7 @@ def _command(gw):
         text = data.get("text")
         if not text:
             _, json_error_response, _ = _route_helpers()
-            return json_error_response("Missing 'text'", status=400)
+            return json_error_response("Missing 'text'", status=400, code="bad_request")
 
         try:
             json_ok, json_error_response, _ = _route_helpers()
@@ -199,13 +207,16 @@ def _command(gw):
         except Exception as e:
             logger.exception("Command failed")
             _, json_error_response, _ = _route_helpers()
-            return json_error_response("Command failed", details={"error": str(e)}, status=500)
+            return json_error_response(
+                "Command failed", details={"error": str(e)}, status=500, code="command_error"
+            )
 
     return h
 
 
 def _poll_wake(gw):
     async def h(r):  # type: aiohttp.web.Request
+        json_ok, _, _ = _route_helpers()
         # Pop the oldest wake if any
         if PENDING_WAKES:
             wake = PENDING_WAKES.popleft()
@@ -218,6 +229,8 @@ def _poll_wake(gw):
             )
         else:
             # 404 means no wake event pending this poll
+            from navig.gateway.routes.common import _get_web  # noqa: PLC0415
+
             return _get_web().json_response({"status": "no_event"}, status=404)
 
     return h

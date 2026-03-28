@@ -13,11 +13,16 @@ def _run_cli(*args: str, home: Path) -> subprocess.CompletedProcess:
     env["HOME"] = str(home)
     env["USERPROFILE"] = str(home)
     env["NAVIG_SKIP_ONBOARDING"] = "1"
+    # Force UTF-8 to prevent UnicodeDecodeError from Rich box-drawing characters
+    # on non-UTF-8 Windows console encodings (e.g. cp1251).
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
     return subprocess.run(
         [sys.executable, "-m", "navig", *args],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=env,
     )
 
