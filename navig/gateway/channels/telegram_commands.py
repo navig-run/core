@@ -1810,7 +1810,7 @@ class TelegramCommandsMixin:
                     vault_has_key, vault_validated = self._provider_vault_validation_status(
                         manifest
                     )
-                    ready = vault_has_key and vault_validated
+                    ready = vault_has_key and (vault_validated or bool(result.key_detected))
                 elif manifest.requires_key:
                     ready = result.key_detected
                 else:
@@ -1840,7 +1840,7 @@ class TelegramCommandsMixin:
         if ready_provider_count == 0:
             lines.append("")
             lines.append(
-                "ℹ️ No vault-validated cloud providers are ready. Run `navig cred test --provider <name>` after saving keys in vault."
+                "ℹ️ No vault-backed cloud providers are ready. Save key in vault and run `navig cred test --provider <name>` when possible."
             )
 
         noai_prefix = "✅ " if user_pref == "noai" else ""
@@ -1878,19 +1878,10 @@ class TelegramCommandsMixin:
             from navig.vault import get_vault
 
             legacy_vault = get_vault()
-            cred = legacy_vault.get(manifest.id, caller="telegram.providers")
-            if cred and isinstance(getattr(cred, "data", None), dict):
-                has_vault_key = any(
-                    str(cred.data.get(field, "")).strip()
-                    for field in ("api_key", "token", "access_token", "key", "password")
-                )
-                if not has_vault_key:
-                    has_vault_key = any(
-                        isinstance(value, str) and value.strip()
-                        for value in cred.data.values()
-                    )
-
-                metadata = getattr(cred, "metadata", {}) or {}
+            infos = legacy_vault.list(provider=manifest.id)
+            if infos:
+                has_vault_key = True
+                metadata = (infos[0].metadata or {}) if infos[0] else {}
                 if metadata.get("validation_success") is True:
                     validated = True
         except Exception as exc:  # noqa: BLE001
@@ -1904,14 +1895,13 @@ class TelegramCommandsMixin:
                 store = vault_v2.store()
                 for label in getattr(manifest, "vault_keys", []) or []:
                     try:
-                        secret = vault_v2.get_secret(label)
+                        item = store.get(label)
                     except Exception:
                         continue
-                    if not str(secret).strip():
+                    if item is None:
                         continue
                     has_vault_key = True
                     try:
-                        item = store.get(label)
                         metadata = getattr(item, "metadata", {}) if item else {}
                         if isinstance(metadata, dict) and metadata.get("validation_success") is True:
                             validated = True

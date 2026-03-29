@@ -502,6 +502,19 @@ navig help --schema
 This emits a JSON document listing every command group, its description,
 and all subcommands. Pipe it to `jq` or use it in automation scripts.
 
+Registry artifacts are generated from command metadata and committed under:
+
+- `generated/commands.json` (authoritative registry)
+- `generated/commands.md` (rendered reference)
+- `generated/deprecations.json` (deprecation report)
+- `generated/completions/commands.txt` (completion source)
+
+Regenerate locally:
+
+```bash
+python tools/export_registry.py --validate --format both --deprecations-report
+```
+
 ### Per-Command Help
 
 Every command and subcommand also exposes `--help` via Typer:

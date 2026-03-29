@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from navig import console_helper as ch
+from navig.registry.meta import command_meta
 
 # ============================================================================
 # DATABASE TYPE DETECTION
@@ -276,16 +277,14 @@ def _execute_db_query(
     return discovery._execute_ssh(cmd)
 
 
-# ============================================================================
-# PUBLIC COMMAND FUNCTIONS
-# ============================================================================
-
-
-def db_containers_cmd(options: dict[str, Any]):
+def _resolve_host_discovery(
+    options: dict[str, Any],
+) -> tuple[str, Any, Any] | None:
     """
-    List Docker containers running database services.
+    Shared bootstrap for DB commands: resolve the active host, build the SSH
+    config, and return ``(host_name, config_manager, discovery)``.
 
-    Usage: navig db containers
+    Returns *None* (after emitting an error) when the host cannot be found.
     """
     from navig.config import get_config_manager
     from navig.discovery import ServerDiscovery
@@ -297,12 +296,9 @@ def db_containers_cmd(options: dict[str, Any]):
     host_config = config_manager.load_host_config(host_name)
     if not host_config:
         ch.error(f"Host not found: {host_name}")
-        return
+        return None
 
-    # Get debug logger from options
     debug_logger = options.get("debug_logger")
-
-    # Build SSH config dict for ServerDiscovery
     ssh_config = {
         "host": host_config.get("host", host_config.get("hostname")),
         "user": host_config.get("user", "root"),
@@ -310,8 +306,30 @@ def db_containers_cmd(options: dict[str, Any]):
         "ssh_key": host_config.get("ssh_key"),
         "ssh_password": host_config.get("ssh_password"),
     }
-
     discovery = ServerDiscovery(ssh_config, debug_logger=debug_logger)
+    return host_name, config_manager, discovery
+
+
+def _emit_db_json(payload: dict[str, Any]) -> None:
+    """Emit a DB command JSON envelope to stdout (indent=2, sorted keys)."""
+    ch.raw_print(json.dumps(payload, indent=2, sort_keys=True))
+
+
+# ============================================================================
+# PUBLIC COMMAND FUNCTIONS
+# ============================================================================
+
+
+def db_containers_cmd(options: dict[str, Any]):
+    """
+    List Docker containers running database services.
+
+    Usage: navig db containers
+    """
+    result = _resolve_host_discovery(options)
+    if result is None:
+        return
+    host_name, _config_manager, discovery = result
 
     spinner_ctx = (
         ch.create_spinner("Scanning for database containers...")
@@ -347,6 +365,13 @@ def db_containers_cmd(options: dict[str, Any]):
         ch.dim(f"\nFound {len(containers)} database container(s)")
 
 
+@command_meta(
+    summary="Execute SQL query on remote database",
+    status="stable",
+    since="2.4.18",
+    tags=["database", "sql", "remote"],
+    examples=["navig db query \"SELECT 1\"", "navig db query \"SELECT * FROM users\" -d mydb"],
+)
 def db_query_cmd(
     query: str,
     container: str | None,
@@ -361,28 +386,10 @@ def db_query_cmd(
 
     Usage: navig db query "SELECT 1" --container mysql_db --user root
     """
-    from navig.config import get_config_manager
-    from navig.discovery import ServerDiscovery
-    from navig.cli.recovery import require_active_host
-
-    config_manager = get_config_manager()
-    host_name = require_active_host(options, config_manager)
-
-    host_config = config_manager.load_host_config(host_name)
-    if not host_config:
-        ch.error(f"Host not found: {host_name}")
+    result = _resolve_host_discovery(options)
+    if result is None:
         return
-
-    debug_logger = options.get("debug_logger")
-
-    ssh_config = {
-        "host": host_config.get("host", host_config.get("hostname")),
-        "user": host_config.get("user", "root"),
-        "port": host_config.get("port", 22),
-        "ssh_key": host_config.get("ssh_key"),
-        "ssh_password": host_config.get("ssh_password"),
-    }
-    discovery = ServerDiscovery(ssh_config, debug_logger=debug_logger)
+    host_name, config_manager, discovery = result
 
     # Resolve credentials from app/host config
     # Only use CLI-provided credentials if they differ from defaults
@@ -450,23 +457,19 @@ def db_query_cmd(
         filtered_stderr = ""
 
     if options.get("json"):
-        ch.raw_print(
-            json.dumps(
-                {
-                    "schema_version": "1.0.0",
-                    "command": "db.query",
-                    "success": bool(success),
-                    "host": host_name,
-                    "db_type": db_type,
-                    "database": database,
-                    "container": container,
-                    "query": query,
-                    "stdout": stdout,
-                    "stderr": filtered_stderr,
-                },
-                indent=2,
-                sort_keys=True,
-            )
+        _emit_db_json(
+            {
+                "schema_version": "1.0.0",
+                "command": "db.query",
+                "success": bool(success),
+                "host": host_name,
+                "db_type": db_type,
+                "database": database,
+                "container": container,
+                "query": query,
+                "stdout": stdout,
+                "stderr": filtered_stderr,
+            }
         )
         return
 
@@ -524,6 +527,13 @@ def db_query_cmd(
                 )
 
 
+@command_meta(
+    summary="List available databases on remote host",
+    status="stable",
+    since="2.4.18",
+    tags=["database", "inventory"],
+    examples=["navig db list", "navig db list --json"],
+)
 def db_list_cmd(
     container: str | None,
     user: str,
@@ -542,17 +552,10 @@ def db_list_cmd(
 
     Usage: navig db-databases --container mysql_db
     """
-    from navig.config import get_config_manager
-    from navig.discovery import ServerDiscovery
-    from navig.cli.recovery import require_active_host
-
-    config_manager = get_config_manager()
-    host_name = require_active_host(options, config_manager)
-
-    host_config = config_manager.load_host_config(host_name)
-    if not host_config:
-        ch.error(f"Host not found: {host_name}")
+    result = _resolve_host_discovery(options)
+    if result is None:
         return
+    host_name, config_manager, discovery = result
 
     # Resolve database credentials from config if not provided
     resolved_user, resolved_password, resolved_db_type = (
@@ -565,17 +568,6 @@ def db_list_cmd(
     if options.get("verbose"):
         if resolved_password and not password:
             ch.dim("Using database credentials from configuration")
-
-    debug_logger = options.get("debug_logger")
-
-    ssh_config = {
-        "host": host_config.get("host", host_config.get("hostname")),
-        "user": host_config.get("user", "root"),
-        "port": host_config.get("port", 22),
-        "ssh_key": host_config.get("ssh_key"),
-        "ssh_password": host_config.get("ssh_password"),
-    }
-    discovery = ServerDiscovery(ssh_config, debug_logger=debug_logger)
 
     # Auto-detect database type
     if not resolved_db_type:
@@ -638,21 +630,17 @@ def db_list_cmd(
             clean_databases.append(db_name)
 
     if options.get("json"):
-        ch.raw_print(
-            json.dumps(
-                {
-                    "schema_version": "1.0.0",
-                    "command": "db.list",
-                    "success": True,
-                    "host": host_name,
-                    "db_type": resolved_db_type,
-                    "container": container,
-                    "databases": clean_databases,
-                    "count": len(clean_databases),
-                },
-                indent=2,
-                sort_keys=True,
-            )
+        _emit_db_json(
+            {
+                "schema_version": "1.0.0",
+                "command": "db.list",
+                "success": True,
+                "host": host_name,
+                "db_type": resolved_db_type,
+                "container": container,
+                "databases": clean_databases,
+                "count": len(clean_databases),
+            }
         )
     elif options.get("plain"):
         # Plain text output - one database per line
@@ -689,17 +677,10 @@ def db_tables_cmd(
 
     Usage: navig db-show-tables mydb --container mysql_db
     """
-    from navig.config import get_config_manager
-    from navig.discovery import ServerDiscovery
-    from navig.cli.recovery import require_active_host
-
-    config_manager = get_config_manager()
-    host_name = require_active_host(options, config_manager)
-
-    host_config = config_manager.load_host_config(host_name)
-    if not host_config:
-        ch.error(f"Host not found: {host_name}")
+    result = _resolve_host_discovery(options)
+    if result is None:
         return
+    host_name, config_manager, discovery = result
 
     # Resolve database credentials from config if not provided
     resolved_user, resolved_password, resolved_db_type = (
@@ -707,17 +688,6 @@ def db_tables_cmd(
             config_manager, host_name, user, password, db_type
         )
     )
-
-    debug_logger = options.get("debug_logger")
-
-    ssh_config = {
-        "host": host_config.get("host", host_config.get("hostname")),
-        "user": host_config.get("user", "root"),
-        "port": host_config.get("port", 22),
-        "ssh_key": host_config.get("ssh_key"),
-        "ssh_password": host_config.get("ssh_password"),
-    }
-    discovery = ServerDiscovery(ssh_config, debug_logger=debug_logger)
 
     if not resolved_db_type:
         spinner_ctx = (
@@ -772,22 +742,18 @@ def db_tables_cmd(
     tables = [t for t in tables if t]
 
     if options.get("json"):
-        ch.raw_print(
-            json.dumps(
-                {
-                    "schema_version": "1.0.0",
-                    "command": "db.tables",
-                    "success": True,
-                    "host": host_name,
-                    "db_type": resolved_db_type,
-                    "container": container,
-                    "database": database,
-                    "tables": tables,
-                    "count": len(tables),
-                },
-                indent=2,
-                sort_keys=True,
-            )
+        _emit_db_json(
+            {
+                "schema_version": "1.0.0",
+                "command": "db.tables",
+                "success": True,
+                "host": host_name,
+                "db_type": resolved_db_type,
+                "container": container,
+                "database": database,
+                "tables": tables,
+                "count": len(tables),
+            }
         )
     elif options.get("plain"):
         # Plain text output - one table per line
@@ -1165,6 +1131,13 @@ def _is_base64_encoded(s: str) -> bool:
 
 
 @db_app.command("query")
+@command_meta(
+    summary="Run an SQL query through NAVIG DB surface",
+    status="stable",
+    since="2.4.18",
+    tags=["database", "sql"],
+    examples=["navig db query \"SELECT 1\"", "navig db query \"SHOW DATABASES\" --json"],
+)
 def db_query_new(
     ctx: typer.Context,
     query: str = typer.Argument(..., help="SQL query to execute (auto-detects base64)"),
@@ -1236,6 +1209,13 @@ def db_file_new(
 
 
 @db_app.command("list")
+@command_meta(
+    summary="List remote databases",
+    status="stable",
+    since="2.4.18",
+    tags=["database", "inventory"],
+    examples=["navig db list", "navig db list --plain"],
+)
 def db_list_new(
     ctx: typer.Context,
     container: str | None = typer.Option(

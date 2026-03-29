@@ -463,3 +463,138 @@ async def test_provider_model_picker_is_tier_first_and_edit_in_place(monkeypatch
     assert first_row[2]["callback_data"].startswith("pmv_nvidia_c")
     model_rows = [row for row in edit[4][1:] if row and row[0]["callback_data"].startswith("pms_nvidia_")]
     assert model_rows, "Expected one-button model rows"
+
+
+@pytest.mark.asyncio
+async def test_providers_cloud_button_hidden_when_vault_present_but_not_ready(monkeypatch):
+    bot = _make_dummy_bot()
+
+    class _Manifest:
+        id = "openai"
+        display_name = "OpenAI"
+        emoji = "🤖"
+        tier = "cloud"
+        local_probe = None
+        requires_key = True
+        vault_keys = ["openai/api_key"]
+
+    class _Verify:
+        key_detected = False
+        local_probe_ok = True
+
+    class _Cred:
+        def __init__(self, ok: bool):
+            self.data = {"api_key": "sk-test"}
+            self.metadata = {"validation_success": ok}
+
+    class _Info:
+        def __init__(self, ok: bool):
+            self.metadata = {"validation_success": ok}
+
+    class _Vault:
+        def __init__(self, ok: bool):
+            self._ok = ok
+
+        def get(self, provider, profile_id=None, caller="unknown"):
+            if provider == "openai":
+                return _Cred(self._ok)
+            return None
+
+        def list(self, provider=None, profile_id=None):
+            if provider == "openai":
+                return [_Info(self._ok)]
+            return []
+
+    async def _probe():
+        return False, "127.0.0.1:11435"
+
+    bot._probe_bridge_grid = _probe
+    monkeypatch.setattr(
+        "navig.providers.registry.list_enabled_providers",
+        lambda: [_Manifest()],
+    )
+    monkeypatch.setattr("navig.providers.verifier.verify_provider", lambda _m: _Verify())
+    monkeypatch.setattr("navig.vault.get_vault", lambda: _Vault(False))
+    monkeypatch.setattr("navig.vault.get_vault_v2", lambda: None)
+
+    await bot._handle_providers(123, 456)
+    keyboard = bot.messages[-1][3].get("keyboard") or []
+    labels = [btn.get("text", "") for row in keyboard for btn in row]
+    assert not any("OpenAI" in text for text in labels)
+
+
+@pytest.mark.asyncio
+async def test_providers_cloud_button_shown_after_successful_vault_validation(monkeypatch):
+    bot = _make_dummy_bot()
+
+    class _Manifest:
+        id = "openai"
+        display_name = "OpenAI"
+        emoji = "🤖"
+        tier = "cloud"
+        local_probe = None
+        requires_key = True
+        vault_keys = ["openai/api_key"]
+
+    class _Verify:
+        key_detected = True
+        local_probe_ok = True
+
+    class _Cred:
+        data = {"api_key": "sk-test"}
+        metadata = {"validation_success": True}
+
+    class _Info:
+        metadata = {"validation_success": True}
+
+    class _Vault:
+        def get(self, provider, profile_id=None, caller="unknown"):
+            if provider == "openai":
+                return _Cred()
+            return None
+
+        def list(self, provider=None, profile_id=None):
+            if provider == "openai":
+                return [_Info()]
+            return []
+
+    async def _probe():
+        return False, "127.0.0.1:11435"
+
+    bot._probe_bridge_grid = _probe
+    monkeypatch.setattr(
+        "navig.providers.registry.list_enabled_providers",
+        lambda: [_Manifest()],
+    )
+    monkeypatch.setattr("navig.providers.verifier.verify_provider", lambda _m: _Verify())
+    monkeypatch.setattr("navig.vault.get_vault", lambda: _Vault())
+    monkeypatch.setattr("navig.vault.get_vault_v2", lambda: None)
+
+    await bot._handle_providers(123, 456)
+    keyboard = bot.messages[-1][3].get("keyboard") or []
+    labels = [btn.get("text", "") for row in keyboard for btn in row]
+    assert any("OpenAI" in text for text in labels)
+
+
+@pytest.mark.asyncio
+async def test_providers_screen_shows_noai_selection_state(monkeypatch):
+    bot = _make_dummy_bot()
+    bot._user_model_prefs = {}
+    bot._user_model_prefs[456] = "noai"
+
+    class _Router:
+        modes = None
+
+    async def _probe():
+        return False, "127.0.0.1:11435"
+
+    bot._probe_bridge_grid = _probe
+    monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
+    monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [])
+
+    await bot._handle_providers(123, 456)
+    text = bot.messages[-1][1]
+    keyboard = bot.messages[-1][3].get("keyboard") or []
+    labels = [btn.get("text", "") for row in keyboard for btn in row]
+    assert "Next message mode" in text
+    assert any(text.startswith("✅ 🚫 No AI") for text in labels)

@@ -389,10 +389,39 @@ def test_credential(
     con = _console()
     con.print(f"Running validation for [cyan]{resolved}[/cyan]...")
 
-    if mode == "id":
-        result = vault.test(resolved)
-    else:
-        result = vault.test_provider(resolved, profile_id=profile)
+    try:
+        if mode == "id":
+            result = vault.test(resolved)
+            credential = vault.get_by_id(resolved, caller="vault.test")
+        else:
+            result = vault.test_provider(resolved, profile_id=profile)
+            credential = vault.get(resolved, profile_id=profile, caller="vault.test")
+    except Exception as exc:
+        exc_name = exc.__class__.__name__
+        if exc_name == "VaultEncryptionError":
+            _ch.error(
+                "Vault decryption failed for this credential. Re-import the key (or reset broken entry) and try again."
+            )
+            con.print(
+                "[yellow]Tip:[/yellow] Use `navig cred list`, delete the broken provider entry, then add it again from your backup .env."
+            )
+            raise typer.Exit(1)
+        raise
+
+    if credential is not None:
+        tested_at = getattr(result, "tested_at", None)
+        tested_at_iso = tested_at.isoformat() if tested_at else None
+        update_meta = {
+            "validation_success": bool(result.success),
+            "validation_message": str(result.message or ""),
+        }
+        if tested_at_iso:
+            update_meta["validation_tested_at"] = tested_at_iso
+        if isinstance(getattr(result, "details", None), dict):
+            validation_mode = result.details.get("validation_mode")
+            if validation_mode:
+                update_meta["validation_mode"] = validation_mode
+        vault.update(credential.id, metadata=update_meta)
 
     if result.success:
         _ch.success("Validation successful!")

@@ -255,8 +255,61 @@ NAVIG will automatically detect it in standard locations.
 
     def execute(self, code: str, timeout: float = None, force: bool = False) -> ExecutionResult:
         """Execute inline AHK code."""
-        # Wrap in V2 requirement just in case
-        full_code = "#Requires AutoHotkey v2.0\n#SingleInstance Force\n" + code
+        # Wrap in V2 requirement and provide a lightweight JSON shim for inline scripts.
+        # Some inline snippets use JSON.stringify(...), which is not built into AHK v2.
+        # We rewrite to NavigJsonStringify(...) at runtime to avoid undefined-global warnings.
+        transformed_code = code.replace("JSON.stringify(", "NavigJsonStringify(")
+        full_code = (
+            "#Requires AutoHotkey v2.0\n"
+            "#SingleInstance Force\n"
+            "NavigJsonEscape(str) {\n"
+            "    str := StrReplace(str, \\\"\\\\\\\", \\\"\\\\\\\\\\\\\\\")\n"
+            "    str := StrReplace(str, \"\\\"\", \"\\\\\\\"\")\n"
+            "    str := StrReplace(str, \"`r\", \"\\\\r\")\n"
+            "    str := StrReplace(str, \"`n\", \"\\\\n\")\n"
+            "    str := StrReplace(str, \"`t\", \"\\\\t\")\n"
+            "    return \"\"\"\" str \"\"\"\"\n"
+            "}\n"
+            "\n"
+            "NavigJsonStringify(value) {\n"
+            "    if IsObject(value) {\n"
+            "        if (value is Map) {\n"
+            "            out := \"{\"\n"
+            "            first := true\n"
+            "            for key, item in value {\n"
+            "                if !first\n"
+            "                    out .= \",\"\n"
+            "                first := false\n"
+            "                out .= NavigJsonEscape(String(key)) \":\" NavigJsonStringify(item)\n"
+            "            }\n"
+            "            out .= \"}\"\n"
+            "            return out\n"
+            "        }\n"
+            "\n"
+            "        if (value is Array) {\n"
+            "            out := \"[\"\n"
+            "            first := true\n"
+            "            for _, item in value {\n"
+            "                if !first\n"
+            "                    out .= \",\"\n"
+            "                first := false\n"
+            "                out .= NavigJsonStringify(item)\n"
+            "            }\n"
+            "            out .= \"]\"\n"
+            "            return out\n"
+            "        }\n"
+            "    }\n"
+            "\n"
+            "    t := Type(value)\n"
+            "    if (t = \"String\")\n"
+            "        return NavigJsonEscape(value)\n"
+            "    if (t = \"Integer\" or t = \"Float\")\n"
+            "        return value\n"
+            "    if (t = \"Object\")\n"
+            "        return NavigJsonEscape(String(value))\n"
+            "    return NavigJsonEscape(String(value))\n"
+            "}\n"
+        ) + transformed_code
         return self._run_ahk_subprocess(full_code, is_file=False, timeout=timeout)
 
     def execute_file(

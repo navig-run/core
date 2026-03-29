@@ -141,6 +141,8 @@ class TelegramChannel:
     - Command handling
     """
 
+    _NAV_ROOT_SCREEN = "main"
+
     def __init__(
         self,
         bot_token: str,
@@ -2533,6 +2535,13 @@ class TelegramChannel:
         from .telegram_commands import TelegramCommandsMixin
 
         await TelegramCommandsMixin._handle_help(self, chat_id)
+
+    @staticmethod
+    def _generate_help_text(deck_enabled: bool = False) -> str:
+        """Delegate /help text generation to TelegramCommandsMixin."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._generate_help_text(deck_enabled=deck_enabled)
 
     async def renderScreen(
         self,

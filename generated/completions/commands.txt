@@ -1,0 +1,693 @@
+navig agent config
+navig agent continuation continue
+navig agent continuation pause
+navig agent continuation skip
+navig agent continuation start
+navig agent continuation status
+navig agent goal
+navig agent install
+navig agent learn
+navig agent logs
+navig agent personality
+navig agent remediation
+navig agent run
+navig agent service
+navig agent soul
+navig agent start
+navig agent status
+navig agent stop
+navig agent telegram setup
+navig agent telegram start
+navig agent telegram status
+navig agents list
+navig agents run
+navig ahk activate
+navig ahk active-window
+navig ahk automate
+navig ahk click
+navig ahk clipboard
+navig ahk close
+navig ahk dashboard
+navig ahk doctor
+navig ahk evolve
+navig ahk exec
+navig ahk find
+navig ahk generate
+navig ahk install
+navig ahk is-muted
+navig ahk kill
+navig ahk layout list
+navig ahk layout restore
+navig ahk layout save
+navig ahk library list
+navig ahk library show
+navig ahk listen
+navig ahk listener-edit
+navig ahk listener-start
+navig ahk maximize
+navig ahk minimize
+navig ahk monitors
+navig ahk mouse-move
+navig ahk move
+navig ahk move-to-monitor
+navig ahk mute
+navig ahk notify
+navig ahk ocr
+navig ahk open
+navig ahk pin
+navig ahk processes
+navig ahk read-text
+navig ahk resize
+navig ahk run
+navig ahk screenshot
+navig ahk send
+navig ahk snap
+navig ahk start
+navig ahk status
+navig ahk transparency
+navig ahk type
+navig ahk volume
+navig ahk window-state
+navig ahk windows
+navig ahk workflow list
+navig ahk workflow run
+navig ai airllm
+navig ai ask
+navig ai diagnose
+navig ai edit
+navig ai explain
+navig ai login
+navig ai logout
+navig ai memory add
+navig ai memory clear
+navig ai memory edit
+navig ai memory search
+navig ai memory set
+navig ai memory show
+navig ai models
+navig ai providers
+navig ai run
+navig ai show
+navig ai suggest
+navig app add
+navig app edit
+navig app list
+navig app migrate
+navig app remove
+navig app search
+navig app show
+navig app use
+navig approve list
+navig approve no
+navig approve policy
+navig approve yes
+navig assistant analyze
+navig assistant config
+navig assistant context
+navig assistant reset
+navig assistant status
+navig auto click
+navig auto clipboard
+navig auto focus
+navig auto open
+navig auto snap
+navig auto status
+navig auto type
+navig auto windows
+navig backup config
+navig backup export
+navig backup import
+navig backup remove
+navig backup restore
+navig backup run
+navig backup show
+navig benchmark run
+navig blueprint apply
+navig blueprint list
+navig boot run
+navig boot show
+navig bot start
+navig bot status
+navig bot stop
+navig bridge connect
+navig bridge rotate-token
+navig bridge status
+navig browser click
+navig browser fill
+navig browser open
+navig browser screenshot
+navig browser status
+navig browser stop
+navig calendar add
+navig calendar auth
+navig calendar list
+navig calendar sync
+navig cloud list
+navig cloud status
+navig config audit
+navig config backup
+navig config edit
+navig config get
+navig config migrate
+navig config schema install
+navig config set
+navig config set-confirmation-level
+navig config set-mode
+navig config settings
+navig config show
+navig config test
+navig config validate
+navig contacts add
+navig contacts import
+navig contacts list
+navig context clear
+navig context init
+navig context set
+navig context show
+navig continuation continue
+navig continuation pause
+navig continuation skip
+navig continuation start
+navig continuation status
+navig copilot ask
+navig copilot explain
+navig copilot review
+navig copilot sessions delete
+navig copilot sessions export
+navig copilot sessions list
+navig copilot sessions search
+navig copilot sessions stats
+navig copilot sessions view
+navig copilot status
+navig copilot suggest
+navig cortex run
+navig council run
+navig crash export
+navig cred add
+navig cred audit
+navig cred clone
+navig cred delete
+navig cred disable
+navig cred edit
+navig cred enable
+navig cred list
+navig cred providers
+navig cred show
+navig cred test
+navig cred-profile list
+navig cred-profile use
+navig cron add
+navig cron disable
+navig cron enable
+navig cron list
+navig cron remove
+navig cron run
+navig cron status
+navig ct add
+navig ct import
+navig ct list
+navig dashboard
+navig database list
+navig database query
+navig db dump
+navig db file
+navig db list
+navig db optimize
+navig db query
+navig db repair
+navig db restore
+navig db run
+navig db show
+navig db tables
+navig debug clear
+navig debug tail
+navig deck list
+navig deck new
+navig desktop ahk
+navig desktop click
+navig desktop find
+navig desktop ping
+navig desktop set
+navig desktop tree
+navig dispatch send
+navig docker compose
+navig docker exec
+navig docker inspect
+navig docker logs
+navig docker ps
+navig docker restart
+navig docker start
+navig docker stats
+navig docker stop
+navig docs
+navig email list
+navig email search
+navig email send
+navig email setup
+navig email sync
+navig eval run
+navig evolve fix
+navig evolve optimize
+navig evolve pack
+navig evolve script
+navig evolve skill
+navig evolve status
+navig evolve workflow
+navig explain command
+navig explain concept
+navig explain config
+navig farmore backup
+navig farmore clone
+navig farmore search
+navig farmore status
+navig farmore token remove
+navig farmore token set
+navig farmore token show
+navig fetch
+navig file add
+navig file edit
+navig file get
+navig file list
+navig file remove
+navig file show
+navig finance balance
+navig finance status
+navig flow add
+navig flow list
+navig flow run
+navig flow show
+navig flow template add
+navig flow template list
+navig flow template remove
+navig flow template run
+navig flow template show
+navig flow test
+navig flux add
+navig flux clear
+navig flux install
+navig flux peers
+navig flux scan
+navig flux status
+navig flux target
+navig flux token
+navig formation agents
+navig formation init
+navig formation list
+navig formation show
+navig gateway session
+navig gateway start
+navig gateway status
+navig gateway stop
+navig gateway test
+navig h list
+navig heartbeat configure
+navig heartbeat history
+navig heartbeat status
+navig heartbeat trigger
+navig help
+navig history clear
+navig history export
+navig history list
+navig history replay
+navig history show
+navig history stats
+navig history undo
+navig host add
+navig host discover-local
+navig host list
+navig host maintenance clean
+navig host maintenance install
+navig host maintenance run
+navig host maintenance show
+navig host maintenance update
+navig host monitor report
+navig host monitor show
+navig host security edit
+navig host security show
+navig host show
+navig host test
+navig host use
+navig hosts add
+navig hosts edit
+navig hosts view
+navig import list-sources
+navig inbox add
+navig inbox dry-run
+navig inbox filter
+navig inbox process-all
+navig inbox process-current
+navig inbox stats
+navig inbox ui
+navig inbox watch
+navig index drop
+navig index scan
+navig index search
+navig index stats
+navig init
+navig init-local
+navig init-rollback
+navig insights anomalies
+navig insights commands
+navig insights hosts
+navig insights recommend
+navig insights report
+navig insights show
+navig insights time
+navig install
+navig install add
+navig install browse
+navig install freeze
+navig install list
+navig install remove
+navig install search
+navig install show
+navig install status
+navig install update
+navig install upgrade
+navig kg forget
+navig kg recall
+navig kg remember
+navig kg routines
+navig kg search
+navig kg status
+navig knowledge forget
+navig knowledge recall
+navig knowledge remember
+navig knowledge routines
+navig knowledge search
+navig knowledge status
+navig links add
+navig links delete
+navig links edit
+navig links import
+navig links list
+navig links open
+navig links search
+navig links show
+navig links tag
+navig local audit
+navig local dns
+navig local firewall
+navig local interfaces
+navig local ping
+navig local ports
+navig local show
+navig log run
+navig log show
+navig matrix accounts
+navig matrix e2ee blacklist
+navig matrix e2ee devices
+navig matrix e2ee export-keys
+navig matrix e2ee import-keys
+navig matrix e2ee keys
+navig matrix e2ee status
+navig matrix e2ee trust
+navig matrix e2ee trust-all
+navig matrix e2ee unverify
+navig matrix e2ee verify
+navig matrix features
+navig matrix file download
+navig matrix file upload
+navig matrix inbox list
+navig matrix inbox mark-read
+navig matrix inbox process
+navig matrix inbox purge
+navig matrix inbox unread
+navig matrix login
+navig matrix logout
+navig matrix notice
+navig matrix read
+navig matrix rooms
+navig matrix send
+navig matrix status
+navig matrix store bridges
+navig matrix store events
+navig matrix store prune
+navig matrix store rooms
+navig matrix store stats
+navig matrix tail
+navig matrix use
+navig mcp list
+navig mcp start
+navig mcp status
+navig memory bank
+navig memory clear
+navig memory clear-bank
+navig memory fact-stats
+navig memory facts
+navig memory files
+navig memory forget
+navig memory history
+navig memory index
+navig memory knowledge
+navig memory remember
+navig memory search
+navig memory sessions
+navig memory stats
+navig memory sync
+navig menu
+navig mesh peers
+navig mesh status
+navig migrate addons
+navig migrate all
+navig migrate config
+navig migrate status
+navig mode detect
+navig mode list
+navig mode set
+navig mode show
+navig mount add
+navig mount list
+navig mount remove
+navig mount sync
+navig mount verify
+navig net speedtest
+navig node add
+navig node list
+navig node remove
+navig pack audit
+navig pack autoload add
+navig pack autoload list
+navig pack autoload remove
+navig pack init
+navig pack install
+navig pack list
+navig pack load
+navig pack remove
+navig pack show
+navig pack unload
+navig pack validate
+navig package audit
+navig package autoload add
+navig package autoload list
+navig package autoload remove
+navig package init
+navig package install
+navig package list
+navig package load
+navig package remove
+navig package show
+navig package unload
+navig package validate
+navig packs audit
+navig packs autoload add
+navig packs autoload list
+navig packs autoload remove
+navig packs init
+navig packs install
+navig packs list
+navig packs load
+navig packs remove
+navig packs show
+navig packs unload
+navig packs validate
+navig plans add
+navig plans briefing
+navig plans next
+navig plans run
+navig plans status
+navig plans sync
+navig plans update
+navig portable create
+navig portable validate
+navig proactive setup
+navig proactive start
+navig proactive status
+navig proactive test
+navig profile list
+navig profile pin-clear
+navig profile pin-set
+navig profile set
+navig profile show
+navig prompts edit
+navig prompts list
+navig prompts remove
+navig prompts show
+navig queue add
+navig queue cancel
+navig queue list
+navig queue show
+navig queue stats
+navig quick add
+navig quick list
+navig quick remove
+navig quick run
+navig quickstart
+navig radar add
+navig radar list
+navig replay list
+navig replay run
+navig run
+navig scaffold apply
+navig script edit
+navig script list
+navig script new
+navig script run
+navig search
+navig server list
+navig server run
+navig server show
+navig server test
+navig server-template disable
+navig server-template enable
+navig server-template init
+navig server-template list
+navig server-template set
+navig server-template show
+navig server-template sync
+navig service config
+navig service install
+navig service logs
+navig service restart
+navig service start
+navig service status
+navig service stop
+navig service uninstall
+navig settings
+navig skills list
+navig skills run
+navig skills show
+navig skills synthesize
+navig skills tree
+navig snapshot create
+navig snapshot list
+navig snapshot restore
+navig software list
+navig software search
+navig space create
+navig space current
+navig space delete
+navig space list
+navig space new
+navig space switch
+navig space use
+navig spaces create
+navig spaces current
+navig spaces delete
+navig spaces list
+navig spaces new
+navig spaces switch
+navig spaces use
+navig stack down
+navig stack health
+navig stack info
+navig stack logs
+navig stack status
+navig stack up
+navig start
+navig status
+navig store backup
+navig store cleanup
+navig store maintenance
+navig store migrate
+navig store status
+navig suggest
+navig sync status
+navig system clean
+navig system info
+navig task add
+navig task complete
+navig task edit
+navig task list
+navig task remove
+navig task run
+navig task show
+navig task test
+navig telegram send
+navig telegram sessions clear
+navig telegram sessions delete
+navig telegram sessions list
+navig telegram sessions prune
+navig telegram sessions show
+navig telegram status
+navig telemetry disable
+navig telemetry enable
+navig tray install
+navig tray start
+navig tray status
+navig tray stop
+navig tray uninstall
+navig trigger add
+navig trigger clear-history
+navig trigger disable
+navig trigger enable
+navig trigger fire
+navig trigger history
+navig trigger list
+navig trigger remove
+navig trigger show
+navig trigger stats
+navig trigger test
+navig tunnel auto
+navig tunnel remove
+navig tunnel run
+navig tunnel show
+navig tunnel update
+navig update check
+navig update history
+navig update nodes
+navig update rollback
+navig update run
+navig update source
+navig update status
+navig upgrade
+navig user set
+navig user show
+navig version
+navig voice list-voices
+navig voice speak
+navig voice transcribe
+navig watch list
+navig watch start
+navig web disable
+navig web enable
+navig web hestia add
+navig web hestia list
+navig web hestia remove
+navig web module-disable
+navig web module-enable
+navig web recommend
+navig web reload
+navig web test
+navig web vhosts
+navig webhook add-inbound
+navig webhook add-outbound
+navig webhook delete
+navig webhook disable
+navig webhook list
+navig webhook test
+navig webhooks add-inbound
+navig webhooks add-outbound
+navig webhooks delete
+navig webhooks disable
+navig webhooks list
+navig webhooks test
+navig whoami
+navig work add
+navig work archive
+navig work kinds
+navig work list
+navig work move
+navig work show
+navig work stages
+navig work update

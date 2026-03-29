@@ -1105,7 +1105,11 @@ class CallbackHandler:
                 self.channel._set_one_shot_noai(user_id)
             else:
                 self.channel._user_model_prefs[user_id] = "noai"
-            await self._answer(cb_id, "🚫 Raw mode — no AI on next message", show_alert=True)
+            await self._answer(cb_id, "🚫 Raw mode armed for next message")
+            try:
+                await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
+            except TypeError:
+                await self.channel._handle_providers(chat_id)
             return
 
         if cb_data == "prov_bridge":

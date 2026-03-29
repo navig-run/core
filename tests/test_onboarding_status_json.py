@@ -426,6 +426,50 @@ def test_db_query_json_envelope(isolated_project: Path, capsys, monkeypatch):
     assert payload["stdout"] == "1\n"
 
 
+def test_db_tables_json_envelope(isolated_project: Path, capsys, monkeypatch):
+    _write_host_config(isolated_project, "alpha")
+    from navig.config import reset_config_manager
+
+    reset_config_manager()
+
+    import navig.discovery as discovery_module
+
+    class DummyDiscovery:
+        def __init__(self, _ssh_config, debug_logger=None):
+            pass
+
+    monkeypatch.setattr(discovery_module, "ServerDiscovery", DummyDiscovery)
+
+    from navig.commands import db as db_mod
+
+    monkeypatch.setattr(db_mod, "_detect_db_type", lambda _d, _c=None: "mysql")
+    monkeypatch.setattr(
+        db_mod,
+        "_execute_db_query",
+        lambda *_a, **_k: (True, "users\norders\nproducts\n", ""),
+    )
+
+    db_mod.db_tables_cmd(
+        database="myapp",
+        container=None,
+        user="root",
+        password=None,
+        db_type=None,
+        options={"host": "alpha", "json": True},
+    )
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert payload["schema_version"] == "1.0.0"
+    assert payload["command"] == "db.tables"
+    assert payload["success"] is True
+    assert payload["host"] == "alpha"
+    assert payload["db_type"] == "mysql"
+    assert payload["database"] == "myapp"
+    assert "users" in payload["tables"]
+    assert payload["count"] == 3
+
+
 def test_tunnel_show_json_envelope(isolated_project: Path, capsys, monkeypatch):
     # Tunnel command uses module-level tunnel_manager; patch it to avoid touching the OS.
     from navig.commands import tunnel as tunnel_mod
