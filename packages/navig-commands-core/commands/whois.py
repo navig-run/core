@@ -1,5 +1,5 @@
 """
-navig-commands-core/commands/whois.py
+navig-commands/commands/whois.py
 
 RDAP-based domain / IP lookup — stdlib only (urllib).
 """
@@ -14,7 +14,7 @@ from urllib.request import Request, urlopen
 _RDAP_DOMAIN = "https://rdap.org/domain/{}"
 _RDAP_IP = "https://rdap.org/ip/{}"
 
-_HEADERS = {"Accept": "application/json", "User-Agent": "navig-commands-core/1.1"}
+_HEADERS = {"Accept": "application/json", "User-Agent": "navig-commands/1.1"}
 
 
 def _rdap_fetch(url: str, timeout: float) -> dict:

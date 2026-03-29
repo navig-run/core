@@ -3,8 +3,20 @@
   "name": "Community Packs",
   "version": "1.0.0",
   "description": "Community-contributed workflows: backup procedures, deployment checklists, devops shortcuts, Docker health checks, security audits.",
+  "type": "workflows",
+  "entry": "backup-runbook.yml",
   "author": "navig",
   "license": "MIT",
   "provides": ["workflows"],
-  "depends_on": {}
+  "hooks": [],
+  "depends_on": {
+    "packages": {},
+    "skills": [],
+    "pip": []
+  },
+  "recommends": {},
+  "install_hooks": {
+    "post_install": "",
+    "post_remove": ""
+  }
 }

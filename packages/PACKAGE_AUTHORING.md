@@ -355,9 +355,8 @@ navig pack install ./my-pack-1.0.0.zip
 
 - `navig/commands/package.py` — PackageManager: install, list, show, remove
 - `navig/plugins/__init__.py` — Python-level PluginManager (runtime, not content)
-- `packages/navig-commands-core/` — reference implementation (commands type)
+- `packages/navig-commands-core/` — reference implementation (canonical package id: `navig-commands`)
 - `packages/navig-telegram/` — reference implementation (telegram type)
-- `packages/navig-telegram-handlers/` — reference implementation (UX layer)
 - `packages/navig-windows-automation/` — reference implementation (tools type)
 - `packages/lifeos/` — reference implementation (workflows type)
 ---
@@ -372,7 +371,7 @@ schema (`entry`, `provides`, `depends_on`, `hooks`).
 
 **Reference implementations (packages/ equivalents):**
 
-- `packages/navig-commands-core/` — commands type (was `plugins/navig-commands-core/`)
+- `packages/navig-commands-core/` — commands type (canonical id: `navig-commands`; was `plugins/navig-commands-core/`)
 - `packages/navig-memory/` — commands type (was `plugins/navig-memory/`)
 - `packages/navig-windows-automation/` — tools type (was `plugins/navig-windows-automation/`)
 

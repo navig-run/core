@@ -552,6 +552,16 @@ HELP_REGISTRY: dict[str, dict[str, Any]] = {
             "import": "bulk import from JSON file",
         },
     },
+    "import": {
+        "desc": "Universal import engine for bookmarks, contacts, and servers",
+        "commands": {
+            "--source all": "import every supported source",
+            "--source <name>": "import one source",
+            "--path <file>": "override source default path",
+            "--output <file>": "write normalized JSON output",
+            "list-sources": "show available import sources",
+        },
+    },
     # ── Phase 3: Knowledge Graph ────────────────────────────────────────────
     "kg": {
         "desc": "Knowledge graph — remember facts, routines, and habits",

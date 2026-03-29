@@ -8469,6 +8469,47 @@ def gateway_session(
         ch.error(f"Error: {e}")
 
 
+@gateway_app.command("test")
+def gateway_test(
+    channel: str = typer.Argument(
+        "all",
+        help="Channel to test: all | telegram | matrix | discord | email",
+    ),
+    target: str = typer.Option(
+        "",
+        "--target",
+        "-t",
+        help="Recipient: @username / chat_id for Telegram; room for Matrix; address for email",
+    ),
+    message: str = typer.Option(
+        "🟢 NAVIG gateway smoke-test — all systems go",
+        "--message",
+        "-m",
+        help="Message body to send",
+    ),
+    strict: bool = typer.Option(
+        False,
+        "--strict",
+        help="Return non-zero exit code when any tested channel fails",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Print machine-readable JSON results",
+    ),
+) -> None:
+    """Send a smoke-test message through one or all configured channels."""
+    from navig.commands.gateway import gateway_test as _gateway_test
+
+    _gateway_test(
+        channel=channel,
+        target=target,
+        message=message,
+        strict=strict,
+        json_output=json_output,
+    )
+
+
 app.add_typer(gateway_app, name="gateway")
 
 # ============================================================================
@@ -11172,6 +11213,7 @@ _EXTERNAL_CMD_MAP = {
     "inbox": ("navig.commands.inbox", "inbox_app"),
     "sync": ("navig.commands.sync", "sync_app"),
     "agent": ("navig.commands.agent", "agent_app"),
+    "continuation": ("navig.commands.agent", "continuation_app"),
     "service": ("navig.commands.service", "service_app"),
     "stack": ("navig.commands.stack", "stack_app"),
     "tray": ("navig.commands.tray", "tray_app"),
@@ -11235,6 +11277,8 @@ _EXTERNAL_CMD_MAP = {
     # ── Browser: Playwright/gateway web automation ────────────────────────────
     # Extracted from inline definition → navig/commands/browser.py :: browser_app
     "browser": ("navig.commands.browser", "browser_app"),
+    # ── Universal import engine ───────────────────────────────────────────────
+    "import": ("navig.commands.import_cmd", "import_app"),
     # ── Multi-network reliable dispatch (Phase 0/1/2) ─────────────────────────
     "dispatch": ("navig.commands.dispatch", "dispatch_app"),
     "contacts": ("navig.commands.dispatch", "contacts_app"),

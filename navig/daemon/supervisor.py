@@ -35,9 +35,21 @@ from typing import Any
 # ---------------------------------------------------------------------------
 NAVIG_HOME = Path.home() / ".navig"
 DAEMON_DIR = NAVIG_HOME / "daemon"
-LOG_DIR = NAVIG_HOME / "logs"
 PID_FILE = DAEMON_DIR / "supervisor.pid"
 STATE_FILE = DAEMON_DIR / "state.json"
+
+
+def _resolve_log_dir() -> Path:
+    """Resolve log directory using navig.platform.paths (respects OS conventions)."""
+    try:
+        from navig.platform import paths as _paths
+
+        return _paths.log_dir()
+    except Exception:
+        return NAVIG_HOME / "logs"
+
+
+LOG_DIR = _resolve_log_dir()
 
 MAX_RESTART_DELAY = 120  # seconds
 INITIAL_RESTART_DELAY = 2

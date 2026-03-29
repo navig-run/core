@@ -112,9 +112,13 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     SlashCommandEntry(
         "start", "Wake up greeting", handler="_handle_start", category="core"
     ),
-    SlashCommandEntry("remindme", "Set reminders", handler="_handle_remindme", category="utilities"),
-    SlashCommandEntry("myreminders", "List your active reminders", handler="_handle_myreminders", category="utilities"),
-    SlashCommandEntry("cancelreminder", "Cancel a reminder", handler="_handle_cancelreminder", category="utilities"),
+    SlashCommandEntry(
+        "helpme",
+        "Command reference (alias)",
+        handler="_handle_help",
+        category="core",
+        visible=False,
+    ),
     SlashCommandEntry(
         "status",
         "System and spaces status",
@@ -251,6 +255,12 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     ),
     SlashCommandEntry(
         "backup", "Backup status", cli_template="backup show", category="tools"
+    ),
+    SlashCommandEntry(
+        "plans", "Plans and spaces progress", cli_template="plans status", category="tools"
+    ),
+    SlashCommandEntry(
+        "plan", "Add a plan goal (+ text)", cli_template="plans add {args}", category="tools"
     ),
     # --- Formatting & Reasoning --------------------------------------------------
     SlashCommandEntry(
@@ -400,6 +410,24 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="ai",
     ),
     SlashCommandEntry(
+        "continue",
+        "Enable autonomous continuation",
+        handler="_handle_continue",
+        category="ai",
+    ),
+    SlashCommandEntry(
+        "pause",
+        "Pause autonomous continuation",
+        handler="_handle_pause",
+        category="ai",
+    ),
+    SlashCommandEntry(
+        "skip",
+        "Skip next auto-continuation turn",
+        handler="_handle_skip",
+        category="ai",
+    ),
+    SlashCommandEntry(
         "auto_roles",
         "List available AI personalities",
         handler="_handle_auto_roles",
@@ -489,8 +517,67 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
 ]
 
 
+def _iter_unique_registry(*, visible_only: bool = False) -> list[SlashCommandEntry]:
+    """Return registry entries deduplicated by command, preserving first occurrence."""
+    unique: list[SlashCommandEntry] = []
+    seen: set[str] = set()
+    for entry in _SLASH_REGISTRY:
+        key = entry.command.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if visible_only and not entry.visible:
+            continue
+        unique.append(entry)
+    return unique
+
+
 class TelegramCommandsMixin:
     """Mixin for TelegramChannel - all slash-command handler methods."""
+
+    @staticmethod
+    def _build_command_list_for_registration() -> list[dict[str, str]]:
+        """Build Telegram command registration payload from visible unique entries."""
+        return [
+            {"command": e.command, "description": e.description}
+            for e in _iter_unique_registry(visible_only=True)
+        ]
+
+    @staticmethod
+    def _generate_help_text(deck_enabled: bool = False) -> str:
+        """Generate grouped /help output from deduplicated registry entries."""
+        cat_labels: dict[str, str] = {
+            "core": "- *core*",
+            "monitoring": "- *monitoring*",
+            "docker": "- *docker*",
+            "database": "- *database*",
+            "tools": "- *tools*",
+            "utilities": "- *utilities*",
+            "model": "- *model control*",
+            "voice": "- *voice & AI settings*",
+            "diagnostics": "- *diagnostics & healing*",
+            "ai": "- *AI features*",
+            "media": "- *media tools*",
+            "social": "- *social*",
+            "admin": "- *business chats / admin*",
+        }
+
+        seen_categories: set[str] = set()
+        lines = ["*things I respond to:*"]
+        for entry in _iter_unique_registry(visible_only=True):
+            if entry.category not in seen_categories:
+                seen_categories.add(entry.category)
+                lines.append("\n" + cat_labels.get(entry.category, entry.category))
+            lines.append(f"/{entry.command} - {entry.description}")
+
+        if deck_enabled:
+            lines.append("/deck - Open the command deck")
+        else:
+            lines.append(
+                "\n_Deck UI is disabled. To activate: set `telegram.deck_url` in `~/.navig/config.yaml` and point it at your NAVIG Deck instance._"
+            )
+        lines.append("\n-or just talk. I understand.")
+        return "\n".join(lines)
 
     # -- Core slash handlers ---------------------------------------------------
 
@@ -537,40 +624,10 @@ class TelegramCommandsMixin:
 
     async def _handle_help(self, chat_id: int) -> None:
         """Command reference (/help) - auto-generated from _SLASH_REGISTRY."""
-        _cat_labels: dict[str, str] = {
-            "core": "- *core*",
-            "monitoring": "- *monitoring*",
-            "docker": "- *docker*",
-            "database": "- *database*",
-            "tools": "- *tools*",
-            "utilities": "- *utilities*",
-            "model": "- *model control*",
-            "voice": "- *voice & AI settings*",
-            "diagnostics": "- *diagnostics & healing*",
-            "ai": "- *AI features*",
-            "media": "- *media tools*",
-            "social": "- *social*",
-            "admin": "- *business chats / admin*",
-        }
-        seen: set[str] = set()
-        lines = ["*things I respond to:*"]
-        for entry in _SLASH_REGISTRY:
-            if not entry.visible:
-                continue
-            if entry.category not in seen:
-                seen.add(entry.category)
-                lines.append("\n" + _cat_labels.get(entry.category, entry.category))
-            lines.append(f"/{entry.command} - {entry.description}")
-        # Deck: show only when configured, otherwise explain how to enable
-        deck_url = self._get_deck_url()
-        if deck_url:
-            lines.append("/deck - Open the command deck")
-        else:
-            lines.append(
-                "\n_Deck UI is disabled. To activate: set `telegram.deck_url` in `~/.navig/config.yaml` and point it at your NAVIG Deck instance._"
-            )
-        lines.append("\n-or just talk. I understand.")
-        await self.send_message(chat_id, "\n".join(lines))
+        await self.send_message(
+            chat_id,
+            self._generate_help_text(deck_enabled=bool(self._get_deck_url())),
+        )
 
     async def _handle_ping(self, chat_id: int) -> None:
         """Quick alive check (/ping)."""
@@ -597,7 +654,10 @@ class TelegramCommandsMixin:
             lines.append("")
             lines.append("_No spaces discovered in project/global scope yet._")
 
-        tier = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
+        if hasattr(self, "_get_user_tier_pref"):
+            tier = self._get_user_tier_pref(chat_id, user_id)
+        else:
+            tier = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
         lines.append("")
         lines.append(f"Model tier: `{tier or 'auto'}`")
 
@@ -617,7 +677,10 @@ class TelegramCommandsMixin:
             )
 
         # Model tier preference
-        tier = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
+        if hasattr(self, "_get_user_tier_pref"):
+            tier = self._get_user_tier_pref(chat_id, user_id)
+        else:
+            tier = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
         lines.append(f"🧠 Model tier: `{tier or 'auto'}`")
 
         # Voice & focus from session
@@ -826,7 +889,10 @@ class TelegramCommandsMixin:
             if router and router.is_active:
                 cfg = router.cfg
                 lines.append(f"\n- *Hybrid Router* - fallback, mode=`{cfg.mode}`:")
-                user_pref = self._user_model_prefs.get(user_id, "")
+                if hasattr(self, "_get_user_tier_pref"):
+                    user_pref = self._get_user_tier_pref(chat_id, user_id)
+                else:
+                    user_pref = self._user_model_prefs.get(user_id, "")
                 pref_label = {
                     "small": "- Small",
                     "big": "- Big",
@@ -854,7 +920,10 @@ class TelegramCommandsMixin:
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
-            user_pref = self._user_model_prefs.get(user_id, "")
+            if hasattr(self, "_get_user_tier_pref"):
+                user_pref = self._get_user_tier_pref(chat_id, user_id)
+            else:
+                user_pref = self._user_model_prefs.get(user_id, "")
             check = lambda t: " -" if user_pref == t else ""  # noqa: E731
             keyboard = [
                 [
@@ -1195,7 +1264,10 @@ class TelegramCommandsMixin:
 
         lines.append(SEP)
 
-        tier = self._user_model_prefs.get(user_id, "")
+        if hasattr(self, "_get_user_tier_pref"):
+            tier = self._get_user_tier_pref(chat_id, user_id)
+        else:
+            tier = self._user_model_prefs.get(user_id, "")
         tier_label = {
             "small": "fast",
             "big": "smart",
@@ -1363,10 +1435,13 @@ class TelegramCommandsMixin:
             "/auto": ("", "- Auto", "model selection is back on automatic."),
         }
         tier_key, label, note = tier_map[cmd]
-        if tier_key:
-            self._user_model_prefs[user_id] = tier_key
-        elif user_id in self._user_model_prefs:
-            del self._user_model_prefs[user_id]
+        if hasattr(self, "_set_user_tier_pref"):
+            self._set_user_tier_pref(chat_id, user_id, tier_key)
+        else:
+            if tier_key:
+                self._user_model_prefs[user_id] = tier_key
+            elif user_id in self._user_model_prefs:
+                del self._user_model_prefs[user_id]
         await self.send_message(
             chat_id,
             f"{label} - {note}\nSend your message normally now.",
@@ -1400,16 +1475,35 @@ class TelegramCommandsMixin:
         target = (arg or "").strip().lower()
 
         if target in DAEMON_ALIASES:
-            await self.send_message(
-                chat_id, "- Restarting navig-daemon in 3s-", parse_mode=None
+            # Dynamic countdown: send initial message then edit it each second
+            msg = await self.send_message(
+                chat_id, "\U0001f504 Restarting navig-daemon in 3s\u2026", parse_mode=None
             )
+            msg_id = (msg or {}).get("message_id")
+            for remaining in (2, 1):
+                await asyncio.sleep(1)
+                if msg_id:
+                    await self.edit_message(
+                        chat_id,
+                        msg_id,
+                        f"\U0001f504 Restarting navig-daemon in {remaining}s\u2026",
+                        parse_mode=None,
+                    )
+            await asyncio.sleep(1)
+            if msg_id:
+                await self.edit_message(
+                    chat_id,
+                    msg_id,
+                    "\U0001f504 Restarting navig-daemon now\u2026",
+                    parse_mode=None,
+                )
             sudo_pass = os.environ.get("SUDO_PASS", "")
             if sudo_pass:
                 # Pass password via env var - never interpolated into shell string (SEC-3 fix)
                 cmd = [
                     "bash",
                     "-c",
-                    "sleep 3 && printf '%s\n' \"$_NAVIG_SUDOPW\" | sudo -S systemctl restart navig-daemon",
+                    "printf '%s\n' \"$_NAVIG_SUDOPW\" | sudo -S systemctl restart navig-daemon",
                 ]
                 await asyncio.create_subprocess_exec(
                     *cmd,
@@ -1422,7 +1516,7 @@ class TelegramCommandsMixin:
                 await asyncio.create_subprocess_exec(
                     "bash",
                     "-c",
-                    "sleep 3 && sudo systemctl restart navig-daemon",
+                    "sudo systemctl restart navig-daemon",
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.DEVNULL,
                     start_new_session=True,
@@ -1746,16 +1840,12 @@ class TelegramCommandsMixin:
             lines.append("_No recent command history._")
 
         try:
-            from navig.spaces.progress import collect_spaces_progress
+            from navig.spaces.briefing import build_spaces_briefing_lines
 
-            spaces = collect_spaces_progress()
-            if spaces:
+            space_lines = build_spaces_briefing_lines(max_items=5)
+            if space_lines:
                 lines.append("-" * 22)
-                lines.append("*Spaces Progress:*")
-                for row in spaces[:5]:
-                    lines.append(
-                        f"  - `{row.name}` ({row.scope}) — {row.completion_pct:.1f}%"
-                    )
+                lines.extend(space_lines)
         except Exception:
             pass
 
@@ -1911,9 +2001,11 @@ class TelegramCommandsMixin:
         if not parts:
             return None
         cmd = parts[0].lower()
+        if cmd.startswith("/") and "@" in cmd:
+            cmd = cmd.split("@", 1)[0]
         args = parts[1] if len(parts) > 1 else ""
 
-        for entry in _SLASH_REGISTRY:
+        for entry in _iter_unique_registry():
             if entry.cli_template and f"/{entry.command}" == cmd:
                 template = entry.cli_template
                 if "{args}" in template:
@@ -2066,16 +2158,12 @@ class TelegramCommandsMixin:
         The command list is derived from :data:`_SLASH_REGISTRY` -
         no separate list to keep in sync.
         """
-        commands = [
-            {"command": e.command, "description": e.description}
-            for e in _SLASH_REGISTRY
-            if e.visible
-        ]
+        commands = self._build_command_list_for_registration()
         # Deck command is opt-in: only added to the bot's command list when
         # telegram.deck_url is configured.  Users without a Deck deployment
         # never see the /deck command in the "/" popup.
         deck_url = self._get_deck_url()
-        if deck_url:
+        if deck_url and not any(c.get("command") == "deck" for c in commands):
             commands.append({"command": "deck", "description": "Open the command deck"})
         result = await self._api_call("setMyCommands", {"commands": commands})
         if result is not None:
@@ -2167,6 +2255,7 @@ class TelegramCommandsMixin:
         state = None
         try:
             from navig.store.runtime import get_runtime_store
+            from navig.core.continuation import policy_from_context
 
             state = get_runtime_store().get_ai_state(user_id)
         except Exception as e:
@@ -2174,12 +2263,156 @@ class TelegramCommandsMixin:
 
         if state and state.get("mode") == "active":
             role = state.get("persona") or "assistant"
-            await self.send_message(
-                chat_id, f"✅ AI is currently *ACTIVE* in `{role}` mode."
+            context = state.get("context") or {}
+            policy = policy_from_context(context)
+            continuation_meta = (context.get("continuation") or {}) if isinstance(context, dict) else {}
+            cls_state = continuation_meta.get("last_classifier_state")
+            cls_reason = continuation_meta.get("last_classifier_reason")
+            busy_until = continuation_meta.get("busy_until")
+            busy_reason = continuation_meta.get("busy_reason")
+            last_skip_reason = continuation_meta.get("last_skip_reason")
+            cont = (
+                f"profile={policy.profile}, enabled={policy.enabled}, paused={policy.paused}, "
+                f"skip_next={policy.skip_next}, turns={policy.turns_used}/{policy.max_turns}, "
+                f"cooldown={policy.cooldown_seconds}s"
             )
+            if cls_state:
+                cont += f", classifier={cls_state}"
+                if cls_reason:
+                    cont += f" ({cls_reason})"
+            if busy_until:
+                cont += f", busy_until={busy_until}"
+                if busy_reason:
+                    cont += f" ({busy_reason})"
+            if last_skip_reason:
+                cont += f", last_skip={last_skip_reason}"
+            await self.send_message(chat_id, f"✅ AI is currently *ACTIVE* in `{role}` mode.\nContinuation: `{cont}`")
             return
 
         await self.send_message(chat_id, "🛑 AI auto-reply is currently *INACTIVE*.")
+
+    async def _handle_continue(self, chat_id: int, user_id: int, text: str = "") -> None:
+        """Enable continuation policy with optional profile and space focus.
+
+        Syntax:
+          /continue
+          /continue <space>
+          /continue <profile>
+          /continue <profile> <space>
+        Profiles: conservative, balanced, aggressive
+        """
+        try:
+            from navig.core.continuation import (
+                decision_sensitivity_for_profile,
+                merge_policy,
+                normalize_profile_name,
+                policy_from_context,
+                suppression_windows_for_profile,
+            )
+            from navig.spaces import normalize_space_name
+            from navig.store.runtime import get_runtime_store
+
+            store = get_runtime_store()
+            state = store.get_ai_state(user_id) or {}
+            if state.get("mode") != "active":
+                await self.send_message(
+                    chat_id,
+                    "Start auto mode first with `/auto_start <persona>`. ",
+                )
+                return
+
+            raw_args = text[len("/continue") :].strip().split() if text else []
+            profile = "conservative"
+            preferred_space = ""
+
+            if raw_args:
+                head = raw_args[0].strip().lower()
+                if head in {"conservative", "balanced", "aggressive"}:
+                    profile = normalize_profile_name(head)
+                    if len(raw_args) > 1:
+                        preferred_space = normalize_space_name(" ".join(raw_args[1:]))
+                else:
+                    preferred_space = normalize_space_name(" ".join(raw_args))
+
+            context = merge_policy(
+                state.get("context") or {},
+                profile=profile,
+                enabled=True,
+                paused=False,
+                skip_next=False,
+                cooldown_seconds=None,
+                max_turns=None,
+            )
+            if preferred_space:
+                context["continuation"] = {
+                    **(context.get("continuation") or {}),
+                    "space": preferred_space,
+                }
+
+            policy = policy_from_context(context)
+            windows = suppression_windows_for_profile(policy.profile)
+            sensitivity = decision_sensitivity_for_profile(policy.profile)
+
+            store.set_ai_state(
+                user_id=user_id,
+                chat_id=chat_id,
+                mode="active",
+                persona=state.get("persona") or "assistant",
+                context=context,
+            )
+            await self.send_message(
+                chat_id,
+                f"▶️ Autonomous continuation *enabled* (profile `{profile}`)."
+                + f"\nPolicy: cooldown={policy.cooldown_seconds}s, max_turns={policy.max_turns}, "
+                + f"suppression(wait={windows.get('wait', 0)}s, blocked={windows.get('blocked', 0)}s), "
+                + f"decision={sensitivity}"
+                + (f"\nSpace focus: `{preferred_space}`" if preferred_space else ""),
+            )
+        except Exception as e:
+            logger.error("Failed to enable continuation: %s", e)
+            await self.send_message(chat_id, "❌ Failed to enable continuation.")
+
+    async def _handle_pause(self, chat_id: int, user_id: int) -> None:
+        """Pause continuation policy without disabling auto mode."""
+        try:
+            from navig.core.continuation import merge_policy
+            from navig.store.runtime import get_runtime_store
+
+            store = get_runtime_store()
+            state = store.get_ai_state(user_id) or {}
+            context = merge_policy(state.get("context") or {}, paused=True)
+            store.set_ai_state(
+                user_id=user_id,
+                chat_id=chat_id,
+                mode=state.get("mode") or "inactive",
+                persona=state.get("persona") or "assistant",
+                context=context,
+            )
+            await self.send_message(chat_id, "⏸️ Continuation paused. Use `/continue` to resume.")
+        except Exception as e:
+            logger.error("Failed to pause continuation: %s", e)
+            await self.send_message(chat_id, "❌ Failed to pause continuation.")
+
+    async def _handle_skip(self, chat_id: int, user_id: int) -> None:
+        """Skip the next continuation trigger."""
+        try:
+            from navig.core.continuation import merge_policy
+            from navig.store.runtime import get_runtime_store
+
+            store = get_runtime_store()
+            state = store.get_ai_state(user_id) or {}
+            context = merge_policy(state.get("context") or {}, skip_next=True)
+            store.set_ai_state(
+                user_id=user_id,
+                chat_id=chat_id,
+                mode=state.get("mode") or "inactive",
+                persona=state.get("persona") or "assistant",
+                context=context,
+            )
+            await self.send_message(chat_id, "⏭️ Next continuation turn will be skipped.")
+        except Exception as e:
+            logger.error("Failed to set skip-next continuation: %s", e)
+            await self.send_message(chat_id, "❌ Failed to set skip-next continuation.")
 
     async def _handle_auto_roles(self, chat_id: int) -> None:
         roles = (

@@ -1,8 +1,9 @@
 ﻿{
-  "id": "navig-commands-core",
+  "id": "navig-commands",
   "version": "1.1.0",
-  "name": "NAVIG Commands Core",
+  "name": "NAVIG Commands",
   "description": "Transport-agnostic command handlers shared by all NAVIG channels.",
+  "type": "commands",
   "author": "navig",
   "license": "MIT",
   "homepage": "https://github.com/navig-run/core",

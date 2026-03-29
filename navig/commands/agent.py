@@ -20,6 +20,13 @@ agent_app = typer.Typer(
     no_args_is_help=False,
 )
 
+continuation_app = typer.Typer(
+    help="Manage autonomous continuation policy",
+    invoke_without_command=True,
+    no_args_is_help=True,
+)
+agent_app.add_typer(continuation_app, name="continuation")
+
 
 @agent_app.callback()
 def _agent_callback(ctx: typer.Context) -> None:
@@ -42,6 +49,192 @@ def _get_agent_config_dir() -> Path:
 def _get_config_path() -> Path:
     """Get agent configuration file path."""
     return _get_agent_config_dir() / "config.yaml"
+
+
+def _resolve_runtime_identity(user_id: int | None, chat_id: int | None) -> tuple[int, int]:
+    """Resolve runtime identity for local CLI continuation controls."""
+    return user_id or 0, chat_id or 0
+
+
+@continuation_app.command("status")
+def continuation_status(
+    user_id: int | None = typer.Option(None, "--user-id", help="Runtime user id (default: 0)"),
+):
+    """Show continuation policy for local runtime state."""
+    from navig.core.continuation import (
+        decision_sensitivity_for_profile,
+        policy_from_context,
+        suppression_windows_for_profile,
+    )
+    from navig.store.runtime import get_runtime_store
+
+    resolved_user, _ = _resolve_runtime_identity(user_id, None)
+    store = get_runtime_store()
+    state = store.get_ai_state(resolved_user)
+    if not state:
+        ch.warning("No runtime AI state found.")
+        return
+
+    policy = policy_from_context(state.get("context") or {})
+    continuation_meta = ((state.get("context") or {}).get("continuation") or {})
+    space = continuation_meta.get("space", "")
+    busy_until = continuation_meta.get("busy_until", "")
+    busy_reason = continuation_meta.get("busy_reason", "")
+    last_skip_reason = continuation_meta.get("last_skip_reason", "")
+    ch.info(
+        "Continuation policy: "
+        f"profile={policy.profile}, enabled={policy.enabled}, paused={policy.paused}, "
+        f"skip_next={policy.skip_next}, turns={policy.turns_used}/{policy.max_turns}, "
+        f"cooldown={policy.cooldown_seconds}s"
+    )
+    windows = suppression_windows_for_profile(policy.profile)
+    sensitivity = decision_sensitivity_for_profile(policy.profile)
+    ch.info(
+        "Suppression windows: "
+        f"wait={windows.get('wait', 0)}s, blocked={windows.get('blocked', 0)}s"
+    )
+    ch.info(f"Decision sensitivity: {sensitivity}")
+    if busy_until:
+        ch.info(f"Busy suppression until: {busy_until}" + (f" ({busy_reason})" if busy_reason else ""))
+    if last_skip_reason:
+        ch.info(f"Last skip reason: {last_skip_reason}")
+    if space:
+        ch.info(f"Space focus: {space}")
+
+
+@continuation_app.command("continue")
+def continuation_continue(
+    profile: str = typer.Option(
+        "conservative",
+        "--profile",
+        help="Continuation profile: conservative, balanced, aggressive",
+    ),
+    space: str | None = typer.Option(None, "--space", help="Optional space focus"),
+    user_id: int | None = typer.Option(None, "--user-id", help="Runtime user id (default: 0)"),
+    chat_id: int | None = typer.Option(None, "--chat-id", help="Runtime chat id (default: 0)"),
+    persona: str | None = typer.Option(None, "--persona", help="Persona used when state is initialized"),
+):
+    """Enable continuation policy for local runtime state."""
+    from navig.core.continuation import (
+        decision_sensitivity_for_profile,
+        merge_policy,
+        normalize_profile_name,
+        policy_from_context,
+        suppression_windows_for_profile,
+    )
+    from navig.spaces import normalize_space_name
+    from navig.store.runtime import get_runtime_store
+
+    resolved_user, resolved_chat = _resolve_runtime_identity(user_id, chat_id)
+    chosen_profile = normalize_profile_name(profile)
+    chosen_space = normalize_space_name(space) if space else ""
+
+    store = get_runtime_store()
+    state = store.get_ai_state(resolved_user) or {}
+    mode = state.get("mode") or "active"
+    chosen_persona = persona or state.get("persona") or "assistant"
+
+    context = merge_policy(
+        state.get("context") or {},
+        profile=chosen_profile,
+        enabled=True,
+        paused=False,
+        skip_next=False,
+        cooldown_seconds=None,
+        max_turns=None,
+    )
+    if chosen_space:
+        context["continuation"] = {
+            **(context.get("continuation") or {}),
+            "space": chosen_space,
+        }
+
+    store.set_ai_state(
+        user_id=resolved_user,
+        chat_id=resolved_chat,
+        mode=mode,
+        persona=chosen_persona,
+        context=context,
+    )
+
+    ch.success(f"Continuation enabled (profile={chosen_profile}).")
+    policy = policy_from_context(context)
+    windows = suppression_windows_for_profile(policy.profile)
+    sensitivity = decision_sensitivity_for_profile(policy.profile)
+    ch.info(
+        "Policy: "
+        f"cooldown={policy.cooldown_seconds}s, max_turns={policy.max_turns}, "
+        f"suppression(wait={windows.get('wait', 0)}s, blocked={windows.get('blocked', 0)}s), "
+        f"decision={sensitivity}"
+    )
+    if chosen_space:
+        ch.info(f"Space focus: {chosen_space}")
+
+
+@continuation_app.command("start")
+def continuation_start(
+    profile: str = typer.Option(
+        "conservative",
+        "--profile",
+        help="Continuation profile: conservative, balanced, aggressive",
+    ),
+    space: str | None = typer.Option(None, "--space", help="Optional space focus"),
+    user_id: int | None = typer.Option(None, "--user-id", help="Runtime user id (default: 0)"),
+    chat_id: int | None = typer.Option(None, "--chat-id", help="Runtime chat id (default: 0)"),
+    persona: str | None = typer.Option(None, "--persona", help="Persona used when state is initialized"),
+):
+    """Enable continuation policy (alias for `continuation continue`)."""
+    continuation_continue(
+        profile=profile,
+        space=space,
+        user_id=user_id,
+        chat_id=chat_id,
+        persona=persona,
+    )
+
+
+@continuation_app.command("pause")
+def continuation_pause(
+    user_id: int | None = typer.Option(None, "--user-id", help="Runtime user id (default: 0)"),
+):
+    """Pause continuation policy for local runtime state."""
+    from navig.core.continuation import merge_policy
+    from navig.store.runtime import get_runtime_store
+
+    resolved_user, _ = _resolve_runtime_identity(user_id, None)
+    store = get_runtime_store()
+    state = store.get_ai_state(resolved_user) or {}
+    context = merge_policy(state.get("context") or {}, paused=True)
+    store.set_ai_state(
+        user_id=resolved_user,
+        chat_id=state.get("chat_id") or 0,
+        mode=state.get("mode") or "inactive",
+        persona=state.get("persona") or "assistant",
+        context=context,
+    )
+    ch.success("Continuation paused.")
+
+
+@continuation_app.command("skip")
+def continuation_skip(
+    user_id: int | None = typer.Option(None, "--user-id", help="Runtime user id (default: 0)"),
+):
+    """Skip the next continuation trigger for local runtime state."""
+    from navig.core.continuation import merge_policy
+    from navig.store.runtime import get_runtime_store
+
+    resolved_user, _ = _resolve_runtime_identity(user_id, None)
+    store = get_runtime_store()
+    state = store.get_ai_state(resolved_user) or {}
+    context = merge_policy(state.get("context") or {}, skip_next=True)
+    store.set_ai_state(
+        user_id=resolved_user,
+        chat_id=state.get("chat_id") or 0,
+        mode=state.get("mode") or "inactive",
+        persona=state.get("persona") or "assistant",
+        context=context,
+    )
+    ch.success("Next continuation trigger will be skipped.")
 
 
 @agent_app.command("install")

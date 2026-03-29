@@ -15,6 +15,7 @@ import importlib.util
 import json
 from pathlib import Path
 import re
+import textwrap
 
 import typer
 
@@ -24,6 +25,12 @@ from navig.platform.paths import config_dir
 # Module-level set: tracks which packs have been successfully loaded in this process.
 # Reset on each fresh Python invocation (not persisted).
 _loaded_packs: set[str] = set()
+
+LEGACY_PACKAGE_ALIASES: dict[str, str] = {
+    "navig-commands-core": "navig-commands",
+    "telegram-bot-navig": "navig-telegram",
+    "navig-telegram-handlers": "navig-telegram",
+}
 
 package_app = typer.Typer(
     name="package",
@@ -71,7 +78,7 @@ def _discover_packages() -> dict[str, dict]:
             if not manifest_file.exists():
                 continue
             try:
-                manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+                manifest = json.loads(manifest_file.read_text(encoding="utf-8-sig"))
             except Exception:
                 manifest = {}
             pkg_id = manifest.get("id") or pkg_dir.name
@@ -83,10 +90,16 @@ def _discover_packages() -> dict[str, dict]:
     return result
 
 
+def _canonical_package_id(name: str) -> str:
+    """Map legacy package IDs to canonical package IDs."""
+    return LEGACY_PACKAGE_ALIASES.get(name, name)
+
+
 def _load_package(name: str) -> tuple[dict | None, Path | None, str]:
     """Load a single package by name or id. Returns (manifest, path, label)."""
     packages = _discover_packages()
-    entry = packages.get(name)
+    canonical = _canonical_package_id(name)
+    entry = packages.get(canonical) or packages.get(name)
     if entry:
         return entry["manifest"], entry["path"], entry["label"]
     return None, None, ""
@@ -117,6 +130,219 @@ def _manifest_dependencies(manifest: dict) -> tuple[list[str], list[str]]:
         package_deps = [str(dep) for dep in deps_block]
 
     return package_deps, pip_deps
+
+
+def _build_manifest_template(pkg_id: str, pkg_type: str, entry: str) -> dict:
+    provides_map = {
+        "commands": ["commands"],
+        "workflows": ["workflows"],
+        "telegram": ["telegram"],
+        "tools": ["tools"],
+    }
+    hooks_map: dict[str, list[str]] = {
+        "commands": ["on_load", "on_unload"],
+        "workflows": [],
+        "telegram": ["on_load", "on_unload"],
+        "tools": ["on_load", "on_unload"],
+    }
+    return {
+        "id": pkg_id,
+        "name": pkg_id.replace("-", " ").title(),
+        "version": "1.0.0",
+        "description": f"{pkg_type.title()} package: {pkg_id}",
+        "type": pkg_type,
+        "author": "navig",
+        "license": "MIT",
+        "entry": entry,
+        "provides": provides_map[pkg_type],
+        "hooks": hooks_map[pkg_type],
+        "depends_on": {
+            "packages": {},
+            "skills": [],
+            "pip": [],
+        },
+        "recommends": {},
+        "install_hooks": {
+            "post_install": "",
+            "post_remove": "",
+        },
+    }
+
+
+def _write_scaffold_files(pkg_dir: Path, pkg_type: str) -> None:
+    if pkg_type == "workflows":
+        (pkg_dir / "workflow.yaml").write_text(
+            textwrap.dedent(
+                """\
+                name: Example Workflow
+                version: 1
+                steps:
+                  - name: status
+                    run: navig status
+                """
+            ),
+            encoding="utf-8",
+        )
+        return
+
+    if pkg_type == "commands":
+        (pkg_dir / "handler.py").write_text(
+            textwrap.dedent(
+                """\
+                from __future__ import annotations
+
+
+                def on_load(ctx) -> None:
+                    from commands import COMMANDS
+                    try:
+                        from navig.commands._registry import CommandRegistry
+                        for name, handler in COMMANDS.items():
+                            CommandRegistry.register(name, handler, pack_id=ctx.pack_id)
+                    except Exception:
+                        pass
+
+
+                def on_unload(ctx) -> None:
+                    from commands import COMMANDS
+                    try:
+                        from navig.commands._registry import CommandRegistry
+                        for name in COMMANDS:
+                            CommandRegistry.deregister(name, pack_id=ctx.pack_id)
+                    except Exception:
+                        pass
+                """
+            ),
+            encoding="utf-8",
+        )
+        commands_dir = pkg_dir / "commands"
+        commands_dir.mkdir(parents=True, exist_ok=True)
+        (commands_dir / "__init__.py").write_text(
+            textwrap.dedent(
+                """\
+                from .hello import handle as _hello
+
+                COMMANDS = {
+                    "hello": _hello,
+                }
+                """
+            ),
+            encoding="utf-8",
+        )
+        (commands_dir / "hello.py").write_text(
+            textwrap.dedent(
+                """\
+                from __future__ import annotations
+
+
+                async def handle(args: dict, ctx=None) -> dict:
+                    name = (args or {}).get("name", "world")
+                    return {"status": "ok", "message": f"hello {name}"}
+                """
+            ),
+            encoding="utf-8",
+        )
+        return
+
+    (pkg_dir / "handler.py").write_text(
+        textwrap.dedent(
+            """\
+            from __future__ import annotations
+
+
+            def on_load(ctx) -> None:
+                return None
+
+
+            def on_unload(ctx) -> None:
+                return None
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    if pkg_type == "telegram":
+        (pkg_dir / "tg_handlers.py").write_text(
+            textwrap.dedent(
+                """\
+                from __future__ import annotations
+
+                TELEGRAM_COMMANDS = {}
+                """
+            ),
+            encoding="utf-8",
+        )
+
+
+def _audit_manifest(manifest: dict) -> tuple[list[str], list[str]]:
+    """Return (errors, warnings) for a package manifest."""
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    required = ["id", "name", "version", "description"]
+    for field in required:
+        if not manifest.get(field):
+            errors.append(f"missing required field '{field}'")
+
+    pkg_type = str(manifest.get("type") or "").strip().lower()
+    if not pkg_type:
+        warnings.append("missing recommended field 'type'")
+
+    entry = str(manifest.get("entry") or "").strip()
+    if not entry:
+        warnings.append("missing recommended field 'entry'")
+
+    provides = manifest.get("provides")
+    if not isinstance(provides, list) or not all(
+        isinstance(item, str) and item.strip() for item in provides
+    ):
+        errors.append("'provides' must be a non-empty list of strings")
+    elif not provides:
+        errors.append("'provides' must not be empty")
+
+    depends_on = manifest.get("depends_on")
+    if depends_on is None:
+        warnings.append("missing recommended field 'depends_on'")
+    elif isinstance(depends_on, dict):
+        if pkg_type and pkg_type != "workflows":
+            if "packages" not in depends_on:
+                warnings.append("depends_on missing 'packages' key")
+            if "pip" not in depends_on:
+                warnings.append("depends_on missing 'pip' key")
+    elif isinstance(depends_on, list):
+        warnings.append("depends_on uses legacy list form; prefer object with packages/pip")
+    else:
+        errors.append("'depends_on' must be an object or list")
+
+    hooks = manifest.get("hooks")
+    if hooks is None:
+        warnings.append("missing recommended field 'hooks'")
+    elif not isinstance(hooks, list):
+        errors.append("'hooks' must be a list")
+
+    install_hooks = manifest.get("install_hooks")
+    if install_hooks is not None and not isinstance(install_hooks, dict):
+        errors.append("'install_hooks' must be an object when present")
+
+    return errors, warnings
+
+
+def _audit_packages() -> list[dict]:
+    """Audit all discovered packages and return structured findings."""
+    findings: list[dict] = []
+    for pkg_id, entry in sorted(_discover_packages().items()):
+        manifest = entry.get("manifest") or {}
+        errors, warnings = _audit_manifest(manifest)
+        findings.append(
+            {
+                "id": pkg_id,
+                "source": entry.get("label", ""),
+                "path": str(entry.get("path", "")),
+                "errors": errors,
+                "warnings": warnings,
+                "ok": not errors and not warnings,
+            }
+        )
+    return findings
 
 
 def _pip_requirement_name(requirement: str) -> str:
@@ -168,7 +394,11 @@ def _ensure_runtime_dependencies(
     """Validate package and pip dependencies before loading a package."""
     package_deps, pip_deps = _manifest_dependencies(manifest)
 
-    missing_packages = [dep for dep in package_deps if dep not in _loaded_packs]
+    missing_packages = [
+        dep
+        for dep in package_deps
+        if _canonical_package_id(dep) not in _loaded_packs
+    ]
     if missing_packages:
         ch.error(
             f"Package '{pkg_id}' requires loaded dependencies: {', '.join(missing_packages)}. "
@@ -418,6 +648,53 @@ def package_validate(
     ch.success(f"Package '{name}' manifest is valid.")
 
 
+@package_app.command("audit")
+def package_audit(
+    json_out: bool = typer.Option(False, "--json", help="Output structured JSON report"),
+    strict: bool = typer.Option(
+        False,
+        "--strict",
+        help="Return non-zero exit code when warnings exist (not only errors)",
+    ),
+):
+    """Audit all package manifests and report errors/warnings."""
+    findings = _audit_packages()
+
+    errors_count = sum(len(item["errors"]) for item in findings)
+    warnings_count = sum(len(item["warnings"]) for item in findings)
+    bad_packages = [item for item in findings if item["errors"] or item["warnings"]]
+
+    if json_out:
+        import sys
+
+        payload = {
+            "summary": {
+                "packages": len(findings),
+                "error_count": errors_count,
+                "warning_count": warnings_count,
+            },
+            "findings": findings,
+        }
+        sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+    else:
+        if not bad_packages:
+            ch.success(f"Package audit passed: {len(findings)} package(s), no issues found.")
+        else:
+            ch.header("Package Audit Report")
+            ch.info(
+                f"Scanned {len(findings)} package(s) — {errors_count} error(s), {warnings_count} warning(s)."
+            )
+            for item in bad_packages:
+                ch.dim(f"• {item['id']} ({item['source']})")
+                for err in item["errors"]:
+                    ch.error(f"  - {err}")
+                for warn in item["warnings"]:
+                    ch.warning(f"  - {warn}")
+
+    if errors_count > 0 or (strict and warnings_count > 0):
+        raise typer.Exit(1)
+
+
 @package_app.command("install")
 def package_install(
     source: str = typer.Argument(..., help="Path to package directory"),
@@ -438,7 +715,7 @@ def package_install(
         raise typer.Exit(1)
 
     try:
-        manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+        manifest = json.loads(manifest_file.read_text(encoding="utf-8-sig"))
     except Exception as e:
         ch.error(f"Invalid navig.package.json: {e}")
         raise typer.Exit(1) from e
@@ -480,6 +757,54 @@ def package_install(
             result = subprocess.run([_sys.executable, str(hook_path)])
             if result.returncode != 0:
                 ch.error(f"Post-install hook exited with code {result.returncode}")
+
+
+@package_app.command("init")
+def package_init(
+    name: str = typer.Argument(..., help="Package ID to create (e.g. my-package)"),
+    pkg_type: str = typer.Option(
+        "workflows",
+        "--type",
+        help="Package type: commands, workflows, telegram, tools",
+    ),
+    directory: str = typer.Option(
+        "packages",
+        "--dir",
+        help="Parent directory where package folder will be created",
+    ),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite if target exists"),
+):
+    """Scaffold a new NAVIG package with manifest + starter files."""
+    normalized_type = (pkg_type or "").strip().lower()
+    allowed = {"commands", "workflows", "telegram", "tools"}
+    if normalized_type not in allowed:
+        ch.error(
+            f"Invalid package type '{pkg_type}'. Allowed: {', '.join(sorted(allowed))}."
+        )
+        raise typer.Exit(1)
+
+    parent = Path(directory).expanduser().resolve()
+    pkg_dir = parent / name
+    if pkg_dir.exists():
+        if not force:
+            ch.error(f"Target already exists: {pkg_dir}. Use --force to overwrite.")
+            raise typer.Exit(1)
+        import shutil
+
+        shutil.rmtree(pkg_dir)
+
+    pkg_dir.mkdir(parents=True, exist_ok=True)
+    entry = "workflow.yaml" if normalized_type == "workflows" else "handler.py"
+    manifest = _build_manifest_template(name, normalized_type, entry)
+    (pkg_dir / "navig.package.json").write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+    )
+    _write_scaffold_files(pkg_dir, normalized_type)
+
+    ch.success(f"Created package scaffold: {pkg_dir}")
+    ch.info(f"Type: {normalized_type}")
+    ch.info(f"Manifest: {pkg_dir / 'navig.package.json'}")
+    ch.dim("Next: edit manifest fields, implement handlers/workflows, then use `navig package install`.")
 
 
 @package_app.command("remove")
@@ -592,18 +917,22 @@ def package_load(
     name: str = typer.Argument(..., help="Package ID to load"),
 ):
     """Call on_load() on a package's handler.py — activates its commands at runtime."""
-    manifest, path, _ = _load_package(name)
+    canonical_name = _canonical_package_id(name)
+    manifest, path, _ = _load_package(canonical_name)
     if manifest is None:
         ch.error(f"Package '{name}' not found.")
         raise typer.Exit(1)
 
-    if not _ensure_runtime_dependencies(name, manifest, allow_pip_install=True):
+    if canonical_name != name:
+        ch.info(f"Package '{name}' is deprecated; using '{canonical_name}'.")
+
+    if not _ensure_runtime_dependencies(canonical_name, manifest, allow_pip_install=True):
         raise typer.Exit(1)
 
-    ok = _invoke_handler(name, path, "on_load")
+    ok = _invoke_handler(canonical_name, path, "on_load")
     if ok:
-        _loaded_packs.add(name)
-        ch.success(f"Package '{name}' loaded.")
+        _loaded_packs.add(canonical_name)
+        ch.success(f"Package '{canonical_name}' loaded.")
     else:
         raise typer.Exit(1)
 
@@ -613,15 +942,19 @@ def package_unload(
     name: str = typer.Argument(..., help="Package ID to unload"),
 ):
     """Call on_unload() on a package's handler.py — deactivates its commands."""
-    manifest, path, _ = _load_package(name)
+    canonical_name = _canonical_package_id(name)
+    manifest, path, _ = _load_package(canonical_name)
     if manifest is None:
         ch.error(f"Package '{name}' not found.")
         raise typer.Exit(1)
 
-    ok = _invoke_handler(name, path, "on_unload")
+    if canonical_name != name:
+        ch.info(f"Package '{name}' is deprecated; using '{canonical_name}'.")
+
+    ok = _invoke_handler(canonical_name, path, "on_unload")
     if ok:
-        _loaded_packs.discard(name)
-        ch.success(f"Package '{name}' unloaded.")
+        _loaded_packs.discard(canonical_name)
+        ch.success(f"Package '{canonical_name}' unloaded.")
 
 
 # ── Autoload ──────────────────────────────────────────────────────────────────────
@@ -639,7 +972,10 @@ def _read_autoload() -> list[str]:
         return []
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
-        return [str(x) for x in data] if isinstance(data, list) else []
+        if not isinstance(data, list):
+            return []
+        normalized = [_canonical_package_id(str(x)) for x in data]
+        return _iter_unique(normalized)
     except Exception:
         return []
 
@@ -647,7 +983,8 @@ def _read_autoload() -> list[str]:
 def _write_autoload(ids: list[str]) -> None:
     p = _autoload_path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(_iter_unique(ids), indent=2), encoding="utf-8")
+    canonical_ids = [_canonical_package_id(pkg_id) for pkg_id in ids]
+    p.write_text(json.dumps(_iter_unique(canonical_ids), indent=2), encoding="utf-8")
 
 
 autoload_app = typer.Typer(
@@ -674,18 +1011,21 @@ def autoload_add(
     name: str = typer.Argument(..., help="Package ID to add to auto-load list"),
 ):
     """Add a package to the auto-load list."""
-    manifest, _, _ = _load_package(name)
+    canonical_name = _canonical_package_id(name)
+    manifest, _, _ = _load_package(canonical_name)
     if manifest is None:
         ch.error(f"Package '{name}' not found.")
         raise typer.Exit(1)
     ids = _read_autoload()
-    if name in ids:
-        ch.info(f"'{name}' is already in the auto-load list.")
+    if canonical_name in ids:
+        ch.info(f"'{canonical_name}' is already in the auto-load list.")
         return
-    ids.append(name)
+    ids.append(canonical_name)
     _write_autoload(ids)
+    if canonical_name != name:
+        ch.info(f"Package '{name}' is deprecated; canonicalized to '{canonical_name}'.")
     ch.success(
-        f"Added '{name}' to auto-load list. It will be loaded on next 'navig' invocation."
+        f"Added '{canonical_name}' to auto-load list. It will be loaded on next 'navig' invocation."
     )
 
 
@@ -694,12 +1034,13 @@ def autoload_remove(
     name: str = typer.Argument(..., help="Package ID to remove from auto-load list"),
 ):
     """Remove a package from the auto-load list."""
+    canonical_name = _canonical_package_id(name)
     ids = _read_autoload()
-    if name not in ids:
-        ch.info(f"'{name}' is not in the auto-load list.")
+    if canonical_name not in ids:
+        ch.info(f"'{canonical_name}' is not in the auto-load list.")
         return
-    _write_autoload([i for i in ids if i != name])
-    ch.success(f"Removed '{name}' from auto-load list.")
+    _write_autoload([i for i in ids if i != canonical_name])
+    ch.success(f"Removed '{canonical_name}' from auto-load list.")
 
 
 def autoload_packages() -> None:
@@ -711,7 +1052,8 @@ def autoload_packages() -> None:
     import logging as _logging
 
     _log = _logging.getLogger(__name__)
-    for pkg_id in _read_autoload():
+    for configured_pkg_id in _read_autoload():
+        pkg_id = _canonical_package_id(configured_pkg_id)
         manifest, path, _ = _load_package(pkg_id)
         if manifest is None or path is None:
             _log.warning("autoload: package '%s' not found — skipping", pkg_id)

@@ -1,5 +1,5 @@
 def main() -> None:
-    print("navig-commands-core post-install")
+    print("navig-commands post-install")
     print("  Verifying runtime dependencies...")
     missing = []
     try:

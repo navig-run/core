@@ -5,6 +5,7 @@
   "description": "Windows UI automation — AutoHotkey v2 library, screen capture, OCR, and UI scripting.",
   "author": "navig",
   "license": "MIT",
+  "type": "tools",
   "entry": "handler.py",
   "provides": ["tools", "skills"],
   "hooks": ["on_load", "on_unload"],

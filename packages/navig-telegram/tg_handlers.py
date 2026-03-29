@@ -1,12 +1,12 @@
 ﻿"""
-telegram/handlers.py - Transport adapter: routes Telegram updates to navig-commands-core handlers.
+telegram/handlers.py - Transport adapter: routes Telegram updates to navig-commands handlers.
 
 No business logic lives here. This file only:
   1. Parses the incoming Telegram command and arguments
   2. Delegates to the transport-agnostic handler via the command registry
   3. Formats the returned dict into a Telegram reply string
 
-To add a new command: add it to navig-commands-core/commands/ and register
+To add a new command: add it to navig-commands/commands/ and register
 a cmd_<name> function here that parses args and calls the handler.
 """
 
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 def _get_handler(command_name: str):
     """
     Resolve a command handler. Tries the live CommandRegistry first,
-    then falls back to a direct import from navig-commands-core.
+    then falls back to a direct import from navig-commands.
     """
     try:
         from navig.commands._registry import CommandRegistry  # noqa: PLC0415
@@ -37,17 +37,20 @@ def _get_handler(command_name: str):
     # Direct import fallback: works when the commands pack is co-installed
     try:
         packages_dir = Path(__file__).parent.parent.parent  # packages/
-        core_commands = packages_dir / "navig-commands-core" / "commands"
-        if core_commands not in sys.path:
-            sys.path.insert(0, str(core_commands))
+        candidate_names = ("navig-commands", "navig-commands-core")
+        for package_name in candidate_names:
+            core_commands = packages_dir / package_name / "commands"
+            if core_commands.is_dir() and str(core_commands) not in sys.path:
+                sys.path.insert(0, str(core_commands))
         # Try parent dir (authoring mode — navig-core/packages/)
-        auth_commands = (
-            Path(__file__).parent.parent.parent.parent
-            / "navig-commands-core"
-            / "commands"
-        )
-        if auth_commands.is_dir() and str(auth_commands) not in sys.path:
-            sys.path.insert(0, str(auth_commands))
+        for package_name in candidate_names:
+            auth_commands = (
+                Path(__file__).parent.parent.parent.parent
+                / package_name
+                / "commands"
+            )
+            if auth_commands.is_dir() and str(auth_commands) not in sys.path:
+                sys.path.insert(0, str(auth_commands))
         from __init__ import COMMANDS  # noqa: PLC0415
 
         return COMMANDS.get(command_name)
@@ -86,7 +89,7 @@ async def cmd_checkdomain(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     handler = _get_handler("checkdomain")
     if handler is None:
         await status_msg.edit_text(
-            "⚠️ checkdomain handler not found. Is navig-commands-core installed?"
+            "⚠️ checkdomain handler not found. Is navig-commands installed?"
         )
         return
 

@@ -1,5 +1,5 @@
 ﻿"""
-handler.py - Pack lifecycle for navig-commands-core.
+handler.py - Pack lifecycle for navig-commands.
 
 Registers all COMMANDS into the NAVIG command registry on load.
 """
@@ -46,15 +46,15 @@ def on_load(ctx: PluginContext) -> None:
 
             for name, handler in COMMANDS.items():
                 CommandRegistry.register(name, handler, pack_id=ctx.pack_id)
-                logger.info("[navig-commands-core] Registered command: %s", name)
+                logger.info("[navig-commands] Registered command: %s", name)
         except ImportError:
             # Registry not wired yet - log and continue (pack still usable via direct import)
             logger.info(
-                "[navig-commands-core] CommandRegistry not found - %d commands available via direct import",
+                "[navig-commands] CommandRegistry not found - %d commands available via direct import",
                 len(COMMANDS),
             )
     except Exception as exc:
-        logger.error("[navig-commands-core] on_load failed: %s", exc)
+        logger.error("[navig-commands] on_load failed: %s", exc)
         raise
 
 
@@ -70,9 +70,9 @@ def on_unload(ctx: PluginContext) -> None:
                 CommandRegistry.deregister(name, pack_id=ctx.pack_id)
         except ImportError:
             pass  # optional dependency not installed; feature disabled
-        logger.info("[navig-commands-core] Unloaded %d commands", len(COMMANDS))
+        logger.info("[navig-commands] Unloaded %d commands", len(COMMANDS))
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[navig-commands-core] on_unload error (suppressed): %s", exc)
+        logger.warning("[navig-commands] on_unload error (suppressed): %s", exc)
 
 
 def on_event(event: PluginEvent, ctx: PluginContext) -> dict[str, Any] | None:
@@ -88,5 +88,5 @@ def on_event(event: PluginEvent, ctx: PluginContext) -> dict[str, Any] | None:
         loop = asyncio.get_event_loop()
         return loop.run_until_complete(handler(event.payload, ctx))  # type: ignore[arg-type]
     except Exception as exc:  # noqa: BLE001
-        logger.error("[navig-commands-core] on_event(%s) error: %s", event.name, exc)
+        logger.error("[navig-commands] on_event(%s) error: %s", event.name, exc)
         return None

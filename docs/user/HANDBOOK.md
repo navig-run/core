@@ -4429,6 +4429,11 @@ navig start --foreground     # See live logs
 | Slash + background orchestration | `/auto_start`, `/auto_stop`, `/auto_status`, `/imagegen`, `/remindme`, `/myreminders`, `/cancelreminder`, `/stats_global` | Slash command controls state/jobs; work may continue in background |
 | Business chats only (groups/supergroups) | `/kick`, `/mute`, `/unmute`, `/search` | Command is denied in DM and requires group admin rights |
 
+**Command shortcuts:**
+- `/plans` → `plans status`
+- `/plan <goal>` → `plans add <goal>`
+- In group chats, commands can be used as `/command@botname`.
+
 **Beta command visibility**
 
 Some migrated commands are intentionally visible with `(beta)` labels in Telegram command lists and `/help`:
@@ -8099,13 +8104,49 @@ Space-aware planning commands for `.navig/plans`.
 | `navig plans run "Goal"` | Deprecated alias for `plans add` |
 | `navig plans sync [--dry-run] [--space <name>]` | Process `.navig/plans/inbox/` through inbox routing |
 | `navig plans update [file]` | Recompute `completion_pct` and `last_updated` frontmatter |
+| `navig plans next [--space <name>]` | Show the next highest-impact actionable task from spaces |
 
 **Examples:**
 ```bash
 navig plans add "Ship onboarding wizard" --space finance
 navig plans sync --dry-run --space finance
 navig plans update CURRENT_PHASE.md
+navig plans next --space health
 ```
+
+### Telegram Continuation Controls
+
+For premium low-friction autonomous chat flow, Telegram now supports:
+
+- `/continue [profile] [space]` — enable autonomous continuation; profiles: `conservative` (20s/2 turns), `balanced` (10s/3), `aggressive` (5s/5)
+- Profile also controls busy suppression windows used after classifier wait/blocked signals:
+  - `conservative`: wait 45s, blocked 120s
+  - `balanced`: wait 30s, blocked 90s
+  - `aggressive`: wait 15s, blocked 60s
+- Profile controls decision sensitivity too:
+  - `conservative` = strict (only explicit continue prompts)
+  - `balanced` = standard
+  - `aggressive` = eager (allows softer continue prompts like “Proceed with next step?”)
+- `/pause` — pause continuation while keeping auto mode active
+- `/skip` — skip the next continuation trigger only
+- `/auto_status` — includes continuation policy, classifier state, and suppression metadata (`busy_until`, `last_skip`)
+- Detection is classifier-assisted: continuation triggers on high-confidence continue intent and avoids auto-trigger on choice/wait/blocked phrasing.
+
+### CLI Continuation Controls
+
+CLI parity is available via `navig agent continuation`:
+
+- `navig agent continuation continue --profile <conservative|balanced|aggressive> [--space <name>]`
+- `navig agent continuation start --profile <conservative|balanced|aggressive> [--space <name>]` (friendlier alias)
+- `navig agent continuation pause`
+- `navig agent continuation skip`
+- `navig agent continuation status`
+
+`continue` and `status` print effective policy telemetry, including cooldown/turn limits, suppression windows, and decision sensitivity.
+
+Top-level alias is also available:
+
+- `navig continuation start|continue|pause|skip|status`
 
 ---
 
@@ -8291,11 +8332,78 @@ navig portable disable           # Switch back to local ~/.navig/
 - Package dependencies in `depends_on.packages` must already be loaded.
 - Missing pip dependencies in `depends_on.pip` are auto-installed before load.
 - Autoload order is preserved exactly as listed in `packages_autoload.json`.
+- Canonical Telegram package is `navig-telegram`.
+- Older Telegram package IDs are auto-normalized to `navig-telegram` by `navig package load` and `navig package autoload`.
+- New packages can be scaffolded directly from CLI: `navig package init <id> --type <commands|workflows|telegram|tools>`.
+- Package quality can be checked across all manifests: `navig package audit` (use `--strict` to fail on warnings).
 
 **Examples:**
 ```bash
-navig package load navig-commands-core
+navig package load navig-commands
 navig package load navig-telegram
-navig package autoload add navig-commands-core
+navig package autoload add navig-commands
 navig package autoload add navig-telegram
+navig package init my-new-pack --type workflows
+navig package audit --strict
 ```
+
+---
+
+## 47. Universal Import Engine (`navig import`)
+
+Import external data (servers, contacts, bookmarks) into a normalized schema.
+
+| Command | Description |
+|---------|-------------|
+| `navig import --source all` | Run every built-in importer with default paths |
+| `navig import --source <name> --path <file>` | Run one importer against a custom path |
+| `navig import --output results.json` | Write full normalized output to JSON |
+| `navig import list-sources` | List available importers |
+
+Built-in sources:
+
+- `winscp` → `WinSCP.ini` / `.reg` server imports
+- `telegram` → Telegram Desktop `contacts.json` or export zip
+- `chrome` / `edge` / `firefox` / `safari` → browser bookmarks
+
+Bookmark imports are persisted into the existing links database by default.
+
+**Examples:**
+```bash
+navig import --source all --output results.json
+navig import --source chrome --path /custom/path/Bookmarks
+navig import list-sources
+```
+
+### Related Commands
+
+- `navig links import <file> --source auto` now supports native browser bookmark files.
+- `navig contacts import <contacts.json|export.zip>` imports Telegram contacts into NAVIG contacts storage.
+
+---
+
+## 48. Telegram Operations (`navig telegram` / `navig gateway test`)
+
+Telegram management commands now include direct message sending and target resolution.
+
+| Command | Description |
+|---------|-------------|
+| `navig telegram status` | Show Telegram bot configuration + active session count |
+| `navig telegram sessions list` | List active Telegram sessions |
+| `navig telegram send <chat_id|@username> --message "..."` | Send message using configured bot token |
+| `navig telegram send @username --message "..." --resolve-only` | Resolve target without sending |
+| `navig gateway test telegram --target <chat_id|@username>` | Run Telegram smoke-test through gateway test flow |
+
+**Examples:**
+```bash
+navig telegram status
+navig telegram sessions list
+navig telegram send 123456789 --message "Gateway online"
+navig telegram send @myuser --message "ping" --resolve-only
+navig gateway test telegram --target 123456789 --message "health-check"
+```
+
+Notes:
+
+- `@username` resolution depends on recent updates seen by the bot.
+- If username resolution fails, use numeric `chat_id` or have the user message the bot first.

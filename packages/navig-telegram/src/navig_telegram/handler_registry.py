@@ -1,6 +1,6 @@
 """navig_telegram.handler_registry — Formatter and menu registry for navig-telegram.
 
-navig-telegram-handlers (and any other UX pack) calls::
+Extension packs (including legacy aliases canonicalized to navig-telegram) call::
 
     from navig_telegram import handler_registry
 

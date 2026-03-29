@@ -588,13 +588,18 @@ echo env('APP_ENV');
 | `run` | `"command"`, `--b64`, `@file`, `-i` | Remote execution |
 | `db` | `list`, `tables`, `query`, `dump`, `restore`, `optimize`, `repair` | Database ops |
 | `docker` | `ps`, `logs`, `exec`, `compose`, `restart`, `stop`, `start`, `stats` | Container ops |
+| `telegram` | `status`, `send`, `sessions list/show/clear/delete/prune` | Telegram bot operations |
+| `gateway` | `start`, `stop`, `status`, `session`, `test` | Gateway runtime + smoke testing |
 | `file` | `add`, `list`, `show`, `edit`, `get`, `remove` | File operations |
 | `web` | `vhosts`, `test`, `enable`, `disable`, `reload`, `hestia` | Web server |
 | `backup` | `export`, `import`, `show`, `run`, `restore`, `remove` | Backup/restore |
 | `config` | `validate`, `show`, `settings`, `set`, `get`, `edit`, `schema` | Configuration |
+| `import` | `--source`, `--path`, `--output`, `list-sources` | Universal data import |
+| `contacts` | `list`, `add`, `import` | Contact address book operations |
 | `tunnel` | (see `navig help tunnel`) | SSH tunnels |
 | `flow` | `list`, `run`, `template` | Workflows |
-| `plans` | `status`, `add`, `run` (alias), `sync`, `update`, `briefing` | Space-aware planning |
+| `agent continuation` | `status`, `continue`, `pause`, `skip` | CLI continuation policy controls |
+| `plans` | `status`, `add`, `run` (alias), `sync`, `update`, `next`, `briefing` | Space-aware planning |
 | `auto` | `status`, `click`, `type`, `open`, `windows`, `snap` | UI Automation |
 | `ahk` | `clipboard`, `screenshot`, `ocr`, `listen` | Windows Automation |
 | `script` | `list`, `run`, `edit`, `new` | Script Management |

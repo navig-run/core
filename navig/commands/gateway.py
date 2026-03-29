@@ -341,6 +341,16 @@ def gateway_test(
         "-m",
         help="Message body to send",
     ),
+    strict: bool = typer.Option(
+        False,
+        "--strict",
+        help="Return non-zero exit code when any tested channel fails",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Print machine-readable JSON results",
+    ),
 ) -> None:
     """Send a smoke-test message through one or all configured channels.
 
@@ -375,8 +385,9 @@ def gateway_test(
                     host="",
                 )
                 results.append({"channel": "telegram", "ok": True})
-            except SystemExit:
-                results.append({"channel": "telegram", "ok": False, "reason": "send failed"})
+            except Exception as exc:
+                ch.warning(f"  Telegram test failed: {exc}")
+                results.append({"channel": "telegram", "ok": False, "reason": str(exc)})
 
         elif ch_name == "matrix":
             from navig.commands.bridge import matrix_bridge_test_alert as _mx_test
@@ -402,17 +413,33 @@ def gateway_test(
             )
             results.append({"channel": ch_name, "ok": False, "reason": "unknown"})
 
-    # Summary
-    ch.console.print("\n[bold]Results[/bold]")
-    for r in results:
-        icon = (
-            "[green]✓[/green]"
-            if r["ok"]
-            else ("[dim]–[/dim]" if r["ok"] is None else "[red]✗[/red]")
-        )
-        detail = f"  [dim]{r.get('reason', '')}[/dim]" if r.get("reason") else ""
-        ch.console.print(f"  {icon} {r['channel']}{detail}")
-    ch.console.print()
+    failed = [r for r in results if r.get("ok") is False]
+    if json_output:
+        import json as _json
+
+        payload = {
+            "results": results,
+            "summary": {
+                "channels_tested": len(results),
+                "failed": len(failed),
+                "ok": len(failed) == 0,
+            },
+        }
+        print(_json.dumps(payload, indent=2))
+    else:
+        ch.console.print("\n[bold]Results[/bold]")
+        for r in results:
+            icon = (
+                "[green]✓[/green]"
+                if r["ok"]
+                else ("[dim]–[/dim]" if r["ok"] is None else "[red]✗[/red]")
+            )
+            detail = f"  [dim]{r.get('reason', '')}[/dim]" if r.get("reason") else ""
+            ch.console.print(f"  {icon} {r['channel']}{detail}")
+        ch.console.print()
+
+    if strict and failed:
+        raise typer.Exit(1)
 
 
 @gateway_app.command("session")

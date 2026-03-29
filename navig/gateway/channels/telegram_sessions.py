@@ -52,6 +52,7 @@ class TelegramSession:
     autoheal_enabled: bool = False
     autoheal_hive_enabled: bool = False
     heal_history: list[dict] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def add_message(
         self,
@@ -105,6 +106,7 @@ class TelegramSession:
             "autoheal_enabled": self.autoheal_enabled,
             "autoheal_hive_enabled": self.autoheal_hive_enabled,
             "heal_history": self.heal_history,
+            "metadata": self.metadata,
         }
 
     @classmethod
@@ -126,6 +128,7 @@ class TelegramSession:
             autoheal_enabled=data.get("autoheal_enabled", False),
             autoheal_hive_enabled=data.get("autoheal_hive_enabled", False),
             heal_history=data.get("heal_history", []),
+            metadata=data.get("metadata", {}),
         )
 
 
@@ -268,7 +271,47 @@ class SessionManager:
             session.message_count = 0
             session.reply_chain = []
             session.context_summary = ""
+            session.metadata = {}
             self._save_session(session)
+
+    def get_session_metadata(
+        self,
+        chat_id: int,
+        user_id: int,
+        key: str,
+        default: Any = None,
+        is_group: bool = False,
+    ) -> Any:
+        """Get a metadata value from a session, or default when missing."""
+        session = self.get_or_create_session(chat_id, user_id, is_group=is_group)
+        return (session.metadata or {}).get(key, default)
+
+    def set_session_metadata(
+        self,
+        chat_id: int,
+        user_id: int,
+        key: str,
+        value: Any,
+        is_group: bool = False,
+        username: str = "",
+    ) -> TelegramSession:
+        """Set or clear a metadata value in a session and persist it."""
+        session = self.get_or_create_session(
+            chat_id,
+            user_id,
+            is_group=is_group,
+            username=username,
+        )
+        if session.metadata is None:
+            session.metadata = {}
+
+        if value is None:
+            session.metadata.pop(key, None)
+        else:
+            session.metadata[key] = value
+
+        self._save_session(session)
+        return session
 
     def delete_session(self, session_key: str):
         """Delete a session completely."""

@@ -156,3 +156,48 @@ def test_plans_update_writes_frontmatter_completion(tmp_path, monkeypatch):
     content = target.read_text(encoding="utf-8")
     assert "completion_pct: 66.7" in content
     assert f"last_updated: {datetime.now().strftime('%Y-%m-%d')}" in content
+
+
+def test_plans_next_selects_lowest_progress_with_pending_task(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    low = home / ".navig" / "spaces" / "health"
+    low.mkdir(parents=True, exist_ok=True)
+    (low / "VISION.md").write_text("---\ngoal: Restore energy\n---\n", encoding="utf-8")
+    (low / "CURRENT_PHASE.md").write_text(
+        "---\ncompletion_pct: 20\n---\n\n- [ ] Sleep 8h tonight\n",
+        encoding="utf-8",
+    )
+
+    high = home / ".navig" / "spaces" / "finance"
+    high.mkdir(parents=True, exist_ok=True)
+    (high / "VISION.md").write_text("---\ngoal: Save monthly\n---\n", encoding="utf-8")
+    (high / "CURRENT_PHASE.md").write_text(
+        "---\ncompletion_pct: 80\n---\n\n- [ ] Review subscriptions\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(plans_app, ["next", "--path", str(tmp_path / "repo")])
+    assert result.exit_code == 0
+    assert "Space: health" in result.stdout
+    assert "Sleep 8h tonight" in result.stdout
+
+
+def test_plans_briefing_includes_action_focus(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    health = home / ".navig" / "spaces" / "health"
+    health.mkdir(parents=True, exist_ok=True)
+    (health / "VISION.md").write_text("---\ngoal: Restore energy\n---\n", encoding="utf-8")
+    (health / "CURRENT_PHASE.md").write_text(
+        "---\ncompletion_pct: 10\n---\n\n- [ ] Sleep by 10pm\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(plans_app, ["briefing", "--path", str(tmp_path / "repo")])
+    assert result.exit_code == 0
+    assert "Spaces Progress:" in result.stdout
+    assert "Action Focus:" in result.stdout
+    assert "Sleep by 10pm" in result.stdout
