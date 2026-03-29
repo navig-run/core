@@ -3410,8 +3410,9 @@ class TelegramChannel:
             "chat_id": chat_id,
             "message_id": message_id,
             "text": text,
-            "parse_mode": parse_mode,
         }
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
         if keyboard is not None:
             payload["reply_markup"] = {"inline_keyboard": keyboard}
         return await self._api_call("editMessageText", payload)
