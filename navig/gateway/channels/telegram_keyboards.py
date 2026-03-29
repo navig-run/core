@@ -653,6 +653,7 @@ class CallbackHandler:
     def __init__(self, channel: TelegramChannel):
         self.channel = channel
         self.store = get_callback_store()
+        self._answered_callback_ids: set[str] = set()
 
     async def handle(self, callback_query: dict[str, Any]) -> None:
         cb_id = callback_query.get("id", "")
@@ -667,178 +668,277 @@ class CallbackHandler:
             await self._answer(cb_id, "⚠️ Invalid callback")
             return
 
-        # ── Model switcher callbacks (ms_*) — no store needed ──
-        if cb_data.startswith("task:"):
-            await self._handle_task_callback(cb_id, cb_data, chat_id, message_id, user_id)
-            return
+        try:
+            if cb_data.startswith("nav:"):
+                await self._handle_navigation_callback(cb_id, cb_data, chat_id, message_id, user_id)
+                return
 
-        if cb_data.startswith("ms_"):
-            await self._handle_model_switch(cb_id, cb_data, chat_id, message_id, user_id)
-            return
+            # ── Model switcher callbacks (ms_*) — no store needed ──
+            if cb_data.startswith("task:"):
+                await self._handle_task_callback(cb_id, cb_data, chat_id, message_id, user_id)
+                return
 
-        # ── Provider model picker callbacks (pm_*) — no store needed ──
-        if cb_data.startswith("pm_"):
-            await self._handle_provider_model_callback(cb_id, cb_data, chat_id, message_id, user_id)
-            return
+            if cb_data.startswith("ms_"):
+                await self._handle_model_switch(cb_id, cb_data, chat_id, message_id, user_id)
+                return
 
-        # ── Provider hub callbacks (prov_*) — no store needed ──
-        if cb_data.startswith("prov_"):
-            await self._handle_provider_callback(cb_id, cb_data, chat_id, message_id, user_id)
-            return
+            # ── Provider model picker callbacks (pm_*) — no store needed ──
+            if cb_data.startswith("pm_"):
+                await self._handle_provider_model_callback(cb_id, cb_data, chat_id, message_id, user_id)
+                return
 
-        # ── Settings callbacks (st_*) — no store needed ──
-        if cb_data.startswith("st_"):
-            await self._handle_settings_callback(cb_id, cb_data, chat_id, message_id, user_id)
-            return
+            # ── Provider hub callbacks (prov_*) — no store needed ──
+            if cb_data.startswith("prov_"):
+                await self._handle_provider_callback(cb_id, cb_data, chat_id, message_id, user_id)
+                return
 
-        # ── Debug callbacks (dbg_*) — no store needed ──
-        if cb_data.startswith("dbg_"):
-            await self._handle_debug_callback(cb_id, cb_data, chat_id, message_id, user_id)
-            return
+            # ── Settings callbacks (st_*) — no store needed ──
+            if cb_data.startswith("st_"):
+                await self._handle_settings_callback(cb_id, cb_data, chat_id, message_id, user_id)
+                return
 
-        # ── Trace action buttons (trace_*) — no store needed ──
-        if cb_data.startswith("trace_"):
-            await self._handle_trace_callback(cb_id, cb_data, chat_id, message_id, user_id)
-            return
+            # ── Debug callbacks (dbg_*) — no store needed ──
+            if cb_data.startswith("dbg_"):
+                await self._handle_debug_callback(cb_id, cb_data, chat_id, message_id, user_id)
+                return
 
-        # ── Heard action cards (heard_*) — no store needed ──
-        if cb_data.startswith("heard_"):
-            await self._handle_heard_callback(cb_id, cb_data, chat_id, message_id, user_id)
-            return
+            # ── Trace action buttons (trace_*) — no store needed ──
+            if cb_data.startswith("trace_"):
+                await self._handle_trace_callback(cb_id, cb_data, chat_id, message_id, user_id)
+                return
 
-        # ── NL confirm/cancel callbacks (nl_*) — no store needed ──
-        if cb_data.startswith("nl_"):
-            handler = getattr(self.channel, "_handle_nl_callback", None)
-            if handler:
-                await handler(cb_id, cb_data, chat_id, user_id)
-            else:
-                await self._answer(cb_id, "⚠️ Action unavailable")
-            return
+            # ── Heard action cards (heard_*) — no store needed ──
+            if cb_data.startswith("heard_"):
+                await self._handle_heard_callback(cb_id, cb_data, chat_id, message_id, user_id)
+                return
 
-        # ── Audio deep menu (audio:*) — no store needed ──
-        if cb_data.startswith("audio:"):
-            try:
-                from navig.gateway.channels.audio_menu import handle_audio_callback
-
-                await handle_audio_callback(
-                    self.channel, cb_id, cb_data, chat_id, message_id, user_id
-                )
-            except Exception as _amc_err:
-                logger.warning("Audio menu callback error: %s", _amc_err)
-                await self._answer(cb_id, "\u26a0\ufe0f Audio menu error")
-            return
-
-        # ── Audio file action buttons (audmsg:*) — no store needed ──
-        if cb_data.startswith("audmsg:"):
-            await self._handle_audio_file_callback(cb_id, cb_data, chat_id, message_id, user_id)
-            return
-
-        if not chat_id or not cb_data:
-            await self._answer(cb_id, "⚠️ Invalid callback")
-            return
-
-        entry = self.store.get(cb_data)
-        if not entry:
-            await self._answer(cb_id, "⏳ Button expired")
-            return
-
-        action = entry.action
-        logger.info("Callback: action=%s user=%s", action, user_id)
-
-        # ── Feedback (acknowledge only) ──
-        if action == "fb_up":
-            await self._answer(cb_id, "👍 Thanks!")
-            return
-        if action == "fb_down":
-            await self._answer(cb_id, "👎 Noted, I'll do better")
-            return
-
-        # ── Approval actions ──
-        if action == "approve":
-            # AUDIT DECISION:
-            # Is this the correct implementation? Yes — delegate to channel-level approval
-            # responder that enforces request ownership and channel checks.
-            # Does it break any existing callers? No — if no responder is configured, we
-            # return a clear unavailability message instead of silently succeeding.
-            # Is there a simpler alternative? Yes, but acknowledging without routing is unsafe.
-            _, message = await self._handle_approval_action(
-                entry=entry,
-                user_id=user_id,
-                approved=True,
-            )
-            await self._answer(cb_id, message)
-            return
-        if action == "alternative":
-            await self._answer(cb_id, "🔀 Using alternative")
-            return
-        if action == "cancel":
-            _, message = await self._handle_approval_action(
-                entry=entry,
-                user_id=user_id,
-                approved=False,
-            )
-            await self._answer(cb_id, message)
-            return
-
-        # ── Copy code ──
-        if action == "copy_code":
-            code_blocks = _CODE_BLOCK.findall(entry.ai_response)
-            if code_blocks:
-                code_text = "\n\n".join(block.strip("`").strip() for block in code_blocks)
-                await self._answer(cb_id, "📋 Code extracted")
-                await self.channel.send_message(chat_id, f"```\n{code_text[:3900]}\n```")
-            else:
-                await self._answer(cb_id, "No code blocks found")
-            return
-
-        # ── AI-routed actions ──
-        prompt_template = _ACTION_PROMPTS.get(action)
-        if prompt_template:
-            await self._answer(cb_id, "🔍 Working on it…")
-            typing_task = asyncio.create_task(self.channel._keep_typing(chat_id))
-            try:
-                prompt = prompt_template.format(
-                    user_message=entry.user_message,
-                    ai_response=entry.ai_response[:2500],
-                    ai_response_short=entry.ai_response[:500],
-                )
-                response = await self._get_ai_response(prompt, user_id)
-                if response:
-                    builder = ResponseKeyboardBuilder(self.store)
-                    keyboard = builder.build(
-                        ai_response=response,
-                        user_message=entry.user_message,
-                        message_id=message_id,
-                    )
-                    await self.channel.send_message(chat_id, response, keyboard=keyboard)
+            # ── NL confirm/cancel callbacks (nl_*) — no store needed ──
+            if cb_data.startswith("nl_"):
+                handler = getattr(self.channel, "_handle_nl_callback", None)
+                if handler:
+                    self._answered_callback_ids.add(cb_id)
+                    await handler(cb_id, cb_data, chat_id, user_id)
                 else:
-                    await self.channel.send_message(chat_id, "❌ Couldn't generate a response.")
-            finally:
-                typing_task.cancel()
+                    await self._answer(cb_id, "⚠️ Action unavailable")
+                return
+
+            # ── Audio deep menu (audio:*) — no store needed ──
+            if cb_data.startswith("audio:"):
                 try:
-                    await typing_task
-                except asyncio.CancelledError:
-                    pass  # task cancelled; expected during shutdown
-            return
+                    from navig.gateway.channels.audio_menu import handle_audio_callback
 
-        # ── Auto-Heal action buttons (heal_*) ───────────────────────────────────
-        if action.startswith("heal_"):
-            mixin = self.channel
-            if hasattr(mixin, "_dispatch_heal_callback"):
-                await mixin._dispatch_heal_callback(
-                    action=action,
-                    cb_key=cb_data,
-                    chat_id=chat_id,
+                    await handle_audio_callback(
+                        self.channel, cb_id, cb_data, chat_id, message_id, user_id
+                    )
+                except Exception as _amc_err:
+                    logger.warning("Audio menu callback error: chat_id=%s callback=%s err=%s", chat_id, cb_data, _amc_err)
+                    await self._answer(cb_id, "\u26a0\ufe0f Audio menu error")
+                return
+
+            # ── Audio file action buttons (audmsg:*) — no store needed ──
+            if cb_data.startswith("audmsg:"):
+                await self._handle_audio_file_callback(cb_id, cb_data, chat_id, message_id, user_id)
+                return
+
+            entry = self.store.get(cb_data)
+            if not entry:
+                await self._answer(cb_id, "⏳ Button expired")
+                return
+
+            action = entry.action
+            logger.info("Callback: action=%s user=%s", action, user_id)
+
+            # ── Feedback (acknowledge only) ──
+            if action == "fb_up":
+                await self._answer(cb_id, "👍 Thanks!")
+                return
+            if action == "fb_down":
+                await self._answer(cb_id, "👎 Noted, I'll do better")
+                return
+
+            # ── Approval actions ──
+            if action == "approve":
+                # AUDIT DECISION:
+                # Is this the correct implementation? Yes — delegate to channel-level approval
+                # responder that enforces request ownership and channel checks.
+                # Does it break any existing callers? No — if no responder is configured, we
+                # return a clear unavailability message instead of silently succeeding.
+                # Is there a simpler alternative? Yes, but acknowledging without routing is unsafe.
+                _, message = await self._handle_approval_action(
+                    entry=entry,
                     user_id=user_id,
-                    cb_id=cb_id,
+                    approved=True,
                 )
-            else:
-                await self._answer(cb_id, "⚠️ Auto-Heal not available")
+                await self._answer(cb_id, message)
+                return
+            if action == "alternative":
+                await self._answer(cb_id, "🔀 Using alternative")
+                return
+            if action == "cancel":
+                _, message = await self._handle_approval_action(
+                    entry=entry,
+                    user_id=user_id,
+                    approved=False,
+                )
+                await self._answer(cb_id, message)
+                return
+
+            # ── Copy code ──
+            if action == "copy_code":
+                code_blocks = _CODE_BLOCK.findall(entry.ai_response)
+                if code_blocks:
+                    code_text = "\n\n".join(
+                        block.strip("`").strip() for block in code_blocks
+                    )
+                    await self._answer(cb_id, "📋 Code extracted")
+                    await self.channel.send_message(
+                        chat_id, f"```\n{code_text[:3900]}\n```"
+                    )
+                else:
+                    await self._answer(cb_id, "No code blocks found")
+                return
+
+            # ── AI-routed actions ──
+            prompt_template = _ACTION_PROMPTS.get(action)
+            if prompt_template:
+                try:
+                    await self._answer(cb_id, "🔍 Working on it…")
+                    typing_task = asyncio.create_task(self.channel._keep_typing(chat_id))
+                    try:
+                        prompt = prompt_template.format(
+                            user_message=entry.user_message,
+                            ai_response=entry.ai_response[:2500],
+                            ai_response_short=entry.ai_response[:500],
+                        )
+                        response = await self._get_ai_response(prompt, user_id)
+                        if response:
+                            builder = ResponseKeyboardBuilder(self.store)
+                            keyboard = builder.build(
+                                ai_response=response,
+                                user_message=entry.user_message,
+                                message_id=message_id,
+                            )
+                            await self.channel.send_message(
+                                chat_id, response, keyboard=keyboard
+                            )
+                        else:
+                            await self.channel.send_message(
+                                chat_id, "❌ Couldn't generate a response."
+                            )
+                    finally:
+                        typing_task.cancel()
+                        try:
+                            await typing_task
+                        except asyncio.CancelledError:
+                            pass  # task cancelled; expected during shutdown
+                except Exception:
+                    raise
+                return
+
+            # ── Auto-Heal action buttons (heal_*) ───────────────────────────────────
+            if action.startswith("heal_"):
+                mixin = self.channel
+                if hasattr(mixin, "_dispatch_heal_callback"):
+                    await mixin._dispatch_heal_callback(
+                        action=action,
+                        cb_key=cb_data,
+                        chat_id=chat_id,
+                        user_id=user_id,
+                        cb_id=cb_id,
+                    )
+                else:
+                    await self._answer(cb_id, "⚠️ Auto-Heal not available")
+                return
+
+            await self._answer(cb_id, "⚠️ Unknown action")
+        except Exception as exc:
+            logger.exception("Callback handling failed: chat_id=%s callback=%s err=%s", chat_id, cb_data, exc)
+            await self._show_callback_error_screen(chat_id, message_id, cb_data)
+            await self._answer(cb_id, "❌ Failed — try again")
+        finally:
+            if cb_id and cb_id not in self._answered_callback_ids:
+                await self._answer(cb_id, "")
+            logger.debug(
+                "callback_ack chat_id=%s callback=%s answered=%s",
+                chat_id,
+                cb_data,
+                cb_id in self._answered_callback_ids,
+            )
+            self._answered_callback_ids.discard(cb_id)
+
+    async def _show_callback_error_screen(self, chat_id: int, message_id: int, cb_data: str) -> None:
+        if not message_id:
+            await self.channel.send_message(
+                chat_id,
+                "⚠️ Something went wrong. Use /start to return to menu.",
+                parse_mode=None,
+            )
+            return
+        await self.channel._api_call(
+            "editMessageText",
+            {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": "⚠️ Something went wrong. You can safely return to the main menu.",
+                "reply_markup": {
+                    "inline_keyboard": [
+                        [{"text": "🏠 Return to Menu", "callback_data": "nav:home"}],
+                    ]
+                },
+            },
+        )
+
+    async def _handle_navigation_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        parts = cb_data.split(":")
+        action = parts[1] if len(parts) > 1 else ""
+        target = parts[2] if len(parts) > 2 else ""
+
+        if action == "open" and target:
+            await self._answer(cb_id, "")
+            nav = getattr(self.channel, "navigateTo", None)
+            if nav:
+                await nav(
+                    chat_id=chat_id,
+                    screen=target,
+                    user_id=user_id,
+                    message_id=message_id,
+                )
             return
 
-        await self._answer(cb_id, "⚠️ Unknown action")
+        if action == "back":
+            await self._answer(cb_id, "")
+            back = getattr(self.channel, "navigateBack", None)
+            if back:
+                await back(chat_id=chat_id, user_id=user_id, message_id=message_id)
+            return
+
+        if action in {"home", "cancel"}:
+            await self._answer(cb_id, "")
+            nav = getattr(self.channel, "navigateTo", None)
+            if nav:
+                await nav(
+                    chat_id=chat_id,
+                    screen="main",
+                    user_id=user_id,
+                    message_id=message_id,
+                )
+            return
+
+        await self._answer(cb_id, "⚠️ Unknown navigation")
 
     async def _answer(self, callback_id: str, text: str, show_alert: bool = False) -> None:
+        if not callback_id:
+            return
+        if callback_id in self._answered_callback_ids:
+            return
+        self._answered_callback_ids.add(callback_id)
         await self.channel._api_call(
             "answerCallbackQuery",
             {
@@ -928,17 +1028,13 @@ class CallbackHandler:
 
             # Update the original message with refreshed keyboard
             try:
-                await self.channel._handle_models_command(chat_id, user_id)
+                await self.channel._handle_models_command(
+                    chat_id,
+                    user_id,
+                    message_id=message_id,
+                )
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
-
-            # Send brief confirmation
-            await self.channel.send_message(
-                chat_id,
-                f"✅ Model preset: *{label}*{model_name}\n"
-                f"All your messages will now use this tier.",
-                parse_mode="Markdown",
-            )
             return
 
         if cb_data == "ms_info":
@@ -964,7 +1060,11 @@ class CallbackHandler:
 
         if cb_data in ("ms_providers", "open_providers"):
             await self._answer(cb_id, "🔌 Providers")
-            await self.channel._handle_providers(chat_id, user_id)
+            await self.channel._handle_providers(
+                chat_id,
+                user_id,
+                message_id=message_id,
+            )
             return
 
         # ── Provider-force shortcuts (ms_prov_*) — redirect to provider model picker ──
@@ -1434,10 +1534,10 @@ class CallbackHandler:
                 logger.debug("Trace refresh failed: %s", exc)
         elif cb_data == "trace_providers":
             await self._answer(cb_id, "")
-            await self.channel._handle_providers(chat_id, user_id)
+            await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
         elif cb_data == "trace_model":
             await self._answer(cb_id, "")
-            await self.channel._handle_models_command(chat_id, user_id)
+            await self.channel._handle_models_command(chat_id, user_id, message_id=message_id)
         elif cb_data == "trace_close":
             try:
                 await self.channel._api_call(
@@ -1765,7 +1865,12 @@ class CallbackHandler:
                         await method(chat_id, "", user_id=user_id)
                     else:
                         try:
-                            await method(chat_id, user_id, is_group)
+                            await method(
+                                chat_id,
+                                user_id,
+                                is_group,
+                                message_id=message_id,
+                            )
                         except TypeError:
                             await method(chat_id)
                 except Exception as exc:

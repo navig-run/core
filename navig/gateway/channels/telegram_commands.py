@@ -602,7 +602,208 @@ class TelegramCommandsMixin:
         ("assumption", "Which assumption might be wrong and should be challenged first?"),
     )
 
+    _NAV_ROOT_SCREEN = "main"
+
     """Mixin for TelegramChannel - all slash-command handler methods."""
+
+    def _get_navigation_store(self) -> dict[int, dict[str, Any]]:
+        store = getattr(self, "_telegram_nav_state", None)
+        if not isinstance(store, dict):
+            store = {}
+            setattr(self, "_telegram_nav_state", store)
+        return store
+
+    def _get_navigation_state(self, chat_id: int) -> dict[str, Any]:
+        store = self._get_navigation_store()
+        state = store.get(chat_id)
+        if not isinstance(state, dict):
+            state = {
+                "chat_id": str(chat_id),
+                "screen_stack": [self._NAV_ROOT_SCREEN],
+                "data": {},
+                "message_id": None,
+            }
+            store[chat_id] = state
+        state.setdefault("chat_id", str(chat_id))
+        state.setdefault("screen_stack", [self._NAV_ROOT_SCREEN])
+        state.setdefault("data", {})
+        state.setdefault("message_id", None)
+        if not state["screen_stack"]:
+            state["screen_stack"] = [self._NAV_ROOT_SCREEN]
+        return state
+
+    def _reset_navigation_state(self, chat_id: int, message_id: int | None = None) -> dict[str, Any]:
+        store = self._get_navigation_store()
+        state = {
+            "chat_id": str(chat_id),
+            "screen_stack": [self._NAV_ROOT_SCREEN],
+            "data": {},
+            "message_id": message_id,
+        }
+        store[chat_id] = state
+        return state
+
+    async def renderScreen(
+        self,
+        chat_id: int,
+        screen_name: str,
+        payload: dict[str, Any] | None = None,
+        message_id: int | None = None,
+        user_id: int = 0,
+        username: str = "",
+    ) -> None:
+        state = self._get_navigation_state(chat_id)
+        state["data"] = payload or {}
+        if message_id is not None:
+            state["message_id"] = message_id
+        target_message_id = state.get("message_id")
+
+        if screen_name == "main":
+            hour = datetime.now().hour
+            if 5 <= hour < 12:
+                greeting = "🌅 Good morning. What do you want to run?"
+            elif 12 <= hour < 18:
+                greeting = "☀️ Good afternoon. Pick your next action."
+            elif 18 <= hour < 23:
+                greeting = "🌆 Good evening. Pick a workflow."
+            else:
+                greeting = "🌙 Late session. Pick your next action."
+            text = "\n".join(
+                [
+                    "✨ *NAVIG Main Menu*",
+                    greeting,
+                    "",
+                    "Use buttons for faster control.",
+                ]
+            )
+            keyboard = [
+                [
+                    {"text": "⚙️ Open Settings", "callback_data": "nav:open:settings"},
+                    {"text": "🧠 Open Models", "callback_data": "nav:open:models"},
+                ],
+                [
+                    {"text": "🔌 Open Providers", "callback_data": "nav:open:providers"},
+                    {"text": "🗂 Open Spaces", "callback_data": "nav:open:spaces"},
+                ],
+                [
+                    {"text": "🧭 Start Intake", "callback_data": "nav:open:intake"},
+                    {"text": "📊 Open Status", "callback_data": "nav:open:status"},
+                ],
+                [{"text": "❌ Cancel", "callback_data": "nav:cancel"}],
+            ]
+            if target_message_id:
+                await self.edit_message(
+                    chat_id,
+                    target_message_id,
+                    text,
+                    parse_mode="Markdown",
+                    keyboard=keyboard,
+                )
+                return
+            sent = await self.send_message(chat_id, text, parse_mode="Markdown", keyboard=keyboard)
+            if sent and isinstance(sent, dict):
+                state["message_id"] = sent.get("message_id")
+            return
+
+        if screen_name == "help":
+            text = self._generate_help_text(deck_enabled=bool(self._get_deck_url()))
+            keyboard = [
+                [
+                    {"text": "🔙 Back", "callback_data": "nav:back"},
+                    {"text": "🏠 Main Menu", "callback_data": "nav:home"},
+                ],
+            ]
+            if target_message_id:
+                await self.edit_message(chat_id, target_message_id, text, parse_mode="Markdown", keyboard=keyboard)
+                return
+            sent = await self.send_message(chat_id, text, parse_mode="Markdown", keyboard=keyboard)
+            if sent and isinstance(sent, dict):
+                state["message_id"] = sent.get("message_id")
+            return
+
+        if screen_name == "status":
+            await self._handle_status(chat_id=chat_id, user_id=user_id, message_id=target_message_id)
+            return
+
+        if screen_name == "spaces":
+            await self._handle_spaces(chat_id=chat_id, message_id=target_message_id)
+            return
+
+        if screen_name == "settings":
+            await self._handle_settings_hub(chat_id=chat_id, user_id=user_id, message_id=target_message_id)
+            return
+
+        if screen_name == "models":
+            await self._handle_models_command(chat_id=chat_id, user_id=user_id, message_id=target_message_id)
+            return
+
+        if screen_name == "providers":
+            await self._handle_providers(chat_id=chat_id, user_id=user_id, message_id=target_message_id)
+            return
+
+        if screen_name == "intake":
+            await self._handle_intake(chat_id=chat_id, user_id=user_id, text="/intake", message_id=target_message_id)
+            return
+
+        # Fallback recovery screen
+        text = "⚠️ Something went wrong while opening that screen."
+        keyboard = [[{"text": "🏠 Return to Menu", "callback_data": "nav:home"}]]
+        if target_message_id:
+            await self.edit_message(chat_id, target_message_id, text, parse_mode=None, keyboard=keyboard)
+            return
+        sent = await self.send_message(chat_id, text, parse_mode=None, keyboard=keyboard)
+        if sent and isinstance(sent, dict):
+            state["message_id"] = sent.get("message_id")
+
+    async def navigateTo(
+        self,
+        chat_id: int,
+        screen: str,
+        *,
+        user_id: int = 0,
+        username: str = "",
+        payload: dict[str, Any] | None = None,
+        message_id: int | None = None,
+    ) -> None:
+        state = self._get_navigation_state(chat_id)
+        stack = list(state.get("screen_stack") or [self._NAV_ROOT_SCREEN])
+        if not stack or stack[-1] != screen:
+            stack.append(screen)
+        state["screen_stack"] = stack
+        if message_id is not None:
+            state["message_id"] = message_id
+        await self.renderScreen(
+            chat_id=chat_id,
+            screen_name=screen,
+            payload=payload,
+            message_id=state.get("message_id"),
+            user_id=user_id,
+            username=username,
+        )
+
+    async def navigateBack(
+        self,
+        chat_id: int,
+        *,
+        user_id: int = 0,
+        username: str = "",
+        message_id: int | None = None,
+    ) -> None:
+        state = self._get_navigation_state(chat_id)
+        stack = list(state.get("screen_stack") or [self._NAV_ROOT_SCREEN])
+        if len(stack) > 1:
+            stack.pop()
+        prev = stack[-1] if stack else self._NAV_ROOT_SCREEN
+        state["screen_stack"] = stack or [self._NAV_ROOT_SCREEN]
+        if message_id is not None:
+            state["message_id"] = message_id
+        await self.renderScreen(
+            chat_id=chat_id,
+            screen_name=prev,
+            message_id=state.get("message_id"),
+            user_id=user_id,
+            username=username,
+        )
 
     @staticmethod
     def _build_command_list_for_registration() -> list[dict[str, str]]:
@@ -650,59 +851,30 @@ class TelegramCommandsMixin:
 
     # -- Core slash handlers ---------------------------------------------------
 
-    async def _handle_start(self, chat_id: int, username: str) -> None:
-        """Greeting on /start - warm, natural, time-of-day aware."""
-        hour = datetime.now().hour
-        name = username if username and username != "None" else "hey"
-        if 5 <= hour < 8:
-            greeting = random.choice(
-                [
-                    f"morning, {name}. you're up early - what's going on?",
-                    f"hey {name}, early start today. what's up?",
-                ]
-            )
-        elif 8 <= hour < 12:
-            greeting = random.choice(
-                [
-                    f"hey {name}! what are we working on?",
-                    "morning. what do you need?",
-                ]
-            )
-        elif 12 <= hour < 18:
-            greeting = random.choice(
-                [
-                    "hey! what's on your mind?",
-                    f"yo {name}, what can I do for you?",
-                ]
-            )
-        elif 18 <= hour < 22:
-            greeting = random.choice(
-                [
-                    f"hey {name}. still at it?",
-                    "evening. what do you need?",
-                ]
-            )
-        else:
-            greeting = random.choice(
-                [
-                    "late one, huh? what's up?",
-                    f"hey {name}. burning the midnight oil?",
-                ]
-            )
-        await self.send_message(chat_id, greeting, parse_mode=None)
+    async def _handle_start(self, chat_id: int, username: str, user_id: int = 0) -> None:
+        """Reset session navigation and render the persistent main menu."""
+        self._reset_navigation_state(chat_id)
+        await self.renderScreen(
+            chat_id=chat_id,
+            screen_name="main",
+            user_id=user_id,
+            username=username,
+        )
 
     async def _handle_help(self, chat_id: int) -> None:
         """Command reference (/help) - auto-generated from _SLASH_REGISTRY."""
-        await self.send_message(
-            chat_id,
-            self._generate_help_text(deck_enabled=bool(self._get_deck_url())),
-        )
+        await self.navigateTo(chat_id, "help")
 
     async def _handle_ping(self, chat_id: int) -> None:
         """Quick alive check (/ping)."""
         await self.send_message(chat_id, "pong.", parse_mode=None)
 
-    async def _handle_status(self, chat_id: int, user_id: int = 0) -> None:
+    async def _handle_status(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        message_id: int | None = None,
+    ) -> None:
         """Space-aware status summary for Telegram users (/status)."""
         from navig.spaces import get_default_space
         from navig.spaces.progress import (
@@ -730,7 +902,24 @@ class TelegramCommandsMixin:
         lines.append("")
         lines.append(f"Model tier: `{tier or 'auto'}`")
 
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+        keyboard = [
+            [
+                {"text": "🔙 Back", "callback_data": "nav:back"},
+                {"text": "🏠 Main Menu", "callback_data": "nav:home"},
+            ],
+        ]
+        if message_id:
+            await self.edit_message(
+                chat_id,
+                message_id,
+                "\n".join(lines),
+                parse_mode="Markdown",
+                keyboard=keyboard,
+            )
+            return
+        sent = await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown", keyboard=keyboard)
+        if sent and isinstance(sent, dict):
+            self._get_navigation_state(chat_id)["message_id"] = sent.get("message_id")
 
     def _runtime_state_with_context(
         self,
@@ -771,7 +960,7 @@ class TelegramCommandsMixin:
                 encoding="utf-8",
             )
 
-    async def _handle_spaces(self, chat_id: int) -> None:
+    async def _handle_spaces(self, chat_id: int, message_id: int | None = None) -> None:
         from navig.commands.space import get_active_space
         from navig.spaces.contracts import CANONICAL_SPACES
 
@@ -782,8 +971,26 @@ class TelegramCommandsMixin:
             if name == active:
                 marker = "▸"
             lines.append(f"{marker} `{name}`")
-        lines.append("\nUse `/space <name>` to switch and get top next actions.")
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+        lines.append("\nUse `/space <name>` or choose below.")
+        keyboard = [
+            [
+                {"text": "🔙 Back", "callback_data": "nav:back"},
+                {"text": "🏠 Main Menu", "callback_data": "nav:home"},
+            ],
+            [{"text": "🧭 Start Intake", "callback_data": "nav:open:intake"}],
+        ]
+        if message_id:
+            await self.edit_message(
+                chat_id,
+                message_id,
+                "\n".join(lines),
+                parse_mode="Markdown",
+                keyboard=keyboard,
+            )
+            return
+        sent = await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown", keyboard=keyboard)
+        if sent and isinstance(sent, dict):
+            self._get_navigation_state(chat_id)["message_id"] = sent.get("message_id")
 
     async def _handle_space(self, chat_id: int, user_id: int, text: str = "") -> None:
         from navig.commands.space import _set_active_space, _spaces_dir
@@ -878,7 +1085,13 @@ class TelegramCommandsMixin:
 
         return space_path
 
-    async def _handle_intake(self, chat_id: int, user_id: int, text: str = "") -> None:
+    async def _handle_intake(
+        self,
+        chat_id: int,
+        user_id: int,
+        text: str = "",
+        message_id: int | None = None,
+    ) -> None:
         from navig.commands.space import get_active_space
         from navig.spaces.contracts import normalize_space_name, validate_space_name
         from navig.store.runtime import get_runtime_store
@@ -891,7 +1104,16 @@ class TelegramCommandsMixin:
             context = dict(state.get("context") or {})
             context["intake"] = {"active": False}
             self._runtime_state_with_context(user_id, chat_id, context)
-            await self.send_message(chat_id, "🛑 Intake cancelled.", parse_mode=None)
+            if message_id:
+                await self.edit_message(
+                    chat_id,
+                    message_id,
+                    "🛑 Intake cancelled.",
+                    parse_mode=None,
+                    keyboard=[[{"text": "🏠 Main Menu", "callback_data": "nav:home"}]],
+                )
+            else:
+                await self.send_message(chat_id, "🛑 Intake cancelled.", parse_mode=None)
             return
 
         selected_space = get_active_space()
@@ -914,11 +1136,19 @@ class TelegramCommandsMixin:
         self._runtime_state_with_context(user_id, chat_id, context)
 
         first_question = self._INTAKE_QUESTIONS[0][1]
-        await self.send_message(
-            chat_id,
-            f"🧭 Intake started for `{selected_space}`.\n{first_question}",
-            parse_mode="Markdown",
-        )
+        text_payload = f"🧭 Intake started for `{selected_space}`.\n{first_question}"
+        keyboard = [
+            [
+                {"text": "🔙 Back", "callback_data": "nav:back"},
+                {"text": "❌ Cancel", "callback_data": "nav:cancel"},
+            ],
+        ]
+        if message_id:
+            await self.edit_message(chat_id, message_id, text_payload, parse_mode="Markdown", keyboard=keyboard)
+            return
+        sent = await self.send_message(chat_id, text_payload, parse_mode="Markdown", keyboard=keyboard)
+        if sent and isinstance(sent, dict):
+            self._get_navigation_state(chat_id)["message_id"] = sent.get("message_id")
 
     async def _handle_intake_reply(self, chat_id: int, user_id: int, text: str) -> bool:
         from navig.spaces.kickoff import build_space_kickoff
@@ -1323,7 +1553,12 @@ class TelegramCommandsMixin:
         except Exception:
             return False, "not configured"
 
-    async def _handle_models_command(self, chat_id: int, user_id: int = 0) -> None:
+    async def _handle_models_command(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        message_id: int | None = None,
+    ) -> None:
         """Show active model config with interactive switcher keyboard (/models)."""
         try:
             from navig.agent.ai_client import get_ai_client
@@ -1425,18 +1660,36 @@ class TelegramCommandsMixin:
                         "callback_data": "ms_tier_small",
                     },
                     {"text": f"- Big{check('big')}", "callback_data": "ms_tier_big"},
+                ],
+                [
                     {
                         "text": f"- Code{check('coder_big')}",
                         "callback_data": "ms_tier_coder",
                     },
+                    {"text": f"- Auto{check('')}", "callback_data": "ms_tier_auto"},
                 ],
                 [
-                    {"text": f"- Auto{check('')}", "callback_data": "ms_tier_auto"},
                     {"text": "- Full table", "callback_data": "ms_info"},
+                    {"text": "- Providers ->", "callback_data": "ms_providers"},
                 ],
-                [{"text": "- Providers ->", "callback_data": "ms_providers"}],
+                [
+                    {"text": "🔙 Back", "callback_data": "nav:back"},
+                    {"text": "🏠 Main Menu", "callback_data": "nav:home"},
+                ],
             ]
-            await self.send_message(chat_id, "\n".join(lines), keyboard=keyboard)
+            text_payload = "\n".join(lines)
+            if message_id:
+                await self.edit_message(
+                    chat_id,
+                    message_id,
+                    text_payload,
+                    parse_mode="Markdown",
+                    keyboard=keyboard,
+                )
+                return
+            sent = await self.send_message(chat_id, text_payload, keyboard=keyboard)
+            if sent and isinstance(sent, dict):
+                self._get_navigation_state(chat_id)["message_id"] = sent.get("message_id")
 
         except Exception as e:
             await self.send_message(chat_id, f"- Could not read routing info: {e}")
@@ -1548,6 +1801,12 @@ class TelegramCommandsMixin:
 
         keyboard_rows.append(
             [{"text": "🚫 No AI  — raw mode", "callback_data": "prov_noai"}]
+        )
+        keyboard_rows.append(
+            [
+                {"text": "🔙 Back", "callback_data": "nav:back"},
+                {"text": "🏠 Main Menu", "callback_data": "nav:home"},
+            ]
         )
         keyboard_rows.append([{"text": "✖ Close", "callback_data": "prov_close"}])
 
@@ -1707,13 +1966,29 @@ class TelegramCommandsMixin:
             nav_row.append({"text": "◀ Prev", "callback_data": f"pmp_{prov_id}_{page-1}_{selected_tier}"})
         if page < total_pages - 1:
             nav_row.append({"text": "Next ▶", "callback_data": f"pmp_{prov_id}_{page+1}_{selected_tier}"})
+        page_btn = {
+            "text": f"Page {page + 1}/{total_pages}",
+            "callback_data": f"pmv_{prov_id}_{selected_tier}_{page}",
+        }
         if nav_row:
-            keyboard.append(nav_row)
+            if len(nav_row) == 1:
+                keyboard.append([nav_row[0], page_btn])
+            else:
+                keyboard.append([nav_row[0], page_btn])
+                keyboard.append([nav_row[1]])
+        else:
+            keyboard.append([page_btn])
 
         keyboard.append(
             [
                 {"text": f"🚀 Activate {name}", "callback_data": f"prov_activate_{prov_id}"},
                 {"text": "← Providers", "callback_data": "prov_back"},
+            ]
+        )
+        keyboard.append(
+            [
+                {"text": "🔙 Back", "callback_data": "nav:back"},
+                {"text": "🏠 Main Menu", "callback_data": "nav:home"},
             ]
         )
 
@@ -2184,7 +2459,11 @@ class TelegramCommandsMixin:
     # -- Audio / settings menus ------------------------------------------------
 
     async def _handle_audio_menu(
-        self, chat_id: int, user_id: int, is_group: bool = False
+        self,
+        chat_id: int,
+        user_id: int,
+        is_group: bool = False,
+        message_id: int | None = None,
     ) -> None:
         """Send the /audio response-mode panel."""
         if not _HAS_KEYBOARDS or not _HAS_SESSIONS:
@@ -2198,33 +2477,75 @@ class TelegramCommandsMixin:
         sm = get_session_manager()
         session = sm.get_or_create_session(chat_id, user_id, is_group)
         keyboard_rows = build_audio_keyboard(session)
-        await self.send_message(
-            chat_id, _audio_header_text(session), keyboard=keyboard_rows
+        keyboard_rows = list(keyboard_rows)
+        keyboard_rows.append(
+            [
+                {"text": "🔙 Back", "callback_data": "nav:back"},
+                {"text": "🏠 Main Menu", "callback_data": "nav:home"},
+            ]
         )
+        if message_id:
+            await self.edit_message(
+                chat_id,
+                message_id,
+                _audio_header_text(session),
+                parse_mode="Markdown",
+                keyboard=keyboard_rows,
+            )
+            return
+        sent = await self.send_message(chat_id, _audio_header_text(session), keyboard=keyboard_rows)
+        if sent and isinstance(sent, dict):
+            self._get_navigation_state(chat_id)["message_id"] = sent.get("message_id")
 
     async def _handle_voice_menu(
-        self, chat_id: int, user_id: int, is_group: bool = False
+        self,
+        chat_id: int,
+        user_id: int,
+        is_group: bool = False,
+        message_id: int | None = None,
     ) -> None:
         """Send the /voice provider picker (provider -> model -> voice/speed/format)."""
         if _HAS_AUDIO_MENU:
             try:
                 cfg = _load_audio_config(user_id)
-                await self.send_message(
-                    chat_id,
-                    _audio_screen_a_text(cfg),
-                    keyboard=_audio_screen_a_kb(cfg),
+                keyboard = list(_audio_screen_a_kb(cfg))
+                keyboard.append(
+                    [
+                        {"text": "🔙 Back", "callback_data": "nav:back"},
+                        {"text": "🏠 Main Menu", "callback_data": "nav:home"},
+                    ]
                 )
+                if message_id:
+                    await self.edit_message(
+                        chat_id,
+                        message_id,
+                        _audio_screen_a_text(cfg),
+                        parse_mode="Markdown",
+                        keyboard=keyboard,
+                    )
+                else:
+                    sent = await self.send_message(
+                        chat_id,
+                        _audio_screen_a_text(cfg),
+                        keyboard=keyboard,
+                    )
+                    if sent and isinstance(sent, dict):
+                        self._get_navigation_state(chat_id)["message_id"] = sent.get("message_id")
                 return
             except Exception as _am_err:
                 logger.debug("Deep audio menu failed, falling back: %s", _am_err)
 
-        await self._handle_audio_menu(chat_id, user_id, is_group)
+        await self._handle_audio_menu(chat_id, user_id, is_group, message_id=message_id)
 
     # Backward-compat alias
     _handle_settings_menu = _handle_audio_menu
 
     async def _handle_settings_hub(
-        self, chat_id: int, user_id: int, is_group: bool = False
+        self,
+        chat_id: int,
+        user_id: int,
+        is_group: bool = False,
+        message_id: int | None = None,
     ) -> None:
         """Send the /settings pro hub - main navigation panel."""
         if not _HAS_KEYBOARDS or not _HAS_SESSIONS:
@@ -2238,9 +2559,25 @@ class TelegramCommandsMixin:
         sm = get_session_manager()
         session = sm.get_or_create_session(chat_id, user_id, is_group)
         keyboard_rows = build_settings_hub_keyboard(session)
-        await self.send_message(
-            chat_id, _settings_hub_text(session), keyboard=keyboard_rows
+        keyboard_rows = list(keyboard_rows)
+        keyboard_rows.append(
+            [
+                {"text": "🔙 Back", "callback_data": "nav:back"},
+                {"text": "🏠 Main Menu", "callback_data": "nav:home"},
+            ]
         )
+        if message_id:
+            await self.edit_message(
+                chat_id,
+                message_id,
+                _settings_hub_text(session),
+                parse_mode="Markdown",
+                keyboard=keyboard_rows,
+            )
+            return
+        sent = await self.send_message(chat_id, _settings_hub_text(session), keyboard=keyboard_rows)
+        if sent and isinstance(sent, dict):
+            self._get_navigation_state(chat_id)["message_id"] = sent.get("message_id")
 
     # -- Formatting & Reasoning -------------------------------------------------
 

@@ -816,7 +816,7 @@ class TelegramChannel:
                     await self._handle_status(chat_id, user_id)
                     return
                 if cmd == "/start":
-                    await self._handle_start(chat_id, username)
+                    await self._handle_start(chat_id, username, user_id=user_id)
                     return
                 if cmd == "/help":
                     await self._handle_help(chat_id)
@@ -2042,465 +2042,45 @@ class TelegramChannel:
         }.get(name, name)
 
     async def _handle_models_command(self, chat_id: int, user_id: int = 0):
-        """Show active model config with interactive switcher keyboard."""
-        try:
-            from navig.agent.ai_client import get_ai_client
+        """Delegate to the canonical model routing screen implementation."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
-            client = get_ai_client()
-            router = client.model_router
+        await TelegramCommandsMixin._handle_models_command(self, chat_id=chat_id, user_id=user_id)
 
-            # ── Active provider ──
-            best_raw = (
-                client._detect_best_provider()
-                if hasattr(client, "_detect_best_provider")
-                else "unknown"
-            )
-            best = self._fmt_provider(best_raw)
+    async def _handle_providers(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        message_id: int | None = None,
+    ) -> None:
+        """Delegate to the canonical provider hub implementation in TelegramCommandsMixin."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
-            lines = ["🧠 *Model Routing*", f"🎯 Active provider: `{best}`", ""]
-
-            # ── User-facing tiers (small_talk / big_tasks / coding only) ──
-            try:
-                from navig.llm_router import get_llm_router
-
-                llm_router = get_llm_router()
-                if llm_router:
-                    lines.append("*Your AI Tiers:*")
-                    user_modes = [
-                        ("⚡", "Small", "small_talk"),
-                        ("🧠", "Big", "big_tasks"),
-                        ("💻", "Code", "coding"),
-                    ]
-                    for icon, label, mode_name in user_modes:
-                        mc = llm_router.modes.get_mode(mode_name)
-                        if mc:
-                            prov = self._fmt_provider(mc.provider)
-                            lines.append(f"{icon} *{label}*   `{prov}:{mc.model}`")
-                            if mc.fallback_provider:
-                                fb_prov = self._fmt_provider(mc.fallback_provider)
-                                lines.append(
-                                    f"     ↳ fallback: `{fb_prov}:{mc.fallback_model}`"
-                                )
-                else:
-                    lines.append("_Tier config unavailable_")
-            except Exception:
-                lines.append("_Tier config unavailable_")
-
-            # ── Bridge tiers (when Bridge is connected) ──
-            if router and router.is_active:
-                cfg = router.cfg
-                lines.append("")
-                lines.append("*Bridge Tiers (when Bridge is connected):*")
-                user_pref = self._get_user_tier_pref(chat_id, user_id)
-                pref_label = {
-                    "small": "⚡ Small",
-                    "big": "🧠 Big",
-                    "coder_big": "💻 Coder",
-                }.get(user_pref, "🔄 Auto")
-                lines.append(f"  Preset: *{pref_label}*")
-                for icon, label, slot in [
-                    ("⚡", "small", cfg.small),
-                    ("🧠", "big", cfg.big),
-                    ("💻", "code", cfg.coder_big),
-                ]:
-                    prov = self._fmt_provider(slot.provider or "—")
-                    model = slot.model or "—"
-                    lines.append(f"  {icon} {label}: `{prov}:{model}`")
-
-            text = "\n".join(lines)
-
-            # ── Inline keyboard ──
-            user_pref = self._get_user_tier_pref(chat_id, user_id)
-            check = lambda t: " ✓" if user_pref == t else ""
-            keyboard = [
-                [
-                    {
-                        "text": f"⚡ Small{check('small')}",
-                        "callback_data": "ms_tier_small",
-                    },
-                    {"text": f"🧠 Big{check('big')}", "callback_data": "ms_tier_big"},
-                    {
-                        "text": f"💻 Code{check('coder_big')}",
-                        "callback_data": "ms_tier_coder",
-                    },
-                ],
-                [
-                    {"text": f"🔄 Auto{check('')}", "callback_data": "ms_tier_auto"},
-                    {"text": "📊 Full table", "callback_data": "ms_info"},
-                ],
-                [
-                    {"text": "🔌 Providers →", "callback_data": "open_providers"},
-                ],
-            ]
-            await self.send_message(chat_id, text, keyboard=keyboard)
-
-        except Exception as e:
-            text = f"⚠️ Could not read routing info: {e}"
-            await self.send_message(chat_id, text)
-
-    async def _handle_providers(self, chat_id: int, user_id: int = 0) -> None:
-        """AI Provider Hub — live registry status, Bridge probe, interactive keyboard."""
-        import socket as _socket
-
-        # ── Bridge probe ──
-        bridge_port = 42070
-        try:
-            from navig.providers.bridge_grid_reader import (
-                BRIDGE_DEFAULT_PORT,
-                get_llm_port,
-            )
-
-            bridge_port = get_llm_port() or BRIDGE_DEFAULT_PORT
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            _s = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-            _s.settimeout(1.0)
-            bridge_online = _s.connect_ex(("127.0.0.1", bridge_port)) == 0
-            _s.close()
-        except Exception:
-            bridge_online = False
-
-        # ── Active provider (for the "Now using" line) ──
-        try:
-            from navig.agent.ai_client import get_ai_client
-
-            client = get_ai_client()
-            best_raw = (
-                client._detect_best_provider()
-                if hasattr(client, "_detect_best_provider")
-                else "unknown"
-            )
-            active_provider = self._fmt_provider(best_raw)
-        except Exception:
-            active_provider = "bridge" if bridge_online else "unknown"
-
-        # ── Load live provider list from registry ──
-        try:
-            from navig.providers.registry import list_enabled_providers
-            from navig.providers.verifier import verify_provider
-
-            providers = list_enabled_providers()
-        except Exception:
-            providers = []
-
-        # ── Header ──
-        bridge_tag = "online ✓" if bridge_online else "offline"
-
-        def _he(s: str) -> str:
-            """Minimal HTML escape for user-facing dynamic strings."""
-            return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-        lines = [
-            "🔌 <b>AI Providers</b>",
-            f"🎯 Now using: <code>{_he(active_provider)}</code> · Bridge {_he(bridge_tag)}",
-            "",
-        ]
-
-        # ── Bridge section ──
-        if bridge_online:
-            lines.append("⚡ <b>Bridge</b> — online")
-            lines.append(
-                "<i>When connected, Bridge models take priority over cloud providers.</i>"
-            )
-        else:
-            lines.append("⚡ <b>Bridge</b> — offline")
-            lines.append("<i>Open VS Code with navig-bridge extension to activate.</i>")
-        lines.append("")
-
-        # ── Cloud & local providers ──
-        cloud_lines: list[str] = []
-        local_lines: list[str] = []
-
-        keyboard_rows: list = [
-            [{"text": f"⚡ Bridge — {bridge_tag}", "callback_data": "prov_bridge"}],
-        ]
-        button_row: list = []
-
-        for manifest in providers:
-            if manifest.id == "mcp_bridge":
-                continue  # already rendered as Bridge section above
-
-            # ── Is this the currently active provider? ──
-            is_active = manifest.id == active_provider or manifest.id.replace(
-                "_", ""
-            ) == active_provider.replace("_", "")
-
-            # ── Determine status ──
-            status_icon = "⚙️"
-            status_label = ""
-            try:
-                result = verify_provider(manifest)
-                if manifest.tier == "local" and manifest.local_probe:
-                    if result.local_probe_ok:
-                        status_icon = "✅"
-                        status_label = "running"
-                    else:
-                        status_icon = "⬜"
-                        status_label = "not detected"
-                elif manifest.requires_key:
-                    if result.key_detected:
-                        status_icon = "✅"
-                        status_label = "configured"
-                    else:
-                        status_icon = "⚙️"
-                        env_hint = manifest.env_vars[0] if manifest.env_vars else ""
-                        status_label = (
-                            f"set {env_hint}" if env_hint else "not configured"
-                        )
-                else:
-                    status_icon = "✅"
-                    status_label = "no key needed"
-            except Exception:
-                status_icon = "⚙️"
-                status_label = "not configured"
-
-            # Active provider marker — always shown regardless of key detection
-            active_tag = "  ★ <b>in use</b>" if is_active else ""
-            extra = (
-                f"  {status_icon} {_he(status_label)}"
-                if status_label
-                else f"  {status_icon}"
-            )
-            entry = f"  {manifest.emoji} <b>{_he(manifest.display_name)}</b>{extra}{active_tag}"
-            if manifest.tier == "local":
-                local_lines.append(entry)
-            else:
-                cloud_lines.append(entry)
-
-            btn_label = (
-                f"{'★ ' if is_active else ''}{manifest.emoji} {manifest.display_name}"
-            )
-            btn = {
-                "text": btn_label,
-                "callback_data": f"prov_{manifest.id}",
-            }
-            button_row.append(btn)
-            if len(button_row) == 2:
-                keyboard_rows.append(list(button_row))
-                button_row = []
-
-        if button_row:
-            keyboard_rows.append(list(button_row))
-
-        if cloud_lines:
-            lines.append("☁️ <b>Cloud Providers:</b>")
-            lines.extend(cloud_lines)
-            lines.append("")
-        if local_lines:
-            lines.append("🖥 <b>Local Providers:</b>")
-            lines.extend(local_lines)
-            lines.append("")
-
-        lines.append("<i>Tap a provider to configure or assign models.</i>")
-
-        # ── Control row pinned at bottom ──
-        keyboard_rows.append(
-            [{"text": "🚫 No AI (raw mode)", "callback_data": "prov_noai"}]
-        )
-        keyboard_rows.append([{"text": "❌ Close", "callback_data": "prov_close"}])
-
-        await self.send_message(
-            chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard_rows
+        await TelegramCommandsMixin._handle_providers(
+            self,
+            chat_id=chat_id,
+            user_id=user_id,
+            message_id=message_id,
         )
 
     async def _show_provider_model_picker(
-        self, chat_id: int, prov_id: str, page: int = 0
+        self,
+        chat_id: int,
+        prov_id: str,
+        page: int = 0,
+        selected_tier: str = "s",
+        message_id: int | None = None,
     ) -> None:
-        """Send a paginated model↔tier assignment picker for the given provider."""
-        import asyncio as _asyncio
-        import json as _json
-        import os as _os
+        """Delegate to the canonical tier-first model picker in TelegramCommandsMixin."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
-        PAGE_SIZE = 8
-
-        def _he(s: str) -> str:
-            """Minimal HTML escape for dynamic strings."""
-            return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-        emoji, name, models = "🤖", prov_id, []
-        try:
-            from navig.providers.registry import _INDEX as PROV_INDEX
-
-            manifest = PROV_INDEX.get(prov_id)
-            if manifest:
-                emoji = manifest.emoji
-                name = manifest.display_name
-                models = list(manifest.models)
-        except Exception:
-            manifest = None
-
-        # ── Live model queries (fallback to static on any error) ────────────
-        if prov_id == "ollama":
-            try:
-                import urllib.request
-
-                def _fetch_ollama() -> list:
-                    with urllib.request.urlopen(
-                        "http://127.0.0.1:11434/api/tags", timeout=2
-                    ) as r:
-                        data = _json.loads(r.read())
-                        return [m["name"] for m in data.get("models", []) if m.get("name")]
-
-                live = await _asyncio.to_thread(_fetch_ollama)
-                if live:
-                    models = live
-            except Exception:  # noqa: BLE001
-                pass
-            if not models:
-                models = ["qwen2.5:7b", "qwen2.5:3b", "phi3.5", "llama3.2"]
-
-        elif prov_id == "openrouter":
-            api_key = _os.environ.get("OPENROUTER_API_KEY", "")
-            if api_key:
-                try:
-                    import urllib.request
-
-                    def _fetch_openrouter() -> list:
-                        req = urllib.request.Request(
-                            "https://openrouter.ai/api/v1/models",
-                            headers={"Authorization": f"Bearer {api_key}"},
-                        )
-                        with urllib.request.urlopen(req, timeout=4) as r:
-                            data = _json.loads(r.read())
-                            return [m["id"] for m in data.get("data", []) if m.get("id")]
-
-                    live = await _asyncio.wait_for(
-                        _asyncio.to_thread(_fetch_openrouter), timeout=5.0
-                    )
-                    if live:
-                        models = live
-                except Exception:  # noqa: BLE001
-                    pass  # fallback to static catalog
-
-        elif prov_id == "xai":
-            api_key = _os.environ.get("XAI_API_KEY") or _os.environ.get("GROK_KEY", "")
-            if api_key:
-                try:
-                    import urllib.request
-
-                    def _fetch_xai() -> list:
-                        req = urllib.request.Request(
-                            "https://api.x.ai/v1/models",
-                            headers={"Authorization": f"Bearer {api_key}"},
-                        )
-                        with urllib.request.urlopen(req, timeout=4) as r:
-                            data = _json.loads(r.read())
-                            return [m["id"] for m in data.get("data", []) if m.get("id")]
-
-                    live = await _asyncio.wait_for(
-                        _asyncio.to_thread(_fetch_xai), timeout=5.0
-                    )
-                    if live:
-                        models = live
-                except Exception:  # noqa: BLE001
-                    pass  # fallback to static catalog
-
-        elif prov_id == "nvidia":
-            api_key = _os.environ.get("NVIDIA_API_KEY") or _os.environ.get("NIM_API_KEY", "")
-            if api_key:
-                try:
-                    import urllib.request
-
-                    def _fetch_nvidia() -> list:
-                        req = urllib.request.Request(
-                            "https://integrate.api.nvidia.com/v1/models",
-                            headers={"Authorization": f"Bearer {api_key}"},
-                        )
-                        with urllib.request.urlopen(req, timeout=4) as r:
-                            data = _json.loads(r.read())
-                            return [m["id"] for m in data.get("data", []) if m.get("id")]
-
-                    live = await _asyncio.wait_for(
-                        _asyncio.to_thread(_fetch_nvidia), timeout=5.0
-                    )
-                    if live:
-                        models = live
-                except Exception:  # noqa: BLE001
-                    pass  # fallback to static catalog
-
-        if not models:
-            await self.send_message(
-                chat_id,
-                f"⚠️ No models found for <code>{_he(prov_id)}</code>.",
-                parse_mode="HTML",
-            )
-            return
-
-        # ── Pagination ──────────────────────────────────────────────────────
-        total = len(models)
-        start = page * PAGE_SIZE
-        end = min(start + PAGE_SIZE, total)
-        page_models = models[start:end]
-        total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
-
-        # Current router assignment for this provider
-        current: dict = {"small": "—", "big": "—", "coder_big": "—"}
-        try:
-            from navig.agent.ai_client import get_ai_client
-
-            router = get_ai_client().model_router
-            if router and router.is_active:
-                for tier in ("small", "big", "coder_big"):
-                    slot = router.cfg.slot_for_tier(tier)
-                    if slot.provider == prov_id:
-                        current[tier] = f"<code>{_he(slot.model)}</code>"
-        except Exception:  # noqa: BLE001
-            pass
-
-        page_label = f"  · page {page + 1}/{total_pages}" if total_pages > 1 else ""
-        lines = [
-            f"{emoji} <b>{_he(name)}</b> — assign model to tier{_he(page_label)}",
-            "",
-            f"  ⚡ Small:  {current['small']}",
-            f"  🧠 Big:    {current['big']}",
-            f"  💻 Code:   {current['coder_big']}",
-            "",
-            "Tap ⚡S / 🧠B / 💻C to assign a model to that tier:",
-        ]
-        for i, m in enumerate(page_models):
-            abs_i = start + i
-            lines.append(f"  <code>{abs_i}.</code> {_he(m)}")
-
-        keyboard: list = []
-        for i, m in enumerate(page_models):
-            abs_i = start + i
-            short = m.split("/")[-1].split(":")[-1][:10]
-            keyboard.append(
-                [
-                    {"text": f"⚡S {short}", "callback_data": f"pm_{prov_id}_{abs_i}_s"},
-                    {"text": f"🧠B {short}", "callback_data": f"pm_{prov_id}_{abs_i}_b"},
-                    {"text": f"💻C {short}", "callback_data": f"pm_{prov_id}_{abs_i}_c"},
-                ]
-            )
-
-        # ── Pagination nav row ──
-        nav_row: list = []
-        if page > 0:
-            nav_row.append(
-                {"text": "◀ Prev", "callback_data": f"prov_page_{prov_id}_{page - 1}"}
-            )
-        if end < total:
-            remaining = total - end
-            nav_row.append(
-                {
-                    "text": f"Next ▶ ({remaining} more)",
-                    "callback_data": f"prov_page_{prov_id}_{page + 1}",
-                }
-            )
-        if nav_row:
-            keyboard.append(nav_row)
-
-        # ── Activate + back row ──
-        keyboard.append(
-            [
-                {"text": f"🚀 Activate {name}", "callback_data": f"prov_activate_{prov_id}"},
-                {"text": "← Providers", "callback_data": "prov_back"},
-            ]
-        )
-
-        await self.send_message(
-            chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard
+        await TelegramCommandsMixin._show_provider_model_picker(
+            self,
+            chat_id=chat_id,
+            prov_id=prov_id,
+            page=page,
+            selected_tier=selected_tier,
+            message_id=message_id,
         )
 
     async def _handle_debug(self, chat_id: int) -> None:
@@ -2902,52 +2482,83 @@ class TelegramChannel:
             keyboard=keyboard_rows,
         )
 
-    async def _handle_start(self, chat_id: int, username: str):
-        """Greeting on /start — warm, natural, human-like."""
-        hour = datetime.now().hour
-        name = username if username and username != "None" else "hey"
-        if 5 <= hour < 8:
-            greeting = random.choice(
-                [
-                    f"morning, {name}. you're up early — what's going on?",
-                    f"hey {name}, early start today. what's up?",
-                ]
-            )
-        elif 8 <= hour < 12:
-            greeting = random.choice(
-                [
-                    f"hey {name}! what are we working on?",
-                    "morning. what do you need?",
-                ]
-            )
-        elif 12 <= hour < 18:
-            greeting = random.choice(
-                [
-                    "hey! what's on your mind?",
-                    f"yo {name}, what can I do for you?",
-                ]
-            )
-        elif 18 <= hour < 22:
-            greeting = random.choice(
-                [
-                    f"hey {name}. still at it?",
-                    "evening. what do you need?",
-                ]
-            )
-        else:
-            greeting = random.choice(
-                [
-                    "late one, huh? what's up?",
-                    f"hey {name}. burning the midnight oil?",
-                ]
-            )
-        await self.send_message(chat_id, greeting, parse_mode=None)
+    async def _handle_start(self, chat_id: int, username: str, user_id: int = 0):
+        """Delegate to canonical /start flow with nav reset + main screen."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_start(
+            self,
+            chat_id=chat_id,
+            username=username,
+            user_id=user_id,
+        )
 
     async def _handle_help(self, chat_id: int):
         """Command reference (/help) from the slash registry."""
         from .telegram_commands import TelegramCommandsMixin
 
         await TelegramCommandsMixin._handle_help(self, chat_id)
+
+    async def renderScreen(
+        self,
+        chat_id: int,
+        screen_name: str,
+        payload: dict[str, Any] | None = None,
+        message_id: int | None = None,
+        user_id: int = 0,
+        username: str = "",
+    ) -> None:
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin.renderScreen(
+            self,
+            chat_id=chat_id,
+            screen_name=screen_name,
+            payload=payload,
+            message_id=message_id,
+            user_id=user_id,
+            username=username,
+        )
+
+    async def navigateTo(
+        self,
+        chat_id: int,
+        screen: str,
+        *,
+        user_id: int = 0,
+        username: str = "",
+        payload: dict[str, Any] | None = None,
+        message_id: int | None = None,
+    ) -> None:
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin.navigateTo(
+            self,
+            chat_id=chat_id,
+            screen=screen,
+            user_id=user_id,
+            username=username,
+            payload=payload,
+            message_id=message_id,
+        )
+
+    async def navigateBack(
+        self,
+        chat_id: int,
+        *,
+        user_id: int = 0,
+        username: str = "",
+        message_id: int | None = None,
+    ) -> None:
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin.navigateBack(
+            self,
+            chat_id=chat_id,
+            user_id=user_id,
+            username=username,
+            message_id=message_id,
+        )
 
     async def _handle_mode(self, chat_id: int, mode_arg: str):
         """Set focus mode and persist to UserStateTracker."""

@@ -4429,6 +4429,14 @@ navig start --foreground     # See live logs
 | Slash + background orchestration | `/auto_start`, `/auto_stop`, `/auto_status`, `/imagegen`, `/remindme`, `/myreminders`, `/cancelreminder`, `/stats_global` | Slash command controls state/jobs; work may continue in background |
 | Business chats only (groups/supergroups) | `/kick`, `/mute`, `/unmute`, `/search` | Command is denied in DM and requires group admin rights |
 
+**Single-message navigation UX (v2.4.2x+)**
+
+- `/start` resets Telegram navigation state and opens one persistent *Main Menu* message.
+- Menu/list workflows now prefer in-place updates via `editMessageText` instead of posting new messages.
+- Inline navigation uses `🔙 Back`, `🏠 Main Menu`, and `❌ Cancel` callbacks.
+- Callback handlers acknowledge actions with `answerCallbackQuery` so the loading spinner clears immediately.
+- If a callback handler fails, NAVIG edits the current message to a recovery screen with `🏠 Return to Menu`.
+
 **Command shortcuts:**
 - `/plans` → `plans status`
 - `/plan <goal>` → `plans add <goal>`
