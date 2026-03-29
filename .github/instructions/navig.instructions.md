@@ -147,6 +147,7 @@ navig run --b64 $b64
 
 ### Fast In-App Help (Use Before Searching Docs)
 - `navig help` lists topics; `navig help <topic>` shows subcommands
+- `navig help --schema` outputs the authoritative machine-readable command registry (preferred for AI/tooling)
 - Use `--plain` for scripting and `--json` for structured output
 - Prefer this to discover the canonical noun-verb actions quickly
 
@@ -543,6 +544,7 @@ echo env('APP_ENV');
 
 ## In-App Help (navig_help)
 - **WHEN TO RUN**: When user asks "what commands exist", "how do I…", "show options", or when unsure of exact syntax
+- **CANONICAL DISCOVERY**: Run `navig help --schema` first for exact command paths/options source-of-truth (same as `navig --schema`)
 - **TOPICS LIST**: `navig help`
 - **TOPIC DETAILS**: `navig help <topic>` (e.g., `navig help db`, `navig help file`, `navig help backup`)
 - **DEEP HELP**: Prefer `navig <resource> --help` for full flags and arguments

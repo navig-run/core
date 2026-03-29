@@ -119,6 +119,17 @@ def _check_key(manifest: ProviderManifest) -> bool:
                     pass  # best-effort; failure is non-critical
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
+
+    try:
+        from navig.vault import get_vault
+
+        legacy_vault = get_vault()
+        infos = legacy_vault.list(provider=manifest.id)
+        if infos:
+            return True
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
+
     return False
 
 

@@ -74,4 +74,4 @@ def get_default_space() -> str:
     env_space = os.environ.get("NAVIG_SPACE", "").strip()
     if env_space:
         return normalize_space_name(env_space)
-    return "life"
+    return "default"

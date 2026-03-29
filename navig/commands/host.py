@@ -12,6 +12,7 @@ from typing import Any
 
 from navig import console_helper as ch
 from navig.config import get_config_manager
+from navig.registry.meta import command_meta
 
 # Lazy import for ServerDiscovery - only loaded when discovery operations are needed
 _server_discovery = None
@@ -102,6 +103,13 @@ def _validate_ssh_key(key_path: str) -> tuple[bool, str]:
         return False, f"Could not read key file: {e}"
 
 
+@command_meta(
+    summary="List all configured hosts",
+    status="stable",
+    since="2.4.18",
+    tags=["infra", "ssh", "hosts"],
+    examples=["navig host list", "navig host list --json"],
+)
 def list_hosts(options: dict[str, Any]):
     """List all configured hosts."""
     hosts = config_manager.list_hosts()
@@ -1188,6 +1196,13 @@ def host_callback(ctx: typer.Context):
 
 
 @host_app.command("list")
+@command_meta(
+    summary="List hosts from current workspace",
+    status="stable",
+    since="2.4.18",
+    tags=["infra", "ssh", "hosts"],
+    examples=["navig host list", "navig host list --all"],
+)
 def host_list(
     ctx: typer.Context,
     all: bool = typer.Option(False, "--all", "-a", help="Show detailed information"),
