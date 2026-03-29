@@ -2926,21 +2926,11 @@ def sync_to_env(config: dict[str, Any], console: ConsoleType = None) -> None:
     }
 
     if telegram_config:
-        # Retrieve bot token from vault using the stored vault_id reference.
-        # Fall back to a raw value only for manually-edited legacy configs.
-        bot_token_vault_id = telegram_config.get("bot_token_vault_id")
-        if bot_token_vault_id:
-            try:
-                from navig.vault import get_vault  # lazy import
+        from navig.messaging.secrets import resolve_telegram_bot_token
 
-                _vault = get_vault()
-                _cred = _vault.get_by_id(bot_token_vault_id, caller="sync_to_env")
-                if _cred:
-                    _tok = _cred.get_secret("bot_token")
-                    if _tok:
-                        updates["TELEGRAM_BOT_TOKEN"] = _tok
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+        resolved_token = resolve_telegram_bot_token(config)
+        if resolved_token:
+            updates["TELEGRAM_BOT_TOKEN"] = resolved_token
         elif telegram_config.get("bot_token"):  # legacy / manual config
             updates["TELEGRAM_BOT_TOKEN"] = telegram_config["bot_token"]
         if telegram_config.get("allowed_users"):

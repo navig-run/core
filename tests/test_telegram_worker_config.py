@@ -43,7 +43,7 @@ def test_telegram_and_deck_config(monkeypatch: pytest.MonkeyPatch):
         },
     }
     monkeypatch.setattr(tw, "get_config_manager", lambda: SimpleNamespace(global_config=cfg))
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "env-token")
+    monkeypatch.setattr(tw, "resolve_telegram_bot_token", lambda _cfg=None: "env-token")
 
     tg = tw._telegram_config()
     dk = tw._deck_config()
@@ -82,6 +82,6 @@ def test_telegram_config_without_env(monkeypatch: pytest.MonkeyPatch):
         "get_config_manager",
         lambda: SimpleNamespace(global_config={"telegram": {"bot_token": "cfg-only"}}),
     )
-    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.setattr(tw, "resolve_telegram_bot_token", lambda _cfg=None: "cfg-only")
     result = tw._telegram_config()
     assert result["bot_token"] == "cfg-only"

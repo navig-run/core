@@ -1085,7 +1085,9 @@ def telegram_start(
 
     load_dotenv()
 
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    from navig.messaging.secrets import resolve_telegram_bot_token
+
+    token = resolve_telegram_bot_token()
     if not token:
         ch.error("TELEGRAM_BOT_TOKEN not set!")
         ch.console.print()
@@ -1150,7 +1152,9 @@ def telegram_status():
 
     load_dotenv()
 
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    from navig.messaging.secrets import resolve_telegram_bot_token
+
+    token = resolve_telegram_bot_token()
     model = os.getenv("NAVIG_AI_MODEL", "openrouter")
     allowed = os.getenv("ALLOWED_TELEGRAM_USERS", "")
     typing_mode = os.getenv("TYPING_MODE", "instant")

@@ -78,6 +78,7 @@ python scripts/version_bump.py bump major --commit --tag --push
 Optional npm-style shortcuts are available at repo root:
 
 ```bash
+npm run release:dry
 npm run release:normal
 npm run release:minor
 npm run release:big
@@ -88,6 +89,7 @@ Command mapping:
 - `release:normal` → patch bump (`X.Y.Z` -> `X.Y.(Z+1)`)
 - `release:minor` → minor bump (`X.Y.Z` -> `X.(Y+1).0`)
 - `release:big` → major bump (`X.Y.Z` -> `(X+1).0.0`)
+- `release:dry` → preview next patch version only (no file or git changes)
 
 ## Post-Release
 

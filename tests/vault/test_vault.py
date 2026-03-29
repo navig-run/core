@@ -1148,6 +1148,56 @@ class TestValidatorsMocked:
         assert isinstance(providers, list)
         assert providers == sorted(providers)  # Should be sorted
 
+    @patch("httpx.get")
+    def test_telegram_validator_success(self, mock_get):
+        from navig.vault.validators import TelegramValidator
+
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            headers={"content-type": "application/json"},
+            json=lambda: {"ok": True, "result": {"id": 123, "username": "navig_bot"}},
+        )
+        cred = self._make_cred("telegram", {"token": "123:abc"})
+        result = TelegramValidator().validate(cred)
+        assert result.success
+        assert result.details["validation_mode"] == "remote"
+
+    @patch("httpx.get")
+    def test_deepgram_validator_success(self, mock_get):
+        from navig.vault.validators import DeepgramValidator
+
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"projects": [{"name": "p1"}]},
+        )
+        cred = self._make_cred("deepgram", {"api_key": "dg_test"})
+        result = DeepgramValidator().validate(cred)
+        assert result.success
+        assert result.details["validation_mode"] == "remote"
+
+    @patch("httpx.get")
+    def test_xai_validator_success(self, mock_get):
+        from navig.vault.validators import XAIValidator
+
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"data": [{"id": "grok-2"}]},
+        )
+        cred = self._make_cred("xai", {"api_key": "xai_test"})
+        result = XAIValidator().validate(cred)
+        assert result.success
+        assert result.details["validation_mode"] == "remote"
+
+    @patch("httpx.get")
+    def test_nvidia_validator_falls_back_presence_only(self, mock_get):
+        from navig.vault.validators import NvidiaValidator
+
+        mock_get.return_value = MagicMock(status_code=404)
+        cred = self._make_cred("nvidia", {"api_key": "nv_test"})
+        result = NvidiaValidator().validate(cred)
+        assert result.success
+        assert result.details["validation_mode"] == "presence_only"
+
 
 class TestStorageEdgeCases:
     """Additional storage tests for coverage."""

@@ -55,7 +55,7 @@ def test_load_env(monkeypatch):
 
 
 def test_configs(mock_config_manager, monkeypatch):
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "env_token")
+    monkeypatch.setattr(tw, "resolve_telegram_bot_token", lambda _cfg=None: "env_token")
     monkeypatch.setenv("NAVIG_BRIDGE_MCP_URL", "ws://env_mcp")
     monkeypatch.setenv("NAVIG_BRIDGE_LLM_TOKEN", "env_llm")
 

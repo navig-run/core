@@ -8568,8 +8568,10 @@ def bot_start(
     import os
     import subprocess
 
-    # Check for telegram token
-    telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    # Check for telegram token (vault-first, env/config fallback)
+    from navig.messaging.secrets import resolve_telegram_bot_token
+
+    telegram_token = resolve_telegram_bot_token()
     if not telegram_token:
         ch.error("TELEGRAM_BOT_TOKEN not set!")
         ch.info("  Get token from @BotFather on Telegram")
@@ -8748,7 +8750,9 @@ def quick_start(
     import subprocess
 
     if bot:
-        telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        from navig.messaging.secrets import resolve_telegram_bot_token
+
+        telegram_token = resolve_telegram_bot_token()
         if not telegram_token:
             ch.error("TELEGRAM_BOT_TOKEN not set!")
             ch.info("  Get token from @BotFather on Telegram")

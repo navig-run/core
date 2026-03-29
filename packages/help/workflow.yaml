@@ -1,0 +1,5 @@
+name: Example Workflow
+version: 1
+steps:
+  - name: status
+    run: navig status

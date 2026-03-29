@@ -24,11 +24,9 @@ telegram_app.add_typer(sessions_app, name="sessions")
 
 
 def _load_telegram_token() -> str:
-    from navig.config import get_config_manager
+    from navig.messaging.secrets import resolve_telegram_bot_token
 
-    cm = get_config_manager()
-    config = cm._load_global_config()
-    token = str(config.get("telegram", {}).get("bot_token") or "").strip()
+    token = resolve_telegram_bot_token()
     if not token:
         raise RuntimeError("Telegram bot token missing. Configure with: navig init")
     return token

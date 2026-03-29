@@ -7,6 +7,7 @@ Supports adding, listing, editing, deleting, testing, and cloning credentials.
 
 import json
 import sys
+import re
 
 import typer
 
@@ -19,6 +20,31 @@ _validators_mod = lazy_import("navig.vault.validators")
 
 cred_app = typer.Typer(name="cred", help="Manage credentials in the vault")
 profile_app = typer.Typer(name="profile", help="Manage credential profiles")
+
+
+def _resolve_test_target_mode(vault, target: str, provider: str | None, credential_id: str | None):
+    if credential_id and provider:
+        raise ValueError("Use either --id or --provider, not both.")
+
+    normalized_target = (target or "").strip()
+    normalized_provider = (provider or "").strip()
+    normalized_id = (credential_id or "").strip()
+
+    if not normalized_target and not normalized_provider and not normalized_id:
+        raise ValueError("Provide a target, --provider, or --id.")
+
+    if normalized_id:
+        return "id", normalized_id
+
+    if normalized_provider:
+        return "provider", normalized_provider
+
+    if re.fullmatch(r"[0-9a-f]{8}", normalized_target.lower()) and vault.get_by_id(
+        normalized_target
+    ) is not None:
+        return "id", normalized_target
+
+    return "provider", normalized_target
 
 # ── Provider shortcuts: auto-detect type, data key, and label ─────────────
 # Maps provider aliases → (canonical_provider, credential_type, data_key, default_label)
@@ -337,24 +363,36 @@ def delete_credential(
 
 @cred_app.command("test")
 def test_credential(
-    target: str = typer.Argument(..., help="Credential ID OR Provider Name"),
+    target: str | None = typer.Argument(None, help="Credential ID OR Provider Name"),
     profile: str | None = typer.Option(
         None, "--profile", "-P", help="Profile (if target is provider)"
+    ),
+    provider: str | None = typer.Option(
+        None,
+        "--provider",
+        help="Force provider mode (fixes ambiguous short names)",
+    ),
+    credential_id: str | None = typer.Option(
+        None,
+        "--id",
+        help="Force credential ID mode",
     ),
 ):
     """Test a credential against the provider API."""
     vault = _vault_mod.get_vault()
-
-    # Check if target looks like a UUID (8 chars)
-    is_id = len(target) == 8
+    try:
+        mode, resolved = _resolve_test_target_mode(vault, target or "", provider, credential_id)
+    except ValueError as exc:
+        _ch.error(str(exc))
+        raise typer.Exit(1)
 
     con = _console()
-    con.print(f"Running validation for [cyan]{target}[/cyan]...")
+    con.print(f"Running validation for [cyan]{resolved}[/cyan]...")
 
-    if is_id:
-        result = vault.test(target)
+    if mode == "id":
+        result = vault.test(resolved)
     else:
-        result = vault.test_provider(target, profile_id=profile)
+        result = vault.test_provider(resolved, profile_id=profile)
 
     if result.success:
         _ch.success("Validation successful!")

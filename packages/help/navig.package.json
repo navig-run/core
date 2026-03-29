@@ -1,0 +1,24 @@
+{
+  "id": "help",
+  "name": "Help",
+  "version": "1.0.0",
+  "description": "Workflows package: help",
+  "type": "workflows",
+  "author": "navig",
+  "license": "MIT",
+  "entry": "workflow.yaml",
+  "provides": [
+    "workflows"
+  ],
+  "hooks": [],
+  "depends_on": {
+    "packages": {},
+    "skills": [],
+    "pip": []
+  },
+  "recommends": {},
+  "install_hooks": {
+    "post_install": "",
+    "post_remove": ""
+  }
+}

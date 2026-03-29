@@ -352,9 +352,17 @@ def get_telegram_bridge() -> TelegramBridge:
             raise RuntimeError(
                 "Telegram credential not found. Run: navig cred add telegram --token <bot_token>"
             )
-        token = cred_list[0].data.get("token", "")
+        full_cred = vault.get_by_id(cred_list[0].id, caller="telegram_bridge")
+        token = ""
+        if full_cred is not None:
+            token = (
+                full_cred.data.get("token")
+                or full_cred.data.get("bot_token")
+                or full_cred.data.get("api_key")
+                or ""
+            )
         if not token:
-            raise RuntimeError("Telegram credential has no 'token' field.")
+            raise RuntimeError("Telegram credential has no token value.")
 
         kg = get_knowledge_graph()
         chat_id_facts = kg.recall("user", predicate="telegram_chat_id")

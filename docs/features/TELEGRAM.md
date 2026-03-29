@@ -22,6 +22,8 @@ Run the interactive wizard:
 ```bash
 navig init
 ```
+Token resolution is vault-first at runtime, with compatibility fallback to
+`TELEGRAM_BOT_TOKEN` and `telegram.bot_token` config when vault is unavailable.
 Or edit `~/.navig/config.yaml`:
 ```yaml
 telegram:

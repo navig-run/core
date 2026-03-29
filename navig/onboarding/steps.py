@@ -675,6 +675,19 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
     marker = navig_dir / ".telegram_configured"
     config_path = navig_dir / "config.yaml"
 
+    def _verify_token_remote(token: str) -> tuple[bool, str]:
+        try:
+            import httpx
+
+            response = httpx.get(f"https://api.telegram.org/bot{token}/getMe", timeout=10)
+            payload = response.json()
+            if response.status_code == 200 and payload.get("ok"):
+                return True, "token valid"
+            description = payload.get("description") or f"HTTP {response.status_code}"
+            return False, str(description)
+        except Exception as exc:  # noqa: BLE001
+            return False, f"validation request failed: {exc}"
+
     def run() -> StepResult:
         if marker.exists():
             return StepResult(status="completed", output={"note": "already configured"})
@@ -695,6 +708,15 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
 
         if not token:
             return StepResult(status="skipped", output={"reason": "no token entered"})
+
+        ok, verify_message = _verify_token_remote(token)
+        if not ok:
+            return StepResult(
+                status="failed",
+                output={"reason": "telegram token validation failed"},
+                error=f"Telegram token check failed: {verify_message}",
+                fix_hint="Get a valid token from @BotFather and run 'navig init' again.",
+            )
 
         writes: list[str] = []
 
@@ -747,7 +769,7 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
         marker.write_text("1", encoding="utf-8")
         return StepResult(
             status="completed",
-            output={"note": f"token saved ({', '.join(writes) or 'nowhere'})"},
+            output={"note": f"token saved ({', '.join(writes) or 'nowhere'})", "validated": True},
         )
 
     def verify() -> bool:

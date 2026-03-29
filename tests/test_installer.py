@@ -496,6 +496,18 @@ class TestTelegramModule:
         assert actions[0].data.get("token") == "1234567890:AABBCCDDEEFFaabbccddeeff"
         assert actions[0].reversible is True
 
+    def test_plan_with_token_from_legacy_env(self, tmp_path, monkeypatch):
+        from navig.installer.contracts import InstallerContext
+        from navig.installer.modules.telegram import plan
+
+        monkeypatch.delenv("NAVIG_TELEGRAM_BOT_TOKEN", raising=False)
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "legacy-token-xyz")
+        ctx = InstallerContext(profile="operator", config_dir=tmp_path)
+        actions = plan(ctx)
+        assert len(actions) == 1
+        assert actions[0].data.get("token") == "legacy-token-xyz"
+        assert actions[0].reversible is True
+
     def test_plan_with_token_from_extra(self, tmp_path, monkeypatch):
         from navig.installer.contracts import InstallerContext
         from navig.installer.modules.telegram import plan

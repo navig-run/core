@@ -3,6 +3,7 @@
 Token source priority (non-interactive):
   1. ctx.extra["telegram_bot_token"]           (programmatic / test injection)
   2. env var NAVIG_TELEGRAM_BOT_TOKEN          (set by the operator before running install)
+    3. env var TELEGRAM_BOT_TOKEN                (compatibility fallback)
 
 If no token is present the module emits a single SKIPPED action so the
 operator profile continues without error.  Telegram is always optional.
@@ -31,7 +32,11 @@ def _marker(ctx: InstallerContext) -> Path:
 
 def _token_from_ctx(ctx: InstallerContext) -> str:
     """Return token string or '' if not available."""
-    token = ctx.extra.get("telegram_bot_token") or os.environ.get("NAVIG_TELEGRAM_BOT_TOKEN", "")
+    token = (
+        ctx.extra.get("telegram_bot_token")
+        or os.environ.get("NAVIG_TELEGRAM_BOT_TOKEN", "")
+        or os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    )
     return (token or "").strip()
 
 

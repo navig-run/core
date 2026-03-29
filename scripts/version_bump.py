@@ -100,6 +100,11 @@ def parse_args() -> argparse.Namespace:
     bump_parser.add_argument("--commit", action="store_true", help="Commit pyproject version change")
     bump_parser.add_argument("--tag", action="store_true", help="Create annotated git tag")
     bump_parser.add_argument("--push", action="store_true", help="Push tag to origin (requires --tag)")
+    bump_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview the next version without writing files or creating git artifacts",
+    )
     bump_parser.set_defaults(command="bump")
 
     return parser.parse_args()
@@ -115,10 +120,18 @@ def main() -> int:
     if args.push and not args.tag:
         raise RuntimeError("--push requires --tag")
 
+    if args.dry_run and (args.commit or args.tag or args.push):
+        raise RuntimeError("--dry-run cannot be combined with --commit/--tag/--push")
+
     ensure_branch_main()
 
     current = read_version()
     next_version = bump_version(current, args.level)
+
+    if args.dry_run:
+        print(f"Version (dry-run): {current} -> {next_version}")
+        return 0
+
     old_version, new_version = write_version(next_version)
     print(f"Version: {old_version} -> {new_version}")
 

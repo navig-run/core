@@ -390,9 +390,158 @@ class GenericValidator(CredentialValidator):
                 return TestResult(
                     success=True,
                     message="Credential data exists (no API validation available)",
-                    details={"provider": credential.provider},
+                    details={
+                        "provider": credential.provider,
+                        "validation_mode": "presence_only",
+                    },
                 )
         return TestResult(success=False, message="Credential data is empty")
+
+
+class TelegramValidator(CredentialValidator):
+    """Validate Telegram bot token via getMe."""
+
+    def validate(self, credential: Credential) -> TestResult:
+        token = credential.data.get("token") or credential.data.get("bot_token", "")
+        if not token:
+            return TestResult(success=False, message="Token is empty")
+
+        try:
+            import httpx
+
+            response = httpx.get(f"https://api.telegram.org/bot{token}/getMe", timeout=10)
+            payload = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
+            if response.status_code == 200 and payload.get("ok"):
+                result = payload.get("result", {})
+                return TestResult(
+                    success=True,
+                    message="Telegram bot token is valid",
+                    details={
+                        "id": result.get("id"),
+                        "username": result.get("username"),
+                        "validation_mode": "remote",
+                    },
+                )
+
+            if payload.get("description"):
+                return TestResult(success=False, message=str(payload.get("description")))
+            return TestResult(success=False, message=f"API error: {response.status_code}")
+        except ImportError:
+            return TestResult(success=False, message="httpx not available for validation")
+        except Exception as e:
+            return TestResult(success=False, message=f"Connection error: {e}")
+
+
+class DeepgramValidator(CredentialValidator):
+    """Validate Deepgram API key via projects endpoint."""
+
+    def validate(self, credential: Credential) -> TestResult:
+        api_key = credential.data.get("api_key") or credential.data.get("token", "")
+        if not api_key:
+            return TestResult(success=False, message="API key is empty")
+
+        try:
+            import httpx
+
+            response = httpx.get(
+                "https://api.deepgram.com/v1/projects",
+                headers={"Authorization": f"Token {api_key}"},
+                timeout=10,
+            )
+            if response.status_code == 200:
+                projects = response.json().get("projects", [])
+                return TestResult(
+                    success=True,
+                    message="Deepgram API key is valid",
+                    details={
+                        "projects": len(projects),
+                        "validation_mode": "remote",
+                    },
+                )
+            if response.status_code in (401, 403):
+                return TestResult(success=False, message="Invalid API key")
+            return TestResult(success=False, message=f"API error: {response.status_code}")
+        except ImportError:
+            return TestResult(success=False, message="httpx not available for validation")
+        except Exception as e:
+            return TestResult(success=False, message=f"Connection error: {e}")
+
+
+class XAIValidator(CredentialValidator):
+    """Validate xAI API key via models endpoint."""
+
+    def validate(self, credential: Credential) -> TestResult:
+        api_key = credential.data.get("api_key") or credential.data.get("token", "")
+        if not api_key:
+            return TestResult(success=False, message="API key is empty")
+
+        try:
+            import httpx
+
+            response = httpx.get(
+                "https://api.x.ai/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=10,
+            )
+            if response.status_code == 200:
+                models = response.json().get("data", [])
+                return TestResult(
+                    success=True,
+                    message="xAI API key is valid",
+                    details={
+                        "models_available": len(models),
+                        "validation_mode": "remote",
+                    },
+                )
+            if response.status_code in (401, 403):
+                return TestResult(success=False, message="Invalid API key")
+            return TestResult(success=False, message=f"API error: {response.status_code}")
+        except ImportError:
+            return TestResult(success=False, message="httpx not available for validation")
+        except Exception as e:
+            return TestResult(success=False, message=f"Connection error: {e}")
+
+
+class NvidiaValidator(CredentialValidator):
+    """Validate NVIDIA NIM API key via models endpoint when available."""
+
+    def validate(self, credential: Credential) -> TestResult:
+        api_key = credential.data.get("api_key") or credential.data.get("token", "")
+        if not api_key:
+            return TestResult(success=False, message="API key is empty")
+
+        try:
+            import httpx
+
+            response = httpx.get(
+                "https://integrate.api.nvidia.com/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=10,
+            )
+            if response.status_code == 200:
+                models = response.json().get("data", [])
+                return TestResult(
+                    success=True,
+                    message="NVIDIA API key is valid",
+                    details={
+                        "models_available": len(models),
+                        "validation_mode": "remote",
+                    },
+                )
+            if response.status_code in (401, 403):
+                return TestResult(success=False, message="Invalid API key")
+
+            generic_result = GenericValidator().validate(credential)
+            generic_result.message = (
+                f"Credential data exists (NVIDIA remote validation unavailable: {response.status_code})"
+            )
+            return generic_result
+        except ImportError:
+            return TestResult(success=False, message="httpx not available for validation")
+        except Exception:
+            generic_result = GenericValidator().validate(credential)
+            generic_result.message = "Credential data exists (NVIDIA remote validation unavailable)"
+            return generic_result
 
 
 class GitHubModelsValidator(CredentialValidator):
@@ -451,6 +600,10 @@ VALIDATORS: dict[str, type[CredentialValidator]] = {
     "groq": GroqValidator,
     "github_models": GitHubModelsValidator,
     "copilot": GitHubModelsValidator,
+    "xai": XAIValidator,
+    "nvidia": NvidiaValidator,
+    "deepgram": DeepgramValidator,
+    "telegram": TelegramValidator,
     # Version Control
     "github": GitHubValidator,
     "gitlab": GitLabValidator,
