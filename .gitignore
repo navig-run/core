@@ -342,10 +342,14 @@ navig/plugins/llm-bridge/
 host/crates/**/target/
 **/target/
 
-# Local workspace
+# Local workspace (WIP, drafts, test scripts, scratch — never commit)
 .local/
 $null
 
-# pytest local temp dirs
+# pytest local temp dirs (all variants land inside .local/)
 .pytest_tmp/
+.pytest_tmp_*/
+.pytest_tmp*/
+pytest_tmp*/
+*.pytest_tmp/
 CHANGELOG.md

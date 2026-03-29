@@ -8,8 +8,8 @@ These directives define a simple, non-noisy workflow for this project.
 Optimize for **fast fixes, minimal docs, and reliable automation**.
 
 ## Scope & Structure (Keep It Lean)
-- Do **not** invent new architecture, folder trees, or random files and do not put a trash files , logs in the root of the repository.
-- Use the project’s **existing structure**.
+- Do **not** invent new architecture, folder trees, or random files. Do not put trash files, logs, or temp dirs in the repo root.
+- Use the project's **existing structure**.
 - Only rely on these standard areas when needed:
   - `docs/` for dev documentation (`HANDBOOK.md` is the primary doc)
   - `tests/` for pytest tests
@@ -17,7 +17,16 @@ Optimize for **fast fixes, minimal docs, and reliable automation**.
   - `navig/commands/` for new CLI command modules
   - `navig/tools/` for new tool/adapter implementations
   - `.backups/` for safe snapshots (only if required)
+  - `.local/` for WIP drafts, scratch scripts, and test artifacts — this dir is gitignored
 - **This is a Python project:** `pyproject.toml`, `pytest`, `pip install -e .` — no Node/npm.
+
+### pytest Temp Directories
+- `pytest.ini` sets `--basetemp=.local/.pytest_tmp` — **never override this with a root-level path**.
+- When passing `--basetemp` on the command line (e.g., to avoid Windows file locks), always use a path inside `.local/`:
+  ```
+  pytest --basetemp=.local/.pytest_tmp_mytest ...
+  ```
+- Paths like `.pytest_tmp_onboard_visuals` or `.pytest_tmp_plans` **directly in the repo root are forbidden** — they are not gitignored by default and will show up in `git status`.
 
 
 ## Remote / Database Operations
