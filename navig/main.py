@@ -75,7 +75,7 @@ def _maybe_handle_fast_path(argv: list[str]) -> bool:
         sys.stdout.write(_fast_help_text(__version__) + "\n")
         return True
 
-    if len(args) == 1 and args[0] in {"--help"}:
+    if len(args) == 1 and args[0] in {"--help", "-h"}:
         from navig import __version__
 
         sys.stdout.write(_fast_help_text(__version__) + "\n")
@@ -95,7 +95,10 @@ def _maybe_handle_fast_path(argv: list[str]) -> bool:
         return True
 
     # `navig start` — alias for `navig dashboard` (Kraken TUI)
+    # Let normal CLI parsing handle help forms.
     if args and args[0] == "start":
+        if any(flag in args[1:] for flag in ("--help", "-h", "help")):
+            return False
         return _handle_start_command(args[1:])
 
     return False
@@ -117,6 +120,47 @@ def _handle_start_command(extra_args: list[str]) -> bool:
     else:
         run_dashboard(skip_boot=skip_boot)
     return True
+
+
+def _normalize_help_compat_args(argv: list[str]) -> list[str]:
+    """Normalize legacy help forms to canonical ``--help``.
+
+    Compatibility rules (best-effort):
+    - ``navig <path> help`` -> ``navig <path> --help``
+    - ``navig <path> -h``   -> ``navig <path> --help`` (only when ``-h`` is trailing)
+
+    We intentionally do not rewrite top-level ``navig help`` or ``navig -h``.
+    """
+
+    if len(argv) <= 2:
+        return argv
+
+    args = argv[1:]
+
+    if args[0] == "help" and len(args) == 1:
+        return argv
+
+    # Legacy alias: `navig memory list` -> `navig memory sessions`
+    if len(args) >= 2 and args[0] == "memory" and args[1] == "list":
+        normalized = list(argv)
+        normalized[2] = "sessions"
+        args = normalized[1:]
+        argv = normalized
+
+    if "--help" in args:
+        return argv
+
+    normalized = list(argv)
+
+    if args[-1] == "help":
+        normalized[-1] = "--help"
+        return normalized
+
+    if args[-1] == "-h" and args[0] != "-h":
+        normalized[-1] = "--help"
+        return normalized
+
+    return argv
 
 
 def _get_console():
@@ -723,6 +767,9 @@ def main() -> None:
         if no_cache_requested:
             reset_config_manager()
 
+        # Compatibility normalization for legacy help syntaxes.
+        sys.argv = _normalize_help_compat_args(sys.argv)
+
         # Fast-path: handle --version / -v / --help / bare invocation without
         # importing the full CLI.  Must run BEFORE first-run onboarding so that
         # these flags always work on a fresh install on every platform.
@@ -733,6 +780,23 @@ def main() -> None:
         # Runs after the fast-path so that -v / --version / --help are never
         # blocked by the onboarding wizard (macOS and other platforms included).
         _check_first_run()
+
+        # One-time migration: legacy ~/.navig/workspace → ~/.navig/spaces/*
+        try:
+            from pathlib import Path as _Path
+
+            from navig.config import get_config_manager as _get_cm
+            from navig.migrations.workspace_to_spaces import (
+                ensure_no_stale_spaces_registration,
+                migrate_workspace_to_spaces,
+            )
+
+            _navig_root = _Path(_get_cm().global_config_dir)
+            migrate_workspace_to_spaces(_navig_root)
+            ensure_no_stale_spaces_registration()
+        except Exception as _migration_exc:
+            _eprint(f"\n[red]Migration error:[/red] {_migration_exc}")
+            sys.exit(1)
 
         # Import the existing CLI app (maintains all current functionality)
         from navig.cli import _register_external_commands, app

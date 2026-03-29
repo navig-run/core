@@ -1086,6 +1086,9 @@ def help_command(
     from pathlib import Path
 
     from rich.console import Console
+    from rich.table import Table
+
+    from navig.cli.registry import get_schema as _get_schema
 
     # --schema: emit the canonical command registry and exit
     if schema_out:
@@ -1097,6 +1100,19 @@ def help_command(
     console = Console()
     # Help markdown files live at navig/help/, one level above navig/cli/
     help_dir = Path(__file__).resolve().parent.parent / "help"
+    schema = _get_schema()
+    schema_commands = [
+        row
+        for row in schema.get("commands", [])
+        if isinstance(row, dict) and str(row.get("path", "")).strip().startswith("navig ")
+    ]
+    manifest_topics = sorted(
+        {
+            str(row.get("path", "")).split()[1]
+            for row in schema_commands
+            if len(str(row.get("path", "")).split()) >= 2
+        }
+    )
 
     md_topics = []
     if help_dir.exists():
@@ -1108,7 +1124,7 @@ def help_command(
             }
         )
 
-    registry_topics = sorted(HELP_REGISTRY.keys())
+    registry_topics = sorted(set(HELP_REGISTRY.keys()) | set(manifest_topics))
     all_topics = sorted(set(md_topics) | set(registry_topics))
 
     want_json = bool(json_output or ctx.obj.get("json"))
@@ -1176,7 +1192,71 @@ def help_command(
             console.print(Markdown(content))
         raise typer.Exit()
 
-    # Fall back to the centralized help registry.
+    # Fall back to generated registry topic index.
+    if normalized in manifest_topics:
+        topic_commands = [
+            row
+            for row in schema_commands
+            if str(row.get("path", "")).startswith(f"navig {normalized}")
+        ]
+
+        if want_json:
+            payload_commands = []
+            for row in topic_commands:
+                path = str(row.get("path", "")).strip()
+                prefix = f"navig {normalized}"
+                cmd_name = path[len(prefix) :].strip() if path.startswith(prefix) else path
+                payload_commands.append(
+                    {
+                        "name": cmd_name or normalized,
+                        "path": path,
+                        "description": row.get("summary", ""),
+                        "status": row.get("status", "stable"),
+                        "since": row.get("since", ""),
+                    }
+                )
+
+            typer.echo(
+                jsonlib.dumps(
+                    {
+                        "topic": normalized,
+                        "desc": HELP_REGISTRY.get(normalized, {}).get("desc", ""),
+                        "commands": payload_commands,
+                        "source": "registry",
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            raise typer.Exit()
+
+        if want_plain:
+            console.print(f"navig {normalized}")
+            for row in topic_commands:
+                path = str(row.get("path", "")).strip()
+                summary = str(row.get("summary", "")).strip()
+                console.print(f"  {path} - {summary}")
+            raise typer.Exit()
+
+        table = Table(box=None, show_header=False, padding=(0, 2), collapse_padding=True)
+        table.add_column("Command", style="cyan")
+        table.add_column("Description", style="dim")
+        for row in topic_commands:
+            path = str(row.get("path", "")).strip()
+            summary = str(row.get("summary", "")).strip()
+            if row.get("status") == "deprecated" and isinstance(row.get("deprecated"), dict):
+                replacement = row["deprecated"].get("replaced_by")
+                if replacement:
+                    summary = f"{summary} (deprecated -> {replacement})"
+            table.add_row(path, summary)
+
+        console.print()
+        console.print(f"[bold cyan]navig {normalized}[/bold cyan]")
+        console.print("[dim]Generated command registry[/dim]")
+        console.print(table)
+        raise typer.Exit()
+
+    # Final fallback to legacy centralized help registry.
     if normalized in HELP_REGISTRY:
         if want_json:
             typer.echo(
@@ -11298,10 +11378,8 @@ _EXTERNAL_CMD_MAP = {
     "mesh": ("navig.commands.mesh", "mesh_app"),
     # ── Debug / observability: toggle debug mode, show log sizes ─────────────
     "debug": ("navig.commands.debug_cmd", "debug_app"),
-    # ── Memory: conversations, key-facts, sessions ────────────────────────────
-    "memory": ("navig.commands.memory", "memory_app"),
-    # ── Spaces context: personal / workspace / studio mode switcher ────────────
-    "spaces": ("navig.commands.spaces", "spaces_context_app"),
+    # ── Spaces context (legacy alias) now routed to unified `space` command ─────
+    "spaces": ("navig.commands.space", "space_app"),
     # ── PERF: commands migrated from main.py unconditional try/except blocks ─
     # Were imported on EVERY CLI invocation; now dispatched lazily via this map.
     "telemetry": ("navig.commands.telemetry", "telemetry_app"),
@@ -11325,7 +11403,6 @@ _EXTERNAL_CMD_MAP = {
     "node": ("navig.commands.node", "node_app"),
     "boot": ("navig.commands.boot_cmd", "boot_app"),
     "space": ("navig.commands.space", "space_app"),
-    "start": ("navig.commands.start", "app"),
     "blueprint": ("navig.commands.blueprint", "blueprint_app"),
     "deck": ("navig.commands.deck", "deck_app"),
     "portable": ("navig.commands.portable", "portable_app"),

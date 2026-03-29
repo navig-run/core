@@ -298,7 +298,7 @@ class TestInboxRouterAgentHeuristic:
         assert plan["space_source"] == "frontmatter"
         assert "space: finance" in plan["transformed_content"]
 
-    def test_default_space_is_life_when_unattributed(self, tmp_path):
+    def test_default_space_is_default_when_unattributed(self, tmp_path):
         from navig.agents.inbox_router import InboxRouterAgent
 
         inbox = tmp_path / ".navig" / "plans" / "inbox"
@@ -309,9 +309,9 @@ class TestInboxRouterAgentHeuristic:
         agent = InboxRouterAgent(tmp_path, use_llm=False)
         plan = agent.process_single(f)
 
-        assert plan["space"] == "life"
+        assert plan["space"] == "default"
         assert plan["space_source"] in {"default", "classifier"}
-        assert "space: life" in plan["transformed_content"]
+        assert "space: default" in plan["transformed_content"]
 
 
 # ── Execute Plan ────────────────────────────────────────────

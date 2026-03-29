@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 CANONICAL_SPACES: tuple[str, ...] = (
+    "default",  # zero-config personal space — always first
     "project",
     "career",
     "health",
@@ -46,7 +47,7 @@ class SpaceConfig:
 def normalize_space_name(name: str | None) -> str:
     value = (name or "").strip().lower()
     if not value:
-        return "life"
+        return "default"
 
     if value in CANONICAL_SPACES:
         return value
@@ -60,9 +61,14 @@ def normalize_space_name(name: str | None) -> str:
         if candidate in CANONICAL_SPACES:
             return candidate
 
-    return "life"
+    return "default"
 
 
 def validate_space_name(name: str) -> bool:
     value = (name or "").strip().lower()
     return value in CANONICAL_SPACES or value in SPACE_ALIASES
+
+
+def is_user_space(name: str) -> bool:
+    """Return True for free-form spaces not in the canonical set."""
+    return not validate_space_name(name)
