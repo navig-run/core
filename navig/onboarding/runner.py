@@ -1,0 +1,160 @@
+from __future__ import annotations
+
+from collections import Counter
+import os
+import socket
+import sys
+from pathlib import Path
+from typing import Sequence
+
+from .engine import EngineConfig, EngineState, OnboardingEngine
+from .genesis import load_or_create
+from .steps import build_step_registry
+
+
+def should_auto_run_onboarding(argv: Sequence[str] | None = None) -> bool:
+    """Return True when first-run onboarding should execute for this invocation."""
+    args = list(argv or sys.argv)
+
+    if os.getenv("NAVIG_SKIP_ONBOARDING") == "1":
+        return False
+
+    if os.getenv("NAVIG_ONBOARDING_ACTIVE") == "1":
+        return False
+
+    if any(v in os.environ for v in ("_NAVIG_COMPLETE", "COMP_WORDS", "_TYPER_COMPLETE")):
+        return False
+
+    navig_dir = Path.home() / ".navig"
+    if (navig_dir / "onboarding.json").exists():
+        return False
+
+    skip_flags = {"-v", "--version", "-h", "--help"}
+    if args[1:2] and args[1] in skip_flags:
+        return False
+
+    skip_cmds = {"onboard", "quickstart", "service", "update", "version"}
+    if any(cmd in args[1:2] for cmd in skip_cmds):
+        return False
+
+    return True
+
+
+def run_engine_onboarding(
+    *,
+    force: bool = False,
+    jump_to_step: str | None = None,
+    show_banner: bool = True,
+    respect_skip_env: bool = False,
+) -> EngineState | None:
+    """Run canonical engine onboarding and return final state, or None if skipped."""
+    if respect_skip_env and os.getenv("NAVIG_SKIP_ONBOARDING") == "1":
+        return None
+
+    navig_dir = Path.home() / ".navig"
+    if not force and (navig_dir / "onboarding.json").exists() and not jump_to_step:
+        return None
+
+    cfg = EngineConfig(
+        navig_dir=navig_dir,
+        node_name=socket.gethostname(),
+        reset=force,
+        jump_to_step=jump_to_step,
+    )
+    genesis = load_or_create(navig_dir, name=socket.gethostname())
+    steps = build_step_registry(cfg, genesis)
+    step_tiers = {step.id: getattr(step, "tier", "essential") for step in steps}
+    step_total = len(steps)
+    started = {"n": 0}
+
+    def _progress(step: object) -> None:
+        started["n"] += 1
+        pct = int((started["n"] / max(step_total, 1)) * 100)
+        title = getattr(step, "title", str(step))
+        tier = getattr(step, "tier", "essential")
+        sys.stdout.write(f"  [{started['n']}/{step_total} {pct:>3}%] · {title} ({tier})...\n")
+        sys.stdout.flush()
+
+    engine = OnboardingEngine(cfg, steps, on_step_start=_progress)
+
+    if show_banner:
+        sys.stdout.write("\n  Welcome to NAVIG — running first-time setup.\n")
+        sys.stdout.write("  Set NAVIG_SKIP_ONBOARDING=1 to skip automatic setup.\n\n")
+        sys.stdout.flush()
+
+    previous_guard = os.getenv("NAVIG_ONBOARDING_ACTIVE")
+    os.environ["NAVIG_ONBOARDING_ACTIVE"] = "1"
+    try:
+        state = engine.run()
+    finally:
+        if previous_guard is None:
+            os.environ.pop("NAVIG_ONBOARDING_ACTIVE", None)
+        else:
+            os.environ["NAVIG_ONBOARDING_ACTIVE"] = previous_guard
+
+    if show_banner:
+        if state.interrupted_at:
+            sys.stdout.write("\n  Setup paused. Run 'navig init' to resume.\n\n")
+        else:
+            sys.stdout.write("\n  Setup complete. Run 'navig --help' to get started.\n\n")
+        _print_verification_dashboard(state, step_tiers)
+        sys.stdout.flush()
+
+    return state
+
+
+def _print_verification_dashboard(state: EngineState, step_tiers: dict[str, str]) -> None:
+    status_counts = Counter(rec.status for rec in state.steps)
+    tier_counts = Counter(step_tiers.get(rec.id, "essential") for rec in state.steps)
+    total = max(len(state.steps), 1)
+    completed = status_counts.get("completed", 0)
+    finished_pct = int((completed / total) * 100)
+
+    sys.stdout.write("  Verification summary\n")
+    sys.stdout.write("  ───────────────────\n")
+    sys.stdout.write(
+        "  Steps: "
+        f"✔ completed={status_counts.get('completed', 0)}  "
+        f"• skipped={status_counts.get('skipped', 0)}  "
+        f"✖ failed={status_counts.get('failed', 0)}\n"
+    )
+    sys.stdout.write(f"  Completion: {finished_pct}%\n")
+    if state.interrupted_at:
+        sys.stdout.write(f"  State: interrupted at {state.interrupted_at}\n")
+    else:
+        sys.stdout.write("  State: finished ✔\n")
+
+    sys.stdout.write(
+        "  Tiers: "
+        f"essential={tier_counts.get('essential', 0)}  "
+        f"recommended={tier_counts.get('recommended', 0)}  "
+        f"optional={tier_counts.get('optional', 0)}\n"
+    )
+
+    deferred = _deferred_integration_commands(state, step_tiers)
+    if deferred:
+        sys.stdout.write("  Deferred integrations:\n")
+        for cmd in deferred:
+            sys.stdout.write(f"    - {cmd}\n")
+    sys.stdout.write("\n")
+
+
+def _deferred_integration_commands(
+    state: EngineState,
+    step_tiers: dict[str, str],
+) -> list[str]:
+    cmd_map = {
+        "matrix": "navig matrix setup",
+        "email": "navig email setup",
+        "social-networks": "navig social setup",
+        "telegram-bot": "navig telegram setup",
+    }
+    status_by_id = {rec.id: rec.status for rec in state.steps}
+
+    deferred: list[str] = []
+    for step_id, cmd in cmd_map.items():
+        if step_tiers.get(step_id) != "optional":
+            continue
+        if status_by_id.get(step_id) in ("skipped", "failed"):
+            deferred.append(cmd)
+    return deferred

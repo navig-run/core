@@ -152,72 +152,16 @@ def _check_first_run() -> None:
 
     Opt-out: set NAVIG_SKIP_ONBOARDING=1 in the environment.
     """
-    import os
-    from pathlib import Path
-
-    # Explicit opt-out for CI and scripted environments
-    if os.getenv("NAVIG_SKIP_ONBOARDING") == "1":
-        return
-
-    # Re-entry guard: prevents recursive onboarding when a step (e.g. _step_first_host)
-    # spawns a navig sub-process that would otherwise re-enter this function.
-    if os.getenv("NAVIG_ONBOARDING_ACTIVE") == "1":
-        return
-
-    # Shell-completion probes — must never block or print
-    if any(
-        v in os.environ for v in ("_NAVIG_COMPLETE", "COMP_WORDS", "_TYPER_COMPLETE")
-    ):
-        return
-
-    navig_dir = Path.home() / ".navig"
-
-    # Primary completion signal: the engine writes this artifact when done
-    if (navig_dir / "onboarding.json").exists():
-        return
-
-    # Skip for version/help flags and explicit onboarding sub-commands.
-    # This ensures `navig -v` / `navig --version` / `navig --help` always
-    # work immediately on a fresh install, regardless of platform.
-    _SKIP_FLAGS = {"-v", "--version", "-h", "--help"}
-    if sys.argv[1:2] and sys.argv[1] in _SKIP_FLAGS:
-        return
-    _SKIP_CMDS = {"onboard", "quickstart", "service", "update", "version"}
-    if any(cmd in sys.argv[1:2] for cmd in _SKIP_CMDS):
-        return
-
     try:
-        import socket
-
-        from navig.onboarding import EngineConfig, OnboardingEngine
-        from navig.onboarding.genesis import load_or_create
-        from navig.onboarding.steps import build_step_registry
-
-        cfg = EngineConfig(
-            navig_dir=navig_dir,
-            node_name=socket.gethostname(),
+        from navig.onboarding.runner import (
+            run_engine_onboarding,
+            should_auto_run_onboarding,
         )
-        genesis = load_or_create(navig_dir, name=socket.gethostname())
-        steps = build_step_registry(cfg, genesis)
 
-        def _progress(step: object) -> None:
-            sys.stdout.write(f"  · {getattr(step, 'title', step)}...\n")
-            sys.stdout.flush()
+        if not should_auto_run_onboarding(sys.argv):
+            return
 
-        engine = OnboardingEngine(cfg, steps, on_step_start=_progress)
-
-        sys.stdout.write("\n  Welcome to NAVIG — running first-time setup.\n")
-        sys.stdout.write("  Set NAVIG_SKIP_ONBOARDING=1 to skip.\n\n")
-        sys.stdout.flush()
-
-        os.environ["NAVIG_ONBOARDING_ACTIVE"] = "1"
-        try:
-            engine.run()
-        finally:
-            os.environ.pop("NAVIG_ONBOARDING_ACTIVE", None)
-
-        sys.stdout.write("\n  Setup complete. Run 'navig --help' to get started.\n\n")
-        sys.stdout.flush()
+        run_engine_onboarding(show_banner=True, respect_skip_env=True)
     except Exception as exc:  # never crash main on onboarding failure
         _eprint(f"[dim]First-run setup skipped: {exc}[/dim]")
 

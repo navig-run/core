@@ -543,8 +543,15 @@ class EventBridge:
 
         try:
             if sys.platform == "win32":
-                # Named pipe connection
-                reader, writer = await asyncio.open_connection(self.ipc_socket_path)
+                # asyncio.open_connection() cannot connect to Windows named pipes —
+                # it is a TCP API and interprets the pipe path as a hostname, always
+                # failing. Named-pipe IPC on Windows requires ProactorEventLoop's
+                # create_pipe_connection helper which is not available in all
+                # Python 3.10 builds. Skip gracefully until a proper implementation
+                # is added.
+                _logger = logging.getLogger("navig.event_bridge.ipc")
+                _logger.debug("IPC offload skipped on Windows (named pipe not supported via asyncio)")
+                return
             else:
                 # Unix domain socket connection
                 reader, writer = await asyncio.open_unix_connection(self.ipc_socket_path)

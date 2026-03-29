@@ -324,6 +324,74 @@ class Step5ShellWidget(_WizardStepBase):
 
 
 # ---------------------------------------------------------------------------
+# Step 6 — Optional integrations (Full tier)
+# ---------------------------------------------------------------------------
+
+
+class Step6IntegrationsWidget(_WizardStepBase):
+    DEFAULT_CSS = (
+        _WizardStepBase.DEFAULT_CSS
+        + """
+    Step6IntegrationsWidget { height: auto; padding: 1 2; }
+    Step6IntegrationsWidget .title { color: #22d3ee; text-style: bold; margin-top: 1; }
+    Step6IntegrationsWidget .desc { color: #94a3b8; margin-bottom: 1; }
+    Step6IntegrationsWidget Checkbox { margin-bottom: 1; }
+    """
+    )
+
+    def __init__(self, cfg: NavigConfig, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._cfg = cfg
+
+    def compose(self):  # type: ignore[override]
+        yield Label("Optional Integrations (Full tier)", classes="title")
+        yield Label(
+            "Enable now or defer to post-setup commands. These are never required.",
+            classes="desc",
+        )
+
+        yield Label("Matrix", classes="title")
+        yield Label(
+            "Secure team communication, incident rooms, and deployment notifications.",
+            classes="desc",
+        )
+        yield Checkbox("Set up Matrix in this onboarding run", value=self._cfg.setup_matrix, id="cb-matrix")
+
+        yield Label("Email / SMTP", classes="title")
+        yield Label(
+            "Automated alert emails and scheduled report delivery.",
+            classes="desc",
+        )
+        yield Checkbox("Set up SMTP in this onboarding run", value=self._cfg.setup_email, id="cb-email")
+
+        yield Label("Social networks", classes="title")
+        yield Label(
+            "Broadcast updates and controlled outbound posting workflows.",
+            classes="desc",
+        )
+        yield Checkbox(
+            "Set up social integrations in this onboarding run",
+            value=self._cfg.setup_social,
+            id="cb-social",
+        )
+
+    @on(Checkbox.Changed)
+    def _toggle(self, event: Checkbox.Changed) -> None:
+        checkbox_id = event.checkbox.id or ""
+        if checkbox_id == "cb-matrix":
+            self._cfg.setup_matrix = event.value
+        elif checkbox_id == "cb-email":
+            self._cfg.setup_email = event.value
+        elif checkbox_id == "cb-social":
+            self._cfg.setup_social = event.value
+
+        try:
+            self.app.query_one(SummaryPanel).refresh_from(self._cfg)
+        except NoMatches:
+            pass
+
+
+# ---------------------------------------------------------------------------
 # WizardScreen — 5-step controller
 # ---------------------------------------------------------------------------
 
@@ -378,6 +446,8 @@ class WizardScreen(Screen):  # type: ignore[type-arg]
         self._cfg = cfg or NavigConfig()
         self._step = start_step
         self._step_ids = ["step-1", "step-2", "step-3", "step-4", "step-5"]
+        if getattr(self._cfg, "onboarding_tier", "recommended") == "full":
+            self._step_ids.append("step-6")
 
     def compose(self):  # type: ignore[override]
         with Horizontal(id="wizard-header"):
@@ -389,6 +459,7 @@ class WizardScreen(Screen):  # type: ignore[type-arg]
                 yield Step3RuntimeWidget(self._cfg, id="step-3")
                 yield Step4PacksWidget(self._cfg, id="step-4")
                 yield Step5ShellWidget(self._cfg, id="step-5")
+                yield Step6IntegrationsWidget(self._cfg, id="step-6")
             with Vertical(id="wizard-summary"):
                 yield SummaryPanel(self._cfg, id="summary-panel")
         with Horizontal(id="wizard-footer"):
@@ -401,8 +472,11 @@ class WizardScreen(Screen):  # type: ignore[type-arg]
     def _sync_nav_buttons(self) -> None:
         ind: StepIndicator = self.query_one("#step-indicator", StepIndicator)
         ind.current_step = self._step
+        ind.total_steps = len(self._step_ids)
         btn_next: Button = self.query_one("#btn-next", Button)
-        btn_next.label = "Finish  ✔" if self._step == 4 else "Next  →"  # type: ignore[assignment]
+        btn_next.label = (
+            "Finish  ✔" if self._step == len(self._step_ids) - 1 else "Next  →"
+        )  # type: ignore[assignment]
         btn_back: Button = self.query_one("#btn-back", Button)
         btn_back.disabled = self._step == 0
 
@@ -410,7 +484,7 @@ class WizardScreen(Screen):  # type: ignore[type-arg]
     def _next(self) -> None:
         if not self._validate_current_step():
             return
-        if self._step < 4:
+        if self._step < len(self._step_ids) - 1:
             self._step += 1
             sw: ContentSwitcher = self.query_one("#wizard-steps", ContentSwitcher)
             sw.current = self._step_ids[self._step]

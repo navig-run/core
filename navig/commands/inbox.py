@@ -57,6 +57,8 @@ def _print_plan(plan: dict, verbose: bool = False) -> None:
     ctype = plan.get("content_type", "?")
     confidence = plan.get("confidence", "?")
     target = plan.get("target_path") or "(stays in inbox)"
+    space = plan.get("space") or "life"
+    space_source = plan.get("space_source") or "default"
     rationale = plan.get("rationale", "")
 
     status_icon = {
@@ -69,6 +71,7 @@ def _print_plan(plan: dict, verbose: bool = False) -> None:
 
     typer.echo(f"  {status_icon} {source}")
     typer.echo(f"    Type: {ctype}  Confidence: {confidence}")
+    typer.echo(f"    Space: {space}  Source: {space_source}")
     typer.echo(f"    Target: {target}")
     if rationale:
         typer.echo(f"    Rationale: {rationale}")
@@ -111,6 +114,11 @@ def process_current(
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing"),
     json_output: bool = typer.Option(False, "--json", help="Output raw JSON"),
     no_move: bool = typer.Option(False, "--no-move", help="Don't move source after routing"),
+    space: str | None = typer.Option(
+        None,
+        "--space",
+        help="Manual space tag override (wins over frontmatter/classifier)",
+    ),
     backend: str = typer.Option(
         "cli_llm", "--backend", "-b", help="Backend caller (cli_llm or vscode_copilot)"
     ),
@@ -127,7 +135,7 @@ def process_current(
     agent = InboxRouterAgent(project_root, use_llm=not no_llm, backend=backend)
 
     typer.echo(f"Processing: {file_path.name}")
-    plan = agent.process_single(file_path, dry_run=dry_run)
+    plan = agent.process_single(file_path, dry_run=dry_run, manual_space=space)
 
     if json_output:
         typer.echo(json.dumps(plan, indent=2, default=str))
@@ -149,6 +157,11 @@ def process_all(
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing"),
     json_output: bool = typer.Option(False, "--json", help="Output raw JSON"),
     no_move: bool = typer.Option(False, "--no-move", help="Don't move source after routing"),
+    space: str | None = typer.Option(
+        None,
+        "--space",
+        help="Manual space tag override applied to all files",
+    ),
     backend: str = typer.Option(
         "cli_llm", "--backend", "-b", help="Backend caller (cli_llm or vscode_copilot)"
     ),
@@ -170,7 +183,7 @@ def process_all(
     typer.echo(f"Found {len(files)} inbox file(s)\n")
 
     agent = InboxRouterAgent(project_root, use_llm=not no_llm, backend=backend)
-    plans = agent.process_batch(files, dry_run=dry_run)
+    plans = agent.process_batch(files, dry_run=dry_run, manual_space=space)
 
     if json_output:
         typer.echo(json.dumps(plans, indent=2, default=str))
@@ -197,6 +210,11 @@ def process_all(
 def dry_run(
     no_llm: bool = typer.Option(False, "--no-llm", help="Use heuristic only (no LLM)"),
     json_output: bool = typer.Option(False, "--json", help="Output raw JSON"),
+    space: str | None = typer.Option(
+        None,
+        "--space",
+        help="Manual space tag override applied to all files",
+    ),
     backend: str = typer.Option(
         "cli_llm", "--backend", "-b", help="Backend caller (cli_llm or vscode_copilot)"
     ),
@@ -218,7 +236,7 @@ def dry_run(
     typer.echo(f"Dry-run preview for {len(files)} inbox file(s)\n")
 
     agent = InboxRouterAgent(project_root, use_llm=not no_llm, backend=backend)
-    plans = agent.process_batch(files, dry_run=True)
+    plans = agent.process_batch(files, dry_run=True, manual_space=space)
 
     if json_output:
         typer.echo(json.dumps(plans, indent=2, default=str))
@@ -421,6 +439,11 @@ def add_url_cmd(
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing"),
     no_llm: bool = typer.Option(False, "--no-llm", help="Use BM25 classifier only"),
     mode: str = typer.Option("copy", "--mode", "-m", help="Route mode: copy | move | link"),
+    space: str | None = typer.Option(
+        None,
+        "--space",
+        help="Manual space tag for this intake item",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Fetch a URL, classify it, and route it into the wiki inbox.
@@ -439,6 +462,7 @@ def add_url_cmd(
     from navig.inbox.classifier import Classifier
     from navig.inbox.router import InboxRouter, RouteMode
     from navig.inbox.store import InboxEvent, InboxStore, RoutingDecision
+    from navig.spaces import normalize_space_name
 
     typer.echo(f"Fetching: {url}")
 
@@ -486,8 +510,11 @@ def add_url_cmd(
     typer.echo(f"  Confidence: {result.confidence:.2%}  ({result.method})")
 
     # Build markdown content
+    selected_space = normalize_space_name(space)
     md = (
         f"---\n"
+        f"space: {selected_space}\n"
+        f"tags: [{selected_space}]\n"
         f"source: {url}\n"
         f"fetched_at: {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n"
         f"category: {result.category}\n"
@@ -615,6 +642,7 @@ def ui_cmd(
         typer.secho(f"[{i}/{len(files)}] {f.name}", fg=typer.colors.WHITE, bold=True)
         typer.echo(f"  Category  : {result.category}")
         typer.echo(f"  Confidence: {result.confidence:.2%}  ({result.method})")
+        typer.echo(f"  Space     : {selected_space}")
 
         while True:
             choice = typer.prompt("  → route? [y/n/q/?]", default="y").strip().lower()

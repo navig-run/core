@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING, Any
 
 from textual.widgets import Static
@@ -32,6 +33,20 @@ class StatusRow(Static):
         self._badge = badge
         color = badge.color
         sym = badge.symbol
+
+        # Visual polish: stronger iconography for quick scanning.
+        icon_map = {
+            "ok": "✔",
+            "warn": "▲",
+            "error": "✖",
+            "missing": "•",
+        }
+        sym = icon_map.get(badge.status, sym)
+
+        # Lightweight loading pulse for initial resolver pass.
+        if badge.status == "missing" and "Loading" in (badge.detail or ""):
+            frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+            sym = frames[int(time.time() * 10) % len(frames)]
 
         # Prefix errors with "!" for visual prominence
         prefix = "[bold red]! [/bold red]" if badge.status == "error" else "  "

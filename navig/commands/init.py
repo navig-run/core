@@ -594,6 +594,16 @@ def _migrate_legacy_windows_runtime_layout() -> None:
         pass  # best-effort cleanup
 
 
+def _maybe_send_first_run_ping() -> None:
+    """Best-effort first-run telemetry ping used by `navig init`."""
+    try:
+        from navig.onboarding.telemetry import ping_install_if_first_time
+
+        ping_install_if_first_time()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def run_init(dry_run: bool = False, no_genesis: bool = False, name: str = "") -> None:
     """Initialize NAVIG global directories and run first-time setup."""
     import click

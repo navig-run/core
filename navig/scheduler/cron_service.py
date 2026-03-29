@@ -581,22 +581,21 @@ class CronService:
         # Check if it's a direct NAVIG command
         if command.startswith("navig "):
             import shlex
-            import subprocess
 
-            result = subprocess.run(
-                shlex.split(command),
-                shell=False,
-                capture_output=True,
-                text=True,
-                timeout=job.timeout_seconds,
+            process = await asyncio.create_subprocess_exec(
+                *shlex.split(command),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
+            
+            stdout_bytes, stderr_bytes = await process.communicate()
+            
+            output = stdout_bytes.decode()
+            if stderr_bytes:
+                output += f"\n{stderr_bytes.decode()}"
 
-            output = result.stdout
-            if result.stderr:
-                output += f"\n{result.stderr}"
-
-            if result.returncode != 0:
-                raise RuntimeError(f"Command failed with exit code {result.returncode}")
+            if process.returncode != 0:
+                raise RuntimeError(f"Command failed with exit code {process.returncode}")
 
             return output
 

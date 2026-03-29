@@ -50,7 +50,14 @@ class MCPClientManager:
         self.config = config or {}
         self._clients: dict[str, MCPClient] = {}
         self._reconnect_tasks: dict[str, asyncio.Task] = {}
+        self._bg_tasks: set[asyncio.Task] = set()
         self._started = False
+
+    def _fire_and_forget(self, coro) -> None:
+        """Run a coroutine in the background, retaining a strong reference."""
+        task = asyncio.create_task(coro)
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
 
     @property
     def clients(self) -> dict[str, MCPClient]:
@@ -123,7 +130,7 @@ class MCPClientManager:
         self._clients[config.id] = client
 
         if self._started and config.auto_connect:
-            await self._connect_with_retry(client)
+            self._fire_and_forget(self._connect_with_retry(client))
 
         return client
 
@@ -162,7 +169,7 @@ class MCPClientManager:
 
             if config.auto_connect:
                 # Connect in background to not block startup
-                asyncio.create_task(self._connect_with_retry(client))
+                self._fire_and_forget(self._connect_with_retry(client))
 
         logger.info(f"MCP Client Manager started with {len(self._clients)} clients")
 

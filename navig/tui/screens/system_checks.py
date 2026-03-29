@@ -146,6 +146,12 @@ class SystemChecksScreen(Screen):  # type: ignore[type-arg]
 
     @on(Button.Pressed, "#btn-continue")
     def _continue(self) -> None:
+        if getattr(self._cfg, "onboarding_tier", "recommended") == "essential":
+            from navig.tui.screens.review import ReviewScreen
+
+            self.app.push_screen(ReviewScreen(self._cfg))
+            return
+
         from navig.tui.screens.wizard import WizardScreen
 
         self.app.push_screen(WizardScreen(self._cfg))

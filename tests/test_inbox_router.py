@@ -266,6 +266,53 @@ class TestInboxRouterAgentHeuristic:
         plans = agent.process_batch()
         assert plans == []
 
+    def test_manual_space_wins_over_frontmatter_and_classifier(self, tmp_path):
+        from navig.agents.inbox_router import InboxRouterAgent
+
+        inbox = tmp_path / ".navig" / "plans" / "inbox"
+        inbox.mkdir(parents=True)
+        f = inbox / "roadmap-draft.md"
+        f.write_text(
+            "---\nspace: career\n---\n\n# Migration Roadmap\n\nPhase 1: milestone setup"
+        )
+
+        agent = InboxRouterAgent(tmp_path, use_llm=False)
+        plan = agent.process_single(f, manual_space="health")
+
+        assert plan["space"] == "health"
+        assert plan["space_source"] == "manual"
+        assert "space: health" in plan["transformed_content"]
+
+    def test_frontmatter_space_used_when_manual_missing(self, tmp_path):
+        from navig.agents.inbox_router import InboxRouterAgent
+
+        inbox = tmp_path / ".navig" / "plans" / "inbox"
+        inbox.mkdir(parents=True)
+        f = inbox / "note.md"
+        f.write_text("---\nspace: finance\n---\n\n# Notes\n\nrandom text")
+
+        agent = InboxRouterAgent(tmp_path, use_llm=False)
+        plan = agent.process_single(f)
+
+        assert plan["space"] == "finance"
+        assert plan["space_source"] == "frontmatter"
+        assert "space: finance" in plan["transformed_content"]
+
+    def test_default_space_is_life_when_unattributed(self, tmp_path):
+        from navig.agents.inbox_router import InboxRouterAgent
+
+        inbox = tmp_path / ".navig" / "plans" / "inbox"
+        inbox.mkdir(parents=True)
+        f = inbox / "note.md"
+        f.write_text("just random text")
+
+        agent = InboxRouterAgent(tmp_path, use_llm=False)
+        plan = agent.process_single(f)
+
+        assert plan["space"] == "life"
+        assert plan["space_source"] in {"default", "classifier"}
+        assert "space: life" in plan["transformed_content"]
+
 
 # ── Execute Plan ────────────────────────────────────────────
 

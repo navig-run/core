@@ -58,6 +58,14 @@ class NavigConfig:
     git_hooks: bool = False
     telemetry: bool = False
 
+    # Optional integration preferences (used by full-tier onboarding)
+    setup_matrix: bool = False
+    setup_email: bool = False
+    setup_social: bool = False
+
+    # Tier selection (premium TUI): essential | recommended | full
+    onboarding_tier: str = "recommended"
+
 
 def build_config_dict(cfg: NavigConfig) -> dict[str, Any]:
     """Convert NavigConfig → JSON-serialisable dict matching navig.json schema."""
@@ -66,6 +74,7 @@ def build_config_dict(cfg: NavigConfig) -> dict[str, Any]:
             "version": "1.0.0",
             "created": datetime.now().isoformat(),
             "onboarding_flow": "tui-wizard",
+            "onboarding_tier": cfg.onboarding_tier,
             "profile_name": cfg.profile_name,
         },
         "agents": {
@@ -87,6 +96,13 @@ def build_config_dict(cfg: NavigConfig) -> dict[str, Any]:
             "auto_update": cfg.auto_update,
             "git_hooks": cfg.git_hooks,
             "telemetry": cfg.telemetry,
+        },
+        "onboarding": {
+            "integrations": {
+                "matrix": cfg.setup_matrix,
+                "email": cfg.setup_email,
+                "social": cfg.setup_social,
+            }
         },
     }
 

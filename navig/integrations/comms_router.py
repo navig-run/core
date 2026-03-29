@@ -54,9 +54,13 @@ class HitLChannel(ABC):
     """Abstract Human-in-the-Loop channel."""
 
     name: str = "base"
-    available: bool = True  # set False to skip this channel
-    _consecutive_failures: int = 0
     _MAX_FAILURES = 3  # disable after 3 consecutive failures
+
+    def __init__(self) -> None:
+        # Instance-level state — must NOT be class-level to avoid cross-instance
+        # corruption when one channel's failure disables all channel types.
+        self.available: bool = True
+        self._consecutive_failures: int = 0
 
     @abstractmethod
     async def ping(self) -> bool:
@@ -107,6 +111,7 @@ class MatrixHitLChannel(HitLChannel):
         bot_provider: callable() -> NavigMatrixBot (lazy, avoids import at construction)
         room_id: Matrix room to use for HitL communication
         """
+        super().__init__()
         self._bot_provider = bot_provider
         self._room_id = room_id
         self._pending: dict[str, asyncio.Future] = {}  # corr_id → Future
@@ -211,6 +216,7 @@ class TelegramHitLChannel(HitLChannel):
 
     def __init__(self, bridge_provider) -> None:
         """bridge_provider: callable() → TelegramBridge (from integrations/telegram_bridge.py)"""
+        super().__init__()
         self._bp = bridge_provider
 
     def _bridge(self):
@@ -270,6 +276,7 @@ class SMSHitLChannel(HitLChannel):
     name = "sms"
 
     def __init__(self, account_sid: str, auth_token: str, from_number: str, to_number: str) -> None:
+        super().__init__()
         self._sid = account_sid
         self._tok = auth_token
         self._from = from_number
@@ -504,7 +511,7 @@ def get_comms_router() -> CommsRouter:
             channels.append(ch_matrix)
             logger.info("CommsRouter: Matrix channel configured (room=%s)", matrix_room)
         else:
-            logger.info("CommsRouter: Matrix channel skipped (no matrix_hitp_room set)")
+            logger.info("CommsRouter: Matrix channel skipped (no matrix_hitl_room set)")
     except Exception as exc:
         logger.info("CommsRouter: Matrix channel unavailable: %s", exc)
 

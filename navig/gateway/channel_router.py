@@ -188,6 +188,11 @@ class ChannelRouter:
                 username=metadata.get("username", ""),
             )
 
+        # Apply transient runtime persona from channel metadata (e.g., Telegram auto mode)
+        runtime_persona = str(metadata.get("auto_reply_persona", "") or "").strip()
+        if hasattr(agent, "set_runtime_persona"):
+            agent.set_runtime_persona(runtime_persona)
+
         # Set up status callback to send updates via WebSocket
         async def send_status(msg):
             await self._broadcast_status(session_key, msg)

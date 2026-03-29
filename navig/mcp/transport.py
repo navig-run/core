@@ -63,6 +63,7 @@ class StdioTransport(MCPTransport):
         self._process: asyncio.subprocess.Process | None = None
         self._pending: dict[Any, asyncio.Future] = {}
         self._reader_task: asyncio.Task | None = None
+        self._stderr_task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
 
     async def connect(self):
@@ -98,7 +99,7 @@ class StdioTransport(MCPTransport):
             self._reader_task = asyncio.create_task(self._read_loop())
 
             # Start stderr reader for debugging
-            asyncio.create_task(self._read_stderr())
+            self._stderr_task = asyncio.create_task(self._read_stderr())
 
             logger.info(f"MCP stdio transport connected: {self.command}")
 
@@ -115,6 +116,13 @@ class StdioTransport(MCPTransport):
             self._reader_task.cancel()
             try:
                 await self._reader_task
+            except asyncio.CancelledError:
+                pass  # task cancelled; expected during shutdown
+
+        if self._stderr_task:
+            self._stderr_task.cancel()
+            try:
+                await self._stderr_task
             except asyncio.CancelledError:
                 pass  # task cancelled; expected during shutdown
 

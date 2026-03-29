@@ -385,6 +385,8 @@ class TelegramVoiceBot:
                 )
 
             # Try intent parser first to trigger real actions from voice
+            response_text: str | None = None
+            _intent_handled = False
             try:
                 from navig.bot import NLP_AVAILABLE, IntentParser
 
@@ -400,13 +402,12 @@ class TelegramVoiceBot:
                             result = await handler(intent)
                             if result:
                                 response_text = str(result)
-                                # Skip general LLM since action was handled
-                                goto_tts = True
+                                _intent_handled = True
             except Exception as intent_exc:
                 logger.debug("Voice intent parser error (falling back to LLM): %s", intent_exc)
 
             # ── 4. Generative LLM fallback ────────────────────────────
-            if "goto_tts" not in locals():
+            if not _intent_handled:
                 response_text = await self._call_llm(transcript)
                 if not response_text:
                     await msg.reply_text("⚠️ I couldn't generate a response. Please try again.")

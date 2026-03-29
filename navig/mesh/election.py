@@ -97,6 +97,7 @@ class ElectionManager:
         self._running = False
         self._watchdog_task: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._bg_tasks: set[asyncio.Task] = set()
 
         # Proposal tracking — resets each election cycle
         self._current_epoch: int = 0
@@ -198,7 +199,7 @@ class ElectionManager:
                     # No leader recorded at all — trigger election
                     if not self._proposed_this_epoch:
                         logger.info("[election] Watchdog: no leader found — proposing")
-                        asyncio.create_task(self._propose_candidacy(reason="no_leader"))
+                        self._fire_and_forget(self._propose_candidacy(reason="no_leader"))
                     continue
 
                 if leader.is_self:
@@ -212,7 +213,7 @@ class ElectionManager:
                             f"[election] Watchdog: leader {leader.node_id} TTL expired "
                             f"(age={age:.1f}s ≥ {self._ttl_seconds}s)"
                         )
-                        asyncio.create_task(
+                        self._fire_and_forget(
                             self._propose_candidacy(reason="ttl_expiry")
                         )
         except asyncio.CancelledError:
@@ -336,6 +337,12 @@ class ElectionManager:
 
     # ──────────────────────────── Packet handlers ────────────────────────────
 
+    def _fire_and_forget(self, coro) -> None:
+        """Run a coroutine in the background, retaining a strong reference."""
+        task = asyncio.create_task(coro)
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+
     def _on_election_packet(self, ptype: str, record: NodeRecord, raw: dict) -> None:
         """
         Synchronous callback invoked by MeshDiscovery._handle_packet for
@@ -348,7 +355,7 @@ class ElectionManager:
         elif ptype == ELECT_PROMOTE:
             self._on_promote(record, raw)
         elif ptype == ELECT_YIELD:
-            asyncio.create_task(self._on_yield(record, raw))
+            self._fire_and_forget(self._on_yield(record, raw))
 
     def _on_propose(self, record: NodeRecord, raw: dict) -> None:
         """Record a competing proposal during the collection window."""

@@ -295,39 +295,47 @@ class SSHConnectionPool:
         """
         key = self._make_key(ssh_config)
 
+        # Phase 1: expire/cleanup outside the lock (liveness probes block on socket I/O)
+        self._cleanup_expired()
+
+
+        # Phase 2: probe candidate connection liveness OUTSIDE the lock
+        # (is_alive() does a blocking socket check and must not hold the pool lock)
+        candidate: SSHConnection | None = None
         with self._lock:
-            # Cleanup expired connections first
-            self._cleanup_expired()
-
-            # Check for existing connection
             if key in self._connections:
-                conn = self._connections[key]
+                candidate = self._connections.pop(key)
 
-                # Validate connection is still alive
-                if conn.is_alive():
-                    # Move to end (most recently used)
+        if candidate is not None:
+            # Probe outside the lock
+            if candidate.is_alive():
+                with self._lock:
+                    # Another thread may have inserted a fresher conn; prefer ours
+                    self._connections[key] = candidate
                     self._connections.move_to_end(key)
                     self._stats["hits"] += 1
-                    return conn
-                else:
-                    # Dead connection, remove it
-                    del self._connections[key]
-                    conn.close()
+                return candidate
+            else:
+                # Dead — close and fall through to create new
+                candidate.close()
+                with self._lock:
                     self._stats["connections_closed"] += 1
 
-            # Need to create new connection
+        # Need to create new connection
+        with self._lock:
             self._stats["misses"] += 1
-
             # Evict oldest if at capacity
             self._evict_oldest()
 
-            try:
-                conn = self._create_connection(ssh_config)
+        try:
+            conn = self._create_connection(ssh_config)
+            with self._lock:
                 self._connections[key] = conn
-                return conn
-            except Exception:
+            return conn
+        except Exception:
+            with self._lock:
                 self._stats["errors"] += 1
-                raise
+            raise
 
     def release(self, conn: SSHConnection):
         """

@@ -594,6 +594,7 @@ echo env('APP_ENV');
 | `config` | `validate`, `show`, `settings`, `set`, `get`, `edit`, `schema` | Configuration |
 | `tunnel` | (see `navig help tunnel`) | SSH tunnels |
 | `flow` | `list`, `run`, `template` | Workflows |
+| `plans` | `status`, `add`, `run` (alias), `sync`, `update`, `briefing` | Space-aware planning |
 | `auto` | `status`, `click`, `type`, `open`, `windows`, `snap` | UI Automation |
 | `ahk` | `clipboard`, `screenshot`, `ocr`, `listen` | Windows Automation |
 | `script` | `list`, `run`, `edit`, `new` | Script Management |

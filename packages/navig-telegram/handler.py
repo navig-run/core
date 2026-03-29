@@ -40,7 +40,11 @@ class PluginEvent:
 
 def on_load(ctx: PluginContext) -> None:
     """Start the Telegram bot worker thread using config from PluginContext."""
-    sys.path.insert(0, str(ctx.store_path / "src"))
+    src_path = str(ctx.store_path / "src")
+    added_to_path = False
+    if src_path not in sys.path:
+        sys.path.insert(0, src_path)
+        added_to_path = True
     try:
         import telegram_worker  # noqa: PLC0415
 
@@ -55,6 +59,12 @@ def on_load(ctx: PluginContext) -> None:
     except Exception as exc:
         logger.error("[navig-telegram] Failed to start bot worker: %s", exc)
         raise
+    finally:
+        if added_to_path:
+            try:
+                sys.path.remove(src_path)
+            except ValueError:
+                pass
 
 
 def on_unload(ctx: PluginContext) -> None:

@@ -94,7 +94,8 @@ pip install -e .
 After running `install.sh` / `install.ps1`, finalize setup with:
 
 ```bash
-navig init                        # interactive wizard (default)
+navig init                        # interactive CLI onboarding (default)
+navig init --tui                  # opt-in full-screen TUI onboarding
 navig init --profile operator     # silent, non-interactive (recommended for automation)
 navig init --profile node         # bare minimum: dirs + CLI check only
 navig init --profile architect    # operator + MCP config
@@ -102,6 +103,32 @@ navig init --profile system_standard  # operator + system service
 navig init --profile system_deep  # system_standard + Windows tray
 navig init --profile operator --dry-run   # preview without changes
 ```
+
+UI selector override (optional):
+
+```bash
+NAVIG_INIT_UI=tui navig init   # force TUI mode
+NAVIG_INIT_UI=cli navig init   # force classic CLI mode
+```
+
+When running `navig init --tui`, the Advanced flow now starts with a tier chooser:
+
+- `Essential` (~2 min): core workspace and safe defaults, integrations deferred
+- `Recommended` (~5 min): adds AI provider + vault setup guidance
+- `Full` (~8 min): includes optional integration prompts
+
+Tier behavior details:
+
+- `Essential`: skips the long wizard and moves from checks directly to review
+- `Recommended`: runs full wizard without optional integration prompts
+- `Full`: adds an integrations step with Matrix/SMTP/Social value context and toggles
+
+Verification and completion:
+
+- CLI onboarding now prints step progress (`[n/N %]`) and a verification summary before completion
+- TUI onboarding now shows a dedicated verification dashboard before final write/activation
+
+You can always configure deferred integrations later from CLI (`navig init`, `navig matrix`, `navig help email`, etc.).
 
 **Profile overview**
 
@@ -4405,8 +4432,13 @@ navig start --foreground     # See live logs
 **Beta command visibility**
 
 Some migrated commands are intentionally visible with `(beta)` labels in Telegram command lists and `/help`:
-`/music`, `/imagegen`, `/quote`, `/respect`, `/currency`, `/crypto_list`, `/remindme`, `/myreminders`, `/cancelreminder`, `/stats_global`.
+`/music`, `/imagegen`, `/quote`, `/respect`, `/currency`, `/crypto_list`, `/stats_global`.
 These are available for controlled rollout while backend orchestration components are finalized.
+
+**Live reminder orchestration**
+
+`/remindme`, `/myreminders`, and `/cancelreminder` are now live and backed by RuntimeStore.
+Due reminders are delivered by the Telegram worker background loop (poll interval ~15s).
 
 **Interactive Menu:**
 ```bash
@@ -8056,6 +8088,25 @@ The handler resolves the correct script, spawns it, streams output to the
 `NAVIG Inbox Router` output channel, and shows a VS Code notification on
 completion or failure.
 
+### NAVIG Plans (`navig plans`)
+
+Space-aware planning commands for `.navig/plans`.
+
+| Command | Description |
+|---------|-------------|
+| `navig plans status` | Show resolved spaces progress (project/global) |
+| `navig plans add "Goal" [--space <name>]` | Add a goal entry to `.navig/plans/DEV_PLAN.md` |
+| `navig plans run "Goal"` | Deprecated alias for `plans add` |
+| `navig plans sync [--dry-run] [--space <name>]` | Process `.navig/plans/inbox/` through inbox routing |
+| `navig plans update [file]` | Recompute `completion_pct` and `last_updated` frontmatter |
+
+**Examples:**
+```bash
+navig plans add "Ship onboarding wizard" --space finance
+navig plans sync --dry-run --space finance
+navig plans update CURRENT_PHASE.md
+```
+
 ---
 
 **Remember:** NAVIG is the secure, unified way to interact with remote servers. Direct SSH/database connections bypass security, tunnel management, and error handling. Always use NAVIG commands.
@@ -8230,3 +8281,21 @@ navig portable disable           # Switch back to local ~/.navig/
 ```
 
 **Security:** Portable vaults use the same AES-256 encryption as `navig backup export --encrypt`. Always keep the vault passphrase separate from the drive.
+
+---
+
+## 46. Package Runtime Notes (`navig package`)
+
+`navig package load <id>` and startup autoload run dependency preflight before `on_load()`.
+
+- Package dependencies in `depends_on.packages` must already be loaded.
+- Missing pip dependencies in `depends_on.pip` are auto-installed before load.
+- Autoload order is preserved exactly as listed in `packages_autoload.json`.
+
+**Examples:**
+```bash
+navig package load navig-commands-core
+navig package load navig-telegram
+navig package autoload add navig-commands-core
+navig package autoload add navig-telegram
+```

@@ -31,9 +31,10 @@ import json
 import logging
 import os
 import random
+import re
 import socket
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from navig.platform.paths import global_config_path, msg_trace_path
@@ -98,7 +99,9 @@ class SlashCommandEntry:
 
     command: str  # without leading "/"
     description: str  # shown in Telegram command list and /help
-    cli_template: str | None = None  # navig CLI template; ``{args}`` is replaced with user input
+    cli_template: str | None = (
+        None  # navig CLI template; ``{args}`` is replaced with user input
+    )
     handler: str | None = None  # method name on TelegramCommandsMixin to call directly
     visible: bool = True  # include in /help and setMyCommands
     category: str = "general"  # section heading for /help
@@ -106,12 +109,16 @@ class SlashCommandEntry:
 
 _SLASH_REGISTRY: list[SlashCommandEntry] = [
     # --- Core ----------------------------------------------------------------
-    SlashCommandEntry("start", "Wake up greeting", handler="_handle_start", category="core"),
-    SlashCommandEntry("help", "Command reference", handler="_handle_help", category="core"),
+    SlashCommandEntry(
+        "start", "Wake up greeting", handler="_handle_start", category="core"
+    ),
+    SlashCommandEntry("remindme", "Set reminders", handler="_handle_remindme", category="utilities"),
+    SlashCommandEntry("myreminders", "List your active reminders", handler="_handle_myreminders", category="utilities"),
+    SlashCommandEntry("cancelreminder", "Cancel a reminder", handler="_handle_cancelreminder", category="utilities"),
     SlashCommandEntry(
         "status",
-        "System health check",
-        handler="_handle_models_command",
+        "System and spaces status",
+        handler="_handle_status",
         category="core",
     ),
     SlashCommandEntry(
@@ -141,7 +148,9 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="core",
         visible=False,
     ),
-    SlashCommandEntry("briefing", "Today's summary", handler="_handle_briefing", category="core"),
+    SlashCommandEntry(
+        "briefing", "Today's summary", handler="_handle_briefing", category="core"
+    ),
     SlashCommandEntry(
         "deck",
         "Open the command deck",
@@ -149,8 +158,12 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="core",
         visible=False,
     ),
-    SlashCommandEntry("ping", "Quick alive check", handler="_handle_ping", category="core"),
-    SlashCommandEntry("skill", "Run a NAVIG skill - /skill list to browse", category="core"),
+    SlashCommandEntry(
+        "ping", "Quick alive check", handler="_handle_ping", category="core"
+    ),
+    SlashCommandEntry(
+        "skill", "Run a NAVIG skill - /skill list to browse", category="core"
+    ),
     # --- Monitoring ----------------------------------------------------------
     SlashCommandEntry(
         "disk",
@@ -158,8 +171,12 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         cli_template="host monitor show --disk",
         category="monitoring",
     ),
-    SlashCommandEntry("memory", "RAM status", cli_template='run "free -h"', category="monitoring"),
-    SlashCommandEntry("cpu", "Load / CPU info", cli_template='run "uptime"', category="monitoring"),
+    SlashCommandEntry(
+        "memory", "RAM status", cli_template='run "free -h"', category="monitoring"
+    ),
+    SlashCommandEntry(
+        "cpu", "Load / CPU info", cli_template='run "uptime"', category="monitoring"
+    ),
     SlashCommandEntry(
         "uptime", "Server uptime", cli_template='run "uptime -p"', category="monitoring"
     ),
@@ -197,16 +214,22 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="monitoring",
     ),
     # --- Docker --------------------------------------------------------------
-    SlashCommandEntry("docker", "List containers", cli_template="docker ps", category="docker"),
+    SlashCommandEntry(
+        "docker", "List containers", cli_template="docker ps", category="docker"
+    ),
     SlashCommandEntry(
         "logs",
         "Container logs (+ name)",
         cli_template="docker logs {args} -n 50",
         category="docker",
     ),
-    SlashCommandEntry("restart", "Restart container (+ name) or daemon", category="docker"),
+    SlashCommandEntry(
+        "restart", "Restart container (+ name) or daemon", category="docker"
+    ),
     # --- Database ------------------------------------------------------------
-    SlashCommandEntry("db", "List databases", cli_template="db list", category="database"),
+    SlashCommandEntry(
+        "db", "List databases", cli_template="db list", category="database"
+    ),
     SlashCommandEntry(
         "tables",
         "Tables in a database (+ db name)",
@@ -214,7 +237,9 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="database",
     ),
     # --- Tools ---------------------------------------------------------------
-    SlashCommandEntry("hosts", "Configured servers", cli_template="host list", category="tools"),
+    SlashCommandEntry(
+        "hosts", "Configured servers", cli_template="host list", category="tools"
+    ),
     SlashCommandEntry(
         "use",
         "Switch active host (+ name)",
@@ -224,7 +249,9 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     SlashCommandEntry(
         "run", "Execute remote command", cli_template='run "{args}"', category="tools"
     ),
-    SlashCommandEntry("backup", "Backup status", cli_template="backup show", category="tools"),
+    SlashCommandEntry(
+        "backup", "Backup status", cli_template="backup show", category="tools"
+    ),
     # --- Formatting & Reasoning --------------------------------------------------
     SlashCommandEntry(
         "format",
@@ -239,8 +266,12 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="tools",
         visible=False,
     ),
-    SlashCommandEntry("think", "Reason through a topic — paginated cards", category="tools"),
-    SlashCommandEntry("refine", "Sharpen your idea with AI clarification", category="tools"),
+    SlashCommandEntry(
+        "think", "Reason through a topic — paginated cards", category="tools"
+    ),
+    SlashCommandEntry(
+        "refine", "Sharpen your idea with AI clarification", category="tools"
+    ),
     # --- Utilities -----------------------------------------------------------
     SlashCommandEntry(
         "ip",
@@ -248,7 +279,9 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         cli_template='run "curl -s ifconfig.me"',
         category="utilities",
     ),
-    SlashCommandEntry("time", "Server time", cli_template='run "date"', category="utilities"),
+    SlashCommandEntry(
+        "time", "Server time", cli_template='run "date"', category="utilities"
+    ),
     SlashCommandEntry(
         "weather",
         "Weather report",
@@ -297,7 +330,9 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="model",
         visible=False,
     ),
-    SlashCommandEntry("mode", "Set focus mode (work, deep-focus, etc.)", category="model"),
+    SlashCommandEntry(
+        "mode", "Set focus mode (work, deep-focus, etc.)", category="model"
+    ),
     SlashCommandEntry("big", "Force big model for next message", category="model"),
     SlashCommandEntry("small", "Force small model for next message", category="model"),
     SlashCommandEntry("coder", "Force coder model for next message", category="model"),
@@ -343,28 +378,114 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="diagnostics",
     ),
     # --- Digital Ghost / Laravel Port ---
-    SlashCommandEntry("about", "Learn about the bot", handler="_handle_about", category="core"),
-    SlashCommandEntry("auto_start", "Enable AI auto-replies", handler="_handle_auto_start", category="ai"),
-    SlashCommandEntry("auto_stop", "Disable AI auto-replies", handler="_handle_auto_stop", category="ai"),
-    SlashCommandEntry("auto_status", "Check AI conversation status", handler="_handle_auto_status", category="ai"),
-    SlashCommandEntry("auto_roles", "List available AI personalities", handler="_handle_auto_roles", category="ai"),
-    SlashCommandEntry("explain_ai", "AI explains any topic", handler="_handle_explain_ai", category="ai"),
-    SlashCommandEntry("music", "Convert music links (beta)", handler="_handle_music", category="media"),
-    SlashCommandEntry("imagegen", "Generate AI images (beta)", handler="_handle_imagegen", category="media"),
-    SlashCommandEntry("profile", "View user profiles", handler="_handle_profile", category="social"),
-    SlashCommandEntry("quote", "Save and view quotes (beta)", handler="_handle_quote", category="social"),
-    SlashCommandEntry("respect", "Show respect to users (beta)", handler="_handle_respect", category="social"),
-    SlashCommandEntry("currency", "Convert currency (beta)", handler="_handle_currency", category="utilities"),
-    SlashCommandEntry("crypto_list", "List cryptocurrencies (beta)", handler="_handle_crypto_list", category="utilities"),
-    SlashCommandEntry("remindme", "Set reminders (beta)", handler="_handle_remindme", category="utilities"),
-    SlashCommandEntry("myreminders", "List your active reminders (beta)", handler="_handle_myreminders", category="utilities"),
-    SlashCommandEntry("cancelreminder", "Cancel a reminder (beta)", handler="_handle_cancelreminder", category="utilities"),
-    SlashCommandEntry("stats_global", "Chat activity statistics (beta)", handler="_handle_stats_global", category="utilities"),
-    SlashCommandEntry("choice", "Make random choices", handler="_handle_choice", category="utilities"),
-    SlashCommandEntry("kick", "Remove user from chat", handler="_handle_kick", category="admin"),
-    SlashCommandEntry("mute", "Silence user temporarily", handler="_handle_mute", category="admin"),
-    SlashCommandEntry("unmute", "Restore user voice", handler="_handle_unmute", category="admin"),
-    SlashCommandEntry("search", "Find users", handler="_handle_search", category="admin"),
+    SlashCommandEntry(
+        "about", "Learn about the bot", handler="_handle_about", category="core"
+    ),
+    SlashCommandEntry(
+        "auto_start",
+        "Enable AI auto-replies",
+        handler="_handle_auto_start",
+        category="ai",
+    ),
+    SlashCommandEntry(
+        "auto_stop",
+        "Disable AI auto-replies",
+        handler="_handle_auto_stop",
+        category="ai",
+    ),
+    SlashCommandEntry(
+        "auto_status",
+        "Check AI conversation status",
+        handler="_handle_auto_status",
+        category="ai",
+    ),
+    SlashCommandEntry(
+        "auto_roles",
+        "List available AI personalities",
+        handler="_handle_auto_roles",
+        category="ai",
+    ),
+    SlashCommandEntry(
+        "explain_ai",
+        "AI explains any topic",
+        handler="_handle_explain_ai",
+        category="ai",
+    ),
+    SlashCommandEntry(
+        "music", "Convert music links (beta)", handler="_handle_music", category="media"
+    ),
+    SlashCommandEntry(
+        "imagegen",
+        "Generate AI images (beta)",
+        handler="_handle_imagegen",
+        category="media",
+    ),
+    SlashCommandEntry(
+        "profile", "View user profiles", handler="_handle_profile", category="social"
+    ),
+    SlashCommandEntry(
+        "quote",
+        "Save and view quotes (beta)",
+        handler="_handle_quote",
+        category="social",
+    ),
+    SlashCommandEntry(
+        "respect",
+        "Show respect to users (beta)",
+        handler="_handle_respect",
+        category="social",
+    ),
+    SlashCommandEntry(
+        "currency",
+        "Convert currency (beta)",
+        handler="_handle_currency",
+        category="utilities",
+    ),
+    SlashCommandEntry(
+        "crypto_list",
+        "List cryptocurrencies (beta)",
+        handler="_handle_crypto_list",
+        category="utilities",
+    ),
+    SlashCommandEntry(
+        "remindme",
+        "Set reminders",
+        handler="_handle_remindme",
+        category="utilities",
+    ),
+    SlashCommandEntry(
+        "myreminders",
+        "List your active reminders",
+        handler="_handle_myreminders",
+        category="utilities",
+    ),
+    SlashCommandEntry(
+        "cancelreminder",
+        "Cancel a reminder",
+        handler="_handle_cancelreminder",
+        category="utilities",
+    ),
+    SlashCommandEntry(
+        "stats_global",
+        "Chat activity statistics (beta)",
+        handler="_handle_stats_global",
+        category="utilities",
+    ),
+    SlashCommandEntry(
+        "choice", "Make random choices", handler="_handle_choice", category="utilities"
+    ),
+    SlashCommandEntry(
+        "kick", "Remove user from chat", handler="_handle_kick", category="admin"
+    ),
+    SlashCommandEntry(
+        "mute", "Silence user temporarily", handler="_handle_mute", category="admin"
+    ),
+    SlashCommandEntry(
+        "unmute", "Restore user voice", handler="_handle_unmute", category="admin"
+    ),
+    SlashCommandEntry(
+        "search", "Find users", handler="_handle_search", category="admin"
+    ),
 ]
 
 
@@ -455,6 +576,33 @@ class TelegramCommandsMixin:
         """Quick alive check (/ping)."""
         await self.send_message(chat_id, "pong.", parse_mode=None)
 
+    async def _handle_status(self, chat_id: int, user_id: int = 0) -> None:
+        """Space-aware status summary for Telegram users (/status)."""
+        from navig.spaces import get_default_space
+        from navig.spaces.progress import (
+            collect_spaces_progress,
+            format_spaces_progress_lines,
+        )
+
+        selected_space = get_default_space()
+        rows = collect_spaces_progress()
+
+        lines = ["*NAVIG Status*", "", f"Default space: `{selected_space}`"]
+
+        if rows:
+            lines.append("")
+            lines.append("*Spaces progression:*")
+            lines.extend(format_spaces_progress_lines(rows, max_items=5))
+        else:
+            lines.append("")
+            lines.append("_No spaces discovered in project/global scope yet._")
+
+        tier = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
+        lines.append("")
+        lines.append(f"Model tier: `{tier or 'auto'}`")
+
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+
     async def _handle_user(self, chat_id: int, user_id: int, username: str) -> None:
         """Show user profile, preferences, and session state (/user)."""
         lines: list[str] = [f"👤 *User Profile* — @{username or 'unknown'}", ""]
@@ -464,7 +612,9 @@ class TelegramCommandsMixin:
         # Auth status
         if getattr(self, "allowed_users", None):
             is_allowed = user_id in self.allowed_users
-            lines.append(f"🔐 Auth: {'✅ Allowed' if is_allowed else '❌ Not in allowed list'}")
+            lines.append(
+                f"🔐 Auth: {'✅ Allowed' if is_allowed else '❌ Not in allowed list'}"
+            )
 
         # Model tier preference
         tier = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
@@ -493,7 +643,9 @@ class TelegramCommandsMixin:
             lines.append("🔍 Debug mode: on")
 
         lines.append("")
-        lines.append("`/settings` to configure · `/voice` for audio · `/status` for routing")
+        lines.append(
+            "`/settings` to configure · `/voice` for audio · `/status` for routing"
+        )
         await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
 
     async def _handle_mode(self, chat_id: int, mode_arg: str, user_id: int = 0) -> None:
@@ -514,7 +666,9 @@ class TelegramCommandsMixin:
                     pass  # best-effort; failure is non-critical
             for mid, mp in MOOD_REGISTRY.items():
                 active_marker = " <b>- active</b>" if mid == current else ""
-                lines.append(f"{mp.emoji} <code>{mid}</code>{active_marker}\n<i>{mp.character}</i>")
+                lines.append(
+                    f"{mp.emoji} <code>{mid}</code>{active_marker}\n<i>{mp.character}</i>"
+                )
             lines.append(
                 "\n<code>/mode &lt;name&gt;</code> to switch  -  "
                 "<code>/mode auto</code> to let NAVIG decide"
@@ -535,7 +689,9 @@ class TelegramCommandsMixin:
                 get_user_state_tracker().set_preference("chat_mode", "auto")
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
-            await self.send_message(chat_id, "- auto. reading the room.", parse_mode=None)
+            await self.send_message(
+                chat_id, "- auto. reading the room.", parse_mode=None
+            )
             return
 
         try:
@@ -655,9 +811,13 @@ class TelegramCommandsMixin:
                         if mc:
                             icon = mode_icons.get(mode_name, "-")
                             display_name = mode_name.replace("_", " ")
-                            lines.append(f"  {icon} {display_name}: `{mc.provider}:{mc.model}`")
+                            lines.append(
+                                f"  {icon} {display_name}: `{mc.provider}:{mc.model}`"
+                            )
                             if mc.fallback_provider:
-                                lines.append(f"  - `{mc.fallback_provider}:{mc.fallback_model}`")
+                                lines.append(
+                                    f"  - `{mc.fallback_provider}:{mc.fallback_model}`"
+                                )
                 else:
                     lines.append("\n_LLM Mode Router: not active_")
             except Exception:
@@ -678,7 +838,9 @@ class TelegramCommandsMixin:
                     ("- big", cfg.big),
                     ("- coder", cfg.coder_big),
                 ]:
-                    lines.append(f"  {label}: `{slot.provider or '-'}:{slot.model or '-'}`")
+                    lines.append(
+                        f"  {label}: `{slot.provider or '-'}:{slot.model or '-'}`"
+                    )
             else:
                 lines.append("\n_Hybrid Router: disabled_")
 
@@ -792,7 +954,9 @@ class TelegramCommandsMixin:
         if button_row:
             keyboard_rows.append(list(button_row))
 
-        keyboard_rows.append([{"text": "🚫 No AI  — raw mode", "callback_data": "prov_noai"}])
+        keyboard_rows.append(
+            [{"text": "🚫 No AI  — raw mode", "callback_data": "prov_noai"}]
+        )
         keyboard_rows.append([{"text": "✖ Close", "callback_data": "prov_close"}])
 
         await self.send_message(chat_id, "\n".join(lines), keyboard=keyboard_rows)
@@ -995,7 +1159,9 @@ class TelegramCommandsMixin:
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
-        lines.append(f"- *Memory* - {len(session_messages)} msgs - {all_sessions_count} session(s)")
+        lines.append(
+            f"- *Memory* - {len(session_messages)} msgs - {all_sessions_count} session(s)"
+        )
         lines.append(SEP)
 
         lines.append("- *Recent*")
@@ -1016,7 +1182,9 @@ class TelegramCommandsMixin:
                 if ts_raw:
                     try:
                         if isinstance(ts_raw, (int, float)):
-                            ts_prefix = _dt.utcfromtimestamp(ts_raw).strftime("%H:%M") + " "
+                            ts_prefix = (
+                                _dt.utcfromtimestamp(ts_raw).strftime("%H:%M") + " "
+                            )
                         else:
                             ts_prefix = str(ts_raw)[:5] + " "
                     except Exception:  # noqa: BLE001
@@ -1050,7 +1218,9 @@ class TelegramCommandsMixin:
                 _sk = f"agent:default:telegram:default:dm:{user_id}"
                 _s = sm.sessions.get(_sk)
                 if _s is not None:
-                    voice_label = "on" if _s.metadata.get("voice_enabled", False) else "off"
+                    voice_label = (
+                        "on" if _s.metadata.get("voice_enabled", False) else "off"
+                    )
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -1087,7 +1257,9 @@ class TelegramCommandsMixin:
                     "failed",
                     "critical",
                 )
-                daemon_issues = [ln.strip() for ln in _tail if any(kw in ln.lower() for kw in _kw)]
+                daemon_issues = [
+                    ln.strip() for ln in _tail if any(kw in ln.lower() for kw in _kw)
+                ]
                 break
             except OSError:
                 pass  # best-effort cleanup
@@ -1161,7 +1333,9 @@ class TelegramCommandsMixin:
                         messages.append(
                             {
                                 "role": entry.get("role") or entry.get("type", "?"),
-                                "content": entry.get("content") or entry.get("text") or "",
+                                "content": entry.get("content")
+                                or entry.get("text")
+                                or "",
                             }
                         )
                     except Exception:  # noqa: BLE001
@@ -1226,7 +1400,9 @@ class TelegramCommandsMixin:
         target = (arg or "").strip().lower()
 
         if target in DAEMON_ALIASES:
-            await self.send_message(chat_id, "- Restarting navig-daemon in 3s-", parse_mode=None)
+            await self.send_message(
+                chat_id, "- Restarting navig-daemon in 3s-", parse_mode=None
+            )
             sudo_pass = os.environ.get("SUDO_PASS", "")
             if sudo_pass:
                 # Pass password via env var - never interpolated into shell string (SEC-3 fix)
@@ -1252,11 +1428,15 @@ class TelegramCommandsMixin:
                     start_new_session=True,
                 )
         else:
-            await self._handle_cli_command(chat_id, user_id, metadata, f"docker restart {arg}")
+            await self._handle_cli_command(
+                chat_id, user_id, metadata, f"docker restart {arg}"
+            )
 
     # -- Audio / settings menus ------------------------------------------------
 
-    async def _handle_audio_menu(self, chat_id: int, user_id: int, is_group: bool = False) -> None:
+    async def _handle_audio_menu(
+        self, chat_id: int, user_id: int, is_group: bool = False
+    ) -> None:
         """Send the /audio response-mode panel."""
         if not _HAS_KEYBOARDS or not _HAS_SESSIONS:
             await self.send_message(
@@ -1269,9 +1449,13 @@ class TelegramCommandsMixin:
         sm = get_session_manager()
         session = sm.get_or_create_session(chat_id, user_id, is_group)
         keyboard_rows = build_audio_keyboard(session)
-        await self.send_message(chat_id, _audio_header_text(session), keyboard=keyboard_rows)
+        await self.send_message(
+            chat_id, _audio_header_text(session), keyboard=keyboard_rows
+        )
 
-    async def _handle_voice_menu(self, chat_id: int, user_id: int, is_group: bool = False) -> None:
+    async def _handle_voice_menu(
+        self, chat_id: int, user_id: int, is_group: bool = False
+    ) -> None:
         """Send the /voice provider picker (provider -> model -> voice/speed/format)."""
         if _HAS_AUDIO_MENU:
             try:
@@ -1305,7 +1489,9 @@ class TelegramCommandsMixin:
         sm = get_session_manager()
         session = sm.get_or_create_session(chat_id, user_id, is_group)
         keyboard_rows = build_settings_hub_keyboard(session)
-        await self.send_message(chat_id, _settings_hub_text(session), keyboard=keyboard_rows)
+        await self.send_message(
+            chat_id, _settings_hub_text(session), keyboard=keyboard_rows
+        )
 
     # -- Formatting & Reasoning -------------------------------------------------
 
@@ -1384,7 +1570,9 @@ class TelegramCommandsMixin:
         from navig.gateway.channels.telegram_navigator import CardNavigator
 
         nav = CardNavigator(self)
-        await nav.create(chat_id=chat_id, user_id=user_id, topic=topic, llm_text=llm_text)
+        await nav.create(
+            chat_id=chat_id, user_id=user_id, topic=topic, llm_text=llm_text
+        )
 
     async def _handle_refine_cmd(
         self,
@@ -1417,7 +1605,9 @@ class TelegramCommandsMixin:
     @rate_limited
     @error_handled
     @typing_context
-    async def _handle_briefing(self, chat_id: int, user_id: int, metadata: MessageMetadata) -> None:
+    async def _handle_briefing(
+        self, chat_id: int, user_id: int, metadata: MessageMetadata
+    ) -> None:
         """Real-data system briefing - no AI, no invented content (/briefing)."""
         from datetime import datetime as _dt
         from datetime import timezone as _tz
@@ -1472,7 +1662,9 @@ class TelegramCommandsMixin:
             _s.close()
         except Exception:
             bridge_ok = False
-        lines.append(f"- *LLM Bridge:* {'online (bridge_copilot)' if bridge_ok else 'offline'}")
+        lines.append(
+            f"- *LLM Bridge:* {'online (bridge_copilot)' if bridge_ok else 'offline'}"
+        )
 
         try:
             from navig.vault import get_vault_v2
@@ -1522,7 +1714,9 @@ class TelegramCommandsMixin:
             if len(dfl) >= 2:
                 parts = dfl[1].split()
                 if len(parts) >= 3:
-                    lines.append(f"- *Disk:* {parts[0]} used, {parts[1]} free ({parts[2]})")
+                    lines.append(
+                        f"- *Disk:* {parts[0]} used, {parts[1]} free ({parts[2]})"
+                    )
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
@@ -1550,6 +1744,20 @@ class TelegramCommandsMixin:
             lines.extend(recent[-5:])
         else:
             lines.append("_No recent command history._")
+
+        try:
+            from navig.spaces.progress import collect_spaces_progress
+
+            spaces = collect_spaces_progress()
+            if spaces:
+                lines.append("-" * 22)
+                lines.append("*Spaces Progress:*")
+                for row in spaces[:5]:
+                    lines.append(
+                        f"  - `{row.name}` ({row.scope}) — {row.completion_pct:.1f}%"
+                    )
+        except Exception:
+            pass
 
         await self.send_message(chat_id, "\n".join(lines))
 
@@ -1632,18 +1840,28 @@ class TelegramCommandsMixin:
             if result.success:
                 output_text = ""
                 if isinstance(result.output, dict):
-                    output_text = result.output.get("output") or result.output.get("info") or ""
+                    output_text = (
+                        result.output.get("output") or result.output.get("info") or ""
+                    )
                 else:
                     output_text = str(result.output or "")
 
                 header = f"- **{skill_name}**" + (f" - `{command}`" if command else "")
-                msg = f"{header}\n\n{output_text[:3800]}" if output_text else f"{header}\n- Done."
+                msg = (
+                    f"{header}\n\n{output_text[:3800]}"
+                    if output_text
+                    else f"{header}\n- Done."
+                )
                 await self.send_message(chat_id, msg)
             else:
-                await self.send_message(chat_id, f"- Skill error:\n{result.error}", parse_mode=None)
+                await self.send_message(
+                    chat_id, f"- Skill error:\n{result.error}", parse_mode=None
+                )
 
         except Exception as exc:
-            await self.send_message(chat_id, f"- /skill crashed: {exc}", parse_mode=None)
+            await self.send_message(
+                chat_id, f"- /skill crashed: {exc}", parse_mode=None
+            )
 
     async def _skill_list(self, chat_id: int) -> None:
         """Send a paginated list of all available skills."""
@@ -1652,7 +1870,9 @@ class TelegramCommandsMixin:
 
             skills = load_all_skills()
         except Exception as exc:
-            await self.send_message(chat_id, f"- Could not load skills: {exc}", parse_mode=None)
+            await self.send_message(
+                chat_id, f"- Could not load skills: {exc}", parse_mode=None
+            )
             return
 
         if not skills:
@@ -1671,10 +1891,14 @@ class TelegramCommandsMixin:
         for cat, cat_skills in sorted(by_cat.items()):
             lines.append(f"\n**{cat.title()}**")
             for s in cat_skills:
-                safety_icon = {"safe": "-", "elevated": "-", "destructive": "-"}.get(s.safety, "-")
+                safety_icon = {"safe": "-", "elevated": "-", "destructive": "-"}.get(
+                    s.safety, "-"
+                )
                 lines.append(f"  {safety_icon} `{s.id}` - {s.name}")
 
-        lines.append("\n\nUsage: `/skill <id>` for info - `/skill <id> <command>` to run")
+        lines.append(
+            "\n\nUsage: `/skill <id>` for info - `/skill <id> <command>` to run"
+        )
         await self.send_message(chat_id, "\n".join(lines))
 
     # -- CLI command dispatch --------------------------------------------------
@@ -1795,7 +2019,9 @@ class TelegramCommandsMixin:
                         _log.getLogger(__name__).exception(
                             "autoheal: _heal_failure raised unexpectedly"
                         )
-                        await self.send_message(chat_id, response[:3950], parse_mode=None)
+                        await self.send_message(
+                            chat_id, response[:3950], parse_mode=None
+                        )
                     return
                 # -- Normal path ---------------------------------------------
                 if len(response) > 4000:
@@ -1815,7 +2041,9 @@ class TelegramCommandsMixin:
                         message=prompt,
                         metadata=metadata,
                     )
-                    if nl_response and not nl_response.startswith("Command exited with code"):
+                    if nl_response and not nl_response.startswith(
+                        "Command exited with code"
+                    ):
                         response = nl_response
                 except Exception as _nl_err:
                     import logging as _log
@@ -1885,7 +2113,9 @@ class TelegramCommandsMixin:
                     if url:
                         return url
                 except Exception as e:
-                    logger.debug("Could not read deck_url from config %s: %s", cfg_path, e)
+                    logger.debug(
+                        "Could not read deck_url from config %s: %s", cfg_path, e
+                    )
         return None
 
     # ── Digital Ghost / Laravel Port Features ───────────────────────────────
@@ -1902,111 +2132,262 @@ class TelegramCommandsMixin:
         await self.send_message(chat_id, msg)
 
     async def _handle_auto_start(self, chat_id: int, user_id: int, text: str) -> None:
-        """Start AI conversational auto-reply using session variables."""
-        role = text[len("/auto_start"):].strip() or "assistant"
+        """Start AI conversational auto-reply using durable runtime state."""
+        role = text[len("/auto_start") :].strip() or "assistant"
         try:
-            from .telegram import HAS_SESSIONS, get_session_manager
-            if HAS_SESSIONS:
-                sm = get_session_manager()
-                sm.set_session_var(chat_id, user_id, "auto_reply", role, is_group=(chat_id < 0))
-                await self.send_message(chat_id, f"✅ Auto-replies *ACTIVATED* with persona: `{role}`")
-            else:
-                await self.send_message(chat_id, "❌ Sessions are disabled. Cannot enable auto-reply.")
+            from navig.store.runtime import get_runtime_store
+
+            get_runtime_store().set_ai_state(
+                user_id=user_id,
+                chat_id=chat_id,
+                mode="active",
+                persona=role,
+                context={"source": "telegram", "command": "auto_start"},
+            )
+            await self.send_message(
+                chat_id, f"✅ Auto-replies *ACTIVATED* with persona: `{role}`"
+            )
         except Exception as e:
-            await self.send_message(chat_id, f"Session error: {e}")
+            logger.error("Failed to start auto-reply state: %s", e)
+            await self.send_message(chat_id, "❌ Failed to activate auto-replies.")
 
     async def _handle_auto_stop(self, chat_id: int, user_id: int) -> None:
         """Stop AI conversational auto-reply."""
         try:
-            from .telegram import HAS_SESSIONS, get_session_manager
-            if HAS_SESSIONS:
-                sm = get_session_manager()
-                sm.set_session_var(chat_id, user_id, "auto_reply", None, is_group=(chat_id < 0))
-                await self.send_message(chat_id, "🛑 Auto-replies deactivated.")
-        except Exception:
+            from navig.store.runtime import get_runtime_store
+
+            get_runtime_store().clear_ai_state(user_id)
+            await self.send_message(chat_id, "🛑 Auto-replies deactivated.")
+        except Exception as e:
+            logger.error("Failed to stop auto-reply state: %s", e)
             await self.send_message(chat_id, "🛑 Auto-replies halted.")
 
     async def _handle_auto_status(self, chat_id: int, user_id: int) -> None:
         """Check current auto-reply status."""
-        role = None
+        state = None
         try:
-            from .telegram import HAS_SESSIONS, get_session_manager
-            if HAS_SESSIONS:
-                sm = get_session_manager()
-                sess = sm.get_session(chat_id, user_id, (chat_id < 0))
-                if hasattr(sess, "vars") and sess.vars:
-                    role = sess.vars.get("auto_reply")
-        except Exception:
-            pass
+            from navig.store.runtime import get_runtime_store
 
-        if role:
-            await self.send_message(chat_id, f"✅ AI is currently *ACTIVE* in `{role}` mode.")
-        else:
-            await self.send_message(chat_id, "🛑 AI auto-reply is currently *INACTIVE*.")
+            state = get_runtime_store().get_ai_state(user_id)
+        except Exception as e:
+            logger.error("Failed to read auto-reply state: %s", e)
+
+        if state and state.get("mode") == "active":
+            role = state.get("persona") or "assistant"
+            await self.send_message(
+                chat_id, f"✅ AI is currently *ACTIVE* in `{role}` mode."
+            )
+            return
+
+        await self.send_message(chat_id, "🛑 AI auto-reply is currently *INACTIVE*.")
 
     async def _handle_auto_roles(self, chat_id: int) -> None:
-        roles = "• `storyteller`\n• `assistant`\n• `philosopher`\n• `teacher`\n• `tyler`"
-        await self.send_message(chat_id, f"🎭 *Available AI Personas:*\n\n{roles}\n\nUse `/auto_start <role>` to activate.")
+        roles = (
+            "• `storyteller`\n• `assistant`\n• `philosopher`\n• `teacher`\n• `tyler`"
+        )
+        await self.send_message(
+            chat_id,
+            f"🎭 *Available AI Personas:*\n\n{roles}\n\nUse `/auto_start <role>` to activate.",
+        )
 
     async def _handle_explain_ai(self, chat_id: int, text: str) -> None:
-        topic = text[len("/explain_ai"):].strip()
+        topic = text[len("/explain_ai") :].strip()
         if not topic:
-            await self.send_message(chat_id, "Please provide a topic. Example: `/explain_ai quantum computing`")
+            await self.send_message(
+                chat_id,
+                "Please provide a topic. Example: `/explain_ai quantum computing`",
+            )
             return
 
         await self.send_typing(chat_id)
         try:
             from navig.ai.llm_router import route_llm
+
             prompt = f"Explain the following topic clearly and comprehensively, structured for a Telegram message:\n\nTopic: {topic}"
-            response = await route_llm(prompt, tier="small", system_prompt="You are an expert explainer.")
+            response = await route_llm(
+                prompt, tier="small", system_prompt="You are an expert explainer."
+            )
             await self.send_message(chat_id, response.text)
         except Exception as e:
-            await self.send_message(chat_id, f"❌ Failed to explain: {e}", parse_mode=None)
+            await self.send_message(
+                chat_id, f"❌ Failed to explain: {e}", parse_mode=None
+            )
 
     async def _handle_music(self, chat_id: int) -> None:
-        await self.send_message(chat_id, "🎵 *Music Conversion*\n\nIntegration with Spotify/Apple Music APIs pending migration.", parse_mode="Markdown")
+        await self.send_message(
+            chat_id,
+            "🎵 *Music Conversion*\n\nIntegration with Spotify/Apple Music APIs pending migration.",
+            parse_mode="Markdown",
+        )
 
     async def _handle_imagegen(self, chat_id: int, text: str) -> None:
-        prompt = text[len("/imagegen"):].strip()
+        prompt = text[len("/imagegen") :].strip()
         if not prompt:
-            await self.send_message(chat_id, "Please provide a prompt. Example: `/imagegen cybernetic city sunset`", parse_mode="Markdown")
+            await self.send_message(
+                chat_id,
+                "Please provide a prompt. Example: `/imagegen cybernetic city sunset`",
+                parse_mode="Markdown",
+            )
             return
         await self.send_typing(chat_id)
-        await self.send_message(chat_id, "🎨 Image generation model not yet bridged to the current workspace.", parse_mode=None)
+        await self.send_message(
+            chat_id,
+            "🎨 Image generation model not yet bridged to the current workspace.",
+            parse_mode=None,
+        )
 
     async def _handle_profile(self, chat_id: int, user_id: int, username: str) -> None:
         await self._handle_user(chat_id, user_id, username)
 
     async def _handle_quote(self, chat_id: int) -> None:
-        await self.send_message(chat_id, "💬 Quote storage is currently being initialized in the new database.", parse_mode=None)
+        await self.send_message(
+            chat_id,
+            "💬 Quote storage is currently being initialized in the new database.",
+            parse_mode=None,
+        )
 
     async def _handle_respect(self, chat_id: int) -> None:
-        await self.send_message(chat_id, "✊ Respect system ledger is syncing...", parse_mode=None)
+        await self.send_message(
+            chat_id, "✊ Respect system ledger is syncing...", parse_mode=None
+        )
 
     async def _handle_currency(self, chat_id: int, text: str) -> None:
-        await self.send_message(chat_id, "💹 Real-time fiat exchange rates are offline.", parse_mode=None)
+        await self.send_message(
+            chat_id, "💹 Real-time fiat exchange rates are offline.", parse_mode=None
+        )
 
     async def _handle_crypto_list(self, chat_id: int) -> None:
-        await self.send_message(chat_id, "🪙 *Crypto Reference:*\n• BTC - Bitcoin\n• ETH - Ethereum\n• SOL - Solana\n\n(Price feed offline)", parse_mode="Markdown")
+        await self.send_message(
+            chat_id,
+            "🪙 *Crypto Reference:*\n• BTC - Bitcoin\n• ETH - Ethereum\n• SOL - Solana\n\n(Price feed offline)",
+            parse_mode="Markdown",
+        )
 
-    async def _handle_remindme(self, chat_id: int) -> None:
-        await self.send_message(chat_id, "⏰ Native scheduling daemon for reminders is currently disabled.", parse_mode=None)
+    def _parse_remindme_request(self, text: str) -> tuple[datetime | None, str, str | None]:
+        """Parse /remindme payload to (remind_at_utc, message, error)."""
+        arg = text[len("/remindme") :].strip()
+        if not arg:
+            return (
+                None,
+                "",
+                "Usage: `/remindme in 30 minutes check logs` or `/remindme at 21:30 deploy review`",
+            )
 
-    async def _handle_myreminders(self, chat_id: int) -> None:
-        await self.send_message(chat_id, "📭 You have 0 active reminders.")
+        rel_match = re.match(
+            r"^(?:in\s+)?(\d+)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)\s+(?:to\s+)?(.+)$",
+            arg,
+            flags=re.IGNORECASE,
+        )
+        if rel_match:
+            qty = int(rel_match.group(1))
+            unit = rel_match.group(2).lower()
+            msg = rel_match.group(3).strip()
+            if not msg:
+                return None, "", "Reminder message cannot be empty."
+            now = datetime.now(timezone.utc)
+            if unit.startswith("m"):
+                remind_at = now + timedelta(minutes=qty)
+            elif unit.startswith("h"):
+                remind_at = now + timedelta(hours=qty)
+            else:
+                remind_at = now + timedelta(days=qty)
+            return remind_at, msg, None
 
-    async def _handle_cancelreminder(self, chat_id: int) -> None:
-        await self.send_message(chat_id, "❌ No reminder found to cancel.")
+        abs_match = re.match(
+            r"^at\s+(\d{1,2}):(\d{2})\s+(.+)$", arg, flags=re.IGNORECASE
+        )
+        if abs_match:
+            hour = int(abs_match.group(1))
+            minute = int(abs_match.group(2))
+            msg = abs_match.group(3).strip()
+            if hour > 23 or minute > 59:
+                return None, "", "Time must be in 24h format, e.g. `at 21:30`."
+            if not msg:
+                return None, "", "Reminder message cannot be empty."
+            now = datetime.now(timezone.utc)
+            remind_at = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if remind_at <= now:
+                remind_at = remind_at + timedelta(days=1)
+            return remind_at, msg, None
+
+        return (
+            None,
+            "",
+            "Could not parse reminder. Use `/remindme in 10 minutes <message>` or `/remindme at 18:45 <message>`.",
+        )
+
+    async def _handle_remindme(self, chat_id: int, user_id: int, text: str) -> None:
+        remind_at, message, err = self._parse_remindme_request(text)
+        if err or remind_at is None:
+            await self.send_message(chat_id, err or "Invalid reminder format.")
+            return
+
+        from navig.store.runtime import get_runtime_store
+
+        reminder_id = get_runtime_store().create_reminder(
+            user_id=user_id,
+            chat_id=chat_id,
+            message=message,
+            remind_at=remind_at,
+        )
+        when = remind_at.strftime("%Y-%m-%d %H:%M UTC")
+        await self.send_message(
+            chat_id,
+            f"⏰ Reminder set.\nID: `{reminder_id}`\nWhen: `{when}`\nMessage: {message}",
+        )
+
+    async def _handle_myreminders(self, chat_id: int, user_id: int) -> None:
+        from navig.store.runtime import get_runtime_store
+
+        reminders = get_runtime_store().get_user_reminders(user_id)
+        if not reminders:
+            await self.send_message(chat_id, "📭 You have no active reminders.")
+            return
+
+        lines = ["⏰ *Your Active Reminders*", ""]
+        for row in reminders:
+            rid = row.get("id")
+            remind_at = str(row.get("remind_at") or "").replace("T", " ")[:16]
+            msg = str(row.get("message") or "").strip()
+            lines.append(f"`#{rid}` at `{remind_at} UTC` — {msg}")
+        lines.append("\nUse `/cancelreminder <id>` to remove one.")
+        await self.send_message(chat_id, "\n".join(lines))
+
+    async def _handle_cancelreminder(self, chat_id: int, user_id: int, text: str) -> None:
+        arg = text[len("/cancelreminder") :].strip()
+        if not arg.isdigit():
+            await self.send_message(chat_id, "Usage: `/cancelreminder <id>`")
+            return
+
+        reminder_id = int(arg)
+        from navig.store.runtime import get_runtime_store
+
+        deleted = get_runtime_store().cancel_reminder(reminder_id, user_id)
+        if deleted:
+            await self.send_message(chat_id, f"✅ Reminder `{reminder_id}` cancelled.")
+        else:
+            await self.send_message(
+                chat_id,
+                f"❌ No active reminder found for id `{reminder_id}`.",
+                parse_mode=None,
+            )
 
     async def _handle_stats_global(self, chat_id: int) -> None:
-        await self.send_message(chat_id, "📊 Global chat statistics are gathering data...")
+        await self.send_message(
+            chat_id, "📊 Global chat statistics are gathering data..."
+        )
 
     async def _handle_choice(self, chat_id: int, text: str) -> None:
-        args = text[len("/choice"):].strip()
+        args = text[len("/choice") :].strip()
         if " or " not in args.lower():
-            await self.send_message(chat_id, "Please use 'or' to separate choices. Example: `/choice pizza or burger`", parse_mode="Markdown")
+            await self.send_message(
+                chat_id,
+                "Please use 'or' to separate choices. Example: `/choice pizza or burger`",
+                parse_mode="Markdown",
+            )
             return
         import random
+
         choices = [c.strip() for c in args.lower().split(" or ") if c.strip()]
         if choices:
             await self.send_message(chat_id, f"🎲 I choose: *{random.choice(choices)}*")
@@ -2014,17 +2395,31 @@ class TelegramCommandsMixin:
             await self.send_message(chat_id, "Invalid choices.", parse_mode=None)
 
     async def _handle_kick(self, chat_id: int, text: str) -> None:
-        target = text[len("/kick"):].strip()
-        await self.send_message(chat_id, f"👢 Core restriction: Bot requires channel Admin rights to ban `{target}`.", parse_mode="Markdown")
+        target = text[len("/kick") :].strip()
+        await self.send_message(
+            chat_id,
+            f"👢 Core restriction: Bot requires channel Admin rights to ban `{target}`.",
+            parse_mode="Markdown",
+        )
 
     async def _handle_mute(self, chat_id: int, text: str) -> None:
-        target = text[len("/mute"):].strip()
-        await self.send_message(chat_id, f"🔇 Core restriction: Bot requires channel Admin rights to restrict `{target}`.", parse_mode="Markdown")
+        target = text[len("/mute") :].strip()
+        await self.send_message(
+            chat_id,
+            f"🔇 Core restriction: Bot requires channel Admin rights to restrict `{target}`.",
+            parse_mode="Markdown",
+        )
 
     async def _handle_unmute(self, chat_id: int, text: str) -> None:
-        target = text[len("/unmute"):].strip()
-        await self.send_message(chat_id, f"🔊 Core restriction: Bot requires channel Admin rights to pardon `{target}`.", parse_mode="Markdown")
+        target = text[len("/unmute") :].strip()
+        await self.send_message(
+            chat_id,
+            f"🔊 Core restriction: Bot requires channel Admin rights to pardon `{target}`.",
+            parse_mode="Markdown",
+        )
 
     async def _handle_search(self, chat_id: int, text: str) -> None:
-        query = text[len("/search"):].strip()
-        await self.send_message(chat_id, f"🔍 User search proxy offline for query: `{query}`")
+        query = text[len("/search") :].strip()
+        await self.send_message(
+            chat_id, f"🔍 User search proxy offline for query: `{query}`"
+        )

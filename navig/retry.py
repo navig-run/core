@@ -156,7 +156,9 @@ class RetryableOperation:
                 time.sleep(delay)
 
         # Should never reach here, but raise last exception if we do
-        raise last_exception
+        raise last_exception or RuntimeError(
+            "RetryableOperation: unexpected fallthrough — no exception was captured"
+        )
 
 
 def with_retry(

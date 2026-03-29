@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Literal
 
 PhaseLabel = Literal["bootstrap", "configuration"]
+TierLabel = Literal["essential", "recommended", "optional"]
 
 ARTIFACT_VERSION = 1
 ARTIFACT_FILENAME = "onboarding.json"
@@ -42,7 +43,7 @@ class StepRecord:
 
     id: str
     title: str
-    status: Literal["completed", "skipped", "failed"]
+    status: Literal["completed", "skipped", "failed", "interrupted"]
     completed_at: str
     duration_ms: int
     output: dict
@@ -74,6 +75,7 @@ class OnboardingStep:
     on_failure: OnFailurePolicy = "abort"
     independent: bool = False
     phase: PhaseLabel = "bootstrap"
+    tier: TierLabel = "essential"
 
 
 @dataclass
@@ -94,6 +96,7 @@ class EngineState:
     node_id: str = ""
     started_at: str = ""
     completed_at: str = ""
+    interrupted_at: str = ""
     engine_version: str = ENGINE_VERSION
     steps: list[StepRecord] = field(default_factory=list)
 
@@ -135,61 +138,69 @@ class OnboardingEngine:
         # True once we reach (or pass) the jump target; always True when no jump configured.
         reached_target = not bool(self._config.jump_to_step)
 
-        for step in self._steps:
-            if not reached_target:
-                if step.id == self._config.jump_to_step:
-                    reached_target = True
-                else:
-                    continue  # skip steps before the jump target
+        try:
+            for step in self._steps:
+                if not reached_target:
+                    if step.id == self._config.jump_to_step:
+                        reached_target = True
+                    else:
+                        continue  # skip steps before the jump target
 
-            if self._already_completed(step.id):
-                continue
+                if self._already_completed(step.id):
+                    continue
 
-            t0 = time.monotonic()
-            # On reset: bypass verify so every step re-executes.
-            if self._config.reset:
-                already_done = False
-            else:
-                try:
-                    already_done = step.verify()
-                except Exception:  # noqa: BLE001
+                t0 = time.monotonic()
+                # On reset: bypass verify so every step re-executes.
+                if self._config.reset:
                     already_done = False
+                else:
+                    try:
+                        already_done = step.verify()
+                    except Exception:  # noqa: BLE001
+                        already_done = False
 
-            if already_done:
+                if already_done:
+                    record = StepRecord(
+                        id=step.id,
+                        title=step.title,
+                        status="skipped",
+                        completed_at=_now(),
+                        duration_ms=int((time.monotonic() - t0) * 1000),
+                        output={},
+                    )
+                    self._record(record)
+                    continue
+
+                if self._on_step_start is not None:
+                    try:
+                        self._on_step_start(step)
+                    except Exception:  # noqa: BLE001
+                        pass
+                result = self._execute(step)
                 record = StepRecord(
                     id=step.id,
                     title=step.title,
-                    status="skipped",
+                    status=result.status,
                     completed_at=_now(),
-                    duration_ms=int((time.monotonic() - t0) * 1000),
-                    output={},
+                    duration_ms=result.duration_ms,
+                    output=result.output,
+                    error=result.error,
                 )
                 self._record(record)
-                continue
 
-            if self._on_step_start is not None:
-                try:
-                    self._on_step_start(step)
-                except Exception:  # noqa: BLE001
-                    pass
-            result = self._execute(step)
-            record = StepRecord(
-                id=step.id,
-                title=step.title,
-                status=result.status,
-                completed_at=_now(),
-                duration_ms=result.duration_ms,
-                output=result.output,
-                error=result.error,
-            )
-            self._record(record)
-
-            if result.status == "failed" and step.on_failure == "abort":
-                self._state.completed_at = _now()
-                self._write_artifact()
-                return self._state
+                if result.status == "failed" and step.on_failure == "abort":
+                    self._state.completed_at = _now()
+                    self._state.interrupted_at = ""
+                    self._write_artifact()
+                    return self._state
+        except KeyboardInterrupt:
+            self._state.interrupted_at = _now()
+            self._state.completed_at = ""
+            self._write_artifact()
+            return self._state
 
         self._state.completed_at = _now()
+        self._state.interrupted_at = ""
         self._write_artifact()
         return self._state
 
@@ -314,6 +325,7 @@ class OnboardingEngine:
             "nodeId": self._state.node_id,
             "startedAt": self._state.started_at,
             "completedAt": self._state.completed_at,
+            "interruptedAt": self._state.interrupted_at,
             "engineVersion": self._state.engine_version,
             "steps": [asdict(s) for s in self._state.steps],
         }
@@ -334,6 +346,7 @@ class OnboardingEngine:
                     node_id=raw.get("nodeId", ""),
                     started_at=raw.get("startedAt", ""),
                     completed_at=raw.get("completedAt", ""),
+                    interrupted_at=raw.get("interruptedAt", ""),
                     engine_version=raw.get("engineVersion", ENGINE_VERSION),
                 )
                 state.steps = [StepRecord(**s) for s in raw.get("steps", [])]

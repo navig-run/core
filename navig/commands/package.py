@@ -10,8 +10,11 @@ Scan roots (highest priority last wins for name collisions):
 
 from __future__ import annotations
 
+import contextlib
+import importlib.util
 import json
 from pathlib import Path
+import re
 
 import typer
 
@@ -87,6 +90,150 @@ def _load_package(name: str) -> tuple[dict | None, Path | None, str]:
     if entry:
         return entry["manifest"], entry["path"], entry["label"]
     return None, None, ""
+
+
+def _iter_unique(items: list[str]) -> list[str]:
+    """Return items de-duplicated while preserving insertion order."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
+
+
+def _manifest_dependencies(manifest: dict) -> tuple[list[str], list[str]]:
+    """Extract declared package and pip dependencies from manifest."""
+    deps_block = manifest.get("depends_on") or manifest.get("depends") or {}
+    package_deps: list[str] = []
+    pip_deps: list[str] = []
+
+    if isinstance(deps_block, dict):
+        package_deps = list((deps_block.get("packages") or {}).keys())
+        pip_deps = list(deps_block.get("pip") or [])
+    elif isinstance(deps_block, list):
+        package_deps = [str(dep) for dep in deps_block]
+
+    return package_deps, pip_deps
+
+
+def _pip_requirement_name(requirement: str) -> str:
+    """Best-effort extraction of top-level module name from pip requirement."""
+    normalized = requirement.strip()
+    if not normalized:
+        return ""
+    base = re.split(r"[<>=!~;\[]", normalized, maxsplit=1)[0].strip()
+    return base.replace("-", "_")
+
+
+def _install_pip_dependencies(pkg_id: str, pip_deps: list[str]) -> bool:
+    """Install pip dependencies using uv (preferred) or pip."""
+    if not pip_deps:
+        return True
+
+    import shutil
+    import subprocess
+    import sys as _sys
+
+    ch.info(
+        f"Installing {len(pip_deps)} pip dependenc{'y' if len(pip_deps) == 1 else 'ies'} for '{pkg_id}'…"
+    )
+    try:
+        uv_path = shutil.which("uv")
+        if uv_path:
+            cmd = [uv_path, "pip", "install", *pip_deps]
+        else:
+            cmd = [_sys.executable, "-m", "pip", "install", *pip_deps]
+
+        subprocess.check_call(
+            cmd,
+            stdout=_sys.stdout,
+            stderr=_sys.stderr,
+        )
+        ch.success("Dependencies installed")
+        return True
+    except subprocess.CalledProcessError as exc:
+        ch.error(f"Failed to install pip dependencies for '{pkg_id}': {exc}")
+        return False
+
+
+def _ensure_runtime_dependencies(
+    pkg_id: str,
+    manifest: dict,
+    *,
+    allow_pip_install: bool,
+) -> bool:
+    """Validate package and pip dependencies before loading a package."""
+    package_deps, pip_deps = _manifest_dependencies(manifest)
+
+    missing_packages = [dep for dep in package_deps if dep not in _loaded_packs]
+    if missing_packages:
+        ch.error(
+            f"Package '{pkg_id}' requires loaded dependencies: {', '.join(missing_packages)}. "
+            f"Load them first with 'navig package load <id>'."
+        )
+        return False
+
+    if not pip_deps:
+        return True
+
+    missing_pip: list[str] = []
+    for dep in pip_deps:
+        import_name = _pip_requirement_name(dep)
+        if not import_name:
+            continue
+        if importlib.util.find_spec(import_name) is None:
+            missing_pip.append(dep)
+
+    if not missing_pip:
+        return True
+
+    if not allow_pip_install:
+        ch.error(
+            f"Package '{pkg_id}' is missing pip dependencies: {', '.join(missing_pip)}. "
+            f"Install them or run 'navig package install' again."
+        )
+        return False
+
+    if not _install_pip_dependencies(pkg_id, missing_pip):
+        return False
+
+    unresolved: list[str] = []
+    for dep in missing_pip:
+        import_name = _pip_requirement_name(dep)
+        if import_name and importlib.util.find_spec(import_name) is None:
+            unresolved.append(dep)
+
+    if unresolved:
+        ch.error(
+            f"Package '{pkg_id}' still has unresolved pip dependencies after install: {', '.join(unresolved)}"
+        )
+        return False
+
+    return True
+
+
+@contextlib.contextmanager
+def _scoped_sys_path(path: Path):
+    """Temporarily prepend path to sys.path during handler import and execution."""
+    import sys
+
+    path_str = str(path)
+    added = False
+    if path_str not in sys.path:
+        sys.path.insert(0, path_str)
+        added = True
+
+    try:
+        yield
+    finally:
+        if added:
+            try:
+                sys.path.remove(path_str)
+            except ValueError:
+                pass
 
 
 # ── Commands ──────────────────────────────────────────────────────────────────
@@ -318,35 +465,8 @@ def package_install(
     shutil.copytree(src, dest)
     ch.success(f"Installed package '{pkg_id}' → {dest}")
 
-    # Install pip dependencies declared in depends_on.pip (or legacy depends.pip).
-    deps_block = manifest.get("depends_on") or manifest.get("depends", {})
-    pip_deps: list[str] = []
-    if isinstance(deps_block, dict):
-        pip_deps = deps_block.get("pip", [])
-    if pip_deps:
-        import shutil
-        import subprocess
-        import sys as _sys
-
-        ch.info(
-            f"Installing {len(pip_deps)} pip dependenc{'y' if len(pip_deps) == 1 else 'ies'}…"
-        )
-        try:
-            # Prefer uv for speed and PEP-668 compliance if available
-            uv_path = shutil.which("uv")
-            if uv_path:
-                cmd = [uv_path, "pip", "install", *pip_deps]
-            else:
-                cmd = [_sys.executable, "-m", "pip", "install", *pip_deps]
-
-            subprocess.check_call(
-                cmd,
-                stdout=_sys.stdout,
-                stderr=_sys.stderr,
-            )
-            ch.success("Dependencies installed")
-        except subprocess.CalledProcessError as e:
-            ch.error(f"Some dependencies failed to install: {e}")
+    _, pip_deps = _manifest_dependencies(manifest)
+    _install_pip_dependencies(pkg_id, pip_deps)
 
     # Run post_install hook if declared.
     post_install = manifest.get("install_hooks", {}).get("post_install", "")
@@ -401,7 +521,6 @@ def _invoke_handler(pkg_id: str, path: Path, lifecycle_fn: str) -> bool:
     - Builds a ``types.SimpleNamespace`` ctx so packs can use both attribute
       access (``ctx.pack_id``) and dict-style access (``ctx.config.get(...)``).
     """
-    import importlib.util
     import logging
     import sys
 
@@ -410,66 +529,62 @@ def _invoke_handler(pkg_id: str, path: Path, lifecycle_fn: str) -> bool:
         ch.info(f"Package '{pkg_id}' has no handler.py — skipping lifecycle call.")
         return True  # workflow-only packs are fine
 
-    # Prepend pack dir so relative imports (e.g. `from commands import COMMANDS`) work
-    pack_str = str(path)
-    if pack_str not in sys.path:
-        sys.path.insert(0, pack_str)
-
     module_name = f"_navig_pack_{pkg_id.replace('-', '_')}"
-    try:
-        spec = importlib.util.spec_from_file_location(module_name, handler_file)
-        if spec is None or spec.loader is None:
-            ch.error(f"Cannot load spec for {handler_file}")
+    with _scoped_sys_path(path):
+        try:
+            spec = importlib.util.spec_from_file_location(module_name, handler_file)
+            if spec is None or spec.loader is None:
+                ch.error(f"Cannot load spec for {handler_file}")
+                return False
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[module_name] = module
+            spec.loader.exec_module(module)  # type: ignore[attr-defined]
+        except Exception as exc:  # noqa: BLE001
+            ch.error(f"Failed to import handler.py for '{pkg_id}': {exc}")
             return False
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
-        spec.loader.exec_module(module)  # type: ignore[attr-defined]
-    except Exception as exc:  # noqa: BLE001
-        ch.error(f"Failed to import handler.py for '{pkg_id}': {exc}")
-        return False
 
-    fn = getattr(module, lifecycle_fn, None)
-    if fn is None:
-        ch.dim(f"handler.py in '{pkg_id}' has no {lifecycle_fn}() — skipping.")
-        return True
+        fn = getattr(module, lifecycle_fn, None)
+        if fn is None:
+            ch.dim(f"handler.py in '{pkg_id}' has no {lifecycle_fn}() — skipping.")
+            return True
 
-    try:
-        from navig.platform.paths import config_dir as _config_dir
+        try:
+            from navig.platform.paths import config_dir as _config_dir
 
-        store_dir = _config_dir() / "store" / pkg_id
-    except Exception:
-        store_dir = Path.home() / ".navig" / "store" / pkg_id
+            store_dir = _config_dir() / "store" / pkg_id
+        except Exception:
+            store_dir = Path.home() / ".navig" / "store" / pkg_id
 
-    store_dir.mkdir(parents=True, exist_ok=True)
+        store_dir.mkdir(parents=True, exist_ok=True)
 
-    # Build ctx as a dual-access namespace: supports both ctx.attr and ctx.get("attr").
-    # Some packs use attribute style (ctx.pack_id), others use dict style (ctx.get("config")).
-    class _PackCtx(dict):  # type: ignore[type-arg]
-        """Dict subclass with attribute access, forwarding both access patterns."""
+        # Build ctx as a dual-access namespace: supports both ctx.attr and ctx.get("attr").
+        # Some packs use attribute style (ctx.pack_id), others use dict style (ctx.get("config")).
+        class _PackCtx(dict):  # type: ignore[type-arg]
+            """Dict subclass with attribute access, forwarding both access patterns."""
 
-        def __getattr__(self, item: str) -> object:
-            try:
-                return self[item]
-            except KeyError:
-                raise AttributeError(item) from None
+            def __getattr__(self, item: str) -> object:
+                try:
+                    return self[item]
+                except KeyError:
+                    raise AttributeError(item) from None
 
-    ctx = _PackCtx(
-        plugin_id=pkg_id,
-        pack_id=pkg_id,
-        plugin_dir=path,
-        store_path=path,
-        store_dir=store_dir,
-        config={},
-        logger=logging.getLogger(f"navig.pack.{pkg_id}"),
-        version="1.0.0",
-    )
+        ctx = _PackCtx(
+            plugin_id=pkg_id,
+            pack_id=pkg_id,
+            plugin_dir=path,
+            store_path=path,
+            store_dir=store_dir,
+            config={},
+            logger=logging.getLogger(f"navig.pack.{pkg_id}"),
+            version="1.0.0",
+        )
 
-    try:
-        fn(ctx)  # type: ignore[call-arg]
-        return True
-    except Exception as exc:  # noqa: BLE001
-        ch.error(f"{lifecycle_fn}() raised in '{pkg_id}': {exc}")
-        return False
+        try:
+            fn(ctx)  # type: ignore[call-arg]
+            return True
+        except Exception as exc:  # noqa: BLE001
+            ch.error(f"{lifecycle_fn}() raised in '{pkg_id}': {exc}")
+            return False
 
 
 @package_app.command("load")
@@ -482,17 +597,8 @@ def package_load(
         ch.error(f"Package '{name}' not found.")
         raise typer.Exit(1)
 
-    # Enforce declared package dependencies
-    deps_block = manifest.get("depends_on") or {}
-    if isinstance(deps_block, dict):
-        dep_pkgs = list(deps_block.get("packages", {}).keys())
-        missing = [dep for dep in dep_pkgs if dep not in _loaded_packs]
-        if missing:
-            ch.error(
-                f"Package '{name}' requires: {', '.join(missing)}. "
-                f"Load them first:  navig package load <id>"
-            )
-            raise typer.Exit(1)
+    if not _ensure_runtime_dependencies(name, manifest, allow_pip_install=True):
+        raise typer.Exit(1)
 
     ok = _invoke_handler(name, path, "on_load")
     if ok:
@@ -541,7 +647,7 @@ def _read_autoload() -> list[str]:
 def _write_autoload(ids: list[str]) -> None:
     p = _autoload_path()
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(sorted(set(ids)), indent=2), encoding="utf-8")
+    p.write_text(json.dumps(_iter_unique(ids), indent=2), encoding="utf-8")
 
 
 autoload_app = typer.Typer(
@@ -607,8 +713,11 @@ def autoload_packages() -> None:
     _log = _logging.getLogger(__name__)
     for pkg_id in _read_autoload():
         manifest, path, _ = _load_package(pkg_id)
-        if path is None:
+        if manifest is None or path is None:
             _log.warning("autoload: package '%s' not found — skipping", pkg_id)
+            continue
+        if not _ensure_runtime_dependencies(pkg_id, manifest, allow_pip_install=True):
+            _log.warning("autoload: '%s' dependencies unresolved — skipping", pkg_id)
             continue
         ok = _invoke_handler(pkg_id, path, "on_load")
         if ok:

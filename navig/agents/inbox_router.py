@@ -22,6 +22,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from navig.spaces import get_default_space, normalize_space_name
+
 logger = logging.getLogger("navig.agents.inbox_router")
 
 # ── Constants ───────────────────────────────────────────────
@@ -50,7 +52,8 @@ INBOX_ROUTER_SYSTEM_PROMPT = (
     '    "existing_plans": ["DEV_PLAN.md", "ROADMAP.md"],\n'
     '    "existing_briefs": ["feature-auth.md"],\n'
     '    "existing_wiki": ["setup-guide.md"],\n'
-    '    "existing_memory": ["2024-01-session.md"]\n'
+    '    "existing_memory": ["2024-01-session.md"],\n'
+    '    "available_spaces": ["project", "career", "health", "finance", "learning", "life", "human", "residence", "company"]\n'
     "  }\n"
     "}\n"
     "\n"
@@ -58,6 +61,7 @@ INBOX_ROUTER_SYSTEM_PROMPT = (
     "Respond with ONLY a JSON object (no markdown fences, no commentary):\n"
     "{\n"
     '  "content_type": "task_roadmap|brief|wiki_knowledge|memory_log|other",\n'
+    '  "space": "project|career|health|finance|learning|life|human|residence|company",\n'
     '  "confidence": 0.0,\n'
     '  "target_filename": "003-feature-auth-plan.md",\n'
     '  "transformed_content": "...processed markdown with frontmatter...",\n'
@@ -96,8 +100,59 @@ INBOX_ROUTER_SYSTEM_PROMPT = (
     "3. Use numeric prefix for filename (e.g. 003-name.md).\n"
     "4. If confidence < 0.5, classify as other.\n"
     "5. transformed_content MUST be valid markdown.\n"
-    "6. Respond with raw JSON only — no code fences.\n"
+    "6. If no explicit space signal exists, choose `life` as default space.\n"
+    "7. Respond with raw JSON only — no code fences.\n"
 )
+
+
+_FRONTMATTER_SPACE_RE = re.compile(r"(?mi)^space:\s*([a-z0-9\-_]+)\s*$")
+
+
+def _extract_space_from_frontmatter(content: str) -> str | None:
+    fm = re.match(r"^---\n([\s\S]*?)\n---", content)
+    if not fm:
+        return None
+    match = _FRONTMATTER_SPACE_RE.search(fm.group(1))
+    if not match:
+        return None
+    return normalize_space_name(match.group(1).strip())
+
+
+def _ensure_space_frontmatter(content: str, space: str) -> str:
+    normalized_space = normalize_space_name(space)
+    if content.startswith("---\n"):
+        fm = re.match(r"^---\n([\s\S]*?)\n---\n?", content)
+        if fm:
+            header = fm.group(1)
+            body = content[fm.end() :]
+            if _FRONTMATTER_SPACE_RE.search(header):
+                header = _FRONTMATTER_SPACE_RE.sub(
+                    f"space: {normalized_space}",
+                    header,
+                )
+            else:
+                header = f"space: {normalized_space}\n{header}"
+            return f"---\n{header}\n---\n\n{body.lstrip()}"
+
+    return f"---\nspace: {normalized_space}\n---\n\n{content}"
+
+
+def resolve_plan_space(
+    manual_space: str | None,
+    content: str,
+    plan_space: str | None,
+) -> tuple[str, str]:
+    if manual_space:
+        return normalize_space_name(manual_space), "manual"
+
+    frontmatter_space = _extract_space_from_frontmatter(content)
+    if frontmatter_space:
+        return frontmatter_space, "frontmatter"
+
+    if plan_space:
+        return normalize_space_name(plan_space), "classifier"
+
+    return get_default_space(), "default"
 
 
 # ── Heuristic Patterns ─────────────────────────────────────
@@ -535,7 +590,12 @@ class InboxRouterAgent:
             self._metadata = collect_workspace_metadata(self.project_root)
         return self._metadata
 
-    def process_single(self, file_path: Path, dry_run: bool = False) -> dict[str, Any]:
+    def process_single(
+        self,
+        file_path: Path,
+        dry_run: bool = False,
+        manual_space: str | None = None,
+    ) -> dict[str, Any]:
         """Process a single inbox file. Returns a plan dict."""
         if not file_path.exists():
             return {"error": f"File not found: {file_path}", "file": str(file_path)}
@@ -552,13 +612,29 @@ class InboxRouterAgent:
         else:
             plan = self._process_heuristic(content, filename)
 
+        resolved_space, source = resolve_plan_space(
+            manual_space=manual_space,
+            content=content,
+            plan_space=plan.get("space"),
+        )
+        plan["space"] = resolved_space
+        plan["space_source"] = source
+        if plan.get("transformed_content"):
+            plan["transformed_content"] = _ensure_space_frontmatter(
+                plan["transformed_content"],
+                resolved_space,
+            )
+
         plan["source_file"] = str(file_path)
         plan["dry_run"] = dry_run
         plan["backend"] = self.backend
         return plan
 
     def process_batch(
-        self, files: list[Path] | None = None, dry_run: bool = False
+        self,
+        files: list[Path] | None = None,
+        dry_run: bool = False,
+        manual_space: str | None = None,
     ) -> list[dict[str, Any]]:
         """Process all inbox files (or a specific list)."""
         if files is None:
@@ -568,7 +644,10 @@ class InboxRouterAgent:
             logger.info("No inbox files to process.")
             return []
 
-        return [self.process_single(f, dry_run=dry_run) for f in files]
+        return [
+            self.process_single(f, dry_run=dry_run, manual_space=manual_space)
+            for f in files
+        ]
 
     def _process_via_llm(
         self, content: str, filename: str, metadata: dict[str, Any]
@@ -635,13 +714,21 @@ class InboxRouterAgent:
             target_path = None
 
         now = datetime.now().strftime("%Y-%m-%d")
+        default_space = get_default_space()
         frontmatter = (
-            f"---\ntype: {content_type}\ncreated: {now}\nsource: inbox/{filename}\n---\n\n"
+            f"---\n"
+            f"space: {default_space}\n"
+            f"tags: [{default_space}]\n"
+            f"type: {content_type}\n"
+            f"created: {now}\n"
+            f"source: inbox/{filename}\n"
+            f"---\n\n"
         )
         transformed = frontmatter + content
 
         return {
             "content_type": content_type,
+            "space": default_space,
             "confidence": confidence,
             "target_filename": target_name,
             "target_path": target_path,

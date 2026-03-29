@@ -17,6 +17,9 @@ from navig.tui.config_model import (
     DEFAULT_CONFIG_FILE,
     NavigConfig,
     build_config_dict,
+    check_git_installed,
+    check_network,
+    check_python_version,
     detect_environment,
 )
 from navig.tui.widgets.summary_panel import SummaryPanel
@@ -121,6 +124,93 @@ class ReviewScreen(Screen):  # type: ignore[type-arg]
 
     @on(Button.Pressed, "#btn-confirm")
     def _confirm(self) -> None:
+        self.app.push_screen(VerificationScreen(self._cfg))
+
+    @on(Button.Pressed, "#btn-back")
+    def _back(self) -> None:
+        self.app.pop_screen()
+
+
+# ---------------------------------------------------------------------------
+# VerificationScreen
+# ---------------------------------------------------------------------------
+
+
+class VerificationScreen(Screen):  # type: ignore[type-arg]
+    """Pre-flight verification dashboard before final setup write."""
+
+    DEFAULT_CSS = """
+    VerificationScreen {
+        background: #0f172a;
+        align: center middle;
+    }
+    #verify-panel {
+        width: 76;
+        border: round #22d3ee;
+        background: #111827;
+        padding: 1 3;
+    }
+    #verify-title {
+        color: #22d3ee;
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    #verify-list {
+        color: #cbd5e1;
+        margin-bottom: 1;
+    }
+    #verify-actions {
+        align: center middle;
+    }
+    #verify-actions Button {
+        margin: 0 1;
+    }
+    """
+
+    def __init__(self, cfg: NavigConfig, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._cfg = cfg
+
+    def compose(self):  # type: ignore[override]
+        with Vertical(id="verify-panel"):
+            yield Label("Verification Dashboard", id="verify-title")
+            yield Static("Running checks…", id="verify-list")
+            with Horizontal(id="verify-actions"):
+                yield Button("Continue  ✔", id="btn-continue", variant="primary")
+                yield Button("← Back", id="btn-back", variant="default")
+
+    def on_mount(self) -> None:
+        rows = self._build_rows()
+        self.query_one("#verify-list", Static).update("\n".join(rows))
+
+    def _build_rows(self) -> list[str]:
+        def mark(ok: bool) -> str:
+            return "[green]✔[/green]" if ok else "[yellow]•[/yellow]"
+
+        tier = getattr(self._cfg, "onboarding_tier", "recommended")
+        rows = [
+            f"{mark(check_python_version())} Python runtime >= 3.10",
+            f"{mark(check_git_installed())} Git available",
+            f"{mark(check_network())} Network reachable",
+            f"{mark(bool(self._cfg.profile_name.strip()))} Operator identity configured",
+            f"{mark(self._cfg.ai_provider != 'none')} AI provider selected",
+            f"{mark(True)} Tier selected: {tier}",
+        ]
+
+        if tier == "full":
+            rows.extend(
+                [
+                    f"{mark(getattr(self._cfg, 'setup_matrix', False))} Matrix integration selected",
+                    f"{mark(getattr(self._cfg, 'setup_email', False))} SMTP integration selected",
+                    f"{mark(getattr(self._cfg, 'setup_social', False))} Social integration selected",
+                ]
+            )
+        else:
+            rows.append("[cyan]i[/cyan] Optional integrations can be configured later from CLI")
+        return rows
+
+    @on(Button.Pressed, "#btn-continue")
+    def _continue(self) -> None:
         self.app.push_screen(FinalScreen(self._cfg))
 
     @on(Button.Pressed, "#btn-back")
@@ -173,6 +263,26 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
     def __init__(self, cfg: NavigConfig, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._cfg = cfg
+
+    def _deferred_commands(self) -> list[str]:
+        tier = getattr(self._cfg, "onboarding_tier", "recommended")
+        cmds: list[str] = []
+
+        if tier in ("essential", "recommended"):
+            cmds.extend([
+                "navig matrix setup",
+                "navig email setup",
+                "navig social setup",
+            ])
+            return cmds
+
+        if not getattr(self._cfg, "setup_matrix", False):
+            cmds.append("navig matrix setup")
+        if not getattr(self._cfg, "setup_email", False):
+            cmds.append("navig email setup")
+        if not getattr(self._cfg, "setup_social", False):
+            cmds.append("navig social setup")
+        return cmds
 
     def compose(self):  # type: ignore[override]
         env = detect_environment()
@@ -275,6 +385,12 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
             )
 
             await asyncio.sleep(0.3)
+            deferred = self._deferred_commands()
+            deferred_block = (
+                "\n".join(f"  [cyan]{c}[/cyan]" for c in deferred)
+                if deferred
+                else "  [dim]No deferred integrations[/dim]"
+            )
             log.write(
                 f"\n[bold #10b981]✔ Operator registered[/bold #10b981]\n"
                 f"[bold #22d3ee]Welcome, {self._cfg.profile_name}.[/bold #22d3ee]\n"
@@ -282,7 +398,9 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
                 f"[dim]Suggested next commands:[/dim]\n"
                 f"  [cyan]navig doctor[/cyan]\n"
                 f"  [cyan]navig status[/cyan]\n"
-                f"  [cyan]navig config show[/cyan]"
+                f"  [cyan]navig config show[/cyan]\n\n"
+                f"[dim]Deferred integrations:[/dim]\n"
+                f"{deferred_block}"
             )
 
         except WorkerCancelled:

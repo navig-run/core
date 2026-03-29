@@ -101,29 +101,28 @@ class TestFirstRunTriggersEngine:
 
     def _call(self, tmp_path, argv=None):
         (tmp_path / ".navig").mkdir(parents=True, exist_ok=True)
-        engine_instance = MagicMock()
-        engine_cls = MagicMock(return_value=engine_instance)
+        run_engine = MagicMock()
 
         with (
             patch("pathlib.Path.home", return_value=tmp_path),
             patch.object(sys, "argv", argv or ["navig", "status"]),
-            patch("navig.onboarding.OnboardingEngine", engine_cls),
-            patch("navig.onboarding.EngineConfig", MagicMock()),
-            patch("navig.onboarding.genesis.load_or_create", return_value=MagicMock()),
-            patch("navig.onboarding.steps.build_step_registry", return_value=[]),
-            patch("socket.gethostname", return_value="test-host"),
+            patch(
+                "navig.onboarding.runner.should_auto_run_onboarding",
+                return_value=True,
+            ),
+            patch("navig.onboarding.runner.run_engine_onboarding", run_engine),
         ):
             _nm._check_first_run()
 
-        return engine_instance
+        return run_engine
 
     def test_engine_run_called_when_artifact_absent(self, tmp_path):
-        instance = self._call(tmp_path)
-        instance.run.assert_called_once()
+        runner = self._call(tmp_path)
+        runner.assert_called_once()
 
     def test_engine_run_called_for_any_normal_command(self, tmp_path):
-        instance = self._call(tmp_path, argv=["navig", "host", "list"])
-        instance.run.assert_called_once()
+        runner = self._call(tmp_path, argv=["navig", "host", "list"])
+        runner.assert_called_once()
 
     def test_engine_exception_does_not_propagate(self, tmp_path):
         """A crash inside the engine must never propagate to the CLI caller."""

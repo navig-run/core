@@ -90,6 +90,7 @@ class SyncManager:
         self._last_pull_at: float = 0.0
 
         self._task: asyncio.Task | None = None
+        self._bg_tasks: set[asyncio.Task] = set()
         self._running = False
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -199,7 +200,13 @@ class SyncManager:
             return
 
         # Schedule a pull (non-blocking)
-        asyncio.create_task(self._pull_from_leader(record.gateway_url))
+        self._fire_and_forget(self._pull_from_leader(record.gateway_url))
+
+    def _fire_and_forget(self, coro) -> None:
+        """Run a coroutine in the background, retaining a strong reference."""
+        task = asyncio.create_task(coro)
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
 
     # ── HTTP pull ─────────────────────────────────────────────────────────────
 

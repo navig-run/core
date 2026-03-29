@@ -252,6 +252,7 @@ For conversation, respond naturally without JSON.
 
         # User identity (set per-request from metadata)
         self._user_identity: dict[str, str] = {}
+        self._runtime_persona: str = ""
 
         # Soul / identity — can be injected or auto-loaded
         if soul_content is not None:
@@ -268,6 +269,10 @@ For conversation, respond naturally without JSON.
     def set_user_identity(self, user_id: str = "", username: str = ""):
         """Inject user identity from channel metadata so the LLM knows who it's talking to."""
         self._user_identity = {"user_id": user_id, "username": username}
+
+    def set_runtime_persona(self, persona: str = ""):
+        """Set a transient runtime persona override for the next chat turns."""
+        self._runtime_persona = (persona or "").strip()
 
     # ---------- Awareness context ----------
 
@@ -315,6 +320,13 @@ For conversation, respond naturally without JSON.
             parts.append(f"Current focus mode: {mode}.")
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
+
+        if self._runtime_persona:
+            parts.append(
+                "Runtime persona override: "
+                f"{self._runtime_persona}. "
+                "Adapt tone and phrasing to this persona while preserving safety and factuality."
+            )
 
         return "\n".join(parts)
 

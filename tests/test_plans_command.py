@@ -1,0 +1,158 @@
+from datetime import datetime
+from pathlib import Path
+
+from typer.testing import CliRunner
+
+from navig.commands.plans import plans_app
+
+
+runner = CliRunner()
+
+
+def test_plans_status_no_spaces(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    result = runner.invoke(plans_app, ["status", "--path", str(tmp_path / "repo")])
+    assert result.exit_code == 0
+    assert "No spaces discovered" in result.stdout
+
+
+def test_plans_status_renders_rows(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    global_space = home / ".navig" / "spaces" / "finance"
+    global_space.mkdir(parents=True, exist_ok=True)
+    (global_space / "VISION.md").write_text("---\ngoal: Save emergency fund\n---\n")
+    (global_space / "CURRENT_PHASE.md").write_text("---\ncompletion_pct: 35\n---\n")
+
+    result = runner.invoke(plans_app, ["status", "--path", str(tmp_path / "repo")])
+    assert result.exit_code == 0
+    assert "finance" in result.stdout
+    assert "35.0%" in result.stdout
+
+
+def test_plans_add_creates_entry(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True, exist_ok=True)
+    (repo / ".navig").mkdir(parents=True, exist_ok=True)
+
+    result = runner.invoke(
+        plans_app,
+        [
+            "add",
+            "Ship onboarding wizard",
+            "--space",
+            "finance",
+            "--path",
+            str(repo),
+        ],
+    )
+    assert result.exit_code == 0
+    assert "Added goal" in result.stdout
+
+    dev_plan = repo / ".navig" / "plans" / "DEV_PLAN.md"
+    assert dev_plan.exists()
+    content = dev_plan.read_text(encoding="utf-8")
+    assert "- [ ] [finance] Ship onboarding wizard" in content
+
+
+def test_plans_run_alias_routes_to_add(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir(parents=True, exist_ok=True)
+    (repo / ".navig").mkdir(parents=True, exist_ok=True)
+
+    result = runner.invoke(
+        plans_app,
+        [
+            "run",
+            "Improve docs",
+            "--space",
+            "finance",
+            "--path",
+            str(repo),
+        ],
+    )
+    assert result.exit_code == 0
+    assert "deprecated" in result.stdout.lower()
+
+    dev_plan = repo / ".navig" / "plans" / "DEV_PLAN.md"
+    assert dev_plan.exists()
+    assert "- [ ] [finance] Improve docs" in dev_plan.read_text(encoding="utf-8")
+
+
+def test_plans_sync_no_inbox(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    (repo / ".navig" / "plans").mkdir(parents=True, exist_ok=True)
+
+    result = runner.invoke(plans_app, ["sync", "--path", str(repo)])
+    assert result.exit_code == 0
+    assert "No inbox files found" in result.stdout
+
+
+def test_plans_sync_dry_run_keeps_inbox_file(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    inbox = repo / ".navig" / "plans" / "inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+    source = inbox / "raw-roadmap.md"
+    source.write_text(
+        "# Launch Roadmap\n\nMilestone 1\nMilestone 2\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        plans_app,
+        ["sync", "--no-llm", "--dry-run", "--path", str(repo)],
+    )
+    assert result.exit_code == 0
+    assert "Dry-run summary: 1 previews" in result.stdout
+    assert source.exists()
+    assert not (inbox / ".processed").exists()
+
+
+def test_plans_sync_writes_and_moves_source(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    inbox = repo / ".navig" / "plans" / "inbox"
+    inbox.mkdir(parents=True, exist_ok=True)
+    source = inbox / "raw-roadmap.md"
+    source.write_text(
+        "# Launch Roadmap\n\nMilestone 1\nMilestone 2\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        plans_app,
+        ["sync", "--no-llm", "--space", "health", "--path", str(repo)],
+    )
+    assert result.exit_code == 0
+    assert "Sync summary: 1 routed" in result.stdout
+
+    routed = [
+        path
+        for path in (repo / ".navig" / "plans").glob("*.md")
+        if path.name not in {"DEV_PLAN.md", "CURRENT_PHASE.md"}
+    ]
+    assert len(routed) == 1
+    content = routed[0].read_text(encoding="utf-8")
+    assert "space: health" in content
+
+    moved_source = inbox / ".processed" / "raw-roadmap.md"
+    assert moved_source.exists()
+    assert not source.exists()
+
+
+def test_plans_update_writes_frontmatter_completion(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    plans_dir = repo / ".navig" / "plans"
+    plans_dir.mkdir(parents=True, exist_ok=True)
+    target = plans_dir / "CURRENT_PHASE.md"
+    target.write_text("# Current Phase\n\n- [x] Task A\n- [ ] Task B\n- [x] Task C\n", encoding="utf-8")
+
+    result = runner.invoke(plans_app, ["update", "CURRENT_PHASE.md", "--path", str(repo)])
+    assert result.exit_code == 0
+    assert "completion_pct=66.7%" in result.stdout
+
+    content = target.read_text(encoding="utf-8")
+    assert "completion_pct: 66.7" in content
+    assert f"last_updated: {datetime.now().strftime('%Y-%m-%d')}" in content

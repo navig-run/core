@@ -79,6 +79,83 @@ def _tty_check() -> StepResult | None:
     return None
 
 
+def _prompt_masked(text: str, default: str = "") -> str:
+    """Prompt for input while echoing '*' for each typed character."""
+    import typer
+
+    prompt = f"{text} [{default}]: " if default else f"{text} []: "
+    try:
+        sys.stdout.write(prompt)
+        sys.stdout.flush()
+
+        if os.name == "nt":
+            import msvcrt
+
+            chars: list[str] = []
+            while True:
+                ch = msvcrt.getwch()
+                if ch in ("\r", "\n"):
+                    sys.stdout.write("\n")
+                    sys.stdout.flush()
+                    value = "".join(chars)
+                    return value if value else default
+                if ch == "\x03":
+                    sys.stdout.write("\n")
+                    sys.stdout.flush()
+                    raise KeyboardInterrupt
+                if ch in ("\b", "\x7f"):
+                    if chars:
+                        chars.pop()
+                        sys.stdout.write("\b \b")
+                        sys.stdout.flush()
+                    continue
+                if ch in ("\x00", "\xe0"):
+                    _ = msvcrt.getwch()
+                    continue
+                chars.append(ch)
+                sys.stdout.write("*")
+                sys.stdout.flush()
+
+        import termios
+        import tty
+
+        chars = []
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            while True:
+                ch = sys.stdin.read(1)
+                if ch in ("\r", "\n"):
+                    sys.stdout.write("\n")
+                    sys.stdout.flush()
+                    value = "".join(chars)
+                    return value if value else default
+                if ch == "\x03":
+                    sys.stdout.write("\n")
+                    sys.stdout.flush()
+                    raise KeyboardInterrupt
+                if ch == "\x04":
+                    sys.stdout.write("\n")
+                    sys.stdout.flush()
+                    raise EOFError
+                if ch in ("\x7f", "\b"):
+                    if chars:
+                        chars.pop()
+                        sys.stdout.write("\b \b")
+                        sys.stdout.flush()
+                    continue
+                chars.append(ch)
+                sys.stdout.write("*")
+                sys.stdout.flush()
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    except KeyboardInterrupt:
+        raise
+    except Exception:
+        return typer.prompt(text, hide_input=True, default=default)
+
+
 # ── Individual step factories ──────────────────────────────────────────────
 
 
@@ -318,11 +395,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             api_key = "local"
         else:
             try:
-                api_key = typer.prompt(
-                    f"  {label} API key",
-                    hide_input=True,
-                    default="",
-                ).strip()
+                api_key = _prompt_masked(f"  {label} API key", default="").strip()
             except (KeyboardInterrupt, EOFError):
                 return StepResult(status="skipped", output={"reason": "interrupted"})
             if not api_key:
@@ -358,6 +431,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         on_failure="skip",
         independent=True,
         phase="configuration",
+        tier="recommended",
     )
 
 
@@ -480,17 +554,13 @@ def _step_vault_init(navig_dir: Path) -> OnboardingStep:
         if tty is not None:
             return tty
 
-        import typer
-
         try:
-            pw = typer.prompt("  Vault passphrase", hide_input=True, default="").strip()
+            pw = _prompt_masked("  Vault passphrase", default="").strip()
             if not pw:
                 return StepResult(
                     status="skipped", output={"reason": "empty passphrase"}
                 )
-            confirm = typer.prompt(
-                "  Confirm passphrase", hide_input=True, default=""
-            ).strip()
+            confirm = _prompt_masked("  Confirm passphrase", default="").strip()
         except (KeyboardInterrupt, EOFError):
             return StepResult(status="skipped", output={"reason": "interrupted"})
 
@@ -522,6 +592,7 @@ def _step_vault_init(navig_dir: Path) -> OnboardingStep:
         verify=verify,
         on_failure="skip",
         phase="configuration",
+        tier="recommended",
     )
 
 
@@ -586,6 +657,7 @@ def _step_first_host(navig_dir: Path) -> OnboardingStep:
         on_failure="skip",
         independent=True,
         phase="configuration",
+        tier="recommended",
     )
 
 
@@ -689,6 +761,7 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
         on_failure="skip",
         independent=True,
         phase="configuration",
+        tier="optional",
     )
 
 
@@ -781,6 +854,7 @@ def _step_skills_activation(navig_dir: Path) -> OnboardingStep:
         on_failure="skip",
         independent=True,
         phase="configuration",
+        tier="optional",
     )
 
 
@@ -936,6 +1010,7 @@ def _step_matrix(navig_dir: Path) -> OnboardingStep:
         on_failure="skip",
         independent=True,
         phase="configuration",
+        tier="optional",
     )
 
 
@@ -1005,6 +1080,7 @@ def _step_email(navig_dir: Path) -> OnboardingStep:
         on_failure="skip",
         independent=True,
         phase="configuration",
+        tier="optional",
     )
 
 
@@ -1043,6 +1119,7 @@ def _step_social_networks(navig_dir: Path) -> OnboardingStep:
         on_failure="skip",
         independent=True,
         phase="configuration",
+        tier="optional",
     )
 
 
@@ -1134,6 +1211,7 @@ def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
         on_failure="skip",
         independent=True,
         phase="configuration",
+        tier="optional",
     )
 
 
@@ -1184,4 +1262,5 @@ def _step_review(navig_dir: Path) -> OnboardingStep:
         verify=verify,
         on_failure="skip",
         phase="configuration",
+        tier="optional",
     )

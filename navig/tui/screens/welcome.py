@@ -73,9 +73,9 @@ class WelcomeScreen(Screen):  # type: ignore[type-arg]
 
     @on(Button.Pressed, "#btn-advanced")
     def _go_advanced(self) -> None:
-        from navig.tui.screens.system_checks import SystemChecksScreen
+        from navig.tui.screens.tiered_init import TieredInitScreen
 
-        self.app.push_screen(SystemChecksScreen())
+        self.app.push_screen(TieredInitScreen())
 
     @on(Button.Pressed, "#btn-quickstart")
     def _go_quickstart(self) -> None:
