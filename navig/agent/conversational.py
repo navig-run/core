@@ -89,10 +89,21 @@ class ConversationalAgent:
         available for heartbeat / deep-agent turns via the gateway.
 
         Search order:
-          1. ~/.navig/workspace/SOUL.md (user-customized)
+          0. Active persona's soul.md  (via navig.personas.soul_loader — highest priority)
+          1. ~/.navig/workspace/SOUL.md (user-customized, legacy path)
           2. navig/resources/SOUL.default.md (rich multi-domain identity)
           3. navig/agent/context/SOUL.md (minimal fallback)
         """
+        # 0. Delegate to centralised soul_loader for persona-aware resolution
+        try:
+            from navig.personas.soul_loader import load_soul as _load_soul  # noqa: PLC0415
+
+            soul = _load_soul()
+            if soul:
+                return soul
+        except Exception:  # noqa: BLE001
+            pass  # best-effort — fall through to legacy logic below
+
         soul_candidates: list[tuple] = []  # (path, source_tag)
 
         # 1. Global workspace SOUL.md  (~/.navig/workspace/SOUL.md)
@@ -252,6 +263,9 @@ For conversation, respond naturally without JSON.
 
         # User identity (set per-request from metadata)
         self._user_identity: dict[str, str] = {}
+        # Active persona — persisted across turns for this agent instance
+        self._active_persona: str = ""
+        # Deprecated alias kept for one release cycle
         self._runtime_persona: str = ""
 
         # Soul / identity — can be injected or auto-loaded
@@ -270,9 +284,38 @@ For conversation, respond naturally without JSON.
         """Inject user identity from channel metadata so the LLM knows who it's talking to."""
         self._user_identity = {"user_id": user_id, "username": username}
 
-    def set_runtime_persona(self, persona: str = ""):
-        """Set a transient runtime persona override for the next chat turns."""
-        self._runtime_persona = (persona or "").strip()
+    def set_active_persona(self, config_or_name=None, soul_content: str | None = None):
+        """Set the active persona for this agent instance.
+
+        Accepts either a ``PersonaConfig`` object or a plain string persona name.
+        When a config is given, the agent's soul content is also updated.
+        """
+        from navig.personas.contracts import PersonaConfig  # noqa: PLC0415
+
+        if isinstance(config_or_name, PersonaConfig):
+            self._active_persona = config_or_name.name
+            self._runtime_persona = config_or_name.name  # keep alias in sync
+            if soul_content:
+                self._soul_content = soul_content
+        else:
+            name = (config_or_name or "").strip() if config_or_name else ""
+            self._active_persona = name
+            self._runtime_persona = name
+
+    def set_runtime_persona(self, persona: str = "") -> None:
+        """Deprecated — use ``set_active_persona`` instead.
+
+        Kept for one release cycle for backward compatibility with callers in
+        ``channel_router.py`` and other gateway code.
+        """
+        import warnings  # noqa: PLC0415
+
+        warnings.warn(
+            "set_runtime_persona() is deprecated; use set_active_persona() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.set_active_persona(persona)
 
     # ---------- Awareness context ----------
 
@@ -321,10 +364,11 @@ For conversation, respond naturally without JSON.
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
-        if self._runtime_persona:
+        active_persona = self._active_persona or self._runtime_persona
+        if active_persona:
             parts.append(
-                "Runtime persona override: "
-                f"{self._runtime_persona}. "
+                "Active persona: "
+                f"{active_persona}. "
                 "Adapt tone and phrasing to this persona while preserving safety and factuality."
             )
 

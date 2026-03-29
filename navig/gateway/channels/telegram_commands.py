@@ -454,8 +454,20 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     ),
     SlashCommandEntry(
         "auto_roles",
-        "List available AI personalities",
+        "List available AI personalities (deprecated — use /personas)",
         handler="_handle_auto_roles",
+        category="ai",
+    ),
+    SlashCommandEntry(
+        "persona",
+        "Switch active AI persona (e.g. /persona tyler)",
+        handler="_handle_persona",
+        category="ai",
+    ),
+    SlashCommandEntry(
+        "personas",
+        "List available AI personas",
+        handler="_handle_personas",
         category="ai",
     ),
     SlashCommandEntry(
@@ -1726,6 +1738,12 @@ class TelegramCommandsMixin:
         except Exception:
             providers = []
 
+        user_pref = ""
+        if hasattr(self, "_get_user_tier_pref"):
+            user_pref = self._get_user_tier_pref(chat_id, user_id)
+        else:
+            user_pref = getattr(self, "_user_model_prefs", {}).get(user_id, "")
+
         lines = ["🎛️ *AI Providers*", ""]
         lines.append(_format_bridge_status(bridge_online, bridge_url))
         if bridge_online:
@@ -1758,6 +1776,18 @@ class TelegramCommandsMixin:
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
+        if user_pref == "noai":
+            lines.append("")
+            lines.append("🧾 *Next message mode:* `raw / no AI` _(one-shot)_")
+        elif user_pref in {"small", "big", "coder_big"}:
+            label = {
+                "small": "small",
+                "big": "big",
+                "coder_big": "code",
+            }.get(user_pref, user_pref)
+            lines.append("")
+            lines.append(f"🎚️ *Selected preference:* `{label}`")
+
         keyboard_rows: list = [
             [
                 {
@@ -1767,6 +1797,7 @@ class TelegramCommandsMixin:
             ],
         ]
         button_row: list = []
+        ready_provider_count = 0
 
         for manifest in providers:
             if manifest.id == "mcp_bridge":
@@ -1774,7 +1805,12 @@ class TelegramCommandsMixin:
             try:
                 result = verify_provider(manifest)
                 if manifest.tier == "local" and manifest.local_probe:
-                    ready = result.local_probe_ok
+                    ready = bool(result.local_probe_ok)
+                elif manifest.tier == "cloud" and manifest.requires_key:
+                    vault_has_key, vault_validated = self._provider_vault_validation_status(
+                        manifest
+                    )
+                    ready = vault_has_key and vault_validated
                 elif manifest.requires_key:
                     ready = result.key_detected
                 else:
@@ -1784,6 +1820,8 @@ class TelegramCommandsMixin:
 
             if not ready:
                 continue
+
+            ready_provider_count += 1
 
             is_active = manifest.id == active_prov
             prefix = "✅ " if is_active else ""
@@ -1799,8 +1837,15 @@ class TelegramCommandsMixin:
         if button_row:
             keyboard_rows.append(list(button_row))
 
+        if ready_provider_count == 0:
+            lines.append("")
+            lines.append(
+                "ℹ️ No vault-validated cloud providers are ready. Run `navig cred test --provider <name>` after saving keys in vault."
+            )
+
+        noai_prefix = "✅ " if user_pref == "noai" else ""
         keyboard_rows.append(
-            [{"text": "🚫 No AI  — raw mode", "callback_data": "prov_noai"}]
+            [{"text": f"{noai_prefix}🚫 No AI  — raw mode", "callback_data": "prov_noai"}]
         )
         keyboard_rows.append(
             [
@@ -1822,6 +1867,60 @@ class TelegramCommandsMixin:
             return
 
         await self.send_message(chat_id, text_payload, keyboard=keyboard_rows)
+
+    @staticmethod
+    def _provider_vault_validation_status(manifest) -> tuple[bool, bool]:
+        """Return (has_vault_key, is_validated) for a cloud provider manifest."""
+        has_vault_key = False
+        validated = False
+
+        try:
+            from navig.vault import get_vault
+
+            legacy_vault = get_vault()
+            cred = legacy_vault.get(manifest.id, caller="telegram.providers")
+            if cred and isinstance(getattr(cred, "data", None), dict):
+                has_vault_key = any(
+                    str(cred.data.get(field, "")).strip()
+                    for field in ("api_key", "token", "access_token", "key", "password")
+                )
+                if not has_vault_key:
+                    has_vault_key = any(
+                        isinstance(value, str) and value.strip()
+                        for value in cred.data.values()
+                    )
+
+                metadata = getattr(cred, "metadata", {}) or {}
+                if metadata.get("validation_success") is True:
+                    validated = True
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Legacy vault provider readiness check failed: %s", exc)
+
+        try:
+            from navig.vault import get_vault_v2
+
+            vault_v2 = get_vault_v2()
+            if vault_v2 is not None:
+                store = vault_v2.store()
+                for label in getattr(manifest, "vault_keys", []) or []:
+                    try:
+                        secret = vault_v2.get_secret(label)
+                    except Exception:
+                        continue
+                    if not str(secret).strip():
+                        continue
+                    has_vault_key = True
+                    try:
+                        item = store.get(label)
+                        metadata = getattr(item, "metadata", {}) if item else {}
+                        if isinstance(metadata, dict) and metadata.get("validation_success") is True:
+                            validated = True
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("Vault v2 metadata check failed for %s: %s", label, exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Vault v2 provider readiness check failed: %s", exc)
+
+        return has_vault_key, validated
 
     @error_handled
     @typing_context
@@ -3212,7 +3311,10 @@ class TelegramCommandsMixin:
         await self.send_message(chat_id, msg)
 
     async def _handle_auto_start(self, chat_id: int, user_id: int, text: str) -> None:
-        """Start AI conversational auto-reply using durable runtime state."""
+        """Start AI conversational auto-reply using durable runtime state.
+
+        Note: For persona-only changes without enabling auto-reply, prefer /persona <name>.
+        """
         role = text[len("/auto_start") :].strip() or "assistant"
         try:
             from navig.store.runtime import get_runtime_store
@@ -3224,8 +3326,23 @@ class TelegramCommandsMixin:
                 persona=role,
                 context={"source": "telegram", "command": "auto_start"},
             )
+            # Also update the unified persona system (best-effort)
+            try:
+                from navig.personas.manager import switch_persona
+
+                await switch_persona(
+                    name=role,
+                    user_id=user_id,
+                    chat_id=chat_id,
+                    deliver_assets=False,
+                )
+            except Exception as _pe:
+                logger.debug("Persona sync during auto_start skipped: %s", _pe)
+
             await self.send_message(
-                chat_id, f"✅ Auto-replies *ACTIVATED* with persona: `{role}`"
+                chat_id,
+                f"✅ Auto-replies *ACTIVATED* with persona: `{role}`\n"
+                f"_Tip: use `/persona {role}` to switch personas without enabling auto-reply._",
             )
         except Exception as e:
             logger.error("Failed to start auto-reply state: %s", e)
@@ -3407,13 +3524,97 @@ class TelegramCommandsMixin:
             await self.send_message(chat_id, "❌ Failed to set skip-next continuation.")
 
     async def _handle_auto_roles(self, chat_id: int) -> None:
-        roles = (
-            "• `storyteller`\n• `assistant`\n• `philosopher`\n• `teacher`\n• `tyler`"
-        )
-        await self.send_message(
-            chat_id,
-            f"🎭 *Available AI Personas:*\n\n{roles}\n\nUse `/auto_start <role>` to activate.",
-        )
+        """Deprecated — delegates to _handle_personas."""
+        logger.debug("_handle_auto_roles called; delegating to _handle_personas (deprecated)")
+        await self._handle_personas(chat_id=chat_id, user_id=0)
+
+    # ── Persona commands ──────────────────────────────────────────────────────
+
+    async def _handle_persona(self, chat_id: int, user_id: int, text: str = "") -> None:
+        """Route /persona subcommands: list, info, reset, or switch."""
+        arg = text[len("/persona"):].strip()
+        if not arg or arg == "list":
+            await self._handle_personas(chat_id=chat_id, user_id=user_id)
+            return
+        if arg == "info":
+            await self._handle_persona_info(chat_id, user_id)
+            return
+        if arg == "reset":
+            await self._handle_persona_reset(chat_id, user_id)
+            return
+        # Treat anything else as a persona name to switch to
+        await self._handle_persona_switch(chat_id, user_id, arg)
+
+    async def _handle_personas(self, chat_id: int, user_id: int = 0) -> None:
+        """List all available personas, showing the currently active one."""
+        try:
+            from navig.personas.manager import list_personas
+            from navig.personas.renderer import render_persona_list
+            from navig.personas.store import get_active_persona
+
+            personas = list_personas()
+            active_name = get_active_persona(user_id, chat_id)
+            text = render_persona_list(personas, active_name)
+            await self.send_message(chat_id, text)
+        except Exception as e:
+            logger.error("_handle_personas error: %s", e)
+            # Graceful fallback using builtin list
+            try:
+                from navig.personas.contracts import BUILTIN_PERSONAS
+                roles = "\n".join(f"• `{p}`" for p in BUILTIN_PERSONAS)
+            except Exception:
+                roles = "• `default`\n• `assistant`\n• `tyler`\n• `storyteller`\n• `philosopher`\n• `teacher`"
+            await self.send_message(
+                chat_id,
+                f"🎭 *Available AI Personas:*\n\n{roles}\n\nUse `/persona <name>` to switch.",
+            )
+
+    async def _handle_persona_switch(
+        self, chat_id: int, user_id: int, name: str
+    ) -> None:
+        """Switch the active AI persona."""
+        await self.send_typing(chat_id)
+        try:
+            from navig.personas.manager import switch_persona
+            from navig.personas.renderer import render_switch_confirmation
+
+            config = await switch_persona(
+                name=name,
+                user_id=user_id,
+                chat_id=chat_id,
+                deliver_assets=True,
+                bot_client=self,
+            )
+            msg = render_switch_confirmation(config)
+            await self.send_message(chat_id, msg)
+        except Exception as e:
+            logger.error("Failed to switch persona to %r: %s", name, e)
+            await self.send_message(
+                chat_id,
+                f"❌ Could not switch to persona *{name}*: {e}",
+                parse_mode="Markdown",
+            )
+
+    async def _handle_persona_info(self, chat_id: int, user_id: int) -> None:
+        """Show details about the currently active persona."""
+        try:
+            from navig.personas.manager import get_active_persona_config
+            from navig.personas.loader import load_persona
+            from navig.personas.renderer import render_persona_info
+
+            config = await get_active_persona_config(user_id, chat_id)
+            _, soul_text = load_persona(config.name)
+            msg = render_persona_info(config, soul_text)
+            await self.send_message(chat_id, msg)
+        except Exception as e:
+            logger.error("_handle_persona_info error: %s", e)
+            await self.send_message(
+                chat_id, "❌ Could not load persona info.", parse_mode=None
+            )
+
+    async def _handle_persona_reset(self, chat_id: int, user_id: int) -> None:
+        """Reset persona to the built-in default."""
+        await self._handle_persona_switch(chat_id, user_id, "default")
 
     async def _handle_explain_ai(self, chat_id: int, text: str) -> None:
         topic = text[len("/explain_ai") :].strip()
