@@ -1,5 +1,5 @@
 """
-navig-commands-core/commands/sysinfo.py
+navig-commands/commands/sysinfo.py
 
 CPU, memory, and disk information.
 Uses psutil when available; falls back to stdlib shutil/os.

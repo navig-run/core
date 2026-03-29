@@ -588,13 +588,18 @@ echo env('APP_ENV');
 | `run` | `"command"`, `--b64`, `@file`, `-i` | Remote execution |
 | `db` | `list`, `tables`, `query`, `dump`, `restore`, `optimize`, `repair` | Database ops |
 | `docker` | `ps`, `logs`, `exec`, `compose`, `restart`, `stop`, `start`, `stats` | Container ops |
+| `telegram` | `status`, `send`, `sessions list/show/clear/delete/prune` | Telegram bot operations |
+| `gateway` | `start`, `stop`, `status`, `session`, `test` | Gateway runtime + smoke testing |
 | `file` | `add`, `list`, `show`, `edit`, `get`, `remove` | File operations |
 | `web` | `vhosts`, `test`, `enable`, `disable`, `reload`, `hestia` | Web server |
 | `backup` | `export`, `import`, `show`, `run`, `restore`, `remove` | Backup/restore |
 | `config` | `validate`, `show`, `settings`, `set`, `get`, `edit`, `schema` | Configuration |
+| `import` | `--source`, `--path`, `--output`, `list-sources` | Universal data import |
+| `contacts` | `list`, `add`, `import` | Contact address book operations |
 | `tunnel` | (see `navig help tunnel`) | SSH tunnels |
 | `flow` | `list`, `run`, `template` | Workflows |
-| `plans` | `status`, `add`, `run` (alias), `sync`, `update`, `briefing` | Space-aware planning |
+| `agent continuation` | `status`, `continue`, `pause`, `skip` | CLI continuation policy controls |
+| `plans` | `status`, `add`, `run` (alias), `sync`, `update`, `next`, `briefing` | Space-aware planning |
 | `auto` | `status`, `click`, `type`, `open`, `windows`, `snap` | UI Automation |
 | `ahk` | `clipboard`, `screenshot`, `ocr`, `listen` | Windows Automation |
 | `script` | `list`, `run`, `edit`, `new` | Script Management |
@@ -625,7 +630,15 @@ echo env('APP_ENV');
 
 # Enforcement Summary
 
+
+- `navig gateway test ... --strict` returns non-zero when any tested channel fails (CI-friendly).
+- `navig gateway test ... --json` prints machine-readable results for automation.
+- Default `navig gateway test ...` remains human-friendly and compatibility-first.
+
 ## BEFORE Remote Operations
+- Unknown `navig import --source` values are rejected with explicit errors.
+- `--path` must point to an existing file/directory.
+- `--path` cannot be used with `--source all`.
 1. ✅ Verify host context with `navig host show` or `navig status`
 2. ✅ Test connectivity with `navig host test` if uncertain
 3. ✅ Use `--b64` for complex commands with special characters

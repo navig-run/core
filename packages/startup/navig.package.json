@@ -3,8 +3,20 @@
   "name": "Startup",
   "version": "1.0.0",
   "description": "Startup sequence for NAVIG sessions — health checks, context loading, environment setup.",
+  "type": "workflows",
+  "entry": "workflow.yaml",
   "author": "navig",
   "license": "MIT",
   "provides": ["workflows"],
-  "depends_on": {}
+  "hooks": [],
+  "depends_on": {
+    "packages": {},
+    "skills": [],
+    "pip": []
+  },
+  "recommends": {},
+  "install_hooks": {
+    "post_install": "",
+    "post_remove": ""
+  }
 }

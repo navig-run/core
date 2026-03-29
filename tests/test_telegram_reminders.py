@@ -69,6 +69,18 @@ class FakeAutoStateStore:
             self.state["mode"] = "inactive"
 
 
+class FakeContinuationStore(FakeAutoStateStore):
+    def __init__(self):
+        super().__init__()
+        self.state = {
+            "user_id": 456,
+            "chat_id": 123,
+            "mode": "active",
+            "persona": "teacher",
+            "context": {},
+        }
+
+
 @pytest.mark.asyncio
 async def test_parse_remindme_relative_format():
     bot = _make_dummy_bot()
@@ -142,3 +154,67 @@ async def test_auto_state_start_status_stop_flow(monkeypatch):
 
     await bot._handle_auto_status(123, 456)
     assert any("INACTIVE" in m[1] for m in bot.messages)
+
+
+@pytest.mark.asyncio
+async def test_continuation_controls_update_context(monkeypatch):
+    bot = _make_dummy_bot()
+    fake_store = FakeContinuationStore()
+
+    monkeypatch.setattr(
+        "navig.store.runtime.get_runtime_store",
+        lambda: fake_store,
+    )
+
+    await bot._handle_continue(123, 456, "/continue balanced finance")
+    ctx = fake_store.state.get("context") or {}
+    cont = ctx.get("continuation") or {}
+    assert cont.get("enabled") is True
+    assert cont.get("paused") is False
+    assert cont.get("profile") == "balanced"
+    assert cont.get("space") == "finance"
+    assert any("Policy: cooldown=10s, max_turns=3" in m[1] for m in bot.messages)
+    assert any("suppression(wait=30s, blocked=90s)" in m[1] for m in bot.messages)
+    assert any("decision=standard" in m[1] for m in bot.messages)
+
+    await bot._handle_pause(123, 456)
+    ctx2 = fake_store.state.get("context") or {}
+    cont2 = ctx2.get("continuation") or {}
+    assert cont2.get("paused") is True
+
+    await bot._handle_skip(123, 456)
+    ctx3 = fake_store.state.get("context") or {}
+    cont3 = ctx3.get("continuation") or {}
+    assert cont3.get("skip_next") is True
+
+    await bot._handle_auto_status(123, 456)
+    assert any("Continuation:" in m[1] for m in bot.messages)
+
+
+@pytest.mark.asyncio
+async def test_auto_status_shows_busy_suppression_metadata(monkeypatch):
+    bot = _make_dummy_bot()
+    fake_store = FakeContinuationStore()
+    fake_store.state["context"] = {
+        "continuation": {
+            "enabled": True,
+            "paused": False,
+            "skip_next": False,
+            "profile": "conservative",
+            "cooldown_seconds": 20,
+            "max_turns": 2,
+            "turns_used": 0,
+            "busy_until": "2099-01-01T00:00:00+00:00",
+            "busy_reason": "wait_signal",
+            "last_skip_reason": "busy_suppressed:wait_signal",
+        }
+    }
+
+    monkeypatch.setattr(
+        "navig.store.runtime.get_runtime_store",
+        lambda: fake_store,
+    )
+
+    await bot._handle_auto_status(123, 456)
+    assert any("busy_until=" in m[1] for m in bot.messages)
+    assert any("last_skip=" in m[1] for m in bot.messages)

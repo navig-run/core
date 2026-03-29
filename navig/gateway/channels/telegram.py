@@ -186,6 +186,84 @@ class TelegramChannel:
             self._kb_builder = ResponseKeyboardBuilder()
             self._cb_handler = CallbackHandler(self)
 
+    @staticmethod
+    def _is_group_chat_id(chat_id: int) -> bool:
+        """Best-effort chat scope detector for Telegram IDs."""
+        return chat_id < 0
+
+    def _set_one_shot_noai(self, user_id: int) -> None:
+        """Set one-shot no-AI mode for the next message only."""
+        self._user_model_prefs[user_id] = "noai"
+
+    def _set_user_tier_pref(
+        self,
+        chat_id: int,
+        user_id: int,
+        tier: str,
+        *,
+        is_group: bool | None = None,
+        persist: bool = True,
+    ) -> None:
+        """Set persistent user tier preference in memory + session metadata."""
+        valid = {"small", "big", "coder_big", ""}
+        normalized = tier if tier in valid else ""
+
+        if normalized:
+            self._user_model_prefs[user_id] = normalized
+        else:
+            self._user_model_prefs.pop(user_id, None)
+
+        if not persist or not HAS_SESSIONS:
+            return
+
+        try:
+            sm = get_session_manager()
+            sm.set_session_metadata(
+                chat_id,
+                user_id,
+                "model_tier_pref",
+                normalized or None,
+                is_group=self._is_group_chat_id(chat_id)
+                if is_group is None
+                else is_group,
+            )
+        except Exception as e:
+            logger.debug("Could not persist model tier preference: %s", e)
+
+    def _get_user_tier_pref(
+        self,
+        chat_id: int,
+        user_id: int,
+        *,
+        is_group: bool | None = None,
+    ) -> str:
+        """Get effective tier preference (one-shot memory first, then session)."""
+        in_memory = self._user_model_prefs.get(user_id, "")
+        if in_memory in {"small", "big", "coder_big", "noai"}:
+            return in_memory
+
+        if not HAS_SESSIONS:
+            return ""
+
+        try:
+            sm = get_session_manager()
+            persisted = sm.get_session_metadata(
+                chat_id,
+                user_id,
+                "model_tier_pref",
+                default="",
+                is_group=self._is_group_chat_id(chat_id)
+                if is_group is None
+                else is_group,
+            )
+            if persisted in {"small", "big", "coder_big"}:
+                self._user_model_prefs[user_id] = persisted
+                return persisted
+        except Exception as e:
+            logger.debug("Could not read persisted model tier preference: %s", e)
+
+        return ""
+
     # ── Access Control ─────────────────────────────────────────────
     def _is_user_authorized(self, user_id: int, chat_id: int, is_group: bool) -> bool:
         """Check if a user/chat is authorized to interact with the bot.
@@ -212,53 +290,66 @@ class TelegramChannel:
         """Start the Telegram channel."""
         if aiohttp is None:
             logger.error("aiohttp not installed. Cannot start Telegram channel.")
-            return
+            raise RuntimeError("aiohttp not installed; cannot start Telegram channel")
 
         self._session = aiohttp.ClientSession()
-        self._running = True
 
-        # Get bot info
+        # Get bot info — validate token before marking as running
         try:
             me = await self._api_call("getMe")
-            if me:
-                self._bot_username = me.get("username", "")
-                logger.info(f"Telegram bot started: @{self._bot_username}")
-
-                # Auth status
-                if self.require_auth:
-                    if self.allowed_users:
-                        logger.info(
-                            "Auth ENFORCED: %d allowed users", len(self.allowed_users)
-                        )
-                    else:
-                        logger.warning(
-                            "Auth ENFORCED but allowed_users is EMPTY — all DMs will be blocked!"
-                        )
-                else:
-                    logger.warning(
-                        "Auth DISABLED (require_auth=false) — bot is open to everyone"
-                    )
-
-                # Register slash commands with Telegram
-                await self._register_commands()
-
-                # Send startup notification to allowed users
-                from navig.boot_messages import get_boot_message
-
-                boot_msg = get_boot_message()
-                for user_id in self.allowed_users:
-                    try:
-                        await self.send_message(
-                            user_id,
-                            boot_msg,
-                            parse_mode=None,
-                        )
-                    except Exception:  # noqa: BLE001
-                        pass  # best-effort; failure is non-critical
-
         except Exception as e:
+            await self._session.close()
+            self._session = None
             logger.error(f"Failed to connect to Telegram: {e}")
-            return
+            raise RuntimeError(f"Telegram connection failed: {e}") from e
+
+        if not me:
+            await self._session.close()
+            self._session = None
+            logger.error(
+                "Telegram API rejected the bot token (getMe returned ok=false). "
+                "Check TELEGRAM_BOT_TOKEN."
+            )
+            raise RuntimeError(
+                "Telegram API rejected bot token (ok=false) — check TELEGRAM_BOT_TOKEN"
+            )
+
+        # Token is valid — mark running and complete setup
+        self._running = True
+        self._bot_username = me.get("username", "")
+        logger.info(f"Telegram bot started: @{self._bot_username}")
+
+        # Auth status
+        if self.require_auth:
+            if self.allowed_users:
+                logger.info(
+                    "Auth ENFORCED: %d allowed users", len(self.allowed_users)
+                )
+            else:
+                logger.warning(
+                    "Auth ENFORCED but allowed_users is EMPTY — all DMs will be blocked!"
+                )
+        else:
+            logger.warning(
+                "Auth DISABLED (require_auth=false) — bot is open to everyone"
+            )
+
+        # Register slash commands with Telegram
+        await self._register_commands()
+
+        # Send startup notification to allowed users
+        from navig.boot_messages import get_boot_message
+
+        boot_msg = get_boot_message()
+        for user_id in self.allowed_users:
+            try:
+                await self.send_message(
+                    user_id,
+                    boot_msg,
+                    parse_mode=None,
+                )
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         # Start notifications if enabled
         if self.enable_notifications and self.allowed_users:
@@ -672,9 +763,15 @@ class TelegramChannel:
                         clean_text = text[len(prefix) :].strip()
                         break
 
-                # Apply persistent user preference if no per-message override
-                if not tier_override and user_id in self._user_model_prefs:
-                    tier_override = self._user_model_prefs[user_id]
+                # Apply persistent user preference if no per-message override.
+                # "noai" is one-shot: consume and clear it after first use.
+                if not tier_override:
+                    pref_tier = self._get_user_tier_pref(
+                        chat_id, user_id, is_group=is_group
+                    )
+                    tier_override = pref_tier
+                    if pref_tier == "noai":
+                        self._user_model_prefs.pop(user_id, None)
 
                 if tier_override:
                     metadata["tier_override"] = tier_override
@@ -844,6 +941,12 @@ class TelegramChannel:
                     )
                     return
 
+                # ── One-shot raw/no-AI route ──
+                if metadata.get("tier_override") == "noai":
+                    noai_cmd = self._match_cli_command(clean_text.strip()) or clean_text
+                    await self._handle_cli_command(chat_id, user_id, metadata, noai_cmd)
+                    return
+
                 # ── Cinematic mode dispatch ──
                 await self._dispatch_by_mode(
                     tg_msg=telegram_msg,
@@ -998,6 +1101,167 @@ class TelegramChannel:
                 is_group=is_group,
                 extra_krow=debug_krow,
             )
+
+            await self._maybe_auto_continue(
+                chat_id=chat_id,
+                user_id=user_id,
+                metadata=metadata,
+                trigger_text=response,
+                session=session,
+                session_manager=session_manager,
+                is_group=is_group,
+            )
+
+    async def _maybe_auto_continue(
+        self,
+        chat_id: int,
+        user_id: int,
+        metadata: dict,
+        trigger_text: str,
+        session,
+        session_manager,
+        is_group: bool,
+    ) -> None:
+        """Run a single conservative continuation turn when policy allows."""
+        try:
+            from navig.core.continuation import (
+                apply_busy_suppression,
+                classify_continuation_state,
+                consume_skip,
+                get_busy_suppression,
+                mark_continued,
+                merge_policy,
+                policy_from_context,
+                should_auto_continue,
+            )
+            from navig.spaces.next_action import build_continuation_prompt
+            from navig.store.runtime import get_runtime_store
+
+            store = get_runtime_store()
+            state = store.get_ai_state(user_id)
+            if not state or state.get("mode") != "active":
+                return
+
+            context = state.get("context") or {}
+            policy = policy_from_context(context)
+            classifier_state, classifier_reason = classify_continuation_state(trigger_text)
+            context = {
+                **context,
+                "continuation": {
+                    **(context.get("continuation") or {}),
+                    "last_classifier_state": classifier_state,
+                    "last_classifier_reason": classifier_reason,
+                },
+            }
+            context = apply_busy_suppression(
+                context,
+                classifier_state,
+                classifier_reason,
+                profile=policy.profile,
+            )
+            busy_active, busy_reason, busy_until = get_busy_suppression(context)
+            if busy_active:
+                context = {
+                    **context,
+                    "continuation": {
+                        **(context.get("continuation") or {}),
+                        "last_skip_reason": f"busy_suppressed:{busy_reason}",
+                        "busy_until": busy_until,
+                    },
+                }
+            should_run, reason = should_auto_continue(trigger_text, policy, context)
+
+            if reason == "skip_next":
+                context = consume_skip(context)
+                store.set_ai_state(
+                    user_id=user_id,
+                    chat_id=chat_id,
+                    mode="active",
+                    persona=state.get("persona") or "assistant",
+                    context=context,
+                )
+                return
+
+            if not should_run:
+                context = {
+                    **context,
+                    "continuation": {
+                        **(context.get("continuation") or {}),
+                        "last_skip_reason": reason,
+                    },
+                }
+                store.set_ai_state(
+                    user_id=user_id,
+                    chat_id=chat_id,
+                    mode="active",
+                    persona=state.get("persona") or "assistant",
+                    context=context,
+                )
+                return
+
+            if policy.dry_run:
+                store.set_ai_state(
+                    user_id=user_id,
+                    chat_id=chat_id,
+                    mode="active",
+                    persona=state.get("persona") or "assistant",
+                    context=context,
+                )
+                await self.send_message(
+                    chat_id,
+                    "[dry-run] continuation would run here.",
+                    parse_mode=None,
+                )
+                return
+
+            preferred_space = (context.get("continuation") or {}).get("space", "")
+            followup_prompt = build_continuation_prompt(preferred_space=preferred_space)
+
+            typing_task = asyncio.create_task(self._keep_typing(chat_id))
+            try:
+                next_response = await self.on_message(
+                    channel="telegram",
+                    user_id=str(user_id),
+                    message=followup_prompt,
+                    metadata={**metadata, "auto_continuation_turn": True},
+                )
+            finally:
+                typing_task.cancel()
+                try:
+                    await typing_task
+                except asyncio.CancelledError:
+                    pass
+
+            if not next_response:
+                return
+
+            self._record_assistant_msg(
+                session,
+                session_manager,
+                chat_id,
+                user_id,
+                next_response,
+                is_group,
+            )
+            await self._send_response(
+                chat_id,
+                f"↪️ {next_response}",
+                followup_prompt,
+                user_id=user_id,
+                is_group=is_group,
+            )
+
+            updated_context = mark_continued(context)
+            updated_context = merge_policy(updated_context, skip_next=False)
+            store.set_ai_state(
+                user_id=user_id,
+                chat_id=chat_id,
+                mode="active",
+                persona=state.get("persona") or "assistant",
+                context=updated_context,
+            )
+        except Exception as exc:
+            logger.debug("Auto continuation skipped due to error: %s", exc)
 
     async def _handle_reason(
         self,
@@ -1796,7 +2060,7 @@ class TelegramChannel:
                 cfg = router.cfg
                 lines.append("")
                 lines.append("*Bridge Tiers (when Bridge is connected):*")
-                user_pref = self._user_model_prefs.get(user_id, "")
+                user_pref = self._get_user_tier_pref(chat_id, user_id)
                 pref_label = {
                     "small": "⚡ Small",
                     "big": "🧠 Big",
@@ -1815,7 +2079,7 @@ class TelegramChannel:
             text = "\n".join(lines)
 
             # ── Inline keyboard ──
-            user_pref = self._user_model_prefs.get(user_id, "")
+            user_pref = self._get_user_tier_pref(chat_id, user_id)
             check = lambda t: " ✓" if user_pref == t else ""
             keyboard = [
                 [
@@ -2415,7 +2679,7 @@ class TelegramChannel:
         lines.append(SEP)
 
         # ── Session state ──────────────────────────────────────────────────────
-        tier = self._user_model_prefs.get(user_id, "")
+        tier = self._get_user_tier_pref(chat_id, user_id)
         tier_label = {
             "small": "fast",
             "big": "smart",
@@ -2535,10 +2799,7 @@ class TelegramChannel:
             "/auto": ("", "🔄 Auto", "model selection is back on automatic."),
         }
         tier_key, label, note = tier_map[cmd]
-        if tier_key:
-            self._user_model_prefs[user_id] = tier_key
-        elif user_id in self._user_model_prefs:
-            del self._user_model_prefs[user_id]
+        self._set_user_tier_pref(chat_id, user_id, tier_key)
         await self.send_message(
             chat_id,
             f"{label} — {note}\nSend your message normally now.",
@@ -2694,41 +2955,6 @@ class TelegramChannel:
         }
         text = mode_voice.get(mode_arg, f"{emoji} mode shifted.")
         await self.send_message(chat_id, text, parse_mode=None)
-
-    # ── CLI-backed slash commands ──────────────────────────────────────
-    # Maps /command → navig CLI string. Use {args} placeholder for user args.
-    _SLASH_CLI_MAP = {
-        # monitoring
-        "/disk": "host monitor show --disk",
-        "/memory": 'run "free -h"',
-        "/cpu": 'run "uptime"',
-        "/uptime": 'run "uptime -p"',
-        "/services": 'run "systemctl list-units --type=service --state=running --no-pager | head -40"',
-        "/ports": 'run "ss -tlnp | head -30"',
-        "/top": 'run "top -bn1 | head -20"',
-        "/df": 'run "df -h"',
-        "/cron": "run \"crontab -l 2>/dev/null || echo 'no crontab'\"",
-        # docker
-        "/docker": "docker ps",
-        "/logs": "docker logs {args} -n 50",
-        # /restart handled by explicit _handle_restart — removed from CLI map
-        # database
-        "/db": "db list",
-        "/tables": "db tables {args}",
-        # hosts / tools
-        "/hosts": "host list",
-        "/use": "host use {args}",
-        "/run": 'run "{args}"',
-        "/backup": "backup show",
-        # utilities
-        "/ip": 'run "curl -s ifconfig.me"',
-        "/time": 'run "date"',
-        "/weather": "run \"curl -s 'wttr.in/?format=3'\"",
-        "/dns": 'run "dig +short {args}"',
-        "/ssl": "run \"echo | openssl s_client -connect {args}:443 -servername {args} 2>/dev/null | openssl x509 -noout -dates 2>/dev/null || echo 'no cert found'\"",
-        "/whois": 'run "whois {args} | head -30"',
-        "/netstat": 'run "ss -s"',
-    }
 
     def _match_cli_command(self, text: str) -> str | None:
         """Match slash command to a navig CLI string via the registry."""

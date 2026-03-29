@@ -7,6 +7,15 @@
   "provides": ["workflows"],
   "entry": "workflow.yaml",
   "author": "navig",
-  "depends_on": [],
-  "hooks": {}
+  "hooks": [],
+  "depends_on": {
+    "packages": {},
+    "skills": [],
+    "pip": []
+  },
+  "recommends": {},
+  "install_hooks": {
+    "post_install": "",
+    "post_remove": ""
+  }
 }

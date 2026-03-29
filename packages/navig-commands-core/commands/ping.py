@@ -1,5 +1,5 @@
 """
-navig-commands-core/commands/ping.py
+navig-commands/commands/ping.py
 
 TCP/DNS connectivity check — stdlib only, no extra deps.
 """

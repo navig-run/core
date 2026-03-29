@@ -672,10 +672,6 @@ class CallbackHandler:
             await self._handle_task_callback(cb_id, cb_data, chat_id, message_id, user_id)
             return
 
-        if cb_data.startswith("task:"):
-            await self._handle_task_callback(cb_id, cb_data, chat_id, message_id, user_id)
-            return
-
         if cb_data.startswith("ms_"):
             await self._handle_model_switch(cb_id, cb_data, chat_id, message_id, user_id)
             return
@@ -898,10 +894,13 @@ class CallbackHandler:
         if cb_data in tier_map:
             tier, label = tier_map[cb_data]
             # Persist in channel's per-user prefs
-            if tier:
-                self.channel._user_model_prefs[user_id] = tier
+            if hasattr(self.channel, "_set_user_tier_pref"):
+                self.channel._set_user_tier_pref(chat_id, user_id, tier)
             else:
-                self.channel._user_model_prefs.pop(user_id, None)
+                if tier:
+                    self.channel._user_model_prefs[user_id] = tier
+                else:
+                    self.channel._user_model_prefs.pop(user_id, None)
 
             # Get model name for confirmation
             model_name = ""
@@ -993,7 +992,10 @@ class CallbackHandler:
             return
 
         if cb_data == "prov_noai":
-            self.channel._user_model_prefs[user_id] = "noai"
+            if hasattr(self.channel, "_set_one_shot_noai"):
+                self.channel._set_one_shot_noai(user_id)
+            else:
+                self.channel._user_model_prefs[user_id] = "noai"
             await self._answer(cb_id, "🚫 Raw mode — no AI on next message", show_alert=True)
             return
 
@@ -1005,7 +1007,10 @@ class CallbackHandler:
 
         if cb_data == "prov_back":
             await self._answer(cb_id, "")
-            await self.channel._handle_providers(chat_id, user_id)
+            try:
+                await self.channel._handle_providers(chat_id, user_id)
+            except TypeError:
+                await self.channel._handle_providers(chat_id)
             return
 
         # ── Pagination: prov_page_{prov_id}_{page} ──────────────────────────
@@ -1020,7 +1025,17 @@ class CallbackHandler:
                 except ValueError:
                     page_num = 0
                 await self._answer(cb_id, "")
-                await self.channel._show_provider_model_picker(chat_id, prov_id_p, page=page_num)
+                try:
+                    await self.channel._show_provider_model_picker(
+                        chat_id, prov_id_p, page=page_num
+                    )
+                except TypeError:
+                    try:
+                        await self.channel._show_provider_model_picker(
+                            chat_id, prov_id_p, page_num
+                        )
+                    except TypeError:
+                        await self.channel._show_provider_model_picker(chat_id, prov_id_p)
             else:
                 await self._answer(cb_id, "⚠️ Bad page callback")
             return
@@ -1096,7 +1111,11 @@ class CallbackHandler:
         }
         if cb_data in picker_map:
             await self._answer(cb_id, "")
-            await self.channel._show_provider_model_picker(chat_id, picker_map[cb_data])
+            prov_id = picker_map[cb_data]
+            try:
+                await self.channel._show_provider_model_picker(chat_id, prov_id)
+            except TypeError:
+                await self.channel._show_provider_model_picker(chat_id, prov_id=prov_id)
             return
 
         # Deepgram: STT only, no LLM routing
@@ -1277,8 +1296,17 @@ class CallbackHandler:
             if not router or not router.is_active:
                 await self._answer(
                     cb_id,
-                    "⚠️ Hybrid router not active — enable routing in config.yaml first",
+                    "⚠️ Hybrid router not active",
                     show_alert=True,
+                )
+                await self.channel.send_message(
+                    chat_id,
+                    "⚠️ <b>Hybrid router not active</b>\n\n"
+                    "To enable model-tier assignment, add this to your "
+                    "<code>~/.navig/config.yaml</code>:\n\n"
+                    "<pre>routing:\n  enabled: true</pre>\n\n"
+                    "Then restart the daemon and try again.",
+                    parse_mode="HTML",
                 )
                 return
             slot = router.cfg.slot_for_tier(tier)

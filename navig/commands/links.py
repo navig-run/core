@@ -331,11 +331,16 @@ def delete_link(
 @links_app.command("import")
 def import_links(
     file: str = typer.Argument(..., help="Path to JSON file (array of {url, title, notes, tags})"),
+    source: str = typer.Option(
+        "auto",
+        "--source",
+        help="Source format: auto|json|chrome|edge|firefox|safari",
+    ),
     cred: str | None = typer.Option(
         None, "--cred", "-c", help="Apply this vault cred to all imported links"
     ),
 ):
-    """Bulk import bookmarks from a JSON file."""
+    """Bulk import bookmarks from legacy JSON or native browser bookmark files."""
     import pathlib
 
     db = _db()
@@ -344,12 +349,56 @@ def import_links(
         _ch.error(f"File not found: {file}")
         raise typer.Exit(1)
 
-    with open(path, encoding="utf-8") as fh:
-        items = json.load(fh)
-
     added = 0
     skipped = 0
-    for item in items:
+    normalized_items: list[dict] = []
+
+    if source in {"auto", "chrome", "edge", "firefox", "safari"}:
+        try:
+            from navig.importers.core import UniversalImporter
+
+            engine = UniversalImporter()
+            imported = []
+            if source == "auto":
+                inferred, imported = engine.run_path(str(path))
+                if inferred:
+                    _ch.info(f"Detected source: {inferred}")
+            else:
+                imported = engine.run_one(source, path=str(path))
+
+            normalized_items = [
+                {
+                    "url": item.value,
+                    "title": item.label,
+                    "notes": f"Imported folder: {(item.meta or {}).get('folder', '')}".rstrip(),
+                    "tags": ["imported", item.source],
+                }
+                for item in imported
+                if item.type == "bookmark"
+            ]
+        except Exception as exc:
+            _ch.warning(f"Universal importer unavailable ({exc}); falling back to JSON parser")
+
+    if not normalized_items:
+        with open(path, encoding="utf-8") as fh:
+            items = json.load(fh)
+        for item in items:
+            url = item.get("url")
+            if not url:
+                continue
+            tags = item.get("tags") or []
+            if isinstance(tags, str):
+                tags = [t.strip() for t in tags.split(",") if t.strip()]
+            normalized_items.append(
+                {
+                    "url": url,
+                    "title": item.get("title"),
+                    "notes": item.get("notes"),
+                    "tags": tags,
+                }
+            )
+
+    for item in normalized_items:
         url = item.get("url")
         if not url:
             continue

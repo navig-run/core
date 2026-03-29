@@ -198,8 +198,13 @@ def test_main(monkeypatch):
     parser_mock.return_value.parse_args.return_value = MockArgs()
     monkeypatch.setattr(tw.argparse, "ArgumentParser", parser_mock)
 
-    run_mock = MagicMock()
-    monkeypatch.setattr(tw.asyncio, "run", run_mock)
+    captured = {}
+
+    def _run(coro):
+        captured["coro"] = coro
+        coro.close()
+
+    monkeypatch.setattr(tw.asyncio, "run", _run)
 
     tw.main()
-    run_mock.assert_called_once()
+    assert captured.get("coro") is not None

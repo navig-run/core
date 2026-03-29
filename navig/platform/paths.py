@@ -127,13 +127,14 @@ def data_dir() -> Path:
 
 def log_dir() -> Path:
     """
-    NAVIG log directory.
+    NAVIG log directory — stored in the OS-idiomatic user-local data area.
     Respects NAVIG_LOG_DIR env var.
 
     Defaults:
-        Windows:  %USERPROFILE%\\.navig\\logs
-        Linux:    ~/.navig/logs  (user) or /var/log/navig (system)
-        macOS:    ~/.navig/logs
+        Windows:  %LOCALAPPDATA%\\navig\\logs
+        macOS:    ~/Library/Logs/navig
+        Linux:    $XDG_STATE_HOME/navig/logs  (~/.local/state/navig/logs)
+        System:   /var/log/navig
     """
     env = os.environ.get("NAVIG_LOG_DIR")
     if env:
@@ -142,7 +143,22 @@ def log_dir() -> Path:
     if _is_system_service():
         return Path("/var/log/navig")
 
-    return config_dir() / "logs"
+    os_name = current_os()
+
+    if os_name == "windows":
+        local_appdata = os.environ.get("LOCALAPPDATA")
+        if local_appdata:
+            return Path(local_appdata) / "navig" / "logs"
+        return config_dir() / "logs"
+
+    if os_name == "macos":
+        return home_dir() / "Library" / "Logs" / "navig"
+
+    # Linux / WSL: follow XDG \u2014 logs live under XDG_STATE_HOME (systemd convention)
+    xdg_state = os.environ.get("XDG_STATE_HOME")
+    if xdg_state:
+        return Path(xdg_state) / "navig" / "logs"
+    return home_dir() / ".local" / "state" / "navig" / "logs"
 
 
 def blackbox_dir() -> Path:
@@ -196,8 +212,13 @@ def workspace_dir() -> Path:
 
 
 def debug_log_path() -> Path:
-    """Path to the debug log file."""
-    return config_dir() / "debug.log"
+    """Path to the debug log file (inside the platform log directory)."""
+    return log_dir() / "debug.log"
+
+
+def msg_trace_path() -> Path:
+    """Path to the message trace JSONL file used for recent-message context."""
+    return log_dir() / "msg_trace.jsonl"
 
 
 def global_config_path() -> Path:
@@ -211,6 +232,15 @@ def global_config_path() -> Path:
     if not new_path.exists() and legacy.exists():
         return legacy
     return new_path
+
+
+def msg_trace_path() -> Path:
+    """Path to Telegram message trace log with stable legacy location.
+
+    The trace file has historically lived at ``~/.navig/msg_trace.jsonl``.
+    Keep that path stable for compatibility with existing telemetry and tests.
+    """
+    return config_dir() / "msg_trace.jsonl"
 
 
 def genesis_json_path() -> Path:

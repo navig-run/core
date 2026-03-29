@@ -9,6 +9,8 @@ from rich.console import Console
 from rich.table import Table
 
 from navig.spaces import get_default_space, normalize_space_name
+from navig.spaces.briefing import build_spaces_briefing_lines
+from navig.spaces.next_action import get_space_next_action, select_best_next_action
 from navig.spaces.progress import collect_spaces_progress
 
 plans_app = typer.Typer(
@@ -201,17 +203,35 @@ def plans_add(
 
 
 @plans_app.command("briefing")
-def plans_briefing() -> None:
-    rows = collect_spaces_progress()
-    if not rows:
-        typer.echo("No spaces available for briefing.")
-        return
-
-    top = sorted(rows, key=lambda r: r.completion_pct, reverse=True)[:5]
+def plans_briefing(
+    path: str | None = typer.Option(None, "--path", "-p", help="Workspace path"),
+) -> None:
+    cwd = Path(path).resolve() if path else Path.cwd()
     lines = ["Daily spaces briefing:"]
-    for row in top:
-        lines.append(f"- {row.name}: {row.completion_pct:.1f}% ({row.scope})")
+    lines.extend(build_spaces_briefing_lines(cwd=cwd, max_items=5))
     typer.echo("\n".join(lines))
+
+
+@plans_app.command("next")
+def plans_next(
+    space: str | None = typer.Option(None, "--space", help="Specific space to inspect"),
+    path: str | None = typer.Option(None, "--path", "-p", help="Workspace path"),
+) -> None:
+    cwd = Path(path).resolve() if path else Path.cwd()
+    action = (
+        get_space_next_action(normalize_space_name(space), cwd=cwd)
+        if space
+        else select_best_next_action(cwd=cwd)
+    )
+
+    if not action:
+        typer.secho("No spaces or actionable tasks found.", fg=typer.colors.YELLOW)
+        raise typer.Exit(0)
+
+    typer.echo(f"Space: {action.space} ({action.scope})")
+    typer.echo(f"Goal : {action.goal}")
+    typer.echo(f"Done : {action.completion_pct:.1f}%")
+    typer.echo(f"Next : {action.next_task or 'Define next concrete task in CURRENT_PHASE.md'}")
 
 
 @plans_app.command("sync")

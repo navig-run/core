@@ -1,19 +1,150 @@
 """
-Telegram Session Management Commands
+Telegram management commands.
 
-CLI commands for managing Telegram bot sessions.
+Provides:
+- session management
+- status checks
+- direct send/resolve helper for gateway smoke tests
 """
 
 import json
+import logging
 from datetime import datetime
+from typing import Any
 
 import typer
 
 from navig import console_helper as ch
 
+logger = logging.getLogger(__name__)
+
 telegram_app = typer.Typer(help="Telegram bot management")
 sessions_app = typer.Typer(help="Session management")
 telegram_app.add_typer(sessions_app, name="sessions")
+
+
+def _load_telegram_token() -> str:
+    from navig.config import get_config_manager
+
+    cm = get_config_manager()
+    config = cm._load_global_config()
+    token = str(config.get("telegram", {}).get("bot_token") or "").strip()
+    if not token:
+        raise RuntimeError("Telegram bot token missing. Configure with: navig init")
+    return token
+
+
+def _api_call(token: str, method: str, payload: dict[str, Any]) -> dict[str, Any]:
+    import requests
+
+    url = f"https://api.telegram.org/bot{token}/{method}"
+    response = requests.post(url, json=payload, timeout=15)
+    response.raise_for_status()
+    data = response.json()
+    if not data.get("ok"):
+        raise RuntimeError(str(data.get("description") or "Telegram API call failed"))
+    return data
+
+
+def _resolve_chat_id(token: str, target: str) -> int:
+    raw = target.strip()
+    if not raw:
+        raise RuntimeError("Empty target")
+
+    # Direct numeric chat id
+    if raw.lstrip("-").isdigit():
+        return int(raw)
+
+    # Best-effort @username lookup from recent updates
+    if raw.startswith("@"):
+        import requests
+
+        wanted = raw.lstrip("@").lower()
+        url = f"https://api.telegram.org/bot{token}/getUpdates"
+        response = requests.get(url, params={"limit": 100}, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        if not data.get("ok"):
+            raise RuntimeError("Failed to fetch updates for username resolution")
+
+        for item in data.get("result", []):
+            message = item.get("message") or item.get("edited_message") or {}
+            chat = message.get("chat") or {}
+            if str(chat.get("username") or "").lower() == wanted:
+                chat_id = chat.get("id")
+                if isinstance(chat_id, int):
+                    return chat_id
+
+            sender = message.get("from") or {}
+            if str(sender.get("username") or "").lower() == wanted:
+                chat_id = chat.get("id")
+                if isinstance(chat_id, int):
+                    return chat_id
+
+        raise RuntimeError(
+            "Could not resolve @username from recent updates. Ask the user to message the bot first or use numeric chat_id."
+        )
+
+    raise RuntimeError("Target must be numeric chat_id or @username")
+
+
+def telegram_send(
+    *,
+    target: str,
+    message: str,
+    parse_mode: str = "Markdown",
+    resolve_only: bool = False,
+    host: str = "",
+) -> int:
+    """Compatibility send API used by gateway smoke tests.
+
+    Returns resolved chat_id.
+    """
+    del host  # legacy compatibility argument
+    token = _load_telegram_token()
+    chat_id = _resolve_chat_id(token, target)
+
+    if resolve_only:
+        ch.info(f"Resolved target {target} -> {chat_id}")
+        return chat_id
+
+    payload: dict[str, Any] = {
+        "chat_id": chat_id,
+        "text": message,
+    }
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+
+    _api_call(token, "sendMessage", payload)
+    return chat_id
+
+
+@telegram_app.command("send")
+def send_message(
+    target: str = typer.Argument(..., help="Target chat id or @username"),
+    message: str = typer.Option(..., "--message", "-m", help="Message to send"),
+    parse_mode: str = typer.Option("Markdown", "--parse-mode", help="Telegram parse mode"),
+    resolve_only: bool = typer.Option(False, "--resolve-only", help="Resolve target without sending"),
+):
+    """Send a Telegram message using the configured bot token."""
+    try:
+        chat_id = telegram_send(
+            target=target,
+            message=message,
+            parse_mode=parse_mode,
+            resolve_only=resolve_only,
+        )
+    except RuntimeError as exc:
+        ch.error(str(exc))
+        raise typer.Exit(1)
+    except Exception as exc:  # noqa: BLE001
+        ch.error(f"Telegram send failed: {exc}")
+        raise typer.Exit(1)
+
+    if resolve_only:
+        ch.success(f"Resolved: {target} -> {chat_id}")
+    else:
+        ch.success(f"Message sent to {chat_id}")
 
 
 @sessions_app.command("list")
@@ -255,8 +386,8 @@ def telegram_status():
         manager = get_session_manager()
         sessions = manager.list_sessions()
         ch.console.print(f"  Sessions: {len(sessions)} active")
-    except Exception:  # noqa: BLE001
-        pass  # best-effort; failure is non-critical
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Telegram session status unavailable: %s", exc)
 
     ch.console.print()
     ch.info("Start bot with: navig gateway start")

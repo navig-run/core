@@ -149,11 +149,16 @@ class DebugLogger:
     def _setup_logger(self):
         """Configure the rotating file handler and logger."""
         if self.log_path is None:
-            # Determine log path based on context
-            from navig.config import get_config_manager
+            # Use the canonical platform-local log path
+            try:
+                from navig.platform import paths as _paths
 
-            config_manager = get_config_manager()
-            self.log_path = config_manager.base_dir / "debug.log"
+                self.log_path = _paths.debug_log_path()
+            except Exception:
+                # Fallback if platform module unavailable
+                from navig.config import get_config_manager
+
+                self.log_path = get_config_manager().base_dir / "debug.log"
 
         # Ensure parent directory exists
         self.log_path.parent.mkdir(parents=True, exist_ok=True)

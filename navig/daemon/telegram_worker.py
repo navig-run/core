@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import os
 import signal
+import sys
 from pathlib import Path
 
 from navig.config import get_config_manager
@@ -96,6 +97,7 @@ async def _start_gateway_http(gateway: NavigGateway, tg_config: dict, deck_cfg: 
     This configures deck auth and starts aiohttp without entering the
     gateway's own while-loop, since our _run() manages the event loop.
     """
+    import inspect
     import logging
 
     from aiohttp import web
@@ -104,8 +106,16 @@ async def _start_gateway_http(gateway: NavigGateway, tg_config: dict, deck_cfg: 
 
     gateway.running = True
 
-    # Create app with CORS middleware
-    gateway._app = web.Application(middlewares=[gateway._cors_middleware])
+    # Create app with CORS middleware (new-style adapter to avoid aiohttp
+    # old-style middleware deprecation warnings).
+    @web.middleware
+    async def _cors_middleware_adapter(request, handler):
+        result = gateway._cors_middleware(request, handler)
+        if inspect.isawaitable(result):
+            return await result
+        return result
+
+    gateway._app = web.Application(middlewares=[_cors_middleware_adapter])
 
     # Register full gateway routes for parity with standard gateway startup
     from navig.gateway.routes import register_all_routes
@@ -216,7 +226,14 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
     _load_env()
     config = _telegram_config()
     if not config.get("bot_token"):
-        logger.info("TELEGRAM_BOT_TOKEN not configured; Telegram bot will be disabled")
+        logger.warning("TELEGRAM_BOT_TOKEN not configured; Telegram bot will be disabled")
+        print(
+            "[NAVIG] WARNING: TELEGRAM_BOT_TOKEN not set — Telegram bot is disabled.\n"
+            "        Set it in ~/.navig/config.yaml (telegram.bot_token) or the "
+            "TELEGRAM_BOT_TOKEN env var.",
+            file=sys.stderr,
+            flush=True,
+        )
 
     deck_cfg = _deck_config()
     matrix_cfg = _matrix_config()
@@ -274,7 +291,16 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
 
     # Start Telegram channel
     if channel:
-        await channel.start()
+        try:
+            await channel.start()
+        except RuntimeError as e:
+            print(
+                f"[NAVIG] FATAL: Telegram channel failed to start: {e}",
+                file=sys.stderr,
+                flush=True,
+            )
+            logger.error("Telegram channel failed to start: %s", e)
+            sys.exit(1)
 
     logger.info(
         "Telegram bot + Deck running as single unit (bot=%s, deck=%s, port=%d, matrix=%s, mcp=%s)",

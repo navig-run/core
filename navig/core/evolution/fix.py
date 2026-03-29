@@ -5,6 +5,7 @@ from typing import Any
 from navig.ai import ask_ai_with_context
 from navig.console_helper import error, info, success
 from navig.core.evolution.base import BaseEvolver
+from navig.core.evolution.failure_summary import summarize_check_failure
 
 
 class FixEvolver(BaseEvolver):
@@ -14,6 +15,7 @@ class FixEvolver(BaseEvolver):
         super().__init__()
         self.target_file = target_file
         self.check_command = check_command
+        self.last_failure_summary = ""
         self._system_prompt = """
 You are a Code Repair Expert.
 Your task is to FIX or IMPROVE the provided code based on the user's request.
@@ -92,7 +94,15 @@ Constraints:
                 result = subprocess.run(cmd_args, capture_output=True, text=True)
 
                 if result.returncode != 0:
-                    return f"Check Failed:\nStdout: {result.stdout}\nStderr: {result.stderr}"
+                    self.last_failure_summary = summarize_check_failure(
+                        result.stdout,
+                        result.stderr,
+                    )
+                    detail = f"Check Failed:\nStdout: {result.stdout}\nStderr: {result.stderr}"
+                    if self.last_failure_summary:
+                        detail += f"\n\nFailure Summary:\n{self.last_failure_summary}"
+                    return detail
+                self.last_failure_summary = ""
 
             except Exception as e:
                 return f"Validation execution failed: {e}"
