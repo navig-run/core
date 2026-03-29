@@ -1683,6 +1683,11 @@ def init_command(
         "-q",
         help="Suppress installer output (use with --profile)",
     ),
+    tui: bool = typer.Option(
+        False,
+        "--tui",
+        help="Use full-screen TUI onboarding (opt-in). Falls back to CLI when unsupported.",
+    ),
 ) -> None:
     """
     State-aware NAVIG setup gateway.
@@ -1723,24 +1728,82 @@ def init_command(
         run_install(profile=profile, dry_run=dry_run, quiet=quiet)
         return
 
-    # ── Interactive wizard ────────────────────────────────────────────────────
-    from navig.commands.init import _maybe_send_first_run_ping
-    from navig.commands.onboard import run_onboard
+    # ── Interactive onboarding (canonical engine flow + optional TUI) ───────
+    import os
+    import sys
 
-    if reconfigure:
-        run_onboard(flow="manual")
-        return
+    try:
+        from navig.commands.init import _maybe_send_first_run_ping
+    except ImportError:
+        def _maybe_send_first_run_ping() -> None:  # type: ignore[misc]
+            pass
+    from navig.commands.onboard import run_onboard
+    from navig.onboarding.runner import run_engine_onboarding
 
     if settings:
-        run_onboard(flow="manual")
+        from navig.commands.status import show_status
+
+        show_status({"all": True, "plain": False})
         return
 
-    run_onboard(flow="auto")
+    # UI mode selector (additive, backward-compatible):
+    # - default: CLI engine flow (current stable behavior)
+    # - opt-in: --tui or NAVIG_INIT_UI=tui
+    # - force classic: NAVIG_INIT_UI=cli
+    ui_mode = os.getenv("NAVIG_INIT_UI", "auto").strip().lower()
+    use_tui = tui or ui_mode == "tui"
+    if ui_mode == "cli":
+        use_tui = False
+
+    if use_tui:
+        if not _init_tui_capable():
+            from rich.console import Console as _C
+
+            _C().print(
+                "[yellow]TUI unavailable in this terminal; falling back to CLI onboarding.[/yellow]"
+            )
+        else:
+            flow = "manual" if (reconfigure or provider) else "auto"
+            try:
+                run_onboard(flow=flow)
+                try:
+                    _maybe_send_first_run_ping()
+                except Exception:  # noqa: BLE001
+                    pass
+                return
+            except Exception:
+                from rich.console import Console as _C
+
+                _C().print(
+                    "[yellow]TUI launch failed; falling back to CLI onboarding.[/yellow]"
+                )
+
+    jump_to_step = "ai-provider" if provider else None
+    state = run_engine_onboarding(
+        force=reconfigure,
+        jump_to_step=jump_to_step,
+        show_banner=True,
+        respect_skip_env=False,
+    )
+
+    if state is None and not reconfigure and not provider:
+        from rich.console import Console as _C
+
+        _C().print(
+            "[green]NAVIG is already configured.[/green] "
+            "Use [bold]navig init --reconfigure[/bold] to run setup again."
+        )
+        return
 
     try:
         _maybe_send_first_run_ping()
     except Exception:  # noqa: BLE001
         pass
+
+
+def _init_tui_capable() -> bool:
+    """Return True when this terminal can run full-screen init TUI."""
+    return bool(sys.stdin.isatty() and sys.stdout.isatty())
 
 
 @app.command("init-rollback")
@@ -11207,6 +11270,7 @@ _EXTERNAL_CMD_MAP = {
     "finance": ("navig.commands.finance", "finance_app"),
     # ── Work: lifecycle/stage tracker for leads, projects, tasks, etc. ────────
     "work": ("navig.commands.work", "work_app"),
+    "plans": ("navig.commands.plans", "plans_app"),
     # ── Formerly eager-loaded inline — now lazy via this map ─────────────────
     "origin": ("navig.commands.origin", "origin_app"),
     "user": ("navig.commands.user", "user_app"),
