@@ -706,6 +706,15 @@ class CallbackHandler:
             await self._handle_heard_callback(cb_id, cb_data, chat_id, message_id, user_id)
             return
 
+        # ── NL confirm/cancel callbacks (nl_*) — no store needed ──
+        if cb_data.startswith("nl_"):
+            handler = getattr(self.channel, "_handle_nl_callback", None)
+            if handler:
+                await handler(cb_id, cb_data, chat_id, user_id)
+            else:
+                await self._answer(cb_id, "⚠️ Action unavailable")
+            return
+
         # ── Audio deep menu (audio:*) — no store needed ──
         if cb_data.startswith("audio:"):
             try:
@@ -1008,7 +1017,7 @@ class CallbackHandler:
         if cb_data == "prov_back":
             await self._answer(cb_id, "")
             try:
-                await self.channel._handle_providers(chat_id, user_id)
+                await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
             except TypeError:
                 await self.channel._handle_providers(chat_id)
             return
@@ -1027,7 +1036,11 @@ class CallbackHandler:
                 await self._answer(cb_id, "")
                 try:
                     await self.channel._show_provider_model_picker(
-                        chat_id, prov_id_p, page=page_num
+                        chat_id,
+                        prov_id_p,
+                        page=page_num,
+                        selected_tier="s",
+                        message_id=message_id,
                     )
                 except TypeError:
                     try:
@@ -1077,7 +1090,8 @@ class CallbackHandler:
                     await self.channel.send_message(
                         chat_id,
                         f"✅ <b>{prov_label}</b> is now active.\n"
-                        f"Big: <code>{default_big}</code> · Small: <code>{default_small}</code>\n"
+                        f"Big: <code>{default_big}</code> · Small: <code>{default_small}</code> · "
+                        f"Code: <code>{default_big}</code>\n"
                         f"<i>Use /model to verify or adjust individual tiers.</i>",
                         parse_mode="HTML",
                     )
@@ -1113,7 +1127,13 @@ class CallbackHandler:
             await self._answer(cb_id, "")
             prov_id = picker_map[cb_data]
             try:
-                await self.channel._show_provider_model_picker(chat_id, prov_id)
+                await self.channel._show_provider_model_picker(
+                    chat_id,
+                    prov_id,
+                    page=0,
+                    selected_tier="s",
+                    message_id=message_id,
+                )
             except TypeError:
                 await self.channel._show_provider_model_picker(chat_id, prov_id=prov_id)
             return
@@ -1164,18 +1184,65 @@ class CallbackHandler:
         message_id: int,
         user_id: int,
     ) -> None:
-        """Handle model→tier assignment buttons (pm_{prov_id}_{idx}_{tier_code}).
+        """Handle tier-first provider picker callbacks.
 
-        Callback data format: pm_{prov_id}_{model_idx}_{tier_code}
-        tier_code: s=small  b=big  c=coder_big
-        prov_id may contain underscores (e.g. github_models) — split from right.
+        Supported callback formats:
+        - `pmv_{prov_id}_{tier_code}_{page}`: switch viewed tier
+        - `pmp_{prov_id}_{page}_{tier_code}`: paginate while keeping tier
+        - `pms_{prov_id}_{model_idx}_{tier_code}_{page}`: assign selected model to tier
         """
-        rest = cb_data[3:]  # strip "pm_"
-        parts = rest.rsplit("_", 2)
-        if len(parts) != 3:
-            await self._answer(cb_id, "⚠️ Bad callback format")
+        if cb_data.startswith("pmv_"):
+            rest = cb_data[4:]
+            parts = rest.rsplit("_", 2)
+            if len(parts) != 3:
+                await self._answer(cb_id, "⚠️ Bad tier switch callback")
+                return
+            prov_id, tier_code, page_str = parts
+            try:
+                page = int(page_str)
+            except ValueError:
+                page = 0
+            await self._answer(cb_id, "")
+            await self.channel._show_provider_model_picker(
+                chat_id,
+                prov_id,
+                page=page,
+                selected_tier=tier_code,
+                message_id=message_id,
+            )
             return
-        prov_id, model_idx_str, tier_code = parts
+
+        if cb_data.startswith("pmp_"):
+            rest = cb_data[4:]
+            parts = rest.rsplit("_", 2)
+            if len(parts) != 3:
+                await self._answer(cb_id, "⚠️ Bad page callback")
+                return
+            prov_id, page_str, tier_code = parts
+            try:
+                page = int(page_str)
+            except ValueError:
+                page = 0
+            await self._answer(cb_id, "")
+            await self.channel._show_provider_model_picker(
+                chat_id,
+                prov_id,
+                page=page,
+                selected_tier=tier_code,
+                message_id=message_id,
+            )
+            return
+
+        if not cb_data.startswith("pms_"):
+            await self._answer(cb_id, "⚠️ Unknown model action")
+            return
+
+        rest = cb_data[4:]
+        parts = rest.rsplit("_", 3)
+        if len(parts) != 4:
+            await self._answer(cb_id, "⚠️ Bad assignment callback")
+            return
+        prov_id, model_idx_str, tier_code, page_str = parts
 
         tier_map: dict = {
             "s": ("small", "⚡ Small"),
@@ -1192,6 +1259,10 @@ class CallbackHandler:
         except ValueError:
             await self._answer(cb_id, "⚠️ Bad model index")
             return
+        try:
+            page = int(page_str)
+        except ValueError:
+            page = 0
 
         # Resolve model list for this provider (mirrors _show_provider_model_picker logic)
         import asyncio as _asyncio
@@ -1313,11 +1384,12 @@ class CallbackHandler:
             slot.provider = prov_id
             slot.model = model
             await self._answer(cb_id, f"✅ {tier_label} → {model[:40]}")
-            await self.channel.send_message(
+            await self.channel._show_provider_model_picker(
                 chat_id,
-                f"✅ <b>{tier_label}</b> set to <code>{prov_id}:{model}</code>\n"
-                f"<i>Active for this session. Use /model to verify.</i>",
-                parse_mode="HTML",
+                prov_id,
+                page=page,
+                selected_tier=tier_code,
+                message_id=message_id,
             )
         except Exception as e:
             await self._answer(cb_id, f"Error: {e}", show_alert=True)

@@ -777,6 +777,16 @@ class TelegramChannel:
                     metadata["tier_override"] = tier_override
 
                 try:
+                    if await self._handle_nl_pending_reply(
+                        chat_id=chat_id,
+                        user_id=user_id,
+                        text=text,
+                    ):
+                        return
+                except AttributeError:
+                    pass
+
+                try:
                     if await self._handle_intake_reply(
                         chat_id=chat_id,
                         user_id=user_id,
@@ -785,6 +795,17 @@ class TelegramChannel:
                         return
                 except AttributeError:
                     pass
+
+                if not text.strip().startswith("/"):
+                    try:
+                        if await self._handle_natural_language_request(
+                            chat_id=chat_id,
+                            user_id=user_id,
+                            text=text,
+                        ):
+                            return
+                    except AttributeError:
+                        pass
 
                 # ── Slash command routing ──
                 cmd = text.strip().lower()

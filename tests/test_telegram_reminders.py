@@ -13,9 +13,19 @@ def _make_dummy_bot():
     class DummyTelegram(mixin):
         def __init__(self):
             self.messages = []
+            self.edits = []
+            self.api_calls = []
 
         async def send_message(self, chat_id, text, parse_mode="Markdown", **kwargs):
             self.messages.append((chat_id, text, parse_mode, kwargs))
+            return {"ok": True}
+
+        async def _api_call(self, method, data):
+            self.api_calls.append((method, data))
+            return {"ok": True}
+
+        async def edit_message(self, chat_id, message_id, text, parse_mode="Markdown", keyboard=None):
+            self.edits.append((chat_id, message_id, text, parse_mode, keyboard))
             return {"ok": True}
 
     return DummyTelegram()
@@ -285,3 +295,171 @@ async def test_intake_flow_writes_space_docs(monkeypatch, tmp_path):
     assert (health_dir / "CURRENT_PHASE.md").exists()
     assert "Intake" in (health_dir / "VISION.md").read_text(encoding="utf-8")
     assert any("Intake completed" in m[1] for m in bot.messages)
+
+
+@pytest.mark.asyncio
+async def test_natural_language_money_plan_starts_finance_intake(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    handled = await bot._handle_natural_language_request(
+        123,
+        456,
+        "please work for 1 day and make me a money plan",
+    )
+    assert handled is True
+    assert any("Auto-starting in 3s" in m[1] for m in bot.messages)
+    assert any(
+        any(btn.get("callback_data") == "nl_yes" for btn in row)
+        for msg in bot.messages
+        for row in (msg[3].get("keyboard") or [])
+    )
+
+    cancelled = await bot._handle_nl_pending_reply(123, 456, "cancel")
+    assert cancelled is True
+    assert any("action cancelled" in m[1].lower() for m in bot.messages)
+
+
+@pytest.mark.asyncio
+async def test_natural_language_health_improvement_starts_health_intake(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    handled = await bot._handle_natural_language_request(
+        123,
+        456,
+        "i want that you told me how to improve my health currently",
+    )
+    assert handled is True
+    assert any("Auto-starting in 3s" in m[1] for m in bot.messages)
+
+    confirmed = await bot._handle_nl_pending_reply(123, 456, "yes")
+    assert confirmed is True
+    assert any("Intake started for `health`" in m[1] for m in bot.messages)
+
+
+@pytest.mark.asyncio
+async def test_nl_callback_yes_and_cancel(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    await bot._handle_natural_language_request(123, 456, "make me a money plan")
+    await bot._handle_nl_callback("cb1", "nl_yes", 123, 456)
+    assert any("Running now" in call[1].get("text", "") for call in bot.api_calls)
+    assert any("Intake started for `finance`" in m[1] for m in bot.messages)
+
+    await bot._handle_natural_language_request(123, 456, "improve health")
+    await bot._handle_nl_callback("cb2", "nl_cancel", 123, 456)
+    assert any("Cancelled" in call[1].get("text", "") for call in bot.api_calls)
+    assert any("action cancelled" in m[1].lower() for m in bot.messages)
+
+
+@pytest.mark.asyncio
+async def test_providers_header_is_clean_and_shows_current_models(monkeypatch):
+    bot = _make_dummy_bot()
+
+    class _Mode:
+        def __init__(self, provider, model):
+            self.provider = provider
+            self.model = model
+
+    class _Modes:
+        def get_mode(self, name):
+            mapping = {
+                "small_talk": _Mode("nvidia", "deepseek-ai/deepseek-r1"),
+                "big_tasks": _Mode("nvidia", "meta/llama-3.3-70b-instruct"),
+                "coding": _Mode("nvidia", "meta/llama-3.3-70b-instruct"),
+            }
+            return mapping.get(name)
+
+    class _Router:
+        modes = _Modes()
+
+    class _Manifest:
+        def __init__(self, pid, name):
+            self.id = pid
+            self.display_name = name
+            self.emoji = "🧩"
+            self.tier = "cloud"
+            self.local_probe = None
+            self.requires_key = False
+
+    class _Verify:
+        key_detected = True
+        local_probe_ok = True
+
+    async def _probe():
+        return False, "127.0.0.1:11435"
+
+    bot._probe_bridge_grid = _probe
+    monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
+    monkeypatch.setattr(
+        "navig.providers.registry.list_enabled_providers",
+        lambda: [_Manifest("nvidia", "NVIDIA NIM")],
+    )
+    monkeypatch.setattr("navig.providers.verifier.verify_provider", lambda _m: _Verify())
+
+    await bot._handle_providers(123, 456)
+    text = bot.messages[-1][1]
+    assert "VS Code" not in text
+    assert "Current model routing" in text
+    assert "💻 Code:" in text
+
+
+@pytest.mark.asyncio
+async def test_provider_model_picker_is_tier_first_and_edit_in_place(monkeypatch):
+    bot = _make_dummy_bot()
+
+    class _Manifest:
+        def __init__(self):
+            self.emoji = "🟩"
+            self.display_name = "NVIDIA NIM"
+            self.models = [
+                "meta/llama-3.3-70b-instruct",
+                "deepseek-ai/deepseek-r1",
+                "qwen/qwen2.5-coder",
+            ]
+
+    class _Slot:
+        def __init__(self, provider, model):
+            self.provider = provider
+            self.model = model
+
+    class _Cfg:
+        def slot_for_tier(self, tier):
+            mapping = {
+                "small": _Slot("nvidia", "deepseek-ai/deepseek-r1"),
+                "big": _Slot("nvidia", "meta/llama-3.3-70b-instruct"),
+                "coder_big": _Slot("nvidia", "meta/llama-3.3-70b-instruct"),
+            }
+            return mapping[tier]
+
+    class _Router:
+        is_active = True
+        cfg = _Cfg()
+
+    class _Client:
+        model_router = _Router()
+
+    monkeypatch.setattr("navig.providers.registry._INDEX", {"nvidia": _Manifest()})
+    monkeypatch.setattr("navig.agent.ai_client.get_ai_client", lambda: _Client())
+
+    await bot._show_provider_model_picker(123, "nvidia", page=0, selected_tier="s", message_id=99)
+    assert len(bot.edits) == 1
+    edit = bot.edits[-1]
+    assert "page 1/1" in edit[2]
+    first_row = edit[4][0]
+    assert first_row[0]["callback_data"].startswith("pmv_nvidia_s")
+    assert first_row[1]["callback_data"].startswith("pmv_nvidia_b")
+    assert first_row[2]["callback_data"].startswith("pmv_nvidia_c")
+    model_rows = [row for row in edit[4][1:] if row and row[0]["callback_data"].startswith("pms_nvidia_")]
+    assert model_rows, "Expected one-button model rows"

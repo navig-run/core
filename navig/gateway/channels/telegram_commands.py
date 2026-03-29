@@ -84,8 +84,8 @@ except ImportError:
 def _format_bridge_status(online: bool, url: str) -> str:
     """Return a single Markdown line describing Bridge Grid status (DUP-5 fix)."""
     if online:
-        return f"- *Bridge Grid* `{url}` - - primary"
-    return f"- *Bridge Grid* `{url}` - offline"
+        return f"⚡ *Bridge:* online at `{url}`"
+    return f"⚡ *Bridge:* offline (`{url}`)"
 
 
 # -- Slash-command registry ----------------------------------------------------
@@ -1441,8 +1441,13 @@ class TelegramCommandsMixin:
         except Exception as e:
             await self.send_message(chat_id, f"- Could not read routing info: {e}")
 
-    async def _handle_providers(self, chat_id: int) -> None:
-        """AI Provider Hub - Bridge Grid probe, live registry status (/providers)."""
+    async def _handle_providers(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        message_id: int | None = None,
+    ) -> None:
+        """AI Provider Hub - bridge status, active provider, and available providers (/providers)."""
         bridge_online, bridge_url = await self._probe_bridge_grid()
 
         active_prov = ""
@@ -1468,17 +1473,42 @@ class TelegramCommandsMixin:
         except Exception:
             providers = []
 
-        lines = ["- *Bridge Grid - AI Provider Hub*\n"]
+        lines = ["🎛️ *AI Providers*", ""]
         lines.append(_format_bridge_status(bridge_online, bridge_url))
         if bridge_online:
-            lines.append("- _Non-Bridge providers are fallback only._")
+            lines.append("- Bridge is active; other providers remain available as fallback.")
         else:
-            lines.append("- _Connect VS Code + navig\\-bridge to activate._")
+            lines.append("- Bridge is optional; configure any compatible bridge endpoint to enable it.")
+
+        try:
+            from navig.llm_router import get_llm_router
+
+            llm_router = get_llm_router()
+            if llm_router:
+                small = llm_router.modes.get_mode("small_talk")
+                big = llm_router.modes.get_mode("big_tasks")
+                code = llm_router.modes.get_mode("coding")
+
+                def _slot(mode_obj):
+                    if not mode_obj:
+                        return "—"
+                    model = getattr(mode_obj, "model", "") or ""
+                    provider = getattr(mode_obj, "provider", "") or ""
+                    label = model.split("/")[-1] if model else "-"
+                    return f"{provider}:{label}" if provider else label
+
+                lines.append("")
+                lines.append("*Current model routing:*")
+                lines.append(f"⚡ Small: `{_slot(small)}`")
+                lines.append(f"🧠 Big: `{_slot(big)}`")
+                lines.append(f"💻 Code: `{_slot(code)}`")
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
 
         keyboard_rows: list = [
             [
                 {
-                    "text": f"- Bridge Grid - {'online -' if bridge_online else 'offline'}",
+                    "text": f"⚡ Bridge — {'online' if bridge_online else 'offline'}",
                     "callback_data": "prov_bridge",
                 }
             ],
@@ -1521,12 +1551,30 @@ class TelegramCommandsMixin:
         )
         keyboard_rows.append([{"text": "✖ Close", "callback_data": "prov_close"}])
 
-        await self.send_message(chat_id, "\n".join(lines), keyboard=keyboard_rows)
+        text_payload = "\n".join(lines)
+        if message_id:
+            await self.edit_message(
+                chat_id,
+                message_id,
+                text_payload,
+                parse_mode="Markdown",
+                keyboard=keyboard_rows,
+            )
+            return
+
+        await self.send_message(chat_id, text_payload, keyboard=keyboard_rows)
 
     @error_handled
     @typing_context
-    async def _show_provider_model_picker(self, chat_id: int, prov_id: str) -> None:
-        """Send a model-tier assignment picker for the given provider."""
+    async def _show_provider_model_picker(
+        self,
+        chat_id: int,
+        prov_id: str,
+        page: int = 0,
+        selected_tier: str = "s",
+        message_id: int | None = None,
+    ) -> None:
+        """Show tier-first model picker for a provider with edit-in-place pagination."""
         emoji, name, models = "🤖", prov_id, []
         try:
             from navig.providers.registry import _INDEX as PROV_INDEX
@@ -1555,8 +1603,6 @@ class TelegramCommandsMixin:
                 pass  # best-effort; failure is non-critical
             if not models:
                 models = ["qwen2.5:7b", "qwen2.5:3b", "phi3.5", "llama3.2"]
-
-        models = models[:8]
 
         if not models:
             await self.send_message(
@@ -1591,19 +1637,32 @@ class TelegramCommandsMixin:
                 return f"{tier_emoji[tier]} {tier_label[tier]}: <code>{short_val}</code>"
             return f"{tier_emoji[tier]} {tier_label[tier]}: —"
 
+        selected_tier = selected_tier if selected_tier in {"s", "b", "c"} else "s"
+        tier_code_to_name = {"s": "small", "b": "big", "c": "coder_big"}
+        tier_name = tier_code_to_name[selected_tier]
+
+        page_size = 8
+        total_pages = max(1, (len(models) + page_size - 1) // page_size)
+        page = min(max(0, page), total_pages - 1)
+        start = page * page_size
+        end = start + page_size
+        page_models = models[start:end]
+
         lines = [
-            f"<b>{emoji} {name}</b> — assign model to tier",
+            f"<b>{emoji} {name}</b> — assign model to tier · page {page + 1}/{total_pages}",
             "",
             _tier_line("small"),
             _tier_line("big"),
             _tier_line("coder_big"),
             "",
-            "Tap ⚡ / 🧠 / 💻 next to a model to assign it to that tier:",
+            f"Viewing: {tier_emoji[tier_name]} {tier_label[tier_name]}",
+            "Tap a model below to assign it.",
         ]
-        for i, m in enumerate(models):
-            # Show full model name without truncation in the list
+        for offset, m in enumerate(page_models):
+            idx = start + offset
             short_m = m.split("/")[-1].split(":")[-1]
-            lines.append(f"  {i}. {short_m}")
+            marker = "✅" if current[tier_name] == m else "•"
+            lines.append(f"{marker} {idx}. {short_m}")
 
         if not router_active:
             lines.append("")
@@ -1612,25 +1671,64 @@ class TelegramCommandsMixin:
                 "<code>routing: enabled: true</code> in config.yaml to save assignments.</i>"
             )
 
-        keyboard = []
-        for i, m in enumerate(models):
-            # Button label: tier emoji + model short name (up to 18 chars)
-            short = m.split("/")[-1].split(":")[-1][:18]
-            # Mark active assignment with checkmark
-            s_mark = "✅" if current["small"] == m else "⚡"
-            b_mark = "✅" if current["big"] == m else "🧠"
-            c_mark = "✅" if current["coder_big"] == m else "💻"
+        keyboard: list[list[dict[str, str]]] = []
+        keyboard.append(
+            [
+                {
+                    "text": ("✅ " if selected_tier == "s" else "") + "⚡ Small",
+                    "callback_data": f"pmv_{prov_id}_s_{page}",
+                },
+                {
+                    "text": ("✅ " if selected_tier == "b" else "") + "🧠 Big",
+                    "callback_data": f"pmv_{prov_id}_b_{page}",
+                },
+                {
+                    "text": ("✅ " if selected_tier == "c" else "") + "💻 Code",
+                    "callback_data": f"pmv_{prov_id}_c_{page}",
+                },
+            ]
+        )
+        for offset, m in enumerate(page_models):
+            idx = start + offset
+            short = m.split("/")[-1].split(":")[-1]
+            label = short if len(short) <= 42 else short[:39] + "..."
+            marker = "✅" if current[tier_name] == m else "•"
             keyboard.append(
                 [
-                    {"text": f"{s_mark} {short}", "callback_data": f"pm_{prov_id}_{i}_s"},
-                    {"text": f"{b_mark} {short}", "callback_data": f"pm_{prov_id}_{i}_b"},
-                    {"text": f"{c_mark} {short}", "callback_data": f"pm_{prov_id}_{i}_c"},
+                    {
+                        "text": f"{marker} {label}",
+                        "callback_data": f"pms_{prov_id}_{idx}_{selected_tier}_{page}",
+                    }
                 ]
             )
-        keyboard.append([{"text": "← Providers", "callback_data": "prov_back"}])
-        await self.send_message(
-            chat_id, "\n".join(lines), keyboard=keyboard, parse_mode="HTML"
+
+        nav_row: list[dict[str, str]] = []
+        if page > 0:
+            nav_row.append({"text": "◀ Prev", "callback_data": f"pmp_{prov_id}_{page-1}_{selected_tier}"})
+        if page < total_pages - 1:
+            nav_row.append({"text": "Next ▶", "callback_data": f"pmp_{prov_id}_{page+1}_{selected_tier}"})
+        if nav_row:
+            keyboard.append(nav_row)
+
+        keyboard.append(
+            [
+                {"text": f"🚀 Activate {name}", "callback_data": f"prov_activate_{prov_id}"},
+                {"text": "← Providers", "callback_data": "prov_back"},
+            ]
         )
+
+        text_payload = "\n".join(lines)
+        if message_id:
+            await self.edit_message(
+                chat_id,
+                message_id,
+                text_payload,
+                parse_mode="HTML",
+                keyboard=keyboard,
+            )
+            return
+
+        await self.send_message(chat_id, text_payload, keyboard=keyboard, parse_mode="HTML")
 
     async def _handle_providers_and_models(
         self, chat_id: int, user_id: int = 0, is_group: bool = False

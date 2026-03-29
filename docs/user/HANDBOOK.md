@@ -8162,6 +8162,19 @@ The intake writes structured updates into the target space:
 
 Cancel anytime with `/intake cancel` (or `/intake stop`).
 
+Natural-language routing is also supported for common intents:
+
+- "please work for 1 day and make me a money plan" → starts intake in `finance`
+- "tell me how to improve my health currently" → starts intake in `health`
+
+Safety confirmation is enabled for NL routing:
+
+- NAVIG sends: "Detected `<intent>` for `<space>`. Auto-starting in 3s."
+- Reply `cancel` to stop, or `yes` to run immediately.
+- One-tap buttons are also shown: `✅ Yes now` and `🛑 Cancel`.
+
+You can still use explicit commands at any time for deterministic control.
+
 ### CLI Continuation Controls
 
 CLI parity is available via `navig agent continuation`:
@@ -8184,6 +8197,15 @@ Use one command to begin work in a space with immediate direction:
 
 - `navig start <space>` — switches to the space and prints top 3 next actions.
 - `navig space switch <space>` now also prints top 3 next actions automatically.
+
+### Telegram Provider Picker UX
+
+Provider/model assignment in Telegram is optimized for readability and low friction:
+
+- `/providers` now shows cleaner bridge status wording (bridge is optional and not tied to VS Code only).
+- Current routing is visible at a glance: `Small`, `Big`, and `Code` model selections.
+- Model assignment is tier-first: pick `⚡ Small`, `🧠 Big`, or `💻 Code`, then choose from a readable model list.
+- `Next`/`Prev` and tier switches update the same message in place (no message spam).
 
 Kickoff actions are synthesized from:
 
