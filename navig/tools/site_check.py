@@ -118,6 +118,7 @@ async def _get_cert_expiry(hostname: str) -> str | None:
 
     def _sync_check() -> str | None:
         ctx = ssl.create_default_context()
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         try:
             with ctx.wrap_socket(
                 __import__("socket").socket(), server_hostname=hostname
