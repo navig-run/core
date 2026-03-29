@@ -2956,41 +2956,6 @@ class TelegramChannel:
         text = mode_voice.get(mode_arg, f"{emoji} mode shifted.")
         await self.send_message(chat_id, text, parse_mode=None)
 
-    # ── CLI-backed slash commands ──────────────────────────────────────
-    # Maps /command → navig CLI string. Use {args} placeholder for user args.
-    _SLASH_CLI_MAP = {
-        # monitoring
-        "/disk": "host monitor show --disk",
-        "/memory": 'run "free -h"',
-        "/cpu": 'run "uptime"',
-        "/uptime": 'run "uptime -p"',
-        "/services": 'run "systemctl list-units --type=service --state=running --no-pager | head -40"',
-        "/ports": 'run "ss -tlnp | head -30"',
-        "/top": 'run "top -bn1 | head -20"',
-        "/df": 'run "df -h"',
-        "/cron": "run \"crontab -l 2>/dev/null || echo 'no crontab'\"",
-        # docker
-        "/docker": "docker ps",
-        "/logs": "docker logs {args} -n 50",
-        # /restart handled by explicit _handle_restart — removed from CLI map
-        # database
-        "/db": "db list",
-        "/tables": "db tables {args}",
-        # hosts / tools
-        "/hosts": "host list",
-        "/use": "host use {args}",
-        "/run": 'run "{args}"',
-        "/backup": "backup show",
-        # utilities
-        "/ip": 'run "curl -s ifconfig.me"',
-        "/time": 'run "date"',
-        "/weather": "run \"curl -s 'wttr.in/?format=3'\"",
-        "/dns": 'run "dig +short {args}"',
-        "/ssl": "run \"echo | openssl s_client -connect {args}:443 -servername {args} 2>/dev/null | openssl x509 -noout -dates 2>/dev/null || echo 'no cert found'\"",
-        "/whois": 'run "whois {args} | head -30"',
-        "/netstat": 'run "ss -s"',
-    }
-
     def _match_cli_command(self, text: str) -> str | None:
         """Match slash command to a navig CLI string via the registry."""
         from .telegram_commands import TelegramCommandsMixin

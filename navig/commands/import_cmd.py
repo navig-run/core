@@ -74,15 +74,19 @@ def list_sources() -> None:
 
 
 def _run_import(
-    source: str = typer.Option("all", "--source", help="Source name or 'all'"),
-    path: str | None = typer.Option(None, "--path", help="Optional custom source path"),
-    output: str | None = typer.Option(None, "--output", help="Optional JSON output file"),
+    source: str = typer.Option("all", "--source", help="Import source name or 'all'"),
+    path: str | None = typer.Option(
+        None,
+        "--path",
+        help="Explicit source path (required to exist; not allowed with --source all)",
+    ),
+    output: str | None = typer.Option(None, "--output", help="Write normalized JSON output to file"),
     persist_bookmarks: bool = typer.Option(
         True,
         "--persist-bookmarks/--no-persist-bookmarks",
-        help="Persist imported bookmark items into navig links storage",
+        help="Persist imported bookmark items into NAVIG links storage",
     ),
-    json_output: bool = typer.Option(False, "--json", help="Print JSON output"),
+    json_output: bool = typer.Option(False, "--json", help="Print normalized JSON output to stdout"),
 ) -> None:
     """Run universal import for one source or all sources."""
     engine = UniversalImporter()
@@ -156,15 +160,19 @@ def _run_import(
 @import_app.callback(invoke_without_command=True)
 def run_import(
     ctx: typer.Context,
-    source: str = typer.Option("all", "--source", help="Source name or 'all'"),
-    path: str | None = typer.Option(None, "--path", help="Optional custom source path"),
-    output: str | None = typer.Option(None, "--output", help="Optional JSON output file"),
+    source: str = typer.Option("all", "--source", help="Import source name or 'all'"),
+    path: str | None = typer.Option(
+        None,
+        "--path",
+        help="Explicit source path (required to exist; not allowed with --source all)",
+    ),
+    output: str | None = typer.Option(None, "--output", help="Write normalized JSON output to file"),
     persist_bookmarks: bool = typer.Option(
         True,
         "--persist-bookmarks/--no-persist-bookmarks",
-        help="Persist imported bookmark items into navig links storage",
+        help="Persist imported bookmark items into NAVIG links storage",
     ),
-    json_output: bool = typer.Option(False, "--json", help="Print JSON output"),
+    json_output: bool = typer.Option(False, "--json", help="Print normalized JSON output to stdout"),
 ) -> None:
     if ctx.invoked_subcommand is not None:
         return

@@ -31,3 +31,29 @@ def test_telegram_contacts_from_zip(tmp_path) -> None:
     items = TelegramImporter().parse(str(z))
     assert len(items) == 2
     assert items[1].value == "+200"
+
+
+def test_telegram_contacts_from_nested_contacts_list(tmp_path) -> None:
+    d = tmp_path / "export"
+    d.mkdir()
+    payload = {
+        "contacts": {
+            "list": [
+                {"first_name": "Ada", "last_name": "L", "phone_number": "+100"},
+            ]
+        }
+    }
+    (d / "contacts.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    items = TelegramImporter().parse(str(d))
+    assert len(items) == 1
+    assert items[0].label == "Ada L"
+
+
+def test_telegram_contacts_zip_case_insensitive_member(tmp_path) -> None:
+    z = tmp_path / "export.zip"
+    with ZipFile(z, "w") as archive:
+        archive.writestr("Data/Contacts.JSON", json.dumps(_payload()))
+
+    items = TelegramImporter().parse(str(z))
+    assert len(items) == 2

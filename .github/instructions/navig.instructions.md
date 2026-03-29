@@ -630,7 +630,15 @@ echo env('APP_ENV');
 
 # Enforcement Summary
 
+
+- `navig gateway test ... --strict` returns non-zero when any tested channel fails (CI-friendly).
+- `navig gateway test ... --json` prints machine-readable results for automation.
+- Default `navig gateway test ...` remains human-friendly and compatibility-first.
+
 ## BEFORE Remote Operations
+- Unknown `navig import --source` values are rejected with explicit errors.
+- `--path` must point to an existing file/directory.
+- `--path` cannot be used with `--source all`.
 1. ✅ Verify host context with `navig host show` or `navig status`
 2. ✅ Test connectivity with `navig host test` if uncertain
 3. ✅ Use `--b64` for complex commands with special characters

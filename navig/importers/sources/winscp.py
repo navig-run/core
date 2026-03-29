@@ -4,6 +4,7 @@ import configparser
 import logging
 import re
 from pathlib import Path
+from urllib.parse import unquote
 
 from ..base import BaseImporter
 from ..models import ImportedItem
@@ -37,7 +38,9 @@ class WinSCPImporter(BaseImporter):
         try:
             parser = configparser.ConfigParser()
             parser.optionxform = str
-            parser.read(path, encoding="utf-8")
+            loaded = parser.read(path, encoding="utf-8-sig")
+            if not loaded:
+                parser.read(path, encoding="utf-8")
             items: list[ImportedItem] = []
 
             for section in parser.sections():
@@ -48,10 +51,10 @@ class WinSCPImporter(BaseImporter):
                 host = parser.get(section, "HostName", fallback="")
                 if not host:
                     continue
-                port = parser.get(section, "PortNumber", fallback="22")
+                port = self._normalize_port(parser.get(section, "PortNumber", fallback="22"))
                 username = parser.get(section, "UserName", fallback="")
                 protocol = parser.get(section, "Protocol", fallback=parser.get(section, "FSProtocol", fallback=""))
-                name = parser.get(section, "Name", fallback=section.split("\\")[-1])
+                name = unquote(parser.get(section, "Name", fallback=section.split("\\")[-1]))
 
                 items.append(
                     ImportedItem(
@@ -98,12 +101,14 @@ class WinSCPImporter(BaseImporter):
                     continue
 
                 key = key_m.group("key")
-                name = key.split("Sessions\\")[-1].replace("%20", " ")
+                name = unquote(key.split("Sessions\\")[-1])
                 host = host_m.group("host")
                 user_m = user_re.search(block)
                 proto_m = proto_re.search(block)
                 port_m = port_re.search(block)
-                port = str(int(port_m.group("port"), 16)) if port_m else "22"
+                port = self._normalize_port(
+                    str(int(port_m.group("port"), 16)) if port_m else "22"
+                )
 
                 items.append(
                     ImportedItem(
@@ -123,3 +128,13 @@ class WinSCPImporter(BaseImporter):
         except Exception as exc:
             logger.warning("[%s] %s", self.SOURCE_NAME, exc)
             return []
+
+    @staticmethod
+    def _normalize_port(value: str) -> str:
+        try:
+            port = int(str(value).strip())
+            if port <= 0:
+                return "22"
+            return str(port)
+        except (TypeError, ValueError):
+            return "22"

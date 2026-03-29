@@ -22,6 +22,7 @@ from rich.table import Table
 
 from navig import console_helper as ch
 from navig.config import get_config_manager
+from navig.spaces.kickoff import build_space_kickoff
 
 # ── Typer app ─────────────────────────────────────────────────────────────────
 
@@ -195,6 +196,15 @@ def space_switch(
 
     _set_active_space(name)
     ch.success(f"Active space: {name}", details=str(space_path))
+
+    kickoff = build_space_kickoff(name, space_path, cwd=Path.cwd(), max_items=3)
+    if kickoff.actions:
+        ch.info(f"Goal: {kickoff.goal}")
+        ch.info("Top next actions:")
+        for index, action in enumerate(kickoff.actions, start=1):
+            ch.info(f"{index}. {action}")
+    else:
+        ch.info("No next actions found yet. Add tasks in CURRENT_PHASE.md or .navig/plans/*.md.")
 
 
 @space_app.command("delete")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from zipfile import ZipFile
 
 from .base import BaseImporter
 from .models import ImportedItem
@@ -35,6 +36,14 @@ class UniversalImporter:
 
     def infer_source(self, path: str) -> str | None:
         probe = path.lower()
+        candidate = Path(path)
+
+        if candidate.exists() and candidate.is_dir():
+            if (candidate / "contacts.json").exists():
+                return "telegram"
+            if (candidate / "places.sqlite").exists():
+                return "firefox"
+
         if probe.endswith("winscp.ini") or probe.endswith(".reg"):
             return "winscp"
         if probe.endswith("contacts.json"):
@@ -43,6 +52,27 @@ class UniversalImporter:
             return "firefox"
         if probe.endswith("bookmarks.plist"):
             return "safari"
+        if probe.endswith(".zip") and candidate.exists() and candidate.is_file():
+            try:
+                with ZipFile(candidate) as archive:
+                    members = [name.lower() for name in archive.namelist()]
+                    if any(name.endswith("contacts.json") for name in members):
+                        return "telegram"
+            except Exception:
+                pass
+
+        if candidate.exists() and candidate.is_file() and candidate.suffix.lower() == ".json":
+            try:
+                payload = json.loads(candidate.read_text(encoding="utf-8"))
+                if isinstance(payload, dict) and isinstance(payload.get("roots"), dict):
+                    roots = payload.get("roots", {})
+                    if any(k in roots for k in ("bookmark_bar", "other", "synced")):
+                        if "microsoft" in probe or "edge" in probe:
+                            return "edge"
+                        return "chrome"
+            except Exception:
+                pass
+
         if probe.endswith("bookmarks"):
             if "microsoft" in probe or "edge" in probe:
                 return "edge"

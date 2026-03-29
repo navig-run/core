@@ -314,6 +314,7 @@ HELP_REGISTRY: dict[str, dict[str, Any]] = {
             "stop": "stop the gateway server",
             "status": "show gateway status",
             "session": "manage sessions",
+            "test": "run channel smoke-tests (use --strict/--json for automation)",
         },
     },
     "heartbeat": {
@@ -524,6 +525,7 @@ HELP_REGISTRY: dict[str, dict[str, Any]] = {
         "desc": "Telegram bot management",
         "commands": {
             "status": "show bot status",
+            "send": "send message to chat_id/@username",
             "sessions list": "list active sessions",
             "sessions show": "show session details",
             "sessions clear": "clear session history",
@@ -549,7 +551,7 @@ HELP_REGISTRY: dict[str, dict[str, Any]] = {
             "edit": "edit bookmark metadata",
             "tag": "add a tag to a bookmark",
             "delete": "delete a bookmark",
-            "import": "bulk import from JSON file",
+            "import": "import bookmarks from JSON or native browser files",
         },
     },
     "import": {
@@ -557,8 +559,9 @@ HELP_REGISTRY: dict[str, dict[str, Any]] = {
         "commands": {
             "--source all": "import every supported source",
             "--source <name>": "import one source",
-            "--path <file>": "override source default path",
+            "--path <file>": "use explicit existing path (not with --source all)",
             "--output <file>": "write normalized JSON output",
+            "--json": "print normalized JSON output to stdout",
             "list-sources": "show available import sources",
         },
     },

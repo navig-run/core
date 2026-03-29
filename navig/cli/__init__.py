@@ -8473,29 +8473,29 @@ def gateway_session(
 def gateway_test(
     channel: str = typer.Argument(
         "all",
-        help="Channel to test: all | telegram | matrix | discord | email",
+        help="Channel to test (all|telegram|matrix|discord|email)",
     ),
     target: str = typer.Option(
         "",
         "--target",
         "-t",
-        help="Recipient: @username / chat_id for Telegram; room for Matrix; address for email",
+        help="Target recipient (@username|chat_id for Telegram, room for Matrix, address for email)",
     ),
     message: str = typer.Option(
         "🟢 NAVIG gateway smoke-test — all systems go",
         "--message",
         "-m",
-        help="Message body to send",
+        help="Message text to send during smoke test",
     ),
     strict: bool = typer.Option(
         False,
         "--strict",
-        help="Return non-zero exit code when any tested channel fails",
+        help="Exit with code 1 when any tested channel fails",
     ),
     json_output: bool = typer.Option(
         False,
         "--json",
-        help="Print machine-readable JSON results",
+        help="Emit machine-readable JSON summary",
     ),
 ) -> None:
     """Send a smoke-test message through one or all configured channels."""
@@ -11321,6 +11321,7 @@ _EXTERNAL_CMD_MAP = {
     "node": ("navig.commands.node", "node_app"),
     "boot": ("navig.commands.boot_cmd", "boot_app"),
     "space": ("navig.commands.space", "space_app"),
+    "start": ("navig.commands.start", "app"),
     "blueprint": ("navig.commands.blueprint", "blueprint_app"),
     "deck": ("navig.commands.deck", "deck_app"),
     "portable": ("navig.commands.portable", "portable_app"),

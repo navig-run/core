@@ -8148,6 +8148,21 @@ Top-level alias is also available:
 
 - `navig continuation start|continue|pause|skip|status`
 
+### Space Kickoff (Simplified UX)
+
+Use one command to begin work in a space with immediate direction:
+
+- `navig start <space>` — switches to the space and prints top 3 next actions.
+- `navig space switch <space>` now also prints top 3 next actions automatically.
+
+Kickoff actions are synthesized from:
+
+- `<space>/CURRENT_PHASE.md`
+- `.navig/plans/DEV_PLAN.md`
+- `.navig/plans/ROADMAP.md`
+
+This keeps startup flow minimal: pick a space → get next actions instantly.
+
 ---
 
 **Remember:** NAVIG is the secure, unified way to interact with remote servers. Direct SSH/database connections bypass security, tunnel management, and error handling. Always use NAVIG commands.
@@ -8360,10 +8375,16 @@ Import external data (servers, contacts, bookmarks) into a normalized schema.
 | `navig import --output results.json` | Write full normalized output to JSON |
 | `navig import list-sources` | List available importers |
 
+Validation behavior:
+
+- Unknown `--source` values return an explicit error.
+- `--path` must exist; missing paths return an explicit error.
+- `--path` cannot be combined with `--source all`.
+
 Built-in sources:
 
 - `winscp` → `WinSCP.ini` / `.reg` server imports
-- `telegram` → Telegram Desktop `contacts.json` or export zip
+- `telegram` → Telegram Desktop `contacts.json` or export ZIP
 - `chrome` / `edge` / `firefox` / `safari` → browser bookmarks
 
 Bookmark imports are persisted into the existing links database by default.
@@ -8393,6 +8414,9 @@ Telegram management commands now include direct message sending and target resol
 | `navig telegram send <chat_id|@username> --message "..."` | Send message using configured bot token |
 | `navig telegram send @username --message "..." --resolve-only` | Resolve target without sending |
 | `navig gateway test telegram --target <chat_id|@username>` | Run Telegram smoke-test through gateway test flow |
+| `navig gateway test telegram --target <chat_id|@username> --strict` | Fail with non-zero exit code if channel test fails |
+| `navig gateway test telegram --target <chat_id|@username> --json` | Emit machine-readable JSON summary for automation |
+| `navig contacts import <path>` | Import Telegram contacts from `contacts.json` or export ZIP |
 
 **Examples:**
 ```bash
@@ -8407,3 +8431,5 @@ Notes:
 
 - `@username` resolution depends on recent updates seen by the bot.
 - If username resolution fails, use numeric `chat_id` or have the user message the bot first.
+- `navig gateway test telegram` requires `--target`.
+- `navig gateway test all` tests Telegram and Matrix in one run.

@@ -327,29 +327,29 @@ def gateway_status(
 def gateway_test(
     channel: str = typer.Argument(
         "all",
-        help="Channel to test: all | telegram | matrix | discord | email",
+        help="Channel to test (all|telegram|matrix|discord|email)",
     ),
     target: str = typer.Option(
         "",
         "--target",
         "-t",
-        help="Recipient: @username / chat_id for Telegram; room for Matrix; address for email",
+        help="Target recipient (@username|chat_id for Telegram, room for Matrix, address for email)",
     ),
     message: str = typer.Option(
         "🟢 NAVIG gateway smoke-test — all systems go",
         "--message",
         "-m",
-        help="Message body to send",
+        help="Message text to send during smoke test",
     ),
     strict: bool = typer.Option(
         False,
         "--strict",
-        help="Return non-zero exit code when any tested channel fails",
+        help="Exit with code 1 when any tested channel fails",
     ),
     json_output: bool = typer.Option(
         False,
         "--json",
-        help="Print machine-readable JSON results",
+        help="Emit machine-readable JSON summary",
     ),
 ) -> None:
     """Send a smoke-test message through one or all configured channels.
@@ -367,11 +367,13 @@ def gateway_test(
     results: list[dict] = []
 
     for ch_name in channels_to_test:
-        ch.console.print(f"\n[bold]Testing [cyan]{ch_name}[/cyan]…[/bold]")
+        if not json_output:
+            ch.console.print(f"\n[bold]Testing [cyan]{ch_name}[/cyan]…[/bold]")
 
         if ch_name == "telegram":
             if not target:
-                ch.warning("  --target required for Telegram (e.g. --target @username)")
+                if not json_output:
+                    ch.warning("  --target required for Telegram (e.g. --target @username)")
                 results.append({"channel": "telegram", "ok": False, "reason": "no target"})
                 continue
             from navig.commands.telegram import telegram_send as _tg_send
@@ -386,7 +388,8 @@ def gateway_test(
                 )
                 results.append({"channel": "telegram", "ok": True})
             except Exception as exc:
-                ch.warning(f"  Telegram test failed: {exc}")
+                if not json_output:
+                    ch.warning(f"  Telegram test failed: {exc}")
                 results.append({"channel": "telegram", "ok": False, "reason": str(exc)})
 
         elif ch_name == "matrix":
@@ -396,21 +399,25 @@ def gateway_test(
                 _mx_test(message=message)
                 results.append({"channel": "matrix", "ok": True})
             except Exception as exc:
-                ch.warning(f"  Matrix test failed: {exc}")
+                if not json_output:
+                    ch.warning(f"  Matrix test failed: {exc}")
                 results.append({"channel": "matrix", "ok": False, "reason": str(exc)})
 
         elif ch_name == "discord":
-            ch.dim("  Discord test not yet implemented — verify via Discord Dev Portal.")
+            if not json_output:
+                ch.dim("  Discord test not yet implemented — verify via Discord Dev Portal.")
             results.append({"channel": "discord", "ok": None, "reason": "not implemented"})
 
         elif ch_name == "email":
-            ch.dim("  Email test: run navig email send --to example@domain.com")
+            if not json_output:
+                ch.dim("  Email test: run navig email send --to example@domain.com")
             results.append({"channel": "email", "ok": None, "reason": "not implemented"})
 
         else:
-            ch.warning(
-                f"  Unknown channel '{ch_name}'. Choices: telegram | matrix | discord | email | all"
-            )
+            if not json_output:
+                ch.warning(
+                    f"  Unknown channel '{ch_name}'. Choices: telegram | matrix | discord | email | all"
+                )
             results.append({"channel": ch_name, "ok": False, "reason": "unknown"})
 
     failed = [r for r in results if r.get("ok") is False]

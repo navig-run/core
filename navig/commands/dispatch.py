@@ -20,7 +20,7 @@ def dispatch_send(
 
 
 @contacts_app.command("list")
-def contacts_list(limit: int = typer.Option(200, "--limit", "-n", help="Max rows to show")):
+def contacts_list(limit: int = typer.Option(200, "--limit", "-n", help="Maximum contacts to display")):
     """List saved contacts."""
     from rich.console import Console
     from rich.table import Table
@@ -46,7 +46,7 @@ def contacts_list(limit: int = typer.Option(200, "--limit", "-n", help="Max rows
 @contacts_app.command("add")
 def contacts_add(
     name: str = typer.Argument(..., help="Contact name"),
-    phone: str | None = typer.Option(None, "--phone", "-p", help="Phone number"),
+    phone: str | None = typer.Option(None, "--phone", "-p", help="Phone number (normalized on save)"),
 ):
     """Add a contact."""
     from navig import console_helper as ch
@@ -58,7 +58,7 @@ def contacts_add(
 
 
 @contacts_app.command("import")
-def contacts_import(path: str = typer.Argument(..., help="Path to Telegram contacts.json or export zip")):
+def contacts_import(path: str = typer.Argument(..., help="Path to Telegram contacts.json or export ZIP")):
     """Import contacts from Telegram Desktop export."""
     from navig import console_helper as ch
     from navig.comms.contacts_store import get_contacts_store, normalize_phone
