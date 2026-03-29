@@ -170,6 +170,7 @@ class TelegramChannel:
         self._session: aiohttp.ClientSession | None = None
         self._last_update_id = 0
         self._poll_task: asyncio.Task | None = None
+        self._reminder_task: asyncio.Task | None = None
         self._notifier = None
         self._use_webhook = bool(webhook_url)
 
@@ -269,6 +270,8 @@ class TelegramChannel:
         else:
             self._poll_task = asyncio.create_task(self._poll_updates())
 
+        self._reminder_task = asyncio.create_task(self._poll_due_reminders())
+
     async def _start_notifier(self):
         """Start the notification system."""
         try:
@@ -307,6 +310,13 @@ class TelegramChannel:
             self._poll_task.cancel()
             try:
                 await self._poll_task
+            except asyncio.CancelledError:
+                pass  # task cancelled; expected during shutdown
+
+        if self._reminder_task:
+            self._reminder_task.cancel()
+            try:
+                await self._reminder_task
             except asyncio.CancelledError:
                 pass  # task cancelled; expected during shutdown
 
@@ -355,6 +365,37 @@ class TelegramChannel:
             except Exception as e:
                 logger.error(f"Polling error: {e}")
                 await asyncio.sleep(5)
+
+    async def _poll_due_reminders(self):
+        """Deliver due reminders from RuntimeStore in the background."""
+        while self._running:
+            try:
+                from navig.store.runtime import get_runtime_store
+
+                store = get_runtime_store()
+                due_items = store.get_due_reminders()
+                for reminder in due_items:
+                    reminder_id = int(reminder.get("id") or 0)
+                    chat_id = reminder.get("chat_id")
+                    msg = str(reminder.get("message") or "").strip()
+                    if not chat_id or not msg:
+                        if reminder_id:
+                            store.complete_reminder(reminder_id)
+                        continue
+
+                    sent = await self.send_message(
+                        int(chat_id),
+                        f"⏰ *Reminder*\n{msg}",
+                        parse_mode="Markdown",
+                    )
+                    if sent and reminder_id:
+                        store.complete_reminder(reminder_id)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error("Reminder poller error: %s", e)
+
+            await asyncio.sleep(15)
 
     # ── Webhook mode ───────────────────────────────────────────────
 
@@ -537,28 +578,49 @@ class TelegramChannel:
 
         # Session management
         session = None
+        auto_state = None
+        auto_active_in_chat = False
+        auto_persona = ""
+        try:
+            from navig.store.runtime import get_runtime_store
+
+            auto_state = get_runtime_store().get_ai_state(user_id)
+            if auto_state and auto_state.get("mode") == "active":
+                state_chat_id = auto_state.get("chat_id")
+                if state_chat_id is not None and int(state_chat_id) == int(chat_id):
+                    auto_active_in_chat = True
+                    auto_persona = str(auto_state.get("persona") or "")
+        except Exception as e:
+            logger.debug("Unable to read ai_state for user %s: %s", user_id, e)
+
         if HAS_SESSIONS:
             session_manager = get_session_manager()
             session = session_manager.get_session(chat_id, user_id, is_group)
 
             # Mention gating for groups
             if is_group and hasattr(self, "_bot_username"):
-                mention_gate = get_mention_gate(self._bot_username)
-                should_respond = mention_gate.should_respond(
-                    text=text,
-                    user_id=user_id,
-                    is_group=is_group,
-                    is_reply_to_bot=is_reply_to_bot,
-                    session=session,
-                    reply_to_message_id=reply_to_message_id,
-                )
+                if auto_active_in_chat:
+                    logger.debug(
+                        "Bypassing mention gate due to active auto mode in chat %s",
+                        chat_id,
+                    )
+                else:
+                    mention_gate = get_mention_gate(self._bot_username)
+                    should_respond = mention_gate.should_respond(
+                        text=text,
+                        user_id=user_id,
+                        is_group=is_group,
+                        is_reply_to_bot=is_reply_to_bot,
+                        session=session,
+                        reply_to_message_id=reply_to_message_id,
+                    )
 
-                if not should_respond:
-                    logger.debug(f"Skipping group message (no mention): {text[:50]}")
-                    return
+                    if not should_respond:
+                        logger.debug(f"Skipping group message (no mention): {text[:50]}")
+                        return
 
-                # Strip mention from text
-                text = mention_gate.strip_mention(text)
+                    # Strip mention from text
+                    text = mention_gate.strip_mention(text)
 
             # Record user message in session
             session = session_manager.add_user_message(
@@ -587,6 +649,10 @@ class TelegramChannel:
         if session:
             metadata["session_key"] = session.session_key
             metadata["context_messages"] = session.get_context_messages(limit=10)
+        if auto_active_in_chat:
+            metadata["auto_reply_active"] = True
+            if auto_persona:
+                metadata["auto_reply_persona"] = auto_persona
         if _voice_lang:
             metadata["detected_language"] = _voice_lang
 
@@ -615,8 +681,11 @@ class TelegramChannel:
 
                 # ── Slash command routing ──
                 cmd = text.strip().lower()
-                if cmd in ("/models", "/model", "/status"):
+                if cmd in ("/models", "/model"):
                     await self._handle_models_command(chat_id, user_id)
+                    return
+                if cmd == "/status":
+                    await self._handle_status(chat_id, user_id)
                     return
                 if cmd == "/start":
                     await self._handle_start(chat_id, username)
@@ -705,6 +774,67 @@ class TelegramChannel:
                     skill_arg = text.strip()[6:].strip()  # preserve original case
                     await self._handle_skill(chat_id, user_id, skill_arg, metadata)
                     return
+
+                # ── Dynamic Registry Dispatch (New Features) ──
+                if cmd.startswith("/"):
+                    cmd_bare = cmd.split(" ")[0][1:].split("@", 1)[0]
+                    import functools
+                    import inspect
+
+                    from .telegram_commands import (
+                        _SLASH_REGISTRY,
+                        TelegramCommandsMixin,
+                    )
+
+                    business_chat_only = {"kick", "mute", "unmute", "search"}
+                    if cmd_bare in business_chat_only and not is_group:
+                        await self.send_message(
+                            chat_id,
+                            "This command is only available in business chats (groups/supergroups).",
+                            parse_mode=None,
+                        )
+                        return
+
+                    if cmd_bare in business_chat_only:
+                        if not await self._is_group_admin(chat_id, user_id):
+                            await self.send_message(
+                                chat_id,
+                                "Admin permissions are required for this command in group chats.",
+                                parse_mode=None,
+                            )
+                            return
+
+                    registry_entry = next(
+                        (e for e in _SLASH_REGISTRY if e.command == cmd_bare), None
+                    )
+                    if registry_entry and registry_entry.handler:
+                        handler_func = getattr(self, registry_entry.handler, None)
+                        if handler_func is None:
+                            mixin_handler = getattr(
+                                TelegramCommandsMixin, registry_entry.handler, None
+                            )
+                            if mixin_handler is not None:
+                                handler_func = functools.partial(mixin_handler, self)
+                        if handler_func:
+                            sig = inspect.signature(handler_func)
+                            kwargs = {}
+                            if "chat_id" in sig.parameters:
+                                kwargs["chat_id"] = chat_id
+                            if "user_id" in sig.parameters:
+                                kwargs["user_id"] = user_id
+                            if "username" in sig.parameters:
+                                kwargs["username"] = username
+                            if "metadata" in sig.parameters:
+                                kwargs["metadata"] = metadata
+                            if "is_group" in sig.parameters:
+                                kwargs["is_group"] = is_group
+                            if "text" in sig.parameters:
+                                kwargs["text"] = text
+                            if "session" in sig.parameters:
+                                kwargs["session"] = session
+
+                            await handler_func(**kwargs)
+                            return
 
                 # ── Server / infra commands → navig CLI ──
                 cli_result = self._match_cli_command(text.strip())
@@ -1761,21 +1891,26 @@ class TelegramChannel:
 
         # ── Header ──
         bridge_tag = "online ✓" if bridge_online else "offline"
+
+        def _he(s: str) -> str:
+            """Minimal HTML escape for user-facing dynamic strings."""
+            return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
         lines = [
-            "🔌 *AI Providers*",
-            f"🎯 Now using: `{active_provider}` · Bridge {bridge_tag}",
+            "🔌 <b>AI Providers</b>",
+            f"🎯 Now using: <code>{_he(active_provider)}</code> · Bridge {_he(bridge_tag)}",
             "",
         ]
 
         # ── Bridge section ──
         if bridge_online:
-            lines.append("⚡ *Bridge* — online")
+            lines.append("⚡ <b>Bridge</b> — online")
             lines.append(
-                "_When connected, Bridge models take priority over cloud providers._"
+                "<i>When connected, Bridge models take priority over cloud providers.</i>"
             )
         else:
-            lines.append("⚡ *Bridge* — offline")
-            lines.append("_Open VS Code with navig-bridge extension to activate._")
+            lines.append("⚡ <b>Bridge</b> — offline")
+            lines.append("<i>Open VS Code with navig-bridge extension to activate.</i>")
         lines.append("")
 
         # ── Cloud & local providers ──
@@ -1826,13 +1961,13 @@ class TelegramChannel:
                 status_label = "not configured"
 
             # Active provider marker — always shown regardless of key detection
-            active_tag = "  ★ *in use*" if is_active else ""
+            active_tag = "  ★ <b>in use</b>" if is_active else ""
             extra = (
-                f"  {status_icon} {status_label}"
+                f"  {status_icon} {_he(status_label)}"
                 if status_label
                 else f"  {status_icon}"
             )
-            entry = f"  {manifest.emoji} *{manifest.display_name}*{extra}{active_tag}"
+            entry = f"  {manifest.emoji} <b>{_he(manifest.display_name)}</b>{extra}{active_tag}"
             if manifest.tier == "local":
                 local_lines.append(entry)
             else:
@@ -1854,15 +1989,15 @@ class TelegramChannel:
             keyboard_rows.append(list(button_row))
 
         if cloud_lines:
-            lines.append("☁️ *Cloud Providers:*")
+            lines.append("☁️ <b>Cloud Providers:</b>")
             lines.extend(cloud_lines)
             lines.append("")
         if local_lines:
-            lines.append("🖥 *Local Providers:*")
+            lines.append("🖥 <b>Local Providers:</b>")
             lines.extend(local_lines)
             lines.append("")
 
-        lines.append("_Tap a provider to configure or assign models._")
+        lines.append("<i>Tap a provider to configure or assign models.</i>")
 
         # ── Control row pinned at bottom ──
         keyboard_rows.append(
@@ -1870,11 +2005,23 @@ class TelegramChannel:
         )
         keyboard_rows.append([{"text": "❌ Close", "callback_data": "prov_close"}])
 
-        await self.send_message(chat_id, "\n".join(lines), keyboard=keyboard_rows)
+        await self.send_message(
+            chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard_rows
+        )
 
-    async def _show_provider_model_picker(self, chat_id: int, prov_id: str) -> None:
-        """Send a model\u2194tier assignment picker for the given provider."""
+    async def _show_provider_model_picker(
+        self, chat_id: int, prov_id: str, page: int = 0
+    ) -> None:
+        """Send a paginated model↔tier assignment picker for the given provider."""
+        import asyncio as _asyncio
         import json as _json
+        import os as _os
+
+        PAGE_SIZE = 8
+
+        def _he(s: str) -> str:
+            """Minimal HTML escape for dynamic strings."""
+            return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
         emoji, name, models = "🤖", prov_id, []
         try:
@@ -1888,33 +2035,112 @@ class TelegramChannel:
         except Exception:
             manifest = None
 
-        # Ollama: query live installed tags
+        # ── Live model queries (fallback to static on any error) ────────────
         if prov_id == "ollama":
             try:
                 import urllib.request
 
-                with urllib.request.urlopen(
-                    "http://127.0.0.1:11434/api/tags", timeout=2
-                ) as r:
-                    data = _json.loads(r.read())
-                    live = [m["name"] for m in data.get("models", []) if m.get("name")]
-                    if live:
-                        models = live
+                def _fetch_ollama() -> list:
+                    with urllib.request.urlopen(
+                        "http://127.0.0.1:11434/api/tags", timeout=2
+                    ) as r:
+                        data = _json.loads(r.read())
+                        return [m["name"] for m in data.get("models", []) if m.get("name")]
+
+                live = await _asyncio.to_thread(_fetch_ollama)
+                if live:
+                    models = live
             except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+                pass
             if not models:
                 models = ["qwen2.5:7b", "qwen2.5:3b", "phi3.5", "llama3.2"]
 
-        models = models[:8]  # cap at 8
+        elif prov_id == "openrouter":
+            api_key = _os.environ.get("OPENROUTER_API_KEY", "")
+            if api_key:
+                try:
+                    import urllib.request
+
+                    def _fetch_openrouter() -> list:
+                        req = urllib.request.Request(
+                            "https://openrouter.ai/api/v1/models",
+                            headers={"Authorization": f"Bearer {api_key}"},
+                        )
+                        with urllib.request.urlopen(req, timeout=4) as r:
+                            data = _json.loads(r.read())
+                            return [m["id"] for m in data.get("data", []) if m.get("id")]
+
+                    live = await _asyncio.wait_for(
+                        _asyncio.to_thread(_fetch_openrouter), timeout=5.0
+                    )
+                    if live:
+                        models = live
+                except Exception:  # noqa: BLE001
+                    pass  # fallback to static catalog
+
+        elif prov_id == "xai":
+            api_key = _os.environ.get("XAI_API_KEY") or _os.environ.get("GROK_KEY", "")
+            if api_key:
+                try:
+                    import urllib.request
+
+                    def _fetch_xai() -> list:
+                        req = urllib.request.Request(
+                            "https://api.x.ai/v1/models",
+                            headers={"Authorization": f"Bearer {api_key}"},
+                        )
+                        with urllib.request.urlopen(req, timeout=4) as r:
+                            data = _json.loads(r.read())
+                            return [m["id"] for m in data.get("data", []) if m.get("id")]
+
+                    live = await _asyncio.wait_for(
+                        _asyncio.to_thread(_fetch_xai), timeout=5.0
+                    )
+                    if live:
+                        models = live
+                except Exception:  # noqa: BLE001
+                    pass  # fallback to static catalog
+
+        elif prov_id == "nvidia":
+            api_key = _os.environ.get("NVIDIA_API_KEY") or _os.environ.get("NIM_API_KEY", "")
+            if api_key:
+                try:
+                    import urllib.request
+
+                    def _fetch_nvidia() -> list:
+                        req = urllib.request.Request(
+                            "https://integrate.api.nvidia.com/v1/models",
+                            headers={"Authorization": f"Bearer {api_key}"},
+                        )
+                        with urllib.request.urlopen(req, timeout=4) as r:
+                            data = _json.loads(r.read())
+                            return [m["id"] for m in data.get("data", []) if m.get("id")]
+
+                    live = await _asyncio.wait_for(
+                        _asyncio.to_thread(_fetch_nvidia), timeout=5.0
+                    )
+                    if live:
+                        models = live
+                except Exception:  # noqa: BLE001
+                    pass  # fallback to static catalog
 
         if not models:
             await self.send_message(
-                chat_id, f"\u26a0\ufe0f No models found for `{prov_id}`."
+                chat_id,
+                f"⚠️ No models found for <code>{_he(prov_id)}</code>.",
+                parse_mode="HTML",
             )
             return
 
+        # ── Pagination ──────────────────────────────────────────────────────
+        total = len(models)
+        start = page * PAGE_SIZE
+        end = min(start + PAGE_SIZE, total)
+        page_models = models[start:end]
+        total_pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
+
         # Current router assignment for this provider
-        current: dict = {"small": "\u2014", "big": "\u2014", "coder_big": "\u2014"}
+        current: dict = {"small": "—", "big": "—", "coder_big": "—"}
         try:
             from navig.agent.ai_client import get_ai_client
 
@@ -1923,44 +2149,64 @@ class TelegramChannel:
                 for tier in ("small", "big", "coder_big"):
                     slot = router.cfg.slot_for_tier(tier)
                     if slot.provider == prov_id:
-                        current[tier] = f"`{slot.model}`"
+                        current[tier] = f"<code>{_he(slot.model)}</code>"
         except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
+            pass
 
+        page_label = f"  · page {page + 1}/{total_pages}" if total_pages > 1 else ""
         lines = [
-            f"{emoji} *{name}* \u2014 assign model to tier",
+            f"{emoji} <b>{_he(name)}</b> — assign model to tier{_he(page_label)}",
             "",
-            f"  \u26a1 Small:  {current['small']}",
-            f"  \ud83e\udde0 Big:    {current['big']}",
-            f"  \ud83d\udcbb Code:   {current['coder_big']}",
+            f"  ⚡ Small:  {current['small']}",
+            f"  🧠 Big:    {current['big']}",
+            f"  💻 Code:   {current['coder_big']}",
             "",
-            "Tap \u26a1S / \ud83e\udde0B / \ud83d\udcbbC next to a model to assign it to that tier:",
+            "Tap ⚡S / 🧠B / 💻C to assign a model to that tier:",
         ]
-        for i, m in enumerate(models):
-            lines.append(f"  `{i}.` {m}")
+        for i, m in enumerate(page_models):
+            abs_i = start + i
+            lines.append(f"  <code>{abs_i}.</code> {_he(m)}")
 
-        keyboard = []
-        for i, m in enumerate(models):
+        keyboard: list = []
+        for i, m in enumerate(page_models):
+            abs_i = start + i
             short = m.split("/")[-1].split(":")[-1][:10]
             keyboard.append(
                 [
-                    {
-                        "text": f"\u26a1S {short}",
-                        "callback_data": f"pm_{prov_id}_{i}_s",
-                    },
-                    {
-                        "text": f"\ud83e\udde0B {short}",
-                        "callback_data": f"pm_{prov_id}_{i}_b",
-                    },
-                    {
-                        "text": f"\ud83d\udcbbC {short}",
-                        "callback_data": f"pm_{prov_id}_{i}_c",
-                    },
+                    {"text": f"⚡S {short}", "callback_data": f"pm_{prov_id}_{abs_i}_s"},
+                    {"text": f"🧠B {short}", "callback_data": f"pm_{prov_id}_{abs_i}_b"},
+                    {"text": f"💻C {short}", "callback_data": f"pm_{prov_id}_{abs_i}_c"},
                 ]
             )
-        keyboard.append([{"text": "\u2190 Providers", "callback_data": "prov_back"}])
 
-        await self.send_message(chat_id, "\n".join(lines), keyboard=keyboard)
+        # ── Pagination nav row ──
+        nav_row: list = []
+        if page > 0:
+            nav_row.append(
+                {"text": "◀ Prev", "callback_data": f"prov_page_{prov_id}_{page - 1}"}
+            )
+        if end < total:
+            remaining = total - end
+            nav_row.append(
+                {
+                    "text": f"Next ▶ ({remaining} more)",
+                    "callback_data": f"prov_page_{prov_id}_{page + 1}",
+                }
+            )
+        if nav_row:
+            keyboard.append(nav_row)
+
+        # ── Activate + back row ──
+        keyboard.append(
+            [
+                {"text": f"🚀 Activate {name}", "callback_data": f"prov_activate_{prov_id}"},
+                {"text": "← Providers", "callback_data": "prov_back"},
+            ]
+        )
+
+        await self.send_message(
+            chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard
+        )
 
     async def _handle_debug(self, chat_id: int) -> None:
         """Show daemon debug info (/debug)."""
@@ -2406,60 +2652,10 @@ class TelegramChannel:
         await self.send_message(chat_id, greeting, parse_mode=None)
 
     async def _handle_help(self, chat_id: int):
-        """Command reference — entity style."""
-        text = (
-            "*things I respond to:*\n\n"
-            "⚡ *core*\n"
-            "/status — how I'm doing\n"
-            "/models — what's running under the hood\n"
-            "/mode — shift my focus\n"
-            "/briefing — today compressed\n"
-            "/ping — am I alive?\n"
-            "/deck — open the command deck\n\n"
-            "📊 *monitoring*\n"
-            "/disk — disk usage\n"
-            "/memory — RAM status\n"
-            "/cpu — load average\n"
-            "/uptime — how long the server's been up\n"
-            "/services — running services\n"
-            "/ports — open ports\n\n"
-            "🐳 *docker*\n"
-            "/docker — list containers\n"
-            "/logs <name> — container logs\n"
-            "/restart — restart navig-daemon (no args)\n"
-            "/restart <name> — restart docker container\n\n"
-            "🗃 *database*\n"
-            "/db — list databases\n"
-            "/tables <db> — show tables\n\n"
-            "🔧 *tools*\n"
-            "/hosts — configured servers\n"
-            "/use <host> — switch server\n"
-            "/run <cmd> — execute remote command\n"
-            "/backup — backup status\n\n"
-            "🛠 *utilities*\n"
-            "/ip — server IP\n"
-            "/time — server time\n"
-            "/weather — weather check\n"
-            "/dns <domain> — DNS lookup\n"
-            "/ssl <domain> — SSL cert check\n"
-            "/whois <domain> — domain whois\n\n"
-            "🧠 *model control*\n"
-            "/model — active routing table\n"
-            "/routing — same as /model\n"
-            "/providers — LLM provider key status\n"
-            "/big — lock to large/smart model\n"
-            "/small — lock to fast/lightweight model\n"
-            "/coder — lock to coder model\n"
-            "/auto — clear override, back to automatic\n\n"
-            "🔊 *voice & AI settings*\n"
-            "/settings — toggle voice, STT, TTS provider, AI mode\n"
-            "/voiceon /voiceoff — quick voice toggle\n\n"
-            "🛠 *diagnostics*\n"
-            "/debug — package paths, vault, flags\n"
-            "/trace — recent conversation history\n\n"
-            "…or just talk. I understand."
-        )
-        await self.send_message(chat_id, text)
+        """Command reference (/help) from the slash registry."""
+        from .telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_help(self, chat_id)
 
     async def _handle_mode(self, chat_id: int, mode_arg: str):
         """Set focus mode and persist to UserStateTracker."""
@@ -2535,23 +2731,10 @@ class TelegramChannel:
     }
 
     def _match_cli_command(self, text: str) -> str | None:
-        """Match a slash command to a navig CLI string. Returns None if no match."""
-        parts = text.strip().split(None, 1)
-        if not parts:
-            return None
-        cmd = parts[0].lower()
-        args = parts[1] if len(parts) > 1 else ""
+        """Match slash command to a navig CLI string via the registry."""
+        from .telegram_commands import TelegramCommandsMixin
 
-        template = self._SLASH_CLI_MAP.get(cmd)
-        if not template:
-            return None
-
-        if "{args}" in template:
-            if not args:
-                # Command needs args but none given
-                return template.replace(" {args}", "").replace("{args}", "")
-            return template.replace("{args}", args)
-        return template
+        return TelegramCommandsMixin._match_cli_command(self, text)
 
     async def _handle_cli_command(
         self,
@@ -2889,88 +3072,19 @@ class TelegramChannel:
         await self.send_message(chat_id, "\n".join(lines))
 
     async def _register_commands(self):
-        """Register slash commands with Telegram via setMyCommands API."""
-        commands = [
-            # core
-            {"command": "start", "description": "Wake up greeting"},
-            {"command": "help", "description": "Command reference"},
-            {"command": "status", "description": "System health check"},
-            {"command": "models", "description": "Active model routing table"},
-            {"command": "model", "description": "Active model routing table"},
-            {
-                "command": "mode",
-                "description": "Set focus mode (work, deep-focus, etc.)",
-            },
-            {"command": "briefing", "description": "Today's summary"},
-            {"command": "deck", "description": "Open the command deck"},
-            {"command": "ping", "description": "Quick alive check"},
-            {
-                "command": "skill",
-                "description": "Run a NAVIG skill — /skill list to browse",
-            },
-            # monitoring
-            {"command": "disk", "description": "Disk usage"},
-            {"command": "memory", "description": "RAM status"},
-            {"command": "cpu", "description": "Load / CPU info"},
-            {"command": "uptime", "description": "Server uptime"},
-            {"command": "services", "description": "Running services"},
-            {"command": "ports", "description": "Open ports"},
-            # docker
-            {"command": "docker", "description": "List containers"},
-            {"command": "logs", "description": "Container logs (+ name)"},
-            {"command": "restart", "description": "Restart container (+ name)"},
-            # database
-            {"command": "db", "description": "List databases"},
-            {"command": "tables", "description": "Tables in a database (+ db name)"},
-            # hosts / tools
-            {"command": "hosts", "description": "Configured servers"},
-            {"command": "use", "description": "Switch active host (+ name)"},
-            {"command": "run", "description": "Execute remote command"},
-            {"command": "backup", "description": "Backup status"},
-            # utilities
-            {"command": "ip", "description": "Server public IP"},
-            {"command": "time", "description": "Server time"},
-            {"command": "weather", "description": "Weather report"},
-            {"command": "dns", "description": "DNS lookup (+ domain)"},
-            {"command": "ssl", "description": "SSL cert check (+ domain)"},
-            {"command": "whois", "description": "Domain whois (+ domain)"},
-            # voice & settings
-            {"command": "settings", "description": "Voice, STT, TTS, AI mode settings"},
-            {"command": "voiceon", "description": "Enable voice replies"},
-            {"command": "voiceoff", "description": "Disable voice replies"},
-            # model override
-            {"command": "routing", "description": "Active model routing table"},
-            {"command": "providers", "description": "AI Provider Hub"},
-            {"command": "provider", "description": "AI Provider Hub (alias)"},
-            {"command": "big", "description": "Force big model for next message"},
-            {"command": "small", "description": "Force small model for next message"},
-            {"command": "coder", "description": "Force coder model for next message"},
-            {"command": "auto", "description": "Reset to automatic model selection"},
-            # diagnostics
-            {"command": "debug", "description": "Package paths, vault, flags"},
-            {"command": "trace", "description": "Recent conversation history"},
-        ]
-        result = await self._api_call("setMyCommands", {"commands": commands})
-        if result is not None:
-            logger.info("Registered %d bot commands with Telegram", len(commands))
-        else:
-            logger.warning("Failed to register bot commands")
+        """Register slash commands with Telegram via registry-backed mixin."""
+        from .telegram_commands import TelegramCommandsMixin
 
-        # Register persistent menu button → opens Deck WebApp
-        deck_url = self._get_deck_url()
-        if deck_url:
-            # Set default menu button for all chats (no chat_id = global default)
-            await self._api_call(
-                "setChatMenuButton",
-                {
-                    "menu_button": {
-                        "type": "web_app",
-                        "text": "🖲️ Deck",
-                        "web_app": {"url": deck_url},
-                    },
-                },
-            )
-            logger.info("Registered Deck menu button: %s", deck_url)
+        await TelegramCommandsMixin._register_commands(self)
+
+    async def _is_group_admin(self, chat_id: int, user_id: int) -> bool:
+        """Check if user has admin rights in the current group chat."""
+        member = await self._api_call(
+            "getChatMember", {"chat_id": chat_id, "user_id": user_id}
+        )
+        if not isinstance(member, dict):
+            return False
+        return member.get("status") in {"administrator", "creator"}
 
     def _get_deck_url(self) -> str | None:
         """Resolve the Deck WebApp URL from config."""

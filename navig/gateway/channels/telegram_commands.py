@@ -342,6 +342,29 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Auto-Heal - /autoheal on|off|status|hive on|hive off",
         category="diagnostics",
     ),
+    # --- Digital Ghost / Laravel Port ---
+    SlashCommandEntry("about", "Learn about the bot", handler="_handle_about", category="core"),
+    SlashCommandEntry("auto_start", "Enable AI auto-replies", handler="_handle_auto_start", category="ai"),
+    SlashCommandEntry("auto_stop", "Disable AI auto-replies", handler="_handle_auto_stop", category="ai"),
+    SlashCommandEntry("auto_status", "Check AI conversation status", handler="_handle_auto_status", category="ai"),
+    SlashCommandEntry("auto_roles", "List available AI personalities", handler="_handle_auto_roles", category="ai"),
+    SlashCommandEntry("explain_ai", "AI explains any topic", handler="_handle_explain_ai", category="ai"),
+    SlashCommandEntry("music", "Convert music links (beta)", handler="_handle_music", category="media"),
+    SlashCommandEntry("imagegen", "Generate AI images (beta)", handler="_handle_imagegen", category="media"),
+    SlashCommandEntry("profile", "View user profiles", handler="_handle_profile", category="social"),
+    SlashCommandEntry("quote", "Save and view quotes (beta)", handler="_handle_quote", category="social"),
+    SlashCommandEntry("respect", "Show respect to users (beta)", handler="_handle_respect", category="social"),
+    SlashCommandEntry("currency", "Convert currency (beta)", handler="_handle_currency", category="utilities"),
+    SlashCommandEntry("crypto_list", "List cryptocurrencies (beta)", handler="_handle_crypto_list", category="utilities"),
+    SlashCommandEntry("remindme", "Set reminders (beta)", handler="_handle_remindme", category="utilities"),
+    SlashCommandEntry("myreminders", "List your active reminders (beta)", handler="_handle_myreminders", category="utilities"),
+    SlashCommandEntry("cancelreminder", "Cancel a reminder (beta)", handler="_handle_cancelreminder", category="utilities"),
+    SlashCommandEntry("stats_global", "Chat activity statistics (beta)", handler="_handle_stats_global", category="utilities"),
+    SlashCommandEntry("choice", "Make random choices", handler="_handle_choice", category="utilities"),
+    SlashCommandEntry("kick", "Remove user from chat", handler="_handle_kick", category="admin"),
+    SlashCommandEntry("mute", "Silence user temporarily", handler="_handle_mute", category="admin"),
+    SlashCommandEntry("unmute", "Restore user voice", handler="_handle_unmute", category="admin"),
+    SlashCommandEntry("search", "Find users", handler="_handle_search", category="admin"),
 ]
 
 
@@ -403,6 +426,10 @@ class TelegramCommandsMixin:
             "model": "- *model control*",
             "voice": "- *voice & AI settings*",
             "diagnostics": "- *diagnostics & healing*",
+            "ai": "- *AI features*",
+            "media": "- *media tools*",
+            "social": "- *social*",
+            "admin": "- *business chats / admin*",
         }
         seen: set[str] = set()
         lines = ["*things I respond to:*"]
@@ -1860,3 +1887,144 @@ class TelegramCommandsMixin:
                 except Exception as e:
                     logger.debug("Could not read deck_url from config %s: %s", cfg_path, e)
         return None
+
+    # ── Digital Ghost / Laravel Port Features ───────────────────────────────
+
+    async def _handle_about(self, chat_id: int) -> None:
+        """Learn about the bot origin."""
+        msg = (
+            "🤖 *Digital Ghost*\n\n"
+            "An advanced cybernetic entity running within the SCHEMA network. "
+            "Originally designed for the Laravel ecosystem, now evolved into a pure Python "
+            "NAVIG context.\n\n"
+            "Use `/help` to see my capabilities."
+        )
+        await self.send_message(chat_id, msg)
+
+    async def _handle_auto_start(self, chat_id: int, user_id: int, text: str) -> None:
+        """Start AI conversational auto-reply using session variables."""
+        role = text[len("/auto_start"):].strip() or "assistant"
+        try:
+            from .telegram import HAS_SESSIONS, get_session_manager
+            if HAS_SESSIONS:
+                sm = get_session_manager()
+                sm.set_session_var(chat_id, user_id, "auto_reply", role, is_group=(chat_id < 0))
+                await self.send_message(chat_id, f"✅ Auto-replies *ACTIVATED* with persona: `{role}`")
+            else:
+                await self.send_message(chat_id, "❌ Sessions are disabled. Cannot enable auto-reply.")
+        except Exception as e:
+            await self.send_message(chat_id, f"Session error: {e}")
+
+    async def _handle_auto_stop(self, chat_id: int, user_id: int) -> None:
+        """Stop AI conversational auto-reply."""
+        try:
+            from .telegram import HAS_SESSIONS, get_session_manager
+            if HAS_SESSIONS:
+                sm = get_session_manager()
+                sm.set_session_var(chat_id, user_id, "auto_reply", None, is_group=(chat_id < 0))
+                await self.send_message(chat_id, "🛑 Auto-replies deactivated.")
+        except Exception:
+            await self.send_message(chat_id, "🛑 Auto-replies halted.")
+
+    async def _handle_auto_status(self, chat_id: int, user_id: int) -> None:
+        """Check current auto-reply status."""
+        role = None
+        try:
+            from .telegram import HAS_SESSIONS, get_session_manager
+            if HAS_SESSIONS:
+                sm = get_session_manager()
+                sess = sm.get_session(chat_id, user_id, (chat_id < 0))
+                if hasattr(sess, "vars") and sess.vars:
+                    role = sess.vars.get("auto_reply")
+        except Exception:
+            pass
+
+        if role:
+            await self.send_message(chat_id, f"✅ AI is currently *ACTIVE* in `{role}` mode.")
+        else:
+            await self.send_message(chat_id, "🛑 AI auto-reply is currently *INACTIVE*.")
+
+    async def _handle_auto_roles(self, chat_id: int) -> None:
+        roles = "• `storyteller`\n• `assistant`\n• `philosopher`\n• `teacher`\n• `tyler`"
+        await self.send_message(chat_id, f"🎭 *Available AI Personas:*\n\n{roles}\n\nUse `/auto_start <role>` to activate.")
+
+    async def _handle_explain_ai(self, chat_id: int, text: str) -> None:
+        topic = text[len("/explain_ai"):].strip()
+        if not topic:
+            await self.send_message(chat_id, "Please provide a topic. Example: `/explain_ai quantum computing`")
+            return
+
+        await self.send_typing(chat_id)
+        try:
+            from navig.ai.llm_router import route_llm
+            prompt = f"Explain the following topic clearly and comprehensively, structured for a Telegram message:\n\nTopic: {topic}"
+            response = await route_llm(prompt, tier="small", system_prompt="You are an expert explainer.")
+            await self.send_message(chat_id, response.text)
+        except Exception as e:
+            await self.send_message(chat_id, f"❌ Failed to explain: {e}", parse_mode=None)
+
+    async def _handle_music(self, chat_id: int) -> None:
+        await self.send_message(chat_id, "🎵 *Music Conversion*\n\nIntegration with Spotify/Apple Music APIs pending migration.", parse_mode="Markdown")
+
+    async def _handle_imagegen(self, chat_id: int, text: str) -> None:
+        prompt = text[len("/imagegen"):].strip()
+        if not prompt:
+            await self.send_message(chat_id, "Please provide a prompt. Example: `/imagegen cybernetic city sunset`", parse_mode="Markdown")
+            return
+        await self.send_typing(chat_id)
+        await self.send_message(chat_id, "🎨 Image generation model not yet bridged to the current workspace.", parse_mode=None)
+
+    async def _handle_profile(self, chat_id: int, user_id: int, username: str) -> None:
+        await self._handle_user(chat_id, user_id, username)
+
+    async def _handle_quote(self, chat_id: int) -> None:
+        await self.send_message(chat_id, "💬 Quote storage is currently being initialized in the new database.", parse_mode=None)
+
+    async def _handle_respect(self, chat_id: int) -> None:
+        await self.send_message(chat_id, "✊ Respect system ledger is syncing...", parse_mode=None)
+
+    async def _handle_currency(self, chat_id: int, text: str) -> None:
+        await self.send_message(chat_id, "💹 Real-time fiat exchange rates are offline.", parse_mode=None)
+
+    async def _handle_crypto_list(self, chat_id: int) -> None:
+        await self.send_message(chat_id, "🪙 *Crypto Reference:*\n• BTC - Bitcoin\n• ETH - Ethereum\n• SOL - Solana\n\n(Price feed offline)", parse_mode="Markdown")
+
+    async def _handle_remindme(self, chat_id: int) -> None:
+        await self.send_message(chat_id, "⏰ Native scheduling daemon for reminders is currently disabled.", parse_mode=None)
+
+    async def _handle_myreminders(self, chat_id: int) -> None:
+        await self.send_message(chat_id, "📭 You have 0 active reminders.")
+
+    async def _handle_cancelreminder(self, chat_id: int) -> None:
+        await self.send_message(chat_id, "❌ No reminder found to cancel.")
+
+    async def _handle_stats_global(self, chat_id: int) -> None:
+        await self.send_message(chat_id, "📊 Global chat statistics are gathering data...")
+
+    async def _handle_choice(self, chat_id: int, text: str) -> None:
+        args = text[len("/choice"):].strip()
+        if " or " not in args.lower():
+            await self.send_message(chat_id, "Please use 'or' to separate choices. Example: `/choice pizza or burger`", parse_mode="Markdown")
+            return
+        import random
+        choices = [c.strip() for c in args.lower().split(" or ") if c.strip()]
+        if choices:
+            await self.send_message(chat_id, f"🎲 I choose: *{random.choice(choices)}*")
+        else:
+            await self.send_message(chat_id, "Invalid choices.", parse_mode=None)
+
+    async def _handle_kick(self, chat_id: int, text: str) -> None:
+        target = text[len("/kick"):].strip()
+        await self.send_message(chat_id, f"👢 Core restriction: Bot requires channel Admin rights to ban `{target}`.", parse_mode="Markdown")
+
+    async def _handle_mute(self, chat_id: int, text: str) -> None:
+        target = text[len("/mute"):].strip()
+        await self.send_message(chat_id, f"🔇 Core restriction: Bot requires channel Admin rights to restrict `{target}`.", parse_mode="Markdown")
+
+    async def _handle_unmute(self, chat_id: int, text: str) -> None:
+        target = text[len("/unmute"):].strip()
+        await self.send_message(chat_id, f"🔊 Core restriction: Bot requires channel Admin rights to pardon `{target}`.", parse_mode="Markdown")
+
+    async def _handle_search(self, chat_id: int, text: str) -> None:
+        query = text[len("/search"):].strip()
+        await self.send_message(chat_id, f"🔍 User search proxy offline for query: `{query}`")

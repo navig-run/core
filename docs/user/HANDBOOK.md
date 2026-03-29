@@ -4394,6 +4394,20 @@ navig start --foreground     # See live logs
 | `navig bot status` | Check if bot is running |
 | `navig bot stop` | Stop all bot/gateway processes |
 
+**Telegram Command Execution Policy (v2.4.17+)**
+
+| Mode | Commands | Behavior |
+|------|----------|----------|
+| Slash (foreground) | `/about`, `/help`, `/profile`, `/choice`, `/explain_ai` | Immediate user-invoked responses |
+| Slash + background orchestration | `/auto_start`, `/auto_stop`, `/auto_status`, `/imagegen`, `/remindme`, `/myreminders`, `/cancelreminder`, `/stats_global` | Slash command controls state/jobs; work may continue in background |
+| Business chats only (groups/supergroups) | `/kick`, `/mute`, `/unmute`, `/search` | Command is denied in DM and requires group admin rights |
+
+**Beta command visibility**
+
+Some migrated commands are intentionally visible with `(beta)` labels in Telegram command lists and `/help`:
+`/music`, `/imagegen`, `/quote`, `/respect`, `/currency`, `/crypto_list`, `/remindme`, `/myreminders`, `/cancelreminder`, `/stats_global`.
+These are available for controlled rollout while backend orchestration components are finalized.
+
 **Interactive Menu:**
 ```bash
 navig menu
