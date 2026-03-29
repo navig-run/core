@@ -376,6 +376,12 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     ),
     # --- Diagnostics ---------------------------------------------------------
     SlashCommandEntry(
+        "version",
+        "Show NAVIG version info",
+        handler="_handle_version",
+        category="diagnostics",
+    ),
+    SlashCommandEntry(
         "debug",
         "Package paths, vault, flags",
         handler="_handle_debug",
@@ -1034,7 +1040,7 @@ class TelegramCommandsMixin:
     @typing_context
     async def _show_provider_model_picker(self, chat_id: int, prov_id: str) -> None:
         """Send a model-tier assignment picker for the given provider."""
-        emoji, name, models = "-", prov_id, []
+        emoji, name, models = "🤖", prov_id, []
         try:
             from navig.providers.registry import _INDEX as PROV_INDEX
 
@@ -1066,46 +1072,78 @@ class TelegramCommandsMixin:
         models = models[:8]
 
         if not models:
-            await self.send_message(chat_id, f"- No models found for `{prov_id}`.")
+            await self.send_message(
+                chat_id, f"⚠️ No models found for {prov_id}.", parse_mode=None
+            )
             return
 
-        current: dict = {"small": "-", "big": "-", "coder_big": "-"}
+        # Resolve currently-assigned models for each tier
+        current: dict = {"small": None, "big": None, "coder_big": None}
+        router_active = False
         try:
             from navig.agent.ai_client import get_ai_client
 
             router = get_ai_client().model_router
             if router and router.is_active:
+                router_active = True
                 for tier in ("small", "big", "coder_big"):
                     slot = router.cfg.slot_for_tier(tier)
-                    if slot.provider == prov_id:
-                        current[tier] = f"`{slot.model}`"
+                    if slot.provider == prov_id and slot.model:
+                        current[tier] = slot.model
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
+        # Build tier display labels using HTML (safe for all model name chars)
+        tier_emoji = {"small": "⚡", "big": "🧠", "coder_big": "💻"}
+        tier_label = {"small": "Small", "big": "Big", "coder_big": "Code"}
+
+        def _tier_line(tier: str) -> str:
+            val = current[tier]
+            if val:
+                short_val = val.split("/")[-1].split(":")[-1]
+                return f"{tier_emoji[tier]} {tier_label[tier]}: <code>{short_val}</code>"
+            return f"{tier_emoji[tier]} {tier_label[tier]}: —"
+
         lines = [
-            f"{emoji} *{name}* - assign model to tier",
+            f"<b>{emoji} {name}</b> — assign model to tier",
             "",
-            f"  - Small:  {current['small']}",
-            f"  - Big:    {current['big']}",
-            f"  - Code:   {current['coder_big']}",
+            _tier_line("small"),
+            _tier_line("big"),
+            _tier_line("coder_big"),
             "",
-            "Tap -S / -B / -C next to a model to assign it to that tier:",
+            "Tap ⚡ / 🧠 / 💻 next to a model to assign it to that tier:",
         ]
         for i, m in enumerate(models):
-            lines.append(f"  `{i}.` {m}")
+            # Show full model name without truncation in the list
+            short_m = m.split("/")[-1].split(":")[-1]
+            lines.append(f"  {i}. {short_m}")
+
+        if not router_active:
+            lines.append("")
+            lines.append(
+                "⚠️ <i>Hybrid router not configured. Enable "
+                "<code>routing: enabled: true</code> in config.yaml to save assignments.</i>"
+            )
 
         keyboard = []
         for i, m in enumerate(models):
-            short = m.split("/")[-1].split(":")[-1][:10]
+            # Button label: tier emoji + model short name (up to 18 chars)
+            short = m.split("/")[-1].split(":")[-1][:18]
+            # Mark active assignment with checkmark
+            s_mark = "✅" if current["small"] == m else "⚡"
+            b_mark = "✅" if current["big"] == m else "🧠"
+            c_mark = "✅" if current["coder_big"] == m else "💻"
             keyboard.append(
                 [
-                    {"text": f"-S {short}", "callback_data": f"pm_{prov_id}_{i}_s"},
-                    {"text": f"-B {short}", "callback_data": f"pm_{prov_id}_{i}_b"},
-                    {"text": f"-C {short}", "callback_data": f"pm_{prov_id}_{i}_c"},
+                    {"text": f"{s_mark} {short}", "callback_data": f"pm_{prov_id}_{i}_s"},
+                    {"text": f"{b_mark} {short}", "callback_data": f"pm_{prov_id}_{i}_b"},
+                    {"text": f"{c_mark} {short}", "callback_data": f"pm_{prov_id}_{i}_c"},
                 ]
             )
-        keyboard.append([{"text": "- Providers", "callback_data": "prov_back"}])
-        await self.send_message(chat_id, "\n".join(lines), keyboard=keyboard)
+        keyboard.append([{"text": "← Providers", "callback_data": "prov_back"}])
+        await self.send_message(
+            chat_id, "\n".join(lines), keyboard=keyboard, parse_mode="HTML"
+        )
 
     async def _handle_providers_and_models(
         self, chat_id: int, user_id: int = 0, is_group: bool = False
@@ -1115,6 +1153,38 @@ class TelegramCommandsMixin:
         await self._handle_providers(chat_id)
 
     # -- Diagnostics -----------------------------------------------------------
+
+    async def _handle_version(self, chat_id: int) -> None:
+        """Show NAVIG version info and active host (/version)."""
+        import sys
+
+        lines = ["<b>NAVIG</b>"]
+        try:
+            import navig as _navig_pkg
+
+            ver = getattr(_navig_pkg, "__version__", "unknown")
+            lines.append(f"Version: <code>{ver}</code>")
+        except Exception as e:
+            lines.append(f"Version: <i>unknown ({e})</i>")
+
+        lines.append(f"Python: <code>{sys.version.split()[0]}</code>")
+
+        # Active host
+        try:
+            from navig.config import load_config
+
+            cfg = load_config()
+            active_host = (cfg.get("active_host") or "—") if cfg else "—"
+            lines.append(f"Active host: <code>{active_host}</code>")
+        except Exception:
+            pass
+
+        # Platform
+        import platform
+
+        lines.append(f"Platform: <code>{platform.system()} {platform.machine()}</code>")
+
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
 
     async def _handle_debug(self, chat_id: int) -> None:
         """Show daemon debug info (/debug)."""

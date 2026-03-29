@@ -1296,8 +1296,17 @@ class CallbackHandler:
             if not router or not router.is_active:
                 await self._answer(
                     cb_id,
-                    "⚠️ Hybrid router not active — enable routing in config.yaml first",
+                    "⚠️ Hybrid router not active",
                     show_alert=True,
+                )
+                await self.channel.send_message(
+                    chat_id,
+                    "⚠️ <b>Hybrid router not active</b>\n\n"
+                    "To enable model-tier assignment, add this to your "
+                    "<code>~/.navig/config.yaml</code>:\n\n"
+                    "<pre>routing:\n  enabled: true</pre>\n\n"
+                    "Then restart the daemon and try again.",
+                    parse_mode="HTML",
                 )
                 return
             slot = router.cfg.slot_for_tier(tier)
