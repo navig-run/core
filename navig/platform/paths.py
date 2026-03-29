@@ -412,9 +412,16 @@ def _is_system_service() -> bool:
         except (ImportError, KeyError):
             pass  # optional platform info unavailable
 
-    # Systemd detection
-    if os.environ.get("INVOCATION_ID"):  # Set by systemd
-        return True
+    # Systemd detection — only a *system* service if running as root.
+    # INVOCATION_ID is set by systemd for all services (including user services
+    # like `User=void`), so we must also check uid to avoid treating user-level
+    # daemons as system services and redirecting their paths to /var/log/navig.
+    if os.environ.get("INVOCATION_ID") and is_unix():
+        try:
+            if os.getuid() == 0:
+                return True
+        except AttributeError:
+            pass  # Windows — no getuid
 
     return False
 
