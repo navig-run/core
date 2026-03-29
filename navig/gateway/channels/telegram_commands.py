@@ -558,6 +558,43 @@ def _iter_unique_registry(*, visible_only: bool = False) -> list[SlashCommandEnt
 
 
 class TelegramCommandsMixin:
+    _NL_SWITCH_VERBS: tuple[str, ...] = (
+        "switch",
+        "focus",
+        "work on",
+        "use",
+        "go to",
+        "start",
+    )
+    _NL_INTAKE_VERBS: tuple[str, ...] = (
+        "plan",
+        "roadmap",
+        "improve",
+        "strategy",
+        "ask me questions",
+        "work for",
+    )
+    _NL_DOMAIN_HINTS: dict[str, str] = {
+        "money": "finance",
+        "budget": "finance",
+        "savings": "finance",
+        "finance": "finance",
+        "health": "health",
+        "sleep": "health",
+        "fitness": "health",
+        "workout": "health",
+        "devops": "devops",
+        "deploy": "devops",
+        "docker": "devops",
+        "kubernetes": "devops",
+        "infra": "devops",
+        "sysops": "sysops",
+        "sysadmin": "sysops",
+        "uptime": "sysops",
+        "patch": "sysops",
+        "security": "sysops",
+    }
+
     _INTAKE_QUESTIONS: tuple[tuple[str, str], ...] = (
         ("goal", "What is your main goal for this space in the next 30 days?"),
         ("horizon", "What valuable result should be visible by the end of tomorrow?"),
@@ -937,6 +974,187 @@ class TelegramCommandsMixin:
                 lines.append(f"{index}. {action}")
         await self.send_message(chat_id, "\n".join(lines), parse_mode=None)
         return True
+
+    def _detect_space_from_text(self, text: str) -> str | None:
+        from navig.spaces.contracts import CANONICAL_SPACES, SPACE_ALIASES, normalize_space_name
+
+        lowered = (text or "").lower()
+        for name in CANONICAL_SPACES:
+            if re.search(rf"\b{re.escape(name)}\b", lowered):
+                return name
+
+        for alias in SPACE_ALIASES:
+            if re.search(rf"\b{re.escape(alias)}\b", lowered):
+                return normalize_space_name(alias)
+
+        for hint, mapped in self._NL_DOMAIN_HINTS.items():
+            if re.search(rf"\b{re.escape(hint)}\b", lowered):
+                return mapped
+        return None
+
+    def _infer_nl_space_intent(self, text: str) -> tuple[str | None, str | None]:
+        lowered = (text or "").strip().lower()
+        if not lowered or lowered.startswith("/"):
+            return None, None
+
+        detected_space = self._detect_space_from_text(lowered)
+        has_switch_signal = any(verb in lowered for verb in self._NL_SWITCH_VERBS)
+        has_intake_signal = any(verb in lowered for verb in self._NL_INTAKE_VERBS)
+
+        if detected_space and has_switch_signal and not has_intake_signal:
+            return "space", detected_space
+
+        if detected_space and has_intake_signal:
+            return "intake", detected_space
+
+        if has_intake_signal and detected_space:
+            return "intake", detected_space
+
+        return None, None
+
+    async def _handle_natural_language_request(
+        self,
+        chat_id: int,
+        user_id: int,
+        text: str,
+    ) -> bool:
+        from navig.store.runtime import get_runtime_store
+
+        intent, space = self._infer_nl_space_intent(text)
+        if intent and space:
+            store = get_runtime_store()
+            state = store.get_ai_state(user_id) or {}
+            context = dict(state.get("context") or {})
+            pending_id = datetime.now(timezone.utc).isoformat()
+            context["nl_pending"] = {
+                "active": True,
+                "id": pending_id,
+                "intent": intent,
+                "space": space,
+                "created_at": pending_id,
+            }
+            self._runtime_state_with_context(user_id, chat_id, context)
+
+            await self.send_message(
+                chat_id,
+                (
+                    f"🧭 Detected `{intent}` for `{space}`. "
+                    "Auto-starting in 3s. Reply `cancel` to stop or `yes` to run now."
+                ),
+                parse_mode="Markdown",
+                keyboard=[
+                    [
+                        {"text": "✅ Yes now", "callback_data": "nl_yes"},
+                        {"text": "🛑 Cancel", "callback_data": "nl_cancel"},
+                    ]
+                ],
+            )
+            asyncio.create_task(
+                self._execute_nl_pending_after_delay(
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    pending_id=pending_id,
+                    delay_seconds=3,
+                )
+            )
+            return True
+        return False
+
+    async def _run_nl_intent(self, chat_id: int, user_id: int, intent: str, space: str) -> None:
+        if intent == "space":
+            await self._handle_space(chat_id=chat_id, user_id=user_id, text=f"/space {space}")
+            return
+        if intent == "intake":
+            await self._handle_intake(chat_id=chat_id, user_id=user_id, text=f"/intake {space}")
+
+    async def _handle_nl_pending_reply(self, chat_id: int, user_id: int, text: str) -> bool:
+        from navig.store.runtime import get_runtime_store
+
+        if not text or text.strip().startswith("/"):
+            return False
+
+        store = get_runtime_store()
+        state = store.get_ai_state(user_id) or {}
+        context = dict(state.get("context") or {})
+        pending = dict(context.get("nl_pending") or {})
+        if not pending.get("active"):
+            return False
+
+        lowered = text.strip().lower()
+        if lowered in {"cancel", "stop", "no", "abort"}:
+            context["nl_pending"] = {"active": False}
+            self._runtime_state_with_context(user_id, chat_id, context)
+            await self.send_message(chat_id, "🛑 Natural-language action cancelled.", parse_mode=None)
+            return True
+
+        if lowered in {"yes", "ok", "go", "proceed", "run"}:
+            intent = str(pending.get("intent") or "")
+            space = str(pending.get("space") or "")
+            context["nl_pending"] = {"active": False}
+            self._runtime_state_with_context(user_id, chat_id, context)
+            await self._run_nl_intent(chat_id=chat_id, user_id=user_id, intent=intent, space=space)
+            return True
+
+        await self.send_message(
+            chat_id,
+            "Pending natural-language action. Reply `yes` to run now or `cancel` to stop.",
+            parse_mode="Markdown",
+        )
+        return True
+
+    async def _execute_nl_pending_after_delay(
+        self,
+        chat_id: int,
+        user_id: int,
+        pending_id: str,
+        delay_seconds: int = 3,
+    ) -> None:
+        from navig.store.runtime import get_runtime_store
+
+        await asyncio.sleep(max(0, delay_seconds))
+        store = get_runtime_store()
+        state = store.get_ai_state(user_id) or {}
+        context = dict(state.get("context") or {})
+        pending = dict(context.get("nl_pending") or {})
+        if not pending.get("active"):
+            return
+        if str(pending.get("id") or "") != pending_id:
+            return
+
+        intent = str(pending.get("intent") or "")
+        space = str(pending.get("space") or "")
+        context["nl_pending"] = {"active": False}
+        self._runtime_state_with_context(user_id, chat_id, context)
+        await self._run_nl_intent(chat_id=chat_id, user_id=user_id, intent=intent, space=space)
+
+    async def _handle_nl_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        user_id: int,
+    ) -> None:
+        if cb_data == "nl_yes":
+            await self._handle_nl_pending_reply(chat_id, user_id, "yes")
+            await self._api_call(
+                "answerCallbackQuery",
+                {
+                    "callback_query_id": cb_id,
+                    "text": "✅ Running now",
+                    "show_alert": False,
+                },
+            )
+            return
+
+        await self._handle_nl_pending_reply(chat_id, user_id, "cancel")
+        await self._api_call(
+            "answerCallbackQuery",
+            {
+                "callback_query_id": cb_id,
+                "text": "🛑 Cancelled",
+                "show_alert": False,
+            },
+        )
 
     async def _handle_user(self, chat_id: int, user_id: int, username: str) -> None:
         """Show user profile, preferences, and session state (/user)."""
@@ -2497,7 +2715,7 @@ class TelegramCommandsMixin:
         The command list is derived from :data:`_SLASH_REGISTRY` -
         no separate list to keep in sync.
         """
-        commands = self._build_command_list_for_registration()
+        commands = TelegramCommandsMixin._build_command_list_for_registration()
         # Deck command is opt-in: only added to the bot's command list when
         # telegram.deck_url is configured.  Users without a Deck deployment
         # never see the /deck command in the "/" popup.
