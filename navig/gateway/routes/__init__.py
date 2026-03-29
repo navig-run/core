@@ -35,8 +35,10 @@ def register_all_routes(app: web.Application, gateway: NavigGateway) -> None:
         router_status,
         runtime,
         tasks,
-        telegram_webhook,
     )
+    from navig.messaging import is_provider_enabled
+
+    raw_cfg = getattr(gateway.config_manager, "global_config", {}) or {}
 
     for mod in (
         core,
@@ -49,7 +51,6 @@ def register_all_routes(app: web.Application, gateway: NavigGateway) -> None:
         tasks,
         memory,
         proactive,
-        telegram_webhook,
         router_status,
         mesh,
         runtime,
@@ -59,3 +60,8 @@ def register_all_routes(app: web.Application, gateway: NavigGateway) -> None:
         billing,
     ):
         mod.register(app, gateway)
+
+    if is_provider_enabled("telegram", raw_cfg):
+        from navig.gateway.routes import telegram_webhook
+
+        telegram_webhook.register(app, gateway)

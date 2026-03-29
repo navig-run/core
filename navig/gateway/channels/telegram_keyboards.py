@@ -1374,9 +1374,14 @@ class CallbackHandler:
             try:
                 import urllib.request
 
-                with urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=2) as r:
-                    data = _json.loads(r.read())
-                    models = [m["name"] for m in data.get("models", []) if m.get("name")]
+                def _fetch_ollama() -> list:
+                    with urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=2) as r:
+                        data = _json.loads(r.read())
+                        return [m["name"] for m in data.get("models", []) if m.get("name")]
+
+                live = await _asyncio.wait_for(_asyncio.to_thread(_fetch_ollama), timeout=3.0)
+                if live:
+                    models = live
             except Exception:
                 models = ["qwen2.5:7b", "qwen2.5:3b", "phi3.5", "llama3.2"]
 

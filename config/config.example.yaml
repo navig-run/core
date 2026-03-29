@@ -25,6 +25,13 @@
 #   port: 8789
 
 
+# ── Messaging Provider ──────────────────────────────────────────────────────
+# Active messaging provider abstraction used by gateway/worker startup.
+#
+# messaging:
+#   provider: telegram   # telegram | none
+
+
 # ── Telegram Bot ──────────────────────────────────────────────────────────────
 # Configure via `navig init` (recommended) — the token is stored in the vault.
 # You can safely customise these non-secret settings here:

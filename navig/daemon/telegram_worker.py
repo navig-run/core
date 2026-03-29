@@ -10,8 +10,12 @@ from pathlib import Path
 from navig.config import get_config_manager
 from navig.daemon.entry import NAVIG_HOME
 from navig.gateway.channels.matrix import MatrixChannelAdapter
-from navig.gateway.channels.telegram import create_telegram_channel
 from navig.gateway.server import NavigGateway
+from navig.messaging.registry import (
+    create_channel_for_provider,
+    get_active_provider_name,
+)
+from navig.messaging.secrets import resolve_telegram_bot_token
 from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 
 
@@ -37,13 +41,18 @@ def _telegram_config() -> dict:
     cfg = get_config_manager().global_config or {}
     telegram_cfg = cfg.get("telegram", {}) if isinstance(cfg, dict) else {}
 
-    token = os.getenv("TELEGRAM_BOT_TOKEN") or telegram_cfg.get("bot_token")
+    token = resolve_telegram_bot_token(cfg)
     return {
         "bot_token": token,
         "allowed_users": telegram_cfg.get("allowed_users", []),
         "allowed_groups": telegram_cfg.get("allowed_groups", []),
         "require_auth": telegram_cfg.get("require_auth", True),
     }
+
+
+def create_telegram_channel(gateway, config: dict):
+    """Backward-compatible helper retained for existing tests/monkeypatches."""
+    return create_channel_for_provider("telegram", gateway, {"telegram": config})
 
 
 def _deck_config() -> dict:
@@ -224,8 +233,11 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
     logger = logging.getLogger(__name__)
 
     _load_env()
+    raw_cfg = get_config_manager().global_config or {}
+    provider_name = get_active_provider_name(raw_cfg)
+
     config = _telegram_config()
-    if not config.get("bot_token"):
+    if provider_name == "telegram" and not config.get("bot_token"):
         logger.warning("TELEGRAM_BOT_TOKEN not configured; Telegram bot will be disabled")
         print(
             "[NAVIG] WARNING: TELEGRAM_BOT_TOKEN not set — Telegram bot is disabled.\n"
@@ -243,12 +255,21 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
     if port is not None:
         gateway.config.port = int(port)
     channel = None
-    if config.get("bot_token"):
+    if provider_name == "telegram":
         channel = create_telegram_channel(gateway, config)
+    elif provider_name != "none":
+        channel = create_channel_for_provider(provider_name, gateway, raw_cfg)
+
+    if provider_name != "none":
         if channel is None:
-            logger.error("Failed to initialize Telegram channel")
+            if provider_name == "telegram":
+                logger.error("Failed to initialize Telegram channel")
+            else:
+                logger.error(
+                    "Failed to initialize messaging channel (provider=%s)", provider_name
+                )
         else:
-            gateway.channels["telegram"] = channel
+            gateway.channels[provider_name] = channel
 
     # ── Matrix channel (optional) ──
     matrix_adapter = None

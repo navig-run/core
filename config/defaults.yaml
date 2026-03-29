@@ -40,6 +40,11 @@ gateway:
   typing_interval_seconds: 4
 
 # Telegram bot  [configure with: navig init — stores token in vault]
+messaging:
+  # Active messaging provider: telegram | none
+  # Can be overridden by NAVIG_MESSAGING_PROVIDER env var.
+  provider: telegram
+
 telegram:
   # Polling or webhook mode. Set automatically by navig init.
   mode: polling

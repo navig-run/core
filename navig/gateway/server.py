@@ -153,6 +153,7 @@ class NavigGateway:
         # Bounded queue — prevents OOM on message floods (P1-2)
         self._message_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
         self._queue_task: asyncio.Task | None = None
+        self._background_tasks: set[asyncio.Task] = set()
 
         # New autonomous modules (lazy initialized)
         self.approval_manager = None
@@ -264,6 +265,13 @@ class NavigGateway:
             except asyncio.CancelledError:
                 pass  # task cancelled; expected during shutdown
 
+        # Cancel tracked background tasks (P4 cleanup hardening)
+        if self._background_tasks:
+            for task in list(self._background_tasks):
+                task.cancel()
+            await asyncio.gather(*list(self._background_tasks), return_exceptions=True)
+            self._background_tasks.clear()
+
         # Stop heartbeat
         if self.heartbeat_runner:
             await self.heartbeat_runner.stop()
@@ -343,14 +351,22 @@ class NavigGateway:
         # Deck (Telegram Mini App) routes — pass auth config
         try:
             from navig.gateway.deck import register_deck_routes
+            from navig.messaging import is_provider_enabled
+            from navig.messaging.secrets import resolve_telegram_bot_token
 
             raw_cfg = self.config_manager.global_config or {}
             tg_cfg = raw_cfg.get("telegram", {}) if isinstance(raw_cfg, dict) else {}
             deck_cfg = raw_cfg.get("deck", {}) if isinstance(raw_cfg, dict) else {}
 
-            # Only register deck if telegram is configured (tightly coupled)
-            bot_token = tg_cfg.get("bot_token", "")
-            if bot_token and deck_cfg.get("enabled", True):
+            telegram_channel = self.channels.get("telegram")
+            provider_ready = bool(telegram_channel) or is_provider_enabled("telegram", raw_cfg)
+            bot_token = (
+                getattr(telegram_channel, "bot_token", "")
+                or resolve_telegram_bot_token(raw_cfg)
+                or tg_cfg.get("bot_token", "")
+            )
+
+            if provider_ready and bot_token and deck_cfg.get("enabled", True):
                 # Store gateway reference so Deck API handlers can access channels
                 self._app["gateway"] = self
                 register_deck_routes(
@@ -360,6 +376,8 @@ class NavigGateway:
                     require_auth=tg_cfg.get("require_auth", True),
                     deck_cfg=deck_cfg,
                 )
+            elif not provider_ready:
+                logger.info("Deck not loaded: telegram messaging provider disabled")
             elif not bot_token:
                 logger.info("Deck not loaded: no Telegram bot_token configured")
             else:
@@ -1148,7 +1166,7 @@ class NavigGateway:
             await self.stop()
             sys.exit(0)
 
-        _asyncio.create_task(_delayed())
+        self._spawn_background_task(_delayed())
         return resp
 
     async def _handle_approval_request(self, request) -> web.Response:
@@ -1193,7 +1211,7 @@ class NavigGateway:
 
         engine = get_proactive_engine()
         if not engine.running:
-            asyncio.create_task(engine.start())
+            self._spawn_background_task(engine.start())
             return web.json_response({"success": True, "status": "started"})
         return web.json_response({"success": True, "status": "already_running"})
 
@@ -1214,7 +1232,7 @@ class NavigGateway:
         engine = get_proactive_engine()
         if engine.is_checking:
             return web.json_response({"error": "Proactive engine busy"}, status=409)
-        asyncio.create_task(engine.run_checks(None))
+        self._spawn_background_task(engine.run_checks(None))
         return web.json_response({"success": True, "status": "triggered"})
 
     async def _handle_engagement_status(self, request) -> web.Response:
@@ -1355,6 +1373,14 @@ class NavigGateway:
     def get_queue_size(self) -> int:
         """Get current message queue size."""
         return self._message_queue.qsize()
+
+    def _spawn_background_task(self, coro: Any) -> Any:
+        """Create a tracked background task that is cancelled on shutdown."""
+        task = asyncio.create_task(coro)
+        if hasattr(task, "add_done_callback"):
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+        return task
 
 
 def run_gateway():

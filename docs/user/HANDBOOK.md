@@ -3751,6 +3751,7 @@ execution:
 | `NAVIG_ACTIVE_HOST` | Override active host (highest priority) |
 | `NAVIG_ACTIVE_APP` | Override active app (highest priority) |
 | `NAVIG_CONFIG_DIR` | Override config/log base directory (default: `~/.navig`) |
+| `NAVIG_MESSAGING_PROVIDER` | Override active messaging provider (`telegram` or `none`) |
 
 **Usage:**
 ```powershell
@@ -3767,6 +3768,26 @@ export NAVIG_ACTIVE_APP='my-app'
 - CI/CD pipelines where you can't rely on project config
 - Scripting that needs to target a specific host
 - Testing commands against different hosts without changing global state
+
+---
+
+### Messaging Provider (Canonical)
+
+```yaml
+messaging:
+  provider: telegram  # telegram | none
+```
+
+Resolution order for active provider:
+1. `NAVIG_MESSAGING_PROVIDER` environment variable
+2. `messaging.provider` in config
+3. Default: `telegram` (backward-compatible)
+
+Telegram token resolution remains vault-first (with compatibility fallback):
+1. Vault v2 labels (`telegram/bot_token`, `telegram/token`, ...)
+2. Vault v1 (`telegram` token/bot_token)
+3. `TELEGRAM_BOT_TOKEN` env var
+4. `telegram.bot_token` in config
 
 ---
 
@@ -4408,6 +4429,14 @@ echo "ALLOWED_TELEGRAM_USERS=your_user_id" >> .env
 navig start                  # Gateway + bot (background, recommended)
 navig start --foreground     # See live logs
 ```
+
+**Telegram token resolution (env + vault):**
+- NAVIG resolves bot token in this order:
+  1. Vault (`telegram` provider credential, token/bot_token)
+  2. `NAVIG_TELEGRAM_BOT_TOKEN`
+  3. `TELEGRAM_BOT_TOKEN`
+  4. `telegram.bot_token` in config
+- So you can run Telegram bot without exporting env vars when Vault is configured.
 
 **Alternative Start Methods:**
 
@@ -5465,6 +5494,8 @@ navig cred delete <id> --force      # Skip confirmation
 # Test credential validity
 navig cred test openai              # Test by provider name
 navig cred test <id>                # Test by credential ID
+navig cred test --provider deepgram # Force provider mode (avoids short-name ambiguity)
+navig cred test --id 4d731848       # Force credential-ID mode
 
 # Enable/disable without deleting
 navig cred disable <id>
@@ -8512,6 +8543,7 @@ python scripts/version_bump.py bump major --commit --tag --push
 Optional npm-style aliases:
 
 ```bash
+npm run release:dry
 npm run release:normal
 npm run release:minor
 npm run release:big
@@ -8522,3 +8554,4 @@ Mapping:
 - `release:normal` = patch bump (`X.Y.Z` -> `X.Y.(Z+1)`)
 - `release:minor` = minor bump (`X.Y.Z` -> `X.(Y+1).0`)
 - `release:big` = major bump (`X.Y.Z` -> `(X+1).0.0`)
+- `release:dry` = preview next patch bump only (no file/git changes)

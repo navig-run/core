@@ -292,7 +292,7 @@ class TelegramChannel:
             logger.error("aiohttp not installed. Cannot start Telegram channel.")
             raise RuntimeError("aiohttp not installed; cannot start Telegram channel")
 
-        self._session = aiohttp.ClientSession()
+        self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10))
 
         # Get bot info — validate token before marking as running
         try:
@@ -429,6 +429,9 @@ class TelegramChannel:
                 else:
                     logger.error(f"Telegram API error: {result.get('description')}")
                     return None
+        except asyncio.TimeoutError:
+            logger.error("Telegram API call timed out: %s", method)
+            return None
         except Exception as e:
             logger.error(f"Telegram API call failed: {e}")
             return None
@@ -2046,6 +2049,38 @@ class TelegramChannel:
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
         await TelegramCommandsMixin._handle_models_command(self, chat_id=chat_id, user_id=user_id)
+
+    async def _probe_bridge_grid(self) -> tuple[bool, str]:
+        """Delegate bridge probe helper required by provider/model screens."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return await TelegramCommandsMixin._probe_bridge_grid(self)
+
+    def _get_navigation_store(self) -> dict[int, dict[str, Any]]:
+        """Delegate navigation store helper for single-message Telegram UX."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._get_navigation_store(self)
+
+    def _get_navigation_state(self, chat_id: int) -> dict[str, Any]:
+        """Delegate navigation state helper for single-message Telegram UX."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._get_navigation_state(self, chat_id)
+
+    def _reset_navigation_state(
+        self,
+        chat_id: int,
+        message_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Delegate nav reset helper used by /start."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._reset_navigation_state(
+            self,
+            chat_id,
+            message_id=message_id,
+        )
 
     async def _handle_providers(
         self,
