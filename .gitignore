@@ -7,8 +7,8 @@
 # ===============================================
 # IDE and Editor Files
 # ===============================================
-.vscode/                    # VS Code settings
-.idea/                      # JetBrains IDEs (PyCharm, IntelliJ)
+.vscode/
+.idea/
 *.swp                       # Vim swap files
 *.swo                       # Vim swap files
 *~                          # Backup files
