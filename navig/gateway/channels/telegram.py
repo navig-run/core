@@ -776,6 +776,16 @@ class TelegramChannel:
                 if tier_override:
                     metadata["tier_override"] = tier_override
 
+                try:
+                    if await self._handle_intake_reply(
+                        chat_id=chat_id,
+                        user_id=user_id,
+                        text=text,
+                    ):
+                        return
+                except AttributeError:
+                    pass
+
                 # ── Slash command routing ──
                 cmd = text.strip().lower()
                 if cmd in ("/models", "/model"):

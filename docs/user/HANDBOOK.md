@@ -8132,6 +8132,36 @@ For premium low-friction autonomous chat flow, Telegram now supports:
 - `/auto_status` — includes continuation policy, classifier state, and suppression metadata (`busy_until`, `last_skip`)
 - Detection is classifier-assisted: continuation triggers on high-confidence continue intent and avoids auto-trigger on choice/wait/blocked phrasing.
 
+### Telegram Space Control (Low-Friction)
+
+You can switch planning space directly from Telegram and get immediate direction:
+
+- `/spaces` — list available spaces and the currently active one
+- `/space <name>` — switch active space and print top 3 next actions
+
+Operational spaces are first-class and supported out of the box:
+
+- `devops`
+- `sysops`
+
+If a selected space has no docs yet, NAVIG bootstraps baseline files automatically:
+
+- `VISION.md`
+- `ROADMAP.md`
+- `CURRENT_PHASE.md`
+
+### Telegram Guided Intake
+
+Run `/intake [space]` to start a short guided planning interview (4 questions).
+
+The intake writes structured updates into the target space:
+
+- `VISION.md` (goal, constraints, assumption to challenge)
+- `ROADMAP.md` (short-horizon target)
+- `CURRENT_PHASE.md` (actionable checklist)
+
+Cancel anytime with `/intake cancel` (or `/intake stop`).
+
 ### CLI Continuation Controls
 
 CLI parity is available via `navig agent continuation`:

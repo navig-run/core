@@ -550,6 +550,16 @@ echo env('APP_ENV');
 - **OUTPUT CONTROL**: Use `--plain` for machine-friendly help
 
 
+## Telegram Space & Intake Shortcuts (navig_telegram_space)
+- **WHEN TO USE**: When user wants ultra-fast planning flow directly in Telegram without jumping back to CLI.
+- **COMMANDS**:
+  - `/spaces` — list available spaces and show active space
+  - `/space <name>` — switch active space and return top 3 next actions immediately
+  - `/intake [space]` — guided 4-question planning intake that updates `VISION.md`, `ROADMAP.md`, `CURRENT_PHASE.md`
+  - `/intake cancel` — stop active intake session
+- **OPS SPACES**: `devops` and `sysops` are first-class spaces and should be offered as standard choices.
+
+
 ## Error Handling Rules
 - **ON CONNECTION ERROR**:
   1. Run `navig host test` to verify connectivity

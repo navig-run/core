@@ -13,6 +13,8 @@ CANONICAL_SPACES: tuple[str, ...] = (
     "human",
     "residence",
     "company",
+    "devops",
+    "sysops",
 )
 
 SPACE_ALIASES: dict[str, str] = {
@@ -25,6 +27,11 @@ SPACE_ALIASES: dict[str, str] = {
     "human-space": "human",
     "residence-space": "residence",
     "company-space": "company",
+    "devops-space": "devops",
+    "sysops-space": "sysops",
+    "ops": "devops",
+    "operations": "devops",
+    "system-operations": "sysops",
 }
 
 

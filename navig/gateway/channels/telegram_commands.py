@@ -35,6 +35,7 @@ import re
 import socket
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from navig.platform.paths import global_config_path, msg_trace_path
@@ -261,6 +262,24 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     ),
     SlashCommandEntry(
         "plan", "Add a plan goal (+ text)", cli_template="plans add {args}", category="tools"
+    ),
+    SlashCommandEntry(
+        "space",
+        "Switch active space (+ name)",
+        handler="_handle_space",
+        category="tools",
+    ),
+    SlashCommandEntry(
+        "spaces",
+        "List available spaces",
+        handler="_handle_spaces",
+        category="tools",
+    ),
+    SlashCommandEntry(
+        "intake",
+        "Guided planning questions (Vision/Roadmap/Phase)",
+        handler="_handle_intake",
+        category="tools",
     ),
     # --- Formatting & Reasoning --------------------------------------------------
     SlashCommandEntry(
@@ -539,6 +558,13 @@ def _iter_unique_registry(*, visible_only: bool = False) -> list[SlashCommandEnt
 
 
 class TelegramCommandsMixin:
+    _INTAKE_QUESTIONS: tuple[tuple[str, str], ...] = (
+        ("goal", "What is your main goal for this space in the next 30 days?"),
+        ("horizon", "What valuable result should be visible by the end of tomorrow?"),
+        ("constraint", "What is your biggest constraint right now (time, money, energy, skills)?"),
+        ("assumption", "Which assumption might be wrong and should be challenged first?"),
+    )
+
     """Mixin for TelegramChannel - all slash-command handler methods."""
 
     @staticmethod
@@ -668,6 +694,249 @@ class TelegramCommandsMixin:
         lines.append(f"Model tier: `{tier or 'auto'}`")
 
         await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+
+    def _runtime_state_with_context(
+        self,
+        user_id: int,
+        chat_id: int,
+        context: dict[str, Any],
+    ) -> None:
+        from navig.store.runtime import get_runtime_store
+
+        store = get_runtime_store()
+        state = store.get_ai_state(user_id) or {}
+        store.set_ai_state(
+            user_id=user_id,
+            chat_id=chat_id,
+            mode=state.get("mode") or "active",
+            persona=state.get("persona") or "assistant",
+            context=context,
+        )
+
+    def _bootstrap_space_docs(self, space: str, space_path: Path) -> None:
+        space_path.mkdir(parents=True, exist_ok=True)
+
+        vision = space_path / "VISION.md"
+        if not vision.exists():
+            vision.write_text(
+                f"---\ngoal: {space} goals\n---\n\n# {space.title()} Vision\n\n",
+                encoding="utf-8",
+            )
+
+        roadmap = space_path / "ROADMAP.md"
+        if not roadmap.exists():
+            roadmap.write_text("# Roadmap\n\n", encoding="utf-8")
+
+        current_phase = space_path / "CURRENT_PHASE.md"
+        if not current_phase.exists():
+            current_phase.write_text(
+                "---\ncompletion_pct: 0\n---\n\n# Current Phase\n\n",
+                encoding="utf-8",
+            )
+
+    async def _handle_spaces(self, chat_id: int) -> None:
+        from navig.commands.space import get_active_space
+        from navig.spaces.contracts import CANONICAL_SPACES
+
+        active = get_active_space()
+        lines = ["*Spaces*", f"Active: `{active}`", "", "Available:"]
+        for name in CANONICAL_SPACES:
+            marker = "•"
+            if name == active:
+                marker = "▸"
+            lines.append(f"{marker} `{name}`")
+        lines.append("\nUse `/space <name>` to switch and get top next actions.")
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+
+    async def _handle_space(self, chat_id: int, user_id: int, text: str = "") -> None:
+        from navig.commands.space import _set_active_space, _spaces_dir
+        from navig.spaces.contracts import normalize_space_name, validate_space_name
+        from navig.spaces.kickoff import build_space_kickoff
+
+        raw = (text or "").strip()
+        arg = raw[len("/space") :].strip() if raw.lower().startswith("/space") else ""
+        if not arg:
+            await self._handle_spaces(chat_id)
+            return
+
+        if not validate_space_name(arg):
+            await self.send_message(
+                chat_id,
+                "Unknown space. Use `/spaces` to see valid names.",
+                parse_mode="Markdown",
+            )
+            return
+
+        selected = normalize_space_name(arg)
+        space_path = _spaces_dir() / selected
+        self._bootstrap_space_docs(selected, space_path)
+        _set_active_space(selected)
+
+        kickoff = build_space_kickoff(selected, space_path, cwd=Path.cwd(), max_items=3)
+        lines = [f"✅ Active space: `{selected}`", f"Goal: {kickoff.goal}"]
+        if kickoff.actions:
+            lines.append("Top next actions:")
+            for index, action in enumerate(kickoff.actions, start=1):
+                lines.append(f"{index}. {action}")
+        else:
+            lines.append("No next actions found yet.")
+            lines.append("Run `/intake` to build Vision/Roadmap/Current Phase quickly.")
+
+        from navig.store.runtime import get_runtime_store
+
+        store = get_runtime_store()
+        state = store.get_ai_state(user_id) or {}
+        context = dict(state.get("context") or {})
+        continuation = dict(context.get("continuation") or {})
+        continuation["space"] = selected
+        context["continuation"] = continuation
+        self._runtime_state_with_context(user_id, chat_id, context)
+
+        await self.send_message(chat_id, "\n".join(lines), parse_mode=None)
+
+    def _append_markdown_section(self, path: Path, heading: str, lines: list[str]) -> None:
+        existing = ""
+        if path.exists():
+            existing = path.read_text(encoding="utf-8")
+            if existing and not existing.endswith("\n"):
+                existing += "\n"
+        content = existing + f"\n## {heading}\n\n" + "\n".join(lines) + "\n"
+        path.write_text(content, encoding="utf-8")
+
+    def _apply_intake_to_space_docs(self, space: str, answers: dict[str, str]) -> Path:
+        from navig.commands.space import _spaces_dir
+
+        space_path = _spaces_dir() / space
+        self._bootstrap_space_docs(space, space_path)
+        date_label = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        vision = space_path / "VISION.md"
+        self._append_markdown_section(
+            vision,
+            f"Intake {date_label}",
+            [
+                f"- Goal (30d): {answers.get('goal', '')}",
+                f"- Biggest constraint: {answers.get('constraint', '')}",
+                f"- Assumption to challenge: {answers.get('assumption', '')}",
+            ],
+        )
+
+        roadmap = space_path / "ROADMAP.md"
+        self._append_markdown_section(
+            roadmap,
+            f"Intake {date_label}",
+            [f"- Outcome target (tomorrow): {answers.get('horizon', '')}"],
+        )
+
+        phase = space_path / "CURRENT_PHASE.md"
+        self._append_markdown_section(
+            phase,
+            f"Intake {date_label}",
+            [
+                f"- [ ] Execute: {answers.get('horizon', '')}",
+                f"- [ ] Reduce constraint: {answers.get('constraint', '')}",
+                f"- [ ] Validate assumption: {answers.get('assumption', '')}",
+            ],
+        )
+
+        return space_path
+
+    async def _handle_intake(self, chat_id: int, user_id: int, text: str = "") -> None:
+        from navig.commands.space import get_active_space
+        from navig.spaces.contracts import normalize_space_name, validate_space_name
+        from navig.store.runtime import get_runtime_store
+
+        raw = (text or "").strip()
+        arg = raw[len("/intake") :].strip() if raw.lower().startswith("/intake") else ""
+        if arg.lower() in {"stop", "cancel"}:
+            store = get_runtime_store()
+            state = store.get_ai_state(user_id) or {}
+            context = dict(state.get("context") or {})
+            context["intake"] = {"active": False}
+            self._runtime_state_with_context(user_id, chat_id, context)
+            await self.send_message(chat_id, "🛑 Intake cancelled.", parse_mode=None)
+            return
+
+        selected_space = get_active_space()
+        if arg:
+            if not validate_space_name(arg):
+                await self.send_message(chat_id, "Unknown space for intake. Use `/spaces` first.", parse_mode="Markdown")
+                return
+            selected_space = normalize_space_name(arg)
+
+        store = get_runtime_store()
+        state = store.get_ai_state(user_id) or {}
+        context = dict(state.get("context") or {})
+        context["intake"] = {
+            "active": True,
+            "space": selected_space,
+            "step": 0,
+            "answers": {},
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._runtime_state_with_context(user_id, chat_id, context)
+
+        first_question = self._INTAKE_QUESTIONS[0][1]
+        await self.send_message(
+            chat_id,
+            f"🧭 Intake started for `{selected_space}`.\n{first_question}",
+            parse_mode="Markdown",
+        )
+
+    async def _handle_intake_reply(self, chat_id: int, user_id: int, text: str) -> bool:
+        from navig.spaces.kickoff import build_space_kickoff
+        from navig.store.runtime import get_runtime_store
+
+        if not text or text.strip().startswith("/"):
+            return False
+
+        store = get_runtime_store()
+        state = store.get_ai_state(user_id) or {}
+        context = dict(state.get("context") or {})
+        intake = dict(context.get("intake") or {})
+        if not intake.get("active"):
+            return False
+
+        step = int(intake.get("step") or 0)
+        answers = dict(intake.get("answers") or {})
+        if step >= len(self._INTAKE_QUESTIONS):
+            context["intake"] = {"active": False}
+            self._runtime_state_with_context(user_id, chat_id, context)
+            return True
+
+        key, _ = self._INTAKE_QUESTIONS[step]
+        answers[key] = text.strip()
+
+        next_step = step + 1
+        if next_step < len(self._INTAKE_QUESTIONS):
+            intake["step"] = next_step
+            intake["answers"] = answers
+            context["intake"] = intake
+            self._runtime_state_with_context(user_id, chat_id, context)
+            await self.send_message(chat_id, self._INTAKE_QUESTIONS[next_step][1], parse_mode=None)
+            return True
+
+        space = str(intake.get("space") or "life")
+        space_path = self._apply_intake_to_space_docs(space, answers)
+        kickoff = build_space_kickoff(space, space_path, cwd=Path.cwd(), max_items=3)
+
+        context["intake"] = {
+            "active": False,
+            "space": space,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._runtime_state_with_context(user_id, chat_id, context)
+
+        lines = [
+            f"✅ Intake completed for `{space}`.",
+            f"Updated: {space_path / 'VISION.md'}, {space_path / 'ROADMAP.md'}, {space_path / 'CURRENT_PHASE.md'}",
+        ]
+        if kickoff.actions:
+            lines.append("Top next actions:")
+            for index, action in enumerate(kickoff.actions, start=1):
+                lines.append(f"{index}. {action}")
+        await self.send_message(chat_id, "\n".join(lines), parse_mode=None)
+        return True
 
     async def _handle_user(self, chat_id: int, user_id: int, username: str) -> None:
         """Show user profile, preferences, and session state (/user)."""

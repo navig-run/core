@@ -1,4 +1,5 @@
 import pytest
+from pathlib import Path
 
 
 def _get_mixin():
@@ -79,6 +80,12 @@ class FakeContinuationStore(FakeAutoStateStore):
             "persona": "teacher",
             "context": {},
         }
+
+
+class _FakeConfigManager:
+    def __init__(self, base: Path):
+        self.global_config_dir = str(base)
+        self.global_config = {}
 
 
 @pytest.mark.asyncio
@@ -218,3 +225,63 @@ async def test_auto_status_shows_busy_suppression_metadata(monkeypatch):
     await bot._handle_auto_status(123, 456)
     assert any("busy_until=" in m[1] for m in bot.messages)
     assert any("last_skip=" in m[1] for m in bot.messages)
+
+
+@pytest.mark.asyncio
+async def test_space_command_switches_and_prints_kickoff(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_store = FakeContinuationStore()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    repo = tmp_path / "repo"
+    plans_dir = repo / ".navig" / "plans"
+    plans_dir.mkdir(parents=True, exist_ok=True)
+    (plans_dir / "DEV_PLAN.md").write_text("- [ ] Prepare incident runbook\n", encoding="utf-8")
+    monkeypatch.chdir(repo)
+
+    await bot._handle_space(123, 456, "/space devops")
+
+    assert any("Active space: `devops`" in m[1] for m in bot.messages)
+    assert any("Top next actions:" in m[1] for m in bot.messages)
+
+
+@pytest.mark.asyncio
+async def test_spaces_command_lists_devops_and_sysops(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+
+    await bot._handle_spaces(123)
+    assert any("`devops`" in m[1] for m in bot.messages)
+    assert any("`sysops`" in m[1] for m in bot.messages)
+
+
+@pytest.mark.asyncio
+async def test_intake_flow_writes_space_docs(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    await bot._handle_intake(123, 456, "/intake health")
+    assert any("Intake started" in m[1] for m in bot.messages)
+
+    handled = await bot._handle_intake_reply(123, 456, "Improve sleep and recovery")
+    assert handled is True
+    handled = await bot._handle_intake_reply(123, 456, "Have a repeatable bedtime routine by tomorrow")
+    assert handled is True
+    handled = await bot._handle_intake_reply(123, 456, "Late-night screen time")
+    assert handled is True
+    handled = await bot._handle_intake_reply(123, 456, "I assume I can sleep well without planning evenings")
+    assert handled is True
+
+    health_dir = Path(fake_cfg.global_config_dir) / "spaces" / "health"
+    assert (health_dir / "VISION.md").exists()
+    assert (health_dir / "ROADMAP.md").exists()
+    assert (health_dir / "CURRENT_PHASE.md").exists()
+    assert "Intake" in (health_dir / "VISION.md").read_text(encoding="utf-8")
+    assert any("Intake completed" in m[1] for m in bot.messages)

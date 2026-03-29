@@ -7,6 +7,9 @@ from navig.spaces.resolver import discover_space_paths, resolve_space
 def test_normalize_space_name_aliases_and_default():
     assert normalize_space_name("health") == "health"
     assert normalize_space_name("health-space") == "health"
+    assert normalize_space_name("devops") == "devops"
+    assert normalize_space_name("ops") == "devops"
+    assert normalize_space_name("sysops-space") == "sysops"
     assert normalize_space_name("") == "life"
     assert normalize_space_name("unknown-value") == "life"
 
