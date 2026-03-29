@@ -65,6 +65,30 @@ This checklist is for NAVIG maintainers preparing an official release.
   ```
 - [ ] **Update website** download links (if applicable)
 
+### Quick bump commands (maintainers)
+
+Use the helper script to bump `pyproject.toml` and create/push a tag in one command:
+
+```bash
+python scripts/version_bump.py bump patch --commit --tag --push
+python scripts/version_bump.py bump minor --commit --tag --push
+python scripts/version_bump.py bump major --commit --tag --push
+```
+
+Optional npm-style shortcuts are available at repo root:
+
+```bash
+npm run release:normal
+npm run release:minor
+npm run release:big
+```
+
+Command mapping:
+
+- `release:normal` → patch bump (`X.Y.Z` -> `X.Y.(Z+1)`)
+- `release:minor` → minor bump (`X.Y.Z` -> `X.(Y+1).0`)
+- `release:big` → major bump (`X.Y.Z` -> `(X+1).0.0`)
+
 ## Post-Release
 
 - [ ] **Announce release**:

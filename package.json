@@ -1,0 +1,10 @@
+{
+  "name": "navig-core-release-tools",
+  "private": true,
+  "scripts": {
+    "version:show": "python scripts/version_bump.py show",
+    "release:normal": "python scripts/version_bump.py bump patch --commit --tag --push",
+    "release:minor": "python scripts/version_bump.py bump minor --commit --tag --push",
+    "release:big": "python scripts/version_bump.py bump major --commit --tag --push"
+  }
+}

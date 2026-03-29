@@ -8493,3 +8493,32 @@ Notes:
 - If username resolution fails, use numeric `chat_id` or have the user message the bot first.
 - `navig gateway test telegram` requires `--target`.
 - `navig gateway test all` tests Telegram and Matrix in one run.
+
+---
+
+## 49. Maintainer Release Shortcuts
+
+For maintainers, NAVIG includes a helper to bump package version and publish a git tag quickly.
+
+Python helper (no npm required):
+
+```bash
+python scripts/version_bump.py show
+python scripts/version_bump.py bump patch --commit --tag --push
+python scripts/version_bump.py bump minor --commit --tag --push
+python scripts/version_bump.py bump major --commit --tag --push
+```
+
+Optional npm-style aliases:
+
+```bash
+npm run release:normal
+npm run release:minor
+npm run release:big
+```
+
+Mapping:
+
+- `release:normal` = patch bump (`X.Y.Z` -> `X.Y.(Z+1)`)
+- `release:minor` = minor bump (`X.Y.Z` -> `X.(Y+1).0`)
+- `release:big` = major bump (`X.Y.Z` -> `(X+1).0.0`)
