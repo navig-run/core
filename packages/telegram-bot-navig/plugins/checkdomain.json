@@ -1,0 +1,9 @@
+﻿{
+  "id": "checkdomain",
+  "version": "1.0.0",
+  "description": "Check DNS records and WHOIS info for a domain.",
+  "provides": [],
+  "depends": {
+    "pip": []
+  }
+}

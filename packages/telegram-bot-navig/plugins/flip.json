@@ -1,0 +1,9 @@
+﻿{
+  "id": "flip",
+  "version": "1.0.0",
+  "description": "Flip a coin — heads or tails.",
+  "provides": [],
+  "depends": {
+    "pip": []
+  }
+}

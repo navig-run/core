@@ -1,0 +1,9 @@
+{
+  "id": "business_chat",
+  "version": "1.0.0",
+  "description": "Handle Telegram Business messages and reply on behalf of the account.",
+  "provides": [],
+  "depends": {
+    "pip": []
+  }
+}

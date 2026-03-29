@@ -1,0 +1,33 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "watch-navig-bridge",
+			"type": "shell",
+			"command": "npm run watch",
+			"options": {
+				"cwd": "${workspaceFolder}/packages/navig-bridge"
+			},
+			"isBackground": true,
+			"problemMatcher": "$tsc-watch",
+			"group": "build"
+		},
+		{
+			"label": "compile-navig-bridge",
+			"type": "shell",
+			"command": "npm run compile",
+			"options": {
+				"cwd": "${workspaceFolder}/packages/navig-bridge"
+			},
+			"problemMatcher": "$tsc",
+			"group": "build"
+		},
+		{
+			"label": "Landing Dev Server",
+			"type": "shell",
+			"command": "cd packages/landing && npx next dev -p 7003",
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}
