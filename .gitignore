@@ -348,3 +348,4 @@ $null
 
 # pytest local temp dirs
 .pytest_tmp/
+CHANGELOG.md
