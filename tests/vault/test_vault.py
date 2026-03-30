@@ -806,7 +806,7 @@ class TestVaultTestMethods:
 
     @patch("httpx.get")
     def test_test_provider_success(self, mock_get, vault):
-        """Test vaccine.test_provider() with mocked validator."""
+        """Test vault.test_provider() with mocked validator."""
         mock_get.return_value = MagicMock(
             status_code=200,
             json=lambda: {"data": [{"id": "gpt-4"}]},

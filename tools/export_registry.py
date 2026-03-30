@@ -35,7 +35,11 @@ def _emit_text(path: Path, content: str) -> None:
 
 
 def _emit_completions(path: Path, manifest: dict) -> None:
-    commands = [str(c.get("path", "")).strip() for c in manifest.get("commands", [])]
+    commands = [
+        str(c.get("path", "")).strip()
+        for c in manifest.get("commands", [])
+        if isinstance(c, dict)
+    ]
     commands = sorted(c for c in commands if c)
     _emit_text(path, "\n".join(commands) + ("\n" if commands else ""))
 

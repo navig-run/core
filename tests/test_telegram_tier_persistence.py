@@ -85,3 +85,78 @@ def test_noai_is_one_shot_and_does_not_overwrite_persistent_pref(tmp_path: Path,
 
     # Should restore from persisted preference.
     assert channel._get_user_tier_pref(chat_id, user_id) == "big"
+
+
+@pytest.mark.asyncio
+async def test_noai_is_not_consumed_by_slash_commands(tmp_path: Path, monkeypatch):
+    storage = tmp_path / "sessions"
+    sm = SessionManager(storage_dir=storage)
+
+    monkeypatch.setattr("navig.gateway.channels.telegram.HAS_SESSIONS", True)
+    monkeypatch.setattr("navig.gateway.channels.telegram.get_session_manager", lambda: sm)
+
+    channel = TelegramChannel(
+        bot_token="123:FAKE",
+        allowed_users=[42],
+        on_message=lambda *args, **kwargs: None,
+    )
+
+    async def _noop_handle_providers(chat_id: int, user_id: int = 0, message_id=None):
+        return None
+
+    channel._handle_providers = _noop_handle_providers
+    channel._set_one_shot_noai(42)
+
+    update = {
+        "message": {
+            "chat": {"id": 42, "type": "private"},
+            "from": {"id": 42, "username": "tester"},
+            "text": "/provider",
+            "message_id": 100,
+        }
+    }
+
+    await channel._process_update(update)
+
+    assert channel._get_user_tier_pref(42, 42) == "noai"
+
+
+@pytest.mark.asyncio
+async def test_noai_non_command_text_shows_guidance_instead_of_cli(tmp_path: Path, monkeypatch):
+    storage = tmp_path / "sessions"
+    sm = SessionManager(storage_dir=storage)
+
+    monkeypatch.setattr("navig.gateway.channels.telegram.HAS_SESSIONS", True)
+    monkeypatch.setattr("navig.gateway.channels.telegram.get_session_manager", lambda: sm)
+
+    channel = TelegramChannel(
+        bot_token="123:FAKE",
+        allowed_users=[42],
+        on_message=lambda *args, **kwargs: None,
+    )
+
+    captured: list[str] = []
+
+    async def _fake_send_message(chat_id: int, text: str, **kwargs):
+        captured.append(text)
+        return {"ok": True}
+
+    async def _never_cli(chat_id: int, user_id: int, metadata: dict, navig_cmd: str):
+        raise AssertionError("CLI should not be called for plain chat text in no-AI mode")
+
+    channel.send_message = _fake_send_message
+    channel._handle_cli_command = _never_cli
+    channel._set_one_shot_noai(42)
+
+    update = {
+        "message": {
+            "chat": {"id": 42, "type": "private"},
+            "from": {"id": 42, "username": "tester"},
+            "text": "hello navig",
+            "message_id": 101,
+        }
+    }
+
+    await channel._process_update(update)
+
+    assert any("No-AI mode expects a command" in msg for msg in captured)

@@ -1769,7 +1769,7 @@ class TelegramCommandsMixin:
                     return f"{provider}:{label}" if provider else label
 
                 lines.append("")
-                lines.append("*Current model routing:*")
+                lines.append("*Base model routing:*")
                 lines.append(f"⚡ Small: `{_slot(small)}`")
                 lines.append(f"🧠 Big: `{_slot(big)}`")
                 lines.append(f"💻 Code: `{_slot(code)}`")
@@ -1779,6 +1779,7 @@ class TelegramCommandsMixin:
         if user_pref == "noai":
             lines.append("")
             lines.append("🧾 *Next message mode:* `raw / no AI` _(one-shot)_")
+            lines.append("➡️ *Effective next message routing:* `raw / no AI`")
         elif user_pref in {"small", "big", "coder_big"}:
             label = {
                 "small": "small",
@@ -1802,6 +1803,7 @@ class TelegramCommandsMixin:
         for manifest in providers:
             if manifest.id == "mcp_bridge":
                 continue
+            vault_has_key = False
             try:
                 result = verify_provider(manifest)
                 if manifest.tier == "local" and manifest.local_probe:
@@ -1810,7 +1812,9 @@ class TelegramCommandsMixin:
                     vault_has_key, vault_validated = self._provider_vault_validation_status(
                         manifest
                     )
-                    ready = vault_has_key and (vault_validated or bool(result.key_detected))
+                    # Cloud providers become selectable only after successful
+                    # validation (or explicit env-detected key path).
+                    ready = bool(result.key_detected) or bool(vault_validated)
                 elif manifest.requires_key:
                     ready = result.key_detected
                 else:
@@ -1819,6 +1823,21 @@ class TelegramCommandsMixin:
                 ready = False
 
             if not ready:
+                # Show unconfigured cloud providers as grayed-out configure stubs
+                if (
+                    getattr(manifest, "tier", "") == "cloud"
+                    and getattr(manifest, "requires_key", False)
+                    and not vault_has_key
+                    and not bool(getattr(result, "key_detected", False))
+                ):
+                    keyboard_rows.append(
+                        [
+                            {
+                                "text": f"🔑 {manifest.emoji} {manifest.display_name} — add key",
+                                "callback_data": f"prov_{manifest.id}",
+                            }
+                        ]
+                    )
                 continue
 
             ready_provider_count += 1

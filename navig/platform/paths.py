@@ -284,6 +284,11 @@ def builtin_packages_dir() -> Path:
     return Path(__file__).resolve().parent.parent.parent / "packages"
 
 
+def vault_dir() -> Path:
+    """Encrypted vault storage directory (~/.navig/vault)."""
+    return config_dir() / "vault"
+
+
 def store_dir() -> Path:
     """User content store location, with env override and legacy fallback."""
     env = os.environ.get("NAVIG_STORE_DIR")

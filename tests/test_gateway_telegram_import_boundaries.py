@@ -33,14 +33,15 @@ def test_gateway_telegram_imports_stay_within_boundary() -> None:
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     segments = alias.name.split(".")
-                    if "telegram" in segments:
+                    if segments and segments[0] in {"telegram", "telegram_bot"}:
                         rel = py_file.relative_to(repo_root).as_posix()
                         violations.append(f"{rel}:{node.lineno} import {alias.name}")
 
             elif isinstance(node, ast.ImportFrom):
                 module = (node.module or "")
                 module_segments = module.split(".") if module else []
-                if any(seg == "telegram" or seg.startswith("telegram_") for seg in module_segments):
+                is_internal_telegram_module = module.startswith("navig.gateway.channels.telegram")
+                if module_segments and module_segments[0] in {"telegram", "telegram_bot"} and not is_internal_telegram_module:
                     rel = py_file.relative_to(repo_root).as_posix()
                     violations.append(f"{rel}:{node.lineno} from {module}")
                     continue

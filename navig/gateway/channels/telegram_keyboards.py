@@ -1228,7 +1228,6 @@ class CallbackHandler:
             "prov_airllm": "airllm",
         }
         if cb_data in picker_map:
-            await self._answer(cb_id, "")
             prov_id = picker_map[cb_data]
             try:
                 await self.channel._show_provider_model_picker(
@@ -1238,8 +1237,39 @@ class CallbackHandler:
                     selected_tier="s",
                     message_id=message_id,
                 )
-            except TypeError:
-                await self.channel._show_provider_model_picker(chat_id, prov_id=prov_id)
+                await self._answer(cb_id, "")
+            except TypeError as exc:
+                err = str(exc)
+                signature_mismatch = (
+                    "unexpected keyword argument" in err
+                    or "positional argument" in err
+                    or "required positional argument" in err
+                )
+                if signature_mismatch:
+                    await self.channel._show_provider_model_picker(chat_id, prov_id=prov_id)
+                    await self._answer(cb_id, "")
+                else:
+                    logger.warning(
+                        "Provider picker failed for %s: %s",
+                        prov_id,
+                        exc,
+                    )
+                    await self._answer(cb_id, f"⚠️ Couldn't open {prov_id} picker", show_alert=True)
+                    try:
+                        await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
+                    except TypeError:
+                        await self.channel._handle_providers(chat_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Provider picker failed for %s: %s",
+                    prov_id,
+                    exc,
+                )
+                await self._answer(cb_id, f"⚠️ Couldn't open {prov_id} picker", show_alert=True)
+                try:
+                    await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
+                except TypeError:
+                    await self.channel._handle_providers(chat_id)
             return
 
         # Deepgram: STT only, no LLM routing

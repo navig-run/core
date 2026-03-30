@@ -74,3 +74,56 @@ async def test_handle_message_clears_runtime_persona_when_not_present(monkeypatc
 
     assert response == "ok"
     assert fake_agent.persona_calls[-1] == ""
+
+
+def test_format_command_failure_for_unknown_command_is_friendly():
+    gateway = SimpleNamespace(
+        config_manager=SimpleNamespace(global_config={}),
+        config=SimpleNamespace(default_agent="default"),
+        run_agent_turn=AsyncMock(return_value="fallback"),
+    )
+    router = ChannelRouter(gateway)
+
+    output = """
+Usage: navig [OPTIONS] COMMAND [ARGS]...
+Error: No such command 'hello'. Did you mean 'help', 'db-shell'?
+"""
+
+    text = router._format_command_failure("hello", output, 2)
+    assert "Unknown command" in text
+    assert "`help`" in text
+    assert "`db-shell`" in text
+
+
+@pytest.mark.asyncio
+async def test_quick_workflows_uses_flow_list_command(monkeypatch):
+    gateway = SimpleNamespace(
+        config_manager=SimpleNamespace(global_config={}),
+        config=SimpleNamespace(default_agent="default"),
+        run_agent_turn=AsyncMock(return_value="fallback"),
+    )
+    router = ChannelRouter(gateway)
+
+    calls = []
+
+    async def _fake_exec(message: str, metadata: dict):
+        calls.append(message)
+        return "ok"
+
+    monkeypatch.setattr(router, "_execute_navig_command", _fake_exec)
+    result = await router._check_quick_commands("workflows", {})
+
+    assert result == "ok"
+    assert calls == ["navig flow list --plain"]
+
+
+def test_format_command_success_for_empty_clipboard_is_clear():
+    gateway = SimpleNamespace(
+        config_manager=SimpleNamespace(global_config={}),
+        config=SimpleNamespace(default_agent="default"),
+        run_agent_turn=AsyncMock(return_value="fallback"),
+    )
+    router = ChannelRouter(gateway)
+
+    text = router._format_command_success("auto clipboard --plain", "\n\n")
+    assert text == "📋 Clipboard is empty."

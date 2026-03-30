@@ -294,7 +294,11 @@ class TelegramChannel:
             logger.error("aiohttp not installed. Cannot start Telegram channel.")
             raise RuntimeError("aiohttp not installed; cannot start Telegram channel")
 
-        self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10))
+        # total=60 must exceed the getUpdates long-poll timeout (30s) to avoid
+        # spurious TimeoutError on every polling cycle.
+        self._session = aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=60, connect=10)
+        )
 
         # Get bot info — validate token before marking as running
         try:
@@ -758,6 +762,7 @@ class TelegramChannel:
                 # ── Parse tier override from /big /small /coder prefix ──
                 tier_override = ""
                 clean_text = text
+                is_slash_command = text.strip().startswith("/")
                 for prefix, tier in (
                     ("/big ", "big"),
                     ("/small ", "small"),
@@ -774,8 +779,10 @@ class TelegramChannel:
                     pref_tier = self._get_user_tier_pref(
                         chat_id, user_id, is_group=is_group
                     )
+                    if pref_tier == "noai" and is_slash_command:
+                        pref_tier = ""
                     tier_override = pref_tier
-                    if pref_tier == "noai":
+                    if pref_tier == "noai" and not is_slash_command:
                         self._user_model_prefs.pop(user_id, None)
 
                 if tier_override:
@@ -979,8 +986,28 @@ class TelegramChannel:
 
                 # ── One-shot raw/no-AI route ──
                 if metadata.get("tier_override") == "noai":
-                    noai_cmd = self._match_cli_command(clean_text.strip()) or clean_text
-                    await self._handle_cli_command(chat_id, user_id, metadata, noai_cmd)
+                    stripped_text = clean_text.strip()
+                    noai_cmd = self._match_cli_command(stripped_text)
+                    if noai_cmd:
+                        await self._handle_cli_command(
+                            chat_id, user_id, metadata, noai_cmd
+                        )
+                        return
+
+                    if stripped_text.lower().startswith("navig "):
+                        await self._handle_cli_command(
+                            chat_id,
+                            user_id,
+                            metadata,
+                            stripped_text[6:].strip(),
+                        )
+                        return
+
+                    await self.send_message(
+                        chat_id,
+                        "⚙️ No-AI mode expects a command. Use `/help` for shortcuts, or send `navig <command>`.",
+                        parse_mode="Markdown",
+                    )
                     return
 
                 # ── Cinematic mode dispatch ──
@@ -2046,17 +2073,100 @@ class TelegramChannel:
             "mcp_bridge": "bridge",
         }.get(name, name)
 
-    async def _handle_models_command(self, chat_id: int, user_id: int = 0):
+    async def _handle_models_command(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        message_id: int | None = None,
+    ):
         """Delegate to the canonical model routing screen implementation."""
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
-        await TelegramCommandsMixin._handle_models_command(self, chat_id=chat_id, user_id=user_id)
+        await TelegramCommandsMixin._handle_models_command(
+            self,
+            chat_id,
+            user_id=user_id,
+            message_id=message_id,
+        )
+
+    async def _handle_status(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        message_id: int | None = None,
+    ) -> None:
+        """Delegate to canonical status screen handler used by menu navigation."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_status(
+            self,
+            chat_id,
+            user_id=user_id,
+            message_id=message_id,
+        )
+
+    async def _handle_spaces(
+        self,
+        chat_id: int,
+        message_id: int | None = None,
+    ) -> None:
+        """Delegate to canonical spaces screen handler used by menu navigation."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_spaces(
+            self,
+            chat_id,
+            message_id=message_id,
+        )
+
+    async def _handle_intake(
+        self,
+        chat_id: int,
+        user_id: int,
+        text: str = "",
+        message_id: int | None = None,
+    ) -> None:
+        """Delegate to canonical intake handler used by menu navigation."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_intake(
+            self,
+            chat_id,
+            user_id,
+            text=text,
+            message_id=message_id,
+        )
+
+    async def _handle_settings_hub(
+        self,
+        chat_id: int,
+        user_id: int,
+        is_group: bool = False,
+        message_id: int | None = None,
+    ) -> None:
+        """Delegate to canonical settings hub handler used by menu navigation."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_settings_hub(
+            self,
+            chat_id,
+            user_id,
+            is_group=is_group,
+            message_id=message_id,
+        )
 
     async def _probe_bridge_grid(self) -> tuple[bool, str]:
         """Delegate bridge probe helper required by provider/model screens."""
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
         return await TelegramCommandsMixin._probe_bridge_grid(self)
+
+    @staticmethod
+    def _provider_vault_validation_status(manifest) -> tuple[bool, bool]:
+        """Delegate static vault-key validation used by provider list rendering."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._provider_vault_validation_status(manifest)
 
     def _get_navigation_store(self) -> dict[int, dict[str, Any]]:
         """Delegate navigation store helper for single-message Telegram UX."""
@@ -2113,11 +2223,63 @@ class TelegramChannel:
 
         await TelegramCommandsMixin._show_provider_model_picker(
             self,
-            chat_id=chat_id,
-            prov_id=prov_id,
+            chat_id,
+            prov_id,
             page=page,
             selected_tier=selected_tier,
             message_id=message_id,
+        )
+
+    async def _handle_audio_menu(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        is_group: bool = False,
+        message_id: int | None = None,
+    ) -> None:
+        """Delegate to audio/voice settings screen (Voice settings button)."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_audio_menu(
+            self,
+            chat_id,
+            user_id,
+            is_group=is_group,
+            message_id=message_id,
+        )
+
+    async def _handle_voice_menu(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        is_group: bool = False,
+        message_id: int | None = None,
+    ) -> None:
+        """Delegate to voice/TTS provider picker screen."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_voice_menu(
+            self,
+            chat_id,
+            user_id,
+            is_group=is_group,
+            message_id=message_id,
+        )
+
+    async def _handle_providers_and_models(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        is_group: bool = False,
+    ) -> None:
+        """Delegate to combined providers+models view (Providers & Models button)."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_providers_and_models(
+            self,
+            chat_id,
+            user_id=user_id,
+            is_group=is_group,
         )
 
     async def _handle_debug(self, chat_id: int) -> None:
@@ -2166,6 +2328,23 @@ class TelegramChannel:
         pp = os.environ.get("PYTHONPATH", "_(not set)_")
         lines.append(f"PYTHONPATH: `{pp}`")
         dg = os.environ.get("DEEPGRAM_KEY") or os.environ.get("DEEPGRAM_API_KEY")
+        if not dg:
+            # Also check vault for deepgram key
+            try:
+                from navig.vault import get_vault_v2
+                _v2 = get_vault_v2()
+                if _v2 is not None:
+                    _store = _v2.store()
+                    for _lbl in ("deepgram", "DEEPGRAM_API_KEY", "DEEPGRAM_KEY"):
+                        try:
+                            _item = _store.get(_lbl)
+                            if _item is not None:
+                                dg = "(vault)"
+                                break
+                        except Exception:
+                            pass
+            except Exception:
+                pass
         lines.append(rf"DEEPGRAM\_KEY: `{'✓ set' if dg else '✗ missing'}`")
         await self.send_message(chat_id, "\n".join(lines))
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 
@@ -54,7 +55,13 @@ def test_markdown_render_contains_reference_sections():
 
 
 def test_export_script_writes_artifacts(tmp_path: Path):
-    from tools.export_registry import main
+    repo_root = Path(__file__).resolve().parents[1]
+    export_script = repo_root / "tools" / "export_registry.py"
+    spec = importlib.util.spec_from_file_location("export_registry", export_script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    main = module.main
 
     output_dir = tmp_path / "generated"
     code = main(
