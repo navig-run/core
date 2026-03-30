@@ -7,6 +7,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Allow importing sibling script without a package __init__
+sys.path.insert(0, str(Path(__file__).parent))
+from _version_sync import run as _sync_manifests  # noqa: E402
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
@@ -74,6 +78,8 @@ def ensure_tag_absent(tag_name: str) -> None:
 
 def git_commit(version: str) -> None:
     run_git("add", "pyproject.toml")
+    run_git("add", "latest.json")
+    run_git("add", "config/latest.json")
     run_git("commit", "-m", f"chore(release): bump version to {version}")
 
 
@@ -134,6 +140,8 @@ def main() -> int:
 
     old_version, new_version = write_version(next_version)
     print(f"Version: {old_version} -> {new_version}")
+
+    _sync_manifests(version=new_version)
 
     if args.commit:
         git_commit(new_version)

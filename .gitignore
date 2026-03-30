@@ -275,6 +275,8 @@ import_times.log
 test_out*.txt
 test_results*.txt
 test_failures*.txt
+pytest_out*.txt
+pytest_fail*.txt
 test_run.log
 test_vault.log
 failed_test*.txt

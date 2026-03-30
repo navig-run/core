@@ -57,6 +57,18 @@ echo "────────────────────────�
 
 git pull origin main
 
+# ── Update version manifests ───────────────────────────────────────────────────
+echo "Syncing version manifests to $VERSION..."
+python scripts/_version_sync.py --version "$VERSION"
+
+# Stage manifests and amend if there are pending changes
+if ! git diff --quiet latest.json config/latest.json 2>/dev/null; then
+  git add latest.json config/latest.json
+  git commit -m "chore(release): sync version manifests to $VERSION" || true
+  git push origin main
+  echo "✅ Manifest commit pushed to main"
+fi
+
 git tag -a "$TAG" -m "Release $TAG"
 echo "✅ Tag $TAG created locally"
 

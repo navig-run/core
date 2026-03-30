@@ -4,10 +4,11 @@ This checklist is for NAVIG maintainers preparing an official release.
 
 ## Pre-Release
 
-- [ ] **Update version number** in:
-  - `pyproject.toml`
-  - `navig/__init__.py` (if applicable)
-  - Any other version references
+- [ ] **Update version number** — the bump scripts handle this automatically:
+  - `pyproject.toml` (bumped by `version_bump.py`)
+  - `latest.json` (root — canonical, auto-synced by `scripts/_version_sync.py`)
+  - `config/latest.json` (mirror, auto-synced)
+  - `navig-www/public/latest.json` (auto-synced when `NAVIG_DEV_SYNC=1` or sibling dir detected)
 - [ ] **Update CHANGELOG.md** with release notes:
   - New features
   - Bug fixes
@@ -86,10 +87,19 @@ npm run release:big
 
 Command mapping:
 
-- `release:normal` → patch bump (`X.Y.Z` -> `X.Y.(Z+1)`)
+- `release:normal` → patch bump (`X.Y.Z` -> `X.Y.(Z+1)`) — bumps `pyproject.toml`, syncs `latest.json`, commits, tags, pushes
 - `release:minor` → minor bump (`X.Y.Z` -> `X.(Y+1).0`)
 - `release:big` → major bump (`X.Y.Z` -> `(X+1).0.0`)
 - `release:dry` → preview next patch version only (no file or git changes)
+- `version:sync` → manually re-sync `latest.json` files from current `pyproject.toml` version
+
+To sync manifests manually without bumping (e.g. after a manual pyproject edit):
+
+```bash
+python scripts/_version_sync.py
+# or
+npm run version:sync
+```
 
 ## Post-Release
 

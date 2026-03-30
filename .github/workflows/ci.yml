@@ -66,6 +66,25 @@ jobs:
           --cov-report=term-missing
           --cov-fail-under=75
 
+      - name: Guard — no test artifacts committed
+        run: |
+          if git ls-files | grep -Eq 'pytest_out.*\.txt|test_out.*\.txt|test_results.*\.txt'; then
+            echo "ERROR: test artifact file(s) found in repository — remove and re-commit"
+            git ls-files | grep -E 'pytest_out.*\.txt|test_out.*\.txt|test_results.*\.txt'
+            exit 1
+          fi
+
+      - name: Guard — latest.json version matches pyproject.toml
+        run: |
+          PYPROJECT_VER=$(python -c "import re, pathlib; m=re.search(r'version = \"(\S+)\"', pathlib.Path('pyproject.toml').read_text()); print(m.group(1))")
+          LATEST_VER=$(python -c "import json; print(json.load(open('latest.json'))['version'])")
+          if [ "$PYPROJECT_VER" != "$LATEST_VER" ]; then
+            echo "ERROR: version drift — pyproject.toml=$PYPROJECT_VER but latest.json=$LATEST_VER"
+            echo "       Run: python scripts/_version_sync.py"
+            exit 1
+          fi
+          echo "Version OK: $PYPROJECT_VER"
+
       - name: Build
         run: python -m build
 
