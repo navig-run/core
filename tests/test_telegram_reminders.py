@@ -411,7 +411,7 @@ async def test_providers_header_is_clean_and_shows_current_models(monkeypatch):
     await bot._handle_providers(123, 456)
     text = bot.messages[-1][1]
     assert "VS Code" not in text
-    assert "Current model routing" in text
+    assert "Base model routing" in text
     assert "💻 Code:" in text
 
 

@@ -9,6 +9,7 @@ Handles:
 """
 
 from datetime import datetime
+import re
 from typing import TYPE_CHECKING, Any
 
 from navig.debug_logger import get_debug_logger
@@ -333,17 +334,93 @@ class ChannelRouter:
                 proc.kill()
                 return "❌ Command timed out (60s limit)"
 
-            output = stdout_bytes.decode()
+            output = stdout_bytes.decode(errors="replace")
             if stderr_bytes:
-                output += f"\n{stderr_bytes.decode()}"
+                output += f"\n{stderr_bytes.decode(errors='replace')}"
 
             if proc.returncode != 0:
-                return f"❌ Command failed (exit {proc.returncode}):\n```\n{output}\n```"
+                return self._format_command_failure(command, output, proc.returncode)
 
-            return f"✅ Output:\n```\n{output}\n```"
+            return self._format_command_success(command, output)
 
         except Exception as e:
             return f"❌ Error: {e}"
+
+    @staticmethod
+    def _strip_ansi(text: str) -> str:
+        return re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
+
+    @staticmethod
+    def _extract_command_suggestions(output: str) -> list[str]:
+        suggestions: list[str] = []
+        inline_hint = re.search(r"Did you mean", output, flags=re.IGNORECASE)
+        if inline_hint:
+            tail = output[inline_hint.start() :].splitlines()[0]
+            for candidate in re.findall(r"'([^']+)'", tail):
+                item = candidate.strip()
+                if item:
+                    suggestions.append(item)
+
+        for match in re.findall(r"(?m)^\s*navig\s+([^\s].*)$", output):
+            candidate = match.strip()
+            if candidate:
+                suggestions.append(candidate)
+
+        uniq: list[str] = []
+        for item in suggestions:
+            if item not in uniq:
+                uniq.append(item)
+        return uniq[:4]
+
+    def _format_command_failure(self, command: str, output: str, exit_code: int) -> str:
+        cleaned = self._strip_ansi(output or "").strip()
+        requested = (command.strip().split() or ["command"])[0]
+
+        if "No such command" in cleaned:
+            suggestions = self._extract_command_suggestions(cleaned)
+            lines = [f"❌ Unknown command: `{requested}`."]
+            if suggestions:
+                rendered = ", ".join(f"`{item}`" for item in suggestions)
+                lines.append(f"Try: {rendered}.")
+            lines.append("Use `help` for quick shortcuts or `/help` for Telegram commands.")
+            return "\n".join(lines)
+
+        compact_lines = [line.rstrip() for line in cleaned.splitlines() if line.strip()]
+        if not compact_lines:
+            return f"❌ Command failed (exit {exit_code})."
+
+        preview = compact_lines[:10]
+        body = "\n".join(preview)
+        suffix = "\n…" if len(compact_lines) > len(preview) else ""
+        return f"❌ Command failed (exit {exit_code}).\n{body}{suffix}"
+
+    def _format_command_success(self, command: str, output: str) -> str:
+        cleaned = self._strip_ansi(output or "").strip("\n")
+        if not cleaned.strip():
+            if command.startswith("auto clipboard"):
+                return "📋 Clipboard is empty."
+            return "✅ Done. No output returned."
+
+        compact_lines = [line.rstrip() for line in cleaned.splitlines()]
+        while compact_lines and not compact_lines[-1].strip():
+            compact_lines.pop()
+
+        if command.startswith("auto clipboard"):
+            body = "\n".join(compact_lines).strip()
+            if not body:
+                return "📋 Clipboard is empty."
+            if len(body) > 1200:
+                body = body[:1170].rstrip() + "\n…(truncated)"
+            return f"📋 Clipboard\n{body}"
+
+        max_lines = 24
+        preview = compact_lines[:max_lines]
+        body = "\n".join(preview)
+        if len(compact_lines) > max_lines:
+            body += f"\n…({len(compact_lines) - max_lines} more lines)"
+        if len(body) > 3400:
+            body = body[:3360].rstrip() + "\n…(truncated)"
+        return f"✅ Done\n{body}"
 
     async def _check_quick_commands(self, message: str, metadata: dict[str, Any]) -> str | None:
         """Check for quick commands that don't need full AI."""
@@ -363,23 +440,23 @@ class ChannelRouter:
 
         # Automation status
         if msg_lower in ("auto", "/auto", "automation", "/automation"):
-            return await self._execute_navig_command("navig auto status", metadata)
+            return await self._execute_navig_command("navig auto status --plain", metadata)
 
         # Windows list
         if msg_lower in ("windows", "/windows"):
-            return await self._execute_navig_command("navig auto windows", metadata)
+            return await self._execute_navig_command("navig auto windows --plain", metadata)
 
         # Clipboard
         if msg_lower in ("clipboard", "/clipboard"):
-            return await self._execute_navig_command("navig auto clipboard", metadata)
+            return await self._execute_navig_command("navig auto clipboard --plain", metadata)
 
         # Workflows
         if msg_lower in ("workflows", "/workflows"):
-            return await self._execute_navig_command("navig workflow list", metadata)
+            return await self._execute_navig_command("navig flow list --plain", metadata)
 
         # Scripts
         if msg_lower in ("scripts", "/scripts"):
-            return await self._execute_navig_command("navig script list", metadata)
+            return await self._execute_navig_command("navig script list --plain", metadata)
 
         return None
 

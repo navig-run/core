@@ -259,7 +259,7 @@ class HeartbeatRunner:
         # Get workspace context
         from navig.gateway.config_watcher import WorkspaceManager
 
-        workspace = WorkspaceManager(Path(self.gateway.config_manager.global_path))
+        workspace = WorkspaceManager(Path(self.gateway.config_manager.global_config_dir))
 
         heartbeat_instructions = workspace.read_file("HEARTBEAT.md")
 
