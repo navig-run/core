@@ -8,7 +8,7 @@
       "handler": "agent_config_cmd",
       "module": "navig.commands.agent",
       "path": "navig agent config",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Manage agent configuration.",
       "tags": []
@@ -21,7 +21,7 @@
       "handler": "continuation_continue",
       "module": "navig.commands.agent",
       "path": "navig agent continuation continue",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Enable continuation policy for local runtime state.",
       "tags": []
@@ -34,7 +34,7 @@
       "handler": "continuation_pause",
       "module": "navig.commands.agent",
       "path": "navig agent continuation pause",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Pause continuation policy for local runtime state.",
       "tags": []
@@ -47,7 +47,7 @@
       "handler": "continuation_skip",
       "module": "navig.commands.agent",
       "path": "navig agent continuation skip",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Skip the next continuation trigger for local runtime state.",
       "tags": []
@@ -60,7 +60,7 @@
       "handler": "continuation_start",
       "module": "navig.commands.agent",
       "path": "navig agent continuation start",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Enable continuation policy (alias for `continuation continue`).",
       "tags": []
@@ -73,7 +73,7 @@
       "handler": "continuation_status",
       "module": "navig.commands.agent",
       "path": "navig agent continuation status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show continuation policy for local runtime state.",
       "tags": []
@@ -86,7 +86,7 @@
       "handler": "agent_goal",
       "module": "navig.commands.agent",
       "path": "navig agent goal",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Autonomous goal planning and execution tracking.",
       "tags": []
@@ -99,7 +99,7 @@
       "handler": "agent_install",
       "module": "navig.commands.agent",
       "path": "navig agent install",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Install and configure agent mode.",
       "tags": []
@@ -112,7 +112,7 @@
       "handler": "agent_learn",
       "module": "navig.commands.agent",
       "path": "navig agent learn",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Analyze agent logs and learn from error patterns.",
       "tags": []
@@ -125,7 +125,7 @@
       "handler": "agent_logs",
       "module": "navig.commands.agent",
       "path": "navig agent logs",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "View agent logs.",
       "tags": []
@@ -138,7 +138,7 @@
       "handler": "agent_personality",
       "module": "navig.commands.agent",
       "path": "navig agent personality",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Manage personality profiles.",
       "tags": []
@@ -151,7 +151,7 @@
       "handler": "agent_remediation",
       "module": "navig.commands.agent",
       "path": "navig agent remediation",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "View and manage automatic remediation actions.",
       "tags": []
@@ -164,7 +164,7 @@
       "handler": "agent_run",
       "module": "navig.commands.agent",
       "path": "navig agent run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run a single formation agent on a task.",
       "tags": []
@@ -177,7 +177,7 @@
       "handler": "agent_service",
       "module": "navig.commands.agent",
       "path": "navig agent service",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Manage NAVIG agent as a system service.",
       "tags": []
@@ -190,7 +190,7 @@
       "handler": "agent_soul",
       "module": "navig.commands.agent",
       "path": "navig agent soul",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Manage agent personality via SOUL.md.",
       "tags": []
@@ -203,7 +203,7 @@
       "handler": "agent_start",
       "module": "navig.commands.agent",
       "path": "navig agent start",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Start the autonomous agent.",
       "tags": []
@@ -216,7 +216,7 @@
       "handler": "agent_status",
       "module": "navig.commands.agent",
       "path": "navig agent status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show agent status.",
       "tags": []
@@ -229,7 +229,7 @@
       "handler": "agent_stop",
       "module": "navig.commands.agent",
       "path": "navig agent stop",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Stop the running agent.",
       "tags": []
@@ -242,7 +242,7 @@
       "handler": "telegram_setup",
       "module": "navig.commands.agent",
       "path": "navig agent telegram setup",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Interactive setup for Telegram bot.",
       "tags": []
@@ -255,7 +255,7 @@
       "handler": "telegram_start",
       "module": "navig.commands.agent",
       "path": "navig agent telegram start",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Start the Telegram bot.",
       "tags": []
@@ -268,7 +268,7 @@
       "handler": "telegram_status",
       "module": "navig.commands.agent",
       "path": "navig agent telegram status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show Telegram bot status and configuration.",
       "tags": []
@@ -281,7 +281,7 @@
       "handler": "agents_list",
       "module": "navig.commands.agents",
       "path": "navig agents list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List registered agents.",
       "tags": []
@@ -294,7 +294,7 @@
       "handler": "agents_run",
       "module": "navig.commands.agents",
       "path": "navig agents run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run a specific agent on a task.",
       "tags": []
@@ -307,7 +307,7 @@
       "handler": "ahk_activate",
       "module": "navig.commands.ahk",
       "path": "navig ahk activate",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Activate (focus) window.",
       "tags": []
@@ -320,7 +320,7 @@
       "handler": "ahk_active_window",
       "module": "navig.commands.ahk",
       "path": "navig ahk active-window",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Get currently active window.",
       "tags": []
@@ -333,7 +333,7 @@
       "handler": "ahk_automate",
       "module": "navig.commands.ahk",
       "path": "navig ahk automate",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "AI-powered automation - generate and execute script for goal.",
       "tags": []
@@ -346,7 +346,7 @@
       "handler": "ahk_click",
       "module": "navig.commands.ahk",
       "path": "navig ahk click",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Click at screen coordinates.",
       "tags": []
@@ -359,7 +359,7 @@
       "handler": "ahk_clipboard",
       "module": "navig.commands.ahk",
       "path": "navig ahk clipboard",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Get or set clipboard content.",
       "tags": []
@@ -372,7 +372,7 @@
       "handler": "ahk_close",
       "module": "navig.commands.ahk",
       "path": "navig ahk close",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Close window by selector.",
       "tags": []
@@ -385,7 +385,7 @@
       "handler": "ahk_dashboard",
       "module": "navig.commands.ahk",
       "path": "navig ahk dashboard",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Live window manager dashboard.",
       "tags": []
@@ -398,7 +398,7 @@
       "handler": "ahk_doctor",
       "module": "navig.commands.ahk",
       "path": "navig ahk doctor",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Diagnose AutoHotkey integration issues.",
       "tags": []
@@ -411,7 +411,7 @@
       "handler": "ahk_evolve",
       "module": "navig.commands.ahk",
       "path": "navig ahk evolve",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Auto-generate, test, and evolve AHK scripts until they work.",
       "tags": []
@@ -424,7 +424,7 @@
       "handler": "ahk_exec",
       "module": "navig.commands.ahk",
       "path": "navig ahk exec",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Execute inline AHK code.",
       "tags": []
@@ -437,7 +437,7 @@
       "handler": "ahk_find",
       "module": "navig.commands.ahk",
       "path": "navig ahk find",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Find windows matching criteria.",
       "tags": []
@@ -450,7 +450,7 @@
       "handler": "ahk_generate",
       "module": "navig.commands.ahk",
       "path": "navig ahk generate",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Generate AHK script from natural language using AI.",
       "tags": []
@@ -463,7 +463,7 @@
       "handler": "ahk_install",
       "module": "navig.commands.ahk",
       "path": "navig ahk install",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Detect or install AutoHotkey v2.",
       "tags": []
@@ -476,7 +476,7 @@
       "handler": "ahk_is_muted",
       "module": "navig.commands.ahk",
       "path": "navig ahk is-muted",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Check if system audio is muted.",
       "tags": []
@@ -489,7 +489,7 @@
       "handler": "ahk_kill",
       "module": "navig.commands.ahk",
       "path": "navig ahk kill",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Kill a process by name or PID.",
       "tags": []
@@ -502,7 +502,7 @@
       "handler": "layout_list",
       "module": "navig.commands.ahk",
       "path": "navig ahk layout list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List saved layouts.",
       "tags": []
@@ -515,7 +515,7 @@
       "handler": "layout_restore",
       "module": "navig.commands.ahk",
       "path": "navig ahk layout restore",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Restore a saved window layout.",
       "tags": []
@@ -528,7 +528,7 @@
       "handler": "layout_save",
       "module": "navig.commands.ahk",
       "path": "navig ahk layout save",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Save current window positions and sizes.",
       "tags": []
@@ -541,7 +541,7 @@
       "handler": "library_list",
       "module": "navig.commands.ahk",
       "path": "navig ahk library list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List saved automation scripts.",
       "tags": []
@@ -554,7 +554,7 @@
       "handler": "library_show",
       "module": "navig.commands.ahk",
       "path": "navig ahk library show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show content of a saved script.",
       "tags": []
@@ -567,7 +567,7 @@
       "handler": "ahk_listen",
       "module": "navig.commands.ahk",
       "path": "navig ahk listen",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Register a global hotkey to run a command.",
       "tags": []
@@ -580,7 +580,7 @@
       "handler": "ahk_listener_edit",
       "module": "navig.commands.ahk",
       "path": "navig ahk listener-edit",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Open listener script in default editor.",
       "tags": []
@@ -593,7 +593,7 @@
       "handler": "ahk_listener_start",
       "module": "navig.commands.ahk",
       "path": "navig ahk listener-start",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Start or restart the persistent listener script.",
       "tags": []
@@ -606,7 +606,7 @@
       "handler": "ahk_maximize",
       "module": "navig.commands.ahk",
       "path": "navig ahk maximize",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Maximize window.",
       "tags": []
@@ -619,7 +619,7 @@
       "handler": "ahk_minimize",
       "module": "navig.commands.ahk",
       "path": "navig ahk minimize",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Minimize window.",
       "tags": []
@@ -632,7 +632,7 @@
       "handler": "ahk_monitors",
       "module": "navig.commands.ahk",
       "path": "navig ahk monitors",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all connected monitors.",
       "tags": []
@@ -645,7 +645,7 @@
       "handler": "ahk_mouse_move",
       "module": "navig.commands.ahk",
       "path": "navig ahk mouse-move",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Move mouse cursor.",
       "tags": []
@@ -658,7 +658,7 @@
       "handler": "ahk_move",
       "module": "navig.commands.ahk",
       "path": "navig ahk move",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Move and optionally resize window.",
       "tags": []
@@ -671,7 +671,7 @@
       "handler": "ahk_move_to_monitor",
       "module": "navig.commands.ahk",
       "path": "navig ahk move-to-monitor",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Move window to specific monitor.",
       "tags": []
@@ -684,7 +684,7 @@
       "handler": "ahk_mute",
       "module": "navig.commands.ahk",
       "path": "navig ahk mute",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Mute or unmute system audio.",
       "tags": []
@@ -697,7 +697,7 @@
       "handler": "ahk_notify",
       "module": "navig.commands.ahk",
       "path": "navig ahk notify",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show Windows notification.",
       "tags": []
@@ -710,7 +710,7 @@
       "handler": "ahk_ocr",
       "module": "navig.commands.ahk",
       "path": "navig ahk ocr",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Extract text from screen or image (requires pytesseract).",
       "tags": []
@@ -723,7 +723,7 @@
       "handler": "ahk_open",
       "module": "navig.commands.ahk",
       "path": "navig ahk open",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Open application or URL.",
       "tags": []
@@ -736,7 +736,7 @@
       "handler": "ahk_pin",
       "module": "navig.commands.ahk",
       "path": "navig ahk pin",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Toggle Always-On-Top (Pin) status.",
       "tags": []
@@ -749,7 +749,7 @@
       "handler": "ahk_processes",
       "module": "navig.commands.ahk",
       "path": "navig ahk processes",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all running processes.",
       "tags": []
@@ -762,7 +762,7 @@
       "handler": "ahk_read_text",
       "module": "navig.commands.ahk",
       "path": "navig ahk read-text",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Read text from window or control.",
       "tags": []
@@ -775,7 +775,7 @@
       "handler": "ahk_resize",
       "module": "navig.commands.ahk",
       "path": "navig ahk resize",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Resize window.",
       "tags": []
@@ -788,7 +788,7 @@
       "handler": "ahk_run",
       "module": "navig.commands.ahk",
       "path": "navig ahk run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Execute an AHK script file.",
       "tags": []
@@ -801,7 +801,7 @@
       "handler": "ahk_screenshot",
       "module": "navig.commands.ahk",
       "path": "navig ahk screenshot",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Take a screenshot.",
       "tags": []
@@ -814,7 +814,7 @@
       "handler": "ahk_send",
       "module": "navig.commands.ahk",
       "path": "navig ahk send",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Send key sequence.",
       "tags": []
@@ -827,7 +827,7 @@
       "handler": "ahk_snap",
       "module": "navig.commands.ahk",
       "path": "navig ahk snap",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Snap window to screen edge/corner.",
       "tags": []
@@ -840,7 +840,7 @@
       "handler": "ahk_start",
       "module": "navig.commands.ahk",
       "path": "navig ahk start",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Start a new process.",
       "tags": []
@@ -853,7 +853,7 @@
       "handler": "ahk_status",
       "module": "navig.commands.ahk",
       "path": "navig ahk status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show AutoHotkey status and capabilities.",
       "tags": []
@@ -866,7 +866,7 @@
       "handler": "ahk_transparency",
       "module": "navig.commands.ahk",
       "path": "navig ahk transparency",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Set window transparency.",
       "tags": []
@@ -879,7 +879,7 @@
       "handler": "ahk_type",
       "module": "navig.commands.ahk",
       "path": "navig ahk type",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Type text using keyboard.",
       "tags": []
@@ -892,7 +892,7 @@
       "handler": "ahk_volume",
       "module": "navig.commands.ahk",
       "path": "navig ahk volume",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Get or set system volume.",
       "tags": []
@@ -905,7 +905,7 @@
       "handler": "ahk_window_state",
       "module": "navig.commands.ahk",
       "path": "navig ahk window-state",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Get detailed window state.",
       "tags": []
@@ -918,7 +918,7 @@
       "handler": "ahk_windows",
       "module": "navig.commands.ahk",
       "path": "navig ahk windows",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all visible windows.",
       "tags": []
@@ -931,7 +931,7 @@
       "handler": "workflow_list",
       "module": "navig.commands.ahk",
       "path": "navig ahk workflow list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List available workflows.",
       "tags": []
@@ -944,7 +944,7 @@
       "handler": "workflow_run",
       "module": "navig.commands.ahk",
       "path": "navig ahk workflow run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run a cross-platform workflow.",
       "tags": []
@@ -957,7 +957,7 @@
       "handler": "ai_airllm",
       "module": "navig.cli",
       "path": "navig ai airllm",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Configure and manage AirLLM local inference provider.",
       "tags": []
@@ -970,7 +970,7 @@
       "handler": "ai_ask",
       "module": "navig.cli",
       "path": "navig ai ask",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Ask AI about server/configuration (canonical command).",
       "tags": []
@@ -983,7 +983,7 @@
       "handler": "ai_diagnose",
       "module": "navig.cli",
       "path": "navig ai diagnose",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "AI-powered issue diagnosis based on system state.",
       "tags": []
@@ -996,7 +996,7 @@
       "handler": "ai_edit",
       "module": "navig.cli",
       "path": "navig ai edit",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Configure AI assistant settings (interactive wizard).",
       "tags": []
@@ -1009,7 +1009,7 @@
       "handler": "ai_explain",
       "module": "navig.cli",
       "path": "navig ai explain",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Explain logs/errors using AI.",
       "tags": []
@@ -1022,7 +1022,7 @@
       "handler": "ai_login",
       "module": "navig.cli",
       "path": "navig ai login",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Login to an AI provider using OAuth (e.g., OpenAI Codex).",
       "tags": []
@@ -1035,7 +1035,7 @@
       "handler": "ai_logout",
       "module": "navig.cli",
       "path": "navig ai logout",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove OAuth credentials for a provider.",
       "tags": []
@@ -1048,7 +1048,7 @@
       "handler": "memory_add",
       "module": "navig.cli",
       "path": "navig ai memory add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Add a note to NAVIG's memory about you.",
       "tags": []
@@ -1061,7 +1061,7 @@
       "handler": "memory_clear",
       "module": "navig.cli",
       "path": "navig ai memory clear",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Clear all memory (requires --confirm).",
       "tags": []
@@ -1074,7 +1074,7 @@
       "handler": "memory_edit",
       "module": "navig.cli",
       "path": "navig ai memory edit",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Open user profile in your default editor.",
       "tags": []
@@ -1087,7 +1087,7 @@
       "handler": "memory_search",
       "module": "navig.cli",
       "path": "navig ai memory search",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Search NAVIG's memory about you.",
       "tags": []
@@ -1100,7 +1100,7 @@
       "handler": "memory_set",
       "module": "navig.cli",
       "path": "navig ai memory set",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Set a specific profile field.",
       "tags": []
@@ -1113,7 +1113,7 @@
       "handler": "memory_show",
       "module": "navig.cli",
       "path": "navig ai memory show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Display what NAVIG knows about you.",
       "tags": []
@@ -1126,7 +1126,7 @@
       "handler": "ai_models",
       "module": "navig.cli",
       "path": "navig ai models",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List available AI models from all providers.",
       "tags": []
@@ -1139,7 +1139,7 @@
       "handler": "ai_providers",
       "module": "navig.cli",
       "path": "navig ai providers",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Manage AI providers and API keys.",
       "tags": []
@@ -1152,7 +1152,7 @@
       "handler": "ai_run",
       "module": "navig.cli",
       "path": "navig ai run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run AI operations (canonical command).",
       "tags": []
@@ -1165,7 +1165,7 @@
       "handler": "ai_show",
       "module": "navig.cli",
       "path": "navig ai show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show AI assistant information (canonical command).",
       "tags": []
@@ -1178,7 +1178,7 @@
       "handler": "ai_suggest",
       "module": "navig.cli",
       "path": "navig ai suggest",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Get AI-powered optimization suggestions.",
       "tags": []
@@ -1191,7 +1191,7 @@
       "handler": "app_add",
       "module": "navig.commands.app",
       "path": "navig app add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Add new app to a host (or clone from existing).",
       "tags": []
@@ -1204,7 +1204,7 @@
       "handler": "app_edit",
       "module": "navig.commands.app",
       "path": "navig app edit",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Edit app configuration in default editor.",
       "tags": []
@@ -1217,7 +1217,7 @@
       "handler": "app_list",
       "module": "navig.commands.app",
       "path": "navig app list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all apps on a host.",
       "tags": []
@@ -1230,7 +1230,7 @@
       "handler": "app_migrate",
       "module": "navig.commands.app",
       "path": "navig app migrate",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Migrate apps from legacy embedded format to individual files.",
       "tags": []
@@ -1243,7 +1243,7 @@
       "handler": "app_remove",
       "module": "navig.commands.app",
       "path": "navig app remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove app from a host.",
       "tags": []
@@ -1256,7 +1256,7 @@
       "handler": "app_search",
       "module": "navig.commands.app",
       "path": "navig app search",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Search for apps across all hosts by name or configuration.",
       "tags": []
@@ -1269,7 +1269,7 @@
       "handler": "app_show",
       "module": "navig.commands.app",
       "path": "navig app show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show detailed app configuration (canonical command).",
       "tags": []
@@ -1282,7 +1282,7 @@
       "handler": "app_use",
       "module": "navig.commands.app",
       "path": "navig app use",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Set active app (global or local scope).",
       "tags": []
@@ -1295,7 +1295,7 @@
       "handler": "approve_list",
       "module": "navig.cli",
       "path": "navig approve list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List pending approval requests.",
       "tags": []
@@ -1308,7 +1308,7 @@
       "handler": "approve_no",
       "module": "navig.cli",
       "path": "navig approve no",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Deny a pending request.",
       "tags": []
@@ -1321,7 +1321,7 @@
       "handler": "approve_policy",
       "module": "navig.cli",
       "path": "navig approve policy",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show approval policy (patterns and levels).",
       "tags": []
@@ -1334,7 +1334,7 @@
       "handler": "approve_yes",
       "module": "navig.cli",
       "path": "navig approve yes",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Approve a pending request.",
       "tags": []
@@ -1347,7 +1347,7 @@
       "handler": "assistant_analyze",
       "module": "navig.cli",
       "path": "navig assistant analyze",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "[DEPRECATED: Use 'navig ai diagnose']",
       "tags": []
@@ -1360,7 +1360,7 @@
       "handler": "assistant_config",
       "module": "navig.cli",
       "path": "navig assistant config",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "[DEPRECATED: Use 'navig ai edit']",
       "tags": []
@@ -1373,7 +1373,7 @@
       "handler": "assistant_context",
       "module": "navig.cli",
       "path": "navig assistant context",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "[DEPRECATED: Use 'navig ai show --context']",
       "tags": []
@@ -1386,7 +1386,7 @@
       "handler": "assistant_reset",
       "module": "navig.cli",
       "path": "navig assistant reset",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "[DEPRECATED: Use 'navig ai run --reset']",
       "tags": []
@@ -1399,7 +1399,7 @@
       "handler": "assistant_status",
       "module": "navig.cli",
       "path": "navig assistant status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "[DEPRECATED: Use 'navig ai show --status']",
       "tags": []
@@ -1412,7 +1412,7 @@
       "handler": "auto_click",
       "module": "navig.commands.auto",
       "path": "navig auto click",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Click at screen coordinates.",
       "tags": []
@@ -1425,7 +1425,7 @@
       "handler": "auto_clipboard",
       "module": "navig.commands.auto",
       "path": "navig auto clipboard",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Get or set clipboard content.",
       "tags": []
@@ -1438,7 +1438,7 @@
       "handler": "auto_focus",
       "module": "navig.commands.auto",
       "path": "navig auto focus",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Get currently focused window.",
       "tags": []
@@ -1451,7 +1451,7 @@
       "handler": "auto_open",
       "module": "navig.commands.auto",
       "path": "navig auto open",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Open application.",
       "tags": []
@@ -1464,7 +1464,7 @@
       "handler": "auto_snap",
       "module": "navig.commands.auto",
       "path": "navig auto snap",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Snap window to screen position.",
       "tags": []
@@ -1477,7 +1477,7 @@
       "handler": "auto_status",
       "module": "navig.commands.auto",
       "path": "navig auto status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Check automation system status.",
       "tags": []
@@ -1490,7 +1490,7 @@
       "handler": "auto_type",
       "module": "navig.commands.auto",
       "path": "navig auto type",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Type text.",
       "tags": []
@@ -1503,7 +1503,7 @@
       "handler": "auto_windows",
       "module": "navig.commands.auto",
       "path": "navig auto windows",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all windows.",
       "tags": []
@@ -1516,7 +1516,7 @@
       "handler": "backup_config_cmd",
       "module": "navig.cli",
       "path": "navig backup config",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Backup/export NAVIG configuration (hosts, apps, settings).",
       "tags": []
@@ -1529,7 +1529,7 @@
       "handler": "backup_export",
       "module": "navig.cli",
       "path": "navig backup export",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Export NAVIG configuration to a backup file.",
       "tags": []
@@ -1542,7 +1542,7 @@
       "handler": "backup_import",
       "module": "navig.cli",
       "path": "navig backup import",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Import NAVIG configuration from a backup file.",
       "tags": []
@@ -1555,7 +1555,7 @@
       "handler": "backup_remove",
       "module": "navig.cli",
       "path": "navig backup remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove/delete a backup file (canonical command).",
       "tags": []
@@ -1568,7 +1568,7 @@
       "handler": "backup_restore",
       "module": "navig.cli",
       "path": "navig backup restore",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Restore from a comprehensive backup by name.",
       "tags": []
@@ -1581,7 +1581,7 @@
       "handler": "backup_run",
       "module": "navig.cli",
       "path": "navig backup run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run server backup/restore operations (system config, DBs, Hestia, web).",
       "tags": []
@@ -1594,7 +1594,7 @@
       "handler": "backup_show",
       "module": "navig.cli",
       "path": "navig backup show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show backup details or list all backups (canonical command).",
       "tags": []
@@ -1607,7 +1607,7 @@
       "handler": "benchmark_run",
       "module": "navig.commands.benchmark",
       "path": "navig benchmark run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run benchmarks and show timing results.",
       "tags": []
@@ -1620,7 +1620,7 @@
       "handler": "blueprint_apply",
       "module": "navig.commands.blueprint",
       "path": "navig blueprint apply",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Apply a blueprint to a directory.",
       "tags": []
@@ -1633,7 +1633,7 @@
       "handler": "blueprint_list",
       "module": "navig.commands.blueprint",
       "path": "navig blueprint list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List available blueprints.",
       "tags": []
@@ -1646,7 +1646,7 @@
       "handler": "boot_run",
       "module": "navig.commands.boot_cmd",
       "path": "navig boot run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Execute the boot sequence hooks.",
       "tags": []
@@ -1659,7 +1659,7 @@
       "handler": "boot_show",
       "module": "navig.commands.boot_cmd",
       "path": "navig boot show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show the current boot configuration.",
       "tags": []
@@ -1672,7 +1672,7 @@
       "handler": "bot_start",
       "module": "navig.cli",
       "path": "navig bot start",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Start the NAVIG Telegram bot.",
       "tags": []
@@ -1685,7 +1685,7 @@
       "handler": "bot_status",
       "module": "navig.cli",
       "path": "navig bot status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Check if bot is running.",
       "tags": []
@@ -1698,7 +1698,7 @@
       "handler": "bot_stop",
       "module": "navig.cli",
       "path": "navig bot stop",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Stop all running NAVIG bot/gateway processes.",
       "tags": []
@@ -1711,7 +1711,7 @@
       "handler": "bridge_connect",
       "module": "navig.commands.bridge",
       "path": "navig bridge connect",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Set up Bridge \u2194 Daemon connection in one step.",
       "tags": []
@@ -1724,7 +1724,7 @@
       "handler": "bridge_rotate_token",
       "module": "navig.commands.bridge",
       "path": "navig bridge rotate-token",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Rotate the gateway auth token.",
       "tags": []
@@ -1737,7 +1737,7 @@
       "handler": "bridge_status",
       "module": "navig.commands.bridge",
       "path": "navig bridge status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show current Bridge connection configuration.",
       "tags": []
@@ -1750,7 +1750,7 @@
       "handler": "browser_click",
       "module": "navig.commands.browser",
       "path": "navig browser click",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Click an element on the active page.",
       "tags": []
@@ -1763,7 +1763,7 @@
       "handler": "browser_fill",
       "module": "navig.commands.browser",
       "path": "navig browser fill",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Fill an input field on the active page.",
       "tags": []
@@ -1776,7 +1776,7 @@
       "handler": "browser_open",
       "module": "navig.commands.browser",
       "path": "navig browser open",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Navigate browser to a URL.",
       "tags": []
@@ -1789,7 +1789,7 @@
       "handler": "browser_screenshot",
       "module": "navig.commands.browser",
       "path": "navig browser screenshot",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Capture a browser screenshot.",
       "tags": []
@@ -1802,7 +1802,7 @@
       "handler": "browser_status",
       "module": "navig.commands.browser",
       "path": "navig browser status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show browser status.",
       "tags": []
@@ -1815,7 +1815,7 @@
       "handler": "browser_stop",
       "module": "navig.commands.browser",
       "path": "navig browser stop",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Stop the browser controller.",
       "tags": []
@@ -1828,7 +1828,7 @@
       "handler": "add_event",
       "module": "navig.commands.calendar",
       "path": "navig calendar add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Add a new calendar event.",
       "tags": []
@@ -1841,7 +1841,7 @@
       "handler": "authenticate",
       "module": "navig.commands.calendar",
       "path": "navig calendar auth",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Authenticate with a calendar provider.",
       "tags": []
@@ -1854,7 +1854,7 @@
       "handler": "calendar_list",
       "module": "navig.cli",
       "path": "navig calendar list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List upcoming calendar events.",
       "tags": []
@@ -1867,7 +1867,7 @@
       "handler": "sync_calendar",
       "module": "navig.commands.calendar",
       "path": "navig calendar sync",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Sync calendar data from remote providers.",
       "tags": []
@@ -1880,7 +1880,7 @@
       "handler": "cloud_list",
       "module": "navig.commands.cloud",
       "path": "navig cloud list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List configured cloud providers.",
       "tags": []
@@ -1893,7 +1893,7 @@
       "handler": "cloud_status",
       "module": "navig.commands.cloud",
       "path": "navig cloud status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show cloud connection status.",
       "tags": []
@@ -1906,7 +1906,7 @@
       "handler": "config_audit",
       "module": "navig.cli",
       "path": "navig config audit",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Audit configuration for security and validity.",
       "tags": []
@@ -1919,7 +1919,7 @@
       "handler": "config_backup_cmd",
       "module": "navig.cli",
       "path": "navig config backup",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Export NAVIG configuration to a backup file.",
       "tags": []
@@ -1932,7 +1932,7 @@
       "handler": "config_edit",
       "module": "navig.cli",
       "path": "navig config edit",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Open configuration in default editor.",
       "tags": []
@@ -1945,7 +1945,7 @@
       "handler": "config_get",
       "module": "navig.cli",
       "path": "navig config get",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Get a configuration value.",
       "tags": []
@@ -1958,7 +1958,7 @@
       "handler": "config_migrate",
       "module": "navig.cli",
       "path": "navig config migrate",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Migrate configuration to the latest version.",
       "tags": []
@@ -1971,7 +1971,7 @@
       "handler": "config_schema_install",
       "module": "navig.cli",
       "path": "navig config schema install",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Install NAVIG YAML JSON Schemas for editor validation/autocomplete.",
       "tags": []
@@ -1984,7 +1984,7 @@
       "handler": "config_set",
       "module": "navig.cli",
       "path": "navig config set",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Set a global configuration value.",
       "tags": []
@@ -1997,7 +1997,7 @@
       "handler": "config_set_confirmation_level",
       "module": "navig.cli",
       "path": "navig config set-confirmation-level",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Set the confirmation level for interactive mode.",
       "tags": []
@@ -2010,7 +2010,7 @@
       "handler": "config_set_mode",
       "module": "navig.cli",
       "path": "navig config set-mode",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Set the default execution mode.",
       "tags": []
@@ -2023,7 +2023,7 @@
       "handler": "config_settings",
       "module": "navig.cli",
       "path": "navig config settings",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Display current NAVIG settings including execution mode and confirmation level.",
       "tags": []
@@ -2036,7 +2036,7 @@
       "handler": "config_show",
       "module": "navig.cli",
       "path": "navig config show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show configuration.",
       "tags": []
@@ -2049,7 +2049,7 @@
       "handler": "config_test",
       "module": "navig.cli",
       "path": "navig config test",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Alias for: navig config validate.",
       "tags": []
@@ -2062,7 +2062,7 @@
       "handler": "config_validate",
       "module": "navig.cli",
       "path": "navig config validate",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run navig config validate",
       "tags": []
@@ -2075,7 +2075,7 @@
       "handler": "contacts_add",
       "module": "navig.commands.dispatch",
       "path": "navig contacts add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Add a contact.",
       "tags": []
@@ -2088,7 +2088,7 @@
       "handler": "contacts_import",
       "module": "navig.commands.dispatch",
       "path": "navig contacts import",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Import contacts from Telegram Desktop export.",
       "tags": []
@@ -2101,7 +2101,7 @@
       "handler": "contacts_list",
       "module": "navig.commands.dispatch",
       "path": "navig contacts list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List saved contacts.",
       "tags": []
@@ -2114,7 +2114,7 @@
       "handler": "context_clear",
       "module": "navig.cli",
       "path": "navig context clear",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Clear project-local context.",
       "tags": []
@@ -2127,7 +2127,7 @@
       "handler": "context_init",
       "module": "navig.cli",
       "path": "navig context init",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Initialize .navig directory in current project.",
       "tags": []
@@ -2140,7 +2140,7 @@
       "handler": "context_set",
       "module": "navig.cli",
       "path": "navig context set",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Set project-local context in .navig/config.yaml.",
       "tags": []
@@ -2153,7 +2153,7 @@
       "handler": "context_show",
       "module": "navig.cli",
       "path": "navig context show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show current context resolution.",
       "tags": []
@@ -2166,7 +2166,7 @@
       "handler": "continuation_continue",
       "module": "navig.commands.agent",
       "path": "navig continuation continue",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Enable continuation policy for local runtime state.",
       "tags": []
@@ -2179,7 +2179,7 @@
       "handler": "continuation_pause",
       "module": "navig.commands.agent",
       "path": "navig continuation pause",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Pause continuation policy for local runtime state.",
       "tags": []
@@ -2192,7 +2192,7 @@
       "handler": "continuation_skip",
       "module": "navig.commands.agent",
       "path": "navig continuation skip",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Skip the next continuation trigger for local runtime state.",
       "tags": []
@@ -2205,7 +2205,7 @@
       "handler": "continuation_start",
       "module": "navig.commands.agent",
       "path": "navig continuation start",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Enable continuation policy (alias for `continuation continue`).",
       "tags": []
@@ -2218,7 +2218,7 @@
       "handler": "continuation_status",
       "module": "navig.commands.agent",
       "path": "navig continuation status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show continuation policy for local runtime state.",
       "tags": []
@@ -2231,7 +2231,7 @@
       "handler": "copilot_ask",
       "module": "navig.commands.ask",
       "path": "navig copilot ask",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Ask Copilot a question and get a response.",
       "tags": []
@@ -2244,7 +2244,7 @@
       "handler": "copilot_explain",
       "module": "navig.commands.ask",
       "path": "navig copilot explain",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Explain a log file, error, or code snippet using Copilot.",
       "tags": []
@@ -2257,7 +2257,7 @@
       "handler": "copilot_review",
       "module": "navig.commands.ask",
       "path": "navig copilot review",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Code review a file using Copilot.",
       "tags": []
@@ -2270,7 +2270,7 @@
       "handler": "_cmd_delete",
       "module": "navig.commands.sessions",
       "path": "navig copilot sessions delete",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Delete one or more chat sessions.",
       "tags": []
@@ -2283,7 +2283,7 @@
       "handler": "_cmd_export",
       "module": "navig.commands.sessions",
       "path": "navig copilot sessions export",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Export sessions to JSON, Markdown, or CSV.",
       "tags": []
@@ -2296,7 +2296,7 @@
       "handler": "_cmd_list",
       "module": "navig.commands.sessions",
       "path": "navig copilot sessions list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all Copilot chat sessions.",
       "tags": []
@@ -2309,7 +2309,7 @@
       "handler": "_cmd_search",
       "module": "navig.commands.sessions",
       "path": "navig copilot sessions search",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Search across all chat sessions for a query string.",
       "tags": []
@@ -2322,7 +2322,7 @@
       "handler": "_cmd_stats",
       "module": "navig.commands.sessions",
       "path": "navig copilot sessions stats",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show storage statistics for all chat sessions.",
       "tags": []
@@ -2335,7 +2335,7 @@
       "handler": "_cmd_view",
       "module": "navig.commands.sessions",
       "path": "navig copilot sessions view",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "View a chat session's content.",
       "tags": []
@@ -2348,7 +2348,7 @@
       "handler": "copilot_status",
       "module": "navig.commands.ask",
       "path": "navig copilot status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Check navig-bridge MCP connectivity and status.",
       "tags": []
@@ -2361,7 +2361,7 @@
       "handler": "copilot_suggest",
       "module": "navig.commands.ask",
       "path": "navig copilot suggest",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Get optimization suggestions from Copilot.",
       "tags": []
@@ -2374,7 +2374,7 @@
       "handler": "run_cortex",
       "module": "navig.commands.cortex",
       "path": "navig cortex run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Start the Cortex Hybrid Brain Loop on a specific goal.",
       "tags": []
@@ -2387,7 +2387,7 @@
       "handler": "council_run",
       "module": "navig.commands.council",
       "path": "navig council run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run a council deliberation across all agents in the active formation.",
       "tags": []
@@ -2400,7 +2400,7 @@
       "handler": "export_crash_report",
       "module": "navig.commands.crash",
       "path": "navig crash export",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Export the latest crash report for GitHub issues.",
       "tags": []
@@ -2413,7 +2413,7 @@
       "handler": "add_credential",
       "module": "navig.commands.vault",
       "path": "navig cred add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Add a new credential to the vault.",
       "tags": []
@@ -2426,7 +2426,7 @@
       "handler": "show_audit_log",
       "module": "navig.commands.vault",
       "path": "navig cred audit",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show audit log for credentials.",
       "tags": []
@@ -2439,7 +2439,7 @@
       "handler": "clone_credential",
       "module": "navig.commands.vault",
       "path": "navig cred clone",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Clone a credential to a different profile.",
       "tags": []
@@ -2452,7 +2452,7 @@
       "handler": "delete_credential",
       "module": "navig.commands.vault",
       "path": "navig cred delete",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Delete a credential permanently.",
       "tags": []
@@ -2465,7 +2465,7 @@
       "handler": "disable_credential",
       "module": "navig.commands.vault",
       "path": "navig cred disable",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Disable a credential.",
       "tags": []
@@ -2478,7 +2478,7 @@
       "handler": "edit_credential",
       "module": "navig.commands.vault",
       "path": "navig cred edit",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Edit an existing credential.",
       "tags": []
@@ -2491,7 +2491,7 @@
       "handler": "enable_credential",
       "module": "navig.commands.vault",
       "path": "navig cred enable",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Enable a credential.",
       "tags": []
@@ -2504,7 +2504,7 @@
       "handler": "list_credentials",
       "module": "navig.commands.vault",
       "path": "navig cred list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List credentials in the vault.",
       "tags": []
@@ -2517,7 +2517,7 @@
       "handler": "list_providers",
       "module": "navig.commands.vault",
       "path": "navig cred providers",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List supported providers with built-in validation.",
       "tags": []
@@ -2530,7 +2530,7 @@
       "handler": "show_credential",
       "module": "navig.commands.vault",
       "path": "navig cred show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show details of a credential.",
       "tags": []
@@ -2543,7 +2543,7 @@
       "handler": "test_credential",
       "module": "navig.commands.vault",
       "path": "navig cred test",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Test a credential against the provider API.",
       "tags": []
@@ -2556,7 +2556,7 @@
       "handler": "list_profiles",
       "module": "navig.commands.vault",
       "path": "navig cred-profile list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all credential profiles.",
       "tags": []
@@ -2569,7 +2569,7 @@
       "handler": "use_profile",
       "module": "navig.commands.vault",
       "path": "navig cred-profile use",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Set the active profile.",
       "tags": []
@@ -2582,7 +2582,7 @@
       "handler": "cron_add",
       "module": "navig.cli",
       "path": "navig cron add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Add a new scheduled job.",
       "tags": []
@@ -2595,7 +2595,7 @@
       "handler": "cron_disable",
       "module": "navig.cli",
       "path": "navig cron disable",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Disable a job without removing it.",
       "tags": []
@@ -2608,7 +2608,7 @@
       "handler": "cron_enable",
       "module": "navig.cli",
       "path": "navig cron enable",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Enable a disabled job.",
       "tags": []
@@ -2621,7 +2621,7 @@
       "handler": "cron_list",
       "module": "navig.cli",
       "path": "navig cron list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all scheduled jobs.",
       "tags": []
@@ -2634,7 +2634,7 @@
       "handler": "cron_remove",
       "module": "navig.cli",
       "path": "navig cron remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove a scheduled job.",
       "tags": []
@@ -2647,7 +2647,7 @@
       "handler": "cron_run",
       "module": "navig.cli",
       "path": "navig cron run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run a job immediately.",
       "tags": []
@@ -2660,7 +2660,7 @@
       "handler": "cron_status",
       "module": "navig.cli",
       "path": "navig cron status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show cron service status.",
       "tags": []
@@ -2673,7 +2673,7 @@
       "handler": "contacts_add",
       "module": "navig.commands.dispatch",
       "path": "navig ct add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Add a contact.",
       "tags": []
@@ -2686,7 +2686,7 @@
       "handler": "contacts_import",
       "module": "navig.commands.dispatch",
       "path": "navig ct import",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Import contacts from Telegram Desktop export.",
       "tags": []
@@ -2699,7 +2699,7 @@
       "handler": "contacts_list",
       "module": "navig.commands.dispatch",
       "path": "navig ct list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List saved contacts.",
       "tags": []
@@ -2712,7 +2712,7 @@
       "handler": "dashboard_command",
       "module": "navig.cli",
       "path": "navig dashboard",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Real-time operations dashboard with host status, Docker, and history.",
       "tags": []
@@ -2759,7 +2759,7 @@
       "handler": "db_dump_new",
       "module": "navig.commands.db",
       "path": "navig db dump",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Dump/backup a database from remote server.",
       "tags": []
@@ -2772,7 +2772,7 @@
       "handler": "db_file_new",
       "module": "navig.commands.db",
       "path": "navig db file",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Execute SQL file through tunnel.",
       "tags": []
@@ -2802,7 +2802,7 @@
       "handler": "db_optimize_new",
       "module": "navig.commands.db",
       "path": "navig db optimize",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Optimize database table.",
       "tags": []
@@ -2832,7 +2832,7 @@
       "handler": "db_repair_new",
       "module": "navig.commands.db",
       "path": "navig db repair",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Repair database table.",
       "tags": []
@@ -2845,7 +2845,7 @@
       "handler": "db_restore_new",
       "module": "navig.commands.db",
       "path": "navig db restore",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Restore database from backup file.",
       "tags": []
@@ -2858,7 +2858,7 @@
       "handler": "db_run",
       "module": "navig.commands.db",
       "path": "navig db run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run SQL query/file or open shell (canonical command).",
       "tags": []
@@ -2871,7 +2871,7 @@
       "handler": "db_show",
       "module": "navig.commands.db",
       "path": "navig db show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show database information (canonical command).",
       "tags": []
@@ -2884,7 +2884,7 @@
       "handler": "db_tables_new",
       "module": "navig.commands.db",
       "path": "navig db tables",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List tables in a database.",
       "tags": []
@@ -2897,7 +2897,7 @@
       "handler": "debug_clear",
       "module": "navig.commands.debug_cmd",
       "path": "navig debug clear",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Clear the NAVIG debug log.",
       "tags": []
@@ -2910,7 +2910,7 @@
       "handler": "debug_tail",
       "module": "navig.commands.debug_cmd",
       "path": "navig debug tail",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Tail the NAVIG debug log.",
       "tags": []
@@ -2923,7 +2923,7 @@
       "handler": "deck_list",
       "module": "navig.commands.deck",
       "path": "navig deck list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List available decks.",
       "tags": []
@@ -2936,7 +2936,7 @@
       "handler": "deck_new",
       "module": "navig.commands.deck",
       "path": "navig deck new",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Create a new deck.",
       "tags": []
@@ -2949,7 +2949,7 @@
       "handler": "desktop_ahk",
       "module": "navig.commands.desktop",
       "path": "navig desktop ahk",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Execute an AutoHotkey v2 script via AutoHotkey.exe.",
       "tags": []
@@ -2962,7 +2962,7 @@
       "handler": "desktop_click",
       "module": "navig.commands.desktop",
       "path": "navig desktop click",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Click a UI element by its native window handle.",
       "tags": []
@@ -2975,7 +2975,7 @@
       "handler": "desktop_find",
       "module": "navig.commands.desktop",
       "path": "navig desktop find",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Search the UI element tree for matching elements.",
       "tags": []
@@ -2988,7 +2988,7 @@
       "handler": "desktop_ping",
       "module": "navig.commands.desktop",
       "path": "navig desktop ping",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Health-check the desktop agent.",
       "tags": []
@@ -3001,7 +3001,7 @@
       "handler": "desktop_set",
       "module": "navig.commands.desktop",
       "path": "navig desktop set",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Set the value of a UI element by its native window handle.",
       "tags": []
@@ -3014,7 +3014,7 @@
       "handler": "desktop_tree",
       "module": "navig.commands.desktop",
       "path": "navig desktop tree",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Dump the UI element tree to the specified depth.",
       "tags": []
@@ -3027,7 +3027,7 @@
       "handler": "dispatch_send",
       "module": "navig.commands.dispatch",
       "path": "navig dispatch send",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Send a message via the configured dispatch channel.",
       "tags": []
@@ -3040,7 +3040,7 @@
       "handler": "_docker_compose_cmd",
       "module": "navig.commands.docker",
       "path": "navig docker compose",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run docker compose commands on remote host.",
       "tags": []
@@ -3053,7 +3053,7 @@
       "handler": "_docker_exec_cmd",
       "module": "navig.commands.docker",
       "path": "navig docker exec",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Execute command in Docker container.",
       "tags": []
@@ -3066,7 +3066,7 @@
       "handler": "_docker_inspect_cmd",
       "module": "navig.commands.docker",
       "path": "navig docker inspect",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Inspect Docker container.",
       "tags": []
@@ -3079,7 +3079,7 @@
       "handler": "_docker_logs_cmd",
       "module": "navig.commands.docker",
       "path": "navig docker logs",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "View Docker container logs.",
       "tags": []
@@ -3092,7 +3092,7 @@
       "handler": "_docker_ps_cmd",
       "module": "navig.commands.docker",
       "path": "navig docker ps",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List Docker containers on remote host.",
       "tags": []
@@ -3105,7 +3105,7 @@
       "handler": "_docker_restart_cmd",
       "module": "navig.commands.docker",
       "path": "navig docker restart",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Restart Docker container.",
       "tags": []
@@ -3118,7 +3118,7 @@
       "handler": "_docker_start_cmd",
       "module": "navig.commands.docker",
       "path": "navig docker start",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Start Docker container.",
       "tags": []
@@ -3131,7 +3131,7 @@
       "handler": "_docker_stats_cmd",
       "module": "navig.commands.docker",
       "path": "navig docker stats",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show container resource usage statistics.",
       "tags": []
@@ -3144,7 +3144,7 @@
       "handler": "_docker_stop_cmd",
       "module": "navig.commands.docker",
       "path": "navig docker stop",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Stop Docker container.",
       "tags": []
@@ -3157,7 +3157,7 @@
       "handler": "docs_command",
       "module": "navig.cli",
       "path": "navig docs",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Search NAVIG documentation for relevant information.",
       "tags": []
@@ -3170,7 +3170,7 @@
       "handler": "list_emails",
       "module": "navig.commands.email",
       "path": "navig email list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List emails from your inbox.",
       "tags": []
@@ -3183,7 +3183,7 @@
       "handler": "search_emails",
       "module": "navig.commands.email",
       "path": "navig email search",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Search emails by subject, sender, or content.",
       "tags": []
@@ -3196,7 +3196,7 @@
       "handler": "send_email",
       "module": "navig.commands.email",
       "path": "navig email send",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Send an email.",
       "tags": []
@@ -3209,7 +3209,7 @@
       "handler": "setup_email",
       "module": "navig.commands.email",
       "path": "navig email setup",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Configure email provider credentials.",
       "tags": []
@@ -3222,7 +3222,7 @@
       "handler": "sync_email",
       "module": "navig.commands.email",
       "path": "navig email sync",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Sync email data from remote provider.",
       "tags": []
@@ -3235,7 +3235,7 @@
       "handler": "eval_run",
       "module": "navig.commands.eval",
       "path": "navig eval run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Evaluate a Python expression with NAVIG context available.",
       "tags": []
@@ -3248,7 +3248,7 @@
       "handler": "evolve_fix",
       "module": "navig.commands.evolution",
       "path": "navig evolve fix",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Attempt to fix or improve an existing file.",
       "tags": []
@@ -3261,7 +3261,7 @@
       "handler": "evolve_optimize",
       "module": "navig.commands.evolution",
       "path": "navig evolve optimize",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Analyze profile data and propose the next optimization target.",
       "tags": []
@@ -3274,7 +3274,7 @@
       "handler": "evolve_pack",
       "module": "navig.commands.evolution",
       "path": "navig evolve pack",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Generate a new Pack (collection of skills).",
       "tags": []
@@ -3287,7 +3287,7 @@
       "handler": "evolve_script",
       "module": "navig.commands.evolution",
       "path": "navig evolve script",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Generate a Python automation script.",
       "tags": []
@@ -3300,7 +3300,7 @@
       "handler": "evolve_skill",
       "module": "navig.commands.evolution",
       "path": "navig evolve skill",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Generate and refine a new skill definition (SKILL.md).",
       "tags": []
@@ -3313,7 +3313,7 @@
       "handler": "evolve_status",
       "module": "navig.commands.evolution",
       "path": "navig evolve status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show performance trends and regression alerts from the auto-profiler.",
       "tags": []
@@ -3326,7 +3326,7 @@
       "handler": "evolve_workflow",
       "module": "navig.commands.evolution",
       "path": "navig evolve workflow",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Generate and refine a new automation workflow (YAML).",
       "tags": []
@@ -3339,7 +3339,7 @@
       "handler": "explain_command",
       "module": "navig.commands.explain",
       "path": "navig explain command",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Explain a NAVIG CLI command.",
       "tags": []
@@ -3352,7 +3352,7 @@
       "handler": "explain_concept",
       "module": "navig.commands.explain",
       "path": "navig explain concept",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Explain a NAVIG concept using the AI assistant.",
       "tags": []
@@ -3365,7 +3365,7 @@
       "handler": "explain_config",
       "module": "navig.commands.explain",
       "path": "navig explain config",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Explain a configuration key.",
       "tags": []
@@ -3378,7 +3378,7 @@
       "handler": "farmore_backup",
       "module": "navig.commands.farmore",
       "path": "navig farmore backup",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "\ud83d\udce6 Clone / mirror every repo for a user or organisation.",
       "tags": []
@@ -3391,7 +3391,7 @@
       "handler": "farmore_clone",
       "module": "navig.commands.farmore",
       "path": "navig farmore clone",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "\u2b07\ufe0f  Clone a single repository (with farmore if available, else plain git).",
       "tags": []
@@ -3404,7 +3404,7 @@
       "handler": "farmore_search",
       "module": "navig.commands.farmore",
       "path": "navig farmore search",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "\ud83d\udd0d Search GitHub and clone matching repositories.",
       "tags": []
@@ -3417,7 +3417,7 @@
       "handler": "farmore_status",
       "module": "navig.commands.farmore",
       "path": "navig farmore status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "\u2139\ufe0f  Show farmore installation status and token configuration.",
       "tags": []
@@ -3430,7 +3430,7 @@
       "handler": "token_remove",
       "module": "navig.commands.farmore",
       "path": "navig farmore token remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "\ud83d\uddd1  Remove the stored GitHub token.",
       "tags": []
@@ -3443,7 +3443,7 @@
       "handler": "token_set",
       "module": "navig.commands.farmore",
       "path": "navig farmore token set",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "\ud83d\udd11 Save a GitHub token for farmore to use automatically.",
       "tags": []
@@ -3456,7 +3456,7 @@
       "handler": "token_show",
       "module": "navig.commands.farmore",
       "path": "navig farmore token show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "\ud83d\udd0d Display where the current GitHub token comes from (masked).",
       "tags": []
@@ -3469,7 +3469,7 @@
       "handler": "fetch_command",
       "module": "navig.cli",
       "path": "navig fetch",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Fetch and extract content from a URL.",
       "tags": []
@@ -3482,7 +3482,7 @@
       "handler": "file_add",
       "module": "navig.commands.files",
       "path": "navig file add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Add file/directory to remote (upload or mkdir).",
       "tags": []
@@ -3495,7 +3495,7 @@
       "handler": "file_edit",
       "module": "navig.commands.files",
       "path": "navig file edit",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Edit remote file (write content, change permissions/owner).",
       "tags": []
@@ -3508,7 +3508,7 @@
       "handler": "file_get",
       "module": "navig.commands.files",
       "path": "navig file get",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Download file from remote.",
       "tags": []
@@ -3521,7 +3521,7 @@
       "handler": "file_list",
       "module": "navig.commands.files",
       "path": "navig file list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List remote directory contents.",
       "tags": []
@@ -3534,7 +3534,7 @@
       "handler": "file_remove",
       "module": "navig.commands.files",
       "path": "navig file remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove remote file or directory.",
       "tags": []
@@ -3547,7 +3547,7 @@
       "handler": "file_show",
       "module": "navig.commands.files",
       "path": "navig file show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show remote file contents or download.",
       "tags": []
@@ -3560,7 +3560,7 @@
       "handler": "finance_balance",
       "module": "navig.commands.finance",
       "path": "navig finance balance",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show account balances from a beancount ledger.",
       "tags": []
@@ -3573,7 +3573,7 @@
       "handler": "finance_status",
       "module": "navig.commands.finance",
       "path": "navig finance status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show finance integration status.",
       "tags": []
@@ -3586,7 +3586,7 @@
       "handler": "flow_add",
       "module": "navig.cli",
       "path": "navig flow add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Create a new flow.",
       "tags": []
@@ -3599,7 +3599,7 @@
       "handler": "flow_list",
       "module": "navig.cli",
       "path": "navig flow list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all available flows.",
       "tags": []
@@ -3612,7 +3612,7 @@
       "handler": "flow_run",
       "module": "navig.cli",
       "path": "navig flow run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Execute a flow.",
       "tags": []
@@ -3625,7 +3625,7 @@
       "handler": "flow_show",
       "module": "navig.cli",
       "path": "navig flow show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Display flow definition and steps.",
       "tags": []
@@ -3638,7 +3638,7 @@
       "handler": "flow_template_add",
       "module": "navig.cli",
       "path": "navig flow template add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Enable/add a template.",
       "tags": []
@@ -3651,7 +3651,7 @@
       "handler": "flow_template_list",
       "module": "navig.cli",
       "path": "navig flow template list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all available templates.",
       "tags": []
@@ -3664,7 +3664,7 @@
       "handler": "flow_template_remove",
       "module": "navig.cli",
       "path": "navig flow template remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Disable/remove a template.",
       "tags": []
@@ -3677,7 +3677,7 @@
       "handler": "flow_template_run",
       "module": "navig.cli",
       "path": "navig flow template run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Deploy/run a template.",
       "tags": []
@@ -3690,7 +3690,7 @@
       "handler": "flow_template_show",
       "module": "navig.cli",
       "path": "navig flow template show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show template details.",
       "tags": []
@@ -3703,7 +3703,7 @@
       "handler": "flow_test",
       "module": "navig.cli",
       "path": "navig flow test",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Test/validate flow syntax and structure.",
       "tags": []
@@ -3716,7 +3716,7 @@
       "handler": "add_node",
       "module": "navig.commands.flux",
       "path": "navig flux add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Manually add a peer by its gateway URL.",
       "tags": []
@@ -3729,7 +3729,7 @@
       "handler": "clear",
       "module": "navig.commands.flux",
       "path": "navig flux clear",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Clear the routing target \u2014 commands run locally.",
       "tags": []
@@ -3742,7 +3742,7 @@
       "handler": "install",
       "module": "navig.commands.flux",
       "path": "navig flux install",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show one-liner install commands, or push the install to a peer (--push).",
       "tags": []
@@ -3755,7 +3755,7 @@
       "handler": "peers",
       "module": "navig.commands.flux",
       "path": "navig flux peers",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all known mesh peers.",
       "tags": []
@@ -3768,7 +3768,7 @@
       "handler": "scan",
       "module": "navig.commands.flux",
       "path": "navig flux scan",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Trigger LAN multicast discovery and wait for responses.",
       "tags": []
@@ -3781,7 +3781,7 @@
       "handler": "status",
       "module": "navig.commands.flux",
       "path": "navig flux status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Overall mesh health summary.",
       "tags": []
@@ -3794,7 +3794,7 @@
       "handler": "target",
       "module": "navig.commands.flux",
       "path": "navig flux target",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Set the active routing target. Interactive picker if no arg given.",
       "tags": []
@@ -3807,7 +3807,7 @@
       "handler": "token",
       "module": "navig.commands.flux",
       "path": "navig flux token",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show (and optionally copy) the mesh_token.",
       "tags": []
@@ -3820,7 +3820,7 @@
       "handler": "formation_agents",
       "module": "navig.commands.formation",
       "path": "navig formation agents",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List agents in the active formation (from .navig/profile.json).",
       "tags": []
@@ -3833,7 +3833,7 @@
       "handler": "formation_init",
       "module": "navig.commands.formation",
       "path": "navig formation init",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Initialize a profile for this workspace.",
       "tags": []
@@ -3846,7 +3846,7 @@
       "handler": "formation_list",
       "module": "navig.commands.formation",
       "path": "navig formation list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all available formations.",
       "tags": []
@@ -3859,7 +3859,7 @@
       "handler": "formation_show",
       "module": "navig.commands.formation",
       "path": "navig formation show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show detailed information about a formation.",
       "tags": []
@@ -3872,7 +3872,7 @@
       "handler": "gateway_session",
       "module": "navig.cli",
       "path": "navig gateway session",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Manage gateway sessions.",
       "tags": []
@@ -3885,7 +3885,7 @@
       "handler": "gateway_start",
       "module": "navig.cli",
       "path": "navig gateway start",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Start the autonomous agent gateway server.",
       "tags": []
@@ -3898,7 +3898,7 @@
       "handler": "gateway_status",
       "module": "navig.cli",
       "path": "navig gateway status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show gateway status.",
       "tags": []
@@ -3911,7 +3911,7 @@
       "handler": "gateway_stop",
       "module": "navig.cli",
       "path": "navig gateway stop",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Stop the running gateway server.",
       "tags": []
@@ -3924,7 +3924,7 @@
       "handler": "gateway_test",
       "module": "navig.cli",
       "path": "navig gateway test",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Send a smoke-test message through one or all configured channels.",
       "tags": []
@@ -3955,7 +3955,7 @@
       "handler": "heartbeat_configure",
       "module": "navig.cli",
       "path": "navig heartbeat configure",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Configure heartbeat settings.",
       "tags": []
@@ -3968,7 +3968,7 @@
       "handler": "heartbeat_history",
       "module": "navig.cli",
       "path": "navig heartbeat history",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show heartbeat history.",
       "tags": []
@@ -3981,7 +3981,7 @@
       "handler": "heartbeat_status",
       "module": "navig.cli",
       "path": "navig heartbeat status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show heartbeat status.",
       "tags": []
@@ -3994,7 +3994,7 @@
       "handler": "heartbeat_trigger",
       "module": "navig.cli",
       "path": "navig heartbeat trigger",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Trigger an immediate heartbeat check.",
       "tags": []
@@ -4007,7 +4007,7 @@
       "handler": "help_command",
       "module": "navig.cli",
       "path": "navig help",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "In-app help system for predictable, AI-friendly help output.",
       "tags": []
@@ -4020,7 +4020,7 @@
       "handler": "history_clear",
       "module": "navig.cli",
       "path": "navig history clear",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Clear all operation history.",
       "tags": []
@@ -4033,7 +4033,7 @@
       "handler": "history_export",
       "module": "navig.cli",
       "path": "navig history export",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Export operation history to file.",
       "tags": []
@@ -4046,7 +4046,7 @@
       "handler": "history_list",
       "module": "navig.cli",
       "path": "navig history list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List command history with filtering.",
       "tags": []
@@ -4059,7 +4059,7 @@
       "handler": "history_replay",
       "module": "navig.cli",
       "path": "navig history replay",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Replay a previous operation.",
       "tags": []
@@ -4072,7 +4072,7 @@
       "handler": "history_show",
       "module": "navig.cli",
       "path": "navig history show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show detailed information about an operation.",
       "tags": []
@@ -4085,7 +4085,7 @@
       "handler": "history_stats_cmd",
       "module": "navig.cli",
       "path": "navig history stats",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show history statistics.",
       "tags": []
@@ -4098,7 +4098,7 @@
       "handler": "history_undo",
       "module": "navig.cli",
       "path": "navig history undo",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Undo a reversible operation.",
       "tags": []
@@ -4111,7 +4111,7 @@
       "handler": "host_add",
       "module": "navig.commands.host",
       "path": "navig host add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Add new host configuration (interactive wizard or clone).",
       "tags": []
@@ -4124,7 +4124,7 @@
       "handler": "host_discover_local",
       "module": "navig.commands.host",
       "path": "navig host discover-local",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Discover and configure local development environment.",
       "tags": []
@@ -4155,7 +4155,7 @@
       "handler": "host_maintenance_clean",
       "module": "navig.commands.host",
       "path": "navig host maintenance clean",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Clean package cache and orphans.",
       "tags": []
@@ -4168,7 +4168,7 @@
       "handler": "host_maintenance_install",
       "module": "navig.commands.host",
       "path": "navig host maintenance install",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Install a package on the remote host.",
       "tags": []
@@ -4181,7 +4181,7 @@
       "handler": "host_maintenance_run",
       "module": "navig.commands.host",
       "path": "navig host maintenance run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run system maintenance operations.",
       "tags": []
@@ -4194,7 +4194,7 @@
       "handler": "host_maintenance_show",
       "module": "navig.commands.host",
       "path": "navig host maintenance show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show system maintenance information.",
       "tags": []
@@ -4207,7 +4207,7 @@
       "handler": "host_maintenance_update",
       "module": "navig.commands.host",
       "path": "navig host maintenance update",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Update system packages.",
       "tags": []
@@ -4220,7 +4220,7 @@
       "handler": "host_monitor_report",
       "module": "navig.commands.host",
       "path": "navig host monitor report",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Generate comprehensive monitoring report.",
       "tags": []
@@ -4233,7 +4233,7 @@
       "handler": "host_monitor_show",
       "module": "navig.commands.host",
       "path": "navig host monitor show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show monitoring information.",
       "tags": []
@@ -4246,7 +4246,7 @@
       "handler": "host_security_edit",
       "module": "navig.commands.host",
       "path": "navig host security edit",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Edit security settings.",
       "tags": []
@@ -4259,7 +4259,7 @@
       "handler": "host_security_show",
       "module": "navig.commands.host",
       "path": "navig host security show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show security information.",
       "tags": []
@@ -4272,7 +4272,7 @@
       "handler": "host_show",
       "module": "navig.commands.host",
       "path": "navig host show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show host information (canonical command).",
       "tags": []
@@ -4285,7 +4285,7 @@
       "handler": "host_test",
       "module": "navig.commands.host",
       "path": "navig host test",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Test SSH connection to host.",
       "tags": []
@@ -4298,7 +4298,7 @@
       "handler": "host_use",
       "module": "navig.commands.host",
       "path": "navig host use",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Switch active host context (global).",
       "tags": []
@@ -4311,7 +4311,7 @@
       "handler": "hosts_add_cmd",
       "module": "navig.cli",
       "path": "navig hosts add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Add an entry to the hosts file (requires admin).",
       "tags": []
@@ -4324,7 +4324,7 @@
       "handler": "hosts_edit_cmd",
       "module": "navig.cli",
       "path": "navig hosts edit",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Open hosts file in editor (requires admin).",
       "tags": []
@@ -4337,7 +4337,7 @@
       "handler": "hosts_view_cmd",
       "module": "navig.cli",
       "path": "navig hosts view",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "View the system hosts file with syntax highlighting.",
       "tags": []
@@ -4350,7 +4350,7 @@
       "handler": "list_sources",
       "module": "navig.commands.import_cmd",
       "path": "navig import list-sources",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all built-in import sources.",
       "tags": []
@@ -4363,7 +4363,7 @@
       "handler": "add_url_cmd",
       "module": "navig.commands.inbox",
       "path": "navig inbox add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Fetch a URL, classify it, and route it into the wiki inbox.",
       "tags": []
@@ -4376,7 +4376,7 @@
       "handler": "dry_run",
       "module": "navig.commands.inbox",
       "path": "navig inbox dry-run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Preview routing for all inbox files (no files written or moved).",
       "tags": []
@@ -4389,7 +4389,7 @@
       "handler": "filter_cmd",
       "module": "navig.commands.inbox",
       "path": "navig inbox filter",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Filter and normalize all .navig/**/*.md files in-place.",
       "tags": []
@@ -4402,7 +4402,7 @@
       "handler": "process_all",
       "module": "navig.commands.inbox",
       "path": "navig inbox process-all",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Process ALL .md files in .navig/plans/inbox/.",
       "tags": []
@@ -4415,7 +4415,7 @@
       "handler": "process_current",
       "module": "navig.commands.inbox",
       "path": "navig inbox process-current",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Process a single inbox file \u2014 classify, transform, and route.",
       "tags": []
@@ -4428,7 +4428,7 @@
       "handler": "stats_cmd",
       "module": "navig.commands.inbox",
       "path": "navig inbox stats",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show routing summary statistics from the inbox SQLite store.",
       "tags": []
@@ -4441,7 +4441,7 @@
       "handler": "ui_cmd",
       "module": "navig.commands.inbox",
       "path": "navig inbox ui",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Interactive TUI review panel \u2014 inspect inbox files and approve routing.",
       "tags": []
@@ -4454,7 +4454,7 @@
       "handler": "watch_cmd",
       "module": "navig.commands.inbox",
       "path": "navig inbox watch",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Watch .navig/**/*.md for changes and re-filter automatically.",
       "tags": []
@@ -4467,7 +4467,7 @@
       "handler": "index_drop",
       "module": "navig.cli",
       "path": "navig index drop",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Drop the project index (removes SQLite database).",
       "tags": []
@@ -4480,7 +4480,7 @@
       "handler": "index_scan",
       "module": "navig.cli",
       "path": "navig index scan",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Scan and index project source code for BM25 search.",
       "tags": []
@@ -4493,7 +4493,7 @@
       "handler": "index_search",
       "module": "navig.cli",
       "path": "navig index search",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Search the project index using BM25 ranking.",
       "tags": []
@@ -4506,7 +4506,7 @@
       "handler": "index_stats",
       "module": "navig.cli",
       "path": "navig index stats",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show project index statistics.",
       "tags": []
@@ -4519,7 +4519,7 @@
       "handler": "init_command",
       "module": "navig.cli",
       "path": "navig init",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "State-aware NAVIG setup gateway.",
       "tags": []
@@ -4532,7 +4532,7 @@
       "handler": "init_local_command",
       "module": "navig.cli",
       "path": "navig init-local",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Initialize app-specific .navig/ directory (renamed from 'init').",
       "tags": []
@@ -4545,7 +4545,7 @@
       "handler": "init_rollback_command",
       "module": "navig.cli",
       "path": "navig init-rollback",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Roll back the most recent installer run.",
       "tags": []
@@ -4558,7 +4558,7 @@
       "handler": "insights_anomalies",
       "module": "navig.cli",
       "path": "navig insights anomalies",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Detect unusual patterns and potential issues.",
       "tags": []
@@ -4571,7 +4571,7 @@
       "handler": "insights_commands",
       "module": "navig.cli",
       "path": "navig insights commands",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show most frequently used commands with success rates.",
       "tags": []
@@ -4584,7 +4584,7 @@
       "handler": "insights_hosts",
       "module": "navig.cli",
       "path": "navig insights hosts",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show host health scores and trends.",
       "tags": []
@@ -4597,7 +4597,7 @@
       "handler": "insights_recommend",
       "module": "navig.cli",
       "path": "navig insights recommend",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Get personalized recommendations based on your usage.",
       "tags": []
@@ -4610,7 +4610,7 @@
       "handler": "insights_report",
       "module": "navig.cli",
       "path": "navig insights report",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Generate a full analytics report.",
       "tags": []
@@ -4623,7 +4623,7 @@
       "handler": "insights_show",
       "module": "navig.cli",
       "path": "navig insights show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show insights summary with key metrics.",
       "tags": []
@@ -4636,7 +4636,7 @@
       "handler": "insights_time",
       "module": "navig.cli",
       "path": "navig insights time",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show time-based usage patterns.",
       "tags": []
@@ -4649,7 +4649,7 @@
       "handler": "install_package",
       "module": "navig.cli",
       "path": "navig install",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Auto-detect package manager and install.",
       "tags": []
@@ -4662,7 +4662,7 @@
       "handler": "install_add",
       "module": "navig.cli",
       "path": "navig install add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Install an asset from GitHub.",
       "tags": []
@@ -4675,7 +4675,7 @@
       "handler": "install_browse",
       "module": "navig.cli",
       "path": "navig install browse",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Browse the NAVIG community registry.",
       "tags": []
@@ -4688,7 +4688,7 @@
       "handler": "install_freeze",
       "module": "navig.cli",
       "path": "navig install freeze",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Print installed assets as type/name==version specs.",
       "tags": []
@@ -4701,7 +4701,7 @@
       "handler": "install_list",
       "module": "navig.cli",
       "path": "navig install list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List installed community assets.",
       "tags": []
@@ -4714,7 +4714,7 @@
       "handler": "install_remove",
       "module": "navig.cli",
       "path": "navig install remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove an installed community asset.",
       "tags": []
@@ -4727,7 +4727,7 @@
       "handler": "install_search",
       "module": "navig.cli",
       "path": "navig install search",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Search the NAVIG community registry.",
       "tags": []
@@ -4740,7 +4740,7 @@
       "handler": "install_show",
       "module": "navig.cli",
       "path": "navig install show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show details of an installed asset.",
       "tags": []
@@ -4753,7 +4753,7 @@
       "handler": "install_status",
       "module": "navig.cli",
       "path": "navig install status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show health of all installed assets.",
       "tags": []
@@ -4766,7 +4766,7 @@
       "handler": "install_update",
       "module": "navig.cli",
       "path": "navig install update",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Update one or all installed assets to latest.",
       "tags": []
@@ -4779,7 +4779,7 @@
       "handler": "install_upgrade",
       "module": "navig.cli",
       "path": "navig install upgrade",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Upgrade all installed assets (alias for update).",
       "tags": []
@@ -4792,7 +4792,7 @@
       "handler": "kg_forget",
       "module": "navig.commands.kg",
       "path": "navig kg forget",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Delete a fact by ID.",
       "tags": []
@@ -4805,7 +4805,7 @@
       "handler": "kg_recall",
       "module": "navig.commands.kg",
       "path": "navig kg recall",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Recall all facts about a subject.",
       "tags": []
@@ -4818,7 +4818,7 @@
       "handler": "kg_remember",
       "module": "navig.commands.kg",
       "path": "navig kg remember",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Store a fact triple in the knowledge graph.",
       "tags": []
@@ -4831,7 +4831,7 @@
       "handler": "kg_routines",
       "module": "navig.commands.kg",
       "path": "navig kg routines",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all registered routines.",
       "tags": []
@@ -4844,7 +4844,7 @@
       "handler": "kg_search",
       "module": "navig.commands.kg",
       "path": "navig kg search",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Full-text search across all facts (subject, predicate, object).",
       "tags": []
@@ -4857,7 +4857,7 @@
       "handler": "kg_status",
       "module": "navig.commands.kg",
       "path": "navig kg status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show knowledge graph statistics.",
       "tags": []
@@ -4870,7 +4870,7 @@
       "handler": "kg_forget",
       "module": "navig.commands.kg",
       "path": "navig knowledge forget",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Delete a fact by ID.",
       "tags": []
@@ -4883,7 +4883,7 @@
       "handler": "kg_recall",
       "module": "navig.commands.kg",
       "path": "navig knowledge recall",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Recall all facts about a subject.",
       "tags": []
@@ -4896,7 +4896,7 @@
       "handler": "kg_remember",
       "module": "navig.commands.kg",
       "path": "navig knowledge remember",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Store a fact triple in the knowledge graph.",
       "tags": []
@@ -4909,7 +4909,7 @@
       "handler": "kg_routines",
       "module": "navig.commands.kg",
       "path": "navig knowledge routines",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all registered routines.",
       "tags": []
@@ -4922,7 +4922,7 @@
       "handler": "kg_search",
       "module": "navig.commands.kg",
       "path": "navig knowledge search",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Full-text search across all facts (subject, predicate, object).",
       "tags": []
@@ -4935,7 +4935,7 @@
       "handler": "kg_status",
       "module": "navig.commands.kg",
       "path": "navig knowledge status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show knowledge graph statistics.",
       "tags": []
@@ -4948,7 +4948,7 @@
       "handler": "add_link",
       "module": "navig.commands.links",
       "path": "navig links add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Add a new bookmark. Optionally associate a vault credential for auto-login.",
       "tags": []
@@ -4961,7 +4961,7 @@
       "handler": "delete_link",
       "module": "navig.commands.links",
       "path": "navig links delete",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Delete a bookmark permanently.",
       "tags": []
@@ -4974,7 +4974,7 @@
       "handler": "edit_link",
       "module": "navig.commands.links",
       "path": "navig links edit",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Edit link metadata.",
       "tags": []
@@ -4987,7 +4987,7 @@
       "handler": "import_links",
       "module": "navig.commands.links",
       "path": "navig links import",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Bulk import bookmarks from legacy JSON or native browser bookmark files.",
       "tags": []
@@ -5000,7 +5000,7 @@
       "handler": "list_links",
       "module": "navig.commands.links",
       "path": "navig links list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all bookmarks.",
       "tags": []
@@ -5013,7 +5013,7 @@
       "handler": "open_link",
       "module": "navig.commands.links",
       "path": "navig links open",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Open a bookmark in the browser.",
       "tags": []
@@ -5026,7 +5026,7 @@
       "handler": "search_links",
       "module": "navig.commands.links",
       "path": "navig links search",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Full-text search bookmarks by URL, title, notes, or tags.",
       "tags": []
@@ -5039,7 +5039,7 @@
       "handler": "show_link",
       "module": "navig.commands.links",
       "path": "navig links show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show full details for a bookmark.",
       "tags": []
@@ -5052,7 +5052,7 @@
       "handler": "tag_link",
       "module": "navig.commands.links",
       "path": "navig links tag",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Add a tag to a link.",
       "tags": []
@@ -5065,7 +5065,7 @@
       "handler": "local_audit_cmd",
       "module": "navig.cli",
       "path": "navig local audit",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run local security audit.",
       "tags": []
@@ -5078,7 +5078,7 @@
       "handler": "local_dns_cmd",
       "module": "navig.cli",
       "path": "navig local dns",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Perform DNS lookup.",
       "tags": []
@@ -5091,7 +5091,7 @@
       "handler": "local_firewall_cmd",
       "module": "navig.cli",
       "path": "navig local firewall",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show local firewall status.",
       "tags": []
@@ -5104,7 +5104,7 @@
       "handler": "local_interfaces_cmd",
       "module": "navig.cli",
       "path": "navig local interfaces",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show network interfaces.",
       "tags": []
@@ -5117,7 +5117,7 @@
       "handler": "local_ping_cmd",
       "module": "navig.cli",
       "path": "navig local ping",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Ping a host from local machine.",
       "tags": []
@@ -5130,7 +5130,7 @@
       "handler": "local_ports_cmd",
       "module": "navig.cli",
       "path": "navig local ports",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show open/listening ports on local machine.",
       "tags": []
@@ -5143,7 +5143,7 @@
       "handler": "local_show_cmd",
       "module": "navig.cli",
       "path": "navig local show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show local system information.",
       "tags": []
@@ -5156,7 +5156,7 @@
       "handler": "log_run",
       "module": "navig.commands.log",
       "path": "navig log run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run log maintenance operations.",
       "tags": []
@@ -5169,7 +5169,7 @@
       "handler": "log_show",
       "module": "navig.commands.log",
       "path": "navig log show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show service or container logs.",
       "tags": []
@@ -5182,7 +5182,7 @@
       "handler": "accounts",
       "module": "navig.commands.matrix",
       "path": "navig matrix accounts",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List configured Matrix accounts from the vault.",
       "tags": []
@@ -5195,7 +5195,7 @@
       "handler": "e2ee_blacklist",
       "module": "navig.commands.matrix",
       "path": "navig matrix e2ee blacklist",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Blacklist a device (do not send keys to it).",
       "tags": []
@@ -5208,7 +5208,7 @@
       "handler": "e2ee_devices",
       "module": "navig.commands.matrix",
       "path": "navig matrix e2ee devices",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List devices and their trust state.",
       "tags": []
@@ -5221,7 +5221,7 @@
       "handler": "e2ee_export_keys",
       "module": "navig.commands.matrix",
       "path": "navig matrix e2ee export-keys",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Export E2EE room keys to a file (encrypted).",
       "tags": []
@@ -5234,7 +5234,7 @@
       "handler": "e2ee_import_keys",
       "module": "navig.commands.matrix",
       "path": "navig matrix e2ee import-keys",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Import E2EE room keys from a file.",
       "tags": []
@@ -5247,7 +5247,7 @@
       "handler": "e2ee_keys",
       "module": "navig.commands.matrix",
       "path": "navig matrix e2ee keys",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show the bot's own device keys (for cross-verification).",
       "tags": []
@@ -5260,7 +5260,7 @@
       "handler": "e2ee_status",
       "module": "navig.commands.matrix",
       "path": "navig matrix e2ee status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show E2EE diagnostic status.",
       "tags": []
@@ -5273,7 +5273,7 @@
       "handler": "e2ee_trust",
       "module": "navig.commands.matrix",
       "path": "navig matrix e2ee trust",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Manually trust a device (skip SAS verification).",
       "tags": []
@@ -5286,7 +5286,7 @@
       "handler": "e2ee_trust_all",
       "module": "navig.commands.matrix",
       "path": "navig matrix e2ee trust-all",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Trust ALL known devices for a user.",
       "tags": []
@@ -5299,7 +5299,7 @@
       "handler": "e2ee_unverify",
       "module": "navig.commands.matrix",
       "path": "navig matrix e2ee unverify",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove trust from a device.",
       "tags": []
@@ -5312,7 +5312,7 @@
       "handler": "e2ee_verify",
       "module": "navig.commands.matrix",
       "path": "navig matrix e2ee verify",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Start interactive SAS (emoji) verification with a device.",
       "tags": []
@@ -5325,7 +5325,7 @@
       "handler": "features",
       "module": "navig.commands.matrix",
       "path": "navig matrix features",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show Matrix feature toggle states.",
       "tags": []
@@ -5338,7 +5338,7 @@
       "handler": "file_download",
       "module": "navig.commands.matrix",
       "path": "navig matrix file download",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Download a file from a Matrix content URI.",
       "tags": []
@@ -5351,7 +5351,7 @@
       "handler": "file_upload",
       "module": "navig.commands.matrix",
       "path": "navig matrix file upload",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Upload a file to a Matrix room.",
       "tags": []
@@ -5364,7 +5364,7 @@
       "handler": "inbox_list",
       "module": "navig.commands.matrix",
       "path": "navig matrix inbox list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List persisted Matrix inbox messages.",
       "tags": []
@@ -5377,7 +5377,7 @@
       "handler": "inbox_mark_read",
       "module": "navig.commands.matrix",
       "path": "navig matrix inbox mark-read",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Mark messages as read (one or all).",
       "tags": []
@@ -5390,7 +5390,7 @@
       "handler": "inbox_process",
       "module": "navig.commands.matrix",
       "path": "navig matrix inbox process",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Route unread Matrix messages through InboxRouterAgent.",
       "tags": []
@@ -5403,7 +5403,7 @@
       "handler": "inbox_purge",
       "module": "navig.commands.matrix",
       "path": "navig matrix inbox purge",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Delete all read messages from inbox.",
       "tags": []
@@ -5416,7 +5416,7 @@
       "handler": "inbox_unread",
       "module": "navig.commands.matrix",
       "path": "navig matrix inbox unread",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show unread count.",
       "tags": []
@@ -5429,7 +5429,7 @@
       "handler": "login",
       "module": "navig.commands.matrix",
       "path": "navig matrix login",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Authenticate with a Matrix homeserver.",
       "tags": []
@@ -5442,7 +5442,7 @@
       "handler": "logout",
       "module": "navig.commands.matrix",
       "path": "navig matrix logout",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "End the current Matrix session.",
       "tags": []
@@ -5455,7 +5455,7 @@
       "handler": "notice",
       "module": "navig.commands.matrix",
       "path": "navig matrix notice",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Send a notice (bot-style, no notification highlight).",
       "tags": []
@@ -5468,7 +5468,7 @@
       "handler": "read_messages",
       "module": "navig.commands.matrix",
       "path": "navig matrix read",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Read recent messages from a room.",
       "tags": []
@@ -5481,7 +5481,7 @@
       "handler": "list_rooms",
       "module": "navig.commands.matrix",
       "path": "navig matrix rooms",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List joined Matrix rooms.",
       "tags": []
@@ -5494,7 +5494,7 @@
       "handler": "send",
       "module": "navig.commands.matrix",
       "path": "navig matrix send",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Send a text message to a Matrix room.",
       "tags": []
@@ -5507,7 +5507,7 @@
       "handler": "status",
       "module": "navig.commands.matrix",
       "path": "navig matrix status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show Matrix connection status and account info.",
       "tags": []
@@ -5520,7 +5520,7 @@
       "handler": "store_bridges",
       "module": "navig.commands.matrix",
       "path": "navig matrix store bridges",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List bridge configurations in the store.",
       "tags": []
@@ -5533,7 +5533,7 @@
       "handler": "store_events",
       "module": "navig.commands.matrix",
       "path": "navig matrix store events",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show recent events for a room from the persistent store.",
       "tags": []
@@ -5546,7 +5546,7 @@
       "handler": "store_prune",
       "module": "navig.commands.matrix",
       "path": "navig matrix store prune",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Prune old events from the store.",
       "tags": []
@@ -5559,7 +5559,7 @@
       "handler": "store_rooms",
       "module": "navig.commands.matrix",
       "path": "navig matrix store rooms",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List rooms in the persistent store.",
       "tags": []
@@ -5572,7 +5572,7 @@
       "handler": "store_stats",
       "module": "navig.commands.matrix",
       "path": "navig matrix store stats",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show persistent store statistics.",
       "tags": []
@@ -5585,7 +5585,7 @@
       "handler": "tail",
       "module": "navig.commands.matrix",
       "path": "navig matrix tail",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Live-tail messages from a room (Ctrl+C to stop).",
       "tags": []
@@ -5598,7 +5598,7 @@
       "handler": "use_profile",
       "module": "navig.commands.matrix",
       "path": "navig matrix use",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Switch the active Matrix account.",
       "tags": []
@@ -5611,7 +5611,7 @@
       "handler": "mcp_list",
       "module": "navig.commands.mcp_cmd",
       "path": "navig mcp list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List configured MCP servers.",
       "tags": []
@@ -5624,7 +5624,7 @@
       "handler": "mcp_start",
       "module": "navig.commands.mcp_cmd",
       "path": "navig mcp start",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Start the NAVIG MCP server.",
       "tags": []
@@ -5637,7 +5637,7 @@
       "handler": "mcp_status",
       "module": "navig.commands.mcp_cmd",
       "path": "navig mcp status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show MCP server status.",
       "tags": []
@@ -5650,7 +5650,7 @@
       "handler": "memory_bank_status",
       "module": "navig.cli",
       "path": "navig memory bank",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show memory bank status and statistics.",
       "tags": []
@@ -5663,7 +5663,7 @@
       "handler": "memory_clear",
       "module": "navig.cli",
       "path": "navig memory clear",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Clear conversation memory.",
       "tags": []
@@ -5676,7 +5676,7 @@
       "handler": "memory_bank_clear",
       "module": "navig.cli",
       "path": "navig memory clear-bank",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Clear the memory bank index (keeps original files).",
       "tags": []
@@ -5689,7 +5689,7 @@
       "handler": "memory_fact_stats",
       "module": "navig.cli",
       "path": "navig memory fact-stats",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show key facts memory statistics.",
       "tags": []
@@ -5702,7 +5702,7 @@
       "handler": "memory_facts_list",
       "module": "navig.cli",
       "path": "navig memory facts",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List stored key facts (what NAVIG remembers about you).",
       "tags": []
@@ -5715,7 +5715,7 @@
       "handler": "memory_bank_files",
       "module": "navig.cli",
       "path": "navig memory files",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List indexed files in the memory bank.",
       "tags": []
@@ -5728,7 +5728,7 @@
       "handler": "memory_forget",
       "module": "navig.cli",
       "path": "navig memory forget",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove a key fact from memory (soft-delete).",
       "tags": []
@@ -5741,7 +5741,7 @@
       "handler": "memory_history",
       "module": "navig.cli",
       "path": "navig memory history",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show conversation history for a session.",
       "tags": []
@@ -5754,7 +5754,7 @@
       "handler": "memory_bank_index",
       "module": "navig.cli",
       "path": "navig memory index",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Index files in the memory bank.",
       "tags": []
@@ -5767,7 +5767,7 @@
       "handler": "memory_knowledge",
       "module": "navig.cli",
       "path": "navig memory knowledge",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Manage knowledge base entries.",
       "tags": []
@@ -5780,7 +5780,7 @@
       "handler": "memory_remember",
       "module": "navig.cli",
       "path": "navig memory remember",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Manually add a key fact to memory.",
       "tags": []
@@ -5793,7 +5793,7 @@
       "handler": "memory_bank_search",
       "module": "navig.cli",
       "path": "navig memory search",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Search the memory bank with hybrid search.",
       "tags": []
@@ -5806,7 +5806,7 @@
       "handler": "memory_sessions",
       "module": "navig.cli",
       "path": "navig memory sessions",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List conversation sessions.",
       "tags": []
@@ -5819,7 +5819,7 @@
       "handler": "memory_stats",
       "module": "navig.cli",
       "path": "navig memory stats",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show memory usage statistics.",
       "tags": []
@@ -5832,7 +5832,7 @@
       "handler": "memory_sync",
       "module": "navig.cli",
       "path": "navig memory sync",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Pull memory chunks from a remote NAVIG formation.",
       "tags": []
@@ -5845,7 +5845,7 @@
       "handler": "menu_command",
       "module": "navig.cli",
       "path": "navig menu",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Launch interactive menu interface.",
       "tags": []
@@ -5858,7 +5858,7 @@
       "handler": "peers",
       "module": "navig.commands.mesh",
       "path": "navig mesh peers",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all known mesh peers (alias for 'mesh status').",
       "tags": []
@@ -5871,7 +5871,7 @@
       "handler": "status",
       "module": "navig.commands.mesh",
       "path": "navig mesh status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show the current mesh topology and peer status.",
       "tags": []
@@ -5884,7 +5884,7 @@
       "handler": "migrate_addons_cmd",
       "module": "navig.commands.migrate",
       "path": "navig migrate addons",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Migrate legacy addons/ \u2192 templates/ architecture.",
       "tags": []
@@ -5897,7 +5897,7 @@
       "handler": "migrate_all_cmd",
       "module": "navig.commands.migrate",
       "path": "navig migrate all",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run all migration steps in dependency order.",
       "tags": []
@@ -5910,7 +5910,7 @@
       "handler": "migrate_config_cmd",
       "module": "navig.commands.migrate",
       "path": "navig migrate config",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Migrate Documents\\.navig \u2192 ~/.navig config layout.",
       "tags": []
@@ -5923,7 +5923,7 @@
       "handler": "migrate_status_cmd",
       "module": "navig.commands.migrate",
       "path": "navig migrate status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show which migration steps have been completed.",
       "tags": []
@@ -5936,7 +5936,7 @@
       "handler": "mode_detect",
       "module": "navig.commands.mode",
       "path": "navig mode detect",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Test mode detection on a piece of text.",
       "tags": []
@@ -5949,7 +5949,7 @@
       "handler": "mode_list",
       "module": "navig.commands.mode",
       "path": "navig mode list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List available models per provider, with uncensored status.",
       "tags": []
@@ -5962,7 +5962,7 @@
       "handler": "mode_set",
       "module": "navig.commands.mode",
       "path": "navig mode set",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Update a mode's provider, model, or parameters.",
       "tags": []
@@ -5975,7 +5975,7 @@
       "handler": "mode_show",
       "module": "navig.commands.mode",
       "path": "navig mode show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Display all LLM modes with their configuration.",
       "tags": []
@@ -5988,7 +5988,7 @@
       "handler": "cmd_add",
       "module": "navig.commands.mount",
       "path": "navig mount add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Register a drive junction and create it immediately.",
       "tags": []
@@ -6001,7 +6001,7 @@
       "handler": "cmd_list",
       "module": "navig.commands.mount",
       "path": "navig mount list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all registered drive junctions.",
       "tags": []
@@ -6014,7 +6014,7 @@
       "handler": "cmd_remove",
       "module": "navig.commands.mount",
       "path": "navig mount remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove a registered drive junction.",
       "tags": []
@@ -6027,7 +6027,7 @@
       "handler": "cmd_sync",
       "module": "navig.commands.mount",
       "path": "navig mount sync",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Verify all junctions and regenerate mount-drive.ps1 helper script.",
       "tags": []
@@ -6040,7 +6040,7 @@
       "handler": "cmd_verify",
       "module": "navig.commands.mount",
       "path": "navig mount verify",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Verify all registered junctions are alive and update registry status.",
       "tags": []
@@ -6053,7 +6053,7 @@
       "handler": "speedtest_cmd",
       "module": "navig.commands.net",
       "path": "navig net speedtest",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Measure internet speed with speedtest-cli (Ookla) and/or iperf3.",
       "tags": []
@@ -6066,7 +6066,7 @@
       "handler": "node_add",
       "module": "navig.commands.node",
       "path": "navig node add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Register a new node.",
       "tags": []
@@ -6079,7 +6079,7 @@
       "handler": "node_list",
       "module": "navig.commands.node",
       "path": "navig node list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List known nodes.",
       "tags": []
@@ -6092,7 +6092,7 @@
       "handler": "node_remove",
       "module": "navig.commands.node",
       "path": "navig node remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove a registered node.",
       "tags": []
@@ -6105,7 +6105,7 @@
       "handler": "package_audit",
       "module": "navig.commands.package",
       "path": "navig pack audit",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Audit all package manifests and report errors/warnings.",
       "tags": []
@@ -6118,7 +6118,7 @@
       "handler": "autoload_add",
       "module": "navig.commands.package",
       "path": "navig pack autoload add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Add a package to the auto-load list.",
       "tags": []
@@ -6131,7 +6131,7 @@
       "handler": "autoload_list",
       "module": "navig.commands.package",
       "path": "navig pack autoload list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show packages configured to auto-load at boot.",
       "tags": []
@@ -6144,7 +6144,7 @@
       "handler": "autoload_remove",
       "module": "navig.commands.package",
       "path": "navig pack autoload remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove a package from the auto-load list.",
       "tags": []
@@ -6157,7 +6157,7 @@
       "handler": "package_init",
       "module": "navig.commands.package",
       "path": "navig pack init",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Scaffold a new NAVIG package with manifest + starter files.",
       "tags": []
@@ -6170,7 +6170,7 @@
       "handler": "package_install",
       "module": "navig.commands.package",
       "path": "navig pack install",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Install a package into ~/.navig/packages/.",
       "tags": []
@@ -6183,7 +6183,7 @@
       "handler": "package_list",
       "module": "navig.commands.package",
       "path": "navig pack list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all available packages.",
       "tags": []
@@ -6196,7 +6196,7 @@
       "handler": "package_load",
       "module": "navig.commands.package",
       "path": "navig pack load",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Call on_load() on a package's handler.py \u2014 activates its commands at runtime.",
       "tags": []
@@ -6209,7 +6209,7 @@
       "handler": "package_remove",
       "module": "navig.commands.package",
       "path": "navig pack remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove a user-installed package from ~/.navig/packages/.",
       "tags": []
@@ -6222,7 +6222,7 @@
       "handler": "package_show",
       "module": "navig.commands.package",
       "path": "navig pack show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show details of a package.",
       "tags": []
@@ -6235,7 +6235,7 @@
       "handler": "package_unload",
       "module": "navig.commands.package",
       "path": "navig pack unload",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Call on_unload() on a package's handler.py \u2014 deactivates its commands.",
       "tags": []
@@ -6248,7 +6248,7 @@
       "handler": "package_validate",
       "module": "navig.commands.package",
       "path": "navig pack validate",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Validate a package manifest (navig.package.json).",
       "tags": []
@@ -6261,7 +6261,7 @@
       "handler": "package_audit",
       "module": "navig.commands.package",
       "path": "navig package audit",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Audit all package manifests and report errors/warnings.",
       "tags": []
@@ -6274,7 +6274,7 @@
       "handler": "autoload_add",
       "module": "navig.commands.package",
       "path": "navig package autoload add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Add a package to the auto-load list.",
       "tags": []
@@ -6287,7 +6287,7 @@
       "handler": "autoload_list",
       "module": "navig.commands.package",
       "path": "navig package autoload list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show packages configured to auto-load at boot.",
       "tags": []
@@ -6300,7 +6300,7 @@
       "handler": "autoload_remove",
       "module": "navig.commands.package",
       "path": "navig package autoload remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove a package from the auto-load list.",
       "tags": []
@@ -6313,7 +6313,7 @@
       "handler": "package_init",
       "module": "navig.commands.package",
       "path": "navig package init",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Scaffold a new NAVIG package with manifest + starter files.",
       "tags": []
@@ -6326,7 +6326,7 @@
       "handler": "package_install",
       "module": "navig.commands.package",
       "path": "navig package install",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Install a package into ~/.navig/packages/.",
       "tags": []
@@ -6339,7 +6339,7 @@
       "handler": "package_list",
       "module": "navig.commands.package",
       "path": "navig package list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all available packages.",
       "tags": []
@@ -6352,7 +6352,7 @@
       "handler": "package_load",
       "module": "navig.commands.package",
       "path": "navig package load",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Call on_load() on a package's handler.py \u2014 activates its commands at runtime.",
       "tags": []
@@ -6365,7 +6365,7 @@
       "handler": "package_remove",
       "module": "navig.commands.package",
       "path": "navig package remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove a user-installed package from ~/.navig/packages/.",
       "tags": []
@@ -6378,7 +6378,7 @@
       "handler": "package_show",
       "module": "navig.commands.package",
       "path": "navig package show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show details of a package.",
       "tags": []
@@ -6391,7 +6391,7 @@
       "handler": "package_unload",
       "module": "navig.commands.package",
       "path": "navig package unload",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Call on_unload() on a package's handler.py \u2014 deactivates its commands.",
       "tags": []
@@ -6404,7 +6404,7 @@
       "handler": "package_validate",
       "module": "navig.commands.package",
       "path": "navig package validate",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Validate a package manifest (navig.package.json).",
       "tags": []
@@ -6417,7 +6417,7 @@
       "handler": "package_audit",
       "module": "navig.commands.package",
       "path": "navig packs audit",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Audit all package manifests and report errors/warnings.",
       "tags": []
@@ -6430,7 +6430,7 @@
       "handler": "autoload_add",
       "module": "navig.commands.package",
       "path": "navig packs autoload add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Add a package to the auto-load list.",
       "tags": []
@@ -6443,7 +6443,7 @@
       "handler": "autoload_list",
       "module": "navig.commands.package",
       "path": "navig packs autoload list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show packages configured to auto-load at boot.",
       "tags": []
@@ -6456,7 +6456,7 @@
       "handler": "autoload_remove",
       "module": "navig.commands.package",
       "path": "navig packs autoload remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove a package from the auto-load list.",
       "tags": []
@@ -6469,7 +6469,7 @@
       "handler": "package_init",
       "module": "navig.commands.package",
       "path": "navig packs init",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Scaffold a new NAVIG package with manifest + starter files.",
       "tags": []
@@ -6482,7 +6482,7 @@
       "handler": "package_install",
       "module": "navig.commands.package",
       "path": "navig packs install",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Install a package into ~/.navig/packages/.",
       "tags": []
@@ -6495,7 +6495,7 @@
       "handler": "package_list",
       "module": "navig.commands.package",
       "path": "navig packs list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all available packages.",
       "tags": []
@@ -6508,7 +6508,7 @@
       "handler": "package_load",
       "module": "navig.commands.package",
       "path": "navig packs load",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Call on_load() on a package's handler.py \u2014 activates its commands at runtime.",
       "tags": []
@@ -6521,7 +6521,7 @@
       "handler": "package_remove",
       "module": "navig.commands.package",
       "path": "navig packs remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove a user-installed package from ~/.navig/packages/.",
       "tags": []
@@ -6534,7 +6534,7 @@
       "handler": "package_show",
       "module": "navig.commands.package",
       "path": "navig packs show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show details of a package.",
       "tags": []
@@ -6547,7 +6547,7 @@
       "handler": "package_unload",
       "module": "navig.commands.package",
       "path": "navig packs unload",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Call on_unload() on a package's handler.py \u2014 deactivates its commands.",
       "tags": []
@@ -6560,7 +6560,7 @@
       "handler": "package_validate",
       "module": "navig.commands.package",
       "path": "navig packs validate",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Validate a package manifest (navig.package.json).",
       "tags": []
@@ -6573,7 +6573,7 @@
       "handler": "plans_add",
       "module": "navig.commands.plans",
       "path": "navig plans add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run navig plans add",
       "tags": []
@@ -6586,7 +6586,7 @@
       "handler": "plans_briefing",
       "module": "navig.commands.plans",
       "path": "navig plans briefing",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run navig plans briefing",
       "tags": []
@@ -6599,7 +6599,7 @@
       "handler": "plans_next",
       "module": "navig.commands.plans",
       "path": "navig plans next",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run navig plans next",
       "tags": []
@@ -6612,7 +6612,7 @@
       "handler": "plans_run",
       "module": "navig.commands.plans",
       "path": "navig plans run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run navig plans run",
       "tags": []
@@ -6625,7 +6625,7 @@
       "handler": "plans_status",
       "module": "navig.commands.plans",
       "path": "navig plans status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show current progress by resolved space.",
       "tags": []
@@ -6638,7 +6638,7 @@
       "handler": "plans_sync",
       "module": "navig.commands.plans",
       "path": "navig plans sync",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run navig plans sync",
       "tags": []
@@ -6651,7 +6651,7 @@
       "handler": "plans_update",
       "module": "navig.commands.plans",
       "path": "navig plans update",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run navig plans update",
       "tags": []
@@ -6664,7 +6664,7 @@
       "handler": "portable_create",
       "module": "navig.commands.portable",
       "path": "navig portable create",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Create a portable NAVIG bundle.",
       "tags": []
@@ -6677,7 +6677,7 @@
       "handler": "portable_validate",
       "module": "navig.commands.portable",
       "path": "navig portable validate",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Validate a portable NAVIG bundle.",
       "tags": []
@@ -6690,7 +6690,7 @@
       "handler": "proactive_setup",
       "module": "navig.commands.proactive",
       "path": "navig proactive setup",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Configure proactive assistance sources interactively.",
       "tags": []
@@ -6703,7 +6703,7 @@
       "handler": "start_proactive_agent",
       "module": "navig.commands.proactive",
       "path": "navig proactive start",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Start the proactive agent loop.",
       "tags": []
@@ -6716,7 +6716,7 @@
       "handler": "proactive_status",
       "module": "navig.commands.proactive",
       "path": "navig proactive status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show proactive agent status and configured sources.",
       "tags": []
@@ -6729,7 +6729,7 @@
       "handler": "proactive_test",
       "module": "navig.commands.proactive",
       "path": "navig proactive test",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Test configured proactive sources.",
       "tags": []
@@ -6742,7 +6742,7 @@
       "handler": "profile_list",
       "module": "navig.commands.profile",
       "path": "navig profile list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show all available operating profiles.",
       "tags": []
@@ -6755,7 +6755,7 @@
       "handler": "profile_pin_clear",
       "module": "navig.commands.profile",
       "path": "navig profile pin-clear",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove the stored PIN (disables PIN protection for all profiles).",
       "tags": []
@@ -6768,7 +6768,7 @@
       "handler": "profile_pin_set",
       "module": "navig.commands.profile",
       "path": "navig profile pin-set",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Set or change the PIN that protects operator/architect profiles.",
       "tags": []
@@ -6781,7 +6781,7 @@
       "handler": "profile_set",
       "module": "navig.commands.profile",
       "path": "navig profile set",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Switch to a different operating profile.",
       "tags": []
@@ -6794,7 +6794,7 @@
       "handler": "profile_show",
       "module": "navig.commands.profile",
       "path": "navig profile show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show the current operating profile and all its settings.",
       "tags": []
@@ -6807,7 +6807,7 @@
       "handler": "prompts_edit",
       "module": "navig.commands.prompts",
       "path": "navig prompts edit",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Open a prompt in the system editor.",
       "tags": []
@@ -6820,7 +6820,7 @@
       "handler": "prompts_list",
       "module": "navig.commands.prompts",
       "path": "navig prompts list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List saved system prompts.",
       "tags": []
@@ -6833,7 +6833,7 @@
       "handler": "prompts_remove",
       "module": "navig.commands.prompts",
       "path": "navig prompts remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Delete a prompt.",
       "tags": []
@@ -6846,7 +6846,7 @@
       "handler": "prompts_show",
       "module": "navig.commands.prompts",
       "path": "navig prompts show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show a saved prompt.",
       "tags": []
@@ -6859,7 +6859,7 @@
       "handler": "queue_add",
       "module": "navig.cli",
       "path": "navig queue add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Add a task to the queue.",
       "tags": []
@@ -6872,7 +6872,7 @@
       "handler": "queue_cancel",
       "module": "navig.cli",
       "path": "navig queue cancel",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Cancel a pending task.",
       "tags": []
@@ -6885,7 +6885,7 @@
       "handler": "queue_list",
       "module": "navig.cli",
       "path": "navig queue list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List queued tasks.",
       "tags": []
@@ -6898,7 +6898,7 @@
       "handler": "queue_show",
       "module": "navig.cli",
       "path": "navig queue show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show task details.",
       "tags": []
@@ -6911,7 +6911,7 @@
       "handler": "queue_stats",
       "module": "navig.cli",
       "path": "navig queue stats",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show queue statistics.",
       "tags": []
@@ -6924,7 +6924,7 @@
       "handler": "quick_add",
       "module": "navig.cli",
       "path": "navig quick add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Add a quick action shortcut.",
       "tags": []
@@ -6937,7 +6937,7 @@
       "handler": "quick_list",
       "module": "navig.cli",
       "path": "navig quick list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all quick actions.",
       "tags": []
@@ -6950,7 +6950,7 @@
       "handler": "quick_remove",
       "module": "navig.cli",
       "path": "navig quick remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove a quick action.",
       "tags": []
@@ -6963,7 +6963,7 @@
       "handler": "quick_run",
       "module": "navig.cli",
       "path": "navig quick run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run a quick action by name.",
       "tags": []
@@ -6976,7 +6976,7 @@
       "handler": "quickstart_command",
       "module": "navig.cli",
       "path": "navig quickstart",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Minimal onboarding to get NAVIG usable in under 5 minutes.",
       "tags": []
@@ -6989,7 +6989,7 @@
       "handler": "radar_add",
       "module": "navig.commands.radar",
       "path": "navig radar add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Add a keyword to radar.",
       "tags": []
@@ -7002,7 +7002,7 @@
       "handler": "radar_list",
       "module": "navig.commands.radar",
       "path": "navig radar list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List active radar watches.",
       "tags": []
@@ -7015,7 +7015,7 @@
       "handler": "replay_list",
       "module": "navig.commands.replay",
       "path": "navig replay list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List recorded sessions available for replay.",
       "tags": []
@@ -7028,7 +7028,7 @@
       "handler": "replay_run",
       "module": "navig.commands.replay",
       "path": "navig replay run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Replay a recorded session.",
       "tags": []
@@ -7041,7 +7041,7 @@
       "handler": "run_command",
       "module": "navig.cli",
       "path": "navig run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Execute arbitrary shell command on remote server.",
       "tags": []
@@ -7054,7 +7054,7 @@
       "handler": "scaffold_apply",
       "module": "navig.cli",
       "path": "navig scaffold apply",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Generate files/directories from a template.",
       "tags": []
@@ -7067,7 +7067,7 @@
       "handler": "edit_script",
       "module": "navig.commands.script",
       "path": "navig script edit",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Open script in editor.",
       "tags": []
@@ -7080,7 +7080,7 @@
       "handler": "list_scripts",
       "module": "navig.commands.script",
       "path": "navig script list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List available scripts.",
       "tags": []
@@ -7093,7 +7093,7 @@
       "handler": "new_script",
       "module": "navig.commands.script",
       "path": "navig script new",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Create a new manual script.",
       "tags": []
@@ -7106,7 +7106,7 @@
       "handler": "run_script",
       "module": "navig.commands.script",
       "path": "navig script run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run a Python script.",
       "tags": []
@@ -7119,7 +7119,7 @@
       "handler": "search_command",
       "module": "navig.cli",
       "path": "navig search",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Search the web for information.",
       "tags": []
@@ -7132,7 +7132,7 @@
       "handler": "server_list",
       "module": "navig.commands.server",
       "path": "navig server list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List server resources (vhosts, containers, etc.).",
       "tags": []
@@ -7145,7 +7145,7 @@
       "handler": "server_run",
       "module": "navig.commands.server",
       "path": "navig server run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run server operations.",
       "tags": []
@@ -7158,7 +7158,7 @@
       "handler": "server_show",
       "module": "navig.commands.server",
       "path": "navig server show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show server details.",
       "tags": []
@@ -7171,7 +7171,7 @@
       "handler": "server_test",
       "module": "navig.commands.server",
       "path": "navig server test",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Test server configuration.",
       "tags": []
@@ -7184,7 +7184,7 @@
       "handler": "server_template_disable",
       "module": "navig.cli",
       "path": "navig server-template disable",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Disable an template for a specific server.",
       "tags": []
@@ -7197,7 +7197,7 @@
       "handler": "server_template_enable",
       "module": "navig.cli",
       "path": "navig server-template enable",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Enable an template for a specific server.",
       "tags": []
@@ -7210,7 +7210,7 @@
       "handler": "server_template_init",
       "module": "navig.cli",
       "path": "navig server-template init",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Manually initialize an template for a server.",
       "tags": []
@@ -7223,7 +7223,7 @@
       "handler": "server_template_list",
       "module": "navig.cli",
       "path": "navig server-template list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List template configurations for a server.",
       "tags": []
@@ -7236,7 +7236,7 @@
       "handler": "server_template_set",
       "module": "navig.cli",
       "path": "navig server-template set",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Set a custom value for a server template configuration.",
       "tags": []
@@ -7249,7 +7249,7 @@
       "handler": "server_template_show",
       "module": "navig.cli",
       "path": "navig server-template show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show merged configuration for a server template.",
       "tags": []
@@ -7262,7 +7262,7 @@
       "handler": "server_template_sync",
       "module": "navig.cli",
       "path": "navig server-template sync",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Sync template configuration from template.",
       "tags": []
@@ -7275,7 +7275,7 @@
       "handler": "service_config",
       "module": "navig.commands.service",
       "path": "navig service config",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show or manage daemon configuration.",
       "tags": []
@@ -7288,7 +7288,7 @@
       "handler": "service_install",
       "module": "navig.commands.service",
       "path": "navig service install",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Install NAVIG daemon as a persistent service.",
       "tags": []
@@ -7301,7 +7301,7 @@
       "handler": "service_logs",
       "module": "navig.commands.service",
       "path": "navig service logs",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show NAVIG daemon logs.",
       "tags": []
@@ -7314,7 +7314,7 @@
       "handler": "service_restart",
       "module": "navig.commands.service",
       "path": "navig service restart",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Restart the NAVIG daemon.",
       "tags": []
@@ -7327,7 +7327,7 @@
       "handler": "service_start",
       "module": "navig.commands.service",
       "path": "navig service start",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Start the NAVIG daemon.",
       "tags": []
@@ -7340,7 +7340,7 @@
       "handler": "service_status",
       "module": "navig.commands.service",
       "path": "navig service status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show NAVIG daemon status.",
       "tags": []
@@ -7353,7 +7353,7 @@
       "handler": "service_stop",
       "module": "navig.commands.service",
       "path": "navig service stop",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Stop the running NAVIG daemon.",
       "tags": []
@@ -7366,7 +7366,7 @@
       "handler": "service_uninstall",
       "module": "navig.commands.service",
       "path": "navig service uninstall",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove NAVIG daemon service.",
       "tags": []
@@ -7379,7 +7379,7 @@
       "handler": "settings_command",
       "module": "navig.cli",
       "path": "navig settings",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "View or edit layered NAVIG settings (VSCode-style, 5 layers).",
       "tags": []
@@ -7392,7 +7392,7 @@
       "handler": "skills_list",
       "module": "navig.cli",
       "path": "navig skills list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List available AI skills.",
       "tags": []
@@ -7405,7 +7405,7 @@
       "handler": "skills_run",
       "module": "navig.cli",
       "path": "navig skills run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run a skill command.",
       "tags": []
@@ -7418,7 +7418,7 @@
       "handler": "skills_show",
       "module": "navig.cli",
       "path": "navig skills show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show detailed skill information (commands, examples, metadata).",
       "tags": []
@@ -7431,7 +7431,7 @@
       "handler": "skills_synthesize",
       "module": "navig.cli",
       "path": "navig skills synthesize",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Synthesize new skill YAML files from repeated command patterns.",
       "tags": []
@@ -7444,7 +7444,7 @@
       "handler": "skills_tree",
       "module": "navig.cli",
       "path": "navig skills tree",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show skills grouped by category.",
       "tags": []
@@ -7457,7 +7457,7 @@
       "handler": "snapshot_create",
       "module": "navig.commands.snapshot",
       "path": "navig snapshot create",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Create a named snapshot of the current NAVIG config and state.",
       "tags": []
@@ -7470,7 +7470,7 @@
       "handler": "snapshot_list",
       "module": "navig.commands.snapshot",
       "path": "navig snapshot list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List available snapshots.",
       "tags": []
@@ -7483,7 +7483,7 @@
       "handler": "snapshot_restore",
       "module": "navig.commands.snapshot",
       "path": "navig snapshot restore",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Restore a snapshot.",
       "tags": []
@@ -7496,7 +7496,7 @@
       "handler": "software_list_cmd",
       "module": "navig.cli",
       "path": "navig software list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List installed software packages.",
       "tags": []
@@ -7509,7 +7509,7 @@
       "handler": "software_search_cmd",
       "module": "navig.cli",
       "path": "navig software search",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Search installed packages by name.",
       "tags": []
@@ -7522,7 +7522,7 @@
       "handler": "space_create",
       "module": "navig.commands.space",
       "path": "navig space create",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Create a new named space.",
       "tags": []
@@ -7535,7 +7535,7 @@
       "handler": "space_current",
       "module": "navig.commands.space",
       "path": "navig space current",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show the active space (NAVIG_SPACE override respected).",
       "tags": []
@@ -7548,7 +7548,7 @@
       "handler": "space_delete",
       "module": "navig.commands.space",
       "path": "navig space delete",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Delete a space and all its contents.",
       "tags": []
@@ -7561,7 +7561,7 @@
       "handler": "_space_list",
       "module": "navig.commands.space",
       "path": "navig space list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all spaces with active indicator.",
       "tags": []
@@ -7574,7 +7574,7 @@
       "handler": "space_create",
       "module": "navig.commands.space",
       "path": "navig space new",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Create a new named space.",
       "tags": []
@@ -7587,7 +7587,7 @@
       "handler": "space_switch",
       "module": "navig.commands.space",
       "path": "navig space switch",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Activate a space.",
       "tags": []
@@ -7600,7 +7600,7 @@
       "handler": "space_use",
       "module": "navig.commands.space",
       "path": "navig space use",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Compatibility alias for `navig space switch <name>`.",
       "tags": []
@@ -7613,7 +7613,7 @@
       "handler": "space_create",
       "module": "navig.commands.space",
       "path": "navig spaces create",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Create a new named space.",
       "tags": []
@@ -7626,7 +7626,7 @@
       "handler": "space_current",
       "module": "navig.commands.space",
       "path": "navig spaces current",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show the active space (NAVIG_SPACE override respected).",
       "tags": []
@@ -7639,7 +7639,7 @@
       "handler": "space_delete",
       "module": "navig.commands.space",
       "path": "navig spaces delete",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Delete a space and all its contents.",
       "tags": []
@@ -7652,7 +7652,7 @@
       "handler": "_space_list",
       "module": "navig.commands.space",
       "path": "navig spaces list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all spaces with active indicator.",
       "tags": []
@@ -7665,7 +7665,7 @@
       "handler": "space_create",
       "module": "navig.commands.space",
       "path": "navig spaces new",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Create a new named space.",
       "tags": []
@@ -7678,7 +7678,7 @@
       "handler": "space_switch",
       "module": "navig.commands.space",
       "path": "navig spaces switch",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Activate a space.",
       "tags": []
@@ -7691,7 +7691,7 @@
       "handler": "space_use",
       "module": "navig.commands.space",
       "path": "navig spaces use",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Compatibility alias for `navig space switch <name>`.",
       "tags": []
@@ -7704,7 +7704,7 @@
       "handler": "stack_down",
       "module": "navig.commands.stack",
       "path": "navig stack down",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Stop the NAVIG infrastructure stack.",
       "tags": []
@@ -7717,7 +7717,7 @@
       "handler": "stack_health",
       "module": "navig.commands.stack",
       "path": "navig stack health",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run healthcheck on all stack services.",
       "tags": []
@@ -7730,7 +7730,7 @@
       "handler": "stack_info",
       "module": "navig.commands.stack",
       "path": "navig stack info",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show stack configuration and paths.",
       "tags": []
@@ -7743,7 +7743,7 @@
       "handler": "stack_logs",
       "module": "navig.commands.stack",
       "path": "navig stack logs",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "View NAVIG stack logs.",
       "tags": []
@@ -7756,7 +7756,7 @@
       "handler": "stack_status",
       "module": "navig.commands.stack",
       "path": "navig stack status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show NAVIG stack container status.",
       "tags": []
@@ -7769,7 +7769,7 @@
       "handler": "stack_up",
       "module": "navig.commands.stack",
       "path": "navig stack up",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Start the NAVIG infrastructure stack.",
       "tags": []
@@ -7782,7 +7782,7 @@
       "handler": "quick_start",
       "module": "navig.cli",
       "path": "navig start",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Quick launcher - start NAVIG services with sensible defaults.",
       "tags": []
@@ -7795,7 +7795,7 @@
       "handler": "status_command",
       "module": "navig.cli",
       "path": "navig status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show current NAVIG status (active host/app, tunnel, gateway).",
       "tags": []
@@ -7808,7 +7808,7 @@
       "handler": "store_backup",
       "module": "navig.commands.store",
       "path": "navig store backup",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Backup all managed SQLite databases to a destination directory.",
       "tags": []
@@ -7821,7 +7821,7 @@
       "handler": "store_cleanup",
       "module": "navig.commands.store",
       "path": "navig store cleanup",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove deprecated .db.migrated files and empty legacy directories.",
       "tags": []
@@ -7834,7 +7834,7 @@
       "handler": "store_maintenance",
       "module": "navig.commands.store",
       "path": "navig store maintenance",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run maintenance on all managed stores (optimize, checkpoint, ANALYZE).",
       "tags": []
@@ -7847,7 +7847,7 @@
       "handler": "store_migrate",
       "module": "navig.commands.store",
       "path": "navig store migrate",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Run pending data migrations (legacy bot_data.db, daily_log.db \u2192 runtime.db).",
       "tags": []
@@ -7860,7 +7860,7 @@
       "handler": "store_status",
       "module": "navig.commands.store",
       "path": "navig store status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show health status of all local SQLite stores.",
       "tags": []
@@ -7873,7 +7873,7 @@
       "handler": "suggest_command",
       "module": "navig.cli",
       "path": "navig suggest",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Intelligent command suggestions based on history and context.",
       "tags": []
@@ -7886,7 +7886,7 @@
       "handler": "sync_status",
       "module": "navig.commands.sync",
       "path": "navig sync status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show sync status.",
       "tags": []
@@ -7899,7 +7899,7 @@
       "handler": "system_clean",
       "module": "navig.commands.system_cmd",
       "path": "navig system clean",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Clean NAVIG caches and temporary files.",
       "tags": []
@@ -7912,7 +7912,7 @@
       "handler": "system_info",
       "module": "navig.commands.system_cmd",
       "path": "navig system info",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show detailed system information.",
       "tags": []
@@ -7925,7 +7925,7 @@
       "handler": "task_add",
       "module": "navig.cli",
       "path": "navig task add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Create a new task from template.",
       "tags": []
@@ -7938,7 +7938,7 @@
       "handler": "task_complete",
       "module": "navig.cli",
       "path": "navig task complete",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Record a completed task \u2014 runs complete-task.sh (Unix) or complete-task.ps1 (Windows).",
       "tags": []
@@ -7951,7 +7951,7 @@
       "handler": "task_edit",
       "module": "navig.cli",
       "path": "navig task edit",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Open task in default editor.",
       "tags": []
@@ -7964,7 +7964,7 @@
       "handler": "task_list",
       "module": "navig.cli",
       "path": "navig task list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all available tasks/workflows.",
       "tags": []
@@ -7977,7 +7977,7 @@
       "handler": "task_remove",
       "module": "navig.cli",
       "path": "navig task remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Delete a task.",
       "tags": []
@@ -7990,7 +7990,7 @@
       "handler": "task_run",
       "module": "navig.cli",
       "path": "navig task run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Execute a task/workflow.",
       "tags": []
@@ -8003,7 +8003,7 @@
       "handler": "task_show",
       "module": "navig.cli",
       "path": "navig task show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Display task definition and steps.",
       "tags": []
@@ -8016,7 +8016,7 @@
       "handler": "task_test",
       "module": "navig.cli",
       "path": "navig task test",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Validate task syntax and structure.",
       "tags": []
@@ -8029,7 +8029,7 @@
       "handler": "send_message",
       "module": "navig.commands.telegram",
       "path": "navig telegram send",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Send a Telegram message using the configured bot token.",
       "tags": []
@@ -8042,7 +8042,7 @@
       "handler": "clear_session",
       "module": "navig.commands.telegram",
       "path": "navig telegram sessions clear",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Clear a session's message history.",
       "tags": []
@@ -8055,7 +8055,7 @@
       "handler": "delete_session",
       "module": "navig.commands.telegram",
       "path": "navig telegram sessions delete",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Delete a session completely.",
       "tags": []
@@ -8068,7 +8068,7 @@
       "handler": "list_sessions",
       "module": "navig.commands.telegram",
       "path": "navig telegram sessions list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all active Telegram sessions.",
       "tags": []
@@ -8081,7 +8081,7 @@
       "handler": "prune_sessions",
       "module": "navig.commands.telegram",
       "path": "navig telegram sessions prune",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove inactive sessions.",
       "tags": []
@@ -8094,7 +8094,7 @@
       "handler": "show_session",
       "module": "navig.commands.telegram",
       "path": "navig telegram sessions show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show details of a specific session.",
       "tags": []
@@ -8107,7 +8107,7 @@
       "handler": "telegram_status",
       "module": "navig.commands.telegram",
       "path": "navig telegram status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show Telegram bot status.",
       "tags": []
@@ -8120,7 +8120,7 @@
       "handler": "telemetry_disable",
       "module": "navig.commands.telemetry",
       "path": "navig telemetry disable",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Disable telemetry.",
       "tags": []
@@ -8133,7 +8133,7 @@
       "handler": "telemetry_enable",
       "module": "navig.commands.telemetry",
       "path": "navig telemetry enable",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Enable telemetry.",
       "tags": []
@@ -8146,7 +8146,7 @@
       "handler": "tray_install",
       "module": "navig.commands.tray",
       "path": "navig tray install",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Install NAVIG Tray (desktop shortcut + optional auto-start).",
       "tags": []
@@ -8159,7 +8159,7 @@
       "handler": "tray_start",
       "module": "navig.commands.tray",
       "path": "navig tray start",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Launch the NAVIG system tray app.",
       "tags": []
@@ -8172,7 +8172,7 @@
       "handler": "tray_status",
       "module": "navig.commands.tray",
       "path": "navig tray status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Check if NAVIG tray app is running.",
       "tags": []
@@ -8185,7 +8185,7 @@
       "handler": "tray_stop",
       "module": "navig.commands.tray",
       "path": "navig tray stop",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Stop the NAVIG tray app.",
       "tags": []
@@ -8198,7 +8198,7 @@
       "handler": "tray_uninstall",
       "module": "navig.commands.tray",
       "path": "navig tray uninstall",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove NAVIG Tray auto-start and desktop shortcut.",
       "tags": []
@@ -8211,7 +8211,7 @@
       "handler": "trigger_add",
       "module": "navig.cli",
       "path": "navig trigger add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Create a new trigger.",
       "tags": []
@@ -8224,7 +8224,7 @@
       "handler": "trigger_clear_history",
       "module": "navig.cli",
       "path": "navig trigger clear-history",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Clear trigger execution history.",
       "tags": []
@@ -8237,7 +8237,7 @@
       "handler": "trigger_disable",
       "module": "navig.cli",
       "path": "navig trigger disable",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Disable a trigger (stops it from firing).",
       "tags": []
@@ -8250,7 +8250,7 @@
       "handler": "trigger_enable",
       "module": "navig.cli",
       "path": "navig trigger enable",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Enable a disabled trigger.",
       "tags": []
@@ -8263,7 +8263,7 @@
       "handler": "trigger_fire",
       "module": "navig.cli",
       "path": "navig trigger fire",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Manually fire a trigger.",
       "tags": []
@@ -8276,7 +8276,7 @@
       "handler": "trigger_history",
       "module": "navig.cli",
       "path": "navig trigger history",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show trigger execution history.",
       "tags": []
@@ -8289,7 +8289,7 @@
       "handler": "trigger_list",
       "module": "navig.cli",
       "path": "navig trigger list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all configured triggers.",
       "tags": []
@@ -8302,7 +8302,7 @@
       "handler": "trigger_remove",
       "module": "navig.cli",
       "path": "navig trigger remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove a trigger.",
       "tags": []
@@ -8315,7 +8315,7 @@
       "handler": "trigger_show",
       "module": "navig.cli",
       "path": "navig trigger show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show detailed trigger information.",
       "tags": []
@@ -8328,7 +8328,7 @@
       "handler": "trigger_stats",
       "module": "navig.cli",
       "path": "navig trigger stats",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show trigger statistics.",
       "tags": []
@@ -8341,7 +8341,7 @@
       "handler": "trigger_test",
       "module": "navig.cli",
       "path": "navig trigger test",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Test a trigger (dry run).",
       "tags": []
@@ -8354,7 +8354,7 @@
       "handler": "tunnel_auto",
       "module": "navig.cli",
       "path": "navig tunnel auto",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Auto-start tunnel if needed, auto-stop when done.",
       "tags": []
@@ -8367,7 +8367,7 @@
       "handler": "tunnel_remove",
       "module": "navig.cli",
       "path": "navig tunnel remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Stop and remove SSH tunnel (canonical command).",
       "tags": []
@@ -8380,7 +8380,7 @@
       "handler": "tunnel_run",
       "module": "navig.cli",
       "path": "navig tunnel run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Start SSH tunnel for active server (canonical command).",
       "tags": []
@@ -8393,7 +8393,7 @@
       "handler": "tunnel_show",
       "module": "navig.cli",
       "path": "navig tunnel show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show tunnel status (canonical command).",
       "tags": []
@@ -8406,7 +8406,7 @@
       "handler": "tunnel_update",
       "module": "navig.cli",
       "path": "navig tunnel update",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Restart tunnel (canonical command).",
       "tags": []
@@ -8419,7 +8419,7 @@
       "handler": "update_check",
       "module": "navig.commands.update",
       "path": "navig update check",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Check current vs. latest available version (no changes made).",
       "tags": []
@@ -8432,7 +8432,7 @@
       "handler": "update_history_cmd",
       "module": "navig.commands.update",
       "path": "navig update history",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show recent update history.",
       "tags": []
@@ -8445,7 +8445,7 @@
       "handler": "update_nodes",
       "module": "navig.commands.update",
       "path": "navig update nodes",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all nodes NAVIG knows about (local + configured hosts).",
       "tags": []
@@ -8458,7 +8458,7 @@
       "handler": "update_rollback",
       "module": "navig.commands.update",
       "path": "navig update rollback",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Roll back NAVIG to a specific version.",
       "tags": []
@@ -8471,7 +8471,7 @@
       "handler": "update_run",
       "module": "navig.commands.update",
       "path": "navig update run",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Apply updates to one or more nodes.",
       "tags": []
@@ -8484,7 +8484,7 @@
       "handler": "update_source",
       "module": "navig.commands.update",
       "path": "navig update source",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show the configured update source.",
       "tags": []
@@ -8497,7 +8497,7 @@
       "handler": "update_status",
       "module": "navig.commands.update",
       "path": "navig update status",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show current installed version and update source config.",
       "tags": []
@@ -8510,7 +8510,7 @@
       "handler": "upgrade_command",
       "module": "navig.cli",
       "path": "navig upgrade",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Upgrade NAVIG to the latest version.",
       "tags": []
@@ -8523,7 +8523,7 @@
       "handler": "user_set",
       "module": "navig.commands.user",
       "path": "navig user set",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Set a user profile value.",
       "tags": []
@@ -8536,7 +8536,7 @@
       "handler": "user_show",
       "module": "navig.commands.user",
       "path": "navig user show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show the current user profile.",
       "tags": []
@@ -8549,7 +8549,7 @@
       "handler": "version_command",
       "module": "navig.cli",
       "path": "navig version",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show NAVIG version and system info.",
       "tags": []
@@ -8562,7 +8562,7 @@
       "handler": "list_voices",
       "module": "navig.commands.voice",
       "path": "navig voice list-voices",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List available voices for a provider.",
       "tags": []
@@ -8575,7 +8575,7 @@
       "handler": "speak_command",
       "module": "navig.commands.voice",
       "path": "navig voice speak",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Synthesize speech from text.",
       "tags": []
@@ -8588,7 +8588,7 @@
       "handler": "transcribe_command",
       "module": "navig.commands.voice",
       "path": "navig voice transcribe",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Transcribe audio file to text.",
       "tags": []
@@ -8601,7 +8601,7 @@
       "handler": "watch_list",
       "module": "navig.commands.watch_cmd",
       "path": "navig watch list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List active watches.",
       "tags": []
@@ -8614,7 +8614,7 @@
       "handler": "watch_start",
       "module": "navig.commands.watch_cmd",
       "path": "navig watch start",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Start watching a path for changes.",
       "tags": []
@@ -8627,7 +8627,7 @@
       "handler": "web_disable_new",
       "module": "navig.cli",
       "path": "navig web disable",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Disable a web server site.",
       "tags": []
@@ -8640,7 +8640,7 @@
       "handler": "web_enable_new",
       "module": "navig.cli",
       "path": "navig web enable",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Enable a web server site.",
       "tags": []
@@ -8653,7 +8653,7 @@
       "handler": "web_hestia_add",
       "module": "navig.cli",
       "path": "navig web hestia add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Add HestiaCP user or domain.",
       "tags": []
@@ -8666,7 +8666,7 @@
       "handler": "web_hestia_list",
       "module": "navig.cli",
       "path": "navig web hestia list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List HestiaCP resources (users, domains).",
       "tags": []
@@ -8679,7 +8679,7 @@
       "handler": "web_hestia_remove",
       "module": "navig.cli",
       "path": "navig web hestia remove",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Remove HestiaCP user or domain.",
       "tags": []
@@ -8692,7 +8692,7 @@
       "handler": "web_module_disable_new",
       "module": "navig.cli",
       "path": "navig web module-disable",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Disable Apache module (Apache only).",
       "tags": []
@@ -8705,7 +8705,7 @@
       "handler": "web_module_enable_new",
       "module": "navig.cli",
       "path": "navig web module-enable",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Enable Apache module (Apache only).",
       "tags": []
@@ -8718,7 +8718,7 @@
       "handler": "web_recommend_new",
       "module": "navig.cli",
       "path": "navig web recommend",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Display performance tuning recommendations.",
       "tags": []
@@ -8731,7 +8731,7 @@
       "handler": "web_reload_new",
       "module": "navig.cli",
       "path": "navig web reload",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Safely reload web server (tests config first).",
       "tags": []
@@ -8744,7 +8744,7 @@
       "handler": "web_test_new",
       "module": "navig.cli",
       "path": "navig web test",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Test web server configuration syntax.",
       "tags": []
@@ -8757,7 +8757,7 @@
       "handler": "web_vhosts_new",
       "module": "navig.cli",
       "path": "navig web vhosts",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List virtual hosts (enabled and available).",
       "tags": []
@@ -8770,7 +8770,7 @@
       "handler": "webhook_add_inbound",
       "module": "navig.commands.webhook",
       "path": "navig webhook add-inbound",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Create an inbound webhook endpoint.",
       "tags": []
@@ -8783,7 +8783,7 @@
       "handler": "webhook_add_outbound",
       "module": "navig.commands.webhook",
       "path": "navig webhook add-outbound",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Register an outbound webhook. NAVIG will POST to this URL when events occur.",
       "tags": []
@@ -8796,7 +8796,7 @@
       "handler": "webhook_delete",
       "module": "navig.commands.webhook",
       "path": "navig webhook delete",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Permanently delete a webhook.",
       "tags": []
@@ -8809,7 +8809,7 @@
       "handler": "webhook_disable",
       "module": "navig.commands.webhook",
       "path": "navig webhook disable",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Disable a webhook (inbound or outbound).",
       "tags": []
@@ -8822,7 +8822,7 @@
       "handler": "webhook_list",
       "module": "navig.commands.webhook",
       "path": "navig webhook list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all registered inbound and outbound webhooks.",
       "tags": []
@@ -8835,7 +8835,7 @@
       "handler": "webhook_test",
       "module": "navig.commands.webhook",
       "path": "navig webhook test",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Send a test event payload to an outbound webhook.",
       "tags": []
@@ -8848,7 +8848,7 @@
       "handler": "webhook_add_inbound",
       "module": "navig.commands.webhook",
       "path": "navig webhooks add-inbound",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Create an inbound webhook endpoint.",
       "tags": []
@@ -8861,7 +8861,7 @@
       "handler": "webhook_add_outbound",
       "module": "navig.commands.webhook",
       "path": "navig webhooks add-outbound",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Register an outbound webhook. NAVIG will POST to this URL when events occur.",
       "tags": []
@@ -8874,7 +8874,7 @@
       "handler": "webhook_delete",
       "module": "navig.commands.webhook",
       "path": "navig webhooks delete",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Permanently delete a webhook.",
       "tags": []
@@ -8887,7 +8887,7 @@
       "handler": "webhook_disable",
       "module": "navig.commands.webhook",
       "path": "navig webhooks disable",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Disable a webhook (inbound or outbound).",
       "tags": []
@@ -8900,7 +8900,7 @@
       "handler": "webhook_list",
       "module": "navig.commands.webhook",
       "path": "navig webhooks list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all registered inbound and outbound webhooks.",
       "tags": []
@@ -8913,7 +8913,7 @@
       "handler": "webhook_test",
       "module": "navig.commands.webhook",
       "path": "navig webhooks test",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Send a test event payload to an outbound webhook.",
       "tags": []
@@ -8926,7 +8926,7 @@
       "handler": "whoami_command",
       "module": "navig.cli",
       "path": "navig whoami",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show your NAVIG node identity sigil card.",
       "tags": []
@@ -8939,7 +8939,7 @@
       "handler": "cmd_add",
       "module": "navig.commands.work",
       "path": "navig work add",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Add a new work item.",
       "tags": []
@@ -8952,7 +8952,7 @@
       "handler": "cmd_archive",
       "module": "navig.commands.work",
       "path": "navig work archive",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Archive a work item (moves to the 'archived' stage).",
       "tags": []
@@ -8965,7 +8965,7 @@
       "handler": "cmd_kinds",
       "module": "navig.commands.work",
       "path": "navig work kinds",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all valid item kind names.",
       "tags": []
@@ -8978,7 +8978,7 @@
       "handler": "cmd_list",
       "module": "navig.commands.work",
       "path": "navig work list",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List work items, optionally filtered.",
       "tags": []
@@ -8991,7 +8991,7 @@
       "handler": "cmd_move",
       "module": "navig.commands.work",
       "path": "navig work move",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Move a work item to a new stage.",
       "tags": []
@@ -9004,7 +9004,7 @@
       "handler": "cmd_show",
       "module": "navig.commands.work",
       "path": "navig work show",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Show details of a work item.",
       "tags": []
@@ -9017,7 +9017,7 @@
       "handler": "cmd_stages",
       "module": "navig.commands.work",
       "path": "navig work stages",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "List all valid stage names.",
       "tags": []
@@ -9030,13 +9030,13 @@
       "handler": "cmd_update",
       "module": "navig.commands.work",
       "path": "navig work update",
-      "since": "2.4.18",
+      "since": "2.4.19",
       "status": "stable",
       "summary": "Update fields on a work item.",
       "tags": []
     }
   ],
-  "generated_at": "2026-03-29T19:25:55.539737+00:00",
+  "generated_at": "2026-03-30T00:18:02.840526+00:00",
   "schema_version": "1.0.0",
   "total": 693
 }
