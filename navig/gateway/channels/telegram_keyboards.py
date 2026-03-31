@@ -1202,6 +1202,12 @@ class CallbackHandler:
                     f"✅ {manifest.emoji if manifest else ''} {prov_label} activated for all tiers",
                     show_alert=True,
                 )
+                try:
+                    from navig.commands.init import mark_chat_onboarding_step_completed
+
+                    mark_chat_onboarding_step_completed("ai-provider")
+                except (ImportError, AttributeError, TypeError, ValueError):
+                    logger.debug("Unable to mark ai-provider step after provider activation")
                 await self.channel.send_message(
                     chat_id,
                     f"✅ <b>{prov_label}</b> is now active.\n"
@@ -1210,12 +1216,6 @@ class CallbackHandler:
                     f"<i>Saved to global config. Use /models to verify or adjust tiers.</i>",
                     parse_mode="HTML",
                 )
-                try:
-                    from navig.commands.init import mark_chat_onboarding_step_completed
-
-                    mark_chat_onboarding_step_completed("ai-provider")
-                except (ImportError, AttributeError, TypeError, ValueError):
-                    logger.debug("Unable to mark ai-provider step after provider activation")
             except Exception as exc:
                 await self._answer(cb_id, f"⚠️ Activation failed: {exc}", show_alert=True)
             return

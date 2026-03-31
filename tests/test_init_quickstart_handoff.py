@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 from navig.cli import app
 from navig.commands.init import (
     get_chat_onboarding_step_progress,
+    run_chat_first_handoff,
     mark_chat_onboarding_step_completed,
 )
 
@@ -82,3 +83,27 @@ def test_mark_chat_onboarding_step_completed_updates_artifact(tmp_path) -> None:
 
 def test_mark_chat_onboarding_step_completed_rejects_unknown_step(tmp_path) -> None:
     assert mark_chat_onboarding_step_completed("not-a-canonical-step", tmp_path / ".navig") is False
+
+
+def test_run_chat_first_handoff_marks_telegram_step_on_auto_start_success(monkeypatch) -> None:
+    marked: list[str] = []
+    handoff_calls: list[dict] = []
+
+    monkeypatch.setattr(
+        "navig.messaging.secrets.resolve_telegram_bot_token",
+        lambda _cfg=None: "123:token",
+    )
+    monkeypatch.setattr("navig.commands.init._auto_start_chat_runtime", lambda: True)
+    monkeypatch.setattr(
+        "navig.commands.init.mark_chat_onboarding_step_completed",
+        lambda step_id, navig_dir=None: marked.append(step_id) or True,
+    )
+    monkeypatch.setattr(
+        "navig.commands.init.write_chat_onboarding_handoff_state",
+        lambda **kwargs: handoff_calls.append(kwargs),
+    )
+
+    run_chat_first_handoff(profile="quickstart", dry_run=False, quiet=True)
+
+    assert marked == ["telegram-bot"]
+    assert handoff_calls and handoff_calls[0]["auto_started"] is True

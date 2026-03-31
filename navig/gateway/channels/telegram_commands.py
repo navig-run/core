@@ -1013,26 +1013,6 @@ class TelegramCommandsMixin:
             logger.debug("Failed to mark chat onboarding step: %s", step_id)
 
     @staticmethod
-    def _has_configured_hosts() -> bool:
-        try:
-            from navig.config import get_config_manager
-
-            cfg = get_config_manager()
-            return len(cfg.list_hosts()) > 0
-        except (ImportError, AttributeError, TypeError, ValueError, OSError, RuntimeError):
-            return False
-
-    @staticmethod
-    def _is_telegram_onboarding_ready() -> bool:
-        try:
-            from navig.messaging.secrets import resolve_telegram_bot_token
-
-            token = str(resolve_telegram_bot_token({}) or "").strip()
-            return bool(token)
-        except (ImportError, AttributeError, TypeError, ValueError, OSError, RuntimeError):
-            return False
-
-    @staticmethod
     def _is_cli_command_success(response: str) -> bool:
         txt = str(response or "")
         if not txt.strip():

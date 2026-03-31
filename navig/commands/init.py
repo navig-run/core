@@ -958,6 +958,8 @@ def run_chat_first_handoff(
         return
 
     auto_started = _auto_start_chat_runtime()
+    if auto_started:
+        mark_chat_onboarding_step_completed("telegram-bot")
     write_chat_onboarding_handoff_state(
         profile=profile,
         token_configured=True,
