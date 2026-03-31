@@ -1026,6 +1026,23 @@ class TelegramCommandsMixin:
             return False
         return int(match.group(1)) == 0
 
+    @staticmethod
+    def _has_host_connectivity_confirmation(response: str) -> bool:
+        import re
+
+        txt = str(response or "")
+        if not txt.strip():
+            return False
+
+        patterns = (
+            r"\bconnect(?:ed|ivity)?\b",
+            r"\breachable\b",
+            r"\bssh\s+(?:ok|success|connected)\b",
+            r"\bhost\s+test\s+(?:passed|ok|successful)\b",
+            r"\bconnectivity\s+(?:verified|confirmed|ok|successful)\b",
+        )
+        return any(re.search(pattern, txt, flags=re.IGNORECASE) for pattern in patterns)
+
     def _bootstrap_space_docs(self, space: str, space_path: Path) -> None:
         space_path.mkdir(parents=True, exist_ok=True)
 
@@ -3450,6 +3467,7 @@ class TelegramCommandsMixin:
                 if (
                     navig_cmd.strip().startswith("host use")
                     and self._is_cli_command_success(response)
+                    and self._has_host_connectivity_confirmation(response)
                 ):
                     self._mark_chat_onboarding_step("first-host")
 

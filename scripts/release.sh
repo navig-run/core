@@ -76,7 +76,7 @@ git push origin "$TAG"
 echo "✅ Tag $TAG pushed to origin"
 echo ""
 echo "──────────────────────────────────────────"
-echo "  Building and publishing to PyPI"
+echo "  Build verification"
 echo "──────────────────────────────────────────"
 
 # Ensure build and twine are available
@@ -89,25 +89,21 @@ fi
 rm -rf dist/
 python -m build
 
-# Validate the distributions before uploading
+# Validate the distributions
 python -m twine check dist/*
 
 echo ""
-echo "Ready to upload to PyPI."
-echo "Ensure TWINE_USERNAME=__token__ and TWINE_PASSWORD=<your-api-token> are set,"
-echo "or that ~/.pypirc is configured."
+echo "✅ Build artifacts validated."
 echo ""
-read -r -p "Upload to PyPI now? [y/N] " PYPI_REPLY
-if [[ "$PYPI_REPLY" =~ ^[Yy]$ ]]; then
-  python -m twine upload dist/*
-  echo "✅ Published navig==$VERSION to PyPI"
-  echo "   https://pypi.org/project/navig/$VERSION/"
-else
-  echo "⚠️  PyPI upload skipped. Run manually: python -m twine upload dist/*"
-fi
+echo "PyPI publication is now automated by GitHub Actions."
+echo "Publish a GitHub Release for tag $TAG (non-draft, non-prerelease) to trigger:"
+echo "  .github/workflows/publish.yml"
+echo ""
+echo "Manual fallback (emergency only): python -m twine upload dist/*"
 
 echo ""
 echo "Next steps:"
-echo "  1. Create GitHub Release from $TAG in the repository UI"
-echo "  2. Update CHANGELOG.md — move [Unreleased] entries under [$VERSION]"
-echo "  3. Merge main back into develop: git checkout develop && git merge main"
+echo "  1. Publish GitHub Release from $TAG in the repository UI"
+echo "  2. Confirm PyPI workflow success and package availability"
+echo "  3. Update CHANGELOG.md — move [Unreleased] entries under [$VERSION]"
+echo "  4. Merge main back into develop: git checkout develop && git merge main"

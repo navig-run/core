@@ -542,7 +542,7 @@ async def test_cli_host_use_marks_first_host_on_success(monkeypatch):
     marked: list[str] = []
 
     async def _on_message(*args, **kwargs):
-        return "Host switched to production"
+        return "Host switched to production. Connectivity verified via SSH."
 
     bot.on_message = _on_message
     monkeypatch.setattr(
@@ -552,6 +552,24 @@ async def test_cli_host_use_marks_first_host_on_success(monkeypatch):
 
     await bot._handle_cli_command(123, 456, {}, "host use production")
     assert marked == ["first-host"]
+
+
+@pytest.mark.asyncio
+async def test_cli_host_use_does_not_mark_without_connectivity_phrase(monkeypatch):
+    bot = _make_dummy_bot()
+    marked: list[str] = []
+
+    async def _on_message(*args, **kwargs):
+        return "Host switched to production"
+
+    bot.on_message = _on_message
+    monkeypatch.setattr(
+        "navig.commands.init.mark_chat_onboarding_step_completed",
+        lambda step_id, navig_dir=None: marked.append(step_id) or True,
+    )
+
+    await bot._handle_cli_command(123, 456, {}, "host use production")
+    assert marked == []
 
 
 @pytest.mark.asyncio
