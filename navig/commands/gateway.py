@@ -128,22 +128,80 @@ def gateway_stop():
     Examples:
         navig gateway stop
     """
+    # Helper: try to stop a stray gateway process via PID file
+    def _try_kill_by_pid() -> bool:
+        """Check for a gateway PID file and kill the process if found. Returns True if killed."""
+        import sys
+
+        pid_candidates = []
+        try:
+            from pathlib import Path
+
+            home = Path.home()
+            pid_candidates = [
+                home / ".navig" / "gateway.pid",
+                home / ".navig" / "run" / "gateway.pid",
+                Path("/tmp/navig-gateway.pid"),
+            ]
+        except Exception:  # noqa: BLE001
+            pass
+
+        for pid_file in pid_candidates:
+            try:
+                if pid_file.exists():
+                    pid = int(pid_file.read_text().strip())
+                    if sys.platform == "win32":
+                        import subprocess
+
+                        result = subprocess.run(
+                            ["taskkill", "/PID", str(pid), "/F"],
+                            capture_output=True,
+                            timeout=5,
+                        )
+                        killed = result.returncode == 0
+                    else:
+                        import os
+                        import signal
+
+                        os.kill(pid, signal.SIGTERM)
+                        killed = True
+                    if killed:
+                        try:
+                            pid_file.unlink(missing_ok=True)
+                        except Exception:  # noqa: BLE001
+                            pass
+                        return True
+            except (ProcessLookupError, ValueError):
+                try:
+                    pid_file.unlink(missing_ok=True)
+                except Exception:  # noqa: BLE001
+                    pass
+            except Exception:  # noqa: BLE001
+                pass
+        return False
+
     try:
         import requests
 
         _base = _gw_base_url()
         # First check if gateway is running
+        http_reachable = False
         try:
             health_response = requests.get(
                 f"{_base}/health",
                 headers=_gateway_request_headers(),
                 timeout=2,
             )
-            if health_response.status_code != 200:
-                ch.warning("Gateway does not appear to be running")
-                return
+            http_reachable = health_response.status_code == 200
         except Exception:  # noqa: BLE001
-            ch.warning("Gateway is not running")
+            pass
+
+        if not http_reachable:
+            # Try PID-based kill as fallback (handles daemon-spawned gateway)
+            if _try_kill_by_pid():
+                ch.success("Gateway stopped")
+            else:
+                ch.dim("Gateway is not running")
             return
 
         # Try to stop via API
@@ -159,7 +217,7 @@ def gateway_stop():
                 ch.warning(f"Shutdown request returned status {response.status_code}")
                 ch.info("If running in foreground, use Ctrl+C to stop")
         except requests.exceptions.ConnectionError:
-            # Connection closed - gateway probably stopped
+            # Connection closed — gateway stopped cleanly
             ch.success("Gateway stopped")
         except Exception as e:
             ch.warning(f"Could not send shutdown signal: {e}")
