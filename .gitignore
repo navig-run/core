@@ -34,6 +34,12 @@ track_c_results.txt
 __pycache__/                # Python bytecode cache
 **/__pycache__/             # Python bytecode cache (any depth)
 **/__pycache__              # Python bytecode cache (no trailing slash variant)
+# Effective patterns (git ignores inline comments above):
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
 *.py[cod]                   # Compiled Python files
 *$py.class                  # Python class files
 *.so                        # Shared objects
