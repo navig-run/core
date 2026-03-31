@@ -31,9 +31,10 @@ track_c_results.txt
 # ===============================================
 # Python
 # ===============================================
-__pycache__/                # Python bytecode cache
-**/__pycache__/             # Python bytecode cache (any depth)
-**/__pycache__              # Python bytecode cache (no trailing slash variant)
+# Python bytecode cache
+__pycache__/
+**/__pycache__/
+**/__pycache__
 *.py[cod]                   # Compiled Python files
 *$py.class                  # Python class files
 *.so                        # Shared objects
