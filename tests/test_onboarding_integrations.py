@@ -230,3 +230,103 @@ def test_review_step_returns_jump_target_when_user_declines(monkeypatch, tmp_pat
 
     assert result.status == "skipped"
     assert result.output["jumpTo"] == "matrix"
+
+
+def test_review_step_rejects_unknown_id_and_reprompts(monkeypatch, tmp_path: Path) -> None:
+    """Review step must loop on unknown IDs and accept a valid one on retry."""
+    artifact = tmp_path / "onboarding.json"
+    artifact.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "nodeId": "node-test",
+                "startedAt": "2026-03-17T00:00:00+00:00",
+                "completedAt": "",
+                "engineVersion": "2.0.0",
+                "steps": [
+                    {
+                        "id": "core-navig",
+                        "title": "Core",
+                        "status": "completed",
+                        "completed_at": "",
+                        "duration_ms": 1,
+                        "output": {},
+                    },
+                    {
+                        "id": "ai-provider",
+                        "title": "AI Provider",
+                        "status": "skipped",
+                        "completed_at": "",
+                        "duration_ms": 1,
+                        "output": {},
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    step = next(step for step in _registry(tmp_path) if step.id == "review")
+    # First two prompts return unknown IDs, third returns a valid one.
+    prompts = iter(["mail", "email", "ai-provider"])
+
+    def _fake_prompt(*args, **kwargs):
+        return next(prompts)
+
+    captured_output: list[str] = []
+
+    def _fake_write(text: str) -> None:
+        captured_output.append(text)
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("typer.confirm", lambda *args, **kwargs: False)
+    monkeypatch.setattr("typer.prompt", _fake_prompt)
+    monkeypatch.setattr("sys.stdout.write", _fake_write)
+    monkeypatch.setattr("sys.stdout.flush", lambda: None)
+
+    result = step.run()
+
+    assert result.status == "skipped"
+    # Should have iterated until a valid ID was entered.
+    assert result.output["jumpTo"] == "ai-provider"
+    # Error message should have been printed for each invalid entry.
+    error_lines = [line for line in captured_output if "Unknown step ID" in line]
+    assert len(error_lines) == 2  # "mail" and "email" were both rejected
+
+
+def test_review_step_keyboard_interrupt_propagates(monkeypatch, tmp_path: Path) -> None:
+    """Ctrl+C during the step-ID prompt must propagate as KeyboardInterrupt."""
+    step = next(step for step in _registry(tmp_path) if step.id == "review")
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("typer.confirm", lambda *args, **kwargs: False)
+
+    def _raise_ki(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("typer.prompt", _raise_ki)
+    monkeypatch.setattr("sys.stdout.write", lambda *a: None)
+    monkeypatch.setattr("sys.stdout.flush", lambda: None)
+
+    import pytest as _pytest
+    with _pytest.raises(KeyboardInterrupt):
+        step.run()
+
+
+def test_review_step_eoferror_exits_cleanly(monkeypatch, tmp_path: Path) -> None:
+    """EOF during the step-ID prompt (e.g. piped input) must return empty jumpTo."""
+    step = next(step for step in _registry(tmp_path) if step.id == "review")
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("typer.confirm", lambda *args, **kwargs: False)
+
+    def _raise_eof(*args, **kwargs):
+        raise EOFError
+
+    monkeypatch.setattr("typer.prompt", _raise_eof)
+    monkeypatch.setattr("sys.stdout.write", lambda *a: None)
+    monkeypatch.setattr("sys.stdout.flush", lambda: None)
+
+    result = step.run()
+    assert result.status == "skipped"
+    assert result.output["jumpTo"] == ""
