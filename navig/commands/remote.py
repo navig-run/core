@@ -288,7 +288,15 @@ def _execute_with_progress(remote_ops, command: str, host_config: dict[str, Any]
         raise FileNotFoundError("ssh.exe not found")
 
     # Build SSH command (same logic as RemoteOperations.execute_command)
-    ssh_args = [_find_ssh()]
+    try:
+        ssh_args = [_find_ssh()]
+    except FileNotFoundError as _exc:
+        raise RuntimeError(
+            "SSH client not found — install OpenSSH or configure a direct "
+            "local transport.\n"
+            "On Windows: Settings → Apps → Optional Features → OpenSSH Client\n"
+            "On Linux/macOS: install the 'openssh-client' package."
+        ) from _exc
     ssh_args.extend(["-o", "StrictHostKeyChecking=yes"])
     ssh_args.extend(["-o", "ConnectTimeout=10"])
 
