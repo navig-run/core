@@ -264,24 +264,24 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
         super().__init__(**kwargs)
         self._cfg = cfg
 
-    def _deferred_commands(self) -> list[str]:
+    def _deferred_commands(self) -> list[tuple[str, str]]:
         tier = getattr(self._cfg, "onboarding_tier", "recommended")
-        cmds: list[str] = []
+        cmds: list[tuple[str, str]] = []
 
         if tier in ("essential", "recommended"):
             cmds.extend([
-                "navig matrix setup",
-                "navig email setup",
-                "navig social setup",
+                ("navig matrix setup", "receive alerts and run commands via Matrix chat"),
+                ("navig email setup", "SMTP notifications for workflows and alerts"),
+                ("navig social setup", "social network integrations (Twitter/X, etc.)"),
             ])
             return cmds
 
         if not getattr(self._cfg, "setup_matrix", False):
-            cmds.append("navig matrix setup")
+            cmds.append(("navig matrix setup", "receive alerts and run commands via Matrix chat"))
         if not getattr(self._cfg, "setup_email", False):
-            cmds.append("navig email setup")
+            cmds.append(("navig email setup", "SMTP notifications for workflows and alerts"))
         if not getattr(self._cfg, "setup_social", False):
-            cmds.append("navig social setup")
+            cmds.append(("navig social setup", "social network integrations (Twitter/X, etc.)"))
         return cmds
 
     def compose(self):  # type: ignore[override]
@@ -387,7 +387,10 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
             await asyncio.sleep(0.3)
             deferred = self._deferred_commands()
             deferred_block = (
-                "\n".join(f"  [cyan]{c}[/cyan]" for c in deferred)
+                "\n".join(
+                    f"  [cyan]{cmd}[/cyan]  [dim]{description}[/dim]"
+                    for cmd, description in deferred
+                )
                 if deferred
                 else "  [dim]No deferred integrations[/dim]"
             )
