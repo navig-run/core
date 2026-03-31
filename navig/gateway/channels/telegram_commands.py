@@ -2221,14 +2221,23 @@ class TelegramCommandsMixin:
 
         text_payload = "\n".join(lines)
         if message_id:
-            await self.edit_message(
-                chat_id,
-                message_id,
-                text_payload,
-                parse_mode="HTML",
-                keyboard=keyboard,
-            )
-            return
+            try:
+                await self.edit_message(
+                    chat_id,
+                    message_id,
+                    text_payload,
+                    parse_mode="HTML",
+                    keyboard=keyboard,
+                )
+                return
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "Provider picker edit_message failed for %s in chat %s (message %s): %s. Falling back to send_message.",
+                    prov_id,
+                    chat_id,
+                    message_id,
+                    exc,
+                )
 
         await self.send_message(chat_id, text_payload, keyboard=keyboard, parse_mode="HTML")
 

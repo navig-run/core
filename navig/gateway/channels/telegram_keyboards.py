@@ -1221,6 +1221,7 @@ class CallbackHandler:
             "prov_github": "github_models",
             "prov_github_models": "github_models",
             "prov_nvidia": "nvidia",
+            "prov_nvidia_nim": "nvidia",
             "prov_ollama": "ollama",
             "prov_xai": "xai",
             "prov_openai": "openai",
