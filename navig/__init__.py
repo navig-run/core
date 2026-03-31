@@ -11,9 +11,19 @@ import warnings
 # Suppress spurious requests-version mismatch warning that fires when urllib3
 # or charset_normalizer is newer than what the installed requests wheel was
 # tested against.  This is harmless – requests still works correctly.
+# Two complementary filters:
+#   1. Match by message prefix (covers all known message formats).
+#   2. Match by the unique message suffix so any future prefix rewording is
+#      also caught without requiring a filter update.
 warnings.filterwarnings(
     "ignore",
-    message="urllib3.*|chardet.*|charset_normalizer.*",
+    message=r"urllib3.*|chardet.*|charset_normalizer.*",
+    category=Warning,
+    module=r"requests",
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r".*doesn't match a supported version",
     category=Warning,
     module=r"requests",
 )
