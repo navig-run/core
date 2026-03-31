@@ -11,6 +11,9 @@ from .engine import EngineConfig, EngineState, OnboardingEngine
 from .genesis import load_or_create
 from .steps import build_step_registry
 
+# Maximum number of step-revisit loops allowed in a single session.
+_MAX_REVISIT_DEPTH = 20
+
 
 def should_auto_run_onboarding(argv: Sequence[str] | None = None) -> bool:
     """Return True when first-run onboarding should execute for this invocation."""
@@ -46,6 +49,7 @@ def run_engine_onboarding(
     jump_to_step: str | None = None,
     show_banner: bool = True,
     respect_skip_env: bool = False,
+    _revisit_depth: int = 0,
 ) -> EngineState | None:
     """Run canonical engine onboarding and return final state, or None if skipped."""
     if respect_skip_env and os.getenv("NAVIG_SKIP_ONBOARDING") == "1":
@@ -95,6 +99,22 @@ def run_engine_onboarding(
             os.environ.pop("NAVIG_ONBOARDING_ACTIVE", None)
         else:
             os.environ["NAVIG_ONBOARDING_ACTIVE"] = previous_guard
+
+    # If the review step asked to revisit a specific step, re-run from there.
+    # Limit recursion to avoid infinite loops.
+    if not state.interrupted_at and _revisit_depth < _MAX_REVISIT_DEPTH:
+        review_record = next((s for s in state.steps if s.id == "review"), None)
+        revisit_target = (review_record.output or {}).get("jumpTo", "") if review_record else ""
+        if revisit_target:
+            sys.stdout.write(f"\n  Revisiting step: {revisit_target} …\n\n")
+            sys.stdout.flush()
+            return run_engine_onboarding(
+                force=True,
+                jump_to_step=revisit_target,
+                show_banner=False,
+                respect_skip_env=False,
+                _revisit_depth=_revisit_depth + 1,
+            )
 
     if show_banner:
         if state.interrupted_at:
