@@ -133,28 +133,29 @@ def _print_verification_dashboard(state: EngineState, step_tiers: dict[str, str]
 
     deferred = _deferred_integration_commands(state, step_tiers)
     if deferred:
+        col_width = max(len(cmd) for cmd, _ in deferred)
         sys.stdout.write("  Deferred integrations:\n")
-        for cmd in deferred:
-            sys.stdout.write(f"    - {cmd}\n")
+        for cmd, description in deferred:
+            sys.stdout.write(f"    - {cmd:<{col_width}}  {description}\n")
     sys.stdout.write("\n")
 
 
 def _deferred_integration_commands(
     state: EngineState,
     step_tiers: dict[str, str],
-) -> list[str]:
+) -> list[tuple[str, str]]:
     cmd_map = {
-        "matrix": "navig matrix setup",
-        "email": "navig email setup",
-        "social-networks": "navig social setup",
-        "telegram-bot": "navig telegram setup",
+        "matrix": ("navig matrix setup", "receive alerts and run commands via Matrix chat"),
+        "email": ("navig email setup", "SMTP notifications for workflows and alerts"),
+        "social-networks": ("navig social setup", "social network integrations (Twitter/X, etc.)"),
+        "telegram-bot": ("navig telegram setup", "receive alerts and run commands via Telegram bot"),
     }
     status_by_id = {rec.id: rec.status for rec in state.steps}
 
-    deferred: list[str] = []
-    for step_id, cmd in cmd_map.items():
+    deferred: list[tuple[str, str]] = []
+    for step_id, (cmd, description) in cmd_map.items():
         if step_tiers.get(step_id) != "optional":
             continue
         if status_by_id.get(step_id) in ("skipped", "failed"):
-            deferred.append(cmd)
+            deferred.append((cmd, description))
     return deferred
