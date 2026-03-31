@@ -1772,7 +1772,13 @@ class TelegramCommandsMixin:
                     model = getattr(mode_obj, "model", "") or ""
                     provider = getattr(mode_obj, "provider", "") or ""
                     label = model.split("/")[-1] if model else "-"
-                    return f"{provider}:{label}" if provider else label
+                    primary = f"{provider}:{label}" if provider else label
+                    fb_prov = getattr(mode_obj, "fallback_provider", "") or ""
+                    fb_model = getattr(mode_obj, "fallback_model", "") or ""
+                    if fb_prov and fb_prov != provider and fb_model:
+                        fb_label = fb_model.split("/")[-1]
+                        return f"{primary} ↩ {fb_prov}:{fb_label}"
+                    return primary
 
                 lines.append("")
                 lines.append("*Base model routing:*")
@@ -1842,11 +1848,7 @@ class TelegramCommandsMixin:
                     keyboard_rows.append(
                         [
                             {
-                                "text": f"{manifest.emoji} {manifest.display_name}",
-                                "callback_data": f"prov_{manifest.id}",
-                            },
-                            {
-                                "text": "🔑",
+                                "text": f"{manifest.emoji} {manifest.display_name} 🔑",
                                 "callback_data": f"prov_{manifest.id}",
                             }
                         ]

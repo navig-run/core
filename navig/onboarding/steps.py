@@ -414,11 +414,71 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         except Exception:  # noqa: BLE001
             pass
 
+        # ── Optional fallback provider ────────────────────────────────────
+        fallback_pid = ""
+        try:
+            sys.stdout.write(
+                "\n  Configure a fallback provider? "
+                "(used when primary is unavailable — press Enter to skip)\n\n"
+            )
+            fallback_providers = [p for p in providers if p.id != pid]
+            for i, p in enumerate(fallback_providers, start=1):
+                local_tag = "" if getattr(p, "requires_key", True) else "  (local)"
+                sys.stdout.write(f"    [{i}] {p.display_name}{local_tag}\n")
+            sys.stdout.write("    [s] Skip\n\n")
+            sys.stdout.flush()
+            fb_raw = typer.prompt("  Fallback provider", default="s").strip().lower()
+            if fb_raw not in ("s", "skip", ""):
+                try:
+                    fb_idx = int(fb_raw) - 1
+                    if 0 <= fb_idx < len(fallback_providers):
+                        chosen_fb = fallback_providers[fb_idx]
+                        fallback_pid = chosen_fb.id
+                        if getattr(chosen_fb, "requires_key", True):
+                            fb_key = _prompt_masked(
+                                f"  {chosen_fb.display_name} API key (fallback)",
+                                default="",
+                            ).strip()
+                            if fb_key:
+                                try:
+                                    from navig.vault.core_v2 import get_vault_v2 as _gv2
+                                    vfb = _gv2()
+                                    if vfb is not None:
+                                        vfb.put(
+                                            f"{fallback_pid}/api_key",
+                                            json.dumps({"value": fb_key}).encode(),
+                                        )
+                                except Exception:  # noqa: BLE001
+                                    pass
+                except (ValueError, IndexError):
+                    fallback_pid = ""
+        except (KeyboardInterrupt, EOFError):
+            fallback_pid = ""
+
+        # Write routing block to config.yaml when a fallback was chosen
+        if fallback_pid:
+            try:
+                import yaml  # type: ignore[import]
+
+                config_path = navig_dir / "config.yaml"
+                cfg: dict = {}
+                if config_path.exists():
+                    cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+                cfg.setdefault("routing", {})["enabled"] = True
+                modes = cfg["routing"].setdefault("llm_modes", {})
+                for tier in ("small_talk", "big_tasks", "coding", "summarize", "research"):
+                    modes.setdefault(tier, {})["fallback_provider"] = fallback_pid
+                config_path.write_text(
+                    yaml.dump(cfg, allow_unicode=True), encoding="utf-8"
+                )
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; never block onboarding
+
         marker.write_text(pid, encoding="utf-8")
-        return StepResult(
-            status="completed",
-            output={"provider": pid, "keySource": "interactive"},
-        )
+        out: dict = {"provider": pid, "keySource": "interactive"}
+        if fallback_pid:
+            out["fallback_provider"] = fallback_pid
+        return StepResult(status="completed", output=out)
 
     def verify() -> bool:
         return marker.exists()
