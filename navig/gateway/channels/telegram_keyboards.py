@@ -1210,6 +1210,12 @@ class CallbackHandler:
                     f"<i>Saved to global config. Use /models to verify or adjust tiers.</i>",
                     parse_mode="HTML",
                 )
+                try:
+                    from navig.commands.init import mark_chat_onboarding_step_completed
+
+                    mark_chat_onboarding_step_completed("ai-provider")
+                except (ImportError, AttributeError, TypeError, ValueError):
+                    logger.debug("Unable to mark ai-provider step after provider activation")
             except Exception as exc:
                 await self._answer(cb_id, f"⚠️ Activation failed: {exc}", show_alert=True)
             return
@@ -1464,6 +1470,12 @@ class CallbackHandler:
             if hasattr(self.channel, "_persist_hybrid_router_assignments"):
                 self.channel._persist_hybrid_router_assignments(router.cfg)
             await self._answer(cb_id, f"✅ {tier_label} → {model[:40]}")
+            try:
+                from navig.commands.init import mark_chat_onboarding_step_completed
+
+                mark_chat_onboarding_step_completed("ai-provider")
+            except (ImportError, AttributeError, TypeError, ValueError):
+                logger.debug("Unable to mark ai-provider step after tier assignment")
             await self.channel._show_provider_model_picker(
                 chat_id,
                 prov_id,

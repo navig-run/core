@@ -271,7 +271,7 @@ async def test_spaces_command_lists_devops_and_sysops(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_status_marks_telegram_bot_onboarding_step(monkeypatch):
+async def test_status_does_not_mark_onboarding_step_on_view(monkeypatch):
     bot = _make_dummy_bot()
     marked: list[str] = []
 
@@ -285,13 +285,8 @@ async def test_status_marks_telegram_bot_onboarding_step(monkeypatch):
         "navig.spaces.progress.format_spaces_progress_lines",
         lambda rows, max_items=5: [],
     )
-    monkeypatch.setattr(
-        "navig.messaging.secrets.resolve_telegram_bot_token",
-        lambda _cfg=None: "123:fake-token",
-    )
-
     await bot._handle_status(123, 456)
-    assert marked == ["telegram-bot"]
+    assert marked == []
 
 
 @pytest.mark.asyncio
@@ -323,7 +318,7 @@ async def test_intake_flow_writes_space_docs(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_intake_marks_first_host_only_when_hosts_exist(monkeypatch, tmp_path):
+async def test_intake_does_not_mark_first_host_on_view(monkeypatch, tmp_path):
     bot = _make_dummy_bot()
     fake_cfg = _FakeConfigManager(tmp_path / "global")
     fake_store = FakeContinuationStore()
@@ -331,7 +326,6 @@ async def test_intake_marks_first_host_only_when_hosts_exist(monkeypatch, tmp_pa
 
     monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
     monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
-    monkeypatch.setattr(bot, "_has_configured_hosts", lambda: False)
     monkeypatch.setattr(
         "navig.commands.init.mark_chat_onboarding_step_completed",
         lambda step_id, navig_dir=None: marked.append(step_id) or True,
@@ -339,10 +333,6 @@ async def test_intake_marks_first_host_only_when_hosts_exist(monkeypatch, tmp_pa
 
     await bot._handle_intake(123, 456, "/intake health")
     assert marked == []
-
-    monkeypatch.setattr(bot, "_has_configured_hosts", lambda: True)
-    await bot._handle_intake(123, 456, "/intake health")
-    assert marked == ["first-host"]
 
 
 @pytest.mark.asyncio
@@ -506,7 +496,7 @@ async def test_providers_header_is_clean_and_shows_current_models(monkeypatch):
     monkeypatch.setattr("navig.providers.verifier.verify_provider", lambda _m: _Verify())
 
     await bot._handle_providers(123, 456)
-    assert marked and marked[0] == "ai-provider"
+    assert marked == []
     text = bot.messages[-1][1]
     assert "VS Code" not in text
     assert "Base model routing" in text
@@ -543,6 +533,42 @@ async def test_providers_does_not_mark_step_when_no_ready_provider(monkeypatch):
     monkeypatch.setattr(bot, "_provider_vault_validation_status", lambda _m: (False, False))
 
     await bot._handle_providers(123, 456)
+    assert marked == []
+
+
+@pytest.mark.asyncio
+async def test_cli_host_use_marks_first_host_on_success(monkeypatch):
+    bot = _make_dummy_bot()
+    marked: list[str] = []
+
+    async def _on_message(*args, **kwargs):
+        return "Host switched to production"
+
+    bot.on_message = _on_message
+    monkeypatch.setattr(
+        "navig.commands.init.mark_chat_onboarding_step_completed",
+        lambda step_id, navig_dir=None: marked.append(step_id) or True,
+    )
+
+    await bot._handle_cli_command(123, 456, {}, "host use production")
+    assert marked == ["first-host"]
+
+
+@pytest.mark.asyncio
+async def test_cli_host_use_does_not_mark_first_host_on_failure(monkeypatch):
+    bot = _make_dummy_bot()
+    marked: list[str] = []
+
+    async def _on_message(*args, **kwargs):
+        return "Command exited with code: 2\nHost not found"
+
+    bot.on_message = _on_message
+    monkeypatch.setattr(
+        "navig.commands.init.mark_chat_onboarding_step_completed",
+        lambda step_id, navig_dir=None: marked.append(step_id) or True,
+    )
+
+    await bot._handle_cli_command(123, 456, {}, "host use missing")
     assert marked == []
 
 

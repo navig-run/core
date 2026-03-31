@@ -940,8 +940,6 @@ class TelegramCommandsMixin:
         message_id: int | None = None,
     ) -> None:
         """Space-aware status summary for Telegram users (/status)."""
-        if self._is_telegram_onboarding_ready():
-            self._mark_chat_onboarding_step("telegram-bot")
         from navig.spaces import get_default_space
         from navig.spaces.progress import (
             collect_spaces_progress,
@@ -1013,6 +1011,26 @@ class TelegramCommandsMixin:
             mark_chat_onboarding_step_completed(step_id)
         except (ImportError, AttributeError, TypeError, ValueError):
             logger.debug("Failed to mark chat onboarding step: %s", step_id)
+
+    @staticmethod
+    def _has_configured_hosts() -> bool:
+        try:
+            from navig.config import get_config_manager
+
+            cfg = get_config_manager()
+            return len(cfg.list_hosts()) > 0
+        except (ImportError, AttributeError, TypeError, ValueError, OSError, RuntimeError):
+            return False
+
+    @staticmethod
+    def _is_telegram_onboarding_ready() -> bool:
+        try:
+            from navig.messaging.secrets import resolve_telegram_bot_token
+
+            token = str(resolve_telegram_bot_token({}) or "").strip()
+            return bool(token)
+        except (ImportError, AttributeError, TypeError, ValueError, OSError, RuntimeError):
+            return False
 
     @staticmethod
     def _is_cli_command_success(response: str) -> bool:
@@ -1204,9 +1222,6 @@ class TelegramCommandsMixin:
             else:
                 await self.send_message(chat_id, "🛑 Intake cancelled.", parse_mode=None)
             return
-
-        if self._has_configured_hosts():
-            self._mark_chat_onboarding_step("first-host")
 
         selected_space = get_active_space()
         if arg:
@@ -1950,9 +1965,6 @@ class TelegramCommandsMixin:
 
         if button_row:
             keyboard_rows.append(list(button_row))
-
-        if bridge_online or ready_provider_count > 0:
-            self._mark_chat_onboarding_step("ai-provider")
 
         if ready_provider_count == 0:
             lines.append("")
@@ -3454,6 +3466,12 @@ class TelegramCommandsMixin:
                     _log.getLogger(__name__).warning(
                         "NLP formatting failed for cli command: %s", _nl_err
                     )
+
+                if (
+                    navig_cmd.strip().startswith("host use")
+                    and self._is_cli_command_success(response)
+                ):
+                    self._mark_chat_onboarding_step("first-host")
 
                 await self.send_message(chat_id, response, parse_mode=None)
             else:
