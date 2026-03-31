@@ -16,6 +16,26 @@ llm:
   # Model used for high-reasoning / complex tasks (e.g. complete_with_fallback)
   fallback_model: "gpt-4o-mini"
 
+# Hybrid LLM routing (set routing.enabled: true to activate)
+routing:
+  enabled: false
+  llm_modes:
+    small_talk:
+      provider: ollama
+      model: qwen2.5:3b-instruct
+      fallback_provider: ollama
+      fallback_model: qwen2.5:3b-instruct
+    big_tasks:
+      provider: openai
+      model: gpt-4o-mini
+      fallback_provider: ollama
+      fallback_model: qwen2.5:7b-instruct
+    coding:
+      provider: deepseek
+      model: deepseek-coder
+      fallback_provider: ollama
+      fallback_model: qwen2.5:7b-instruct
+
 # Media engine (image analysis)
 media_engine:
   # Vision model used for GPT-based image description

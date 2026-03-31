@@ -51,10 +51,32 @@
 
 # ── AI / LLM ─────────────────────────────────────────────────────────────────
 # Provider API keys are stored in the vault (navig vault set openai_api_key ...).
-# These settings control model selection, not credentials.
+# Set up interactively with: navig init  (or navig init --reconfigure)
 #
 # llm:
-#   fallback_model: gpt-4o-mini
+#   fallback_model: gpt-4o-mini   # legacy single-model fallback
+#
+# Hybrid routing — assign different models per task type.
+# Enable with: routing.enabled: true
+#
+# routing:
+#   enabled: false
+#   llm_modes:
+#     small_talk:
+#       provider: ollama
+#       model: qwen2.5:3b-instruct
+#       fallback_provider: ollama
+#       fallback_model: qwen2.5:3b-instruct
+#     big_tasks:
+#       provider: openai
+#       model: gpt-4o-mini
+#       fallback_provider: ollama
+#       fallback_model: qwen2.5:7b-instruct
+#     coding:
+#       provider: deepseek
+#       model: deepseek-coder
+#       fallback_provider: ollama
+#       fallback_model: qwen2.5:7b-instruct
 
 
 # ── Voice Replies (TTS) ───────────────────────────────────────────────────────

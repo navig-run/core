@@ -236,11 +236,11 @@ def _step_config_file(
         f"# Generated: {genesis.bornAt}\n\n"
         f"node:\n"
         f"  id: {genesis.nodeId}\n"
-        f"  name: {genesis.name}\n\n"
-        f"agents:\n"
-        f"  defaults:\n"
-        f"    model: openrouter\n"
-        f"    workspace: {navig_dir / 'workspace'}\n"
+        f"  name: {genesis.name}\n"
+        f"  workspace: {navig_dir / 'workspace'}\n\n"
+        f"# AI provider and routing are configured interactively during `navig init`.\n"
+        f"# To change providers run `navig init --reconfigure` or edit this file.\n"
+        f"# Full reference: config/config.example.yaml (shipped with the package)\n"
     )
 
     def run() -> StepResult:
