@@ -1,3 +1,4 @@
+import json
 import pytest
 from pathlib import Path
 
@@ -270,6 +271,30 @@ async def test_spaces_command_lists_devops_and_sysops(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_status_marks_telegram_bot_onboarding_step(monkeypatch):
+    bot = _make_dummy_bot()
+    marked: list[str] = []
+
+    monkeypatch.setattr(
+        "navig.commands.init.mark_chat_onboarding_step_completed",
+        lambda step_id, navig_dir=None: marked.append(step_id) or True,
+    )
+    monkeypatch.setattr("navig.spaces.get_default_space", lambda: "default")
+    monkeypatch.setattr("navig.spaces.progress.collect_spaces_progress", lambda: [])
+    monkeypatch.setattr(
+        "navig.spaces.progress.format_spaces_progress_lines",
+        lambda rows, max_items=5: [],
+    )
+    monkeypatch.setattr(
+        "navig.messaging.secrets.resolve_telegram_bot_token",
+        lambda _cfg=None: "123:fake-token",
+    )
+
+    await bot._handle_status(123, 456)
+    assert marked == ["telegram-bot"]
+
+
+@pytest.mark.asyncio
 async def test_intake_flow_writes_space_docs(monkeypatch, tmp_path):
     bot = _make_dummy_bot()
     fake_cfg = _FakeConfigManager(tmp_path / "global")
@@ -295,6 +320,29 @@ async def test_intake_flow_writes_space_docs(monkeypatch, tmp_path):
     assert (health_dir / "CURRENT_PHASE.md").exists()
     assert "Intake" in (health_dir / "VISION.md").read_text(encoding="utf-8")
     assert any("Intake completed" in m[1] for m in bot.messages)
+
+
+@pytest.mark.asyncio
+async def test_intake_marks_first_host_only_when_hosts_exist(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+    marked: list[str] = []
+
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+    monkeypatch.setattr(bot, "_has_configured_hosts", lambda: False)
+    monkeypatch.setattr(
+        "navig.commands.init.mark_chat_onboarding_step_completed",
+        lambda step_id, navig_dir=None: marked.append(step_id) or True,
+    )
+
+    await bot._handle_intake(123, 456, "/intake health")
+    assert marked == []
+
+    monkeypatch.setattr(bot, "_has_configured_hosts", lambda: True)
+    await bot._handle_intake(123, 456, "/intake health")
+    assert marked == ["first-host"]
 
 
 @pytest.mark.asyncio
@@ -364,8 +412,53 @@ async def test_nl_callback_yes_and_cancel(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_start_consumes_chat_onboarding_handoff_once(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+
+    onboarding_path = tmp_path / ".navig" / "state" / "onboarding.json"
+    onboarding_path.parent.mkdir(parents=True, exist_ok=True)
+    onboarding_path.write_text(
+        json.dumps(
+            {
+                "steps": [
+                    {"id": "ai-provider", "status": "completed"},
+                    {"id": "first-host", "status": "failed"},
+                    {"id": "telegram-bot", "status": "completed"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    state_path = tmp_path / ".navig" / "state" / "chat_onboarding_handoff.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        '{"pending": true, "profile": "quickstart", "token_configured": true, "auto_started": true}',
+        encoding="utf-8",
+    )
+
+    await bot._handle_start(123, "alice", 456)
+
+    assert any("NAVIG Main Menu" in msg[1] for msg in bot.messages)
+    assert any("Welcome to NAVIG setup" in msg[1] for msg in bot.messages)
+    assert any("Canonical onboarding progress: `2/3`" in msg[1] for msg in bot.messages)
+    assert any("✅ Choose AI provider" in msg[1] for msg in bot.messages)
+    assert any("⬜ Connect first host" in msg[1] for msg in bot.messages)
+    assert any("• Add or confirm your first server host" in msg[1] for msg in bot.messages)
+
+    first_count = len(bot.messages)
+    await bot._handle_start(123, "alice", 456)
+    second_batch = bot.messages[first_count:]
+    assert any("NAVIG Main Menu" in msg[1] for msg in second_batch)
+    assert not any("Welcome to NAVIG setup" in msg[1] for msg in second_batch)
+
+
+@pytest.mark.asyncio
 async def test_providers_header_is_clean_and_shows_current_models(monkeypatch):
     bot = _make_dummy_bot()
+    marked: list[str] = []
 
     class _Mode:
         def __init__(self, provider, model):
@@ -401,6 +494,10 @@ async def test_providers_header_is_clean_and_shows_current_models(monkeypatch):
         return False, "127.0.0.1:11435"
 
     bot._probe_bridge_grid = _probe
+    monkeypatch.setattr(
+        "navig.commands.init.mark_chat_onboarding_step_completed",
+        lambda step_id, navig_dir=None: marked.append(step_id) or True,
+    )
     monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
     monkeypatch.setattr(
         "navig.providers.registry.list_enabled_providers",
@@ -409,10 +506,44 @@ async def test_providers_header_is_clean_and_shows_current_models(monkeypatch):
     monkeypatch.setattr("navig.providers.verifier.verify_provider", lambda _m: _Verify())
 
     await bot._handle_providers(123, 456)
+    assert marked and marked[0] == "ai-provider"
     text = bot.messages[-1][1]
     assert "VS Code" not in text
     assert "Base model routing" in text
     assert "💻 Code:" in text
+
+
+@pytest.mark.asyncio
+async def test_providers_does_not_mark_step_when_no_ready_provider(monkeypatch):
+    bot = _make_dummy_bot()
+    marked: list[str] = []
+
+    class _Manifest:
+        id = "nvidia"
+        display_name = "NVIDIA NIM"
+        emoji = "🧩"
+        tier = "cloud"
+        local_probe = None
+        requires_key = True
+
+    class _Verify:
+        key_detected = False
+        local_probe_ok = False
+
+    async def _probe():
+        return False, "127.0.0.1:11435"
+
+    bot._probe_bridge_grid = _probe
+    monkeypatch.setattr(
+        "navig.commands.init.mark_chat_onboarding_step_completed",
+        lambda step_id, navig_dir=None: marked.append(step_id) or True,
+    )
+    monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [_Manifest()])
+    monkeypatch.setattr("navig.providers.verifier.verify_provider", lambda _m: _Verify())
+    monkeypatch.setattr(bot, "_provider_vault_validation_status", lambda _m: (False, False))
+
+    await bot._handle_providers(123, 456)
+    assert marked == []
 
 
 @pytest.mark.asyncio

@@ -1746,11 +1746,16 @@ def init_command(
         "-s",
         help="Open the configuration status dashboard instead of the wizard",
     ),
+    status: bool = typer.Option(
+        False,
+        "--status",
+        help="Show init setup status summary",
+    ),
     profile: str = typer.Option(
         "",
         "--profile",
         "-p",
-        help="Run installer profile without wizard: node, operator, architect, system_standard, system_deep",
+        help="Run installer profile without wizard: quickstart, node, operator, architect, system_standard, system_deep",
     ),
     dry_run: bool = typer.Option(
         False,
@@ -1796,16 +1801,23 @@ def init_command(
         from navig.installer import run_install
         from navig.installer.profiles import VALID_PROFILES
 
-        if profile not in VALID_PROFILES:
+        valid_profiles = set(VALID_PROFILES) | {"quickstart"}
+        effective_profile = "operator" if profile == "quickstart" else profile
+
+        if profile not in valid_profiles:
             import typer as _t
 
             _t.echo(
-                f"Unknown profile '{profile}'. Valid: {', '.join(VALID_PROFILES)}",
+                f"Unknown profile '{profile}'. Valid: {', '.join(sorted(valid_profiles))}",
                 err=True,
             )
             raise SystemExit(1)
 
-        run_install(profile=profile, dry_run=dry_run, quiet=quiet)
+        run_install(profile=effective_profile, dry_run=dry_run, quiet=quiet)
+        if profile == "quickstart":
+            from navig.commands.init import run_chat_first_handoff
+
+            run_chat_first_handoff(profile=profile, dry_run=dry_run, quiet=quiet)
         return
 
     # ── Interactive onboarding (canonical engine flow + optional TUI) ───────
@@ -1819,6 +1831,12 @@ def init_command(
             pass
     from navig.commands.onboard import run_onboard
     from navig.onboarding.runner import run_engine_onboarding
+
+    if status:
+        from navig.commands.init import show_init_status
+
+        show_init_status()
+        return
 
     if settings:
         from navig.commands.status import show_status
@@ -1868,11 +1886,13 @@ def init_command(
 
     if state is None and not reconfigure and not provider:
         from rich.console import Console as _C
+        from navig.commands.init import show_init_status
 
         _C().print(
             "[green]NAVIG is already configured.[/green] "
             "Use [bold]navig init --reconfigure[/bold] to run setup again."
         )
+        show_init_status()
         return
 
     try:

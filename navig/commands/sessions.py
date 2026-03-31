@@ -1,17 +1,17 @@
 """
-NAVIG Ask Sessions — VS Code Copilot Chat Session Manager
+NAVIG Copilot Sessions — VS Code Copilot Chat Session Manager
 
 Browse, search, export and delete your VS Code Copilot chat sessions
 stored in the local workspaceStorage directory.
 
 Usage:
-    navig ask sessions                        # list all sessions
-    navig ask sessions stats                  # storage statistics
-    navig ask sessions list [--workspace W]   # list with optional filter
-    navig ask sessions view SESSION_ID        # inspect a session
-    navig ask sessions search QUERY           # full-text search
-    navig ask sessions export                 # export all sessions
-    navig ask sessions delete SESSION_ID      # delete a session
+    navig copilot sessions                        # list all sessions
+    navig copilot sessions stats                  # storage statistics
+    navig copilot sessions list [--workspace W]   # list with optional filter
+    navig copilot sessions view SESSION_ID        # inspect a session
+    navig copilot sessions search QUERY           # full-text search
+    navig copilot sessions export                 # export all sessions
+    navig copilot sessions delete SESSION_ID      # delete a session
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ ch = lazy_import("navig.console_helper")
 sessions_app = typer.Typer(
     name="sessions",
     help="Browse and manage VS Code Copilot chat sessions",
-    no_args_is_help=False,  # allow bare `navig ask sessions` to list
+    no_args_is_help=False,  # allow bare `navig copilot sessions` to list
 )
 
 
@@ -367,7 +367,7 @@ def _all_sessions_or_die(
 def sessions_callback(ctx: typer.Context):
     """Browse and manage VS Code Copilot chat sessions."""
     if ctx.invoked_subcommand is None:
-        # bare `navig ask sessions` → list (fast scan)
+        # bare `navig copilot sessions` → list (fast scan)
         _cmd_list(workspace=None, limit=30, show_empty=False)
 
 
@@ -423,8 +423,8 @@ def _cmd_list(
     if total > len(all_s):
         ch.dim(f"  (showing {len(all_s)} of {total} — use --limit 0 for all)")
     ch.console.print()
-    ch.dim("  Tip: navig ask sessions view <SESSION_ID>")
-    ch.dim("       navig ask sessions search <query>")
+    ch.dim("  Tip: navig copilot sessions view <SESSION_ID>")
+    ch.dim("       navig copilot sessions search <query>")
     ch.console.print()
 
 
@@ -617,7 +617,7 @@ def _cmd_search(
         ch.console.print(f"  [dim]  → Session: {sess.session_id}[/]")
         ch.console.print()
 
-    ch.dim("Tip: navig ask sessions view <SESSION_ID>")
+    ch.dim("Tip: navig copilot sessions view <SESSION_ID>")
     ch.console.print()
 
 
@@ -708,9 +708,9 @@ def _cmd_delete(
     """Delete one or more chat sessions.
 
     Examples:
-        navig ask sessions delete abc123
-        navig ask sessions delete --workspace myproject --keep 10
-        navig ask sessions delete --all --yes
+        navig copilot sessions delete abc123
+        navig copilot sessions delete --workspace myproject --keep 10
+        navig copilot sessions delete --all --yes
     """
     all_s = _discover_all_sessions(fast=True)
     targets: list[ChatSession] = []

@@ -264,24 +264,24 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
         super().__init__(**kwargs)
         self._cfg = cfg
 
-    def _deferred_commands(self) -> list[tuple[str, str]]:
+    def _deferred_commands(self) -> list[str]:
         tier = getattr(self._cfg, "onboarding_tier", "recommended")
-        cmds: list[tuple[str, str]] = []
+        cmds: list[str] = []
 
         if tier in ("essential", "recommended"):
             cmds.extend([
-                ("navig matrix setup", "receive alerts and run commands via Matrix chat"),
-                ("navig email setup", "SMTP notifications for workflows and alerts"),
-                ("navig social setup", "social network integrations (Twitter/X, etc.)"),
+                "navig matrix setup",
+                "navig email setup",
+                "navig social setup",
             ])
             return cmds
 
         if not getattr(self._cfg, "setup_matrix", False):
-            cmds.append(("navig matrix setup", "receive alerts and run commands via Matrix chat"))
+            cmds.append("navig matrix setup")
         if not getattr(self._cfg, "setup_email", False):
-            cmds.append(("navig email setup", "SMTP notifications for workflows and alerts"))
+            cmds.append("navig email setup")
         if not getattr(self._cfg, "setup_social", False):
-            cmds.append(("navig social setup", "social network integrations (Twitter/X, etc.)"))
+            cmds.append("navig social setup")
         return cmds
 
     def compose(self):  # type: ignore[override]
@@ -305,7 +305,7 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
                     yield Button("Press Enter to launch  →", variant="primary", id="btn-exit")
                     yield Button("Retry write", variant="warning", id="btn-retry", display=False)
             yield Label(
-                "  [dim]Try:[/dim]  [bold #22d3ee]navig ask 'hello'[/bold #22d3ee]",
+                "  [dim]Try:[/dim]  [bold #22d3ee]navig ask \"hello\"[/bold #22d3ee]",
                 id="final-hint",
                 markup=True,
             )
@@ -387,10 +387,7 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
             await asyncio.sleep(0.3)
             deferred = self._deferred_commands()
             deferred_block = (
-                "\n".join(
-                    f"  [cyan]{cmd}[/cyan]  [dim]{description}[/dim]"
-                    for cmd, description in deferred
-                )
+                "\n".join(f"  [cyan]{c}[/cyan]" for c in deferred)
                 if deferred
                 else "  [dim]No deferred integrations[/dim]"
             )

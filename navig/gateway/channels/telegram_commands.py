@@ -872,6 +872,58 @@ class TelegramCommandsMixin:
             user_id=user_id,
             username=username,
         )
+        try:
+            from navig.commands.init import (
+                consume_chat_onboarding_handoff_state,
+                get_chat_onboarding_step_progress,
+            )
+
+            handoff = consume_chat_onboarding_handoff_state()
+            steps = get_chat_onboarding_step_progress()
+        except Exception:
+            handoff = None
+            steps = []
+
+        if not handoff:
+            return
+
+        profile = str(handoff.get("profile") or "quickstart")
+        if not steps:
+            steps = handoff.get("steps") or []
+        pending_steps = [step for step in steps if not step.get("completed")]
+        completed_count = len(steps) - len(pending_steps)
+        checklist_lines = []
+        for step in steps:
+            mark = "✅" if step.get("completed") else "⬜"
+            checklist_lines.append(f"{mark} {step.get('label', '')}")
+
+        text = "\n".join(
+            [
+                "✨ *Welcome to NAVIG setup*",
+                f"Profile: `{profile}`",
+                "",
+                f"Canonical onboarding progress: `{completed_count}/{len(steps)}`",
+                *checklist_lines,
+                "",
+                "Next in chat:",
+                *(f"• {step.get('hint', '')}" for step in pending_steps[:2]),
+                "• Start Intake to capture your setup goals",
+                "",
+                "Proof command in this chat:",
+                "`/status`",
+            ]
+        )
+        keyboard = [
+            [
+                {"text": "🔌 Open Providers", "callback_data": "nav:open:providers"},
+                {"text": "🧭 Start Intake", "callback_data": "nav:open:intake"},
+            ],
+            [
+                {"text": "📊 Open Status", "callback_data": "nav:open:status"},
+                {"text": "🏠 Main Menu", "callback_data": "nav:home"},
+            ],
+        ]
+        await self.send_message(chat_id, text, parse_mode="Markdown", keyboard=keyboard)
 
     async def _handle_help(self, chat_id: int) -> None:
         """Command reference (/help) - auto-generated from _SLASH_REGISTRY."""
@@ -888,6 +940,8 @@ class TelegramCommandsMixin:
         message_id: int | None = None,
     ) -> None:
         """Space-aware status summary for Telegram users (/status)."""
+        if self._is_telegram_onboarding_ready():
+            self._mark_chat_onboarding_step("telegram-bot")
         from navig.spaces import get_default_space
         from navig.spaces.progress import (
             collect_spaces_progress,
@@ -950,6 +1004,29 @@ class TelegramCommandsMixin:
             persona=state.get("persona") or "assistant",
             context=context,
         )
+
+    @staticmethod
+    def _mark_chat_onboarding_step(step_id: str) -> None:
+        try:
+            from navig.commands.init import mark_chat_onboarding_step_completed
+
+            mark_chat_onboarding_step_completed(step_id)
+        except (ImportError, AttributeError, TypeError, ValueError):
+            logger.debug("Failed to mark chat onboarding step: %s", step_id)
+
+    @staticmethod
+    def _is_cli_command_success(response: str) -> bool:
+        txt = str(response or "")
+        if not txt.strip():
+            return False
+        if "Command exited with code:" not in txt:
+            return True
+        import re
+
+        match = re.search(r"Command exited with code:\s*(\d+)", txt)
+        if not match:
+            return False
+        return int(match.group(1)) == 0
 
     def _bootstrap_space_docs(self, space: str, space_path: Path) -> None:
         space_path.mkdir(parents=True, exist_ok=True)
@@ -1127,6 +1204,9 @@ class TelegramCommandsMixin:
             else:
                 await self.send_message(chat_id, "🛑 Intake cancelled.", parse_mode=None)
             return
+
+        if self._has_configured_hosts():
+            self._mark_chat_onboarding_step("first-host")
 
         selected_space = get_active_space()
         if arg:
@@ -1870,6 +1950,9 @@ class TelegramCommandsMixin:
 
         if button_row:
             keyboard_rows.append(list(button_row))
+
+        if bridge_online or ready_provider_count > 0:
+            self._mark_chat_onboarding_step("ai-provider")
 
         if ready_provider_count == 0:
             lines.append("")

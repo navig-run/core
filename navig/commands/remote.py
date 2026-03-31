@@ -109,15 +109,13 @@ def run_remote_command(
     use --b64 flag to encode as Base64 and bypass all shell escaping issues.
     """
     from navig.config import get_config_manager
+    from navig.cli.recovery import require_active_host
     from navig.remote import RemoteOperations
 
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get("host") or options.get("app") or config_manager.get_active_host()
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
     is_local_host = config_manager.is_local_host(host_name)
@@ -288,15 +286,7 @@ def _execute_with_progress(remote_ops, command: str, host_config: dict[str, Any]
         raise FileNotFoundError("ssh.exe not found")
 
     # Build SSH command (same logic as RemoteOperations.execute_command)
-    try:
-        ssh_args = [_find_ssh()]
-    except FileNotFoundError as _exc:
-        raise RuntimeError(
-            "SSH client not found — install OpenSSH or configure a direct "
-            "local transport.\n"
-            "On Windows: Settings → Apps → Optional Features → OpenSSH Client\n"
-            "On Linux/macOS: install the 'openssh-client' package."
-        ) from _exc
+    ssh_args = [_find_ssh()]
     ssh_args.extend(["-o", "StrictHostKeyChecking=yes"])
     ssh_args.extend(["-o", "ConnectTimeout=10"])
 
@@ -599,14 +589,11 @@ def _try_decode_b64(text: str) -> str | None:
 def install_remote_package(package: str, options: dict[str, Any]):
     """Auto-detect package manager and install."""
     from navig.config import get_config_manager
+    from navig.cli.recovery import require_active_host
     from navig.remote import RemoteOperations
 
     config_manager = get_config_manager()
-    host_name = options.get("host") or options.get("app") or config_manager.get_active_host()
-
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
     remote_ops = RemoteOperations(host_config)

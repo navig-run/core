@@ -102,7 +102,9 @@ After running `install.sh` / `install.ps1`, finalize setup with:
 
 ```bash
 navig init                        # interactive CLI onboarding (default)
+navig init --status               # show compact init/setup status summary
 navig init --tui                  # opt-in full-screen TUI onboarding
+navig init --profile quickstart   # chat-first bootstrap (Telegram handoff + auto-start)
 navig init --profile operator     # silent, non-interactive (recommended for automation)
 navig init --profile node         # bare minimum: dirs + CLI check only
 navig init --profile architect    # operator + MCP config
@@ -141,6 +143,7 @@ You can always configure deferred integrations later from CLI (`navig init`, `na
 
 | Profile | Modules applied |
 |---------|----------------|
+| `quickstart` | alias of `operator` + terminal-to-Telegram onboarding handoff |
 | `node` | config dirs, CLI verify, legacy migration |
 | `operator` | + shell PATH, vault init, Telegram token |
 | `architect` | + MCP config file |
@@ -150,6 +153,11 @@ You can always configure deferred integrations later from CLI (`navig init`, `na
 **Telegram token** — set `NAVIG_TELEGRAM_BOT_TOKEN` before running to have it
 stored automatically (vault + `.env` + `config.yaml`). If absent, the step is
 silently skipped; reconfigure later with `navig init` (interactive).
+
+`quickstart` behavior: when a token is available (or entered during the mini tutorial),
+NAVIG attempts to auto-start daemon + gateway + Telegram bot and writes a one-time
+chat onboarding handoff. On first `/start` in Telegram, the bot displays a continuation
+panel (Providers, Intake, Status) to finish setup in chat.
 
 ```bash
 NAVIG_TELEGRAM_BOT_TOKEN="<token>" navig init --profile operator   # Linux/macOS

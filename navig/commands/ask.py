@@ -5,10 +5,10 @@ Direct access to VS Code Copilot via the MCP Bridge from the command line.
 Works over the SSH tunnel — requires an active Bridge connection.
 
 Usage:
-    navig ask "How do I configure nginx rate limiting?"
-    navig ask explain /var/log/nginx/error.log --lines 50
-    navig ask suggest --topic security
-    navig ask status
+    navig copilot ask "How do I configure nginx rate limiting?"
+    navig copilot explain /var/log/nginx/error.log --lines 50
+    navig copilot suggest --topic security
+    navig copilot status
 """
 
 import asyncio
@@ -106,8 +106,8 @@ def copilot_ask(
     Ask Copilot a question and get a response.
 
     Examples:
-        navig ask "How do I set up a reverse proxy in nginx?"
-        navig ask "Explain Python decorators" --model gpt-4o
+        navig copilot ask "How do I set up a reverse proxy in nginx?"
+        navig copilot ask "Explain Python decorators" --model gpt-4o
     """
     messages = []
     if system:
@@ -131,9 +131,9 @@ def copilot_explain(
     Explain a log file, error, or code snippet using Copilot.
 
     Examples:
-        navig ask explain /var/log/nginx/error.log
-        navig ask explain "ECONNREFUSED 127.0.0.1:3306"
-        navig ask explain /var/log/syslog --lines 100 --remote
+        navig copilot explain /var/log/nginx/error.log
+        navig copilot explain "ECONNREFUSED 127.0.0.1:3306"
+        navig copilot explain /var/log/syslog --lines 100 --remote
     """
     import os
 
@@ -206,8 +206,8 @@ def copilot_suggest(
     Get optimization suggestions from Copilot.
 
     Examples:
-        navig ask suggest --topic security
-        navig ask suggest --topic performance --context "nginx with PHP-FPM"
+        navig copilot suggest --topic security
+        navig copilot suggest --topic performance --context "nginx with PHP-FPM"
     """
     prompt = (
         f"Provide actionable {topic} optimization suggestions. "
@@ -244,8 +244,8 @@ def copilot_review(
     Code review a file using Copilot.
 
     Examples:
-        navig ask review ./app/Http/Controllers/AuthController.php
-        navig ask review ./docker-compose.yml --focus security
+        navig copilot review ./app/Http/Controllers/AuthController.php
+        navig copilot review ./docker-compose.yml --focus security
     """
     import os
 
@@ -308,8 +308,8 @@ def copilot_status(
     Check navig-bridge MCP connectivity and status.
 
     Examples:
-        navig ask status
-        navig ask status --json
+        navig copilot status
+        navig copilot status --json
     """
     import time
 

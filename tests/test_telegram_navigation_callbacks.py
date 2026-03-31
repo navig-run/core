@@ -76,6 +76,46 @@ async def test_nav_open_targets_dispatch_to_channel_handlers(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_nav_open_does_not_mark_canonical_onboarding_steps(monkeypatch):
+    channel = TelegramChannel(
+        bot_token="123:FAKE",
+        allowed_users=[42],
+        on_message=lambda *args, **kwargs: None,
+    )
+
+    async def _noop(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(TelegramChannel, "navigateTo", _noop)
+
+    marked: list[str] = []
+
+    def _mark(step_id: str, navig_dir=None):
+        marked.append(step_id)
+        return True
+
+    monkeypatch.setattr("navig.commands.init.mark_chat_onboarding_step_completed", _mark)
+
+    handler = CallbackHandler(channel)
+
+    async def _noop_answer(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(handler, "_answer", _noop_answer)
+
+    for target in ("providers", "intake", "status", "models"):
+        await handler._handle_navigation_callback(
+            cb_id=f"cb-{target}",
+            cb_data=f"nav:open:{target}",
+            chat_id=1,
+            message_id=2,
+            user_id=3,
+        )
+
+    assert marked == []
+
+
+@pytest.mark.asyncio
 async def test_provider_picker_delegate_accepts_decorated_signature(monkeypatch):
     channel = TelegramChannel(
         bot_token="123:FAKE",
