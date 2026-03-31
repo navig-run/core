@@ -73,6 +73,23 @@ def _write_host_config(project_root: Path, host_name: str = "testhost") -> None:
     )
 
 
+def _write_local_host_config(project_root: Path, host_name: str = "localhost") -> None:
+    """Create a local host config under project's `.navig/hosts/`."""
+    from navig.config import ConfigManager
+
+    cm = ConfigManager(config_dir=project_root / ".navig")
+    cm.save_host_config(
+        host_name,
+        {
+            "name": host_name,
+            "host": "localhost",
+            "user": "local",
+            "is_local": True,
+            "apps": {},
+        },
+    )
+
+
 def _write_host_with_apps(project_root: Path, host_name: str = "testhost") -> None:
     """Create a host config with a couple apps (valid shape for load_app_config)."""
     from navig.config import ConfigManager
@@ -226,6 +243,72 @@ def test_run_json_envelope_captures_stdout(isolated_project: Path, capsys, monke
     assert payload["success"] is True
     assert payload["host"] == "alpha"
     assert payload["stdout"] == "hello\n"
+
+
+def test_run_json_local_host_uses_local_executor(isolated_project: Path, capsys, monkeypatch):
+    _write_local_host_config(isolated_project, "localhost")
+
+    from navig.config import reset_config_manager
+
+    reset_config_manager()
+
+    from navig.commands import remote as remote_cmd
+
+    called = {"local": 0, "remote": 0}
+
+    def _fake_local(_cmd, capture_output=True):
+        called["local"] += 1
+        assert capture_output is True
+        return SimpleNamespace(returncode=0, stdout="local-ok\n", stderr="")
+
+    class _DummyRemoteOps:
+        def __init__(self, _cm):
+            pass
+
+        def execute_command(self, _cmd, _host_cfg, capture_output=False):
+            called["remote"] += 1
+            return SimpleNamespace(returncode=0, stdout="remote\n", stderr="")
+
+    monkeypatch.setattr(remote_cmd, "_execute_local_command", _fake_local)
+    monkeypatch.setattr(remote_cmd.ch, "confirm_operation", lambda *a, **k: True)
+    import navig.remote as remote_module
+
+    monkeypatch.setattr(remote_module, "RemoteOperations", _DummyRemoteOps)
+
+    remote_cmd.run_remote_command(
+        "echo hello",
+        options={"host": "localhost", "yes": True, "json": True},
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["success"] is True
+    assert payload["stdout"] == "local-ok\n"
+    assert called["local"] == 1
+    assert called["remote"] == 0
+
+
+def test_host_test_local_uses_local_probe(isolated_project: Path, monkeypatch):
+    _write_local_host_config(isolated_project, "localhost")
+
+    from navig.config import get_config_manager, reset_config_manager
+
+    reset_config_manager()
+    import navig.commands.host as host_mod
+
+    host_mod.config_manager = get_config_manager(force_new=True)
+
+    calls = []
+
+    def _fake_run(cmd, capture_output=True, text=True, timeout=10):
+        calls.append(cmd)
+        return SimpleNamespace(returncode=0, stdout="LOCAL_OK\n", stderr="")
+
+    monkeypatch.setattr("subprocess.run", _fake_run)
+
+    host_mod.test_host({"host_name": "localhost", "silent": True})
+    assert calls
+    assert calls[0][0].endswith("python") or "python" in calls[0][0].lower()
 
 
 def test_app_list_json_envelope_all_hosts(isolated_project: Path, capsys):

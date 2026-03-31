@@ -10,9 +10,14 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Run: git log v2.4.20..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
 
 ### Changed
+- CLI compatibility: restored top-level `navig ask` as a migration alias to `navig ai ask` with a deprecation warning to keep existing workflows working while steering users to the canonical command.
 - Documentation consistency pass: aligned branch workflow in `CONTRIBUTING.md`, fixed installer script links in `docs/INDEX.md`, and replaced duplicated `docs/README.md` script list with a real docs index.
 - Local-only workspace policy clarified: `.dev/` is now the default AI working folder (scripts/logs/outputs), `.local/` is reserved for backups/moved artifacts and compatibility temp files.
 - Packaging/publish hardening: removed accidental `CHANGELOG.md` ignore entry, excluded `.dev/` from source distributions, and added root `.dockerignore` exclusions for local/runtime folders.
+- Telegram provider picker UX: unconfigured providers now show the key indicator inline with the provider button label (single button), instead of a separate key-only button.
+- Local host execution semantics: `navig run` now executes directly on local hosts (`type: local` or `is_local: true`) without SSH/tunnel.
+- `navig host test` now performs a local shell probe for local hosts and SSH connectivity for remote hosts.
+- CLI routing control: added `navig mode route show` and `navig mode route set <small|big|code> --provider ... --model ...`.
 
 ## [2.4.20] - 2026-03-31
 

@@ -119,6 +119,9 @@ def run_remote_command(
         ch.error("No active host.", "Use 'navig host use <name>' to set one.")
         return
 
+    host_config = config_manager.load_host_config(host_name)
+    is_local_host = config_manager.is_local_host(host_name)
+
     # Detect PowerShell and warn about quoting issues for complex commands
     _check_powershell_quoting_issues(command, stdin, file, interactive, options)
 
@@ -135,7 +138,13 @@ def run_remote_command(
     if use_b64:
         # Check if input is already base64-encoded (auto-detection)
         decoded_cmd = _try_decode_b64(final_command)
-        if decoded_cmd:
+        if is_local_host:
+            if decoded_cmd:
+                display_command = decoded_cmd
+                final_command = decoded_cmd
+            else:
+                ch.dim("Local host detected: skipping SSH Base64 wrapper.")
+        elif decoded_cmd:
             # Was already base64 - use decoded for display, original for execution
             display_command = decoded_cmd
             final_command = _encode_b64_command(decoded_cmd)
@@ -188,8 +197,6 @@ def run_remote_command(
             # Short command - show full
             ch.info(f"Executing: {display_command}", no_wrap=True)
 
-    host_config = config_manager.load_host_config(host_name)
-
     # Warn early if host uses mDNS — unreliable and slow on Windows
     _host_addr = host_config.get("host", "")
     if _host_addr.endswith(".local") and sys.platform == "win32":
@@ -201,7 +208,10 @@ def run_remote_command(
     if options.get("json"):
         # JSON mode: capture output and emit a single JSON object.
         try:
-            result = remote_ops.execute_command(final_command, host_config, capture_output=True)
+            if is_local_host:
+                result = _execute_local_command(final_command, capture_output=True)
+            else:
+                result = remote_ops.execute_command(final_command, host_config, capture_output=True)
         except RuntimeError as e:
             import json as _json
 
@@ -234,7 +244,9 @@ def run_remote_command(
     is_raw_mode = options.get("raw", False)
 
     try:
-        if is_interactive and not is_raw_mode:
+        if is_local_host:
+            result = _execute_local_command(final_command, capture_output=False)
+        elif is_interactive and not is_raw_mode:
             # Show progress indicator for interactive sessions
             result = _execute_with_progress(remote_ops, final_command, host_config)
         else:
@@ -339,6 +351,21 @@ def _execute_with_progress(remote_ops, command: str, host_config: dict[str, Any]
         # Signal progress thread to stop
         stop_event.set()
         progress_thread.join(timeout=1)
+
+
+def _execute_local_command(command: str, capture_output: bool = True) -> subprocess.CompletedProcess:
+    """Execute command on the local machine directly (no SSH)."""
+    try:
+        if capture_output:
+            return subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+            )
+        return subprocess.run(command, shell=True)
+    except Exception as _exc:  # noqa: BLE001
+        raise RuntimeError(f"Local command failed: {_exc}") from _exc
 
 
 def _resolve_command(

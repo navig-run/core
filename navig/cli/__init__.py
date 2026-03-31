@@ -5259,6 +5259,24 @@ def ai_ask(
     ask_ai(question, model, ctx.obj)
 
 
+@app.command("ask")
+def ask_compat(
+    ctx: typer.Context,
+    question: str = typer.Argument(..., help="Natural language question"),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        "-m",
+        help="Override default AI model",
+    ),
+):
+    """[COMPAT] Alias for `navig ai ask`."""
+    deprecation_warning("navig ask", "navig ai ask")
+    from navig.commands.ai import ask_ai
+
+    ask_ai(question, model, ctx.obj)
+
+
 @ai_app.command("explain")
 def ai_explain(
     ctx: typer.Context,

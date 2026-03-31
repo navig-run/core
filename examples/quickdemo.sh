@@ -69,7 +69,7 @@ echo "    navig db query \"SELECT 1\"   Query a remote database"
 echo "    navig file show <path>      Read a remote file"
 echo "    navig docker ps             List containers on the host"
 echo "    navig vault set KEY=value   Store an encrypted secret"
-echo "    navig ask ask \"...\"         Ask the AI operator anything"
+echo "    navig ai ask \"...\"          Ask the AI operator anything"
 echo "    navig help                  Browse all commands"
 echo ""
 

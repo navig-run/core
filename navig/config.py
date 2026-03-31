@@ -502,7 +502,9 @@ Context provided with each query:
 
         try:
             host_config = self.load_host_config(host_name)
-            return host_config.get("type", "").lower() == "local"
+            return host_config.get("type", "").lower() == "local" or bool(
+                host_config.get("is_local", False)
+            )
         except (FileNotFoundError, KeyError):
             return False
 

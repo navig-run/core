@@ -77,7 +77,9 @@ navig run --b64 $b64
 - **WHEN TO RUN**: BEFORE any remote operation, verify or set the active host context
 - **CHECK FIRST**: Run `navig host show` to see active host (or `navig status`)
 - **SET CONTEXT**: Use `navig host use <hostname>` to switch hosts
-- **VERIFICATION**: After switching, confirm with `navig host test` to verify SSH connectivity
+- **VERIFICATION**: After switching, confirm with `navig host test` to verify connectivity
+  - Remote hosts: SSH check
+  - Local hosts (`type: local` or `is_local: true`): local shell probe (SSH skipped)
 - **CONFIG HEALTH CHECK**: If commands fail unexpectedly, run `navig config validate` (use `--scope project|global|both` as appropriate)
 - **TRIGGER ACTIONS**:
   - User mentions a server name/hostname
@@ -92,7 +94,7 @@ navig run --b64 $b64
   | `navig host use <name>` | Switch active host context |
   | `navig host add` | Add new host (interactive wizard) |
   | `navig host show` | Show current host information |
-  | `navig host test` | Test SSH connection |
+  | `navig host test` | Test connectivity (SSH for remote, local probe for local hosts) |
   | `navig host monitor show` | Server monitoring (resources, disk) |
   | `navig host security show` | Security status (firewall, SSH) |
   | `navig host maintenance` | System maintenance (updates, cleanup) |

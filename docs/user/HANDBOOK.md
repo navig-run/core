@@ -370,6 +370,7 @@ navig task         → navig flow
 navig template     → navig flow template
 navig addon        → navig flow template
 navig hestia       → navig web hestia
+navig ask          → navig ai ask
 ```
 
 ---
@@ -776,7 +777,10 @@ navig host info production
 
 ### `navig host test [name]`
 
-Test SSH connection to a host.
+Test host connectivity.
+
+- Remote hosts: SSH connectivity check
+- Local hosts (`type: local` or `is_local: true`): local shell probe (SSH skipped)
 
 **Parameters:**
 | Parameter | Type | Required | Description |
@@ -1036,7 +1040,10 @@ This section documents the most important and frequently used NAVIG functionalit
 
 ### `navig run "<command>"`
 
-Execute a shell command on the remote server.
+Execute a shell command on the selected host context.
+
+- Remote hosts: command runs over SSH
+- Local hosts (`type: local` or `is_local: true`): command runs directly on local machine (no tunnel)
 
 **Parameters:**
 | Parameter | Type | Required | Description |
@@ -1046,6 +1053,21 @@ Execute a shell command on the remote server.
 | `--file`, `-f` | path | No | Read command from file (bypasses escaping) |
 
 *One of `command`, `--stdin`, or `--file` is required.
+
+---
+
+### `navig mode route`
+
+Manage hybrid routing slot assignments (`small`, `big`, `code`) from CLI.
+
+**Commands:**
+```bash
+navig mode route show
+navig mode route show --json
+navig mode route set small --provider ollama --model qwen2.5:3b-instruct
+navig mode route set big --provider openai --model gpt-4o-mini
+navig mode route set code --provider deepseek --model deepseek-coder
+```
 
 ---
 
