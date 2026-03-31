@@ -1031,8 +1031,33 @@ def _step_matrix(navig_dir: Path) -> OnboardingStep:
 
         import typer
 
-        homeserver_url = typer.prompt("  Matrix homeserver URL").strip()
-        access_token = typer.prompt("  Matrix access token").strip()
+        try:
+            homeserver_url = typer.prompt(
+                "  Matrix homeserver URL (leave blank to skip)",
+                default="",
+            ).strip()
+        except (KeyboardInterrupt, EOFError):
+            homeserver_url = ""
+
+        if not homeserver_url:
+            marker.write_text("skipped", encoding="utf-8")
+            return StepResult(
+                status="skipped", output={"reason": "no homeserver URL provided"}
+            )
+
+        try:
+            access_token = typer.prompt(
+                "  Matrix access token (leave blank to skip)",
+                default="",
+            ).strip()
+        except (KeyboardInterrupt, EOFError):
+            access_token = ""
+
+        if not access_token:
+            marker.write_text("skipped", encoding="utf-8")
+            return StepResult(
+                status="skipped", output={"reason": "no access token provided"}
+            )
 
         # Validate — import here to avoid circular deps at module load
         from navig.onboarding.validators import validate_matrix

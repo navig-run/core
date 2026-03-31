@@ -186,6 +186,19 @@ def test_matrix_step_writes_config_and_vault(monkeypatch, tmp_path: Path) -> Non
     assert config["matrix"]["default_room_id"] == "!room:matrix.org"
 
 
+def test_matrix_step_skips_when_no_url_entered(monkeypatch, tmp_path: Path) -> None:
+    step = next(step for step in _registry(tmp_path) if step.id == "matrix")
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "")
+
+    result = step.run()
+
+    assert result.status == "skipped"
+    assert result.output["reason"] == "no homeserver URL provided"
+    assert (tmp_path / ".matrix_configured").read_text(encoding="utf-8") == "skipped"
+
+
 def test_review_step_returns_jump_target_when_user_declines(monkeypatch, tmp_path: Path) -> None:
     artifact = tmp_path / "onboarding.json"
     artifact.write_text(
