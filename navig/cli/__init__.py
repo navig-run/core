@@ -1814,7 +1814,7 @@ def init_command(
 
     try:
         from navig.commands.init import _maybe_send_first_run_ping
-    except ImportError:
+    except (ImportError, AttributeError):
         def _maybe_send_first_run_ping() -> None:  # type: ignore[misc]
             pass
     from navig.commands.onboard import run_onboard

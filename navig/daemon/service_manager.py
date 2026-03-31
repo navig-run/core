@@ -250,6 +250,12 @@ def task_scheduler_install(start_now: bool = True) -> tuple[bool, str]:
         return True, f"Task '{TASK_NAME}' created (will start on next login)"
     except subprocess.CalledProcessError as e:
         err = e.stderr.decode("utf-8", errors="replace") if e.stderr else str(e)
+        if "acc" in err.lower() or "refus" in err.lower() or "denied" in err.lower():
+            return False, (
+                "Task Scheduler requires Administrator rights.\n"
+                "  → Right-click your terminal and choose 'Run as administrator', then retry:\n"
+                "    navig service install --bot"
+            )
         return False, f"Task Scheduler failed: {err}"
 
 
