@@ -1,12 +1,17 @@
-"""Installer module: Telegram bot token — triple-write (vault / .env / config.yaml).
+"""Installer module: Telegram bot token — dual-write (vault / .env).
 
 Token source priority (non-interactive):
   1. ctx.extra["telegram_bot_token"]           (programmatic / test injection)
   2. env var NAVIG_TELEGRAM_BOT_TOKEN          (set by the operator before running install)
-    3. env var TELEGRAM_BOT_TOKEN                (compatibility fallback)
+  3. env var TELEGRAM_BOT_TOKEN                (compatibility fallback)
 
 If no token is present the module emits a single SKIPPED action so the
 operator profile continues without error.  Telegram is always optional.
+
+The token is stored only in the vault (primary) and .env (legacy daemon
+loader).  Writing the token to config.yaml in plaintext is deprecated and
+has been removed.  Use `navig vault set telegram_bot_token <token>` to
+store or update the token at any time.
 """
 
 from __future__ import annotations
@@ -15,12 +20,11 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any
 
 from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
 
 name = "telegram"
-description = "Configure Telegram bot token (vault + .env + config.yaml)"
+description = "Configure Telegram bot token (vault + .env)"
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -62,7 +66,7 @@ def plan(ctx: InstallerContext) -> list[Action]:
     return [
         Action(
             id="telegram.write",
-            description="telegram: write bot token (vault + .env + config.yaml)",
+            description="telegram: write bot token (vault + .env)",
             module=name,
             data={"token": token},
             reversible=True,
@@ -112,20 +116,6 @@ def apply(action: Action, ctx: InstallerContext) -> Result:
     except Exception:  # noqa: BLE001
         pass
 
-    # 3. config.yaml (backward compat for pre-vault setups)
-    config_path = ctx.config_dir / "config.yaml"
-    try:
-        import yaml  # type: ignore[import]
-
-        cfg: dict[str, Any] = {}
-        if config_path.exists():
-            cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        cfg.setdefault("telegram", {})["bot_token"] = token
-        config_path.write_text(yaml.dump(cfg, allow_unicode=True), encoding="utf-8")
-        writes.append("config.yaml")
-    except Exception:  # noqa: BLE001
-        pass
-
     _marker(ctx).write_text("1", encoding="utf-8")
 
     return Result(
@@ -134,14 +124,13 @@ def apply(action: Action, ctx: InstallerContext) -> Result:
         message=f"token saved ({', '.join(writes) or 'nowhere'})",
         undo_data={
             "env_path": str(env_path),
-            "config_path": str(config_path),
             "token": token,
         },
     )
 
 
 def rollback(action: Action, result: Result, ctx: InstallerContext) -> None:
-    """Remove marker and scrub token from .env and config.yaml."""
+    """Remove marker and scrub token from .env."""
     _marker(ctx).unlink(missing_ok=True)
 
     undo = result.undo_data or {}
@@ -156,20 +145,5 @@ def rollback(action: Action, result: Result, ctx: InstallerContext) -> None:
                 if not ln.startswith("TELEGRAM_BOT_TOKEN=")
             ]
             env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    except Exception:  # noqa: BLE001
-        pass
-
-    # Scrub config.yaml
-    config_path = Path(undo.get("config_path", ctx.config_dir / "config.yaml"))
-    try:
-        import yaml  # type: ignore[import]
-
-        if config_path.exists():
-            cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-            tg = cfg.get("telegram", {})
-            tg.pop("bot_token", None)
-            if not tg:
-                cfg.pop("telegram", None)
-            config_path.write_text(yaml.dump(cfg, allow_unicode=True), encoding="utf-8")
     except Exception:  # noqa: BLE001
         pass

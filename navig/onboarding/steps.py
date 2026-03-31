@@ -724,16 +724,18 @@ def _step_first_host(navig_dir: Path) -> OnboardingStep:
 def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
     """Optionally configure a Telegram bot token for notifications.
 
-    Token storage strategy (dual-write for broad compatibility):
+    Token storage strategy:
     1. Vault  — primary, secure (navig.vault.core_v2); requires vault-init step.
     2. .env   — legacy; used by the shell/PS1 installers and daemon env loading.
-    3. config.yaml — legacy fallback for pre-vault installs; matches install.sh pattern.
 
-    All three writes are individually non-fatal.  Missing any one does not fail
-    the step \u2014 the token is preserved in at least one location.
+    Both writes are individually non-fatal.  Missing any one does not fail
+    the step — the token is preserved in at least one location.
+
+    Writing the token to config.yaml in plaintext is deprecated and has been
+    removed.  Use `navig vault set telegram_bot_token <token>` to store or
+    update the token at any time.
     """
     marker = navig_dir / ".telegram_configured"
-    config_path = navig_dir / "config.yaml"
 
     def _verify_token_remote(token: str) -> tuple[bool, str]:
         try:
@@ -810,19 +812,6 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
             except (OSError, PermissionError):
                 pass
             writes.append(".env")
-        except Exception:  # noqa: BLE001
-            pass
-
-        # 3. Legacy: config.yaml (backward compat for pre-vault setups; mirrors installer pattern)
-        try:
-            import yaml  # type: ignore[import]
-
-            cfg: dict[str, Any] = {}
-            if config_path.exists():
-                cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-            cfg.setdefault("telegram", {})["bot_token"] = token
-            config_path.write_text(yaml.dump(cfg, allow_unicode=True), encoding="utf-8")
-            writes.append("config.yaml")
         except Exception:  # noqa: BLE001
             pass
 

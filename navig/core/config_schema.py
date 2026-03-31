@@ -257,6 +257,10 @@ if PYDANTIC_AVAILABLE:
 
         model_config = ConfigDict(extra="allow")
 
+        # DEPRECATED: bot_token in config.yaml is insecure and no longer written by
+        # navig init or the installer.  Existing plaintext values are still read as a
+        # backwards-compatibility fallback, but a deprecation warning is emitted.
+        # Store the token in the vault instead:  navig vault set telegram_bot_token <token>
         bot_token: str | None = None
         allowed_users: list[int] = Field(default_factory=list)
         allowed_groups: list[int] = Field(default_factory=list)

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 _TELEGRAM_VAULT_LABELS = (
@@ -104,6 +107,11 @@ def resolve_telegram_bot_token(raw_config: dict[str, Any] | None = None) -> str:
         if isinstance(telegram_cfg, dict):
             token = str(telegram_cfg.get("bot_token") or "").strip()
             if token:
+                logger.warning(
+                    "telegram.bot_token read from config (deprecated). "
+                    "Store the token in the vault instead: "
+                    "navig vault set telegram_bot_token <token>"
+                )
                 return token
 
     try:
@@ -112,7 +120,14 @@ def resolve_telegram_bot_token(raw_config: dict[str, Any] | None = None) -> str:
         cfg = get_config_manager().global_config or {}
         telegram_cfg = cfg.get("telegram", {}) if isinstance(cfg, dict) else {}
         if isinstance(telegram_cfg, dict):
-            return str(telegram_cfg.get("bot_token") or "").strip()
+            token = str(telegram_cfg.get("bot_token") or "").strip()
+            if token:
+                logger.warning(
+                    "telegram.bot_token read from config.yaml (deprecated). "
+                    "Store the token in the vault instead: "
+                    "navig vault set telegram_bot_token <token>"
+                )
+                return token
     except Exception:
         return ""
 

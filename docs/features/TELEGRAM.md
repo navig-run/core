@@ -22,12 +22,18 @@ Run the interactive wizard:
 ```bash
 navig init
 ```
-Token resolution is vault-first at runtime, with compatibility fallback to
-`TELEGRAM_BOT_TOKEN` and `telegram.bot_token` config when vault is unavailable.
-Or edit `~/.navig/config.yaml`:
+The wizard validates your token with Telegram and stores it securely in the
+NAVIG vault.  To set or rotate the token manually at any time:
+```bash
+navig vault set telegram_bot_token <your-bot-token>
+```
+
+> **Security note:** Do not add `bot_token` to `~/.navig/config.yaml`.
+> The token belongs exclusively in the vault.  Non-secret settings such as
+> `allowed_users` and `typing_mode` can still be set in `config.yaml`:
+
 ```yaml
 telegram:
-  bot_token: "${TELEGRAM_BOT_TOKEN}"
   allowed_users: [123456789]      # Your User ID
   allowed_groups: [-100123456789] # Optional Group IDs
   session_isolation: true

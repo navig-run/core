@@ -3,10 +3,13 @@ bot.py — Entry point for the telegram-bot-navig plugin bot.
 
 Token resolution order (first non-empty wins):
   1. NAVIG vault  (navig.vault → provider="telegram", key api_key/token)
-  2. config.yaml  telegram.nas_token
-  3. config.yaml  telegram.bot_token
-  4. config.yaml  telegram_bot_token  (legacy flat key)
-  5. env var      TELEGRAM_BOT_TOKEN
+  2. env var      TELEGRAM_BOT_TOKEN
+  3. config.yaml  telegram.nas_token  (deprecated, read-only fallback)
+  4. config.yaml  telegram.bot_token  (deprecated, read-only fallback)
+  5. config.yaml  telegram_bot_token  (deprecated, read-only fallback)
+
+Store the token in the vault (recommended):
+    navig vault set telegram_bot_token <your-bot-token>
 
 Pip dependencies declared in plugin.json → depends.pip are auto-installed
 on every startup so new plugin requirements are always satisfied.
@@ -103,12 +106,12 @@ def _auto_install_deps() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 2. Token resolution — vault → config → env
+# 2. Token resolution — vault → env → config (deprecated fallback)
 # ---------------------------------------------------------------------------
 
 
 def _get_token() -> str:
-    """Resolve Telegram bot token from NAVIG vault, config, or env."""
+    """Resolve Telegram bot token from NAVIG vault, env, or config (deprecated fallback)."""
 
     # ── 2a. NAVIG Vault ────────────────────────────────────────────────────
     try:
@@ -122,7 +125,15 @@ def _get_token() -> str:
     except Exception as exc:
         logger.debug("Vault lookup skipped: %s", exc)
 
-    # ── 2b. ~/.navig/config.yaml ───────────────────────────────────────────
+    # ── 2b. Environment variable ───────────────────────────────────────────
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    if token:
+        logger.info("Token resolved from TELEGRAM_BOT_TOKEN env var")
+        return token
+
+    # ── 2c. ~/.navig/config.yaml (deprecated read-only fallback) ──────────
+    # bot_token in config.yaml is deprecated.  No new token writes go here.
+    # Existing values are read to ease migration but a warning is logged.
     try:
         import yaml  # installed by auto_install above or already present
 
@@ -130,40 +141,40 @@ def _get_token() -> str:
         if cfg_path.exists():
             cfg: dict = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
 
-            # telegram.nas_token  (current navig config layout)
             tg_block = cfg.get("telegram", {})
             for key in ("nas_token", "bot_token", "token", "api_key"):
                 val = (
                     tg_block.get(key, "").strip() if isinstance(tg_block, dict) else ""
                 )
                 if val:
-                    logger.info("Token resolved from config.yaml telegram.%s", key)
+                    logger.warning(
+                        "Token resolved from config.yaml telegram.%s (deprecated). "
+                        "Move the token to the vault: navig vault set telegram_bot_token <token>",
+                        key,
+                    )
                     return val
 
             # legacy flat key
             for key in ("telegram_bot_token", "bot_token"):
                 val = str(cfg.get(key, "")).strip()
                 if val:
-                    logger.info("Token resolved from config.yaml %s", key)
+                    logger.warning(
+                        "Token resolved from config.yaml %s (deprecated). "
+                        "Move the token to the vault: navig vault set telegram_bot_token <token>",
+                        key,
+                    )
                     return val
     except Exception as exc:
         logger.debug("config.yaml lookup skipped: %s", exc)
 
-    # ── 2c. Environment variable ───────────────────────────────────────────
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-    if token:
-        logger.info("Token resolved from TELEGRAM_BOT_TOKEN env var")
-        return token
-
     sys.exit(
         "\n[telegram-bot-navig] TELEGRAM_BOT_TOKEN not found.\n\n"
         "Resolution chain tried:\n"
-        "  1. NAVIG vault    (navig vault get telegram)\n"
-        "  2. ~/.navig/config.yaml → telegram.nas_token / telegram.bot_token\n"
-        "  3. env TELEGRAM_BOT_TOKEN\n\n"
-        "Fix: add your bot token to ~/.navig/config.yaml:\n"
-        "  telegram:\n"
-        '    nas_token: "1234567890:ABC-DEF..."\n'
+        "  1. NAVIG vault    (navig vault set telegram_bot_token <token>)\n"
+        "  2. env TELEGRAM_BOT_TOKEN\n"
+        "  3. ~/.navig/config.yaml (deprecated fallback — not recommended)\n\n"
+        "Fix: store your bot token in the vault:\n"
+        "  navig vault set telegram_bot_token 1234567890:ABC-DEF...\n"
     )
 
 

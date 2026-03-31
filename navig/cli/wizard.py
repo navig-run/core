@@ -408,11 +408,10 @@ class SetupWizard:
                     print("  ⚠️ Invalid user IDs. Use numbers only.")
 
             self.config["telegram"] = {
-                "bot_token": "${TELEGRAM_BOT_TOKEN}",
                 "allowed_users": user_ids,
             }
 
-            # Save token securely (vault-first, .env fallback)
+            # Save token securely in vault (vault-first, .env fallback)
             self._save_secret("TELEGRAM_BOT_TOKEN", bot_token)
         else:
             print("  ❌ Invalid bot token.")
