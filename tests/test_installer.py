@@ -555,6 +555,25 @@ class TestTelegramModule:
         env_content = (tmp_path / ".env").read_text()
         assert "TELEGRAM_BOT_TOKEN=test-token-123" in env_content
 
+    def test_apply_does_not_write_token_to_config_yaml(self, tmp_path):
+        """Verify that apply() never writes bot_token to config.yaml (security fix)."""
+        from navig.installer.contracts import Action, InstallerContext, ModuleState
+        from navig.installer.modules.telegram import apply
+
+        action = Action(
+            id="telegram.write",
+            description="telegram: write token",
+            module="telegram",
+            data={"token": "secret-token-abc"},
+            reversible=True,
+        )
+        ctx = InstallerContext(profile="operator", config_dir=tmp_path)
+        result = apply(action, ctx)
+        assert result.state == ModuleState.APPLIED
+        config_yaml = tmp_path / "config.yaml"
+        # config.yaml must not be created by apply()
+        assert not config_yaml.exists(), "apply() must not write bot_token to config.yaml"
+
     def test_rollback_removes_marker_and_scrubs_env(self, tmp_path, monkeypatch):
         from navig.installer.contracts import (
             Action,
@@ -581,7 +600,6 @@ class TestTelegramModule:
             state=ModuleState.APPLIED,
             undo_data={
                 "env_path": str(env_path),
-                "config_path": str(tmp_path / "config.yaml"),
             },
         )
         ctx = InstallerContext(profile="operator", config_dir=tmp_path)

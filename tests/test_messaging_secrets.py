@@ -1,4 +1,5 @@
 import importlib
+import logging
 
 
 def test_resolve_telegram_token_prefers_navig_env(monkeypatch):
@@ -51,3 +52,23 @@ def test_resolve_telegram_token_uses_vault_provider_scan(monkeypatch):
     monkeypatch.setattr("navig.vault.get_vault", lambda: _Vault())
 
     assert mod.resolve_telegram_bot_token({}) == "vault-token"
+
+
+def test_resolve_telegram_token_from_config_yaml_emits_deprecation_warning(
+    monkeypatch, caplog
+):
+    """Verify a deprecation warning is logged when bot_token is read from config."""
+    mod = importlib.import_module("navig.messaging.secrets")
+
+    monkeypatch.setattr(mod, "_resolve_telegram_token_from_vault_v2", lambda: "")
+    monkeypatch.setattr(mod, "_resolve_telegram_token_from_vault_v1", lambda: "")
+    monkeypatch.delenv("NAVIG_TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+
+    raw_config = {"telegram": {"bot_token": "plaintext-token"}}
+    with caplog.at_level(logging.WARNING, logger="navig.messaging.secrets"):
+        token = mod.resolve_telegram_bot_token(raw_config)
+
+    assert token == "plaintext-token"
+    assert any("deprecated" in rec.message.lower() for rec in caplog.records)
+    assert any("vault" in rec.message.lower() for rec in caplog.records)
