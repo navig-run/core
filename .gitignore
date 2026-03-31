@@ -31,12 +31,13 @@ track_c_results.txt
 # ===============================================
 # Python
 # ===============================================
+# Python bytecode cache
 __pycache__/
 **/__pycache__/
 **/__pycache__
-*.py[cod]
-*$py.class
-*.so
+*.py[cod]                   # Compiled Python files
+*$py.class                  # Python class files
+*.so                        # Shared objects
 .Python                     # Python environment
 build/                      # Build directory
 develop-eggs/
