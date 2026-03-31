@@ -16,12 +16,30 @@ class _DummySession:
 
 
 class _DummySessionManager:
+    def __init__(self):
+        self._meta = {}
+
     def get_session(self, chat_id, user_id, is_group):
         return _DummySession()
 
     def add_user_message(
         self, chat_id, user_id, text, message_id, reply_to, is_group, username
     ):
+        return _DummySession()
+
+    def get_session_metadata(self, chat_id, user_id, key, default=None, is_group=False):
+        return self._meta.get((chat_id, user_id, bool(is_group), key), default)
+
+    def set_session_metadata(
+        self,
+        chat_id,
+        user_id,
+        key,
+        value,
+        is_group=False,
+        username="",
+    ):
+        self._meta[(chat_id, user_id, bool(is_group), key)] = value
         return _DummySession()
 
 
@@ -104,6 +122,37 @@ async def test_group_message_bypasses_mention_gate_when_auto_active(monkeypatch)
     kwargs = channel._dispatch_by_mode.await_args.kwargs
     assert kwargs["metadata"]["auto_reply_active"] is True
     assert kwargs["metadata"]["auto_reply_persona"] == "teacher"
+
+
+@pytest.mark.asyncio
+async def test_telegram_metadata_includes_last_detected_language(monkeypatch):
+    channel = TelegramChannel(bot_token="123:FAKE", allowed_users=[42], on_message=lambda *args, **kwargs: None)
+    channel._bot_username = "mybot"
+    channel._dispatch_by_mode = AsyncMock()
+    channel._match_cli_command = lambda _text: None
+
+    session_manager = _DummySessionManager()
+    session_manager.set_session_metadata(42, 42, "last_detected_language", "fr")
+
+    monkeypatch.setattr("navig.gateway.channels.telegram.HAS_SESSIONS", True)
+    monkeypatch.setattr(
+        "navig.gateway.channels.telegram.get_session_manager",
+        lambda: session_manager,
+    )
+
+    update = {
+        "message": {
+            "message_id": 11,
+            "text": "bonjour",
+            "chat": {"id": 42, "type": "private"},
+            "from": {"id": 42, "username": "user42"},
+        }
+    }
+
+    await channel._process_update(update)
+
+    kwargs = channel._dispatch_by_mode.await_args.kwargs
+    assert kwargs["metadata"]["last_detected_language"] == "fr"
 
 
 @pytest.mark.asyncio

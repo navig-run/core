@@ -1102,7 +1102,7 @@ def telegram_start(
         raise typer.Exit(1)
 
     ch.info("Starting Telegram bot...")
-    ch.console.print(f"  Model: {os.getenv('NAVIG_AI_MODEL', 'openrouter')}")
+    ch.console.print("  Model source: ai_model_preference + routing (NAVIG_AI_MODEL is legacy)")
     ch.console.print(f"  Typing mode: {os.getenv('TYPING_MODE', 'instant')}")
 
     allowed = os.getenv("ALLOWED_TELEGRAM_USERS")
@@ -1155,7 +1155,7 @@ def telegram_status():
     from navig.messaging.secrets import resolve_telegram_bot_token
 
     token = resolve_telegram_bot_token()
-    model = os.getenv("NAVIG_AI_MODEL", "openrouter")
+    model_pref = os.getenv("NAVIG_AI_MODEL", "")
     allowed = os.getenv("ALLOWED_TELEGRAM_USERS", "")
     typing_mode = os.getenv("TYPING_MODE", "instant")
     gateway = os.getenv("NAVIG_GATEWAY_URL")
@@ -1168,7 +1168,11 @@ def telegram_status():
     else:
         ch.console.print("  ❌ Token: NOT SET")
 
-    ch.console.print(f"  AI Model: {model}")
+    if model_pref:
+        ch.console.print(f"  Legacy NAVIG_AI_MODEL: {model_pref} [deprecated]")
+    else:
+        ch.console.print("  Legacy NAVIG_AI_MODEL: not set")
+    ch.console.print("  Effective model source: ai_model_preference + routing")
     ch.console.print(f"  Typing Mode: {typing_mode}")
 
     if allowed:
@@ -1216,7 +1220,7 @@ def telegram_setup():
     ch.console.print("   ```")
     ch.console.print("   TELEGRAM_BOT_TOKEN=your_token_here")
     ch.console.print("   ALLOWED_TELEGRAM_USERS=your_user_id")
-    ch.console.print("   NAVIG_AI_MODEL=openrouter")
+    ch.console.print("   # Optional legacy var (deprecated): NAVIG_AI_MODEL=openrouter")
     ch.console.print("   ```")
     ch.console.print()
 
@@ -1227,7 +1231,7 @@ def telegram_setup():
     ch.info("Environment Variables:")
     ch.console.print("  TELEGRAM_BOT_TOKEN     - Required. Bot token from @BotFather")
     ch.console.print("  ALLOWED_TELEGRAM_USERS - Optional. Comma-separated user IDs")
-    ch.console.print("  NAVIG_AI_MODEL         - Optional. Default: openrouter")
+    ch.console.print("  NAVIG_AI_MODEL         - Optional legacy override (deprecated)")
     ch.console.print("  TYPING_MODE            - Optional. instant/message/never")
     ch.console.print("  NAVIG_GATEWAY_URL      - Optional. Gateway for session persistence")
 

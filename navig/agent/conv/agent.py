@@ -278,6 +278,17 @@ class ConversationalAgent:
         if self._ai_client is None:
             result = self._planner.plan(message)
             return json.dumps(result) if result else "I'm ready to help."
+
+        try:
+            if hasattr(self._ai_client, "is_available") and not self._ai_client.is_available():
+                result = self._planner.plan(message)
+                return json.dumps(result) if result else "I'm ready to help."
+        except Exception:
+            pass  # best-effort; failure is non-critical
+
+        def _deterministic_fallback() -> str:
+            result = self._planner.plan(message)
+            return json.dumps(result) if result else "I'm ready to help."
         system_prompt = self._build_system_prompt(message)
         msgs = [
             {"role": "system", "content": system_prompt},
@@ -330,5 +341,19 @@ class ConversationalAgent:
         except Exception as exc:
             logger.warning("Unified router failed: %s", exc)
         if hasattr(self._ai_client, "chat_routed"):
-            return await self._ai_client.chat_routed(msgs, user_message=message, tier_override=tier)
-        return await self._ai_client.chat(msgs)
+            try:
+                return await self._ai_client.chat_routed(
+                    msgs, user_message=message, tier_override=tier
+                )
+            except Exception as exc:
+                msg = str(exc).lower()
+                if "no ai provider available" in msg or "no provider available" in msg:
+                    return _deterministic_fallback()
+                raise
+        try:
+            return await self._ai_client.chat(msgs)
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "no ai provider available" in msg or "no provider available" in msg:
+                return _deterministic_fallback()
+            raise

@@ -34,6 +34,20 @@ async def test_run_requires_token(monkeypatch, navig_log_capture):
 
 
 @pytest.mark.asyncio
+async def test_run_hard_fails_on_invalid_messaging_provider(monkeypatch):
+    from navig.daemon import telegram_worker as tw
+
+    monkeypatch.setattr(tw, "_load_env", lambda: None)
+    monkeypatch.setattr(tw, "get_config_manager", lambda: SimpleNamespace(global_config={}))
+    monkeypatch.setattr(tw, "get_active_provider_name", lambda _cfg: "invalid-provider")
+
+    with pytest.raises(SystemExit) as exc:
+        await tw._run(enable_gateway=False)
+
+    assert exc.value.code == 1
+
+
+@pytest.mark.asyncio
 async def test_run_fails_when_channel_init_returns_none(monkeypatch, navig_log_capture):
     from navig.daemon import telegram_worker as tw
 

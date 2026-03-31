@@ -6,6 +6,8 @@ from typing import Any
 from navig.messaging.provider import IMessagingProvider
 from navig.messaging.secrets import resolve_telegram_bot_token
 
+_SUPPORTED_PROVIDER_NAMES = frozenset({"telegram", "none"})
+
 
 class TelegramProvider:
     """Telegram implementation of :class:`IMessagingProvider`."""
@@ -63,6 +65,14 @@ def get_active_provider_name(raw_config: dict[str, Any]) -> str:
         return cfg_name
 
     return "telegram"
+
+
+def is_supported_provider_name(name: str) -> bool:
+    return (name or "").strip().lower() in _SUPPORTED_PROVIDER_NAMES
+
+
+def supported_provider_names() -> tuple[str, ...]:
+    return tuple(sorted(_SUPPORTED_PROVIDER_NAMES))
 
 
 def _provider_for(name: str) -> IMessagingProvider | None:

@@ -2,7 +2,7 @@
 plugins/timer.py — Live countdown timer (edits its own message).
 Command : /timer <duration>   e.g. /timer 30s  /timer 5m  /timer 2h
 Alias   : /countdown
-Passive : "set timer for 5 minutes" / "timer 30 seconds" / "напомни через X"
+Passive : "set timer for 5 minutes" / "timer 30 seconds"
 Limits  : 5 s min, 24 h max, 3 concurrent per user.
 """
 
@@ -70,7 +70,6 @@ class TimerPlugin(BotPlugin):
             r"\bset\s+(?:a\s+)?timer\s+(?:for\s+)?\d+",
             r"\btimer\s+\d+\s*[smh]",
             r"\bcountdown\s+\d+",
-            r"\bнапомни\s+через\s+\d+",
         ]
 
     async def handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):

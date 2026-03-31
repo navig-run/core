@@ -398,6 +398,41 @@ async def test_streaming_token_emitted_when_chat_stream_present() -> None:
     assert result == "Hello world"
 
 
+async def test_get_ai_response_falls_back_when_ai_client_reports_unavailable() -> None:
+    mock_client = MagicMock()
+    mock_client.is_available.return_value = False
+
+    planner = MagicMock()
+    planner.plan.return_value = {
+        "understanding": "fallback",
+        "plan": [],
+        "confirmation_needed": False,
+    }
+
+    agent = _make_agent(ai_client=mock_client, fallback_planner=planner)
+    result = await agent._get_ai_response("do something")
+    assert "fallback" in result
+
+
+async def test_get_ai_response_falls_back_when_no_provider_error() -> None:
+    mock_client = MagicMock()
+    mock_client.is_available.return_value = True
+    mock_client.chat_routed = AsyncMock(side_effect=RuntimeError("No AI provider available"))
+
+    planner = MagicMock()
+    planner.plan.return_value = {
+        "understanding": "no-llm",
+        "plan": [],
+        "confirmation_needed": False,
+    }
+
+    agent = _make_agent(ai_client=mock_client, fallback_planner=planner)
+    with patch("navig.routing.router.get_router", side_effect=ImportError("no router")):
+        result = await agent._get_ai_response("hello")
+
+    assert "no-llm" in result
+
+
 # ---------------------------------------------------------------------------
 # 6. ConsoleStatusRenderer
 # ---------------------------------------------------------------------------

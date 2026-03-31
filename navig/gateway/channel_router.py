@@ -194,6 +194,15 @@ class ChannelRouter:
         if hasattr(agent, "set_runtime_persona"):
             agent.set_runtime_persona(runtime_persona)
 
+        detected_language = str(metadata.get("detected_language", "") or "").strip().lower()
+        last_detected_language = str(metadata.get("last_detected_language", "") or "")
+        last_detected_language = last_detected_language.strip().lower()
+        if hasattr(agent, "set_language_preferences"):
+            agent.set_language_preferences(
+                detected_language=detected_language,
+                last_detected_language=last_detected_language,
+            )
+
         # Set up status callback to send updates via WebSocket
         async def send_status(msg):
             await self._broadcast_status(session_key, msg)

@@ -508,6 +508,20 @@ def _enrich_messages_with_context(
             lines.append(content[:500] if len(content) > 500 else content)
         parts.append("\n".join(lines))
 
+    # Key facts (stored in English, translated at response time)
+    key_facts = context.get("key_facts", "")
+    if key_facts:
+        key_facts_text = str(key_facts).strip()
+        if key_facts_text:
+            parts.append(
+                "\n".join(
+                    [
+                        "The following context is in English. Use it to answer, but reply in the user's detected language.",
+                        key_facts_text,
+                    ]
+                )
+            )
+
     # Workspace notes
     notes = context.get("workspace_notes", [])
     if notes:

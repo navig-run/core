@@ -445,6 +445,31 @@ class FactExtractor:
         self.min_user_length = min_user_length
         self.max_facts_per_turn = max_facts_per_turn
 
+    async def _rewrite_fact_in_english(self, content: str) -> str:
+        """Rewrite fact content to English before persistence.
+
+        Uses the extractor LLM call path with an explicit storage instruction.
+        Falls back to original content if no LLM callback is configured.
+        """
+        text = (content or "").strip()
+        if not text:
+            return text
+
+        if not self.llm_call:
+            return text
+
+        prompt = f"Store this in English: {text}"
+        try:
+            rewritten = await self.llm_call(prompt)
+        except Exception as exc:
+            logger.debug("Fact English rewrite failed, storing original: %s", exc)
+            return text
+
+        cleaned = str(rewritten or "").strip().strip('"')
+        if not cleaned:
+            return text
+        return cleaned
+
     async def extract_and_store(
         self,
         user_text: str,
@@ -504,6 +529,7 @@ class FactExtractor:
         if self.store and result.facts:
             for fact in result.facts:
                 try:
+                    fact.content = await self._rewrite_fact_in_english(fact.content)
                     self.store.upsert(fact)
                 except Exception as exc:
                     logger.warning("Failed to store fact: %s", exc)

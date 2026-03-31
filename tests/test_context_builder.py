@@ -308,6 +308,30 @@ class TestFullPipeline:
         assert result.provider == "openai"
         assert result.model == "gpt-4o-mini"
 
+
+def test_enrich_messages_includes_key_facts_translation_prefix():
+    from navig.llm_generate import _enrich_messages_with_context
+
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "hola"},
+    ]
+    context = {
+        "conversation_history": [],
+        "kb_snippets": [],
+        "workspace_notes": [],
+        "key_facts": "## Relevant memories about this user:\n- User prefers Python",
+    }
+
+    enriched = _enrich_messages_with_context(messages, context)
+    assert len(enriched) >= 3
+    context_msg = enriched[1]["content"]
+    assert (
+        "The following context is in English. Use it to answer, but reply in the user's detected language."
+        in context_msg
+    )
+    assert "Relevant memories" in context_msg
+
     @patch("navig.memory.context_builder._search_knowledge")
     @patch("navig.memory.context_builder._get_recent_messages")
     @patch("navig.memory.context_builder._collect_metadata")

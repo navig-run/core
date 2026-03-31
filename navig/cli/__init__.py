@@ -11316,6 +11316,7 @@ _EXTERNAL_CMD_MAP = {
     "matrix": ("navig.commands.matrix", "matrix_app"),
     "mx": ("navig.commands.matrix", "matrix_app"),
     "store": ("navig.commands.store", "store_app"),
+    "vault": ("navig.commands.vault", "vault_app"),
     "cred": ("navig.commands.vault", "cred_app"),
     # Operating-mode profiles (node / builder / operator / architect)
     "profile": ("navig.commands.profile", "profile_app"),

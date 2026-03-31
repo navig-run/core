@@ -11,6 +11,7 @@ class _FakeAgent:
         self.current_task = None
         self.identity_calls = []
         self.persona_calls = []
+        self.language_calls = []
         self.on_status_update = None
 
     def set_user_identity(self, user_id="", username=""):
@@ -18,6 +19,9 @@ class _FakeAgent:
 
     def set_runtime_persona(self, persona=""):
         self.persona_calls.append(persona)
+
+    def set_language_preferences(self, detected_language="", last_detected_language=""):
+        self.language_calls.append((detected_language, last_detected_language))
 
     async def chat(self, message, tier_override=""):
         return "ok"
@@ -74,6 +78,35 @@ async def test_handle_message_clears_runtime_persona_when_not_present(monkeypatc
 
     assert response == "ok"
     assert fake_agent.persona_calls[-1] == ""
+
+
+@pytest.mark.asyncio
+async def test_handle_message_passes_language_hints(monkeypatch):
+    gateway = SimpleNamespace(
+        config_manager=SimpleNamespace(global_config={}),
+        config=SimpleNamespace(default_agent="default"),
+        run_agent_turn=AsyncMock(return_value="fallback"),
+    )
+    router = ChannelRouter(gateway)
+
+    fake_agent = _FakeAgent()
+    monkeypatch.setattr(router, "_get_conversational_agent", lambda _key: fake_agent)
+    monkeypatch.setattr(router, "_check_quick_commands", AsyncMock(return_value=None))
+
+    response = await router._handle_message(
+        agent_id="default",
+        session_key="telegram:dm:42",
+        message="bonjour",
+        metadata={
+            "user_id": 42,
+            "username": "operator",
+            "detected_language": "fr",
+            "last_detected_language": "en",
+        },
+    )
+
+    assert response == "ok"
+    assert fake_agent.language_calls[-1] == ("fr", "en")
 
 
 def test_format_command_failure_for_unknown_command_is_friendly():

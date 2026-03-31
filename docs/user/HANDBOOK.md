@@ -4443,6 +4443,12 @@ navig start                  # Gateway + bot (background, recommended)
 navig start --foreground     # See live logs
 ```
 
+**Multilingual behavior (automatic, no setup):**
+- The bot auto-detects each incoming message language and replies in that same language.
+- Language can switch mid-conversation without commands or confirmation.
+- If a message is mixed/ambiguous, response language falls back to last successfully detected language for that user; if none exists, English is used.
+- Long-term memory facts are stored in English, then translated silently to the current user language when used in replies.
+
 **Telegram token resolution (env + vault):**
 - NAVIG resolves bot token in this order:
   1. Vault (`telegram` provider credential, token/bot_token)
@@ -4511,7 +4517,7 @@ cp .env.telegram.example .env
 # Edit .env with your credentials:
 # TELEGRAM_BOT_TOKEN=your_bot_token
 # ALLOWED_TELEGRAM_USERS=your_user_id
-# NAVIG_AI_MODEL=openrouter
+# Optional legacy override (deprecated): NAVIG_AI_MODEL=openrouter
 
 # Run the bot directly
 python -m navig.daemon.telegram_worker --no-gateway
@@ -8256,8 +8262,23 @@ Provider/model assignment in Telegram is optimized for readability and low frict
 
 - `/providers` now shows cleaner bridge status wording (bridge is optional and not tied to VS Code only).
 - Current routing is visible at a glance: `Small`, `Big`, and `Code` model selections.
+- Hybrid routing is explicitly explained in UI: each tier (`Small` / `Big` / `Code`) can point to a different provider:model slot.
+- Hybrid assignment controls are enabled when `routing.enabled: true` is set in config and NAVIG is restarted.
 - Model assignment is tier-first: pick `⚡ Small`, `🧠 Big`, or `💻 Code`, then choose from a readable model list.
-- `Next`/`Prev` and tier switches update the same message in place (no message spam).
+- Model lists are shown in a single page (no pagination) to reduce button churn and callback friction.
+- Activating a provider now applies curated defaults for `Small` / `Big` / `Code` and persists them to global config.
+- Unconfigured cloud providers show provider label + key action (`🔑`) so key setup is one tap from the same row.
+
+### Messaging Provider Validation
+
+- Startup now validates `NAVIG_MESSAGING_PROVIDER` / `messaging.provider` strictly.
+- Unsupported provider names fail fast with an actionable error and a list of supported values.
+
+### No-LLM Fallback Behavior
+
+- If no provider/model is configured, chat no longer hard-fails with provider config errors.
+- NAVIG now falls back to deterministic no-AI response behavior automatically where conversational chat paths support it.
+- Existing explicit no-AI behavior (`No AI` / raw mode) is unchanged.
 
 Kickoff actions are synthesized from:
 

@@ -1750,6 +1750,12 @@ class TelegramCommandsMixin:
             lines.append("- Bridge is active; other providers remain available as fallback.")
         else:
             lines.append("- Bridge is optional; configure any compatible bridge endpoint to enable it.")
+        lines.append(
+            "- Hybrid routing = separate `Small` / `Big` / `Code` slots, each with its own provider:model."
+        )
+        lines.append(
+            "- To enable tier assignments from Telegram, set `routing.enabled: true` in config and restart daemon."
+        )
 
         try:
             from navig.llm_router import get_llm_router
@@ -1804,8 +1810,11 @@ class TelegramCommandsMixin:
             if manifest.id == "mcp_bridge":
                 continue
             vault_has_key = False
+            key_detected = False
+            result = None
             try:
                 result = verify_provider(manifest)
+                key_detected = bool(getattr(result, "key_detected", False))
                 if manifest.tier == "local" and manifest.local_probe:
                     ready = bool(result.local_probe_ok)
                 elif manifest.tier == "cloud" and manifest.requires_key:
@@ -1814,9 +1823,9 @@ class TelegramCommandsMixin:
                     )
                     # Cloud providers become selectable only after successful
                     # validation (or explicit env-detected key path).
-                    ready = bool(result.key_detected) or bool(vault_validated)
+                    ready = key_detected or bool(vault_validated)
                 elif manifest.requires_key:
-                    ready = result.key_detected
+                    ready = key_detected
                 else:
                     ready = True
             except Exception:
@@ -1828,12 +1837,16 @@ class TelegramCommandsMixin:
                     getattr(manifest, "tier", "") == "cloud"
                     and getattr(manifest, "requires_key", False)
                     and not vault_has_key
-                    and not bool(getattr(result, "key_detected", False))
+                    and not key_detected
                 ):
                     keyboard_rows.append(
                         [
                             {
-                                "text": f"🔑 {manifest.emoji} {manifest.display_name} — add key",
+                                "text": f"{manifest.emoji} {manifest.display_name}",
+                                "callback_data": f"prov_{manifest.id}",
+                            },
+                            {
+                                "text": "🔑",
                                 "callback_data": f"prov_{manifest.id}",
                             }
                         ]
@@ -1931,6 +1944,143 @@ class TelegramCommandsMixin:
 
         return has_vault_key, validated
 
+    async def _resolve_provider_models(self, prov_id: str, manifest=None) -> list[str]:
+        """Resolve models for provider using live endpoints when available."""
+        models: list[str] = []
+        if manifest is None:
+            try:
+                from navig.providers.registry import _INDEX as PROV_INDEX
+
+                manifest = PROV_INDEX.get(prov_id)
+            except Exception:
+                manifest = None
+        if manifest and getattr(manifest, "models", None):
+            models = list(manifest.models)
+
+        if prov_id == "ollama":
+            try:
+                import aiohttp
+
+                async with (
+                    aiohttp.ClientSession() as session,
+                    session.get("http://127.0.0.1:11434/api/tags", timeout=2) as response,
+                ):
+                    data = await response.json()
+                    live = [m["name"] for m in data.get("models", []) if m.get("name")]
+                    if live:
+                        models = live
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Could not fetch live Ollama models: %s", exc)
+            if not models:
+                models = ["qwen2.5:7b", "qwen2.5:3b", "phi3.5", "llama3.2"]
+            return models
+
+        try:
+            import aiohttp
+            import os
+
+            endpoint = ""
+            headers = {}
+            if prov_id == "openrouter":
+                api_key = os.environ.get("OPENROUTER_API_KEY", "")
+                if api_key:
+                    endpoint = "https://openrouter.ai/api/v1/models"
+                    headers = {"Authorization": f"Bearer {api_key}"}
+            elif prov_id == "xai":
+                api_key = os.environ.get("XAI_API_KEY") or os.environ.get("GROK_KEY", "")
+                if api_key:
+                    endpoint = "https://api.x.ai/v1/models"
+                    headers = {"Authorization": f"Bearer {api_key}"}
+            elif prov_id == "nvidia":
+                api_key = os.environ.get("NVIDIA_API_KEY") or os.environ.get("NIM_API_KEY", "")
+                if api_key:
+                    endpoint = "https://integrate.api.nvidia.com/v1/models"
+                    headers = {"Authorization": f"Bearer {api_key}"}
+
+            if endpoint:
+                async with (
+                    aiohttp.ClientSession() as session,
+                    session.get(endpoint, headers=headers, timeout=5) as response,
+                ):
+                    data = await response.json()
+                    live = [m["id"] for m in data.get("data", []) if m.get("id")]
+                    if live:
+                        models = live
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Could not fetch live model list for %s: %s", prov_id, exc)
+
+        return models
+
+    @staticmethod
+    def _select_curated_tier_defaults(prov_id: str, models: list[str]) -> dict[str, str]:
+        """Select curated defaults for small/big/coder_big tiers."""
+        if not models:
+            return {"small": "", "big": "", "coder_big": ""}
+
+        lowered = [(m, m.lower()) for m in models]
+
+        def _pick(preferred: tuple[str, ...], fallback: str = "") -> str:
+            for raw, low in lowered:
+                if any(token in low for token in preferred):
+                    return raw
+            return fallback or models[0]
+
+        if prov_id == "xai":
+            big = _pick(("grok-3", "grok-2"), models[0])
+            small = _pick(("mini",), models[-1])
+            coder = _pick(("code", "coder"), big)
+            return {"small": small, "big": big, "coder_big": coder}
+
+        big = _pick(("405b", "120b", "90b", "72b", "70b", "67b", "34b", "32b"), models[0])
+        small = _pick(("mini", "8b", "7b", "3b", "2b", "1b"), models[-1])
+        coder = _pick(("coder", "code", "deepseek-coder"), big)
+        return {"small": small, "big": big, "coder_big": coder}
+
+    def _persist_hybrid_router_assignments(self, router_cfg) -> None:
+        """Persist current hybrid router slots to global config."""
+        from navig.config import get_config_manager
+
+        cfg_mgr = get_config_manager()
+        global_cfg = dict(cfg_mgr.global_config or {})
+        ai_cfg = dict(global_cfg.get("ai") or {})
+        routing_cfg = dict(ai_cfg.get("routing") or {})
+
+        routing_cfg["enabled"] = True
+        if not routing_cfg.get("mode"):
+            routing_cfg["mode"] = "rules_then_fallback"
+
+        routing_cfg["models"] = {
+            "small": {
+                "provider": router_cfg.small.provider,
+                "model": router_cfg.small.model,
+                "defaults": {
+                    "max_tokens": router_cfg.small.max_tokens,
+                    "temperature": router_cfg.small.temperature,
+                    "num_ctx": router_cfg.small.num_ctx,
+                },
+            },
+            "big": {
+                "provider": router_cfg.big.provider,
+                "model": router_cfg.big.model,
+                "defaults": {
+                    "max_tokens": router_cfg.big.max_tokens,
+                    "temperature": router_cfg.big.temperature,
+                    "num_ctx": router_cfg.big.num_ctx,
+                },
+            },
+            "coder_big": {
+                "provider": router_cfg.coder_big.provider,
+                "model": router_cfg.coder_big.model,
+                "defaults": {
+                    "max_tokens": router_cfg.coder_big.max_tokens,
+                    "temperature": router_cfg.coder_big.temperature,
+                    "num_ctx": router_cfg.coder_big.num_ctx,
+                },
+            },
+        }
+        ai_cfg["routing"] = routing_cfg
+        cfg_mgr.update_global_config({"ai": ai_cfg})
+
     @error_handled
     @typing_context
     async def _show_provider_model_picker(
@@ -1942,7 +2092,8 @@ class TelegramCommandsMixin:
         message_id: int | None = None,
     ) -> None:
         """Show tier-first model picker for a provider with edit-in-place pagination."""
-        emoji, name, models = "🤖", prov_id, []
+        emoji, name = "🤖", prov_id
+        models: list[str] = []
         try:
             from navig.providers.registry import _INDEX as PROV_INDEX
 
@@ -1950,26 +2101,10 @@ class TelegramCommandsMixin:
             if manifest:
                 emoji = manifest.emoji
                 name = manifest.display_name
-                models = list(manifest.models)
         except Exception:
             manifest = None
 
-        if prov_id == "ollama":
-            try:
-                import aiohttp
-
-                async with (
-                    aiohttp.ClientSession() as session,
-                    session.get("http://127.0.0.1:11434/api/tags", timeout=2) as r,
-                ):
-                    data = await r.json()
-                    live = [m["name"] for m in data.get("models", []) if m.get("name")]
-                    if live:
-                        models = live
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
-            if not models:
-                models = ["qwen2.5:7b", "qwen2.5:3b", "phi3.5", "llama3.2"]
+        models = await self._resolve_provider_models(prov_id, manifest=manifest)
 
         if not models:
             await self.send_message(
@@ -2008,7 +2143,7 @@ class TelegramCommandsMixin:
         tier_code_to_name = {"s": "small", "b": "big", "c": "coder_big"}
         tier_name = tier_code_to_name[selected_tier]
 
-        page_size = 8
+        page_size = max(1, len(models))
         total_pages = max(1, (len(models) + page_size - 1) // page_size)
         page = min(max(0, page), total_pages - 1)
         start = page * page_size
@@ -2016,7 +2151,7 @@ class TelegramCommandsMixin:
         page_models = models[start:end]
 
         lines = [
-            f"<b>{emoji} {name}</b> — assign model to tier · page {page + 1}/{total_pages}",
+            f"<b>{emoji} {name}</b> — assign model to tier",
             "",
             _tier_line("small"),
             _tier_line("big"),
@@ -2034,8 +2169,8 @@ class TelegramCommandsMixin:
         if not router_active:
             lines.append("")
             lines.append(
-                "⚠️ <i>Hybrid router not configured. Enable "
-                "<code>routing: enabled: true</code> in config.yaml to save assignments.</i>"
+                "⚠️ <i>Hybrid routing is disabled. Enable "
+                "<code>routing.enabled: true</code> in your config, then restart NAVIG to apply tier assignments.</i>"
             )
 
         keyboard: list[list[dict[str, str]]] = []
@@ -2068,24 +2203,6 @@ class TelegramCommandsMixin:
                     }
                 ]
             )
-
-        nav_row: list[dict[str, str]] = []
-        if page > 0:
-            nav_row.append({"text": "◀ Prev", "callback_data": f"pmp_{prov_id}_{page-1}_{selected_tier}"})
-        if page < total_pages - 1:
-            nav_row.append({"text": "Next ▶", "callback_data": f"pmp_{prov_id}_{page+1}_{selected_tier}"})
-        page_btn = {
-            "text": f"Page {page + 1}/{total_pages}",
-            "callback_data": f"pmv_{prov_id}_{selected_tier}_{page}",
-        }
-        if nav_row:
-            if len(nav_row) == 1:
-                keyboard.append([nav_row[0], page_btn])
-            else:
-                keyboard.append([nav_row[0], page_btn])
-                keyboard.append([nav_row[1]])
-        else:
-            keyboard.append([page_btn])
 
         keyboard.append(
             [

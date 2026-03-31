@@ -345,6 +345,33 @@ class TestFactExtractor:
         )
         assert result.count <= 1
 
+    @pytest.mark.asyncio
+    async def test_extract_and_store_rewrites_fact_to_english(self, store):
+        prompts = []
+
+        async def _llm_call(prompt, model=None):
+            prompts.append(prompt)
+            return "User prefers Python"
+
+        extractor = FactExtractor(
+            store=store,
+            llm_call=_llm_call,
+            mode="rule",
+            min_user_length=1,
+        )
+
+        await extractor.extract_and_store(
+            "I prefer Python",
+            "Great.",
+            source_conversation_id="s1",
+            source_platform="telegram",
+        )
+
+        active = store.get_active()
+        assert active
+        assert active[0].content == "User prefers Python"
+        assert any(p.startswith("Store this in English: ") for p in prompts)
+
 
 # ── FactRetriever Tests ───────────────────────────────────────
 
@@ -394,6 +421,31 @@ class TestFactRetriever:
 
         score = FactRetriever._recency_score(_utcnow())
         assert score > 0.95  # Just created = near 1.0
+
+    def test_retrieve_adds_english_context_prefix(self, populated_store):
+        retriever = FactRetriever(populated_store)
+        result = retriever.retrieve("python")
+        if result.count > 0:
+            assert result.formatted.startswith(
+                "<!-- MEMORY CONTEXT: translate everything below to en before use -->"
+            )
+
+    def test_retrieve_memory_marker_for_non_english(self, populated_store):
+        retriever = FactRetriever(populated_store)
+        result = retriever.retrieve("bonjour merci")
+        if result.count > 0:
+            assert result.formatted.startswith(
+                "<!-- MEMORY CONTEXT: translate everything below to fr before use -->"
+            )
+
+    def test_three_consecutive_non_english_recalls_have_no_marker_drift(self, populated_store):
+        retriever = FactRetriever(populated_store)
+        results = [retriever.retrieve("bonjour projet") for _ in range(3)]
+        for result in results:
+            if result.count > 0:
+                assert result.formatted.startswith(
+                    "<!-- MEMORY CONTEXT: translate everything below to fr before use -->"
+                )
 
 
 # ── Context Builder Integration Tests ─────────────────────────

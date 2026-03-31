@@ -14,6 +14,8 @@ from navig.gateway.server import NavigGateway
 from navig.messaging.registry import (
     create_channel_for_provider,
     get_active_provider_name,
+    is_supported_provider_name,
+    supported_provider_names,
 )
 from navig.messaging.secrets import resolve_telegram_bot_token
 from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
@@ -52,7 +54,9 @@ def _telegram_config() -> dict:
 
 def create_telegram_channel(gateway, config: dict):
     """Backward-compatible helper retained for existing tests/monkeypatches."""
-    return create_channel_for_provider("telegram", gateway, {"telegram": config})
+    from navig.gateway.channels.telegram import create_telegram_channel as _create_telegram
+
+    return _create_telegram(gateway, config)
 
 
 def _deck_config() -> dict:
@@ -235,6 +239,19 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
     _load_env()
     raw_cfg = get_config_manager().global_config or {}
     provider_name = get_active_provider_name(raw_cfg)
+    if not is_supported_provider_name(provider_name):
+        supported = ", ".join(supported_provider_names())
+        msg = (
+            f"[NAVIG] FATAL: Unsupported messaging provider '{provider_name}'.\n"
+            f"        Set NAVIG_MESSAGING_PROVIDER or messaging.provider to one of: {supported}."
+        )
+        print(msg, file=sys.stderr, flush=True)
+        logger.error(
+            "Unsupported messaging provider '%s' (supported: %s)",
+            provider_name,
+            supported,
+        )
+        sys.exit(1)
 
     config = _telegram_config()
     if provider_name == "telegram" and not config.get("bot_token"):

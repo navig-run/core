@@ -1,6 +1,6 @@
 """
 plugins/quote.py — Saved quote system.
-Save  : reply to any message with "quote" / "цитата" / "цитатка"
+Save  : reply to any message with "quote"
 Fetch : /quote            — random from this chat
         /quote global      — random from all chats
         /quote stats       — per-user stats in this chat
@@ -28,7 +28,7 @@ except ImportError:
 _DB = Path.home() / ".navig" / "plugins" / "saved_quotes.db"
 _DB.parent.mkdir(parents=True, exist_ok=True)
 
-_KEYWORD = r"^(quote|цитата|цитатка|цтт)$"
+_KEYWORD = r"^(quote)$"
 
 
 def _db():

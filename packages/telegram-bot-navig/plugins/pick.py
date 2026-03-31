@@ -1,7 +1,7 @@
 """
 plugins/pick.py — Pick randomly from options.
 Command : /pick a, b, c
-Passive : "pick between coffee or tea" / "choose between A and B" / "выбери X или Y"
+Passive : "pick between coffee or tea" / "choose between A and B"
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ try:
 except ImportError:
     from ..plugin_base import BotPlugin, PluginMeta  # type: ignore
 
-_NL = r"(?:pick|choose|выбери|выбор|decide|décide)\s+(?:between\s+)?(.+)"
+_NL = r"(?:pick|choose|decide)\s+(?:between\s+)?(.+)"
 
 
 class PickPlugin(BotPlugin):
@@ -46,7 +46,7 @@ class PickPlugin(BotPlugin):
     async def _pick(self, update, raw: str):
         items = [
             i.strip()
-            for i in re.split(r"[,]|\bor\b|\band\b|\bили\b|\bou\b", raw, flags=re.I)
+            for i in re.split(r"[,]|\bor\b|\band\b", raw, flags=re.I)
             if i.strip()
         ]
         if len(items) < 2:

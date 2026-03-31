@@ -749,12 +749,37 @@ class TelegramChannel:
         if session:
             metadata["session_key"] = session.session_key
             metadata["context_messages"] = session.get_context_messages(limit=10)
+            try:
+                persisted_lang = session_manager.get_session_metadata(
+                    chat_id,
+                    user_id,
+                    "last_detected_language",
+                    default="",
+                    is_group=is_group,
+                )
+                if persisted_lang:
+                    metadata["last_detected_language"] = str(persisted_lang).strip().lower()
+            except Exception as e:
+                logger.debug("Could not load persisted language metadata: %s", e)
         if auto_active_in_chat:
             metadata["auto_reply_active"] = True
             if auto_persona:
                 metadata["auto_reply_persona"] = auto_persona
         if _voice_lang:
-            metadata["detected_language"] = _voice_lang
+            normalized_voice_lang = str(_voice_lang).strip().lower()
+            metadata["detected_language"] = normalized_voice_lang
+            if session:
+                try:
+                    session_manager.set_session_metadata(
+                        chat_id,
+                        user_id,
+                        "last_detected_language",
+                        normalized_voice_lang,
+                        is_group=is_group,
+                        username=username,
+                    )
+                except Exception as e:
+                    logger.debug("Could not persist voice language metadata: %s", e)
 
         # Dispatch to handler
         if self.on_message:

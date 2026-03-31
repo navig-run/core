@@ -80,13 +80,8 @@ class LanguageResult:
 
 _INSTRUCTIONS: dict[str, str] = {
     "ru": (
-        "### ABSOLUTE LANGUAGE RULE — HIGHEST PRIORITY ###\n"
-        "You MUST reply ONLY in Russian using Cyrillic script.\n"
-        "NEVER output Chinese characters (汉字/漢字), Japanese kana, "
-        "or any CJK Unicode (U+4E00–U+9FFF, U+3400–U+4DBF).\n"
-        "NEVER mix languages. Every single word of your reply must be Russian.\n"
-        "If you are unsure of a term, transliterate it into Cyrillic.\n"
-        "Violation of this rule makes the entire response invalid.\n"
+        "### LANGUAGE RULE ###\n"
+        "Reply in English only. Do not mix in other languages or scripts.\n"
         "### END LANGUAGE RULE ###"
     ),
     "zh": (
@@ -150,7 +145,7 @@ _INSTRUCTIONS: dict[str, str] = {
     ),
     "fr": (
         "### LANGUAGE RULE ###\n"
-        "Reply ONLY in French (français). Do not mix in English or other languages.\n"
+        "Reply in English only. Do not mix in other languages or scripts.\n"
         "### END LANGUAGE RULE ###"
     ),
     "mixed": (

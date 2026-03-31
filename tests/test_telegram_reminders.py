@@ -456,13 +456,61 @@ async def test_provider_model_picker_is_tier_first_and_edit_in_place(monkeypatch
     await bot._show_provider_model_picker(123, "nvidia", page=0, selected_tier="s", message_id=99)
     assert len(bot.edits) == 1
     edit = bot.edits[-1]
-    assert "page 1/1" in edit[2]
+    assert "assign model to tier" in edit[2]
+    assert "page" not in edit[2].lower()
     first_row = edit[4][0]
     assert first_row[0]["callback_data"].startswith("pmv_nvidia_s")
     assert first_row[1]["callback_data"].startswith("pmv_nvidia_b")
     assert first_row[2]["callback_data"].startswith("pmv_nvidia_c")
     model_rows = [row for row in edit[4][1:] if row and row[0]["callback_data"].startswith("pms_nvidia_")]
     assert model_rows, "Expected one-button model rows"
+
+
+@pytest.mark.asyncio
+async def test_providers_unconfigured_cloud_shows_provider_row_with_icon_only_key_action(monkeypatch):
+    bot = _make_dummy_bot()
+
+    class _Manifest:
+        id = "openai"
+        display_name = "OpenAI"
+        emoji = "🤖"
+        tier = "cloud"
+        local_probe = None
+        requires_key = True
+        vault_keys = ["openai/api_key"]
+
+    class _Verify:
+        key_detected = False
+        local_probe_ok = True
+
+    class _LegacyVault:
+        def list(self, provider=None, profile_id=None):
+            return []
+
+    class _Store:
+        def get(self, label):
+            return None
+
+    class _VaultV2:
+        def store(self):
+            return _Store()
+
+    async def _probe():
+        return False, "127.0.0.1:11435"
+
+    bot._probe_bridge_grid = _probe
+    monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [_Manifest()])
+    monkeypatch.setattr("navig.providers.verifier.verify_provider", lambda _m: _Verify())
+    monkeypatch.setattr("navig.vault.get_vault", lambda: _LegacyVault())
+    monkeypatch.setattr("navig.vault.get_vault_v2", lambda: _VaultV2())
+
+    await bot._handle_providers(123, 456)
+    keyboard = bot.messages[-1][3].get("keyboard") or []
+    rows = [row for row in keyboard if len(row) == 2]
+    openai_row = next((row for row in rows if any("OpenAI" in btn.get("text", "") for btn in row)), None)
+    assert openai_row is not None
+    assert openai_row[0]["text"].endswith("OpenAI")
+    assert openai_row[1]["text"] == "🔑"
 
 
 @pytest.mark.asyncio
@@ -574,6 +622,34 @@ async def test_providers_cloud_button_shown_after_successful_vault_validation(mo
     keyboard = bot.messages[-1][3].get("keyboard") or []
     labels = [btn.get("text", "") for row in keyboard for btn in row]
     assert any("OpenAI" in text for text in labels)
+
+
+@pytest.mark.asyncio
+async def test_providers_verify_exception_does_not_crash(monkeypatch):
+    bot = _make_dummy_bot()
+
+    class _Manifest:
+        id = "openai"
+        display_name = "OpenAI"
+        emoji = "🤖"
+        tier = "cloud"
+        local_probe = None
+        requires_key = True
+        vault_keys = ["openai/api_key"]
+
+    async def _probe():
+        return False, "127.0.0.1:11435"
+
+    bot._probe_bridge_grid = _probe
+    monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [_Manifest()])
+    monkeypatch.setattr(
+        "navig.providers.verifier.verify_provider",
+        lambda _m: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    await bot._handle_providers(123, 456)
+    text = bot.messages[-1][1]
+    assert "No vault-backed cloud providers are ready" in text
 
 
 @pytest.mark.asyncio

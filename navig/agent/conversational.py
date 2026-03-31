@@ -18,6 +18,8 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Any
 
+from navig.memory.key_facts import KeyFact, get_key_fact_store
+
 logger = logging.getLogger(__name__)
 
 
@@ -248,6 +250,37 @@ For conversation, respond naturally without JSON.
         "- When the user is just chatting, chat back naturally. You're a friend, not a service desk."
     )
 
+    _MULTILINGUAL_MEMORY_SYSTEM_RULE = (
+        "You are a multilingual AI assistant.\n\n"
+        "LANGUAGE RULE:\n"
+        "- Detect the language of the user's latest message.\n"
+        "- Respond exclusively in that detected language.\n"
+        "- Never ask the user what language they prefer.\n"
+        "- Support all natural languages without exception.\n\n"
+        "MEMORY RULE:\n"
+        "- All facts, summaries, and stored context must be written and saved in English.\n"
+        "- When recalling stored memory to compose a reply, silently translate it into\n"
+        "  the user's current detected language before including it in your response.\n"
+        "- The user never sees raw English memory entries."
+    )
+
+    _SUPPORTED_LANGUAGE_CODES = {"en", "fr", "ru", "ar", "zh", "es", "hi", "ja"}
+    _LANGUAGE_OVERRIDE_ALIASES = {
+        "english": "en",
+        "french": "fr",
+        "francais": "fr",
+        "français": "fr",
+        "russian": "ru",
+        "arabic": "ar",
+        "chinese": "zh",
+        "mandarin": "zh",
+        "spanish": "es",
+        "espanol": "es",
+        "español": "es",
+        "hindi": "hi",
+        "japanese": "ja",
+    }
+
     def __init__(
         self,
         ai_client: Any | None = None,
@@ -267,6 +300,9 @@ For conversation, respond naturally without JSON.
         self._active_persona: str = ""
         # Deprecated alias kept for one release cycle
         self._runtime_persona: str = ""
+        self._detected_language_hint: str = ""
+        self._last_detected_language: str = "en"
+        self._language_override_code: str = ""
 
         # Soul / identity — can be injected or auto-loaded
         if soul_content is not None:
@@ -316,6 +352,147 @@ For conversation, respond naturally without JSON.
             stacklevel=2,
         )
         self.set_active_persona(persona)
+
+    def set_language_preferences(
+        self,
+        detected_language: str = "",
+        last_detected_language: str = "",
+    ) -> None:
+        """Inject language hints from channel metadata.
+
+        Args:
+            detected_language: per-message detected language code (e.g. voice STT)
+            last_detected_language: previous successful language for ambiguity fallback
+        """
+        hint = (detected_language or "").strip().lower()
+        if hint:
+            self._detected_language_hint = hint
+
+        previous = (last_detected_language or "").strip().lower()
+        if previous:
+            self._last_detected_language = previous
+
+    def _normalize_language_code(self, value: str) -> str:
+        raw = (value or "").strip().lower().replace("_", "-")
+        if not raw:
+            return ""
+        if raw in self._LANGUAGE_OVERRIDE_ALIASES:
+            raw = self._LANGUAGE_OVERRIDE_ALIASES[raw]
+        if raw in ("zh-cn", "zh-tw", "zh-hans", "zh-hant"):
+            raw = "zh"
+        if "-" in raw:
+            raw = raw.split("-", 1)[0]
+        if raw in self._LANGUAGE_OVERRIDE_ALIASES:
+            raw = self._LANGUAGE_OVERRIDE_ALIASES[raw]
+        return raw
+
+    def _language_override_scope(self) -> str:
+        uid = (self._user_identity.get("user_id", "") or "").strip()
+        uname = (self._user_identity.get("username", "") or "").strip().lower()
+        if uid:
+            return f"user_id:{uid}"
+        if uname:
+            return f"username:{uname}"
+        return "anonymous"
+
+    def _extract_language_override_intent(self, message: str) -> tuple[str, str]:
+        text = (message or "").strip()
+        lower = text.lower()
+
+        cancel_patterns = (
+            r"\bcancel\s+language\s+override\b",
+            r"\bclear\s+language\s+override\b",
+            r"\bdisable\s+language\s+override\b",
+            r"\buse\s+auto\s+language\b",
+            r"\bback\s+to\s+auto\s+language\b",
+            r"\bauto\s+detect\s+language\b",
+        )
+        if any(re.search(pat, lower) for pat in cancel_patterns):
+            return ("cancel", "")
+
+        set_patterns = (
+            r"\breply\s+in\s+([a-zA-Z\-\u00C0-\u024F]+)",
+            r"\bfrom\s+now\s+on\s+use\s+([a-zA-Z\-\u00C0-\u024F]+)",
+            r"\bfrom\s+now\s+on\s+reply\s+in\s+([a-zA-Z\-\u00C0-\u024F]+)",
+            r"\bswitch\s+to\s+([a-zA-Z\-\u00C0-\u024F]+)",
+        )
+        for pat in set_patterns:
+            match = re.search(pat, text, re.IGNORECASE)
+            if match:
+                return ("set", match.group(1))
+
+        return ("none", "")
+
+    def _iter_pinned_language_override_facts(self) -> list[KeyFact]:
+        store = get_key_fact_store()
+        scope = self._language_override_scope()
+        facts = store.get_active(limit=500, category="preference")
+        return [
+            fact
+            for fact in facts
+            if isinstance(fact.metadata, dict)
+            and fact.metadata.get("type") == "language_override"
+            and bool(fact.metadata.get("pinned"))
+            and fact.metadata.get("scope") == scope
+        ]
+
+    def _store_pinned_language_override(self, language_code: str) -> bool:
+        code = self._normalize_language_code(language_code)
+        if code not in self._SUPPORTED_LANGUAGE_CODES:
+            logger.warning("Unrecognized language override code '%s'; discarding", language_code)
+            return False
+
+        store = get_key_fact_store()
+        for fact in self._iter_pinned_language_override_facts():
+            store.soft_delete(fact.id)
+
+        scope = self._language_override_scope()
+        fact = KeyFact(
+            content=f"Pinned language override: {code}",
+            category="preference",
+            confidence=1.0,
+            source_conversation_id=scope,
+            source_platform="core",
+            tags=["language_override", code],
+            metadata={
+                "type": "language_override",
+                "language": code,
+                "source": "explicit_user_instruction",
+                "pinned": True,
+                "scope": scope,
+            },
+        )
+        store.upsert(fact)
+        self._language_override_code = code
+        self._last_detected_language = code
+        return True
+
+    def _clear_pinned_language_override(self) -> None:
+        store = get_key_fact_store()
+        for fact in self._iter_pinned_language_override_facts():
+            store.soft_delete(fact.id)
+        self._language_override_code = ""
+
+    def _get_pinned_language_override(self) -> str:
+        if self._language_override_code in self._SUPPORTED_LANGUAGE_CODES:
+            return self._language_override_code
+
+        store = get_key_fact_store()
+        for fact in self._iter_pinned_language_override_facts():
+            meta = fact.metadata if isinstance(fact.metadata, dict) else {}
+            raw_code = str(meta.get("language", "") or "").strip()
+            code = self._normalize_language_code(raw_code)
+            if code not in self._SUPPORTED_LANGUAGE_CODES:
+                logger.warning(
+                    "Unrecognized pinned language override '%s' in fact %s; discarding",
+                    raw_code,
+                    fact.id,
+                )
+                store.soft_delete(fact.id)
+                continue
+            self._language_override_code = code
+            return code
+        return ""
 
     # ---------- Awareness context ----------
 
@@ -426,9 +603,21 @@ For conversation, respond naturally without JSON.
         self._last_user_message = message
         self._tier_override = tier_override
 
+        action, override_value = self._extract_language_override_intent(message)
+        if action == "set":
+            self._store_pinned_language_override(override_value)
+        elif action == "cancel":
+            self._clear_pinned_language_override()
+
         # Sanitize history: if user is Cyrillic, drop any past assistant
         # messages that contain CJK to prevent model from copying them.
-        lang = self._detect_language_code(message)
+        lang = self._get_pinned_language_override() or self._detected_language_hint
+        if not lang:
+            lang = self._detect_language_code(message)
+        if lang in ("", "mixed", "unknown"):
+            lang = self._last_detected_language or "en"
+        else:
+            self._last_detected_language = lang
         if lang == "ru":
             self.conversation_history = [
                 m
@@ -480,8 +669,15 @@ For conversation, respond naturally without JSON.
             return await self._simple_response(message)
 
         try:
+            if hasattr(self.ai_client, "is_available") and not self.ai_client.is_available():
+                return await self._simple_response(message)
+        except Exception:
+            pass  # best-effort; failure is non-critical
+
+        try:
             system_prompt = self._build_system_prompt(message)
             messages = [
+                {"role": "system", "content": self._MULTILINGUAL_MEMORY_SYSTEM_RULE},
                 {"role": "system", "content": system_prompt},
                 *self.conversation_history,
             ]
@@ -489,7 +685,7 @@ For conversation, respond naturally without JSON.
             # Add context if available
             if self.context:
                 context_str = f"\nCurrent context: {json.dumps(self.context)}"
-                messages[0]["content"] += context_str
+                messages[1]["content"] += context_str
 
             tier_override = getattr(self, "_tier_override", "")
 
@@ -533,6 +729,13 @@ For conversation, respond naturally without JSON.
 
         except Exception as e:
             logger.error(f"AI response error: {e}")
+            err = str(e).lower()
+            if (
+                "no ai provider available" in err
+                or "no provider available" in err
+                or "provider available" in err and "set openrouter_api_key" in err
+            ):
+                return await self._simple_response(message)
             return f"I'm having trouble thinking right now: {e}"
 
     # Maps LLM mode names to HybridRouter tier names for the TR pass-through.
@@ -647,17 +850,20 @@ For conversation, respond naturally without JSON.
         Chinese training bias (e.g., Qwen-family), we explicitly ban
         CJK characters when the user writes in Cyrillic.
         """
-        language_code = self._detect_language_code(message)
+        language_code = self._get_pinned_language_override() or self._detected_language_hint
+        if not language_code:
+            language_code = self._detect_language_code(message)
+        if language_code in ("", "mixed", "unknown"):
+            language_code = self._last_detected_language or "en"
+        else:
+            self._last_detected_language = language_code
 
         if language_code == "ru":
             return (
                 "### ABSOLUTE LANGUAGE RULE — HIGHEST PRIORITY ###\n"
-                "You MUST reply ONLY in Russian using Cyrillic script.\n"
-                "NEVER output Chinese characters (汉字/漢字), Japanese kana, "
-                "or any CJK Unicode (U+4E00–U+9FFF, U+3400–U+4DBF).\n"
+                "You MUST reply ONLY in Russian (русский) using Cyrillic script.\n"
+                "NEVER output Chinese/Japanese characters or mixed scripts.\n"
                 "NEVER mix languages. Every single word of your reply must be Russian.\n"
-                "If you are unsure of a term, transliterate it into Cyrillic.\n"
-                "Violation of this rule makes the entire response invalid.\n"
                 "### END LANGUAGE RULE ###"
             )
 
@@ -665,28 +871,27 @@ For conversation, respond naturally without JSON.
             return (
                 "### ABSOLUTE LANGUAGE RULE — HIGHEST PRIORITY ###\n"
                 "You MUST reply ONLY in Simplified Chinese (简体中文).\n"
-                "Do not mix in English, Russian, or any other language.\n"
+                "NEVER output Cyrillic, Arabic, or non-CJK scripts.\n"
+                "NEVER mix languages. Every single word of your reply must be Chinese.\n"
                 "### END LANGUAGE RULE ###"
             )
 
-        if language_code == "en":
-            return (
-                "### LANGUAGE RULE ###\n"
-                "Reply in English only. Do not mix in other languages or scripts.\n"
-                "### END LANGUAGE RULE ###"
-            )
+        language_label = {
+            "en": "English",
+            "fr": "French",
+            "ru": "Russian",
+            "ar": "Arabic",
+            "zh": "Chinese",
+            "es": "Spanish",
+            "hi": "Hindi",
+            "ja": "Japanese",
+        }.get(language_code, language_code)
 
-        if language_code == "fr":
-            return (
-                "### LANGUAGE RULE ###\n"
-                "Reply ONLY in French (français). Do not mix in English or other languages.\n"
-                "### END LANGUAGE RULE ###"
-            )
-
-        # Mixed or unknown — mirror the user's primary language
         return (
             "### LANGUAGE RULE ###\n"
-            "Reply in the same language as the user's message.\n"
+            "Reply in the same language as the user's latest message.\n"
+            "Never ask the user for language preference and never use menus or prompts for language.\n"
+            f"If the latest message is mixed or ambiguous, default to {language_label}.\n"
             "Do not mix multiple languages or scripts in your reply.\n"
             "### END LANGUAGE RULE ###"
         )
@@ -697,15 +902,29 @@ For conversation, respond naturally without JSON.
         Script-based detection for CJK and Cyrillic, then heuristic
         keyword detection for Latin-script languages (French, etc.).
         """
+        pinned = self._get_pinned_language_override()
+        if pinned:
+            return pinned
+
         has_cyrillic = any("\u0400" <= ch <= "\u04ff" for ch in message)
+        has_arabic = any("\u0600" <= ch <= "\u06ff" for ch in message)
+        has_devanagari = any("\u0900" <= ch <= "\u097f" for ch in message)
+        has_hiragana = any("\u3040" <= ch <= "\u309f" for ch in message)
+        has_katakana = any("\u30a0" <= ch <= "\u30ff" for ch in message)
         has_cjk = any("\u4e00" <= ch <= "\u9fff" for ch in message)
         has_latin = any(("A" <= ch <= "Z") or ("a" <= ch <= "z") for ch in message)
 
-        if has_cyrillic and not has_cjk:
+        if has_hiragana or has_katakana:
+            return "ja"
+        if has_arabic and not (has_cyrillic or has_cjk or has_latin):
+            return "ar"
+        if has_devanagari and not (has_cyrillic or has_cjk or has_latin):
+            return "hi"
+        if has_cyrillic and not (has_cjk or has_arabic or has_devanagari):
             return "ru"
-        if has_cjk and not has_cyrillic:
+        if has_cjk and not (has_cyrillic or has_arabic or has_devanagari):
             return "zh"
-        if has_latin and not has_cyrillic and not has_cjk:
+        if has_latin and not (has_cyrillic or has_cjk or has_arabic or has_devanagari):
             # Detect French via common markers (accented chars + keywords)
             lower = message.lower()
             french_markers = (
@@ -741,9 +960,36 @@ For conversation, respond naturally without JSON.
                 "bonsoir",
                 "au revoir",
             )
+            spanish_markers = (
+                "á",
+                "é",
+                "í",
+                "ó",
+                "ú",
+                "ñ",
+                "¿",
+                "¡",
+            )
+            spanish_keywords = (
+                "hola",
+                "gracias",
+                "por favor",
+                "como",
+                "qué",
+                "porque",
+                "estoy",
+                "eres",
+                "buenos",
+                "adiós",
+            )
             french_score = sum(1 for m in french_markers if m in lower) + sum(
                 2 for k in french_keywords if k in lower
             )
+            spanish_score = sum(1 for m in spanish_markers if m in lower) + sum(
+                2 for k in spanish_keywords if k in lower
+            )
+            if spanish_score >= 2 and spanish_score > french_score:
+                return "es"
             if french_score >= 2:
                 return "fr"
             return "en"
@@ -755,31 +1001,26 @@ For conversation, respond naturally without JSON.
 
         translations = {
             "completed": {
-                "ru": "Готово!",
                 "zh": "已完成！",
                 "en": "Completed!",
                 "mixed": "Completed!",
             },
             "issues": {
-                "ru": "Есть проблемы",
                 "zh": "遇到一些问题",
                 "en": "Had some issues",
                 "mixed": "Had some issues",
             },
             "retrying": {
-                "ru": "повторяем попытку...",
                 "zh": "正在重试...",
                 "en": "retrying...",
                 "mixed": "retrying...",
             },
             "anything_else": {
-                "ru": "Нужна ещё помощь? 😊",
                 "zh": "还需要我帮忙吗？😊",
                 "en": "Anything else I can help with? 😊",
                 "mixed": "Anything else I can help with? 😊",
             },
             "different_approach": {
-                "ru": "Хотите, я попробую другой подход?",
                 "zh": "要不要我换一种方式再试一次？",
                 "en": "Want me to try a different approach?",
                 "mixed": "Want me to try a different approach?",

@@ -550,3 +550,218 @@ def use_profile(profile_id: str = typer.Argument(..., help="Profile ID to activa
     vault = _vault_mod.get_vault()
     vault.set_active_profile(profile_id)
     _ch.success(f"Active profile set to: {profile_id}")
+
+
+# ============================================================================
+# VAULT APP — top-level `navig vault` command group
+# ============================================================================
+
+vault_app = typer.Typer(
+    name="vault",
+    help="Manage the NAVIG credentials vault (set, get, list, validate)",
+    invoke_without_command=True,
+    no_args_is_help=True,
+)
+
+
+def _parse_vault_path(path: str) -> tuple[str, str]:
+    """Parse a vault key path into (provider, data_key).
+
+    Supports:
+      nvidia/api_key     → ("nvidia", "api_key")
+      openai/api_key     → ("openai", "api_key")
+      openai             → ("openai", "api_key")  via PROVIDER_DEFAULTS
+      openai_api_key     → ("openai", "api_key")  underscore heuristic
+    """
+    if "/" in path:
+        provider, _, data_key = path.partition("/")
+        return provider.strip().lower(), data_key.strip().lower()
+
+    lower = path.lower()
+    # Known provider shortcut (e.g. "openai", "nvidia")
+    if lower in PROVIDER_DEFAULTS:
+        canonical, _, default_key, _ = PROVIDER_DEFAULTS[lower]
+        return canonical, default_key
+
+    # Heuristic: provider_api_key / provider_token / provider_secret
+    for suffix in ("_api_key", "_token", "_secret", "_password"):
+        if lower.endswith(suffix):
+            provider = lower[: -len(suffix)]
+            data_key = suffix.lstrip("_")
+            return provider, data_key
+
+    # Fall back: treat whole path as provider with api_key
+    return lower, "api_key"
+
+
+@vault_app.command("set")
+def vault_set(
+    path: str = typer.Argument(
+        ...,
+        help="Key path: provider/data_key  (e.g. nvidia/api_key, openai, telegram/token)",
+    ),
+    value: str = typer.Argument(..., help="Secret value to store"),
+    profile: str = typer.Option("default", "--profile", "-P", help="Credential profile"),
+    label: str = typer.Option(None, "--label", "-l", help="Human-readable label"),
+):
+    """Set (add or update) a credential in the vault.
+
+    \b
+    Examples:
+      navig vault set nvidia/api_key nvapi-xxxx
+      navig vault set openai sk-xxxx
+      navig vault set telegram/token 123456:ABC
+      navig vault set openai_api_key sk-xxxx
+    """
+    vault = _vault_mod.get_vault()
+    provider, data_key = _parse_vault_path(path)
+
+    # Map data_key to the correct field
+    if data_key in ("token",):
+        cred_type = "token"
+    elif data_key in ("password", "secret"):
+        cred_type = "password"
+    else:
+        cred_type = "api_key"
+        data_key = "api_key"  # normalise
+
+    data = {data_key: value}
+
+    # Resolve display label from PROVIDER_DEFAULTS if not given
+    if label is None:
+        defaults = PROVIDER_DEFAULTS.get(provider)
+        label = defaults[3] if defaults else provider.title()
+
+    # Check if a credential already exists for this provider+profile → update
+    existing = vault.get(provider, profile_id=profile, caller="vault.set")
+    if existing is not None:
+        vault.update(existing.id, data=data, label=label)
+        _ch.success(f"Updated credential for [bold]{provider}[/bold] (ID: {existing.id})")
+    else:
+        cred_id = vault.add(
+            provider=provider,
+            credential_type=cred_type,
+            data=data,
+            profile_id=profile,
+            label=label,
+        )
+        _ch.success(f"Stored credential for [bold]{provider}[/bold] (ID: {cred_id})")
+
+
+@vault_app.command("get")
+def vault_get(
+    path: str = typer.Argument(..., help="Key path: provider or provider/data_key"),
+    reveal: bool = typer.Option(False, "--reveal", "-r", help="Show the actual secret value"),
+    profile: str = typer.Option("default", "--profile", "-P", help="Credential profile"),
+):
+    """Get a credential value from the vault."""
+    vault = _vault_mod.get_vault()
+    provider, data_key = _parse_vault_path(path)
+    cred = vault.get(provider, profile_id=profile, caller="vault.get")
+
+    if cred is None:
+        _ch.error(f"No credential found for provider '{provider}' in profile '{profile}'.")
+        _ch.info("Use 'navig vault set <path> <value>' to add one.")
+        raise typer.Exit(1)
+
+    secret = cred.data.get(data_key, "")
+    if reveal:
+        _ch.warning("Revealing secret!")
+        _rprint(secret)
+    else:
+        _rprint(f"[dim]{provider}/{data_key}:[/dim] {'*' * min(len(secret), 12)} (use --reveal to show)")
+
+
+@vault_app.command("list")
+def vault_list(
+    provider: str = typer.Option(None, "--provider", "-p", help="Filter by provider"),
+    profile: str = typer.Option(None, "--profile", "-P", help="Filter by profile"),
+    json_output: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """List credentials stored in the vault."""
+    vault = _vault_mod.get_vault()
+    creds = vault.list(provider=provider, profile_id=profile)
+    creds = [c for c in creds if c.enabled]
+
+    if json_output:
+        import dataclasses
+        _rprint(json.dumps([dataclasses.asdict(c) for c in creds], default=str))
+        return
+
+    if not creds:
+        _ch.warning("Vault is empty." if not (provider or profile) else "No credentials found matching filters.")
+        _ch.info("Use 'navig vault set <path> <value>' to add a credential.")
+        return
+
+    table = _Table(title="NAVIG Credentials Vault")
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Provider", style="green")
+    table.add_column("Profile", style="magenta")
+    table.add_column("Type", style="yellow")
+    table.add_column("Label")
+    table.add_column("Last Used", style="dim")
+
+    for c in creds:
+        last_used = c.last_used_at.strftime("%Y-%m-%d %H:%M") if c.last_used_at else "-"
+        table.add_row(c.id, c.provider, c.profile_id, c.credential_type.value, c.label, last_used)
+
+    _console().print(table)
+
+
+@vault_app.command("validate")
+def vault_validate(
+    provider: str = typer.Argument(..., help="Provider name (e.g. nvidia, openai)"),
+    profile: str = typer.Option(None, "--profile", "-P", help="Credential profile"),
+):
+    """Validate a credential against the provider's API."""
+    vault = _vault_mod.get_vault()
+    con = _console()
+    con.print(f"Running validation for [cyan]{provider}[/cyan]...")
+    try:
+        result = vault.test_provider(provider, profile_id=profile)
+        cred = vault.get(provider, profile_id=profile, caller="vault.validate")
+        if cred is not None:
+            tested_at = getattr(result, "tested_at", None)
+            meta = {"validation_success": bool(result.success), "validation_message": str(result.message or "")}
+            if tested_at:
+                meta["validation_tested_at"] = tested_at.isoformat()
+            vault.update(cred.id, metadata=meta)
+    except Exception as exc:
+        _ch.error(f"Validation error: {exc}")
+        raise typer.Exit(1) from exc
+
+    if result.success:
+        _ch.success("Validation successful!")
+        con.print(f"[green]{result.message}[/green]")
+        if result.details:
+            _rprint(result.details)
+    else:
+        _ch.error("Validation failed.")
+        con.print(f"[red]{result.message}[/red]")
+        if result.details:
+            _rprint(result.details)
+        raise typer.Exit(1)
+
+
+@vault_app.command("delete")
+def vault_delete(
+    path: str = typer.Argument(..., help="Provider name or provider/data_key"),
+    profile: str = typer.Option("default", "--profile", "-P", help="Credential profile"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
+):
+    """Delete a credential from the vault."""
+    vault = _vault_mod.get_vault()
+    provider, _ = _parse_vault_path(path)
+    cred = vault.get(provider, profile_id=profile, caller="vault.delete")
+
+    if cred is None:
+        _ch.error(f"No credential found for provider '{provider}' in profile '{profile}'.")
+        raise typer.Exit(1)
+
+    if not force and not _ch.confirm_action(f"Delete credential for '{provider}' ({cred.id})?"):
+        raise typer.Abort()
+
+    if vault.delete(cred.id):
+        _ch.success(f"Deleted credential for '{provider}'.")
+    else:
+        _ch.error("Failed to delete credential.")

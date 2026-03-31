@@ -1169,43 +1169,47 @@ class CallbackHandler:
                 if not router or not router.is_active:
                     await self._answer(
                         cb_id,
-                        "⚠️ Hybrid router not active — enable routing in config.yaml first",
+                        "⚠️ Hybrid routing disabled — set routing.enabled: true and restart",
                         show_alert=True,
                     )
                     return
 
-                if manifest and manifest.models:
-                    default_big = manifest.models[0]
-                    default_small = manifest.models[-1] if len(manifest.models) > 1 else default_big
-                    for tier, model in (
-                        ("big", default_big),
-                        ("small", default_small),
-                        ("coder_big", default_big),
-                    ):
-                        slot = router.cfg.slot_for_tier(tier)
-                        slot.provider = prov_id_a
-                        slot.model = model
-                    prov_label = manifest.display_name if manifest else prov_id_a
-                    await self._answer(
-                        cb_id,
-                        f"✅ {manifest.emoji if manifest else ''} {prov_label} activated for all tiers",
-                        show_alert=True,
-                    )
-                    await self.channel.send_message(
-                        chat_id,
-                        f"✅ <b>{prov_label}</b> is now active.\n"
-                        f"Big: <code>{default_big}</code> · Small: <code>{default_small}</code> · "
-                        f"Code: <code>{default_big}</code>\n"
-                        f"<i>Use /model to verify or adjust individual tiers.</i>",
-                        parse_mode="HTML",
-                    )
-                else:
+                models = []
+                if hasattr(self.channel, "_resolve_provider_models"):
+                    models = await self.channel._resolve_provider_models(prov_id_a, manifest=manifest)
+
+                if not models:
                     prov_label = manifest.display_name if manifest else prov_id_a
                     await self._answer(
                         cb_id,
                         f"⚠️ No models configured for {prov_label}",
                         show_alert=True,
                     )
+                    return
+
+                defaults = self.channel._select_curated_tier_defaults(prov_id_a, models)
+                for tier in ("small", "big", "coder_big"):
+                    slot = router.cfg.slot_for_tier(tier)
+                    slot.provider = prov_id_a
+                    slot.model = defaults[tier]
+
+                if hasattr(self.channel, "_persist_hybrid_router_assignments"):
+                    self.channel._persist_hybrid_router_assignments(router.cfg)
+
+                prov_label = manifest.display_name if manifest else prov_id_a
+                await self._answer(
+                    cb_id,
+                    f"✅ {manifest.emoji if manifest else ''} {prov_label} activated for all tiers",
+                    show_alert=True,
+                )
+                await self.channel.send_message(
+                    chat_id,
+                    f"✅ <b>{prov_label}</b> is now active.\n"
+                    f"Big: <code>{defaults['big']}</code> · Small: <code>{defaults['small']}</code> · "
+                    f"Code: <code>{defaults['coder_big']}</code>\n"
+                    f"<i>Saved to global config. Use /models to verify or adjust tiers.</i>",
+                    parse_mode="HTML",
+                )
             except Exception as exc:
                 await self._answer(cb_id, f"⚠️ Activation failed: {exc}", show_alert=True)
             return
@@ -1398,100 +1402,16 @@ class CallbackHandler:
         except ValueError:
             page = 0
 
-        # Resolve model list for this provider (mirrors _show_provider_model_picker logic)
-        import asyncio as _asyncio
-        import json as _json
-        import os as _os
-
         models: list = []
-        if prov_id == "ollama":
-            try:
-                import urllib.request
+        try:
+            from navig.providers.registry import get_provider
 
-                def _fetch_ollama() -> list:
-                    with urllib.request.urlopen("http://127.0.0.1:11434/api/tags", timeout=2) as r:
-                        data = _json.loads(r.read())
-                        return [m["name"] for m in data.get("models", []) if m.get("name")]
+            manifest = get_provider(prov_id)
+        except Exception:
+            manifest = None
 
-                live = await _asyncio.wait_for(_asyncio.to_thread(_fetch_ollama), timeout=3.0)
-                if live:
-                    models = live
-            except Exception:
-                models = ["qwen2.5:7b", "qwen2.5:3b", "phi3.5", "llama3.2"]
-
-        elif prov_id == "openrouter":
-            api_key = _os.environ.get("OPENROUTER_API_KEY", "")
-            if api_key:
-                try:
-                    import urllib.request
-
-                    def _fetch_or() -> list:
-                        req = urllib.request.Request(
-                            "https://openrouter.ai/api/v1/models",
-                            headers={"Authorization": f"Bearer {api_key}"},
-                        )
-                        with urllib.request.urlopen(req, timeout=4) as r:
-                            data = _json.loads(r.read())
-                            return [m["id"] for m in data.get("data", []) if m.get("id")]
-
-                    live = await _asyncio.wait_for(_asyncio.to_thread(_fetch_or), timeout=5.0)
-                    if live:
-                        models = live
-                except Exception:  # noqa: BLE001
-                    pass
-
-        elif prov_id == "xai":
-            api_key = _os.environ.get("XAI_API_KEY") or _os.environ.get("GROK_KEY", "")
-            if api_key:
-                try:
-                    import urllib.request
-
-                    def _fetch_xai() -> list:
-                        req = urllib.request.Request(
-                            "https://api.x.ai/v1/models",
-                            headers={"Authorization": f"Bearer {api_key}"},
-                        )
-                        with urllib.request.urlopen(req, timeout=4) as r:
-                            data = _json.loads(r.read())
-                            return [m["id"] for m in data.get("data", []) if m.get("id")]
-
-                    live = await _asyncio.wait_for(_asyncio.to_thread(_fetch_xai), timeout=5.0)
-                    if live:
-                        models = live
-                except Exception:  # noqa: BLE001
-                    pass
-
-        elif prov_id == "nvidia":
-            api_key = _os.environ.get("NVIDIA_API_KEY") or _os.environ.get("NIM_API_KEY", "")
-            if api_key:
-                try:
-                    import urllib.request
-
-                    def _fetch_nvidia() -> list:
-                        req = urllib.request.Request(
-                            "https://integrate.api.nvidia.com/v1/models",
-                            headers={"Authorization": f"Bearer {api_key}"},
-                        )
-                        with urllib.request.urlopen(req, timeout=4) as r:
-                            data = _json.loads(r.read())
-                            return [m["id"] for m in data.get("data", []) if m.get("id")]
-
-                    live = await _asyncio.wait_for(_asyncio.to_thread(_fetch_nvidia), timeout=5.0)
-                    if live:
-                        models = live
-                except Exception:  # noqa: BLE001
-                    pass
-
-        # Fallback to static registry model list
-        if not models:
-            try:
-                from navig.providers.registry import _INDEX as PROV_INDEX
-
-                manifest = PROV_INDEX.get(prov_id)
-                if manifest:
-                    models = list(manifest.models)
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+        if hasattr(self.channel, "_resolve_provider_models"):
+            models = await self.channel._resolve_provider_models(prov_id, manifest=manifest)
 
         if model_idx >= len(models):
             await self._answer(cb_id, "⚠️ Model index out of range")
@@ -1512,16 +1432,18 @@ class CallbackHandler:
                 await self.channel.send_message(
                     chat_id,
                     "⚠️ <b>Hybrid router not active</b>\n\n"
-                    "To enable model-tier assignment, add this to your "
-                    "<code>~/.navig/config.yaml</code>:\n\n"
+                    "Hybrid routing means Small/Big/Code can each use different provider:model slots.\n"
+                    "To enable model-tier assignment, set this in your config:\n\n"
                     "<pre>routing:\n  enabled: true</pre>\n\n"
-                    "Then restart the daemon and try again.",
+                    "Then restart NAVIG and try again.",
                     parse_mode="HTML",
                 )
                 return
             slot = router.cfg.slot_for_tier(tier)
             slot.provider = prov_id
             slot.model = model
+            if hasattr(self.channel, "_persist_hybrid_router_assignments"):
+                self.channel._persist_hybrid_router_assignments(router.cfg)
             await self._answer(cb_id, f"✅ {tier_label} → {model[:40]}")
             await self.channel._show_provider_model_picker(
                 chat_id,

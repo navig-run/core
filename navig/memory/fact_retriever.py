@@ -168,7 +168,8 @@ class FactRetriever:
             self.store.record_access([rf.fact.id for rf in selected])
 
         # 5. Format output
-        formatted, token_est = self._format(selected)
+        user_language = self._infer_user_language_code(query)
+        formatted, token_est = self._format(selected, user_language=user_language)
 
         return FactRetrievalResult(
             facts=selected,
@@ -206,7 +207,11 @@ class FactRetriever:
         ranked.sort(key=lambda x: x.combined_score, reverse=True)
 
         selected = self._select_within_budget(ranked, budget)
-        formatted, token_est = self._format(selected, header="All stored memories:")
+        formatted, token_est = self._format(
+            selected,
+            header="All stored memories:",
+            user_language="en",
+        )
 
         return FactRetrievalResult(
             facts=selected,
@@ -362,6 +367,7 @@ class FactRetriever:
         self,
         ranked_facts: list[RankedFact],
         header: str = "Relevant memories about this user:",
+        user_language: str = "en",
     ) -> tuple[str, int]:
         """
         Format selected facts into a markdown block for LLM injection.
@@ -371,7 +377,10 @@ class FactRetriever:
         if not ranked_facts:
             return "", 0
 
-        lines = [f"## {header}"]
+        lines = [
+            f"<!-- MEMORY CONTEXT: translate everything below to {user_language} before use -->",
+            f"## {header}",
+        ]
         for rf in ranked_facts:
             tag_str = ""
             if rf.fact.tags:
@@ -383,6 +392,93 @@ class FactRetriever:
         text = "\n".join(lines)
         tokens = max(1, len(text) // 4)
         return text, tokens
+
+    @staticmethod
+    def _infer_user_language_code(query: str) -> str:
+        text = (query or "").strip()
+        if not text:
+            return "en"
+
+        has_cyrillic = any("\u0400" <= ch <= "\u04ff" for ch in text)
+        has_arabic = any("\u0600" <= ch <= "\u06ff" for ch in text)
+        has_devanagari = any("\u0900" <= ch <= "\u097f" for ch in text)
+        has_hiragana = any("\u3040" <= ch <= "\u309f" for ch in text)
+        has_katakana = any("\u30a0" <= ch <= "\u30ff" for ch in text)
+        has_cjk = any("\u4e00" <= ch <= "\u9fff" for ch in text)
+
+        if has_hiragana or has_katakana:
+            return "ja"
+        if has_cyrillic:
+            return "ru"
+        if has_arabic:
+            return "ar"
+        if has_devanagari:
+            return "hi"
+        if has_cjk:
+            return "zh"
+
+        lower = text.lower()
+        french_markers = (
+            "à",
+            "â",
+            "é",
+            "è",
+            "ê",
+            "ë",
+            "î",
+            "ï",
+            "ô",
+            "ù",
+            "û",
+            "ü",
+            "ç",
+            "œ",
+            "æ",
+        )
+        french_keywords = (
+            "bonjour",
+            "salut",
+            "merci",
+            "s'il vous",
+            "comment",
+            "pourquoi",
+            "qu'est-ce",
+            "je suis",
+            "c'est",
+            "est-ce que",
+            "bonsoir",
+            "au revoir",
+        )
+        spanish_markers = ("á", "é", "í", "ó", "ú", "ñ", "¿", "¡")
+        spanish_keywords = (
+            "hola",
+            "gracias",
+            "por favor",
+            "cómo",
+            "como",
+            "qué",
+            "que",
+            "porque",
+            "estoy",
+            "eres",
+            "buenos",
+            "adiós",
+            "adios",
+        )
+
+        french_score = sum(1 for marker in french_markers if marker in lower) + sum(
+            2 for kw in french_keywords if kw in lower
+        )
+        spanish_score = sum(1 for marker in spanish_markers if marker in lower) + sum(
+            2 for kw in spanish_keywords if kw in lower
+        )
+
+        if spanish_score >= 2 and spanish_score > french_score:
+            return "es"
+        if french_score >= 2:
+            return "fr"
+
+        return "en"
 
     # ── Private: Score Helpers ────────────────────────────────
 

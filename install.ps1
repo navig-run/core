@@ -620,6 +620,11 @@ function Main {
     $cleanVer = if ($navVer -match '(\d+\.\d+[\.\d]*)') { $Matches[1] } else { $navVer }
     try { Write-NavigInstallState -InstalledVersion $cleanVer } catch {}
 
+    # ── NAVIG Anchor offer ────────────────────────────────────────────────────
+    # Disabled until Anchor v1.0 ships publicly.
+    # Future URL: https://github.com/navig-run/anchor/releases/latest
+    # Re-enable: $env:NAVIG_OFFER_ANCHOR = "1"
+
     # ── Done ──────────────────────────────────────────────────
     Print-Done -Version $cleanVer
 }
