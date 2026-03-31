@@ -78,8 +78,12 @@ def run_engine_onboarding(
     engine = OnboardingEngine(cfg, steps, on_step_start=_progress)
 
     if show_banner:
-        sys.stdout.write("\n  Welcome to NAVIG — running first-time setup.\n")
-        sys.stdout.write("  Set NAVIG_SKIP_ONBOARDING=1 to skip automatic setup.\n\n")
+        if force:
+            sys.stdout.write("\n  Welcome back — reconfiguring your existing NAVIG installation.\n")
+            sys.stdout.write("  Your previous settings will be preserved where not overwritten.\n\n")
+        else:
+            sys.stdout.write("\n  Welcome to NAVIG — running first-time setup.\n")
+            sys.stdout.write("  Set NAVIG_SKIP_ONBOARDING=1 to skip automatic setup.\n\n")
         sys.stdout.flush()
 
     previous_guard = os.getenv("NAVIG_ONBOARDING_ACTIVE")
