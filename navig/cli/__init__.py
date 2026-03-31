@@ -5270,8 +5270,7 @@ def ask_compat(
         help="Override default AI model",
     ),
 ):
-    """[COMPAT] Alias for `navig ai ask`."""
-    deprecation_warning("navig ask", "navig ai ask")
+    """Ask AI about server/configuration."""
     from navig.commands.ai import ask_ai
 
     ask_ai(question, model, ctx.obj)

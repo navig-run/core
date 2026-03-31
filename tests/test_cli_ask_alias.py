@@ -58,5 +58,4 @@ def test_ask_alias_forwards_to_ai_ask(monkeypatch, capsys):
     assert captured["question"] == "hello from alias"
     assert captured["model"] == "demo-model"
     assert captured["options_type"] == "dict"
-    assert "deprecated" in combined
-    assert "navig ai ask" in combined
+    assert "deprecated" not in combined

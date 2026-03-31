@@ -1,6 +1,7 @@
 """AI Assistant Commands"""
 
 import logging
+import os
 import subprocess
 from typing import Any
 
@@ -36,16 +37,22 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
 
     # Gather running processes (optional, can fail gracefully)
     try:
-        result = remote_ops.execute_command(
-            "ps aux | grep -E 'nginx|php|mysql' | grep -v grep", server_config
-        )
-        if result.returncode == 0:
-            context["processes"] = result.stdout.strip().split("\n")
+        is_local_host = bool(server_config.get("is_local")) or str(
+            server_config.get("type", "")
+        ).lower() == "local"
+        if is_local_host and os.name == "nt":
+            logger.debug("Skipping Linux process probe for local Windows host")
+        else:
+            result = remote_ops.execute_command(
+                "ps aux | grep -E 'nginx|php|mysql' | grep -v grep", server_config
+            )
+            if result.returncode == 0:
+                context["processes"] = result.stdout.strip().split("\n")
     except (OSError, subprocess.SubprocessError) as e:
-        logger.warning(f"Failed to gather process context: {e}")
+        logger.debug(f"Failed to gather process context: {e}")
         # Continue without process info - not critical
     except Exception as e:
-        logger.warning(f"Unexpected error gathering process context: {e}")
+        logger.debug(f"Unexpected error gathering process context: {e}")
 
     # Get AI response
     try:

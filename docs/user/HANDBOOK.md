@@ -370,7 +370,6 @@ navig task         → navig flow
 navig template     → navig flow template
 navig addon        → navig flow template
 navig hestia       → navig web hestia
-navig ask          → navig ai ask
 ```
 
 ---
