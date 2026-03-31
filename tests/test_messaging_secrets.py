@@ -4,6 +4,11 @@ import importlib
 def test_resolve_telegram_token_prefers_navig_env(monkeypatch):
     mod = importlib.import_module("navig.messaging.secrets")
 
+    # Vault is probed before env vars; stub both vault functions so the
+    # env-var-preference branch is actually reached.
+    monkeypatch.setattr(mod, "_resolve_telegram_token_from_vault_v2", lambda: "")
+    monkeypatch.setattr(mod, "_resolve_telegram_token_from_vault_v1", lambda: "")
+
     monkeypatch.setenv("NAVIG_TELEGRAM_BOT_TOKEN", "navig-token")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "legacy-token")
 

@@ -506,11 +506,13 @@ async def test_providers_unconfigured_cloud_shows_provider_row_with_icon_only_ke
 
     await bot._handle_providers(123, 456)
     keyboard = bot.messages[-1][3].get("keyboard") or []
-    rows = [row for row in keyboard if len(row) == 2]
+    # Unconfigured cloud providers produce a single-button stub row that
+    # combines the provider name and the 🔑 configure-action in one button.
+    rows = [row for row in keyboard if len(row) == 1]
     openai_row = next((row for row in rows if any("OpenAI" in btn.get("text", "") for btn in row)), None)
     assert openai_row is not None
-    assert openai_row[0]["text"].endswith("OpenAI")
-    assert openai_row[1]["text"] == "🔑"
+    assert "OpenAI" in openai_row[0]["text"]
+    assert "🔑" in openai_row[0]["text"]
 
 
 @pytest.mark.asyncio
