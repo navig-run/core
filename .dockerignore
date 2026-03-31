@@ -1,0 +1,28 @@
+# Local-only folders and runtime state
+.local/
+.dev/
+.navig/
+
+# VCS / editor
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Python caches / virtualenvs
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Build outputs
+build/
+dist/
+*.egg-info/
+htmlcov/
+coverage.xml

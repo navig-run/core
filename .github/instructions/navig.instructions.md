@@ -6,6 +6,14 @@ applyTo: '**'
 
 > Behavioral directives for AI agents interacting with remote hosts and applications via NAVIG CLI.
 
+## Priority Rules (Read First)
+
+- Check `CHANGELOG.md` first before implementing related changes.
+- Use `.dev/` for AI scripts/logs/outputs/scratch.
+- Use `.local/` only for backups/moved files and compatibility temp artifacts.
+- Keep repo root clean and avoid ad-hoc files.
+- When command syntax is uncertain, prefer `navig help --schema` before guessing.
+
 ## 🚨 QUICK REFERENCE: Most Common Mistakes
 
 ### Mistake 1: Using `--b64` flag incorrectly
@@ -449,7 +457,7 @@ echo env('APP_ENV');
   | `--all` | Full backup |
   | `--compress gzip` | Compress backups |
 - **EXAMPLES**:
-  - DB backup: `navig db dump mydb -o backup.sql --compress`
+  - DB backup: `navig db dump mydb -o backup.sql.gz`
   - Config backup: `navig backup run --config`
   - All DBs: `navig backup run --db-all --compress gzip`
   - Full: `navig backup run --all`

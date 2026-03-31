@@ -20,11 +20,18 @@ pip install -e .[dev]
 
 ## Development Workflow
 
-1. Create a branch from `main`.
+1. Create a branch from `develop` (`feature/<slug>` for features, `hotfix/<slug>` for urgent prod fixes).
 2. Implement focused changes with tests.
 3. Run lint + tests locally.
 4. Update docs/changelog when behavior changes.
 5. Open a PR using the provided template.
+
+## Repository Hygiene
+
+- Keep `CHANGELOG.md` tracked and up to date (release/public history source of truth).
+- Use `.dev/` for local AI working artifacts (scripts, logs, command outputs, temporary notes).
+- Use `.local/` only for backups or files intentionally moved out of the main tree.
+- Never place scratch files directly in repo root.
 
 ## Quality Gates
 

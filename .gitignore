@@ -152,6 +152,7 @@ vault.salt                  # Vault salt file
 # .navig/ is TRACKED - plans/, brand/, wiki/, agents/ all live here
 # Only runtime / credential files inside it are ignored (see list below)
 .archive/                   # Local archive folder
+.dev/                       # Local development folder
 nohup.out                   # Background process output
 
 # ===============================================
@@ -344,7 +345,9 @@ navig/plugins/llm-bridge/
 host/crates/**/target/
 **/target/
 
-# Local workspace (WIP, drafts, test scripts, scratch — never commit)
+# Local workspace policy
+# - .dev/: AI working folder (scripts/logs/outputs/scratch) — never commit
+# - .local/: backups/moved artifacts and local temp compatibility — never commit
 .local/
 $null
 
@@ -354,4 +357,3 @@ $null
 .pytest_tmp*/
 pytest_tmp*/
 *.pytest_tmp/
-CHANGELOG.md

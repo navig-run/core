@@ -55,6 +55,13 @@ applyTo: '**'
 3. **Database Changes:** Migrations, schema updates, and seeding.
 4. **Server Configurations:** Environment variable adjustments and service configs.
 
+### Repository Local-Only Folders (Agent Hygiene)
+
+- `CHANGELOG.md` is tracked and remains the release/public history source of truth.
+- `.dev/` is the default local AI working folder for scripts, logs, outputs, and scratch artifacts.
+- `.local/` is reserved for backups/moved files and compatibility temp artifacts.
+- Keep repo root clean: do not place scratch files directly in root.
+
 ## 1. Quick Start & Overview
 
 ### What is NAVIG?

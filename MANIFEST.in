@@ -33,6 +33,7 @@ prune build
 prune dist
 prune *.egg-info
 prune .local
+prune .dev
 prune .navig
 prune __pycache__
 global-exclude *.pyc *.pyo *.pyd .DS_Store

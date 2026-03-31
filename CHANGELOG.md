@@ -9,6 +9,11 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Add entries here until the next release, then move them under a new version heading. -->
 <!-- Run: git log v2.4.20..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
 
+### Changed
+- Documentation consistency pass: aligned branch workflow in `CONTRIBUTING.md`, fixed installer script links in `docs/INDEX.md`, and replaced duplicated `docs/README.md` script list with a real docs index.
+- Local-only workspace policy clarified: `.dev/` is now the default AI working folder (scripts/logs/outputs), `.local/` is reserved for backups/moved artifacts and compatibility temp files.
+- Packaging/publish hardening: removed accidental `CHANGELOG.md` ignore entry, excluded `.dev/` from source distributions, and added root `.dockerignore` exclusions for local/runtime folders.
+
 ## [2.4.20] - 2026-03-31
 
 ### Added
