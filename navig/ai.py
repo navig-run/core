@@ -1,29 +1,17 @@
 """
-AI Assistant Integration (DEPRECATED)
+AI Assistant Integration
 
 Context-aware assistance from The Schema's analysis engines.
 Supports multiple AI providers via the providers system.
 
-.. deprecated::
-    This module is deprecated. Use ``navig.llm_generate.llm_generate()`` as the
-    canonical entry point for all LLM calls. The ``AIAssistant`` class will be
-    removed in a future release. See docs/LLM_MODES.md for details.
-
-Migration::
-
-    # Old
-    from navig.ai import AIAssistant
-    assistant = AIAssistant(config_manager)
-    response = assistant.ask(question, context)
-
-    # New
-    from navig.llm_generate import llm_generate
-    response = llm_generate(messages=[{"role": "user", "content": question}], mode="big_tasks")
+Provides context-aware assistance from The Schema's analysis engines.
+Supports multiple AI providers via the providers system.
 """
 
 import asyncio
 import concurrent.futures as _cf
 import json
+import logging
 from typing import Any, ClassVar
 
 import requests
@@ -31,14 +19,12 @@ import requests
 from navig import console_helper as ch
 from navig.ai_context import get_ai_context_manager
 
+logger = logging.getLogger(__name__)
+
 
 class AIAssistant:
     """
     Multi-provider AI integration for context-aware server assistance.
-
-    .. deprecated::
-        Use ``navig.llm_generate.llm_generate()`` instead. This class is
-        maintained for backward compatibility only.
 
     Supports OpenRouter, OpenAI, Anthropic, and more via the providers system.
     Falls back automatically if a provider fails.
@@ -73,7 +59,7 @@ class AIAssistant:
 
                 self._fallback_manager = FallbackManager()
             except ImportError:
-                pass  # Providers not available, will use legacy mode
+                pass  # Providers not available, will use OpenRouter fallback mode
         return self._fallback_manager
 
     def ask(
@@ -193,10 +179,9 @@ class AIAssistant:
                     model_override,
                 )
             except Exception as e:
-                ch.dim(f"Provider system error, falling back to legacy: {e}")
+                logger.debug("Provider system path failed, using OpenRouter fallback: %s", e)
 
-        # Fall back to legacy OpenRouter-only mode
-        return self._ask_legacy(
+        return self._ask_openrouter_fallback(
             system_prompt,
             context_str,
             question,
@@ -257,14 +242,14 @@ class AIAssistant:
 
         return asyncio.run(run())
 
-    def _ask_legacy(
+    def _ask_openrouter_fallback(
         self,
         system_prompt: str,
         context_str: str,
         question: str,
         model_override: str | None = None,
     ) -> str:
-        """Ask using legacy OpenRouter-only mode."""
+        """Ask using OpenRouter fallback mode."""
         api_key = self.config.global_config.get("openrouter_api_key")
         if not api_key:
             raise ValueError(
@@ -305,7 +290,17 @@ class AIAssistant:
 
     def _build_context_string(self, context: dict[str, Any]) -> str:
         """Build context string for AI from gathered information."""
+        import platform as _platform
         lines = ["CONTEXT:"]
+
+        # Always surface client OS so the AI gives correct shell commands.
+        _os = context.get("client_os") or f"{_platform.system()} {_platform.release()}"
+        _arch = context.get("client_arch") or _platform.machine()
+        lines.append(f"Client OS: {_os} ({_arch})")
+        if _platform.system() == "Windows":
+            lines.append("Shell: PowerShell — always use PowerShell/cmd syntax, NEVER bash/Linux commands (no ls, df, ps aux, grep, etc.)")
+        else:
+            lines.append("Shell: bash/sh")
 
         if "server" in context:
             server = context["server"]

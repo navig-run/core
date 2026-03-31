@@ -56,6 +56,16 @@ class RemoteOperations:
             # Strict mode: rejects unknown hosts, prevents MITM attacks
             ssh_args.extend(["-o", "StrictHostKeyChecking=yes"])
 
+        # Local-host bypass: run directly without SSH so there's no dependency
+        # on an SSH client being installed, and Windows-native commands work.
+        _is_local = (
+            bool(server_config.get("is_local"))
+            or str(server_config.get("type", "")).lower() == "local"
+            or server_config.get("host", "") in ("localhost", "127.0.0.1", "::1")
+        )
+        if _is_local:
+            return self.execute_local(command, capture_output=capture_output)
+
         # Add other SSH options
         ssh_args.extend(["-o", "ConnectTimeout=10"])
 
@@ -106,6 +116,31 @@ class RemoteOperations:
             ) from _exc
 
         return result
+
+    def execute_local(self, command: str, capture_output: bool = True) -> subprocess.CompletedProcess:
+        """Execute a command on the *local* machine (no SSH).  Platform-aware.
+
+        On Windows uses PowerShell so the full Windows command vocabulary is
+        available.  On POSIX uses the default shell.
+        """
+        try:
+            if os.name == "nt":
+                args = ["powershell", "-NonInteractive", "-NoProfile", "-Command", command]
+                return subprocess.run(
+                    args,
+                    capture_output=capture_output,
+                    text=True,
+                    timeout=_SSH_TIMEOUT,
+                )
+            return subprocess.run(
+                command,
+                shell=True,
+                capture_output=capture_output,
+                text=True,
+                timeout=_SSH_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired as _exc:
+            raise RuntimeError(f"Local command timed out after {_SSH_TIMEOUT}s") from _exc
 
     def upload_file(
         self, local_path: Path, remote_path: str, server_config: dict[str, Any]
