@@ -28,6 +28,20 @@ ENGINE_VERSION = "2.0.0"
 OnFailurePolicy = Literal["abort", "skip", "retry"]
 
 
+def _is_click_abort(exc: BaseException) -> bool:
+    """Return True when *exc* is ``click.exceptions.Abort``.
+
+    Uses isinstance() with a guarded import to avoid hard-coding fragile
+    string checks, while keeping click as a soft dependency.
+    """
+    try:
+        from click.exceptions import Abort  # type: ignore[import]
+
+        return isinstance(exc, Abort)
+    except ImportError:
+        return False
+
+
 @dataclass
 class StepResult:
     status: Literal["completed", "skipped", "failed"]
@@ -264,14 +278,25 @@ class OnboardingEngine:
             result = step.run()
             result.duration_ms = int((time.monotonic() - t0) * 1000)
             return result
+        except KeyboardInterrupt:
+            raise
         except Exception as exc:  # noqa: BLE001
+            # click.exceptions.Abort (RuntimeError subclass) is raised when
+            # click/typer intercepts Ctrl+C in a prompt. Treat it like a real
+            # KeyboardInterrupt so the engine's interrupt handler fires.
+            if _is_click_abort(exc):
+                raise KeyboardInterrupt from exc
             if step.on_failure == "retry":
                 time.sleep(2)
                 try:
                     result = step.run()
                     result.duration_ms = int((time.monotonic() - t0) * 1000)
                     return result
+                except KeyboardInterrupt:
+                    raise
                 except Exception as exc2:  # noqa: BLE001
+                    if _is_click_abort(exc2):
+                        raise KeyboardInterrupt from exc2
                     return StepResult(
                         status="failed",
                         output={},

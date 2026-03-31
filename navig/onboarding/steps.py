@@ -379,7 +379,9 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             idx = int(choice_raw.strip()) - 1
             if idx < 0 or idx >= len(providers):
                 raise ValueError("out of range")
-        except (ValueError, KeyboardInterrupt, EOFError):
+        except KeyboardInterrupt:
+            raise
+        except (ValueError, EOFError):
             return StepResult(
                 status="skipped",
                 output={"reason": "invalid selection or interrupted"},
@@ -396,7 +398,9 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         else:
             try:
                 api_key = _prompt_masked(f"  {label} API key", default="").strip()
-            except (KeyboardInterrupt, EOFError):
+            except KeyboardInterrupt:
+                raise
+            except EOFError:
                 return StepResult(status="skipped", output={"reason": "interrupted"})
             if not api_key:
                 return StepResult(status="skipped", output={"reason": "no key entered"})
@@ -452,7 +456,9 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
                                     pass
                 except (ValueError, IndexError):
                     fallback_pid = ""
-        except (KeyboardInterrupt, EOFError):
+        except KeyboardInterrupt:
+            raise
+        except EOFError:
             fallback_pid = ""
 
         # Write routing block to config.yaml when a fallback was chosen
@@ -621,7 +627,9 @@ def _step_vault_init(navig_dir: Path) -> OnboardingStep:
                     status="skipped", output={"reason": "empty passphrase"}
                 )
             confirm = _prompt_masked("  Confirm passphrase", default="").strip()
-        except (KeyboardInterrupt, EOFError):
+        except KeyboardInterrupt:
+            raise
+        except EOFError:
             return StepResult(status="skipped", output={"reason": "interrupted"})
 
         if pw != confirm:
@@ -683,7 +691,9 @@ def _step_first_host(navig_dir: Path) -> OnboardingStep:
                 .strip()
                 .lower()
             )
-        except (KeyboardInterrupt, EOFError):
+        except KeyboardInterrupt:
+            raise
+        except EOFError:
             answer = "n"
 
         if answer == "y":
@@ -724,16 +734,18 @@ def _step_first_host(navig_dir: Path) -> OnboardingStep:
 def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
     """Optionally configure a Telegram bot token for notifications.
 
-    Token storage strategy (dual-write for broad compatibility):
+    Token storage strategy:
     1. Vault  — primary, secure (navig.vault.core_v2); requires vault-init step.
     2. .env   — legacy; used by the shell/PS1 installers and daemon env loading.
-    3. config.yaml — legacy fallback for pre-vault installs; matches install.sh pattern.
 
-    All three writes are individually non-fatal.  Missing any one does not fail
-    the step \u2014 the token is preserved in at least one location.
+    Both writes are individually non-fatal.  Missing any one does not fail
+    the step — the token is preserved in at least one location.
+
+    Writing the token to config.yaml in plaintext is deprecated and has been
+    removed.  Use `navig vault set telegram_bot_token <token>` to store or
+    update the token at any time.
     """
     marker = navig_dir / ".telegram_configured"
-    config_path = navig_dir / "config.yaml"
 
     def _verify_token_remote(token: str) -> tuple[bool, str]:
         try:
@@ -763,7 +775,9 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
                 "  Telegram bot token (leave blank to skip)",
                 default="",
             ).strip()
-        except (KeyboardInterrupt, EOFError):
+        except KeyboardInterrupt:
+            raise
+        except EOFError:
             token = ""
 
         if not token:
@@ -810,19 +824,6 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
             except (OSError, PermissionError):
                 pass
             writes.append(".env")
-        except Exception:  # noqa: BLE001
-            pass
-
-        # 3. Legacy: config.yaml (backward compat for pre-vault setups; mirrors installer pattern)
-        try:
-            import yaml  # type: ignore[import]
-
-            cfg: dict[str, Any] = {}
-            if config_path.exists():
-                cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-            cfg.setdefault("telegram", {})["bot_token"] = token
-            config_path.write_text(yaml.dump(cfg, allow_unicode=True), encoding="utf-8")
-            writes.append("config.yaml")
         except Exception:  # noqa: BLE001
             pass
 
@@ -891,7 +892,9 @@ def _step_skills_activation(navig_dir: Path) -> OnboardingStep:
                 "  Packs to activate (comma-separated numbers, or 'all')",
                 default="all",
             ).strip()
-        except (KeyboardInterrupt, EOFError):
+        except KeyboardInterrupt:
+            raise
+        except EOFError:
             selection = "all"
 
         if selection.lower() == "all":
@@ -1249,7 +1252,9 @@ def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
                     if vault is not None:
                         vault.put(vault_label, json.dumps({"value": val}).encode())
                     imported.append(display_name)
-            except (KeyboardInterrupt, EOFError):
+            except KeyboardInterrupt:
+                raise
+            except EOFError:
                 break
 
         # ── 2. Offer Google service-account JSON ─────────────────────────
@@ -1263,7 +1268,9 @@ def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
                 if line.strip() in ("", "END"):
                     break
                 lines.append(line)
-        except (KeyboardInterrupt, EOFError):
+        except KeyboardInterrupt:
+            raise
+        except EOFError:
             lines = []
 
         if lines:
@@ -1308,7 +1315,8 @@ def _step_review(navig_dir: Path) -> OnboardingStep:
 
         import typer
 
-        # Print summary from artifact if available
+        # Print summary from artifact if available; collect known step IDs.
+        known_ids: list[str] = []
         if artifact.exists():
             try:
                 data = json.loads(artifact.read_text(encoding="utf-8"))
@@ -1316,9 +1324,12 @@ def _step_review(navig_dir: Path) -> OnboardingStep:
                 sys.stdout.write("\n  Onboarding summary:\n")
                 for s in steps_summary:
                     status_icon = "✓" if s.get("status") == "completed" else "·"
+                    step_id = s.get("id", "?")
                     sys.stdout.write(
-                        f"    [{status_icon}] {s.get('id', '?')} — {s.get('status', '?')}\n"
+                        f"    [{status_icon}] {step_id} — {s.get('status', '?')}\n"
                     )
+                    if step_id and step_id != "?":
+                        known_ids.append(step_id)
                 sys.stdout.write("\n")
                 sys.stdout.flush()
             except Exception:  # noqa: BLE001
@@ -1327,10 +1338,35 @@ def _step_review(navig_dir: Path) -> OnboardingStep:
         if typer.confirm("  All settings look good?", default=True):
             return StepResult(status="completed", output={})
 
-        try:
-            jump_to = typer.prompt("  Which step ID to revisit?").strip()
-        except (KeyboardInterrupt, EOFError):
-            jump_to = ""
+        # Show the valid step IDs so the user can make an informed choice.
+        if known_ids:
+            sys.stdout.write(
+                "  Valid step IDs: " + ", ".join(known_ids) + "\n\n"
+            )
+            sys.stdout.flush()
+
+        jump_to = ""
+        while True:
+            try:
+                jump_to = typer.prompt("  Which step ID to revisit?").strip()
+            except EOFError:
+                jump_to = ""
+                break
+            except KeyboardInterrupt:
+                raise
+
+            if not jump_to:
+                break
+
+            if not known_ids or jump_to in known_ids:
+                # Valid choice (or no known IDs to validate against).
+                break
+
+            sys.stdout.write(
+                f"  Unknown step ID '{jump_to}'.\n"
+                f"  Valid IDs: {', '.join(known_ids)}\n\n"
+            )
+            sys.stdout.flush()
 
         return StepResult(status="skipped", output={"jumpTo": jump_to})
 
