@@ -7,7 +7,31 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 <!-- Add entries here until the next release, then move them under a new version heading. -->
-<!-- Run: git log v2.4.14..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+<!-- Run: git log v2.4.20..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+
+## [2.4.20] - 2026-03-31
+
+### Added
+- **`navig vault` command group** — new top-level `vault` command with `set`, `get`, `list`,
+  `validate`, and `delete` subcommands. Smart path parsing supports `provider/key` paths,
+  bare provider names, and `provider_api_key` env-var style aliases.
+  Example: `navig vault set nvidia/api_key nvapi-xxxx`
+- **Multilingual agent support** — `ConversationalAgent` now pins per-user language overrides
+  in `KeyFactStore`; fact extractor rewrites facts to English before storage; `FactRetriever`
+  infers user language and formats responses accordingly.
+- **Messaging registry provider validation** — `MessagingRegistry` exposes provider
+  validation and retrieval helpers used by gateway channel routing.
+- **New test suites** — `test_conversational_language_policy`, `test_channel_router_auto_persona`,
+  `test_telegram_auto_runtime`, `test_key_facts`, `test_context_builder`,
+  `test_telegram_provider_callbacks`, `test_messaging_registry`.
+
+### Fixed
+- **`navig vault` was missing** — `navig vault set` returned `No such command 'vault'` because
+  `vault_app` was not registered in `_EXTERNAL_CMD_MAP`.
+- **`navig init` crash** on packages missing `_maybe_send_first_run_ping` — now catches
+  `AttributeError` alongside `ImportError`.
+- **Task Scheduler `Access Denied`** — `service_manager.py` now detects the error and prints
+  a clear "run as administrator" instruction instead of a raw traceback.
 
 ### Added
 - **`navig --schema` now works** — `navig/cli/registry.py` was missing, causing an `ImportError`
