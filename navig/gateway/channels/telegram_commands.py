@@ -3993,9 +3993,18 @@ class TelegramCommandsMixin:
             remind_at=remind_at,
         )
         when = remind_at.strftime("%Y-%m-%d %H:%M UTC")
+        utc_note = ""
+        if re.match(r"^\s*/?remindme\s+at\s+", text, flags=re.IGNORECASE):
+            utc_note = (
+                "\nℹ️ `at HH:MM` uses server UTC. "
+                "Use `/remindme in <duration> ...` for relative/local timing."
+            )
         await self.send_message(
             chat_id,
-            f"⏰ Reminder set.\nID: `{reminder_id}`\nWhen: `{when}`\nMessage: {message}",
+            (
+                f"⏰ Reminder set.\nID: `{reminder_id}`\nWhen: `{when}`\n"
+                f"Message: {message}{utc_note}"
+            ),
         )
 
     async def _handle_myreminders(self, chat_id: int, user_id: int) -> None:

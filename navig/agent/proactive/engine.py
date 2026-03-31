@@ -239,9 +239,9 @@ class ProactiveEngine:
     def _get_engagement_coordinator(self):
         """Lazy-load the engagement coordinator."""
         if self._engagement is None:
-            from navig.agent.proactive.engagement import EngagementCoordinator
+            from navig.agent.proactive.engagement import get_engagement_coordinator
 
-            self._engagement = EngagementCoordinator()
+            self._engagement = get_engagement_coordinator()
         return self._engagement
 
     def record_user_message(

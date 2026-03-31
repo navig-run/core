@@ -49,6 +49,16 @@
 #   typing_mode: instant
 
 
+# ── Proactive Engagement Intervals ──────────────────────────────────────────
+# Timing controls for reminder polling and scheduler heartbeats.
+#
+# proactive:
+#   reminder_poll_interval_sec: 15
+#   scheduler_loop_interval_sec: 30
+#   heartbeat_interval_sec: 1800
+#   engagement_tick_interval_sec: 900
+
+
 # ── AI / LLM ─────────────────────────────────────────────────────────────────
 # Provider API keys are stored in the vault (navig vault set openai_api_key ...).
 # Set up interactively with: navig init  (or navig init --reconfigure)

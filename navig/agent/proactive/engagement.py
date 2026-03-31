@@ -31,7 +31,12 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from navig.agent.proactive.user_state import OperatorState, TimeOfDay, UserStateTracker
+from navig.agent.proactive.user_state import (
+    OperatorState,
+    TimeOfDay,
+    UserStateTracker,
+    get_user_state_tracker,
+)
 from navig.debug_logger import get_debug_logger
 
 logger = get_debug_logger()
@@ -64,6 +69,7 @@ class EngagementConfig:
     contextual_tip_cooldown_hours: float = 8.0
     feedback_ask_cooldown_hours: float = 72.0
     idle_nudge_cooldown_hours: float = 6.0
+    wrapup_cooldown_hours: float = 6.0
     celebration_cooldown_hours: float = 24.0
 
     # Time windows
@@ -263,8 +269,8 @@ class EngagementCoordinator:
             OperatorState.ACTIVE,
             OperatorState.WINDING_DOWN,
         ):
-            hours_since = self.state.hours_since("checkin")
-            if hours_since is None or hours_since >= 6:
+            hours_since = self.state.hours_since("wrapup")
+            if hours_since is None or hours_since >= self.config.wrapup_cooldown_hours:
                 return EngagementResult(
                     action=EngagementAction.EVENING_WRAPUP,
                     message=self._build_wrapup(),
@@ -327,7 +333,7 @@ class EngagementCoordinator:
         """Evaluate whether to gently nudge an idle user."""
         if state == OperatorState.IDLE:
             hours_idle = self.state.hours_since("last_interaction")
-            hours_since_nudge = self.state.hours_since("checkin")
+            hours_since_nudge = self.state.hours_since("idle_nudge")
 
             if hours_idle and hours_idle >= 0.5:  # 30+ min idle
                 if (
@@ -481,11 +487,11 @@ class EngagementCoordinator:
         event_map = {
             EngagementAction.GREETING: "greeting",
             EngagementAction.CHECKIN: "checkin",
-            EngagementAction.EVENING_WRAPUP: "checkin",
+            EngagementAction.EVENING_WRAPUP: "wrapup",
             EngagementAction.CAPABILITY_PROMO: "capability_promo",
             EngagementAction.CONTEXTUAL_TIP: "capability_promo",
             EngagementAction.FEEDBACK_ASK: "feedback_ask",
-            EngagementAction.IDLE_NUDGE: "checkin",
+            EngagementAction.IDLE_NUDGE: "idle_nudge",
             EngagementAction.CELEBRATION: "checkin",
         }
         event_type = event_map.get(result.action, "checkin")
@@ -506,3 +512,15 @@ class EngagementCoordinator:
 
             self._capability_promoter = CapabilityPromoter()
         return self._capability_promoter
+
+
+_COORDINATORS: dict[str, EngagementCoordinator] = {}
+
+
+def get_engagement_coordinator(user_id: str = "default") -> EngagementCoordinator:
+    """Get (or create) a process-level EngagementCoordinator for a user key."""
+    coordinator = _COORDINATORS.get(user_id)
+    if coordinator is None:
+        coordinator = EngagementCoordinator(state_tracker=get_user_state_tracker())
+        _COORDINATORS[user_id] = coordinator
+    return coordinator

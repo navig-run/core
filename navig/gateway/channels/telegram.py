@@ -468,6 +468,20 @@ class TelegramChannel:
 
     async def _poll_due_reminders(self):
         """Deliver due reminders from RuntimeStore in the background."""
+        _MAX_RETRIES = 3       # BUG-1: give up after this many failed send attempts
+        _RETRY_DELAY_SEC = 60  # push remind_at forward on each retry
+        poll_interval_sec = 15
+        try:
+            from navig.config import get_config_manager
+
+            cm = get_config_manager()
+            proactive_cfg = cm.global_config.get("proactive", {}) if cm.global_config else {}
+            poll_interval_sec = int(
+                proactive_cfg.get("reminder_poll_interval_sec", poll_interval_sec)
+            )
+        except Exception:
+            pass
+
         while self._running:
             try:
                 from navig.store.runtime import get_runtime_store
@@ -478,7 +492,10 @@ class TelegramChannel:
                     reminder_id = int(reminder.get("id") or 0)
                     chat_id = reminder.get("chat_id")
                     msg = str(reminder.get("message") or "").strip()
+                    retry_count = int(reminder.get("retry_count") or 0)
+
                     if not chat_id or not msg:
+                        # Malformed row — close it immediately
                         if reminder_id:
                             store.complete_reminder(reminder_id)
                         continue
@@ -488,14 +505,40 @@ class TelegramChannel:
                         f"⏰ *Reminder*\n{msg}",
                         parse_mode="Markdown",
                     )
-                    if sent and reminder_id:
-                        store.complete_reminder(reminder_id)
+                    if sent:
+                        if reminder_id:
+                            store.complete_reminder(reminder_id)
+                    else:
+                        # BUG-1: handle send failure with capped retry logic
+                        if reminder_id:
+                            if retry_count >= _MAX_RETRIES:
+                                store.fail_reminder(reminder_id)
+                                logger.warning(
+                                    "Reminder id=%s permanently failed after %d retries "
+                                    "(chat_id=%s, msg=%r)",
+                                    reminder_id,
+                                    retry_count,
+                                    chat_id,
+                                    msg[:60],
+                                )
+                            else:
+                                store.increment_reminder_retry(
+                                    reminder_id, _RETRY_DELAY_SEC
+                                )
+                                logger.debug(
+                                    "Reminder id=%s send failed (retry %d/%d), "
+                                    "rescheduled +%ds",
+                                    reminder_id,
+                                    retry_count + 1,
+                                    _MAX_RETRIES,
+                                    _RETRY_DELAY_SEC,
+                                )
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error("Reminder poller error: %s", e)
 
-            await asyncio.sleep(15)
+            await asyncio.sleep(poll_interval_sec)
 
     # ── Webhook mode ───────────────────────────────────────────────
 
@@ -685,6 +728,15 @@ class TelegramChannel:
             from navig.store.runtime import get_runtime_store
 
             auto_state = get_runtime_store().get_ai_state(user_id)
+            if auto_state and auto_state.get("session_expired"):
+                state_chat_id = auto_state.get("chat_id")
+                if state_chat_id is None or int(state_chat_id) == int(chat_id):
+                    await self.send_message(
+                        chat_id,
+                        "ℹ️ Your previous AI session expired after 24h of inactivity. "
+                        "Use `/agent start` to re-enable auto mode.",
+                        parse_mode=None,
+                    )
             if auto_state and auto_state.get("mode") == "active":
                 state_chat_id = auto_state.get("chat_id")
                 if state_chat_id is not None and int(state_chat_id) == int(chat_id):

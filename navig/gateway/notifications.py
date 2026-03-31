@@ -205,10 +205,47 @@ class TelegramNotifier(ChannelNotifier):
 
     async def _scheduler_loop(self):
         """Main scheduler loop."""
-        heartbeat_interval = 30 * 60  # 30 minutes
-        engagement_interval = 15 * 60  # 15 minutes (more frequent than heartbeat)
-        last_heartbeat = datetime.now()
-        last_engagement = datetime.now()
+        from navig.config import get_config_manager
+        from navig.store.runtime import get_runtime_store
+
+        cm = get_config_manager()
+        proactive_cfg = cm.global_config.get("proactive", {}) if cm.global_config else {}
+
+        heartbeat_interval = int(proactive_cfg.get("heartbeat_interval_sec", 30 * 60))
+        engagement_interval = int(
+            proactive_cfg.get("engagement_tick_interval_sec", 15 * 60)
+        )
+        scheduler_loop_interval = int(proactive_cfg.get("scheduler_loop_interval_sec", 30))
+
+        store = get_runtime_store()
+        now = datetime.now()
+
+        heartbeat_cache = store.cache_get("sched:heartbeat_check:last_ts")
+        engagement_cache = store.cache_get("sched:engagement_tick:last_ts")
+
+        try:
+            last_heartbeat = (
+                datetime.fromisoformat(str(heartbeat_cache)) if heartbeat_cache else now
+            )
+        except Exception:
+            last_heartbeat = now
+
+        try:
+            last_engagement = (
+                datetime.fromisoformat(str(engagement_cache)) if engagement_cache else now
+            )
+        except Exception:
+            last_engagement = now
+
+        for task in self.scheduled_tasks:
+            if task.name in ("heartbeat_check", "engagement_tick"):
+                continue
+            last_run_date = store.get_task_last_run(task.name)
+            if last_run_date:
+                try:
+                    task.last_run = datetime.fromisoformat(last_run_date)
+                except Exception:
+                    task.last_run = None
 
         while self._running:
             try:
@@ -224,6 +261,11 @@ class TelegramNotifier(ChannelNotifier):
                         if (now - last_heartbeat).total_seconds() >= heartbeat_interval:
                             await self._run_task(task)
                             last_heartbeat = now
+                            store.cache_set(
+                                "sched:heartbeat_check:last_ts",
+                                now.isoformat(),
+                                ttl_seconds=48 * 3600,
+                            )
                         continue
 
                     # Special handling for engagement tick
@@ -231,6 +273,11 @@ class TelegramNotifier(ChannelNotifier):
                         if (now - last_engagement).total_seconds() >= engagement_interval:
                             await self._run_task(task)
                             last_engagement = now
+                            store.cache_set(
+                                "sched:engagement_tick:last_ts",
+                                now.isoformat(),
+                                ttl_seconds=48 * 3600,
+                            )
                         continue
 
                     # Time-based tasks
@@ -251,12 +298,12 @@ class TelegramNotifier(ChannelNotifier):
                     ):
                         await self._run_task(task)
                         task.last_run = now
+                        store.set_task_last_run(task.name, now.strftime("%Y-%m-%d"))
 
                 # Process notification queue
                 await self._process_queue()
 
-                # Sleep for 30 seconds
-                await asyncio.sleep(30)
+                await asyncio.sleep(scheduler_loop_interval)
 
             except asyncio.CancelledError:
                 break
@@ -282,7 +329,6 @@ class TelegramNotifier(ChannelNotifier):
             # Group by priority
             critical = [n for n in self.queue if n.priority == NotificationPriority.CRITICAL]
             high = [n for n in self.queue if n.priority == NotificationPriority.HIGH]
-            normal = [n for n in self.queue if n.priority == NotificationPriority.NORMAL]
             low = [n for n in self.queue if n.priority == NotificationPriority.LOW]
 
             # Send critical immediately
@@ -301,10 +347,7 @@ class TelegramNotifier(ChannelNotifier):
                 for n in low:
                     self.queue.remove(n)
 
-            # Send normal priority
-            for n in normal:
-                await self._send_notification(n)
-                self.queue.remove(n)
+            # NORMAL notifications are batched by send(); no direct queue branch.
 
     async def _send_notification(self, notification: Notification):
         """Send a single notification (with quiet-hours gating)."""
@@ -556,9 +599,9 @@ class TelegramNotifier(ChannelNotifier):
     def _get_engagement_coordinator(self):
         """Lazy-load the engagement coordinator."""
         if self._engagement is None:
-            from navig.agent.proactive.engagement import EngagementCoordinator
+            from navig.agent.proactive.engagement import get_engagement_coordinator
 
-            self._engagement = EngagementCoordinator()
+            self._engagement = get_engagement_coordinator()
         return self._engagement
 
     def record_user_interaction(

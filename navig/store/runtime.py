@@ -52,7 +52,7 @@ class RuntimeStore(BaseStore):
         store.add_interaction(role="user", content="Deploy the app")
     """
 
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
     PRAGMAS = {"cache_size": -8000}  # 8 MB
 
     def __init__(self, db_path: Optional[Path] = None):
@@ -129,7 +129,9 @@ class RuntimeStore(BaseStore):
                 message     TEXT NOT NULL,
                 remind_at   TEXT NOT NULL,
                 created_at  TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-                completed   INTEGER DEFAULT 0
+                completed   INTEGER DEFAULT 0,
+                retry_count INTEGER DEFAULT 0,
+                failed_at   TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_reminders_due
                 ON reminders (remind_at) WHERE completed = 0;
@@ -138,12 +140,13 @@ class RuntimeStore(BaseStore):
 
             -- AI conversation state
             CREATE TABLE IF NOT EXISTS ai_state (
-                user_id     INTEGER PRIMARY KEY,
-                chat_id     INTEGER,
-                mode        TEXT,
-                persona     TEXT,
-                started_at  TEXT,
-                context     TEXT
+                user_id         INTEGER PRIMARY KEY,
+                chat_id         INTEGER,
+                mode            TEXT,
+                persona         TEXT,
+                started_at      TEXT,
+                context         TEXT,
+                last_active_at  TEXT
             );
 
             -- TTL cache
@@ -188,6 +191,21 @@ class RuntimeStore(BaseStore):
                     f"Implement {step_name}() before upgrading schema version."
                 )
             step(conn)
+
+    # ── Schema migrations ──────────────────────────────────────
+
+    def _migrate_v1_to_v2(self, conn: sqlite3.Connection) -> None:
+        """Add retry_count/failed_at to reminders; add last_active_at to ai_state."""
+        safe_alters = [
+            "ALTER TABLE reminders ADD COLUMN retry_count INTEGER DEFAULT 0",
+            "ALTER TABLE reminders ADD COLUMN failed_at TEXT",
+            "ALTER TABLE ai_state ADD COLUMN last_active_at TEXT",
+        ]
+        for sql in safe_alters:
+            try:
+                conn.execute(sql)
+            except sqlite3.OperationalError:
+                pass  # column already exists on this deployment
 
     # ── Legacy migration ──────────────────────────────────────
 
@@ -492,6 +510,27 @@ class RuntimeStore(BaseStore):
     def complete_reminder(self, reminder_id: int) -> None:
         self._write("UPDATE reminders SET completed = 1 WHERE id = ?", (reminder_id,))
 
+    def increment_reminder_retry(
+        self, reminder_id: int, reschedule_seconds: int = 60
+    ) -> None:
+        """Increment retry_count and push remind_at forward by *reschedule_seconds*."""
+        self._write(
+            """
+            UPDATE reminders
+            SET retry_count = retry_count + 1,
+                remind_at   = datetime('now', ? || ' seconds')
+            WHERE id = ?
+            """,
+            (str(reschedule_seconds), reminder_id),
+        )
+
+    def fail_reminder(self, reminder_id: int) -> None:
+        """Mark a reminder as permanently failed (stops retrying)."""
+        self._write(
+            "UPDATE reminders SET completed = 1, failed_at = ? WHERE id = ?",
+            (_utcnow(), reminder_id),
+        )
+
     def cancel_reminder(self, reminder_id: int, user_id: int) -> bool:
         cursor = self._write(
             "DELETE FROM reminders WHERE id = ? AND user_id = ?",
@@ -505,14 +544,34 @@ class RuntimeStore(BaseStore):
         row = self._read_one("SELECT * FROM ai_state WHERE user_id = ?", (user_id,))
         if not row:
             return None
-        return {
+        keys = row.keys()
+        state: Dict[str, Any] = {
             "user_id": row["user_id"],
             "chat_id": row["chat_id"],
             "mode": row["mode"],
             "persona": row["persona"],
             "started_at": row["started_at"],
             "context": json.loads(row["context"]) if row["context"] else None,
+            "last_active_at": row["last_active_at"] if "last_active_at" in keys else None,
+            "session_expired": False,
         }
+        # BUG-7: enforce 24-hour TTL on active AI sessions
+        if state["mode"] == "active" and state["last_active_at"]:
+            try:
+                last_active = datetime.fromisoformat(
+                    state["last_active_at"].rstrip("Z")
+                ).replace(tzinfo=timezone.utc)
+                age_hours = (_utc_now_dt() - last_active).total_seconds() / 3600
+                if age_hours >= 24:
+                    self._write(
+                        "UPDATE ai_state SET mode = 'inactive' WHERE user_id = ?",
+                        (user_id,),
+                    )
+                    state["mode"] = "inactive"
+                    state["session_expired"] = True
+            except Exception:
+                pass  # parse failure is non-critical; leave state unchanged
+        return state
 
     def set_ai_state(
         self,
@@ -522,26 +581,30 @@ class RuntimeStore(BaseStore):
         persona: Optional[str] = None,
         context: Optional[Dict] = None,
     ) -> None:
+        now = _utcnow()
         self._write(
             """
-            INSERT INTO ai_state (user_id, chat_id, mode, persona, started_at, context)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO ai_state
+                (user_id, chat_id, mode, persona, started_at, context, last_active_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id) DO UPDATE SET
-                chat_id = excluded.chat_id,
-                mode = excluded.mode,
-                persona = excluded.persona,
-                started_at = CASE
+                chat_id        = excluded.chat_id,
+                mode           = excluded.mode,
+                persona        = excluded.persona,
+                started_at     = CASE
                     WHEN excluded.mode = 'active' AND ai_state.mode != 'active'
                     THEN excluded.started_at ELSE ai_state.started_at END,
-                context = excluded.context
+                context        = excluded.context,
+                last_active_at = excluded.last_active_at
             """,
             (
                 user_id,
                 chat_id,
                 mode,
                 persona,
-                _utcnow(),
+                now,
                 json.dumps(context) if context else None,
+                now,  # always touch last_active_at on every set_ai_state call
             ),
         )
 
@@ -628,6 +691,14 @@ class RuntimeStore(BaseStore):
 
     # ── Retention / Maintenance ───────────────────────────────
 
+    def get_task_last_run(self, task_name: str) -> Optional[str]:
+        """Return the last-run date string (YYYY-MM-DD) for a scheduled task, or None."""
+        return self.cache_get(f"sched:{task_name}:last_run")  # type: ignore[return-value]
+
+    def set_task_last_run(self, task_name: str, date_str: str) -> None:
+        """Persist the last-run date for a scheduled task with a 48-hour TTL."""
+        self.cache_set(f"sched:{task_name}:last_run", date_str, ttl_seconds=48 * 3600)
+
     def prune(
         self, command_log_days: int = 30, interaction_days: int = 30
     ) -> Dict[str, int]:
@@ -642,6 +713,11 @@ class RuntimeStore(BaseStore):
             (str(-interaction_days),),
         ).rowcount
         deleted["cache"] = self.cache_clear_expired()
+        # BUG-9: prune completed/failed reminders older than 30 days
+        deleted["reminders"] = self._write(
+            "DELETE FROM reminders WHERE completed = 1 AND remind_at < datetime('now', '-30 days')",
+            (),
+        ).rowcount
         return deleted
 
     def get_full_stats(self) -> Dict[str, Any]:
