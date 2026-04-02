@@ -9,11 +9,36 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Add entries here until the next release, then move them under a new version heading. -->
 <!-- Run: git log v2.4.20..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
 
+### Added
+- **Agent Tool Registry** (F-02): `AgentToolRegistry` singleton with `register()`, `dispatch()`, `available_names()`, and OpenAI-schema generation for LLM tool-use APIs.
+- **Agent Tool Framework** (F-03): `BaseTool` abstract class and concrete tool implementations — `ReadFileTool`, `WriteFileTool`, `ListFilesTool`, `MemoryReadTool`, `MemoryWriteTool`, `MemoryDeleteTool`, `KBLookupTool`, `WikiSearchTool`, `WikiReadTool`, `WikiWriteTool`. Lazy registration via `register_all_tools()`.
+- **Toolset Definitions** (F-04): Named toolset bundles (`core`, `search`, `research`, `code`, `devops`, `memory`, `wiki`, `delegation`, `full`) with `resolve_toolset_names()`, `merge_toolsets()`, `validate_toolset()`, and parallel-safety classification.
+- **Agentic ReAct Loop** (F-01/F-05): `ConversationalAgent.run_agentic()` — async multi-turn tool-use loop with parallel/sequential dispatch, context compression, iteration budgets, KB enrichment, and semantic routing.
+- **LLM Cost Tracking** (F-06/F-08): `run_llm()` now records token usage. `CostTracker` accumulates `UsageEvent` records per session with `session_cost()` summary. `IterationBudget` guards against runaway loops with shared parent→child counters.
+- **MCP Client** (F-09): `MCPClient` and `MCPClientPool` for stdio/HTTP Model Context Protocol servers with tool discovery, `call_tool()`, and connection lifecycle management.
+- **Agent Delegation** (F-10): `DelegateTool` enables parent→child agent delegation with `AgentDepthError` guard (max depth 3) and shared iteration budgets.
+- **Context Compression** (F-11): `ContextCompressor` with two-pass strategy — cheap token-counting pass + LLM-driven summarization when context exceeds thresholds.
+- **Prompt Caching** (F-12): Anthropic prompt cache injection via `apply_anthropic_cache_control()` (`system_and_3` strategy). `supports_caching()` model detection. Optional TTL extension.
+- **Approval Gate** (F-14): `ApprovalGate` with pluggable backends, 4-level `ApprovalPolicy` (YOLO/CONFIRM_DESTRUCTIVE/CONFIRM_ALL/OWNER_ONLY), `needs_approval()` predicate, and `NAVIG_ALLOW_ALL_COMMANDS` env bypass.
+- **Agent Profiles** (F-15): `Profile` dataclass with isolated `memory_dir`, `wiki_dir`, `config_path`. Resolution via `NAVIG_PROFILE` env → sticky `active_profile` file → `"default"`. CRUD operations: `create_profile()`, `switch_profile()`, `delete_profile()`, `list_profiles()`.
+- **DevOps Tool Suite** (F-16): 18 `BaseTool` subclasses wrapping NAVIG CLI operations — host management, remote execution, database ops, Docker management, file operations, web server, app context, and monitoring. All registered under `"devops"` toolset with 6 tools added to `DESTRUCTIVE_TOOLS`.
+- **KB Auto-Enrichment** (F-18): Agentic loop detects extractable key facts from assistant responses and stores them in `KeyFactStore` with category tagging.
+- **Wiki Tool Integration** (F-19): `WikiSearchTool`, `WikiReadTool`, `WikiWriteTool` enable agent access to project wiki for knowledge retrieval and documentation.
+- **Semantic Routing → Toolset Hints** (F-20): `MODE_TOOLSET_HINTS` maps LLM modes to suggested toolsets. `suggest_toolsets()` auto-narrows tool scope based on detected conversation mode. Integrated into `run_agentic()`.
+- **Plan-Execute Agent Mode** (F-21): `PlanExecuteAgent` with 4-phase cycle — Plan (LLM JSON plan), Approve (interactive y/N), Execute (sequential dispatch with LLM-driven revision on failure), Report (trace persistence + formatted summary). `format_plan_report()` for human-readable output. Wired via `ConversationalAgent.run_plan_execute()`.
+- 101 new tests covering agent modules: toolsets, usage tracker, plan-execute, prompt caching, profiles, approval, semantic routing, and import smoke tests.
+
 ### Changed
 - Telegram bot UX: replaced the Main Menu inline keyboard with a conversational context card on `/start`. The card shows active reminder count, current model tier, and a single `[📋 What can I do?]` button that triggers `/helpme` inline — no navigation buttons. All `nav:home` / `nav:cancel` callbacks now send the context card instead of re-rendering the old menu. `/helpme` (`_handle_help`) sends help text directly without going through the navigation stack. The `renderScreen("main")` branch delegates to `_handle_start` for backwards-compatibility with any `nav:home` triggers in settings sub-screens. Navigation stack machinery (`navigateTo`, `navigateBack`, screen_stack) is preserved for settings screen back-navigation only.
 - **Telegram command UX overhaul (Phase 4):**
   - `/help` added to the slash-command registry as a visible first-class command (previously only `helpme` was wired and hidden).
   - Fixed 5 silently broken commands: `/think`, `/refine`, `/autoheal`, `/weather`, `/docker`. They now have Python handlers wired via the dynamic registry instead of being dead stubs or incorrect CLI templates. `/think` and `/refine` had their `topic` parameter renamed to `text` for compatibility with the dynamic dispatch mechanism.
+- **Telegram command UX overhaul (Phase 5 — heartbeat, status enrichment, mode wiring):**
+  - `/ping` is now a rich heartbeat card: shows NAVIG version, active host, active space, model tier, reminder count, and bridge status (with 2 s async timeout). Step-5 dispatch now delegates to `_handle_ping` instead of sending an inline "🏓 pong.".
+  - `/status` enriched with active host, active persona, and reminder count. Nav Back/Home buttons removed from standalone `/status` invocations — they only appear when the screen is rendered inside the navigation edit flow (i.e. `message_id` is set).
+  - `/mode` wired to the dynamic registry (added `handler="_handle_mode"`). The handler signature was updated from `mode_arg: str` to `text: str = ""` to be compatible with dynamic dispatch. Step-5 also updated to pass `text=cmd`.
+  - Registry: `usage=` hints added for `/mode`, `/big`, `/small`, `/coder`, `/restart`, `/tables`, `/plan`.
+  - Test: fixed stale `"NAVIG Main Menu"` and `"Canonical onboarding progress"` assertions left over from before the Phase 1 context-card migration. Updated to match current `_handle_start` output.
   - `/models big|small|coder|auto` — passing a tier name switches immediately (e.g. `/models big` = same as `/big`). Aliases `/model`, `/routing`, `/router` also accept the tier arg.
   - `/providers <name>` — shows a focused card for the named provider with config guidance; falls back to full hub when no arg given.
   - `/spaces <name>` — quick-switches to a space when a name is passed, skipping the list view.
