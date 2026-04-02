@@ -1,6 +1,6 @@
 name: Documentation improvement
 description: Request a docs fix or addition
-title: "[Docs]: "
+title: "[DOCS]: "
 labels: [documentation]
 body:
   - type: input

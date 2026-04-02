@@ -1,6 +1,6 @@
 name: Feature request
 description: Propose an enhancement for NAVIG Core
-title: "[Feature]: "
+title: "[FEATURE]: "
 labels: [enhancement]
 body:
   - type: textarea
