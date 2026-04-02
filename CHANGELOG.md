@@ -44,6 +44,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - 101 new tests covering agent modules: toolsets, usage tracker, plan-execute, prompt caching, profiles, approval, semantic routing, and import smoke tests.
 
 ### Changed
+- **Config Decomposition (PR2/6):** Extracted `navig.core.hosts.HostManager` class with `exists()`, `list_hosts()`, `load()`, `save()`, `delete()` methods. `ConfigManager` now delegates all host operations via `self._hosts`. `config.py` reduced from 2,188 to 1,907 lines (281 lines extracted). Host caches moved to HostManager.
 - **Config Decomposition (PR1/6):** Extracted `navig.core.yaml_io` module with `log_shadow_anomaly()` and `atomic_write_yaml()` utilities from `config.py`. Consolidated duplicate `_log_shadow_anomaly()` from `ipc_pipe.py`. `config.py` reduced from 2,243 to 2,188 lines. Backward-compatible aliases preserved.
 - CLI root help redesign: `navig --help` / bare `navig` now render a compact grouped command map with a status bar (`host`, `profile`, version), aligned command descriptions, workflow-focused examples, and a rotating one-line tip for quick orientation.
 - Added lazy top-level command registrations for `navig logs`, `navig stats`, `navig health`, plus compatibility aliases for common ops nouns: `cert`, `key`, `firewall`, `dns`, `port`, `proxy`, `env`, `secret`, `job`, and `alias`.

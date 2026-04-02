@@ -20,6 +20,7 @@ import yaml
 
 from navig.core.yaml_io import atomic_write_yaml as _atomic_write_yaml
 from navig.core.yaml_io import log_shadow_anomaly
+from navig.core.hosts import HostManager
 
 logger = logging.getLogger(__name__)
 
@@ -67,9 +68,7 @@ class ConfigManager:
         self._paths_resolved = False
 
         # In-memory caches initialized here since they don't depend on paths directly
-        self._host_config_cache: dict[str, dict[str, Any]] = {}
         self._app_config_cache: dict[str, dict[str, Any]] = {}
-        self._hosts_list_cache: tuple[list, tuple[float, int]] | None = None
         self._apps_list_cache: dict[str, tuple[list, float]] = {}
 
         # global_config is loaded lazily on first access (see @property below)
@@ -80,6 +79,9 @@ class ConfigManager:
         # to ensure any filesystem or permission failures crash the app immediately
         # (fail-fast) instead of delaying errors until mid-operation deep in async code.
         self._resolve_paths()
+
+        # Host management delegated to HostManager (after paths resolved)
+        self._hosts = HostManager(self)
 
     def _resolve_paths(self):
         if self._paths_resolved:
@@ -1352,38 +1354,8 @@ Context provided with each query:
         self.set_active_app(app_name)
 
     def host_exists(self, host_name: str) -> bool:
-        """
-        Check if host configuration exists in app-specific or global configs.
-
-        Checks both new format (hosts/) and legacy format (apps/) in
-        both app-specific and global directories.
-
-        Handles permission errors gracefully.
-
-        Args:
-            host_name: Host name to check
-
-        Returns:
-            True if host exists, False otherwise
-        """
-        config_dirs = self._get_config_directories()
-
-        for config_dir in config_dirs:
-            try:
-                # Check new format
-                host_file = config_dir / "hosts" / f"{host_name}.yaml"
-                if host_file.exists():
-                    return True
-
-                # Check legacy format (backward compatibility)
-                legacy_file = config_dir / "apps" / f"{host_name}.yaml"
-                if legacy_file.exists():
-                    return True
-            except (PermissionError, OSError):
-                # Skip inaccessible directories
-                continue
-
-        return False
+        """Check if host configuration exists. Delegates to HostManager."""
+        return self._hosts.exists(host_name)
 
     def app_exists(self, host_name: str, app_name: str) -> bool:
         """
@@ -1411,113 +1383,8 @@ Context provided with each query:
             return False
 
     def list_hosts(self) -> list:
-        """
-        List all configured hosts from both app-specific and global configs.
-
-        Merges hosts from app-specific and global directories, with
-        app-specific hosts taking precedence (appearing first) if duplicates exist.
-
-        Handles permission errors gracefully - skips inaccessible directories.
-        Uses caching with directory mtime invalidation for performance.
-
-        Returns:
-            Sorted list of host names
-        """
-        # Check cache validity based on hosts directory mtime
-        config_dirs = self._get_config_directories()
-
-        # Build a signature from mtimes + file count.
-        # Directory mtimes can be too coarse on some platforms (notably Windows),
-        # so include YAML file mtimes to reliably detect changes.
-        max_mtime = 0.0
-        file_count = 0
-        for config_dir in config_dirs:
-            hosts_dir = config_dir / "hosts"
-            apps_dir = config_dir / "apps"
-            for d in [hosts_dir, apps_dir]:
-                if d.exists():
-                    try:
-                        max_mtime = max(max_mtime, d.stat().st_mtime)
-                    except (OSError, PermissionError):
-                        pass
-
-                    try:
-                        for yaml_file in d.glob("*.yaml"):
-                            file_count += 1
-                            try:
-                                max_mtime = max(max_mtime, yaml_file.stat().st_mtime)
-                            except (OSError, PermissionError):
-                                pass
-                    except (OSError, PermissionError):
-                        pass
-
-        signature = (max_mtime, file_count)
-
-        # Return cached result if still valid
-        if self._hosts_list_cache is not None:
-            cached_hosts, cached_signature = self._hosts_list_cache
-            if cached_signature == signature:
-                return cached_hosts.copy()
-
-        hosts = set()
-
-        # Collect hosts from all accessible config directories
-        for config_dir in config_dirs:
-            try:
-                # New format hosts
-                hosts_dir = config_dir / "hosts"
-                if hosts_dir.exists() and self._is_directory_accessible(hosts_dir):
-                    try:
-                        for yaml_file in hosts_dir.glob("*.yaml"):
-                            hosts.add(yaml_file.stem)
-                    except (PermissionError, OSError) as e:
-                        if self.verbose:
-                            from navig import console_helper as ch
-
-                            ch.warning(f"Cannot read hosts from {hosts_dir}: {e}")
-
-                # Legacy format hosts (backward compatibility)
-                # Only include files from apps/ that are actually host configs, not app configs
-                # A host config has an IP address in 'host' field, while app config references a host name
-                apps_dir = config_dir / "apps"
-                if apps_dir.exists() and self._is_directory_accessible(apps_dir):
-                    try:
-                        for yaml_file in apps_dir.glob("*.yaml"):
-                            # Skip backup files
-                            if ".backup." not in yaml_file.name:
-                                # Check if this is actually a host config (not an app config)
-                                try:
-                                    with open(yaml_file, encoding="utf-8") as f:
-                                        config_data = yaml.safe_load(f) or {}
-                                    host_value = config_data.get("host", "")
-                                    # It's a legacy host if:
-                                    # 1. It has no 'host' field, OR
-                                    # 2. The 'host' field looks like an IP address or FQDN (contains dots)
-                                    #    AND doesn't reference an existing host in hosts/ folder
-                                    if not host_value:
-                                        hosts.add(yaml_file.stem)
-                                    elif "." in str(host_value):
-                                        # Looks like IP or domain, treat as legacy host
-                                        hosts.add(yaml_file.stem)
-                                    # If host_value is a simple name (no dots), it's an app referencing a host
-                                except Exception:
-                                    # If we can't read the file, skip it
-                                    pass
-                    except (PermissionError, OSError) as e:
-                        if self.verbose:
-                            from navig import console_helper as ch
-
-                            ch.warning(f"Cannot read hosts from {apps_dir}: {e}")
-            except (PermissionError, OSError) as e:
-                if self.verbose:
-                    from navig import console_helper as ch
-
-                    ch.warning(f"Cannot access config directory {config_dir}: {e}")
-
-        result = sorted(list(hosts))
-        # Cache the result with current signature
-        self._hosts_list_cache = (result.copy(), signature)
-        return result
+        """List all configured hosts. Delegates to HostManager."""
+        return self._hosts.list_hosts()
 
     def list_apps(self, host_name: str) -> list:
         """
@@ -1584,84 +1451,8 @@ Context provided with each query:
         return hosts_with_app
 
     def load_host_config(self, host_name: str, use_cache: bool = True) -> dict[str, Any]:
-        """
-        Load host configuration with hierarchical support.
-
-        Searches for host configuration in priority order:
-        1. App-specific hosts/ directory (if in app context)
-        2. Global hosts/ directory
-        3. Legacy apps/ directory (backward compatibility)
-
-        Args:
-            host_name: Host name
-            use_cache: Whether to use cached config (default True)
-
-        Returns:
-            Host configuration dictionary
-
-        Raises:
-            FileNotFoundError: If host configuration not found
-        """
-        # Check cache first
-        if use_cache and host_name in self._host_config_cache:
-            return self._host_config_cache[host_name]
-
-        config_dirs = self._get_config_directories()
-
-        try:
-            from navig.core.config_loader import load_config
-        except ImportError:
-            load_config = None
-
-        # Search in priority order
-        for config_dir in config_dirs:
-            # Try new format (hosts/)
-            host_file = config_dir / "hosts" / f"{host_name}.yaml"
-            if host_file.exists():
-                if load_config:
-                    config = load_config(host_file, schema_type="host", strict=False)
-                else:
-                    with open(host_file, encoding="utf-8") as f:
-                        config = yaml.safe_load(f)
-
-                # Expand user paths (config_loader doesn't do ~/ expansion)
-                if "ssh_key" in config and config["ssh_key"]:
-                    config["ssh_key"] = os.path.expanduser(config["ssh_key"])
-
-                if self.verbose:
-                    from navig import console_helper as ch
-
-                    source = "app" if config_dir == self.app_config_dir else "global"
-                    ch.dim(f"✓ Loaded host '{host_name}' from {source} config")
-
-                # Cache the result
-                self._host_config_cache[host_name] = config
-                return config
-
-            # Try legacy format (apps/)
-            legacy_file = config_dir / "apps" / f"{host_name}.yaml"
-            if legacy_file.exists():
-                if load_config:
-                    config = load_config(legacy_file, schema_type="host", strict=False)
-                else:
-                    with open(legacy_file, encoding="utf-8") as f:
-                        config = yaml.safe_load(f)
-
-                # Expand user paths
-                if "ssh_key" in config and config["ssh_key"]:
-                    config["ssh_key"] = os.path.expanduser(config["ssh_key"])
-
-                if self.verbose:
-                    from navig import console_helper as ch
-
-                    source = "app" if config_dir == self.app_config_dir else "global"
-                    ch.dim(f"✓ Loaded host '{host_name}' from {source} config (legacy format)")
-
-                # Cache the result
-                self._host_config_cache[host_name] = config
-                return config
-
-        raise FileNotFoundError(f"Host configuration not found: {host_name}")
+        """Load host configuration. Delegates to HostManager."""
+        return self._hosts.load(host_name, use_cache=use_cache)
 
     def load_app_config(self, host_name: str, app_name: str) -> dict[str, Any]:
         """
@@ -1727,42 +1518,8 @@ Context provided with each query:
             return host_config
 
     def save_host_config(self, host_name: str, config: dict[str, Any]):
-        """
-        Save host configuration.
-
-        Saves to app-specific config if in app context,
-        otherwise saves to global config.
-
-        Args:
-            host_name: Host name
-            config: Host configuration dictionary
-        """
-        # Invalidate caches
-        if host_name in self._host_config_cache:
-            del self._host_config_cache[host_name]
-        self._hosts_list_cache = None  # Invalidate hosts list cache
-
-        # Determine where to save (app-specific or global)
-        if self.app_config_dir:
-            host_file = self.app_config_dir / "hosts" / f"{host_name}.yaml"
-        else:
-            host_file = self.global_config_dir / "hosts" / f"{host_name}.yaml"
-
-        # Add timestamp to metadata
-        if "metadata" not in config:
-            config["metadata"] = {}
-        config["metadata"]["last_updated"] = datetime.now().isoformat()
-
-        # Ensure hosts directory exists
-        host_file.parent.mkdir(parents=True, exist_ok=True)
-
-        _atomic_write_yaml(config, host_file, allow_unicode=True)
-
-        if self.verbose:
-            from navig import console_helper as ch
-
-            location = "app" if self.app_config_dir else "global"
-            ch.dim(f"✓ Saved host '{host_name}' to {location} config")
+        """Save host configuration. Delegates to HostManager."""
+        self._hosts.save(host_name, config)
 
     def save_app_config(
         self,
@@ -1808,46 +1565,8 @@ Context provided with each query:
             self.save_host_config(host_name, host_config)
 
     def delete_host_config(self, host_name: str):
-        """
-        Delete host configuration from app-specific or global config.
-
-        Deletes from app-specific config if it exists there,
-        otherwise deletes from global config.
-
-        Args:
-            host_name: Host name to delete
-        """
-        # Invalidate caches
-        self._host_config_cache.pop(host_name, None)
-        self._hosts_list_cache = None  # Invalidate hosts list cache
-
-        deleted = False
-        config_dirs = self._get_config_directories()
-
-        for config_dir in config_dirs:
-            # Delete from new format
-            host_file = config_dir / "hosts" / f"{host_name}.yaml"
-            if host_file.exists():
-                host_file.unlink()
-                deleted = True
-                if self.verbose:
-                    from navig import console_helper as ch
-
-                    location = "app" if config_dir == self.app_config_dir else "global"
-                    ch.dim(f"✓ Deleted host '{host_name}' from {location} config")
-                break  # Delete from first location found only
-
-            # Delete from legacy format (if exists)
-            legacy_file = config_dir / "apps" / f"{host_name}.yaml"
-            if legacy_file.exists():
-                legacy_file.unlink()
-                deleted = True
-                if self.verbose:
-                    from navig import console_helper as ch
-
-                    location = "app" if config_dir == self.app_config_dir else "global"
-                    ch.dim(f"✓ Deleted host '{host_name}' from {location} config (legacy format)")
-                break  # Delete from first location found only
+        """Delete host configuration. Delegates to HostManager."""
+        self._hosts.delete(host_name)
 
     def delete_app_config(self, host_name: str, app_name: str):
         """
