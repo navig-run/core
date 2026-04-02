@@ -1,23 +1,29 @@
 name: Feature request
-description: Propose an enhancement for NAVIG Core
+description: Propose an enhancement, RFC or idea for NAVIG Core
 title: "[Feature]: "
 labels: [enhancement]
 body:
   - type: textarea
-    id: problem
+    id: report
     attributes:
-      label: Problem
-      description: What problem are you trying to solve?
+      label: Feature / RFC / Idea
+      description: |
+        Scaffold généré par Nero. 
+        Copiez-collez ici le contenu de `github_issue_draft.md`.
+      value: |
+        # Summary (Proposed changes)
+        <!-- What do you want to add or change, and why? -->
+
+        ## Problem / Context
+        <!-- What is the current pain point? -->
+
+        ## Proposed solution
+        <!-- Describe the change and expected behavior. -->
+
+        ## Version
+        <!-- navig --version -->
+
+        ## Environment
+        <!-- OS, Python, Shell -->
     validations:
       required: true
-  - type: textarea
-    id: proposal
-    attributes:
-      label: Proposed solution
-      description: Describe the change and expected behavior
-    validations:
-      required: true
-  - type: textarea
-    id: alternatives
-    attributes:
-      label: Alternatives considered

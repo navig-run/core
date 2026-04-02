@@ -1,29 +1,29 @@
 name: Bug report
 description: Report a reproducible defect in NAVIG Core
-title: "[Bug]: "
-labels: [bug]
+title: "[BUG]: "
+labels: [BUG]
 body:
   - type: textarea
-    id: summary
+    id: report
     attributes:
-      label: Summary
-      description: What is broken?
+      label: Bug report
+      description: |
+        Scaffold généré par Nero. 
+        Copiez-collez ici le contenu de `github_issue_draft.md`.
+      value: |
+        # Summary (What is broken ?)
+        <!-- Describe the issue clearly -->
+
+        ## Steps to reproduce
+        ```bash
+        # Commandes exécutées
+        navig ...
+        ```
+
+        ## Version
+        <!-- navig --version output -->
+
+        ## Environment
+        <!-- OS, Python, Shell info from system_report.json -->
     validations:
       required: true
-  - type: textarea
-    id: steps
-    attributes:
-      label: Steps to reproduce
-      description: Exact steps and command output
-    validations:
-      required: true
-  - type: input
-    id: version
-    attributes:
-      label: NAVIG version
-      placeholder: "e.g. 2.1.0"
-  - type: textarea
-    id: env
-    attributes:
-      label: Environment
-      description: OS, Python version, shell, relevant config context
