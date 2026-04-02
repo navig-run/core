@@ -106,12 +106,19 @@ class SlashCommandEntry:
     handler: str | None = None  # method name on TelegramCommandsMixin to call directly
     visible: bool = True  # include in /help and setMyCommands
     category: str = "general"  # section heading for /help
+    usage: str = ""  # optional usage hint shown in /help (e.g. "/cmd [option]")
 
 
 _SLASH_REGISTRY: list[SlashCommandEntry] = [
     # --- Core ----------------------------------------------------------------
     SlashCommandEntry(
         "start", "Wake up greeting", handler="_handle_start", category="core"
+    ),
+    SlashCommandEntry(
+        "help",
+        "Full command reference",
+        handler="_handle_help",
+        category="core",
     ),
     SlashCommandEntry(
         "helpme",
@@ -131,6 +138,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Active model routing table",
         handler="_handle_models_command",
         category="core",
+        usage="/models [big|small|coder|auto]",
     ),
     SlashCommandEntry(
         "model",
@@ -138,6 +146,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         handler="_handle_models_command",
         category="core",
         visible=False,
+        usage="/model [big|small|coder|auto]",
     ),
     SlashCommandEntry(
         "routing",
@@ -167,7 +176,10 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "ping", "Quick alive check", handler="_handle_ping", category="core"
     ),
     SlashCommandEntry(
-        "skill", "Run a NAVIG skill - /skill list to browse", category="core"
+        "skill",
+        "Run a NAVIG skill",
+        category="core",
+        usage="/skill list  or  /skill <name>",
     ),
     # --- Monitoring ----------------------------------------------------------
     SlashCommandEntry(
@@ -220,13 +232,18 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     ),
     # --- Docker --------------------------------------------------------------
     SlashCommandEntry(
-        "docker", "List containers", cli_template="docker ps", category="docker"
+        "docker",
+        "List containers or view logs",
+        handler="_handle_docker_cmd",
+        category="docker",
+        usage="/docker [ps|logs <name>|restart <name>|all]",
     ),
     SlashCommandEntry(
         "logs",
         "Container logs (+ name)",
         cli_template="docker logs {args} -n 50",
         category="docker",
+        usage="/logs <container-name>",
     ),
     SlashCommandEntry(
         "restart", "Restart container (+ name) or daemon", category="docker"
@@ -250,9 +267,11 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Switch active host (+ name)",
         cli_template="host use {args}",
         category="tools",
+        usage="/use <hostname>",
     ),
     SlashCommandEntry(
-        "run", "Execute remote command", cli_template='run "{args}"', category="tools"
+        "run", "Execute remote command", cli_template='run "{args}"', category="tools",
+        usage="/run <shell command>",
     ),
     SlashCommandEntry(
         "backup", "Backup status", cli_template="backup show", category="tools"
@@ -268,12 +287,14 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Switch active space (+ name)",
         handler="_handle_space",
         category="tools",
+        usage="/space <name>",
     ),
     SlashCommandEntry(
         "spaces",
         "List available spaces",
         handler="_handle_spaces",
         category="tools",
+        usage="/spaces [name]  — name switches directly",
     ),
     SlashCommandEntry(
         "intake",
@@ -287,6 +308,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Convert Markdown to Telegram-friendly format",
         handler="_handle_format",
         category="tools",
+        usage="/format <text>",
     ),
     SlashCommandEntry(
         "fmt",
@@ -296,10 +318,18 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         visible=False,
     ),
     SlashCommandEntry(
-        "think", "Reason through a topic — paginated cards", category="tools"
+        "think",
+        "Reason through a topic — paginated cards",
+        handler="_handle_think",
+        category="tools",
+        usage="/think <topic or question>",
     ),
     SlashCommandEntry(
-        "refine", "Sharpen your idea with AI clarification", category="tools"
+        "refine",
+        "Sharpen your idea with AI clarification",
+        handler="_handle_refine_cmd",
+        category="tools",
+        usage="/refine <idea or text>",
     ),
     # --- Utilities -----------------------------------------------------------
     SlashCommandEntry(
@@ -313,27 +343,31 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     ),
     SlashCommandEntry(
         "weather",
-        "Weather report",
-        cli_template="run \"curl -s 'wttr.in/?format=3'\"",
+        "Weather report (optional city)",
+        handler="_handle_weather",
         category="utilities",
+        usage="/weather [city]",
     ),
     SlashCommandEntry(
         "dns",
         "DNS lookup (+ domain)",
         cli_template='run "dig +short {args}"',
         category="utilities",
+        usage="/dns <domain>",
     ),
     SlashCommandEntry(
         "ssl",
         "SSL cert check (+ domain)",
         cli_template="run \"echo | openssl s_client -connect {args}:443 -servername {args} 2>/dev/null | openssl x509 -noout -dates 2>/dev/null || echo 'no cert found'\"",
         category="utilities",
+        usage="/ssl <domain>",
     ),
     SlashCommandEntry(
         "whois",
         "Domain whois (+ domain)",
         cli_template='run "whois {args} | head -30"',
         category="utilities",
+        usage="/whois <domain>",
     ),
     SlashCommandEntry(
         "netstat",
@@ -350,7 +384,11 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="model",
     ),
     SlashCommandEntry(
-        "providers", "AI Provider Hub", handler="_handle_providers", category="model"
+        "providers",
+        "AI Provider Hub",
+        handler="_handle_providers",
+        category="model",
+        usage="/providers [provider-name]",
     ),
     SlashCommandEntry(
         "provider",
@@ -358,6 +396,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         handler="_handle_providers",
         category="model",
         visible=False,
+        usage="/provider [provider-name]",
     ),
     SlashCommandEntry(
         "mode", "Set focus mode (work, deep-focus, etc.)", category="model"
@@ -409,8 +448,10 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     SlashCommandEntry("trace", "Recent conversation history", category="diagnostics"),
     SlashCommandEntry(
         "autoheal",
-        "Auto-Heal - /autoheal on|off|status|hive on|hive off",
+        "Auto-Heal daemon",
+        handler="_handle_autoheal",
         category="diagnostics",
+        usage="/autoheal [on|off|status|hive on|hive off]",
     ),
     # --- Digital Ghost / Laravel Port ---
     SlashCommandEntry(
@@ -460,9 +501,10 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     ),
     SlashCommandEntry(
         "persona",
-        "Switch active AI persona (e.g. /persona tyler)",
+        "Switch active AI persona",
         handler="_handle_persona",
         category="ai",
+        usage="/persona <name>",
     ),
     SlashCommandEntry(
         "personas",
@@ -517,6 +559,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Set reminders",
         handler="_handle_remindme",
         category="utilities",
+        usage="/remindme <text> in <time>  or  at <time>",
     ),
     SlashCommandEntry(
         "myreminders",
@@ -529,6 +572,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Cancel a reminder",
         handler="_handle_cancelreminder",
         category="utilities",
+        usage="/cancelreminder <id>|all",
     ),
     SlashCommandEntry(
         "stats_global",
@@ -537,7 +581,11 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="utilities",
     ),
     SlashCommandEntry(
-        "choice", "Make random choices", handler="_handle_choice", category="utilities"
+        "choice",
+        "Make random choices",
+        handler="_handle_choice",
+        category="utilities",
+        usage="/choice <a> or <b> [or <c>...]  — also accepts , or |",
     ),
     SlashCommandEntry(
         "kick", "Remove user from chat", handler="_handle_kick", category="admin"
@@ -671,50 +719,9 @@ class TelegramCommandsMixin:
         target_message_id = state.get("message_id")
 
         if screen_name == "main":
-            hour = datetime.now().hour
-            if 5 <= hour < 12:
-                greeting = "🌅 Good morning. What do you want to run?"
-            elif 12 <= hour < 18:
-                greeting = "☀️ Good afternoon. Pick your next action."
-            elif 18 <= hour < 23:
-                greeting = "🌆 Good evening. Pick a workflow."
-            else:
-                greeting = "🌙 Late session. Pick your next action."
-            text = "\n".join(
-                [
-                    "✨ *NAVIG Main Menu*",
-                    greeting,
-                    "",
-                    "Use buttons for faster control.",
-                ]
-            )
-            keyboard = [
-                [
-                    {"text": "⚙️ Open Settings", "callback_data": "nav:open:settings"},
-                    {"text": "🧠 Open Models", "callback_data": "nav:open:models"},
-                ],
-                [
-                    {"text": "🔌 Open Providers", "callback_data": "nav:open:providers"},
-                    {"text": "🗂 Open Spaces", "callback_data": "nav:open:spaces"},
-                ],
-                [
-                    {"text": "🧭 Start Intake", "callback_data": "nav:open:intake"},
-                    {"text": "📊 Open Status", "callback_data": "nav:open:status"},
-                ],
-                [{"text": "❌ Cancel", "callback_data": "nav:cancel"}],
-            ]
-            if target_message_id:
-                await self.edit_message(
-                    chat_id,
-                    target_message_id,
-                    text,
-                    parse_mode="Markdown",
-                    keyboard=keyboard,
-                )
-                return
-            sent = await self.send_message(chat_id, text, parse_mode="Markdown", keyboard=keyboard)
-            if sent and isinstance(sent, dict):
-                state["message_id"] = sent.get("message_id")
+            # Main menu has been replaced by the conversational context card.
+            # Delegate to /start so all nav:home / nav:cancel callbacks land here.
+            await self._handle_start(chat_id=chat_id, username="", user_id=user_id)
             return
 
         if screen_name == "help":
@@ -829,49 +836,76 @@ class TelegramCommandsMixin:
     def _generate_help_text(deck_enabled: bool = False) -> str:
         """Generate grouped /help output from deduplicated registry entries."""
         cat_labels: dict[str, str] = {
-            "core": "- *core*",
-            "monitoring": "- *monitoring*",
-            "docker": "- *docker*",
-            "database": "- *database*",
-            "tools": "- *tools*",
-            "utilities": "- *utilities*",
-            "model": "- *model control*",
-            "voice": "- *voice & AI settings*",
-            "diagnostics": "- *diagnostics & healing*",
-            "ai": "- *AI features*",
-            "media": "- *media tools*",
-            "social": "- *social*",
-            "admin": "- *business chats / admin*",
+            "core": "\U0001f9ed *core*",
+            "monitoring": "\U0001f4ca *monitoring*",
+            "docker": "\U0001f433 *docker*",
+            "database": "\U0001f5c4 *database*",
+            "tools": "\U0001f527 *tools*",
+            "utilities": "\u2728 *utilities*",
+            "model": "\U0001f9e0 *model control*",
+            "voice": "\U0001f50a *voice & AI*",
+            "diagnostics": "\U0001f6e0 *diagnostics*",
+            "ai": "\U0001f916 *AI features*",
+            "media": "\U0001f3a5 *media*",
+            "social": "\U0001f465 *social*",
+            "admin": "\U0001f510 *admin*",
         }
 
         seen_categories: set[str] = set()
-        lines = ["*things I respond to:*"]
+        lines = ["\U0001f4cb *NAVIG command reference*", ""]
         for entry in _iter_unique_registry(visible_only=True):
             if entry.category not in seen_categories:
                 seen_categories.add(entry.category)
-                lines.append("\n" + cat_labels.get(entry.category, entry.category))
-            lines.append(f"/{entry.command} - {entry.description}")
+                lines.append("\n" + cat_labels.get(entry.category, f"*{entry.category}*"))
+            if entry.usage:
+                lines.append(f"`{entry.usage}` \u2014 {entry.description}")
+            else:
+                lines.append(f"/{entry.command} \u2014 {entry.description}")
 
         if deck_enabled:
-            lines.append("/deck - Open the command deck")
-        else:
-            lines.append(
-                "\n_Deck UI is disabled. To activate: set `telegram.deck_url` in `~/.navig/config.yaml` and point it at your NAVIG Deck instance._"
-            )
-        lines.append("\n-or just talk. I understand.")
+            lines.append("/deck \u2014 Open the command deck")
+        lines.append("\n\u2014 or just talk to me naturally.")
         return "\n".join(lines)
 
     # -- Core slash handlers ---------------------------------------------------
 
     async def _handle_start(self, chat_id: int, username: str, user_id: int = 0) -> None:
-        """Reset session navigation and render the persistent main menu."""
-        self._reset_navigation_state(chat_id)
-        await self.renderScreen(
-            chat_id=chat_id,
-            screen_name="main",
-            user_id=user_id,
-            username=username,
+        """Send a conversational context card — no navigation menus."""
+        # Active reminder count
+        active_count = 0
+        try:
+            from navig.store.runtime import get_runtime_store
+
+            active_count = len(get_runtime_store().get_user_reminders(user_id) or [])
+        except Exception:
+            pass
+
+        # Current model tier preference
+        tier_raw = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
+        tier = str(tier_raw).capitalize() if tier_raw else "Auto"
+
+        reminder_line = (
+            f"⏰ {active_count} active reminder{'s' if active_count != 1 else ''}"
+            if active_count
+            else "⏰ No active reminders"
         )
+        text = "\n".join(
+            [
+                "🤖 *NAVIG is ready*",
+                "",
+                reminder_line,
+                f"🧠 Model: `{tier}`",
+                "",
+                "Type naturally or use a command:",
+                "`/remindme` · `/myreminders` · `/status` · `/briefing`",
+                "",
+                "Need more? → /helpme",
+            ]
+        )
+        keyboard = [[{"text": "📋 What can I do?", "callback_data": "helpme"}]]
+        await self.send_message(chat_id, text, parse_mode="Markdown", keyboard=keyboard)
+
+        # Onboarding handoff progress block (text only, no navigation buttons)
         try:
             from navig.commands.init import (
                 consume_chat_onboarding_handoff_state,
@@ -897,37 +931,26 @@ class TelegramCommandsMixin:
             mark = "✅" if step.get("completed") else "⬜"
             checklist_lines.append(f"{mark} {step.get('label', '')}")
 
-        text = "\n".join(
+        onboarding_text = "\n".join(
             [
                 "✨ *Welcome to NAVIG setup*",
                 f"Profile: `{profile}`",
                 "",
-                f"Canonical onboarding progress: `{completed_count}/{len(steps)}`",
+                f"Onboarding progress: `{completed_count}/{len(steps)}`",
                 *checklist_lines,
                 "",
-                "Next in chat:",
+                "Next steps:",
                 *(f"• {step.get('hint', '')}" for step in pending_steps[:2]),
-                "• Start Intake to capture your setup goals",
-                "",
-                "Proof command in this chat:",
-                "`/status`",
+                "• Start intake: `/intake`",
+                "• Check status: `/status`",
             ]
         )
-        keyboard = [
-            [
-                {"text": "🔌 Open Providers", "callback_data": "nav:open:providers"},
-                {"text": "🧭 Start Intake", "callback_data": "nav:open:intake"},
-            ],
-            [
-                {"text": "📊 Open Status", "callback_data": "nav:open:status"},
-                {"text": "🏠 Main Menu", "callback_data": "nav:home"},
-            ],
-        ]
-        await self.send_message(chat_id, text, parse_mode="Markdown", keyboard=keyboard)
+        await self.send_message(chat_id, onboarding_text, parse_mode="Markdown")
 
     async def _handle_help(self, chat_id: int) -> None:
-        """Command reference (/help) - auto-generated from _SLASH_REGISTRY."""
-        await self.navigateTo(chat_id, "help")
+        """Command reference (/helpme) — sent directly without navigation."""
+        text = self._generate_help_text(deck_enabled=bool(self._get_deck_url()))
+        await self.send_message(chat_id, text, parse_mode="Markdown")
 
     async def _handle_ping(self, chat_id: int) -> None:
         """Quick alive check (/ping)."""
@@ -1064,7 +1087,13 @@ class TelegramCommandsMixin:
                 encoding="utf-8",
             )
 
-    async def _handle_spaces(self, chat_id: int, message_id: int | None = None) -> None:
+    async def _handle_spaces(self, chat_id: int, user_id: int = 0, text: str = "", message_id: int | None = None) -> None:
+        # Quick-switch: "/spaces devops" delegates directly to /space
+        arg = text[len("/spaces"):].strip() if text.lower().startswith("/spaces") else ""
+        if arg:
+            await self._handle_space(chat_id=chat_id, user_id=user_id, text=f"/space {arg}")
+            return
+
         from navig.commands.space import get_active_space
         from navig.spaces.contracts import CANONICAL_SPACES
 
@@ -1662,8 +1691,21 @@ class TelegramCommandsMixin:
         chat_id: int,
         user_id: int = 0,
         message_id: int | None = None,
+        text: str = "",
     ) -> None:
-        """Show active model config with interactive switcher keyboard (/models)."""
+        """Show active model config with interactive switcher keyboard (/models).
+
+        /models big|small|coder|auto  — quick-switch tier then confirm.
+        """
+        # Quick-switch: /models big  --  /models auto  etc.
+        tier_arg = ""
+        for prefix in ("/models", "/model", "/routing", "/router"):
+            if text.lower().startswith(prefix):
+                tier_arg = text[len(prefix):].strip().lower()
+                break
+        if tier_arg in ("big", "small", "coder", "auto"):
+            await self._handle_tier_command(chat_id, user_id, f"/{tier_arg}")
+            return
         try:
             from navig.agent.ai_client import get_ai_client
 
@@ -1803,8 +1845,25 @@ class TelegramCommandsMixin:
         chat_id: int,
         user_id: int = 0,
         message_id: int | None = None,
+        text: str = "",
     ) -> None:
-        """AI Provider Hub - bridge status, active provider, and available providers (/providers)."""
+        """AI Provider Hub - bridge status, active provider, and available providers.
+
+        /providers <name>  — show focused card for that provider.
+        """
+        # Quick-focus: /providers openai  --  /provider anthropic  etc.
+        provider_arg = ""
+        for prefix in ("/providers", "/provider"):
+            if text.lower().startswith(prefix):
+                provider_arg = text[len(prefix):].strip().lower()
+                break
+        if provider_arg:
+            await self.send_message(
+                chat_id,
+                f"*Provider: `{provider_arg}`*\n\nUse `/settings` \u2192 Providers to configure connection details, or check `~/.navig/config.yaml` under `llm_router.modes`.",
+                parse_mode="Markdown",
+            )
+            return
         bridge_online, bridge_url = await self._probe_bridge_grid()
 
         active_prov = ""
@@ -2948,10 +3007,11 @@ class TelegramCommandsMixin:
         self,
         chat_id: int,
         user_id: int,
-        topic: str = "",
+        text: str = "",
         metadata: Any = None,
     ) -> None:
         """/think <topic> — reason via LLM, output in paginated cards."""
+        topic = text[len("/think"):].strip() if text.lower().startswith("/think") else text.strip()
         if not topic:
             await self.send_message(
                 chat_id,
@@ -2992,10 +3052,11 @@ class TelegramCommandsMixin:
         self,
         chat_id: int,
         user_id: int,
-        topic: str = "",
+        text: str = "",
         metadata: Any = None,
     ) -> None:
         """/refine [text] — start the AI clarification + refinement loop."""
+        topic = text[len("/refine"):].strip() if text.lower().startswith("/refine") else text.strip()
         if not topic:
             await self.send_message(
                 chat_id,
@@ -3013,6 +3074,59 @@ class TelegramCommandsMixin:
             text=topic,
             topic="",
         )
+
+    async def _handle_weather(
+        self,
+        chat_id: int,
+        user_id: int,
+        text: str = "",
+        metadata: Any = None,
+    ) -> None:
+        """/weather [city] — show current weather via wttr.in."""
+        city = text[len("/weather"):].strip() if text.lower().startswith("/weather") else text.strip()
+        if city:
+            import re as _re
+            safe_city = _re.sub(r"[^A-Za-z0-9\s\-]", "", city).strip().replace(" ", "+")
+            url = f"wttr.in/{safe_city}?format=4"
+        else:
+            url = "wttr.in/?format=4"
+
+        await self._handle_cli_command(
+            chat_id,
+            user_id,
+            metadata or {},
+            f"run \"curl -s '{url}'\"",
+        )
+
+    async def _handle_docker_cmd(
+        self,
+        chat_id: int,
+        user_id: int,
+        text: str = "",
+        metadata: Any = None,
+    ) -> None:
+        """/docker [ps|logs <name>|restart <name>|all|<name>] — smart container dispatch."""
+        arg = text[len("/docker"):].strip() if text.lower().startswith("/docker") else text.strip()
+
+        if not arg or arg.lower() in ("ps", "all", "list"):
+            cli_cmd = "docker ps"
+        elif arg.lower().startswith("logs "):
+            name = arg[5:].strip()
+            cli_cmd = f"docker logs {name} -n 50"
+        elif arg.lower().startswith("restart "):
+            name = arg[8:].strip()
+            cli_cmd = f"docker restart {name}"
+        elif arg.lower().startswith("stop "):
+            name = arg[5:].strip()
+            cli_cmd = f"docker stop {name}"
+        elif arg.lower().startswith("start "):
+            name = arg[6:].strip()
+            cli_cmd = f"docker start {name}"
+        else:
+            # Treat bare arg as container name — show its logs
+            cli_cmd = f"docker logs {arg} -n 50"
+
+        await self._handle_cli_command(chat_id, user_id, metadata or {}, cli_cmd)
 
     # -- Briefing / deck -------------------------------------------------------
 
@@ -4026,14 +4140,34 @@ class TelegramCommandsMixin:
 
     async def _handle_cancelreminder(self, chat_id: int, user_id: int, text: str) -> None:
         arg = text[len("/cancelreminder") :].strip()
+        if not arg:
+            await self.send_message(chat_id, "Usage: `/cancelreminder <id>` or `/cancelreminder all`",
+                parse_mode="Markdown")
+            return
+
+        from navig.store.runtime import get_runtime_store
+        store = get_runtime_store()
+
+        if arg.lower() == "all":
+            reminders = store.get_user_reminders(user_id) or []
+            if not reminders:
+                await self.send_message(chat_id, "No active reminders to cancel.", parse_mode=None)
+                return
+            for r in reminders:
+                rid = r.get("id") if isinstance(r, dict) else getattr(r, "id", None)
+                if rid is not None:
+                    store.cancel_reminder(rid, user_id)
+            await self.send_message(chat_id, f"✅ Cancelled {len(reminders)} reminder{'s' if len(reminders) != 1 else ''}.",
+                parse_mode=None)
+            return
+
         if not arg.isdigit():
-            await self.send_message(chat_id, "Usage: `/cancelreminder <id>`")
+            await self.send_message(chat_id, "Usage: `/cancelreminder <id>` or `/cancelreminder all`",
+                parse_mode="Markdown")
             return
 
         reminder_id = int(arg)
-        from navig.store.runtime import get_runtime_store
-
-        deleted = get_runtime_store().cancel_reminder(reminder_id, user_id)
+        deleted = store.cancel_reminder(reminder_id, user_id)
         if deleted:
             await self.send_message(chat_id, f"✅ Reminder `{reminder_id}` cancelled.")
         else:
@@ -4050,20 +4184,27 @@ class TelegramCommandsMixin:
 
     async def _handle_choice(self, chat_id: int, text: str) -> None:
         args = text[len("/choice") :].strip()
-        if " or " not in args.lower():
+        if not args:
             await self.send_message(
                 chat_id,
-                "Please use 'or' to separate choices. Example: `/choice pizza or burger`",
+                "Usage: `/choice pizza or burger`  — also accepts `,` or `|` as separators.",
                 parse_mode="Markdown",
             )
             return
+        import re
         import random
 
-        choices = [c.strip() for c in args.lower().split(" or ") if c.strip()]
-        if choices:
-            await self.send_message(chat_id, f"🎲 I choose: *{random.choice(choices)}*")
-        else:
-            await self.send_message(chat_id, "Invalid choices.", parse_mode=None)
+        # Normalise separators: | and , become ' or '
+        normalised = re.sub(r"\s*[|,]\s*", " or ", args)
+        choices = [c.strip() for c in re.split(r"\bor\b", normalised, flags=re.IGNORECASE) if c.strip()]
+        if len(choices) < 2:
+            await self.send_message(
+                chat_id,
+                "Please give me at least two options. Example: `/choice tea or coffee`",
+                parse_mode="Markdown",
+            )
+            return
+        await self.send_message(chat_id, f"🎲 I choose: *{random.choice(choices)}*")
 
     async def _handle_kick(self, chat_id: int, text: str) -> None:
         target = text[len("/kick") :].strip()

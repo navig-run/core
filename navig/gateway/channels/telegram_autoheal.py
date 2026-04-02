@@ -322,10 +322,10 @@ class AutoHealMixin:
         self,
         chat_id: int,
         user_id: int,
-        args: str,
+        text: str = "",
     ) -> None:
         """Handle /autoheal [on|off|status|hive on|hive off]."""
-        args = args.strip().lower()
+        args = text[len("/autoheal"):].strip().lower() if text.lower().startswith("/autoheal") else text.strip().lower()
         sm = self._get_session_manager_safe()
 
         if args in ("on", "enable"):
