@@ -246,7 +246,10 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         usage="/logs <container-name>",
     ),
     SlashCommandEntry(
-        "restart", "Restart container (+ name) or daemon", category="docker"
+        "restart",
+        "Restart container (+ name) or daemon",
+        category="docker",
+        usage="/restart [daemon|<container-name>]",
     ),
     # --- Database ------------------------------------------------------------
     SlashCommandEntry(
@@ -257,6 +260,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Tables in a database (+ db name)",
         cli_template="db tables {args}",
         category="database",
+        usage="/tables <database-name>",
     ),
     # --- Tools ---------------------------------------------------------------
     SlashCommandEntry(
@@ -280,7 +284,8 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "plans", "Plans and spaces progress", cli_template="plans status", category="tools"
     ),
     SlashCommandEntry(
-        "plan", "Add a plan goal (+ text)", cli_template="plans add {args}", category="tools"
+        "plan", "Add a plan goal (+ text)", cli_template="plans add {args}", category="tools",
+        usage="/plan <goal text>",
     ),
     SlashCommandEntry(
         "space",
@@ -399,11 +404,24 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         usage="/provider [provider-name]",
     ),
     SlashCommandEntry(
-        "mode", "Set focus mode (work, deep-focus, etc.)", category="model"
+        "mode",
+        "Set focus mode (work, deep-focus, etc.)",
+        handler="_handle_mode",
+        category="model",
+        usage="/mode [work|deep-focus|coder|auto|list]",
     ),
-    SlashCommandEntry("big", "Force big model for next message", category="model"),
-    SlashCommandEntry("small", "Force small model for next message", category="model"),
-    SlashCommandEntry("coder", "Force coder model for next message", category="model"),
+    SlashCommandEntry(
+        "big", "Force big model for next message", category="model",
+        usage="/big  (then send your message)",
+    ),
+    SlashCommandEntry(
+        "small", "Force small model for next message", category="model",
+        usage="/small  (then send your message)",
+    ),
+    SlashCommandEntry(
+        "coder", "Force coder model for next message", category="model",
+        usage="/coder  (then send your message)",
+    ),
     SlashCommandEntry("auto", "Reset to automatic model selection", category="model"),
     # --- Voice & AI settings -------------------------------------------------
     SlashCommandEntry(
@@ -952,9 +970,65 @@ class TelegramCommandsMixin:
         text = self._generate_help_text(deck_enabled=bool(self._get_deck_url()))
         await self.send_message(chat_id, text, parse_mode="Markdown")
 
-    async def _handle_ping(self, chat_id: int) -> None:
-        """Quick alive check (/ping)."""
-        await self.send_message(chat_id, "pong.", parse_mode=None)
+    async def _handle_ping(self, chat_id: int, user_id: int = 0) -> None:
+        """Live heartbeat card — version, host, space, tier, reminders, bridge (/ping)."""
+        import asyncio as _asyncio
+
+        lines = ["🏓 *pong* — NAVIG is live", ""]
+
+        # Version
+        try:
+            import navig as _navig_pkg
+
+            ver = getattr(_navig_pkg, "__version__", "unknown")
+        except Exception:
+            ver = "unknown"
+        lines.append(f"Version: `{ver}`")
+
+        # Active host
+        try:
+            from navig.config import load_config
+
+            cfg = load_config()
+            active_host = (cfg.get("active_host") or "—") if cfg else "—"
+        except Exception:
+            active_host = "—"
+        lines.append(f"Host: `{active_host}`")
+
+        # Active space
+        try:
+            from navig.commands.space import get_active_space
+
+            space = get_active_space() or "—"
+        except Exception:
+            space = "—"
+        lines.append(f"Space: `{space}`")
+
+        # Model tier
+        tier_raw = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
+        tier = str(tier_raw).capitalize() if tier_raw else "Auto"
+        lines.append(f"Model: `{tier}`")
+
+        # Active reminders
+        try:
+            from navig.store.runtime import get_runtime_store
+
+            active_count = len(get_runtime_store().get_user_reminders(user_id) or [])
+            lines.append(f"Reminders: `{active_count} active`")
+        except Exception:
+            pass
+
+        # Bridge status (non-blocking, 2 s timeout)
+        try:
+            bridge_ok, bridge_url = await _asyncio.wait_for(
+                self._probe_bridge_grid(), timeout=2.0
+            )
+            bridge_status = f"🟢 {bridge_url}" if bridge_ok else "🔴 offline"
+        except Exception:
+            bridge_status = "❔ unknown"
+        lines.append(f"Bridge: {bridge_status}")
+
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
 
     async def _handle_status(
         self,
@@ -962,7 +1036,7 @@ class TelegramCommandsMixin:
         user_id: int = 0,
         message_id: int | None = None,
     ) -> None:
-        """Space-aware status summary for Telegram users (/status)."""
+        """System status summary for Telegram users (/status)."""
         from navig.spaces import get_default_space
         from navig.spaces.progress import (
             collect_spaces_progress,
@@ -972,30 +1046,61 @@ class TelegramCommandsMixin:
         selected_space = get_default_space()
         rows = collect_spaces_progress()
 
-        lines = ["*NAVIG Status*", "", f"Default space: `{selected_space}`"]
+        lines = ["*NAVIG Status*", ""]
 
-        if rows:
-            lines.append("")
-            lines.append("*Spaces progression:*")
-            lines.extend(format_spaces_progress_lines(rows, max_items=5))
-        else:
-            lines.append("")
-            lines.append("_No spaces discovered in project/global scope yet._")
+        # Active host
+        try:
+            from navig.config import load_config
 
+            cfg = load_config()
+            active_host = (cfg.get("active_host") or "—") if cfg else "—"
+        except Exception:
+            active_host = "—"
+        lines.append(f"Host: `{active_host}`")
+
+        # Model tier
         if hasattr(self, "_get_user_tier_pref"):
             tier = self._get_user_tier_pref(chat_id, user_id)
         else:
             tier = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
-        lines.append("")
-        lines.append(f"Model tier: `{tier or 'auto'}`")
+        lines.append(f"Model: `{tier or 'auto'}`")
 
-        keyboard = [
-            [
-                {"text": "🔙 Back", "callback_data": "nav:back"},
-                {"text": "🏠 Main Menu", "callback_data": "nav:home"},
-            ],
-        ]
+        # Active persona
+        try:
+            from navig.personas.store import get_active_persona
+
+            persona = get_active_persona(user_id, chat_id) or "assistant"
+        except Exception:
+            persona = "assistant"
+        lines.append(f"Persona: `{persona}`")
+
+        # Active reminders
+        try:
+            from navig.store.runtime import get_runtime_store
+
+            active_count = len(get_runtime_store().get_user_reminders(user_id) or [])
+            lines.append(f"Reminders: `{active_count} active`")
+        except Exception:
+            pass
+
+        # Default space + progression
+        lines.append("")
+        lines.append(f"Space: `{selected_space}`")
+        if rows:
+            lines.append("")
+            lines.append("*Progression:*")
+            lines.extend(format_spaces_progress_lines(rows, max_items=5))
+        else:
+            lines.append("_No spaces discovered yet._")
+
+        # Navigation context: show Back / Home only when rendered inside a nav screen
         if message_id:
+            keyboard = [
+                [
+                    {"text": "🔙 Back", "callback_data": "nav:back"},
+                    {"text": "🏠 Home", "callback_data": "nav:home"},
+                ],
+            ]
             await self.edit_message(
                 chat_id,
                 message_id,
@@ -1004,9 +1109,7 @@ class TelegramCommandsMixin:
                 keyboard=keyboard,
             )
             return
-        sent = await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown", keyboard=keyboard)
-        if sent and isinstance(sent, dict):
-            self._get_navigation_state(chat_id)["message_id"] = sent.get("message_id")
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
 
     def _runtime_state_with_context(
         self,
@@ -1567,8 +1670,9 @@ class TelegramCommandsMixin:
         )
         await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
 
-    async def _handle_mode(self, chat_id: int, mode_arg: str, user_id: int = 0) -> None:
+    async def _handle_mode(self, chat_id: int, text: str = "", user_id: int = 0) -> None:
         """Set focus/behavior mode. Uses MOOD_REGISTRY with fuzzy matching."""
+        mode_arg = text[len("/mode"):].strip() if text.lower().startswith("/mode") else text.strip()
         from navig.agent.soul import MOOD_REGISTRY, get_mood_profile
 
         _uid = user_id or chat_id

@@ -431,9 +431,9 @@ async def test_start_consumes_chat_onboarding_handoff_once(monkeypatch, tmp_path
 
     await bot._handle_start(123, "alice", 456)
 
-    assert any("NAVIG Main Menu" in msg[1] for msg in bot.messages)
+    assert any("NAVIG is ready" in msg[1] for msg in bot.messages)
     assert any("Welcome to NAVIG setup" in msg[1] for msg in bot.messages)
-    assert any("Canonical onboarding progress: `2/3`" in msg[1] for msg in bot.messages)
+    assert any("Onboarding progress: `2/3`" in msg[1] for msg in bot.messages)
     assert any("✅ Choose AI provider" in msg[1] for msg in bot.messages)
     assert any("⬜ Connect first host" in msg[1] for msg in bot.messages)
     assert any("• Add or confirm your first server host" in msg[1] for msg in bot.messages)
@@ -441,7 +441,7 @@ async def test_start_consumes_chat_onboarding_handoff_once(monkeypatch, tmp_path
     first_count = len(bot.messages)
     await bot._handle_start(123, "alice", 456)
     second_batch = bot.messages[first_count:]
-    assert any("NAVIG Main Menu" in msg[1] for msg in second_batch)
+    assert any("NAVIG is ready" in msg[1] for msg in second_batch)
     assert not any("Welcome to NAVIG setup" in msg[1] for msg in second_batch)
 
 

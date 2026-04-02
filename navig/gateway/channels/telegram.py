@@ -911,8 +911,7 @@ class TelegramChannel:
                     await self._handle_help(chat_id)
                     return
                 if cmd.startswith("/mode"):
-                    mode_arg = cmd[5:].strip()
-                    await self._handle_mode(chat_id, mode_arg)
+                    await self._handle_mode(chat_id, text=cmd, user_id=user_id)
                     return
                 if cmd == "/briefing":
                     await self._handle_briefing(chat_id, user_id, metadata)
@@ -921,7 +920,7 @@ class TelegramChannel:
                     await self._handle_deck(chat_id)
                     return
                 if cmd == "/ping":
-                    await self.send_message(chat_id, "🏓 pong.", parse_mode=None)
+                    await self._handle_ping(chat_id, user_id)
                     return
                 if cmd == "/voiceon":
                     if HAS_SESSIONS:
