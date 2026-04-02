@@ -662,6 +662,46 @@ def show_init_status() -> dict[str, Any]:
         cfg.global_config.get("email", {}).get("smtp_host")
     )
 
+    web_cfg = cfg.global_config.get("web", {}) if isinstance(cfg.global_config, dict) else {}
+    web_search_cfg = web_cfg.get("search", {}) if isinstance(web_cfg, dict) else {}
+    web_provider = str(web_search_cfg.get("provider") or os.environ.get("NAVIG_WEB_SEARCH_PROVIDER") or "auto").strip().lower()
+    if not web_provider:
+        web_provider = "auto"
+
+    def _web_key_from_vault(provider_name: str) -> str:
+        label_map = {
+            "brave": ("web/brave_api_key", "brave/api_key", "brave_api_key"),
+            "perplexity": ("web/perplexity_api_key", "perplexity/api_key", "pplx/api_key"),
+            "gemini": ("web/gemini_api_key", "google/api_key", "google_api_key"),
+            "grok": ("web/grok_api_key", "xai/api_key", "xai_api_key"),
+            "kimi": ("web/kimi_api_key", "moonshot/api_key", "moonshot_api_key"),
+        }
+        try:
+            from navig.vault.core_v2 import get_vault_v2
+
+            vault = get_vault_v2()
+            for label in label_map.get(provider_name, ()):
+                try:
+                    value = (vault.get_secret(label) or "").strip()
+                except Exception:
+                    continue
+                if value:
+                    return value
+        except Exception:
+            pass
+        return ""
+
+    web_key = ""
+    if web_provider and web_provider != "auto":
+        web_key = _web_key_from_vault(web_provider)
+    if not web_key and web_provider == "brave":
+        web_key = str(web_search_cfg.get("api_key") or os.environ.get("BRAVE_API_KEY") or "").strip()
+    if not web_key:
+        api_keys = web_search_cfg.get("api_keys", {}) if isinstance(web_search_cfg, dict) else {}
+        if isinstance(api_keys, dict):
+            web_key = str(api_keys.get(web_provider) or "").strip()
+    web_ready = web_provider in {"auto", "duckduckgo"} or bool(web_key)
+
     payload = {
         "provider": active_provider,
         "hosts_count": hosts_count,
@@ -670,6 +710,10 @@ def show_init_status() -> dict[str, Any]:
             "telegram": telegram_active,
             "matrix": matrix_active,
             "email": email_active,
+        },
+        "web_search": {
+            "provider": web_provider,
+            "ready": web_ready,
         },
         "python_version": sys.version.split()[0],
         "navig_version": navig_version,
@@ -686,6 +730,10 @@ def show_init_status() -> dict[str, Any]:
         state = "on" if integrations[name] else "off"
         labels.append(f"{name}={state}")
     ch.info("Integrations: " + ", ".join(labels))
+    ch.info(
+        f"Web search: {payload['web_search']['provider']} "
+        f"({'ready' if payload['web_search']['ready'] else 'needs key'})"
+    )
     ch.info(f"Python: {payload['python_version']}")
     ch.info(f"NAVIG: {payload['navig_version']}")
 

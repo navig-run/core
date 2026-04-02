@@ -542,6 +542,27 @@ navig db list --help
 navig host monitor show --help
 ```
 
+### Fast Root Help Screen
+
+`navig --help` (and bare `navig`) now prints a compact one-screen command map with:
+
+- status bar (`host`, `profile`, `version`)
+- grouped sections (Core, Connections, Apps & Services, Infrastructure,
+  Security, Environment, Monitoring, Developer)
+- aligned command descriptions for quick scanning
+- high-value examples and a rotating single-line tip
+
+Top-level compatibility aliases are also exposed for operator ergonomics:
+`navig cert`, `navig key`, `navig firewall`, `navig dns`, `navig port`,
+`navig proxy`, `navig env`, `navig secret`, `navig job`, and `navig alias`.
+
+This root screen is intentionally terse. Use topic help for full detail:
+
+```bash
+navig help <topic>
+navig <command> --help
+```
+
 ---
 
 ## 2. Host Management

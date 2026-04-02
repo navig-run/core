@@ -6,14 +6,6 @@ applyTo: '**'
 
 > Behavioral directives for AI agents interacting with remote hosts and applications via NAVIG CLI.
 
-## Priority Rules (Read First)
-
-- Check `CHANGELOG.md` first before implementing related changes.
-- Use `.dev/` for AI scripts/logs/outputs/scratch.
-- Use `.local/` only for backups/moved files and compatibility temp artifacts.
-- Keep repo root clean and avoid ad-hoc files.
-- When command syntax is uncertain, prefer `navig help --schema` before guessing.
-
 ## 🚨 QUICK REFERENCE: Most Common Mistakes
 
 ### Mistake 1: Using `--b64` flag incorrectly
@@ -77,9 +69,7 @@ navig run --b64 $b64
 - **WHEN TO RUN**: BEFORE any remote operation, verify or set the active host context
 - **CHECK FIRST**: Run `navig host show` to see active host (or `navig status`)
 - **SET CONTEXT**: Use `navig host use <hostname>` to switch hosts
-- **VERIFICATION**: After switching, confirm with `navig host test` to verify connectivity
-  - Remote hosts: SSH check
-  - Local hosts (`type: local` or `is_local: true`): local shell probe (SSH skipped)
+- **VERIFICATION**: After switching, confirm with `navig host test` to verify SSH connectivity
 - **CONFIG HEALTH CHECK**: If commands fail unexpectedly, run `navig config validate` (use `--scope project|global|both` as appropriate)
 - **TRIGGER ACTIONS**:
   - User mentions a server name/hostname
@@ -94,7 +84,7 @@ navig run --b64 $b64
   | `navig host use <name>` | Switch active host context |
   | `navig host add` | Add new host (interactive wizard) |
   | `navig host show` | Show current host information |
-  | `navig host test` | Test connectivity (SSH for remote, local probe for local hosts) |
+  | `navig host test` | Test SSH connection |
   | `navig host monitor show` | Server monitoring (resources, disk) |
   | `navig host security show` | Security status (firewall, SSH) |
   | `navig host maintenance` | System maintenance (updates, cleanup) |
@@ -417,6 +407,18 @@ echo env('APP_ENV');
   | `navig web hestia` | HestiaCP control panel management |
 
 
+## Web Search Operations (navig_search)
+- **WHEN TO RUN**: User asks to search the web from NAVIG CLI (`navig search ...`)
+- **PROVIDER FLAG**:
+  - `--provider auto` (default): uses configured provider preference and runtime fallback
+  - Explicit options: `brave`, `duckduckgo`, `perplexity`, `gemini`, `grok`, `kimi`
+- **RUNTIME SUPPORT NOTE**:
+  - Current runtime engines execute with Brave or DuckDuckGo.
+  - Non-runtime providers (`perplexity`, `gemini`, `grok`, `kimi`) act as preferences; runtime falls back to Brave (if key available) else DuckDuckGo.
+- **ONBOARDING ALIGNMENT**:
+  - Use `navig init` and complete the **web-search-provider** step to set provider preference and API key (vault-first, config/env fallback).
+
+
 ## Monitoring & Security (navig_monitoring)
 - **WHEN TO RUN**: Health checks, resource monitoring, security audits
 - **TRIGGER PHRASES**:
@@ -459,7 +461,7 @@ echo env('APP_ENV');
   | `--all` | Full backup |
   | `--compress gzip` | Compress backups |
 - **EXAMPLES**:
-  - DB backup: `navig db dump mydb -o backup.sql.gz`
+  - DB backup: `navig db dump mydb -o backup.sql --compress`
   - Config backup: `navig backup run --config`
   - All DBs: `navig backup run --db-all --compress gzip`
   - Full: `navig backup run --all`

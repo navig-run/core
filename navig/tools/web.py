@@ -49,6 +49,38 @@ DEFAULT_USER_AGENT = (
 BRAVE_SEARCH_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 DUCKDUCKGO_ENDPOINT = "https://api.duckduckgo.com/"
 
+_WEB_PROVIDER_ALIASES: dict[str, str] = {
+    "": "auto",
+    "auto": "auto",
+    "brave": "brave",
+    "brave-search": "brave",
+    "duckduckgo": "duckduckgo",
+    "ddg": "duckduckgo",
+    "perplexity": "perplexity",
+    "gemini": "gemini",
+    "google": "gemini",
+    "grok": "grok",
+    "xai": "grok",
+    "kimi": "kimi",
+    "moonshot": "kimi",
+}
+
+_WEB_PROVIDER_ENV_VARS: dict[str, tuple[str, ...]] = {
+    "brave": ("BRAVE_API_KEY",),
+    "perplexity": ("PERPLEXITY_API_KEY", "PPLX_API_KEY"),
+    "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    "grok": ("XAI_API_KEY", "GROK_KEY"),
+    "kimi": ("KIMI_API_KEY", "MOONSHOT_API_KEY"),
+}
+
+_WEB_PROVIDER_VAULT_LABELS: dict[str, tuple[str, ...]] = {
+    "brave": ("web/brave_api_key", "brave/api_key", "brave_api_key"),
+    "perplexity": ("web/perplexity_api_key", "perplexity/api_key", "pplx/api_key"),
+    "gemini": ("web/gemini_api_key", "google/api_key", "google_api_key"),
+    "grok": ("web/grok_api_key", "xai/api_key", "xai_api_key"),
+    "kimi": ("web/kimi_api_key", "moonshot/api_key", "moonshot_api_key"),
+}
+
 
 # =============================================================================
 # Cache
@@ -639,18 +671,79 @@ def web_search(
             result.cached = True
             return result
 
-    # Get API key from environment if not provided
     import os
 
-    brave_key = api_key or os.environ.get("BRAVE_API_KEY", "")
+    def _norm_provider(name: str) -> str:
+        return _WEB_PROVIDER_ALIASES.get(str(name or "").strip().lower(), "auto")
 
-    # Auto-select provider
-    if provider == "auto":
-        provider = "brave" if brave_key else "duckduckgo"
+    def _resolve_vault_key(provider_name: str) -> str:
+        try:
+            from navig.vault.core_v2 import get_vault_v2
+
+            vault = get_vault_v2()
+            for label in _WEB_PROVIDER_VAULT_LABELS.get(provider_name, ()):
+                try:
+                    value = (vault.get_secret(label) or "").strip()
+                except Exception:
+                    continue
+                if value:
+                    return value
+        except Exception:
+            pass
+        return ""
+
+    def _resolve_key(provider_name: str, search_cfg: dict[str, Any]) -> str:
+        api_keys = search_cfg.get("api_keys") or {}
+
+        explicit = (api_key or "").strip()
+        if explicit:
+            return explicit
+
+        vault_value = _resolve_vault_key(provider_name)
+        if vault_value:
+            return vault_value
+
+        if isinstance(api_keys, dict):
+            candidate = str(api_keys.get(provider_name) or "").strip()
+            if candidate:
+                return candidate
+
+        if provider_name == "brave":
+            legacy_cfg = str(search_cfg.get("api_key") or "").strip()
+            if legacy_cfg:
+                return legacy_cfg
+
+        for env_name in _WEB_PROVIDER_ENV_VARS.get(provider_name, ()):
+            value = (os.environ.get(env_name) or "").strip()
+            if value:
+                return value
+
+        return ""
+
+    cfg = get_web_config()
+    search_cfg = cfg.get("search", {}) if isinstance(cfg, dict) else {}
+    config_provider = _norm_provider(str(search_cfg.get("provider") or "auto"))
+    requested_provider = _norm_provider(provider)
+
+    selected_provider = config_provider if requested_provider == "auto" else requested_provider
+    if selected_provider == "auto":
+        selected_provider = "duckduckgo"
+
+    selected_key = _resolve_key(selected_provider, search_cfg)
+
+    # Runtime engine currently supports Brave + DuckDuckGo.
+    if selected_provider not in ("brave", "duckduckgo"):
+        brave_key = _resolve_key("brave", search_cfg)
+        if brave_key:
+            selected_provider = "brave"
+            selected_key = brave_key
+        else:
+            selected_provider = "duckduckgo"
+            selected_key = ""
 
     # Perform search
-    if provider == "brave":
-        if not brave_key:
+    if selected_provider == "brave":
+        if not selected_key:
             return WebSearchResult(
                 success=False,
                 query=query,
@@ -658,11 +751,11 @@ def web_search(
                 error=(
                     "Brave Search API key not configured.\n"
                     "1. Get a free API key: https://brave.com/search/api/\n"
-                    "2. Set it via: navig config set web.search.api_key YOUR_KEY\n"
+                    "2. Set it via: navig init (web search provider step)\n"
                     "   Or set BRAVE_API_KEY environment variable"
                 ),
             )
-        result = _search_brave(query, brave_key, count, timeout_seconds)
+        result = _search_brave(query, selected_key, count, timeout_seconds)
     else:
         result = _search_duckduckgo(query, count, timeout_seconds)
 
@@ -871,8 +964,9 @@ def get_web_config(config_manager=None) -> dict[str, Any]:
         },
         "search": {
             "enabled": True,
-            "provider": "auto",
+            "provider": os.environ.get("NAVIG_WEB_SEARCH_PROVIDER", "auto"),
             "api_key": os.environ.get("BRAVE_API_KEY", ""),
+            "api_keys": {},
         },
     }
 

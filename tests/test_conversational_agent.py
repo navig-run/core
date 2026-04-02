@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -128,6 +129,47 @@ async def test_emit_event_swallows_callback_exception() -> None:
     await agent._emit_event(
         StatusEvent(type="thinking", task_id="1", message="m", timestamp=datetime.now())
     )
+
+
+async def test_plan_context_loaded_log_emitted() -> None:
+    """Agent startup emits required plan_context_loaded log with space + key count."""
+
+    class _FakeAIClient:
+        def is_available(self) -> bool:
+            return True
+
+        async def chat(self, msgs):
+            return "ok"
+
+    with (
+        patch("navig.spaces.resolver.get_default_space", return_value="an0"),
+        patch("navig.plans.context.PlanContext.gather") as gather_mock,
+        patch("navig.routing.router.get_router") as get_router_mock,
+        patch("navig.agent.conv.agent.logger.info") as info_mock,
+    ):
+        gather_mock.return_value = {
+            "current_phase": "---\ntitle: Auth refactor\n---\n",
+            "dev_plan": "- [ ] do thing\n",
+            "wiki": [],
+            "docs": [],
+            "inbox_unread": 0,
+            "mcp_resources": None,
+            "errors": {},
+        }
+
+        # Force fallback path to ai_client.chat so _get_ai_response always completes.
+        get_router_mock.return_value.run = AsyncMock(side_effect=RuntimeError("router down"))
+
+        agent = _make_agent(ai_client=_FakeAIClient())
+        await agent.chat("hello")
+
+        assert info_mock.called
+        assert any(
+            call.args
+            and call.args[0] == "plan_context_loaded space=%s non_null_keys=%d"
+            and call.args[1] == "an0"
+            for call in info_mock.call_args_list
+        )
 
 
 # ---------------------------------------------------------------------------

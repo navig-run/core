@@ -354,7 +354,9 @@ host/crates/**/target/
 # Local workspace policy
 # - .dev/: AI working folder (scripts/logs/outputs/scratch) — never commit
 # - .local/: backups/moved artifacts and local temp compatibility — never commit
+.dev/
 .local/
+.lab/
 $null
 
 # pytest local temp dirs (all variants land inside .local/)

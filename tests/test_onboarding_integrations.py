@@ -100,6 +100,7 @@ def test_build_step_registry_includes_new_integration_steps(tmp_path: Path) -> N
         "core-navig",
         "ai-provider",
         "vault-init",
+        "web-search-provider",
         "first-host",
         "matrix",
         "telegram-bot",
@@ -109,6 +110,33 @@ def test_build_step_registry_includes_new_integration_steps(tmp_path: Path) -> N
         "skills-activation",
         "review",
     ]
+
+
+def test_web_search_provider_step_accepts_env_duckduckgo(monkeypatch, tmp_path: Path) -> None:
+    step = next(step for step in _registry(tmp_path) if step.id == "web-search-provider")
+
+    monkeypatch.setenv("NAVIG_WEB_SEARCH_PROVIDER", "ddg")
+    result = step.run()
+
+    config = yaml.safe_load((tmp_path / "config.yaml").read_text(encoding="utf-8"))
+    assert result.status == "completed"
+    assert result.output["provider"] == "duckduckgo"
+    assert config["web"]["search"]["provider"] == "duckduckgo"
+
+
+def test_web_search_provider_step_invalid_env_falls_back_to_auto(
+    monkeypatch, tmp_path: Path
+) -> None:
+    step = next(step for step in _registry(tmp_path) if step.id == "web-search-provider")
+
+    monkeypatch.setenv("NAVIG_WEB_SEARCH_PROVIDER", "unsupported-provider")
+    result = step.run()
+
+    config = yaml.safe_load((tmp_path / "config.yaml").read_text(encoding="utf-8"))
+    assert result.status == "skipped"
+    assert result.output["provider"] == "auto"
+    assert "invalid" in result.output["reason"]
+    assert config["web"]["search"]["provider"] == "auto"
 
 
 def test_validate_matrix_success_and_auth_failure(monkeypatch) -> None:

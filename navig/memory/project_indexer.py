@@ -263,8 +263,22 @@ def _load_ignore_rules(project_root: Path) -> list[str]:
 
 
 def _is_ignored(rel_path: str, ignore_patterns: list[str], is_dir: bool = False) -> bool:
-    """Check if a relative path matches any ignore pattern."""
-    parts = rel_path.replace("\\", "/").split("/")
+    """Check if a relative path matches any ignore pattern.
+
+    ``.navig/plans/`` and ``.navig/wiki/`` are force-included even when
+    ``.navig`` appears in ``.gitignore`` — these contain plan and wiki
+    content that must be searchable.
+    """
+    # Force-include whitelist: always index plans and wiki inside .navig
+    _norm = rel_path.replace("\\", "/")
+    if (
+        _norm == ".navig"
+        or _norm.startswith(".navig/plans")
+        or _norm.startswith(".navig/wiki")
+    ):
+        return False
+
+    parts = _norm.split("/")
     for pattern in ignore_patterns:
         pat = pattern.rstrip("/")
         # Match against any path component

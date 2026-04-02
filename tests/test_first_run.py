@@ -169,6 +169,7 @@ class TestFirstRunNonTTY:
         phase2_ids = {
             "ai-provider",
             "vault-init",
+            "web-search-provider",
             "first-host",
             "telegram-bot",
             "skills-activation",

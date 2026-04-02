@@ -42,6 +42,7 @@ Telegram now supports command-equivalent natural language for visible slash comm
 - Safe/read-style intents run immediately (example: "show status" → `/status`).
 - Risky intents require explicit confirmation (`yes` / `cancel`) before execution.
 - Missing-argument intents return command usage help instead of guessing.
+- Unmapped or ambiguous intents return one-tap command suggestion buttons (`nl_pick:*`) so users can execute directly from the suggestion card.
 
 Risky commands requiring confirmation include remote execution or state-changing actions such as:
 - `/run`, `/restart`, `/docker` mutating operations
@@ -225,7 +226,7 @@ These are button-driven actions, not slash commands.
 - `dbg_*` → debug panel actions
 - `trace_*` → trace quick actions
 - `heard_*` → heard/reaction actions
-- `nl_*` → natural-language confirm/cancel actions
+- `nl_*` → natural-language confirm/cancel plus one-tap suggestion execution (`nl_pick:*`)
 - `audio:*` and `audmsg:*` → deep audio controls
 - `task:*` → task-card controls (safe fallback if unavailable)
 

@@ -899,6 +899,39 @@ def get_llm_router(force_new: bool = False) -> LLMModeRouter:
 # Convenience function (integration point)
 # ─────────────────────────────────────────────────────────────
 
+# ── Semantic Routing → Toolset Hints (MVP3 F-20) ─────────────
+
+#: Mapping from canonical mode to suggested agent toolsets.
+#: ``run_agentic()`` merges these with any explicit ``toolset=`` arg so
+#: routing automatically narrows tool scope → cheaper schema, better
+#: tool selection, lower latency.
+MODE_TOOLSET_HINTS: dict[str, list[str]] = {
+    "big_tasks": ["core", "devops", "memory"],
+    "coding": ["core", "code", "search"],
+    "research": ["search", "wiki", "memory"],
+    "small_talk": [],  # no tools for casual chat
+    "summarize": ["memory"],
+}
+
+
+def suggest_toolsets(
+    user_input: str | None = None,
+    *,
+    mode: str | None = None,
+) -> list[str]:
+    """Return suggested agent toolset names for a user message.
+
+    If *mode* is provided it is used directly; otherwise the mode is
+    detected from *user_input* via :func:`detect_mode`.
+
+    Returns an empty list when no tools should be offered (e.g. ``small_talk``).
+    """
+    if mode is None:
+        mode = detect_mode(user_input or "")
+    else:
+        mode = LLMModeRouter.resolve_mode(mode)
+    return list(MODE_TOOLSET_HINTS.get(mode, ["core"]))
+
 
 def resolve_llm(
     mode: str | None = None,

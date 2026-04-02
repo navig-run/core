@@ -16,12 +16,93 @@ logger = get_debug_logger()
 
 def register(app, gateway):
     app.router.add_get("/api/daemon/status", _daemon_status(gateway))
+    app.router.add_post("/api/daemon/start", _daemon_start(gateway))
     app.router.add_post("/api/daemon/stop", _daemon_stop(gateway))
+    app.router.add_post("/api/daemon/restart", _daemon_restart(gateway))
     app.router.add_post("/api/formation/start", _formation_start(gateway))
+
+
+async def _run_service_action(action: str, *, timeout_seconds: float = 30.0) -> tuple[bool, str, str]:
+    """Run `navig service <action>` and normalize outcome for API responses."""
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "navig.cli",
+        "service",
+        action,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_seconds)
+    except asyncio.TimeoutError:
+        process.kill()
+        return (False, f"Timed out while executing `navig service {action}`", "timeout")
+
+    output = (stdout.decode("utf-8", errors="ignore") + "\n" + stderr.decode("utf-8", errors="ignore")).strip()
+    lowered = output.lower()
+
+    if action == "start":
+        if "already running" in lowered:
+            return (True, "Daemon already running", "noop_already_running")
+        if process.returncode == 0:
+            return (True, "Daemon started", "started")
+        return (False, output or "Failed to start daemon", "start_failed")
+
+    if action == "stop":
+        if "is not running" in lowered or "already stopped" in lowered:
+            return (True, "Daemon already stopped", "noop_already_stopped")
+        if process.returncode == 0:
+            return (True, "Daemon stopped", "stopped")
+        return (False, output or "Failed to stop daemon", "stop_failed")
+
+    if action == "restart":
+        if process.returncode == 0:
+            return (True, "Daemon restarted", "restarted")
+        return (False, output or "Failed to restart daemon", "restart_failed")
+
+    return (False, f"Unsupported action: {action}", "unsupported_action")
+
+
+def _daemon_start(gw):
+    async def h(request):
+        auth = require_bearer_auth(request, gw)
+        if auth is not None:
+            return auth
+
+        actor = request.headers.get("X-Actor", request.remote or "unknown")
+        block = await gw.policy_check("system.start", actor)
+        if block is not None:
+            return block
+
+        logger.info("Daemon start requested via /api/daemon/start by actor=%s", actor)
+        ok, message, result_code = await _run_service_action("start")
+        if ok:
+            resp = json_ok({"ok": True, "status": "started", "message": message, "result_code": result_code})
+        else:
+            resp = json_error_response(
+                "Failed to start daemon",
+                status=500,
+                code="daemon_start_failed",
+                details={"message": message, "result_code": result_code},
+            )
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        return resp
+
+    return h
 
 
 def _daemon_status(gw):
     async def h(request):
+        daemon_status_value = "UNKNOWN"
+        try:
+            from navig.daemon.supervisor import NavigDaemon
+
+            daemon_status_value = "UP" if NavigDaemon.is_running() else "DOWN"
+        except Exception:  # noqa: BLE001
+            daemon_status_value = "UNKNOWN"
+
         # 1. Active formation
         active_formation = None
         try:
@@ -51,7 +132,7 @@ def _daemon_status(gw):
         # To ensure we have CORS enabled for Deck / Bridge if they hit it directly from browser
         resp = json_ok(
             {
-                "daemonStatus": "UP",
+                "daemonStatus": daemon_status_value,
                 "activeFormation": active_formation,
                 "nodes": nodes,
             }
@@ -74,15 +155,54 @@ def _daemon_stop(gw):
             return block
 
         logger.info("Daemon stop requested via /api/daemon/stop by actor=%s", actor)
-        resp = json_ok({"status": "shutting_down", "message": "Daemon shutdown initiated"})
+        resp = json_ok(
+            {
+                "ok": True,
+                "status": "stopping",
+                "message": "Daemon stop initiated",
+                "result_code": "stopping",
+            }
+        )
         resp.headers["Access-Control-Allow-Origin"] = "*"
 
         async def _d():
-            await asyncio.sleep(0.5)
-            await gw.stop()
-            sys.exit(0)
+            await asyncio.sleep(0.25)
+            subprocess.Popen(
+                [sys.executable, "-m", "navig.cli", "service", "stop"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
 
         asyncio.create_task(_d())
+        return resp
+
+    return h
+
+
+def _daemon_restart(gw):
+    async def h(request):
+        auth = require_bearer_auth(request, gw)
+        if auth is not None:
+            return auth
+
+        actor = request.headers.get("X-Actor", request.remote or "unknown")
+        block = await gw.policy_check("system.restart", actor)
+        if block is not None:
+            return block
+
+        logger.info("Daemon restart requested via /api/daemon/restart by actor=%s", actor)
+        ok, message, result_code = await _run_service_action("restart")
+        if ok:
+            resp = json_ok({"ok": True, "status": "restarted", "message": message, "result_code": result_code})
+        else:
+            resp = json_error_response(
+                "Failed to restart daemon",
+                status=500,
+                code="daemon_restart_failed",
+                details={"message": message, "result_code": result_code},
+            )
+        resp.headers["Access-Control-Allow-Origin"] = "*"
         return resp
 
     return h

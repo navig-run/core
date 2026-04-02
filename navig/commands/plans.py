@@ -277,6 +277,79 @@ def plans_sync(
         typer.echo(f"Sync summary: {written} routed, {kept} kept in inbox, {errors} errors")
 
 
+@plans_app.command("summary")
+def plans_summary(
+    path: str | None = typer.Option(None, "--path", "-p", help="Workspace path"),
+) -> None:
+    """Show cross-space phase rollup table.
+
+    Columns: Space | Phase | Status | Completion | Last Updated.
+    """
+    from navig.spaces.resolver import discover_space_paths
+
+    def _first_non_frontmatter_line(text: str) -> str:
+        _, body = _split_frontmatter(text)
+        for line in body.splitlines():
+            stripped = line.strip()
+            if stripped:
+                return stripped.lstrip("# ").strip()
+        return "—"
+
+    cwd = Path(path).resolve() if path else Path.cwd()
+    discovered = discover_space_paths(cwd=cwd)
+
+    if not discovered:
+        typer.secho("No spaces discovered in project or global scope.", fg=typer.colors.YELLOW)
+        raise typer.Exit(0)
+
+    rows: list[tuple[str, str, str, str, str, bool]] = []
+    for space_name, cfg in discovered.items():
+        phase_file = cfg.path / "CURRENT_PHASE.md"
+        if not phase_file.is_file():
+            rows.append((space_name, "—", "—", "—", "—", True))
+            continue
+
+        try:
+            text = phase_file.read_text(encoding="utf-8", errors="replace")
+            fm, _ = _split_frontmatter(text)
+            phase_title = _first_non_frontmatter_line(text)
+            status = fm.get("status", "—") or "—"
+            completion_raw = fm.get("completion_pct", "—") or "—"
+            if completion_raw != "—":
+                try:
+                    completion = f"{float(completion_raw):.0f}%"
+                except ValueError:
+                    completion = str(completion_raw)
+            else:
+                completion = "—"
+            last_updated = fm.get("last_updated", "—") or "—"
+            rows.append((space_name, phase_title, status, completion, last_updated, False))
+        except Exception:
+            rows.append((space_name, "—", "—", "—", "—", True))
+
+    # Sort by last_updated desc; missing values last.
+    rows.sort(key=lambda row: (row[4] != "—", row[4]), reverse=True)
+
+    table = Table()
+    table.add_column("Space", style="cyan", no_wrap=True)
+    table.add_column("Phase", overflow="fold")
+    table.add_column("Status", no_wrap=True)
+    table.add_column("Completion", justify="right", no_wrap=True)
+    table.add_column("Last Updated", no_wrap=True)
+
+    for space_name, phase_title, status, completion, last_updated, dimmed in rows:
+        table.add_row(
+            space_name,
+            phase_title,
+            status,
+            completion,
+            last_updated,
+            style="dim" if dimmed else None,
+        )
+
+    _console.print(table)
+
+
 @plans_app.command("update")
 def plans_update(
     file: str = typer.Argument("CURRENT_PHASE.md", help="Plan markdown file to update"),

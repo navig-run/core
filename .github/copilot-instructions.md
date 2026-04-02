@@ -71,7 +71,7 @@
 
 - Keep the repo root clean. No temp files, logs, or scratch scripts at root level.
 - `.dev/` — AI scripts, logs, outputs, scratch artifacts.
-- `.local/` — backups and compatibility temp files only.
+- `.dev/` — backups and compatibility temp files.
 - `.github/instructions/` — authoritative dev and AI agent directives. Do not duplicate their content.
 - Do not add `node_modules/`, `__pycache__/`, `.env`, or build artefacts to source control.
 

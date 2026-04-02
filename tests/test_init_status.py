@@ -56,6 +56,8 @@ def test_show_init_status_returns_expected_payload(tmp_path: Path, monkeypatch, 
     assert payload["integrations"]["telegram"] is True
     assert payload["integrations"]["matrix"] is True
     assert payload["integrations"]["email"] is False
+    assert payload["web_search"]["provider"] in {"auto", "brave", "duckduckgo", "perplexity", "gemini", "grok", "kimi"}
+    assert isinstance(payload["web_search"]["ready"], bool)
     assert payload["python_version"]
     assert payload["navig_version"]
 

@@ -216,6 +216,28 @@ class TestIgnoreRules:
         assert not _is_indexable("image.png")
         assert not _is_indexable("data.bin")
 
+    def test_navig_plans_force_included(self):
+        """`.navig/plans/` must bypass .gitignore exclusion."""
+        patterns = list(DEFAULT_EXCLUDES) + [".navig/", ".navig"]
+        assert not _is_ignored(".navig/plans/DEV_PLAN.md", patterns)
+        assert not _is_ignored(".navig/plans/phases/CURRENT_PHASE.md", patterns)
+
+    def test_navig_wiki_force_included(self):
+        """`.navig/wiki/` must bypass .gitignore exclusion."""
+        patterns = list(DEFAULT_EXCLUDES) + [".navig/", ".navig"]
+        assert not _is_ignored(".navig/wiki/knowledge/concepts/auth.md", patterns)
+
+    def test_navig_other_dirs_still_excluded(self):
+        """`.navig/cache/` and other subdirs should remain excluded."""
+        patterns = list(DEFAULT_EXCLUDES) + [".navig/", ".navig"]
+        assert _is_ignored(".navig/cache/index.db", patterns)
+        assert _is_ignored(".navig/logs/debug.log", patterns)
+
+    def test_navig_root_force_included(self):
+        """The `.navig` directory itself must not be ignored (it contains plans/wiki)."""
+        patterns = list(DEFAULT_EXCLUDES) + [".navig/", ".navig"]
+        assert not _is_ignored(".navig", patterns)
+
 
 # ============================================================================
 # Chunking

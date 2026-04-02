@@ -77,6 +77,7 @@ class ConversationalAgent:
         self._user_identity: dict[str, str] = {}
         self._focus_mode = self._last_user_message = self._tier_override = ""
         self._entrypoint, self.context = "channel", {}
+        self._plan_context_loaded = False
 
     @property
     def on_status_update(self) -> Callable[[StatusEvent], Awaitable[None]] | None:
@@ -294,6 +295,40 @@ class ConversationalAgent:
             {"role": "system", "content": system_prompt},
             *self._history.get_messages(),
         ]
+        # ── Lazy plan context injection ──
+        if not self._plan_context_loaded:
+            try:
+                from navig.plans.context import PlanContext
+                from navig.spaces.resolver import get_default_space
+
+                active_space = get_default_space()
+                space_name = active_space
+                pc = PlanContext()
+                snapshot = pc.gather(space_name)
+                if snapshot:
+                    self.context["plan_context"] = snapshot
+                    non_null = sum(
+                        1
+                        for key in (
+                            "current_phase",
+                            "dev_plan",
+                            "wiki",
+                            "docs",
+                            "inbox_unread",
+                            "mcp_resources",
+                        )
+                        if snapshot.get(key) is not None
+                    )
+                    logger.info(
+                        "plan_context_loaded space=%s non_null_keys=%d",
+                        space_name,
+                        non_null,
+                    )
+                self._plan_context_loaded = True
+            except Exception as exc:
+                logger.debug("plan context injection skipped: %s", exc)
+                self._plan_context_loaded = True
+
         if self.context:
             msgs[0]["content"] += f"\nContext: {json.dumps(self.context)}"
         tier = self._tier_override

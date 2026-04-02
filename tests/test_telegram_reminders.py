@@ -462,6 +462,10 @@ async def test_natural_language_unmapped_command_shows_suggestions(monkeypatch, 
     )
     assert handled is True
     assert any("Try:" in m[1] for m in bot.messages)
+    keyboard = bot.messages[-1][3].get("keyboard")
+    assert keyboard
+    callback_values = [btn.get("callback_data") for row in keyboard for btn in row]
+    assert any(str(value).startswith("nl_pick:") for value in callback_values)
 
 
 @pytest.mark.asyncio
@@ -507,6 +511,58 @@ async def test_nl_callback_yes_and_cancel(monkeypatch, tmp_path):
     await bot._handle_nl_callback("cb2", "nl_cancel", 123, 456)
     assert any("Cancelled" in call[1].get("text", "") for call in bot.api_calls)
     assert any("action cancelled" in m[1].lower() for m in bot.messages)
+
+
+@pytest.mark.asyncio
+async def test_nl_callback_pick_runs_safe_command(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    ran: list[tuple[str, str]] = []
+
+    async def _fake_exec(**kwargs):
+        ran.append((kwargs.get("command", ""), kwargs.get("args", "")))
+
+    monkeypatch.setattr(bot, "_execute_nl_registry_command", _fake_exec)
+
+    await bot._handle_nl_callback("cb3", "nl_pick:status", 123, 456)
+    assert ran == [("status", "")]
+    assert any("Running /status" in call[1].get("text", "") for call in bot.api_calls)
+
+
+@pytest.mark.asyncio
+async def test_nl_callback_pick_risky_requires_confirmation(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    await bot._handle_nl_callback("cb4", "nl_pick:restart", 123, 456)
+
+    assert any("Risky action detected" in m[1] for m in bot.messages)
+    assert any("Confirmation required" in call[1].get("text", "") for call in bot.api_calls)
+    state = fake_store.get_ai_state(456) or {}
+    pending = ((state.get("context") or {}).get("nl_pending") or {})
+    assert pending.get("active") is True
+    assert pending.get("command") == "restart"
+
+
+@pytest.mark.asyncio
+async def test_nl_callback_pick_missing_args_shows_usage(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    await bot._handle_nl_callback("cb5", "nl_pick:search", 123, 456)
+
+    assert any("needs arguments" in m[1].lower() for m in bot.messages)
+    assert any("Needs arguments" in call[1].get("text", "") for call in bot.api_calls)
 
 
 @pytest.mark.asyncio

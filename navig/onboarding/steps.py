@@ -29,6 +29,35 @@ from .engine import EngineConfig, OnboardingStep, StepResult
 from .genesis import GenesisData
 
 
+_WEB_SEARCH_PROVIDER_CATALOG: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    (
+        "perplexity",
+        "Perplexity Search  (structured results, domain/language/freshness filters)",
+        ("PERPLEXITY_API_KEY", "PPLX_API_KEY"),
+    ),
+    (
+        "brave",
+        "Brave Search       (structured results, region-specific)",
+        ("BRAVE_API_KEY",),
+    ),
+    (
+        "gemini",
+        "Gemini (Google)    (Google Search grounding, AI-synthesized)",
+        ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    ),
+    (
+        "grok",
+        "Grok (xAI)         (xAI web-grounded responses)",
+        ("XAI_API_KEY", "GROK_KEY"),
+    ),
+    (
+        "kimi",
+        "Kimi (Moonshot)    (Moonshot web search)",
+        ("KIMI_API_KEY", "MOONSHOT_API_KEY"),
+    ),
+)
+
+
 def build_step_registry(
     config: EngineConfig,
     genesis: GenesisData,
@@ -55,6 +84,7 @@ def build_step_registry(
         # ── Phase 2: interactive configuration ───────────────────────────
         _step_ai_provider(navig_dir),
         _step_vault_init(navig_dir),
+        _step_web_search_provider(navig_dir),
         _step_first_host(navig_dir),
         _step_matrix(navig_dir),
         _step_telegram_bot(navig_dir),
@@ -722,6 +752,202 @@ def _step_first_host(navig_dir: Path) -> OnboardingStep:
     return OnboardingStep(
         id="first-host",
         title="Connect first remote server",
+        run=run,
+        verify=verify,
+        on_failure="skip",
+        independent=True,
+        phase="configuration",
+        tier="recommended",
+    )
+
+
+def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
+    """Configure web search provider preference and optional API key."""
+
+    provider_aliases = {
+        "": "auto",
+        "auto": "auto",
+        "duckduckgo": "duckduckgo",
+        "ddg": "duckduckgo",
+        "brave": "brave",
+        "brave-search": "brave",
+        "perplexity": "perplexity",
+        "gemini": "gemini",
+        "google": "gemini",
+        "grok": "grok",
+        "xai": "grok",
+        "kimi": "kimi",
+        "moonshot": "kimi",
+    }
+
+    def _persist_provider(preferred_provider: str) -> bool:
+        try:
+            import yaml  # type: ignore[import]
+
+            config_path = navig_dir / "config.yaml"
+            cfg: dict[str, Any] = {}
+            if config_path.exists():
+                cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            cfg.setdefault("web", {}).setdefault("search", {})["provider"] = preferred_provider
+            config_path.write_text(
+                yaml.dump(cfg, allow_unicode=True, sort_keys=False),
+                encoding="utf-8",
+            )
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _persist_key(preferred_provider: str, api_key: str) -> str:
+        if not api_key:
+            return "none"
+
+        vault_label = f"web/{preferred_provider}_api_key"
+        try:
+            from navig.vault.core_v2 import get_vault_v2
+
+            vault = get_vault_v2()
+            if vault is not None:
+                vault.put(vault_label, json.dumps({"value": api_key}).encode())
+                return "vault"
+        except Exception:  # noqa: BLE001
+            pass
+
+        try:
+            import yaml  # type: ignore[import]
+
+            config_path = navig_dir / "config.yaml"
+            cfg: dict[str, Any] = {}
+            if config_path.exists():
+                cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            search_cfg = cfg.setdefault("web", {}).setdefault("search", {})
+            api_keys = search_cfg.setdefault("api_keys", {})
+            api_keys[preferred_provider] = api_key
+            if preferred_provider == "brave":
+                search_cfg["api_key"] = api_key
+            config_path.write_text(
+                yaml.dump(cfg, allow_unicode=True, sort_keys=False),
+                encoding="utf-8",
+            )
+            return "config"
+        except Exception:  # noqa: BLE001
+            return "none"
+
+    def _resolve_env_key(env_vars: tuple[str, ...]) -> str:
+        for env_name in env_vars:
+            value = os.environ.get(env_name, "").strip()
+            if value:
+                return value
+        return ""
+
+    def run() -> StepResult:
+        env_provider_raw = os.environ.get("NAVIG_WEB_SEARCH_PROVIDER", "").strip().lower()
+        env_provider = provider_aliases.get(env_provider_raw, "")
+        if env_provider_raw and env_provider_raw != "skip":
+            catalog = {pid: (label, env_vars) for pid, label, env_vars in _WEB_SEARCH_PROVIDER_CATALOG}
+            if env_provider in catalog:
+                _, env_vars = catalog[env_provider]
+                env_key = _resolve_env_key(env_vars)
+                _persist_provider(env_provider)
+                key_source = _persist_key(env_provider, env_key) if env_key else "none"
+                return StepResult(
+                    status="completed",
+                    output={
+                        "provider": env_provider,
+                        "keySource": "environment" if env_key else key_source,
+                    },
+                )
+            if env_provider in {"auto", "duckduckgo"}:
+                _persist_provider(env_provider)
+                return StepResult(
+                    status="completed",
+                    output={
+                        "provider": env_provider,
+                        "keySource": "none",
+                    },
+                )
+            _persist_provider("auto")
+            return StepResult(
+                status="skipped",
+                output={
+                    "reason": "invalid NAVIG_WEB_SEARCH_PROVIDER value",
+                    "provider": "auto",
+                },
+            )
+
+        tty = _tty_check()
+        if tty is not None:
+            return tty
+
+        import typer
+
+        sys.stdout.write("\n  Search provider\n\n")
+        for idx, (_, label, _) in enumerate(_WEB_SEARCH_PROVIDER_CATALOG, start=1):
+            sys.stdout.write(f"    [{idx}] {label}\n")
+        sys.stdout.write("    [s] Skip for now\n\n")
+        sys.stdout.flush()
+
+        try:
+            choice_raw = typer.prompt("  Provider", default="1").strip().lower()
+        except KeyboardInterrupt:
+            raise
+        except EOFError:
+            choice_raw = "s"
+
+        if choice_raw in ("s", "skip", ""):
+            _persist_provider("auto")
+            return StepResult(status="skipped", output={"reason": "skipped by user"})
+
+        try:
+            idx = int(choice_raw) - 1
+        except ValueError:
+            return StepResult(status="skipped", output={"reason": "invalid provider selection"})
+
+        if idx < 0 or idx >= len(_WEB_SEARCH_PROVIDER_CATALOG):
+            return StepResult(status="skipped", output={"reason": "invalid provider selection"})
+
+        provider_id, provider_label, env_vars = _WEB_SEARCH_PROVIDER_CATALOG[idx]
+        env_key = _resolve_env_key(env_vars)
+        entered_key = env_key
+
+        if not entered_key:
+            try:
+                entered_key = _prompt_masked(f"  {provider_label.split('(')[0].strip()} API key", default="").strip()
+            except KeyboardInterrupt:
+                raise
+            except EOFError:
+                entered_key = ""
+
+        provider_written = _persist_provider(provider_id)
+        key_target = _persist_key(provider_id, entered_key) if entered_key else "none"
+
+        return StepResult(
+            status="completed",
+            output={
+                "provider": provider_id,
+                "providerSaved": provider_written,
+                "keySource": "environment" if env_key else ("interactive" if entered_key else "none"),
+                "keyTarget": key_target,
+            },
+        )
+
+    def verify() -> bool:
+        try:
+            import yaml  # type: ignore[import]
+
+            config_path = navig_dir / "config.yaml"
+            if not config_path.exists():
+                return False
+            cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            provider = str(
+                ((cfg.get("web") or {}).get("search") or {}).get("provider") or ""
+            ).strip()
+            return bool(provider)
+        except Exception:  # noqa: BLE001
+            return False
+
+    return OnboardingStep(
+        id="web-search-provider",
+        title="Configure web search provider",
         run=run,
         verify=verify,
         on_failure="skip",

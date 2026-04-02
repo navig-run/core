@@ -1745,6 +1745,110 @@ class TelegramCommandsMixin:
             ][:limit]
         return suggestions
 
+    def _nl_command_keyboard(
+        self,
+        commands: list[dict[str, Any]],
+        *,
+        limit: int = 3,
+    ) -> list[list[dict[str, str]]]:
+        rows: list[list[dict[str, str]]] = []
+        for item in commands[:limit]:
+            command = str(item.get("command") or "").strip().lower()
+            usage = str(item.get("usage") or f"/{command}").strip()
+            if not command:
+                continue
+            rows.append(
+                [
+                    {
+                        "text": f"▶ {usage}",
+                        "callback_data": f"nl_pick:{command}",
+                    }
+                ]
+            )
+        if rows:
+            rows.append([{"text": "🛑 Cancel", "callback_data": "nl_cancel"}])
+        return rows
+
+    async def _queue_nl_risky_command_confirmation(
+        self,
+        chat_id: int,
+        user_id: int,
+        command: str,
+        args: str,
+    ) -> None:
+        from navig.store.runtime import get_runtime_store
+
+        store = get_runtime_store()
+        state = store.get_ai_state(user_id) or {}
+        context = dict(state.get("context") or {})
+        pending_id = datetime.now(timezone.utc).isoformat()
+        context["nl_pending"] = {
+            "active": True,
+            "id": pending_id,
+            "intent": "command",
+            "kind": "command",
+            "command": command,
+            "args": args,
+            "created_at": pending_id,
+        }
+        self._runtime_state_with_context(user_id, chat_id, context)
+
+        preview = f"/{command}" + (f" {args}" if args else "")
+        await self.send_message(
+            chat_id,
+            (
+                "⚠️ Risky action detected from natural language.\n"
+                f"Planned command: `{preview}`\n"
+                "Reply `yes` to run now or `cancel` to stop."
+            ),
+            parse_mode="Markdown",
+            keyboard=[
+                [
+                    {"text": "✅ Yes now", "callback_data": "nl_yes"},
+                    {"text": "🛑 Cancel", "callback_data": "nl_cancel"},
+                ]
+            ],
+        )
+
+    async def _handle_nl_command_pick(
+        self,
+        chat_id: int,
+        user_id: int,
+        command: str,
+    ) -> str:
+        cmd = (command or "").strip().lower()
+        entry = next((e for e in _iter_unique_registry(visible_only=True) if e.command == cmd), None)
+        if not cmd or not entry:
+            await self.send_message(chat_id, "Command not available.", parse_mode=None)
+            return "⚠️ Command unavailable"
+
+        usage = entry.usage or f"/{cmd}"
+        if cmd in self._NL_REQUIRED_ARGS_COMMANDS:
+            await self.send_message(
+                chat_id,
+                f"This command needs arguments.\nUsage: `{usage}`",
+                parse_mode="Markdown",
+            )
+            return "ℹ️ Needs arguments"
+
+        if cmd in self._NL_RISKY_COMMANDS:
+            await self._queue_nl_risky_command_confirmation(
+                chat_id=chat_id,
+                user_id=user_id,
+                command=cmd,
+                args="",
+            )
+            return "⚠️ Confirmation required"
+
+        await self._execute_nl_registry_command(
+            chat_id=chat_id,
+            user_id=user_id,
+            command=cmd,
+            args="",
+            text=f"/{cmd}",
+        )
+        return f"✅ Running /{cmd}"
+
     async def _execute_nl_registry_command(
         self,
         chat_id: int,
@@ -1874,21 +1978,41 @@ class TelegramCommandsMixin:
             if has_trigger:
                 suggestions = self._suggest_nl_commands(text, limit=3)
                 if suggestions:
-                    lines = ["I couldn’t map that to one exact command.", "", "Try:"]
+                    lines = [
+                        "I couldn’t map that to one exact command.",
+                        "Tap a command below to run it.",
+                        "",
+                        "Try:",
+                    ]
                     for item in suggestions:
                         lines.append(f"• `{item['usage']}`")
-                    await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+                    await self.send_message(
+                        chat_id,
+                        "\n".join(lines),
+                        parse_mode="Markdown",
+                        keyboard=self._nl_command_keyboard(suggestions, limit=3),
+                    )
                     return True
             return False
 
         if resolved.get("ambiguous"):
             candidates = list(resolved.get("candidates") or [])[:3]
             if candidates:
-                lines = ["I found multiple matching commands.", "", "Pick one:"]
+                lines = [
+                    "I found multiple matching commands.",
+                    "Tap a command below to run it.",
+                    "",
+                    "Pick one:",
+                ]
                 for candidate in candidates:
                     usage = str(candidate.get("usage") or f"/{candidate.get('command')}")
                     lines.append(f"• `{usage}`")
-                await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+                await self.send_message(
+                    chat_id,
+                    "\n".join(lines),
+                    parse_mode="Markdown",
+                    keyboard=self._nl_command_keyboard(candidates, limit=3),
+                )
                 return True
             return False
 
@@ -1905,36 +2029,11 @@ class TelegramCommandsMixin:
             return True
 
         if str(resolved.get("risk") or "safe") == "risky":
-            store = get_runtime_store()
-            state = store.get_ai_state(user_id) or {}
-            context = dict(state.get("context") or {})
-            pending_id = datetime.now(timezone.utc).isoformat()
-            context["nl_pending"] = {
-                "active": True,
-                "id": pending_id,
-                "intent": "command",
-                "kind": "command",
-                "command": command,
-                "args": args,
-                "created_at": pending_id,
-            }
-            self._runtime_state_with_context(user_id, chat_id, context)
-
-            preview = f"/{command}" + (f" {args}" if args else "")
-            await self.send_message(
-                chat_id,
-                (
-                    "⚠️ Risky action detected from natural language.\n"
-                    f"Planned command: `{preview}`\n"
-                    "Reply `yes` to run now or `cancel` to stop."
-                ),
-                parse_mode="Markdown",
-                keyboard=[
-                    [
-                        {"text": "✅ Yes now", "callback_data": "nl_yes"},
-                        {"text": "🛑 Cancel", "callback_data": "nl_cancel"},
-                    ]
-                ],
+            await self._queue_nl_risky_command_confirmation(
+                chat_id=chat_id,
+                user_id=user_id,
+                command=command,
+                args=args,
             )
             return True
 
@@ -2067,6 +2166,19 @@ class TelegramCommandsMixin:
         chat_id: int,
         user_id: int,
     ) -> None:
+        if cb_data.startswith("nl_pick:"):
+            command = cb_data.split(":", 1)[1].strip().lower()
+            ack_text = await self._handle_nl_command_pick(chat_id, user_id, command)
+            await self._api_call(
+                "answerCallbackQuery",
+                {
+                    "callback_query_id": cb_id,
+                    "text": ack_text,
+                    "show_alert": False,
+                },
+            )
+            return
+
         if cb_data == "nl_yes":
             await self._handle_nl_pending_reply(chat_id, user_id, "yes")
             await self._api_call(

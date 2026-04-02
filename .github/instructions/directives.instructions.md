@@ -11,7 +11,7 @@ applyTo: '**'
 
 ## Local Folder Policy
 - `.dev/` is the default AI working folder for scripts, logs, outputs, and scratch artifacts.
-- `.local/` is only for backups/moved files and compatibility temp artifacts.
+- `.dev/` is also used for backups/moved files and compatibility temp artifacts.
 - Do not place temp artifacts directly in root.
 
 ## Project Conventions

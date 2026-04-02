@@ -8,7 +8,7 @@ applyTo: '**'
 - Check `CHANGELOG.md` first before implementing related work.
 - Keep changes minimal, targeted, and verified.
 - Use `.dev/` for AI scripts/logs/outputs/scratch.
-- Use `.local/` only for backups/moved files and compatibility temp artifacts.
+- Use `.dev/` for backups/moved files and compatibility temp artifacts.
 - Keep repo root clean.
 
 ## Execution Loop

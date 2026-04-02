@@ -262,10 +262,53 @@ def _isolate_navig_config_dir(tmp_path_factory):
     real project .navig/ directory, causing tests that run after a config-loading
     test to receive production config in their ConfigManager instances.
     """
+    import shutil
+    import sys
+
+    # -- Pre-cleanup: handle stale temp directories from previous crashed runs --
+    # On Windows, SQLite files may remain locked; retry with ignore handler.
+    def _onerror_ignore(func, path, exc_info):
+        """Best-effort cleanup: try chmod then ignore remaining errors."""
+        import stat
+
+        try:
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+        except Exception:  # noqa: BLE001
+            pass  # let pytest create a new numbered dir suffix
+
+    # Clean up any leftover navig_cfg_isolated* directories
+    base_tmp = tmp_path_factory.getbasetemp()
+    for child in base_tmp.iterdir():
+        if child.name.startswith("navig_cfg_isolated"):
+            shutil.rmtree(child, onexc=_onerror_ignore if sys.version_info >= (3, 12) else None, ignore_errors=True)
+
     isolated = tmp_path_factory.mktemp("navig_cfg_isolated")
     old_value = os.environ.get("NAVIG_CONFIG_DIR")
     os.environ["NAVIG_CONFIG_DIR"] = str(isolated)
     yield isolated
+
+    # -- Cleanup: close any open vault SQLite connections (Windows file lock fix) --
+    try:
+        from navig.vault.core_v2 import _VAULT_INSTANCE
+
+        if _VAULT_INSTANCE is not None and hasattr(_VAULT_INSTANCE, "_store"):
+            store = _VAULT_INSTANCE._store
+            if store is not None:
+                store.close()
+    except Exception:  # noqa: BLE001 — best-effort cleanup
+        pass
+
+    # Also close any Storage singleton
+    try:
+        from navig.vault.storage import Storage
+
+        if hasattr(Storage, "_instance") and Storage._instance is not None:
+            Storage._instance._conn.close()
+            Storage._instance = None
+    except Exception:  # noqa: BLE001
+        pass
+
     # Restore previous value (or remove if it wasn't set before the session).
     if old_value is None:
         os.environ.pop("NAVIG_CONFIG_DIR", None)
