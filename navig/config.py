@@ -18,65 +18,10 @@ from typing import Any
 
 import yaml
 
+from navig.core.yaml_io import atomic_write_yaml as _atomic_write_yaml
+from navig.core.yaml_io import log_shadow_anomaly
+
 logger = logging.getLogger(__name__)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# QUANTUM VELOCITY K2 — Shadow Execution anomaly logger
-# Writes JSON-lines to ~/.navig/perf/shadow_config.jsonl when the fast pickle
-# cache result diverges from the canonical slow YAML parse.
-# ─────────────────────────────────────────────────────────────────────────────
-def _log_shadow_anomaly(event_type: str, data: dict) -> None:
-    """Append a shadow-execution anomaly to the performance log."""
-    try:
-        import json
-        import time
-
-        perf_dir = Path.home() / ".navig" / "perf"
-        perf_dir.mkdir(parents=True, exist_ok=True)
-        log_file = perf_dir / "shadow_config.jsonl"
-        entry = {"ts": time.time(), "event": event_type, "data": data}
-        with open(log_file, "a", encoding="utf-8") as _f:
-            _f.write(json.dumps(entry) + "\n")
-    except Exception:
-        pass  # Logging failure must never affect the main code path
-
-
-def _atomic_write_yaml(data: Any, filepath: Path, allow_unicode: bool = False) -> None:
-    """Safely write YAML data to disk atomically to prevent truncation during crashes."""
-    import sys
-    import tempfile
-    import time
-
-    filepath = Path(filepath)
-    filepath.parent.mkdir(parents=True, exist_ok=True)
-
-    # Use a unique temp file in the same directory to avoid name collisions and
-    # Windows Defender locking a stale config.tmp.yaml from a prior aborted run.
-    fd, tmp_name = tempfile.mkstemp(dir=filepath.parent, prefix=".tmp_yaml_", suffix=".yaml")
-    tmp_path = Path(tmp_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            yaml.dump(
-                data, f, default_flow_style=False, sort_keys=False, allow_unicode=allow_unicode
-            )
-        # On Windows, antivirus scanners can briefly lock a newly-written
-        # file, causing os.replace() to raise PermissionError (WinError 5).
-        # Retry up to 3 times with a short back-off before giving up.
-        for attempt in range(3):
-            try:
-                os.replace(tmp_path, filepath)
-                break
-            except PermissionError:
-                if attempt == 2 or sys.platform != "win32":
-                    raise
-                time.sleep(0.05 * (attempt + 1))
-    except Exception:
-        try:
-            tmp_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
 
 
 class ConfigManager:
@@ -548,7 +493,8 @@ Context provided with each query:
                             fr_keys = set(fr.keys()) - {"_mtime", "_config"}
                             sr_keys = set(slow_result.keys())
                             if fr_keys != sr_keys:
-                                _log_shadow_anomaly(
+                                log_shadow_anomaly(
+                                    "shadow_config",
                                     "config_key_mismatch",
                                     {
                                         "fast_keys": sorted(fr_keys),

@@ -66,9 +66,6 @@ IPC_TIMEOUT_S: float = 2.0
 # File used to record that the pipe path has been validated and promoted
 _PROMOTED_FLAG: Path = Path.home() / ".navig" / ".ipc_promoted"
 
-# Shadow anomaly log
-_SHADOW_LOG: Path = Path.home() / ".navig" / "perf" / "shadow_ipc.jsonl"
-
 # In-memory shadow match counter (resets each process)
 _shadow_match_count: int = 0
 _shadow_lock = threading.Lock()
@@ -97,17 +94,6 @@ def _promote_pipe() -> None:
             "IPC pipe fast-path promoted to primary after %d shadow matches",
             SHADOW_PROMOTE_AFTER,
         )
-    except Exception:  # noqa: BLE001
-        pass  # best-effort; failure is non-critical
-
-
-def _log_shadow_anomaly(event: str, data: dict) -> None:
-    """Append an anomaly entry to the shadow IPC log (never raises)."""
-    try:
-        _SHADOW_LOG.parent.mkdir(parents=True, exist_ok=True)
-        entry = {"ts": time.time(), "event": event, "data": data}
-        with open(_SHADOW_LOG, "a", encoding="utf-8") as _f:
-            _f.write(json.dumps(entry) + "\n")
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
 
@@ -408,7 +394,8 @@ class ShadowIPCBridge:
                         self._promoted = True
             else:
                 # Mismatch — log anomaly, reset counter
-                _log_shadow_anomaly(
+                log_shadow_anomaly(
+                    "shadow_ipc",
                     "result_mismatch",
                     {
                         "payload_cmd": payload.get("cmd"),
