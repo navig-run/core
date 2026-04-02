@@ -178,6 +178,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     SlashCommandEntry(
         "skill",
         "Run a NAVIG skill",
+        handler="_handle_skill_cmd",
         category="core",
         usage="/skill list  or  /skill <name>",
     ),
@@ -248,6 +249,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     SlashCommandEntry(
         "restart",
         "Restart container (+ name) or daemon",
+        handler="_handle_restart_cmd",
         category="docker",
         usage="/restart [daemon|<container-name>]",
     ),
@@ -449,8 +451,20 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         handler="_handle_audio_menu",
         category="voice",
     ),
-    SlashCommandEntry("voiceon", "Enable voice input (STT)", category="voice"),
-    SlashCommandEntry("voiceoff", "Disable voice input (STT)", category="voice"),
+    SlashCommandEntry(
+        "voiceon",
+        "Enable voice input (STT)",
+        handler="_handle_voiceon_cmd",
+        category="voice",
+        usage="/voiceon",
+    ),
+    SlashCommandEntry(
+        "voiceoff",
+        "Disable voice input (STT)",
+        handler="_handle_voiceoff_cmd",
+        category="voice",
+        usage="/voiceoff",
+    ),
     # --- Diagnostics ---------------------------------------------------------
     # --- User / profile ------------------------------------------------------
     SlashCommandEntry(
@@ -472,7 +486,13 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         handler="_handle_debug",
         category="diagnostics",
     ),
-    SlashCommandEntry("trace", "Recent conversation history", category="diagnostics"),
+    SlashCommandEntry(
+        "trace",
+        "Recent conversation history",
+        handler="_handle_trace_cmd",
+        category="diagnostics",
+        usage="/trace  or  /trace debug on|off",
+    ),
     SlashCommandEntry(
         "autoheal",
         "Auto-Heal daemon",
@@ -489,6 +509,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Enable AI auto-replies",
         handler="_handle_auto_start",
         category="ai",
+        usage="/auto_start [persona]",
     ),
     SlashCommandEntry(
         "auto_stop",
@@ -507,6 +528,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Enable autonomous continuation",
         handler="_handle_continue",
         category="ai",
+        usage="/continue [conservative|balanced|aggressive] [space]",
     ),
     SlashCommandEntry(
         "pause",
@@ -544,6 +566,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "AI explains any topic",
         handler="_handle_explain_ai",
         category="ai",
+        usage="/explain_ai <topic>",
     ),
     SlashCommandEntry(
         "music", "Convert music links (beta)", handler="_handle_music", category="media"
@@ -553,6 +576,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Generate AI images (beta)",
         handler="_handle_imagegen",
         category="media",
+        usage="/imagegen <prompt>",
     ),
     SlashCommandEntry(
         "profile", "View user profiles", handler="_handle_profile", category="social"
@@ -574,6 +598,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Convert currency (beta)",
         handler="_handle_currency",
         category="utilities",
+        usage="/currency <query>",
     ),
     SlashCommandEntry(
         "crypto_list",
@@ -615,16 +640,32 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         usage="/choice <a> or <b> [or <c>...]  — also accepts , or |",
     ),
     SlashCommandEntry(
-        "kick", "Remove user from chat", handler="_handle_kick", category="admin"
+        "kick",
+        "Remove user from chat",
+        handler="_handle_kick",
+        category="admin",
+        usage="/kick <@user|id>",
     ),
     SlashCommandEntry(
-        "mute", "Silence user temporarily", handler="_handle_mute", category="admin"
+        "mute",
+        "Silence user temporarily",
+        handler="_handle_mute",
+        category="admin",
+        usage="/mute <@user|id>",
     ),
     SlashCommandEntry(
-        "unmute", "Restore user voice", handler="_handle_unmute", category="admin"
+        "unmute",
+        "Restore user voice",
+        handler="_handle_unmute",
+        category="admin",
+        usage="/unmute <@user|id>",
     ),
     SlashCommandEntry(
-        "search", "Find users", handler="_handle_search", category="admin"
+        "search",
+        "Find users",
+        handler="_handle_search",
+        category="admin",
+        usage="/search <query>",
     ),
 ]
 
@@ -756,7 +797,7 @@ class TelegramCommandsMixin:
             keyboard = [
                 [
                     {"text": "🔙 Back", "callback_data": "nav:back"},
-                    {"text": "🏠 Main Menu", "callback_data": "nav:home"},
+                    {"text": "🏠 Home", "callback_data": "nav:home"},
                 ],
             ]
             if target_message_id:
@@ -793,7 +834,7 @@ class TelegramCommandsMixin:
 
         # Fallback recovery screen
         text = "⚠️ Something went wrong while opening that screen."
-        keyboard = [[{"text": "🏠 Return to Menu", "callback_data": "nav:home"}]]
+        keyboard = [[{"text": "🏠 Home", "callback_data": "nav:home"}]]
         if target_message_id:
             await self.edit_message(chat_id, target_message_id, text, parse_mode=None, keyboard=keyboard)
             return
@@ -1355,7 +1396,7 @@ class TelegramCommandsMixin:
                     message_id,
                     "🛑 Intake cancelled.",
                     parse_mode=None,
-                    keyboard=[[{"text": "🏠 Main Menu", "callback_data": "nav:home"}]],
+                    keyboard=[[{"text": "🏠 Home", "callback_data": "nav:home"}]],
                 )
             else:
                 await self.send_message(chat_id, "🛑 Intake cancelled.", parse_mode=None)
@@ -1776,6 +1817,89 @@ class TelegramCommandsMixin:
             )
             return
         await self._handle_tier_command(chat_id, user_id, cmd)
+
+    async def _handle_voiceon_cmd(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        is_group: bool = False,
+    ) -> None:
+        """Enable voice replies from dynamic slash dispatch."""
+        if _HAS_SESSIONS:
+            sm = get_session_manager()
+            sm.set_voice_enabled(chat_id, user_id, True, is_group=is_group)
+        await self.send_message(chat_id, "🔊 Voice replies enabled.", parse_mode=None)
+
+    async def _handle_voiceoff_cmd(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        is_group: bool = False,
+    ) -> None:
+        """Disable voice replies from dynamic slash dispatch."""
+        if _HAS_SESSIONS:
+            sm = get_session_manager()
+            sm.set_voice_enabled(chat_id, user_id, False, is_group=is_group)
+        await self.send_message(
+            chat_id,
+            "🔇 Voice replies disabled. You'll receive text only.",
+            parse_mode=None,
+        )
+
+    async def _handle_trace_cmd(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        text: str = "",
+    ) -> None:
+        """Handle /trace + /trace debug on|off from dynamic slash dispatch."""
+        trace_arg = text.strip()[len("/trace") :].strip().lower() if text else ""
+        if trace_arg in ("debug on", "debug"):
+            self._debug_users.add(user_id)
+            await self.send_message(
+                chat_id,
+                "🔍 Debug mode *ON* — model names will appear in every response.\n"
+                "Run `/trace debug off` to disable.",
+                parse_mode="Markdown",
+            )
+            return
+        if trace_arg == "debug off":
+            self._debug_users.discard(user_id)
+            await self.send_message(
+                chat_id,
+                "🔍 Debug mode *OFF* — model footers hidden.",
+                parse_mode="Markdown",
+            )
+            return
+        await self._handle_trace(chat_id, user_id)
+
+    async def _handle_restart_cmd(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        text: str = "",
+        metadata: dict | None = None,
+    ) -> None:
+        """Delegate /restart from dynamic slash dispatch to TelegramChannel implementation."""
+        restart_arg = text.strip()[len("/restart") :].strip() if text else ""
+        if hasattr(self, "_handle_restart"):
+            await self._handle_restart(chat_id, user_id, metadata or {}, restart_arg)
+            return
+        await self.send_message(chat_id, "Restart handler unavailable.", parse_mode=None)
+
+    async def _handle_skill_cmd(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        text: str = "",
+        metadata: dict | None = None,
+    ) -> None:
+        """Delegate /skill from dynamic slash dispatch to TelegramChannel implementation."""
+        skill_arg = text.strip()[len("/skill") :].strip() if text else ""
+        if hasattr(self, "_handle_skill"):
+            await self._handle_skill(chat_id, user_id, skill_arg, metadata or {})
+            return
+        await self.send_message(chat_id, "Skill handler unavailable.", parse_mode=None)
 
     # -- Model routing UI ------------------------------------------------------
 
@@ -2506,7 +2630,7 @@ class TelegramCommandsMixin:
         keyboard.append(
             [
                 {"text": "🔙 Back", "callback_data": "nav:back"},
-                {"text": "🏠 Main Menu", "callback_data": "nav:home"},
+                {"text": "🏠 Home", "callback_data": "nav:home"},
             ]
         )
 
@@ -3008,7 +3132,7 @@ class TelegramCommandsMixin:
         keyboard_rows.append(
             [
                 {"text": "🔙 Back", "callback_data": "nav:back"},
-                {"text": "🏠 Main Menu", "callback_data": "nav:home"},
+                {"text": "🏠 Home", "callback_data": "nav:home"},
             ]
         )
         if message_id:
@@ -3039,7 +3163,7 @@ class TelegramCommandsMixin:
                 keyboard.append(
                     [
                         {"text": "🔙 Back", "callback_data": "nav:back"},
-                        {"text": "🏠 Main Menu", "callback_data": "nav:home"},
+                        {"text": "🏠 Home", "callback_data": "nav:home"},
                     ]
                 )
                 if message_id:
@@ -3090,7 +3214,7 @@ class TelegramCommandsMixin:
         keyboard_rows.append(
             [
                 {"text": "🔙 Back", "callback_data": "nav:back"},
-                {"text": "🏠 Main Menu", "callback_data": "nav:home"},
+                {"text": "🏠 Home", "callback_data": "nav:home"},
             ]
         )
         if message_id:

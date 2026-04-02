@@ -132,6 +132,8 @@ Tier behavior details:
 - `Recommended`: runs full wizard without optional integration prompts
 - `Full`: adds an integrations step with Matrix/SMTP/Social value context and toggles
 
+During `navig init` (engine flow), NAVIG now also offers a dedicated **Web Search Provider** setup step with provider preference capture and API-key onboarding (vault-first, with compatibility fallback).
+
 Verification and completion:
 
 - CLI onboarding now prints step progress (`[n/N %]`) and a verification summary before completion
@@ -4515,11 +4517,14 @@ navig start --foreground     # See live logs
 
 **Single-message navigation UX (v2.4.2x+)**
 
-- `/start` resets Telegram navigation state and opens one persistent *Main Menu* message.
-- Menu/list workflows now prefer in-place updates via `editMessageText` instead of posting new messages.
-- Inline navigation uses `🔙 Back`, `🏠 Main Menu`, and `❌ Cancel` callbacks.
+- `/start` resets Telegram navigation state and shows the conversational context card (home screen).
+- Menu/list workflows prefer in-place updates via `editMessageText` instead of posting new messages.
+- Inline navigation uses `🔙 Back` and `🏠 Home` where applicable.
 - Callback handlers acknowledge actions with `answerCallbackQuery` so the loading spinner clears immediately.
-- If a callback handler fails, NAVIG edits the current message to a recovery screen with `🏠 Return to Menu`.
+- If a callback handler fails, NAVIG shows a recovery screen with a `🏠 Home` action.
+
+Canonical Telegram command reference (complete list, options, aliases, callback actions):
+- `docs/features/TELEGRAM.md`
 
 **Command shortcuts:**
 - `/plans` → `plans status`
@@ -6547,7 +6552,7 @@ Search the web for information.
 |-----------|------|---------|-------------|
 | `query` | string | required | Search query |
 | `--limit`, `-l` | int | 10 | Maximum results |
-| `--provider`, `-p` | string | auto | Provider: auto, brave, duckduckgo |
+| `--provider`, `-p` | string | auto | Provider preference: auto, brave, duckduckgo, perplexity, gemini, grok, kimi |
 | `--json` | flag | false | Output in JSON format |
 | `--plain` | flag | false | Plain text output |
 

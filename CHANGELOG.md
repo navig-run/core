@@ -39,6 +39,13 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `/mode` wired to the dynamic registry (added `handler="_handle_mode"`). The handler signature was updated from `mode_arg: str` to `text: str = ""` to be compatible with dynamic dispatch. Step-5 also updated to pass `text=cmd`.
   - Registry: `usage=` hints added for `/mode`, `/big`, `/small`, `/coder`, `/restart`, `/tables`, `/plan`.
   - Test: fixed stale `"NAVIG Main Menu"` and `"Canonical onboarding progress"` assertions left over from before the Phase 1 context-card migration. Updated to match current `_handle_start` output.
+- **Telegram command UX overhaul (Phase 6 — routing consistency + complete docs):**
+  - Added dynamic slash handlers for `/voiceon`, `/voiceoff`, `/trace`, `/restart`, and `/skill` so dynamic dispatch (including `@bot` command forms) behaves consistently with step-5 fast paths.
+  - Added/normalized `usage` metadata for argument-bearing Telegram commands: `/auto_start`, `/continue`, `/explain_ai`, `/imagegen`, `/currency`, `/kick`, `/mute`, `/unmute`, `/search`, and `/trace`.
+  - Unified menu-era copy to context-card wording in Telegram UI surfaces (`🏠 Home` instead of `🏠 Main Menu` / `🏠 Return to Menu`).
+  - Added safe fallback handling for `task:*` callback actions in `telegram_keyboards.py` to prevent callback crashes when task controls are unavailable.
+  - Replaced `docs/features/TELEGRAM.md` with a full, registry-aligned Telegram command reference including options, aliases, and inline callback-action families.
+  - Updated handbook Telegram section to remove stale Main Menu wording and point to the canonical Telegram command reference.
   - `/models big|small|coder|auto` — passing a tier name switches immediately (e.g. `/models big` = same as `/big`). Aliases `/model`, `/routing`, `/router` also accept the tier arg.
   - `/providers <name>` — shows a focused card for the named provider with config guidance; falls back to full hub when no arg given.
   - `/spaces <name>` — quick-switches to a space when a name is passed, skipping the list view.

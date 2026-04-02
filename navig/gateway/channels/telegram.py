@@ -923,21 +923,17 @@ class TelegramChannel:
                     await self._handle_ping(chat_id, user_id)
                     return
                 if cmd == "/voiceon":
-                    if HAS_SESSIONS:
-                        sm = get_session_manager()
-                        sm.set_voice_enabled(chat_id, user_id, True, is_group=is_group)
-                    await self.send_message(
-                        chat_id, "🔊 Voice replies enabled.", parse_mode=None
+                    await self._handle_voiceon_cmd(
+                        chat_id=chat_id,
+                        user_id=user_id,
+                        is_group=is_group,
                     )
                     return
                 if cmd == "/voiceoff":
-                    if HAS_SESSIONS:
-                        sm = get_session_manager()
-                        sm.set_voice_enabled(chat_id, user_id, False, is_group=is_group)
-                    await self.send_message(
-                        chat_id,
-                        "🔇 Voice replies disabled. You'll receive text only.",
-                        parse_mode=None,
+                    await self._handle_voiceoff_cmd(
+                        chat_id=chat_id,
+                        user_id=user_id,
+                        is_group=is_group,
                     )
                     return
                 if cmd == "/settings":
@@ -953,24 +949,7 @@ class TelegramChannel:
                     await self._handle_debug(chat_id)
                     return
                 if cmd == "/trace":
-                    trace_arg = text.strip()[len("/trace") :].strip().lower()
-                    if trace_arg in ("debug on", "debug"):
-                        self._debug_users.add(user_id)
-                        await self.send_message(
-                            chat_id,
-                            "🔍 Debug mode *ON* — model names will appear in every response.\n"
-                            "Run `/trace debug off` to disable.",
-                            parse_mode="Markdown",
-                        )
-                    elif trace_arg == "debug off":
-                        self._debug_users.discard(user_id)
-                        await self.send_message(
-                            chat_id,
-                            "🔍 Debug mode *OFF* — model footers hidden.",
-                            parse_mode="Markdown",
-                        )
-                    else:
-                        await self._handle_trace(chat_id, user_id)
+                    await self._handle_trace_cmd(chat_id=chat_id, user_id=user_id, text=text)
                     return
 
                 # ── Model tier overrides (standalone /big, /small, /coder, /auto) ──
@@ -980,15 +959,21 @@ class TelegramChannel:
 
                 # ── /restart: daemon (systemd) vs container (docker) ──
                 if cmd.startswith("/restart"):
-                    restart_arg = text.strip()[
-                        8:
-                    ].strip()  # preserve case for container names
-                    await self._handle_restart(chat_id, user_id, metadata, restart_arg)
+                    await self._handle_restart_cmd(
+                        chat_id=chat_id,
+                        user_id=user_id,
+                        text=text,
+                        metadata=metadata,
+                    )
                     return
 
                 if cmd.startswith("/skill"):
-                    skill_arg = text.strip()[6:].strip()  # preserve original case
-                    await self._handle_skill(chat_id, user_id, skill_arg, metadata)
+                    await self._handle_skill_cmd(
+                        chat_id=chat_id,
+                        user_id=user_id,
+                        text=text,
+                        metadata=metadata,
+                    )
                     return
 
                 # ── Dynamic Registry Dispatch (New Features) ──
