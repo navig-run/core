@@ -283,7 +283,16 @@ python -m venv /tmp/navig-test-env
 /tmp/navig-test-env/bin/navig --version   # Must print 2.4.14
 ```
 
-### Publish to production PyPI
+### Publish to production PyPI (automated)
+
+Primary path: publish a GitHub Release (non-draft, non-prerelease) from a `v*` tag.
+This automatically runs `.github/workflows/publish.yml`, which:
+- validates release tag version against `pyproject.toml`
+- builds sdist/wheel artifacts
+- runs `twine check`
+- publishes to PyPI via trusted publishing (OIDC)
+
+Manual fallback (emergency only):
 
 ```bash
 twine upload dist/*
@@ -297,7 +306,7 @@ navig --version
 
 ### Automated release (recommended)
 
-The `release.sh` script handles git tagging, building, and PyPI upload in one step:
+The `release.sh` script handles git tagging and pushing in one step:
 
 ```bash
 bash scripts/release.sh 2.4.14
@@ -306,9 +315,9 @@ bash scripts/release.sh 2.4.14
 The script will:
 1. Verify you are on `main` with a clean working tree
 2. Create and push the annotated git tag
-3. Build `dist/` artifacts
-4. Run `twine check`
-5. Ask for confirmation before uploading to PyPI
+3. Sync release manifests
+4. Prompt next steps to publish a GitHub Release
+5. Trigger PyPI publishing via GitHub Actions when the release is published
 
 ---
 

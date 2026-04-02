@@ -12,6 +12,7 @@ Author: Navig Team
 """
 
 import json
+import platform
 import re
 from datetime import datetime
 from typing import Any
@@ -23,6 +24,160 @@ from rich.table import Table
 from navig.config import get_config_manager
 from navig.console_helper import _safe_symbol, console
 from navig.remote import RemoteOperations
+
+
+def _is_local_host(server_config: dict) -> bool:
+    """Return True if the server config points to the local machine."""
+    return (
+        bool(server_config.get("is_local"))
+        or str(server_config.get("type", "")).lower() == "local"
+        or server_config.get("host", "") in ("localhost", "127.0.0.1", "::1")
+    )
+
+
+def _fmt_bytes(n: int) -> str:
+    """Human-readable byte size."""
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if abs(n) < 1024.0:
+            return f"{n:.1f} {unit}"
+        n = int(n / 1024)
+    return f"{n:.1f} PB"
+
+
+def _monitor_disk_local_windows(app_name: str, threshold: int, options: dict) -> None:
+    """Disk monitoring for the local Windows machine via psutil (no SSH)."""
+    import psutil
+
+    disks: list = []
+    alerts: list = []
+    for part in psutil.disk_partitions(all=False):
+        try:
+            usage = psutil.disk_usage(part.mountpoint)
+        except (PermissionError, OSError):
+            continue
+        pct = int(usage.percent)
+        disks.append({
+            "device": part.device,
+            "mount": part.mountpoint,
+            "size": _fmt_bytes(usage.total),
+            "used": _fmt_bytes(usage.used),
+            "available": _fmt_bytes(usage.free),
+            "usage_percent": pct,
+        })
+        if pct > threshold:
+            alerts.append(f"{part.mountpoint} is {pct}% full (threshold: {threshold}%)")
+
+    if options.get("json_output"):
+        console.print(json.dumps({
+            "timestamp": datetime.now().isoformat(),
+            "server": app_name, "threshold": threshold,
+            "disks": disks, "alerts": alerts,
+        }, indent=2))
+        return
+
+    table = Table(title=f"Disk Space — {app_name} (Threshold: {threshold}%)",
+                  show_header=True, header_style="bold cyan")
+    table.add_column("Drive", style="cyan")
+    table.add_column("Device", style="dim")
+    table.add_column("Size", justify="right")
+    table.add_column("Used", justify="right")
+    table.add_column("Free", justify="right")
+    table.add_column("Usage", justify="right")
+    table.add_column("Status")
+    for d in disks:
+        table.add_row(
+            d["mount"], d["device"],
+            d["size"], d["used"], d["available"],
+            f"{d['usage_percent']}%",
+            _disk_status(d["usage_percent"], threshold),
+        )
+    console.print(table)
+    if alerts:
+        console.print(f"\n[red]{_safe_symbol(chr(0x26A0), '!')} {len(alerts)} Alert(s):[/red]")
+        for a in alerts:
+            console.print(f"  [red]\u2022[/red] {a}")
+    else:
+        console.print("\n[green]\u2713[/green] All drives within normal range")
+
+
+def _monitor_resources_local_windows(app_name: str, options: dict) -> None:
+    """Resource monitoring for the local Windows machine via psutil (no SSH)."""
+    import psutil
+
+    metrics: dict = {}
+    alerts: list = []
+
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+                  console=console, transient=True) as _prog:
+        _prog.add_task("Collecting local metrics\u2026", total=None)
+
+        cpu = psutil.cpu_percent(interval=1)
+        metrics["cpu"] = round(cpu, 1)
+        if cpu > 80:
+            alerts.append(f"High CPU usage: {cpu}%")
+
+        vm = psutil.virtual_memory()
+        metrics["memory"] = {
+            "usage_percent": round(vm.percent, 1),
+            "used_mb": round(vm.used / 1024 / 1024, 1),
+            "total_mb": round(vm.total / 1024 / 1024, 1),
+        }
+        if vm.percent > 80:
+            alerts.append(f"High memory usage: {vm.percent:.1f}%")
+
+        try:
+            _root_path = "C:\\" if platform.system() == "Windows" else "/"
+            _du = psutil.disk_usage(_root_path)
+            metrics["disk"] = {
+                "usage_percent": int(_du.percent),
+                "used": _fmt_bytes(_du.used),
+                "total": _fmt_bytes(_du.total),
+                "available": _fmt_bytes(_du.free),
+            }
+            if _du.percent > 80:
+                alerts.append(f"High disk usage: {_du.percent:.1f}%")
+        except OSError:
+            pass
+
+        try:
+            _up_sec = int(datetime.now().timestamp() - psutil.boot_time())
+            _h, _r = divmod(_up_sec, 3600)
+            metrics["uptime"] = f"up {_h}h {_r // 60}m"
+        except Exception:
+            metrics["uptime"] = "N/A"
+
+    if options.get("json_output"):
+        console.print(json.dumps({
+            "timestamp": datetime.now().isoformat(),
+            "server": app_name, "metrics": metrics, "alerts": alerts,
+        }, indent=2))
+        return
+
+    table = Table(title=f"Resource Usage \u2014 {app_name}", show_header=True, header_style="bold cyan")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="white")
+    table.add_column("Status")
+    _info = _safe_symbol("\u2139", "[i]") + " INFO"
+    cpu_val = metrics.get("cpu", 0)
+    table.add_row("CPU Usage", f"{cpu_val}%", _traffic_light(cpu_val))
+    mem = metrics.get("memory", {})
+    mem_val = mem.get("usage_percent", 0)
+    table.add_row("Memory",
+                  f"{mem_val}% ({mem.get('used_mb', 0)} MB / {mem.get('total_mb', 0)} MB)",
+                  _traffic_light(mem_val))
+    disk = metrics.get("disk", {})
+    disk_val = disk.get("usage_percent", 0)
+    table.add_row("Disk (root)",
+                  f"{disk_val}% ({disk.get('used', '0')} / {disk.get('total', '0')})",
+                  _traffic_light(disk_val))
+    table.add_row("Uptime", metrics.get("uptime", "N/A"), _info)
+    console.print(table)
+    if alerts:
+        console.print(f"\n[yellow]{_safe_symbol(chr(0x26A0), '!')} Alerts ({len(alerts)}):[/yellow]")
+        for a in alerts:
+            console.print(f"  [yellow]\u2022[/yellow] {a}")
+    else:
+        console.print("\n[green]\u2713[/green] All metrics within normal range")
 
 
 def _traffic_light(val: float, high: int = 80, med: int = 60) -> str:
@@ -85,6 +240,11 @@ def monitor_resources(options: dict[str, Any]) -> None:
     console.print(
         f"\n[cyan]{_safe_symbol(chr(0x1F4CA), '>>')} Monitoring Resources:[/cyan] {app_name}\n"
     )
+
+    # ── Local Windows fast-path (psutil, no SSH, no Linux commands) ──────────
+    if _is_local_host(server_config) and platform.system() == "Windows":
+        _monitor_resources_local_windows(app_name, options)
+        return
 
     metrics = {}
     alerts = []
@@ -262,6 +422,11 @@ def monitor_disk(threshold: int, options: dict[str, Any]) -> None:
     console.print(
         f"\n[cyan]{_safe_symbol(chr(0x1F4BE), '>>')} Disk Space Monitoring:[/cyan] {app_name}\n"
     )
+
+    # ── Local Windows fast-path (psutil, no SSH, no Linux commands) ──────────
+    if _is_local_host(server_config) and platform.system() == "Windows":
+        _monitor_disk_local_windows(app_name, threshold, options)
+        return
 
     # Get all disk partitions
     disk_cmd = "df -h | grep -E '^/dev/'"

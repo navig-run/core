@@ -195,6 +195,23 @@ def test_run_wizard():
         mock_install.assert_called_once()
 
 
+def test_print_welcome_first_time(mock_print):
+    wiz = SetupWizard(reconfigure=False)
+    wiz._print_welcome()
+    printed = " ".join(str(c) for c in mock_print.call_args_list)
+    assert "Welcome!" in printed
+    assert "5 minutes" in printed
+    assert "reconfigure" not in printed.lower()
+
+
+def test_print_welcome_reconfigure(mock_print):
+    wiz = SetupWizard(reconfigure=True)
+    wiz._print_welcome()
+    printed = " ".join(str(c) for c in mock_print.call_args_list)
+    assert "Welcome back!" in printed
+    assert "existing settings" in printed
+
+
 def test_wizard_run_flow(wizard, mock_print):
     with (
         patch.object(wizard, "_check_prerequisites", return_value=True),

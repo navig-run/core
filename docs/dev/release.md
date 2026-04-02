@@ -60,7 +60,10 @@ This checklist is for NAVIG maintainers preparing an official release.
   - Copy changelog section to release notes
   - Attach build artifacts (`.tar.gz`, `.whl`)
   - Attach `checksums.txt`
-- [ ] **Publish to PyPI** (if configured):
+- [ ] **Publish GitHub Release** (must not be draft/prerelease):
+  - Publishing the release automatically triggers `.github/workflows/publish.yml`
+  - Workflow validates tag/version, builds artifacts, runs `twine check`, and publishes to PyPI via trusted publishing (OIDC)
+- [ ] **Fallback manual publish** (emergency only):
   ```bash
   twine upload dist/*
   ```

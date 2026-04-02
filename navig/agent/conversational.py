@@ -581,10 +581,102 @@ For conversation, respond naturally without JSON.
         else:
             parts.append(self._FALLBACK_IDENTITY)
 
-        # ── 4. Behavioral rules (slim — no capabilities block for chat) ──
+        # ── 4. KB context injection (F-18) — agentic knowledge enrichment ──
+        kb_block = self._build_kb_context(user_message)
+        if kb_block:
+            parts.append(kb_block)
+
+        # ── 5. Behavioral rules (slim — no capabilities block for chat) ──
         parts.append(self._CHAT_RULES)
 
         return "\n\n".join(parts)
+
+    # ── KB context enrichment (F-18) ──
+
+    # TTL cache for KB context (avoids repeated DB reads per loop iteration)
+    _kb_cache: dict[str, tuple[float, str]] = {}
+    _KB_CACHE_TTL = 300.0  # 5 minutes
+    _KB_MAX_TOKENS = 2000  # approx token budget for KB injection
+
+    def _build_kb_context(self, user_message: str) -> str:
+        """Build a ``<navig_context>`` block from the knowledge base.
+
+        Sources:
+        - Key facts from :mod:`navig.memory.key_facts`
+        - Wiki search results from :mod:`navig.wiki_rag` (if available)
+
+        Results are cached for :data:`_KB_CACHE_TTL` seconds per session.
+
+        Args:
+            user_message: Current user message (used for relevance search).
+
+        Returns:
+            Formatted XML-like context block, or empty string if nothing found.
+        """
+        import time as _time
+
+        cache_key = user_message[:200]  # normalise for cache
+        cached = self._kb_cache.get(cache_key)
+        if cached:
+            ts, block = cached
+            if (_time.time() - ts) < self._KB_CACHE_TTL:
+                return block
+
+        sections: list[str] = []
+        char_budget = int(self._KB_MAX_TOKENS * 3.5)  # rough chars
+
+        # ── Key facts ──
+        try:
+            store = get_key_fact_store()
+            facts = store.search(user_message, limit=10)
+            if facts:
+                fact_lines: list[str] = []
+                for f in facts:
+                    line = f"- [{f.category}] {f.key}: {f.value}"
+                    fact_lines.append(line[:300])
+                text = "\n".join(fact_lines)
+                if len(text) > char_budget // 2:
+                    text = text[: char_budget // 2] + "\n..."
+                sections.append(f"<facts>\n{text}\n</facts>")
+        except Exception as exc:
+            logger.debug("KB fact lookup failed: %s", exc)
+
+        # ── Wiki search (if available) ──
+        remaining = char_budget - sum(len(s) for s in sections)
+        if remaining > 200:
+            try:
+                from navig.wiki_rag import get_wiki_rag
+
+                rag = get_wiki_rag()
+                if rag is not None:
+                    results = rag.search(user_message, top_k=3)
+                    if results:
+                        wiki_lines: list[str] = []
+                        for r in results:
+                            title = r.get("title", r.get("path", "?"))
+                            chunk = r.get("chunk", "")[:400]
+                            wiki_lines.append(f"- [{title}]: {chunk}")
+                        text = "\n".join(wiki_lines)
+                        if len(text) > remaining:
+                            text = text[:remaining] + "\n..."
+                        sections.append(f"<wiki>\n{text}\n</wiki>")
+            except Exception as exc:
+                logger.debug("Wiki RAG lookup failed: %s", exc)
+
+        if not sections:
+            return ""
+
+        block = "<navig_context>\n" + "\n".join(sections) + "\n</navig_context>"
+
+        # Cache
+        self._kb_cache[cache_key] = (_time.time(), block)
+        # Evict old entries
+        now = _time.time()
+        stale = [k for k, (ts, _) in self._kb_cache.items() if (now - ts) > self._KB_CACHE_TTL]
+        for k in stale:
+            del self._kb_cache[k]
+
+        return block
 
     async def _notify(self, message: str):
         """Send status update to user."""
@@ -650,6 +742,456 @@ For conversation, respond naturally without JSON.
             # Just conversation
             self.conversation_history.append({"role": "assistant", "content": response})
             return response
+
+    # ─────────────────────────────────────────────────────────────
+    # run_agentic — ReAct multi-step tool-calling loop (F-01)
+    # ─────────────────────────────────────────────────────────────
+
+    async def run_agentic(
+        self,
+        message: str,
+        max_iterations: int = 90,
+        toolset: "str | list[str]" = "core",
+        cost_tracker: "Any | None" = None,
+        approval_policy: "Any | None" = None,
+    ) -> str:
+        """ReAct agent loop — multi-step function-calling conversation.
+
+        Calls the LLM with function-calling enabled, dispatches tool calls via
+        :class:`~navig.agent.agent_tool_registry.AgentToolRegistry`, and loops
+        until the model returns a final ``finish_reason="stop"`` response or
+        the iteration budget is exhausted.
+
+        Args:
+            message:         User message to process.
+            max_iterations:  Maximum LLM call iterations (default: 90).
+            toolset:         Named toolset string OR list of tool names exposed
+                             to the LLM (see :mod:`navig.agent.toolsets`).
+            cost_tracker:    Optional :class:`~navig.agent.usage_tracker.CostTracker`
+                             to accumulate token / cost metrics.
+            approval_policy: Override the process-level
+                             :class:`~navig.tools.approval.ApprovalPolicy`.
+
+        Returns:
+            Final text response from the model.
+        """
+        from navig.agent.agent_tool_registry import _AGENT_REGISTRY
+        from navig.agent.tools import register_all_tools
+        from navig.agent.usage_tracker import CostTracker, IterationBudget, UsageEvent
+        from navig.providers import CompletionRequest, Message, create_client, get_builtin_provider
+        from navig.providers.auth import AuthProfileManager
+        from navig.providers.clients import ToolDefinition
+
+        # ── Lazy tool registration ──
+        if not getattr(self, "_agentic_tools_registered", False):
+            try:
+                register_all_tools()
+                self._agentic_tools_registered: bool = True
+            except Exception as exc:
+                logger.warning("run_agentic: tool registration failed: %s", exc)
+
+        # ── Budget + cost tracking ──
+        budget = IterationBudget(max_iterations=max_iterations)
+        _tracker: CostTracker = cost_tracker if cost_tracker is not None else CostTracker()
+
+        # ── Approval policy ──
+        if approval_policy is not None:
+            try:
+                from navig.tools.approval import set_approval_policy
+
+                set_approval_policy(approval_policy)
+            except Exception:
+                pass
+
+        # ── Tool schemas → ToolDefinition list ──
+        # F-20: merge explicit toolset arg with semantic routing suggestions
+        explicit_toolsets: list[str] = [toolset] if isinstance(toolset, str) else list(toolset)
+        try:
+            from navig.llm_router import suggest_toolsets
+            suggested = suggest_toolsets(user_input=message)
+            # Merge: explicit always wins; add suggestions that aren't already present
+            merged: list[str] = list(explicit_toolsets)
+            for s in suggested:
+                if s not in merged:
+                    merged.append(s)
+            toolsets = merged
+            logger.debug("F-20 semantic routing: explicit=%s suggested=%s → merged=%s",
+                         explicit_toolsets, suggested, toolsets)
+        except Exception:
+            toolsets = explicit_toolsets
+
+        raw_schemas = _AGENT_REGISTRY.get_openai_schemas(toolsets=toolsets)
+        tool_defs: list[ToolDefinition] = [
+            ToolDefinition(
+                name=s["function"]["name"],
+                description=s["function"].get("description", ""),
+                parameters=s["function"].get(
+                    "parameters", {"type": "object", "properties": {}}
+                ),
+            )
+            for s in raw_schemas
+        ]
+
+        # ── Resolve provider / model via router ──
+        provider_name = "openrouter"
+        model_name = "openai/gpt-4o"
+        temperature = 0.7
+        max_tokens = 4096
+        base_url: str | None = None
+        try:
+            from navig.llm_router import resolve_llm
+
+            resolved = resolve_llm(mode="coding")
+            provider_name = resolved.provider
+            model_name = resolved.model
+            temperature = resolved.temperature
+            max_tokens = resolved.max_tokens
+            base_url = resolved.base_url
+        except Exception:
+            pass
+
+        # ── Create provider client ──
+        try:
+            provider_cfg = get_builtin_provider(provider_name)
+            if provider_cfg is None:
+                from navig.llm_router import PROVIDER_BASE_URLS
+                from navig.providers.types import ModelApi, ProviderConfig
+
+                url = base_url or PROVIDER_BASE_URLS.get(
+                    provider_name, "https://openrouter.ai/api/v1"
+                )
+                provider_cfg = ProviderConfig(
+                    name=provider_name,
+                    base_url=url,
+                    api=ModelApi.OPENAI_COMPLETIONS,
+                )
+            auth_mgr = AuthProfileManager()
+            api_key, _ = auth_mgr.resolve_auth(provider_name)
+            client = create_client(provider_cfg, api_key=api_key, timeout=120.0)
+        except Exception as exc:
+            logger.error("run_agentic: could not create LLM client: %s", exc)
+            return "Sorry, I couldn't initialise the LLM client for agentic mode."
+
+        # ── Build initial system prompt with agentic capability block ──
+        self._last_user_message = message
+        system_prompt = self._build_system_prompt(message)
+
+        # ── Plan context injection (PlanContext unified read surface) ──
+        try:
+            from navig.plans.context import PlanContext
+            from navig.spaces.resolver import get_default_space
+
+            _space = get_default_space()
+            _pc = PlanContext()
+            _snapshot = _pc.gather(_space)
+            _plan_block = _pc.format_for_prompt(_snapshot)
+            if _plan_block:
+                system_prompt += "\n\n" + _plan_block
+            _non_null = sum(
+                1 for k, v in _snapshot.items() if k != "errors" and v is not None
+            )
+            logger.info(
+                "plan_context_loaded space=%s non_null_keys=%d",
+                _space,
+                _non_null,
+            )
+        except Exception as _pc_exc:
+            logger.debug("plan context injection skipped (agentic): %s", _pc_exc)
+
+        toolset_names = _AGENT_REGISTRY.available_names(toolsets=toolsets)
+        if toolset_names:
+            displayed = ", ".join(f"`{n}`" for n in toolset_names[:20])
+            system_prompt += (
+                f"\n\n## Agentic Mode\n"
+                f"You have access to the following tools: {displayed}.\n"
+                "Use them step-by-step to fulfill the user's request, then give a final reply."
+            )
+
+        # ── Compose initial message list ──
+        working_messages: list[Message] = [
+            Message(role="system", content=system_prompt),
+            *[
+                Message(
+                    role=m["role"],
+                    content=m.get("content", ""),
+                    tool_call_id=m.get("tool_call_id"),
+                    tool_calls=m.get("tool_calls"),
+                )
+                for m in self.conversation_history
+            ],
+            Message(role="user", content=message),
+        ]
+
+        final_response: str = ""
+        turn: int = 0
+
+        # ── Context compressor (F-11) ──
+        _compressor = None
+        try:
+            from navig.agent.context_compressor import ContextCompressor
+
+            _compressor = ContextCompressor()
+        except Exception:
+            pass
+
+        # ─── ReAct loop ───────────────────────────────────────────
+        while not budget.is_exhausted():
+            turn += 1
+            budget.consume(1)
+
+            # ── Compress context if nearing window limit ──
+            if _compressor is not None and turn > 3:
+                try:
+                    msg_dicts = [
+                        {
+                            "role": m.role,
+                            "content": m.content or "",
+                            "tool_call_id": getattr(m, "tool_call_id", None),
+                            "tool_calls": getattr(m, "tool_calls", None),
+                        }
+                        for m in working_messages
+                    ]
+                    compressed = _compressor.maybe_compress(msg_dicts, model=model_name)
+                    if compressed is not msg_dicts:
+                        working_messages = [
+                            Message(
+                                role=d["role"],
+                                content=d.get("content", ""),
+                                tool_call_id=d.get("tool_call_id"),
+                                tool_calls=d.get("tool_calls"),
+                            )
+                            for d in compressed
+                        ]
+                except Exception as exc:
+                    logger.debug("Context compression skipped: %s", exc)
+
+            pct = budget.budget_used_pct()
+            tool_choice: str | None = "auto"
+            if pct >= 0.90:
+                # Force final answer — no more tool calls
+                tool_choice = "none"
+            elif pct >= 0.70:
+                working_messages.append(
+                    Message(
+                        role="system",
+                        content=(
+                            "[Budget warning: >70% of iteration budget used. "
+                            "Please finalise your response now.]"
+                        ),
+                    )
+                )
+
+            request = CompletionRequest(
+                messages=working_messages,
+                model=model_name,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                tools=tool_defs if (tool_choice != "none" and tool_defs) else None,
+                tool_choice=tool_choice if tool_choice != "none" else None,
+            )
+
+            try:
+                response = await client.complete(request)
+            except Exception as exc:
+                logger.error("run_agentic: LLM call failed on turn %d: %s", turn, exc)
+                final_response = f"Error during agentic execution: {exc}"
+                break
+
+            # Record usage
+            usage = response.usage or {}
+            try:
+                _tracker.record(
+                    UsageEvent(
+                        turn=turn,
+                        model=model_name,
+                        provider=provider_name,
+                        prompt_tokens=usage.get("prompt_tokens", 0),
+                        completion_tokens=usage.get("completion_tokens", 0),
+                        cache_read_tokens=usage.get("cache_read_input_tokens", 0),
+                        cache_write_tokens=usage.get("cache_creation_input_tokens", 0),
+                    )
+                )
+            except Exception:
+                pass
+
+            if not response.has_tool_calls:
+                # Model produced a final answer
+                final_response = response.content or ""
+                working_messages.append(Message(role="assistant", content=final_response))
+                break
+
+            # ── Append assistant message with tool_calls ──
+            assistant_tool_calls_raw = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {"name": tc.name, "arguments": tc.arguments},
+                }
+                for tc in (response.tool_calls or [])
+            ]
+            working_messages.append(
+                Message(
+                    role="assistant",
+                    content=response.content or "",
+                    tool_calls=assistant_tool_calls_raw,
+                )
+            )
+
+            # ── Dispatch tool calls (parallel-safe concurrent, rest sequential) ──
+            import asyncio as _aio
+
+            from navig.agent.toolsets import is_parallel_safe
+
+            pending_calls = response.tool_calls or []
+
+            async def _dispatch_single(tc_item: Any) -> tuple[str, str]:
+                """Run one tool call: approval check → dispatch → (tc_id, result)."""
+                try:
+                    args = (
+                        json.loads(tc_item.arguments)
+                        if isinstance(tc_item.arguments, str)
+                        else (tc_item.arguments or {})
+                    )
+                except json.JSONDecodeError:
+                    args = {}
+
+                # Approval check
+                try:
+                    from navig.tools.approval import (
+                        ApprovalDecision,
+                        get_approval_gate,
+                        needs_approval,
+                    )
+
+                    if needs_approval(tc_item.name):
+                        gate = get_approval_gate()
+                        decision = await gate.check(
+                            tool_name=tc_item.name,
+                            safety_level="moderate",
+                            reason="agentic",
+                        )
+                        if decision == ApprovalDecision.DENIED:
+                            return (
+                                tc_item.id,
+                                f"[Denied: operator did not approve '{tc_item.name}']",
+                            )
+                except Exception:
+                    pass
+
+                # Execute tool
+                try:
+                    result_str = _AGENT_REGISTRY.dispatch(tc_item.name, args)
+                except Exception as exc:
+                    result_str = f"[Tool error: {exc}]"
+                return (tc_item.id, result_str)
+
+            # ── Partition into parallel-safe vs sequential ──
+            parallel_batch: list[Any] = []
+            sequential_batch: list[Any] = []
+            for tc in pending_calls:
+                if is_parallel_safe(tc.name) and len(pending_calls) > 1:
+                    parallel_batch.append(tc)
+                else:
+                    sequential_batch.append(tc)
+
+            collected_results: list[tuple[str, str]] = []
+
+            # Run parallel-safe tools concurrently (max 8)
+            if parallel_batch:
+                _MAX_PARALLEL = 8
+                sem = _aio.Semaphore(_MAX_PARALLEL)
+
+                async def _sem_dispatch(tc_item: Any) -> tuple[str, str]:
+                    async with sem:
+                        return await _dispatch_single(tc_item)
+
+                par_results = await _aio.gather(
+                    *[_sem_dispatch(tc) for tc in parallel_batch],
+                    return_exceptions=True,
+                )
+                for i, pr in enumerate(par_results):
+                    if isinstance(pr, BaseException):
+                        collected_results.append(
+                            (parallel_batch[i].id, f"[Tool error: {pr}]")
+                        )
+                    else:
+                        collected_results.append(pr)
+
+            # Run sequential tools one-by-one
+            for tc in sequential_batch:
+                collected_results.append(await _dispatch_single(tc))
+
+            # Append all results to messages in original tool_call order
+            id_to_result = {tc_id: res for tc_id, res in collected_results}
+            for tc in pending_calls:
+                working_messages.append(
+                    Message(
+                        role="tool",
+                        content=id_to_result.get(tc.id, "[Tool error: result missing]"),
+                        tool_call_id=tc.id,
+                    )
+                )
+            # ── End tool dispatch — continue to next LLM turn ──
+
+        if not final_response:
+            final_response = (
+                "Agent iteration budget exhausted without producing a final response."
+            )
+
+        # Update conversation history
+        self.conversation_history.append({"role": "user", "content": message})
+        self.conversation_history.append({"role": "assistant", "content": final_response})
+        if len(self.conversation_history) > 20:
+            self.conversation_history = self.conversation_history[-20:]
+
+        # Log cost summary
+        cost = _tracker.session_cost()
+        logger.info("run_agentic completed: %s", cost.summary_str())
+
+        return final_response
+
+    # ── Plan-Execute mode (F-21) ──────────────────────────
+
+    async def run_plan_execute(
+        self,
+        task: str,
+        *,
+        toolset: str | list[str] = "core",
+        dry_run: bool = False,
+        auto_approve: bool = False,
+        max_retries: int = 1,
+    ) -> str:
+        """Run a task using the structured plan-execute pipeline.
+
+        1. Plan — ask the LLM for a structured step list.
+        2. Approve — present the plan; require confirmation.
+        3. Execute — run each step via tool dispatch.
+        4. Report — return a human-readable summary.
+
+        Args:
+            task:          Natural-language task description.
+            toolset:       Toolset(s) to make available.
+            dry_run:       If True, plan only — no execution.
+            auto_approve:  If True, skip confirmation prompt.
+            max_retries:   LLM plan-revision attempts on failure.
+
+        Returns:
+            Human-readable execution report string.
+        """
+        from navig.agent.plan_execute import PlanExecuteAgent, format_plan_report
+
+        pe = PlanExecuteAgent(self)
+        plan = await pe.run(
+            task,
+            toolset=toolset,
+            dry_run=dry_run,
+            auto_approve=auto_approve,
+            max_retries=max_retries,
+        )
+
+        report = format_plan_report(plan)
+        logger.info("run_plan_execute completed: %d steps", len(plan.steps))
+        return report
 
     @staticmethod
     def _has_cjk(text: str) -> bool:

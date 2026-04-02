@@ -76,6 +76,7 @@ class CompletionRequest:
     tool_choice: str | None = None  # "auto", "none", or specific tool name
     stream: bool = False
     stop: list[str] | None = None
+    extra_body: dict | None = None  # Provider-specific params (thinking budgets, etc.)
 
 
 @dataclass

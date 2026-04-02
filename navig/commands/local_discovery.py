@@ -16,6 +16,25 @@ from navig import console_helper as ch
 from navig.config import get_config_manager
 
 
+def _decode_subprocess_output(data: bytes) -> str:
+    """Decode subprocess bytes output robustly.
+
+    Tries UTF-8 first; on failure falls back to the system's preferred encoding
+    with ``errors='replace'`` so non-decodable bytes never raise an exception.
+    This prevents UnicodeDecodeError crashes on Windows systems whose locale
+    uses a code page other than UTF-8 (e.g. cp850/cp1252 with accented paths).
+    """
+    if not data:
+        return ""
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        import locale
+
+        enc = locale.getpreferredencoding(False) or "cp1252"
+        return data.decode(enc, errors="replace")
+
+
 def run_local_command(command: str, timeout: int = 10) -> tuple[bool, str, str]:
     """
     Execute a local command and return (success, stdout, stderr).
@@ -29,20 +48,24 @@ def run_local_command(command: str, timeout: int = 10) -> tuple[bool, str, str]:
     """
     try:
         if platform.system() == "Windows":
-            # Use PowerShell on Windows for better compatibility
+            # Use PowerShell on Windows for better compatibility.
+            # Do NOT pass text=True here — we decode manually so that non-UTF-8
+            # bytes in output (e.g. accented chars from Windows locale paths)
+            # don't crash the subprocess reader thread (UnicodeDecodeError).
             result = subprocess.run(
                 ["powershell", "-Command", command],
                 capture_output=True,
-                text=True,
                 timeout=timeout,
                 shell=False,
             )
         else:
             result = subprocess.run(
-                ["bash", "-c", command], capture_output=True, text=True, timeout=timeout
+                ["bash", "-c", command], capture_output=True, timeout=timeout
             )
 
-        return (result.returncode == 0, result.stdout.strip(), result.stderr.strip())
+        stdout = _decode_subprocess_output(result.stdout).strip()
+        stderr = _decode_subprocess_output(result.stderr).strip()
+        return (result.returncode == 0, stdout, stderr)
     except subprocess.TimeoutExpired:
         return (False, "", f"Command timed out after {timeout}s")
     except Exception as e:

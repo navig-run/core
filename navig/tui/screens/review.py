@@ -305,7 +305,7 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
                     yield Button("Press Enter to launch  →", variant="primary", id="btn-exit")
                     yield Button("Retry write", variant="warning", id="btn-retry", display=False)
             yield Label(
-                "  [dim]Try:[/dim]  [bold #22d3ee]navig ask 'hello'[/bold #22d3ee]",
+                "  [dim]Try:[/dim]  [bold #22d3ee]navig ask \"hello\"[/bold #22d3ee]",
                 id="final-hint",
                 markup=True,
             )

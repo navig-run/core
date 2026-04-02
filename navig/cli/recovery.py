@@ -100,6 +100,38 @@ def empty_list_recovery(resource: str, add_cmd: str) -> None:
     raise typer.Exit(0)
 
 
+def _bootstrap_local_host(cfg: "ConfigManager") -> str | None:
+    """Best-effort local-first bootstrap when no host is configured."""
+    local_candidates = ["localhost", "local", "local-dev"]
+    if hasattr(cfg, "list_hosts"):
+        hosts = cfg.list_hosts()
+        for name in local_candidates:
+            if name in hosts:
+                if hasattr(cfg, "set_active_host"):
+                    cfg.set_active_host(name)
+                ch.dim(f"Local host bootstrap: using existing '{name}'.")
+                return name
+
+    try:
+        from navig.commands.local_discovery import discover_local_host
+
+        created = discover_local_host(
+            name="localhost",
+            auto_confirm=True,
+            set_active=True,
+            progress=False,
+        )
+        if created is not None:
+            ch.dim("Local host bootstrap: created 'localhost'.")
+            return "localhost"
+    except (ImportError, RuntimeError, ValueError, OSError) as exc:
+        ch.warning(
+            "Could not auto-bootstrap localhost.",
+            f"Run: navig host discover-local (detail: {exc})",
+        )
+    return None
+
+
 # ── require_active_host ──────────────────────────────────────────────────────
 
 
@@ -128,7 +160,10 @@ def require_active_host(options: dict, cfg: "ConfigManager") -> str:  # type: ig
     hosts: list[str] = cfg.list_hosts() if hasattr(cfg, "list_hosts") else []
 
     if not hosts:
-        empty_list_recovery("host", "host add")
+        local_bootstrap = _bootstrap_local_host(cfg)
+        if local_bootstrap:
+            return local_bootstrap
+        empty_list_recovery("host", "host discover-local")
         raise typer.Exit(0)  # unreachable but keeps type checker happy
 
     if not _is_tty():
@@ -194,7 +229,10 @@ def require_active_server(options: dict, cfg: "ConfigManager") -> str:  # type: 
         servers = cfg.list_hosts()
 
     if not servers:
-        empty_list_recovery("server", "host add")
+        local_bootstrap = _bootstrap_local_host(cfg)
+        if local_bootstrap:
+            return local_bootstrap
+        empty_list_recovery("server", "host discover-local")
         raise typer.Exit(0)
 
     if not _is_tty():

@@ -29,6 +29,35 @@ from .engine import EngineConfig, OnboardingStep, StepResult
 from .genesis import GenesisData
 
 
+_WEB_SEARCH_PROVIDER_CATALOG: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    (
+        "perplexity",
+        "Perplexity Search  (structured results, domain/language/freshness filters)",
+        ("PERPLEXITY_API_KEY", "PPLX_API_KEY"),
+    ),
+    (
+        "brave",
+        "Brave Search       (structured results, region-specific)",
+        ("BRAVE_API_KEY",),
+    ),
+    (
+        "gemini",
+        "Gemini (Google)    (Google Search grounding, AI-synthesized)",
+        ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    ),
+    (
+        "grok",
+        "Grok (xAI)         (xAI web-grounded responses)",
+        ("XAI_API_KEY", "GROK_KEY"),
+    ),
+    (
+        "kimi",
+        "Kimi (Moonshot)    (Moonshot web search)",
+        ("KIMI_API_KEY", "MOONSHOT_API_KEY"),
+    ),
+)
+
+
 def build_step_registry(
     config: EngineConfig,
     genesis: GenesisData,
@@ -55,6 +84,7 @@ def build_step_registry(
         # ── Phase 2: interactive configuration ───────────────────────────
         _step_ai_provider(navig_dir),
         _step_vault_init(navig_dir),
+        _step_web_search_provider(navig_dir),
         _step_first_host(navig_dir),
         _step_matrix(navig_dir),
         _step_telegram_bot(navig_dir),
@@ -236,11 +266,11 @@ def _step_config_file(
         f"# Generated: {genesis.bornAt}\n\n"
         f"node:\n"
         f"  id: {genesis.nodeId}\n"
-        f"  name: {genesis.name}\n\n"
-        f"agents:\n"
-        f"  defaults:\n"
-        f"    model: openrouter\n"
-        f"    workspace: {navig_dir / 'workspace'}\n"
+        f"  name: {genesis.name}\n"
+        f"  workspace: {navig_dir / 'workspace'}\n\n"
+        f"# AI provider and routing are configured interactively during `navig init`.\n"
+        f"# To change providers run `navig init --reconfigure` or edit this file.\n"
+        f"# Full reference: config/config.example.yaml (shipped with the package)\n"
     )
 
     def run() -> StepResult:
@@ -379,7 +409,9 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             idx = int(choice_raw.strip()) - 1
             if idx < 0 or idx >= len(providers):
                 raise ValueError("out of range")
-        except (ValueError, KeyboardInterrupt, EOFError):
+        except KeyboardInterrupt:
+            raise
+        except (ValueError, EOFError):
             return StepResult(
                 status="skipped",
                 output={"reason": "invalid selection or interrupted"},
@@ -396,7 +428,9 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         else:
             try:
                 api_key = _prompt_masked(f"  {label} API key", default="").strip()
-            except (KeyboardInterrupt, EOFError):
+            except KeyboardInterrupt:
+                raise
+            except EOFError:
                 return StepResult(status="skipped", output={"reason": "interrupted"})
             if not api_key:
                 return StepResult(status="skipped", output={"reason": "no key entered"})
@@ -414,11 +448,73 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         except Exception:  # noqa: BLE001
             pass
 
+        # ── Optional fallback provider ────────────────────────────────────
+        fallback_pid = ""
+        try:
+            sys.stdout.write(
+                "\n  Configure a fallback provider? "
+                "(used when primary is unavailable — press Enter to skip)\n\n"
+            )
+            fallback_providers = [p for p in providers if p.id != pid]
+            for i, p in enumerate(fallback_providers, start=1):
+                local_tag = "" if getattr(p, "requires_key", True) else "  (local)"
+                sys.stdout.write(f"    [{i}] {p.display_name}{local_tag}\n")
+            sys.stdout.write("    [s] Skip\n\n")
+            sys.stdout.flush()
+            fb_raw = typer.prompt("  Fallback provider", default="s").strip().lower()
+            if fb_raw not in ("s", "skip", ""):
+                try:
+                    fb_idx = int(fb_raw) - 1
+                    if 0 <= fb_idx < len(fallback_providers):
+                        chosen_fb = fallback_providers[fb_idx]
+                        fallback_pid = chosen_fb.id
+                        if getattr(chosen_fb, "requires_key", True):
+                            fb_key = _prompt_masked(
+                                f"  {chosen_fb.display_name} API key (fallback)",
+                                default="",
+                            ).strip()
+                            if fb_key:
+                                try:
+                                    from navig.vault.core_v2 import get_vault_v2 as _gv2
+                                    vfb = _gv2()
+                                    if vfb is not None:
+                                        vfb.put(
+                                            f"{fallback_pid}/api_key",
+                                            json.dumps({"value": fb_key}).encode(),
+                                        )
+                                except Exception:  # noqa: BLE001
+                                    pass
+                except (ValueError, IndexError):
+                    fallback_pid = ""
+        except KeyboardInterrupt:
+            raise
+        except EOFError:
+            fallback_pid = ""
+
+        # Write routing block to config.yaml when a fallback was chosen
+        if fallback_pid:
+            try:
+                import yaml  # type: ignore[import]
+
+                config_path = navig_dir / "config.yaml"
+                cfg: dict = {}
+                if config_path.exists():
+                    cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+                cfg.setdefault("routing", {})["enabled"] = True
+                modes = cfg["routing"].setdefault("llm_modes", {})
+                for tier in ("small_talk", "big_tasks", "coding", "summarize", "research"):
+                    modes.setdefault(tier, {})["fallback_provider"] = fallback_pid
+                config_path.write_text(
+                    yaml.dump(cfg, allow_unicode=True), encoding="utf-8"
+                )
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; never block onboarding
+
         marker.write_text(pid, encoding="utf-8")
-        return StepResult(
-            status="completed",
-            output={"provider": pid, "keySource": "interactive"},
-        )
+        out: dict = {"provider": pid, "keySource": "interactive"}
+        if fallback_pid:
+            out["fallback_provider"] = fallback_pid
+        return StepResult(status="completed", output=out)
 
     def verify() -> bool:
         return marker.exists()
@@ -561,7 +657,9 @@ def _step_vault_init(navig_dir: Path) -> OnboardingStep:
                     status="skipped", output={"reason": "empty passphrase"}
                 )
             confirm = _prompt_masked("  Confirm passphrase", default="").strip()
-        except (KeyboardInterrupt, EOFError):
+        except KeyboardInterrupt:
+            raise
+        except EOFError:
             return StepResult(status="skipped", output={"reason": "interrupted"})
 
         if pw != confirm:
@@ -623,7 +721,9 @@ def _step_first_host(navig_dir: Path) -> OnboardingStep:
                 .strip()
                 .lower()
             )
-        except (KeyboardInterrupt, EOFError):
+        except KeyboardInterrupt:
+            raise
+        except EOFError:
             answer = "n"
 
         if answer == "y":
@@ -661,19 +761,217 @@ def _step_first_host(navig_dir: Path) -> OnboardingStep:
     )
 
 
+def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
+    """Configure web search provider preference and optional API key."""
+
+    provider_aliases = {
+        "": "auto",
+        "auto": "auto",
+        "duckduckgo": "duckduckgo",
+        "ddg": "duckduckgo",
+        "brave": "brave",
+        "brave-search": "brave",
+        "perplexity": "perplexity",
+        "gemini": "gemini",
+        "google": "gemini",
+        "grok": "grok",
+        "xai": "grok",
+        "kimi": "kimi",
+        "moonshot": "kimi",
+    }
+
+    def _persist_provider(preferred_provider: str) -> bool:
+        try:
+            import yaml  # type: ignore[import]
+
+            config_path = navig_dir / "config.yaml"
+            cfg: dict[str, Any] = {}
+            if config_path.exists():
+                cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            cfg.setdefault("web", {}).setdefault("search", {})["provider"] = preferred_provider
+            config_path.write_text(
+                yaml.dump(cfg, allow_unicode=True, sort_keys=False),
+                encoding="utf-8",
+            )
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _persist_key(preferred_provider: str, api_key: str) -> str:
+        if not api_key:
+            return "none"
+
+        vault_label = f"web/{preferred_provider}_api_key"
+        try:
+            from navig.vault.core_v2 import get_vault_v2
+
+            vault = get_vault_v2()
+            if vault is not None:
+                vault.put(vault_label, json.dumps({"value": api_key}).encode())
+                return "vault"
+        except Exception:  # noqa: BLE001
+            pass
+
+        try:
+            import yaml  # type: ignore[import]
+
+            config_path = navig_dir / "config.yaml"
+            cfg: dict[str, Any] = {}
+            if config_path.exists():
+                cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            search_cfg = cfg.setdefault("web", {}).setdefault("search", {})
+            api_keys = search_cfg.setdefault("api_keys", {})
+            api_keys[preferred_provider] = api_key
+            if preferred_provider == "brave":
+                search_cfg["api_key"] = api_key
+            config_path.write_text(
+                yaml.dump(cfg, allow_unicode=True, sort_keys=False),
+                encoding="utf-8",
+            )
+            return "config"
+        except Exception:  # noqa: BLE001
+            return "none"
+
+    def _resolve_env_key(env_vars: tuple[str, ...]) -> str:
+        for env_name in env_vars:
+            value = os.environ.get(env_name, "").strip()
+            if value:
+                return value
+        return ""
+
+    def run() -> StepResult:
+        env_provider_raw = os.environ.get("NAVIG_WEB_SEARCH_PROVIDER", "").strip().lower()
+        env_provider = provider_aliases.get(env_provider_raw, "")
+        if env_provider_raw and env_provider_raw != "skip":
+            catalog = {pid: (label, env_vars) for pid, label, env_vars in _WEB_SEARCH_PROVIDER_CATALOG}
+            if env_provider in catalog:
+                _, env_vars = catalog[env_provider]
+                env_key = _resolve_env_key(env_vars)
+                _persist_provider(env_provider)
+                key_source = _persist_key(env_provider, env_key) if env_key else "none"
+                return StepResult(
+                    status="completed",
+                    output={
+                        "provider": env_provider,
+                        "keySource": "environment" if env_key else key_source,
+                    },
+                )
+            if env_provider in {"auto", "duckduckgo"}:
+                _persist_provider(env_provider)
+                return StepResult(
+                    status="completed",
+                    output={
+                        "provider": env_provider,
+                        "keySource": "none",
+                    },
+                )
+            _persist_provider("auto")
+            return StepResult(
+                status="skipped",
+                output={
+                    "reason": "invalid NAVIG_WEB_SEARCH_PROVIDER value",
+                    "provider": "auto",
+                },
+            )
+
+        tty = _tty_check()
+        if tty is not None:
+            return tty
+
+        import typer
+
+        sys.stdout.write("\n  Search provider\n\n")
+        for idx, (_, label, _) in enumerate(_WEB_SEARCH_PROVIDER_CATALOG, start=1):
+            sys.stdout.write(f"    [{idx}] {label}\n")
+        sys.stdout.write("    [s] Skip for now\n\n")
+        sys.stdout.flush()
+
+        try:
+            choice_raw = typer.prompt("  Provider", default="1").strip().lower()
+        except KeyboardInterrupt:
+            raise
+        except EOFError:
+            choice_raw = "s"
+
+        if choice_raw in ("s", "skip", ""):
+            _persist_provider("auto")
+            return StepResult(status="skipped", output={"reason": "skipped by user"})
+
+        try:
+            idx = int(choice_raw) - 1
+        except ValueError:
+            return StepResult(status="skipped", output={"reason": "invalid provider selection"})
+
+        if idx < 0 or idx >= len(_WEB_SEARCH_PROVIDER_CATALOG):
+            return StepResult(status="skipped", output={"reason": "invalid provider selection"})
+
+        provider_id, provider_label, env_vars = _WEB_SEARCH_PROVIDER_CATALOG[idx]
+        env_key = _resolve_env_key(env_vars)
+        entered_key = env_key
+
+        if not entered_key:
+            try:
+                entered_key = _prompt_masked(f"  {provider_label.split('(')[0].strip()} API key", default="").strip()
+            except KeyboardInterrupt:
+                raise
+            except EOFError:
+                entered_key = ""
+
+        provider_written = _persist_provider(provider_id)
+        key_target = _persist_key(provider_id, entered_key) if entered_key else "none"
+
+        return StepResult(
+            status="completed",
+            output={
+                "provider": provider_id,
+                "providerSaved": provider_written,
+                "keySource": "environment" if env_key else ("interactive" if entered_key else "none"),
+                "keyTarget": key_target,
+            },
+        )
+
+    def verify() -> bool:
+        try:
+            import yaml  # type: ignore[import]
+
+            config_path = navig_dir / "config.yaml"
+            if not config_path.exists():
+                return False
+            cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            provider = str(
+                ((cfg.get("web") or {}).get("search") or {}).get("provider") or ""
+            ).strip()
+            return bool(provider)
+        except Exception:  # noqa: BLE001
+            return False
+
+    return OnboardingStep(
+        id="web-search-provider",
+        title="Configure web search provider",
+        run=run,
+        verify=verify,
+        on_failure="skip",
+        independent=True,
+        phase="configuration",
+        tier="recommended",
+    )
+
+
 def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
     """Optionally configure a Telegram bot token for notifications.
 
-    Token storage strategy (dual-write for broad compatibility):
+    Token storage strategy:
     1. Vault  — primary, secure (navig.vault.core_v2); requires vault-init step.
     2. .env   — legacy; used by the shell/PS1 installers and daemon env loading.
-    3. config.yaml — legacy fallback for pre-vault installs; matches install.sh pattern.
 
-    All three writes are individually non-fatal.  Missing any one does not fail
-    the step \u2014 the token is preserved in at least one location.
+    Both writes are individually non-fatal.  Missing any one does not fail
+    the step — the token is preserved in at least one location.
+
+    Writing the token to config.yaml in plaintext is deprecated and has been
+    removed.  Use `navig vault set telegram_bot_token <token>` to store or
+    update the token at any time.
     """
     marker = navig_dir / ".telegram_configured"
-    config_path = navig_dir / "config.yaml"
 
     def _verify_token_remote(token: str) -> tuple[bool, str]:
         try:
@@ -703,7 +1001,9 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
                 "  Telegram bot token (leave blank to skip)",
                 default="",
             ).strip()
-        except (KeyboardInterrupt, EOFError):
+        except KeyboardInterrupt:
+            raise
+        except EOFError:
             token = ""
 
         if not token:
@@ -750,19 +1050,6 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
             except (OSError, PermissionError):
                 pass
             writes.append(".env")
-        except Exception:  # noqa: BLE001
-            pass
-
-        # 3. Legacy: config.yaml (backward compat for pre-vault setups; mirrors installer pattern)
-        try:
-            import yaml  # type: ignore[import]
-
-            cfg: dict[str, Any] = {}
-            if config_path.exists():
-                cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-            cfg.setdefault("telegram", {})["bot_token"] = token
-            config_path.write_text(yaml.dump(cfg, allow_unicode=True), encoding="utf-8")
-            writes.append("config.yaml")
         except Exception:  # noqa: BLE001
             pass
 
@@ -831,7 +1118,9 @@ def _step_skills_activation(navig_dir: Path) -> OnboardingStep:
                 "  Packs to activate (comma-separated numbers, or 'all')",
                 default="all",
             ).strip()
-        except (KeyboardInterrupt, EOFError):
+        except KeyboardInterrupt:
+            raise
+        except EOFError:
             selection = "all"
 
         if selection.lower() == "all":
@@ -968,8 +1257,33 @@ def _step_matrix(navig_dir: Path) -> OnboardingStep:
 
         import typer
 
-        homeserver_url = typer.prompt("  Matrix homeserver URL").strip()
-        access_token = typer.prompt("  Matrix access token").strip()
+        try:
+            homeserver_url = typer.prompt(
+                "  Matrix homeserver URL (leave blank to skip)",
+                default="",
+            ).strip()
+        except (KeyboardInterrupt, EOFError):
+            homeserver_url = ""
+
+        if not homeserver_url:
+            marker.write_text("skipped", encoding="utf-8")
+            return StepResult(
+                status="skipped", output={"reason": "no homeserver URL provided"}
+            )
+
+        try:
+            access_token = typer.prompt(
+                "  Matrix access token (leave blank to skip)",
+                default="",
+            ).strip()
+        except (KeyboardInterrupt, EOFError):
+            access_token = ""
+
+        if not access_token:
+            marker.write_text("skipped", encoding="utf-8")
+            return StepResult(
+                status="skipped", output={"reason": "no access token provided"}
+            )
 
         # Validate — import here to avoid circular deps at module load
         from navig.onboarding.validators import validate_matrix
@@ -1189,7 +1503,9 @@ def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
                     if vault is not None:
                         vault.put(vault_label, json.dumps({"value": val}).encode())
                     imported.append(display_name)
-            except (KeyboardInterrupt, EOFError):
+            except KeyboardInterrupt:
+                raise
+            except EOFError:
                 break
 
         # ── 2. Offer Google service-account JSON ─────────────────────────
@@ -1203,7 +1519,9 @@ def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
                 if line.strip() in ("", "END"):
                     break
                 lines.append(line)
-        except (KeyboardInterrupt, EOFError):
+        except KeyboardInterrupt:
+            raise
+        except EOFError:
             lines = []
 
         if lines:
@@ -1248,7 +1566,8 @@ def _step_review(navig_dir: Path) -> OnboardingStep:
 
         import typer
 
-        # Print summary from artifact if available
+        # Print summary from artifact if available; collect known step IDs.
+        known_ids: list[str] = []
         if artifact.exists():
             try:
                 data = json.loads(artifact.read_text(encoding="utf-8"))
@@ -1256,9 +1575,12 @@ def _step_review(navig_dir: Path) -> OnboardingStep:
                 sys.stdout.write("\n  Onboarding summary:\n")
                 for s in steps_summary:
                     status_icon = "✓" if s.get("status") == "completed" else "·"
+                    step_id = s.get("id", "?")
                     sys.stdout.write(
-                        f"    [{status_icon}] {s.get('id', '?')} — {s.get('status', '?')}\n"
+                        f"    [{status_icon}] {step_id} — {s.get('status', '?')}\n"
                     )
+                    if step_id and step_id != "?":
+                        known_ids.append(step_id)
                 sys.stdout.write("\n")
                 sys.stdout.flush()
             except Exception:  # noqa: BLE001
@@ -1267,10 +1589,35 @@ def _step_review(navig_dir: Path) -> OnboardingStep:
         if typer.confirm("  All settings look good?", default=True):
             return StepResult(status="completed", output={})
 
-        try:
-            jump_to = typer.prompt("  Which step ID to revisit?").strip()
-        except (KeyboardInterrupt, EOFError):
-            jump_to = ""
+        # Show the valid step IDs so the user can make an informed choice.
+        if known_ids:
+            sys.stdout.write(
+                "  Valid step IDs: " + ", ".join(known_ids) + "\n\n"
+            )
+            sys.stdout.flush()
+
+        jump_to = ""
+        while True:
+            try:
+                jump_to = typer.prompt("  Which step ID to revisit?").strip()
+            except EOFError:
+                jump_to = ""
+                break
+            except KeyboardInterrupt:
+                raise
+
+            if not jump_to:
+                break
+
+            if not known_ids or jump_to in known_ids:
+                # Valid choice (or no known IDs to validate against).
+                break
+
+            sys.stdout.write(
+                f"  Unknown step ID '{jump_to}'.\n"
+                f"  Valid IDs: {', '.join(known_ids)}\n\n"
+            )
+            sys.stdout.flush()
 
         return StepResult(status="skipped", output={"jumpTo": jump_to})
 

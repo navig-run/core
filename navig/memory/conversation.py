@@ -103,9 +103,12 @@ class ConversationStore(BaseStore):
 
         # Get history
         history = store.get_history('task-123', limit=50)
+
+        # FTS5 search (F-13)
+        results = store.fts_search('error handling', limit=10)
     """
 
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2  # Bumped for FTS5 support (F-13)
 
     def _create_schema(self, conn: sqlite3.Connection) -> None:
         conn.executescript(
@@ -140,7 +143,75 @@ class ConversationStore(BaseStore):
                 ON sessions(updated_at DESC);
         """
         )
+        # Create FTS5 virtual table for full-text search (F-13)
+        self._create_fts5_table(conn)
         _debug_log(f"ConversationStore initialized at {self.db_path}")
+
+    def _create_fts5_table(self, conn: sqlite3.Connection) -> None:
+        """Create FTS5 virtual table for message content search."""
+        conn.executescript(
+            """
+            -- FTS5 virtual table for full-text search (F-13)
+            CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+                content,
+                session_key UNINDEXED,
+                role UNINDEXED,
+                message_id UNINDEXED,
+                tokenize='porter unicode61'
+            );
+
+            -- Trigger to populate FTS on INSERT
+            CREATE TRIGGER IF NOT EXISTS messages_fts_insert
+            AFTER INSERT ON messages
+            BEGIN
+                INSERT INTO messages_fts (content, session_key, role, message_id)
+                VALUES (NEW.content, NEW.session_key, NEW.role, NEW.id);
+            END;
+
+            -- Trigger to update FTS on UPDATE
+            CREATE TRIGGER IF NOT EXISTS messages_fts_update
+            AFTER UPDATE OF content ON messages
+            BEGIN
+                DELETE FROM messages_fts WHERE message_id = OLD.id;
+                INSERT INTO messages_fts (content, session_key, role, message_id)
+                VALUES (NEW.content, NEW.session_key, NEW.role, NEW.id);
+            END;
+
+            -- Trigger to delete from FTS on DELETE
+            CREATE TRIGGER IF NOT EXISTS messages_fts_delete
+            AFTER DELETE ON messages
+            BEGIN
+                DELETE FROM messages_fts WHERE message_id = OLD.id;
+            END;
+        """
+        )
+
+    def _migrate(
+        self, conn: sqlite3.Connection, from_version: int, to_version: int
+    ) -> None:
+        """Run schema migrations."""
+        _debug_log(f"Migrating ConversationStore from v{from_version} to v{to_version}")
+
+        if from_version < 2 <= to_version:
+            # Migration v1 → v2: Add FTS5 support (F-13)
+            self._create_fts5_table(conn)
+
+            # Backfill existing messages into FTS index
+            cursor = conn.execute(
+                "SELECT id, content, session_key, role FROM messages"
+            )
+            rows = cursor.fetchall()
+            if rows:
+                conn.executemany(
+                    """
+                    INSERT INTO messages_fts (content, session_key, role, message_id)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    [(r[1], r[2], r[3], r[0]) for r in rows],
+                )
+                _debug_log(f"Backfilled {len(rows)} messages into FTS5 index")
+
+            conn.commit()
 
     def add_message(self, message: Message) -> Message:
         """
@@ -410,41 +481,138 @@ class ConversationStore(BaseStore):
         limit: int = 20,
     ) -> list[Message]:
         """
-        Full-text search across message content.
+        Full-text search across message content using FTS5.
+
+        Uses BM25 ranking for relevance scoring.
 
         Args:
-            query: Search query
+            query: Search query (supports FTS5 syntax: AND, OR, quotes)
             session_key: Optional session filter
             limit: Maximum results
 
         Returns:
-            Matching messages
+            Matching messages ranked by relevance
         """
         conn = self._get_conn()
 
-        # Simple LIKE search (FTS can be added later)
-        search_pattern = f"%{query}%"
+        try:
+            # Use FTS5 with BM25 ranking (F-13)
+            if session_key:
+                cursor = conn.execute(
+                    """
+                    SELECT m.*, bm25(messages_fts) AS rank
+                    FROM messages_fts AS fts
+                    JOIN messages AS m ON fts.message_id = m.id
+                    WHERE messages_fts MATCH ?
+                      AND fts.session_key = ?
+                    ORDER BY rank
+                    LIMIT ?
+                    """,
+                    (query, session_key, limit),
+                )
+            else:
+                cursor = conn.execute(
+                    """
+                    SELECT m.*, bm25(messages_fts) AS rank
+                    FROM messages_fts AS fts
+                    JOIN messages AS m ON fts.message_id = m.id
+                    WHERE messages_fts MATCH ?
+                    ORDER BY rank
+                    LIMIT ?
+                    """,
+                    (query, limit),
+                )
+            return [Message.from_dict(dict(row)) for row in cursor.fetchall()]
 
-        if session_key:
-            cursor = conn.execute(
-                """
-                SELECT * FROM messages
-                WHERE session_key = ? AND content LIKE ?
-                ORDER BY timestamp DESC LIMIT ?
-            """,
-                (session_key, search_pattern, limit),
-            )
-        else:
-            cursor = conn.execute(
-                """
-                SELECT * FROM messages
-                WHERE content LIKE ?
-                ORDER BY timestamp DESC LIMIT ?
-            """,
-                (search_pattern, limit),
-            )
+        except sqlite3.OperationalError as e:
+            # Fallback to LIKE search if FTS5 not available
+            _debug_log(f"FTS5 search failed, falling back to LIKE: {e}")
+            search_pattern = f"%{query}%"
 
-        return [Message.from_dict(dict(row)) for row in cursor.fetchall()]
+            if session_key:
+                cursor = conn.execute(
+                    """
+                    SELECT * FROM messages
+                    WHERE session_key = ? AND content LIKE ?
+                    ORDER BY timestamp DESC LIMIT ?
+                """,
+                    (session_key, search_pattern, limit),
+                )
+            else:
+                cursor = conn.execute(
+                    """
+                    SELECT * FROM messages
+                    WHERE content LIKE ?
+                    ORDER BY timestamp DESC LIMIT ?
+                """,
+                    (search_pattern, limit),
+                )
+
+            return [Message.from_dict(dict(row)) for row in cursor.fetchall()]
+
+    def fts_search(
+        self,
+        query: str,
+        session_key: str | None = None,
+        role: str | None = None,
+        limit: int = 20,
+    ) -> list[dict]:
+        """
+        Full-text search with relevance ranking (F-13).
+
+        Uses FTS5 MATCH with BM25 ranking for relevance scoring.
+        Returns search results with matched snippets and scores.
+
+        Args:
+            query: Search query (supports FTS5 syntax: AND, OR, quotes)
+            session_key: Optional session filter
+            role: Optional role filter (user, assistant, system, tool)
+            limit: Maximum results
+
+        Returns:
+            List of dicts with message, score, and snippet
+        """
+        conn = self._get_conn()
+
+        try:
+            # Build query with optional filters
+            sql = """
+                SELECT m.*, bm25(messages_fts) AS score,
+                       snippet(messages_fts, 0, '[', ']', '...', 64) AS snippet
+                FROM messages_fts AS fts
+                JOIN messages AS m ON fts.message_id = m.id
+                WHERE messages_fts MATCH ?
+            """
+            params: list = [query]
+
+            if session_key:
+                sql += " AND fts.session_key = ?"
+                params.append(session_key)
+
+            if role:
+                sql += " AND fts.role = ?"
+                params.append(role)
+
+            sql += " ORDER BY score LIMIT ?"
+            params.append(limit)
+
+            cursor = conn.execute(sql, params)
+
+            results = []
+            for row in cursor.fetchall():
+                row_dict = dict(row)
+                results.append({
+                    "message": Message.from_dict(row_dict),
+                    "score": row_dict.get("score", 0),
+                    "snippet": row_dict.get("snippet", ""),
+                })
+            return results
+
+        except sqlite3.OperationalError as e:
+            _debug_log(f"FTS5 search failed: {e}")
+            # Fallback to search_content() which has LIKE fallback
+            messages = self.search_content(query, session_key, limit)
+            return [{"message": m, "score": 0, "snippet": m.content[:200]} for m in messages]
 
     def get_token_count(self, session_key: str) -> int:
         """Get total token count for a session."""

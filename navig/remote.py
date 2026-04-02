@@ -5,6 +5,7 @@ Execute commands through secure encrypted channels.
 """
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -44,17 +45,52 @@ class RemoteOperations:
             Only set trust_new_host=True for initial server setup when you can
             verify the host key out-of-band (e.g., console access, provider dashboard).
         """
-        ssh_args = ["ssh"]
-
         # SECURITY: Use strict host key checking by default
         # Only accept new hosts if explicitly requested
         # void: trust no one. verify everything. MITM is always watching.
+        ssh_opts = []
         if trust_new_host:
             # Accepts and adds new host keys (use only for first connection)
-            ssh_args.extend(["-o", "StrictHostKeyChecking=accept-new"])
+            ssh_opts.extend(["-o", "StrictHostKeyChecking=accept-new"])
         else:
             # Strict mode: rejects unknown hosts, prevents MITM attacks
-            ssh_args.extend(["-o", "StrictHostKeyChecking=yes"])
+            ssh_opts.extend(["-o", "StrictHostKeyChecking=yes"])
+
+        # Local-host bypass: run directly without SSH so there's no dependency
+        # on an SSH client being installed, and Windows-native commands work.
+        _is_local = (
+            bool(server_config.get("is_local"))
+            or str(server_config.get("type", "")).lower() == "local"
+            or server_config.get("host", "") in ("localhost", "127.0.0.1", "::1")
+        )
+        if _is_local:
+            return self.execute_local(command, capture_output=capture_output)
+
+        # Resolve ssh binary — shutil.which handles PATH lookup and raises a
+        # clear error when ssh/ssh.exe is absent rather than letting subprocess
+        # produce a cryptic FileNotFoundError.
+        _ssh_bin = shutil.which("ssh") or shutil.which("ssh.exe")
+        if _ssh_bin is None and os.name == "nt":
+            # 32-bit Python on 64-bit Windows may not see System32\OpenSSH via
+            # PATH due to file-system redirection; check the canonical locations.
+            _sysroot = os.environ.get("SystemRoot", r"C:\Windows")
+            for _candidate in (
+                os.path.join(_sysroot, "SysNative", "OpenSSH", "ssh.exe"),
+                os.path.join(_sysroot, "System32", "OpenSSH", "ssh.exe"),
+            ):
+                if os.path.isfile(_candidate):
+                    _ssh_bin = _candidate
+                    break
+
+        if _ssh_bin is None:
+            raise RuntimeError(
+                "SSH client not found — install OpenSSH or configure a direct "
+                "local transport.\n"
+                "On Windows: Settings → Apps → Optional Features → OpenSSH Client\n"
+                "On Linux/macOS: install the 'openssh-client' package."
+            )
+
+        ssh_args = [_ssh_bin, *ssh_opts]
 
         # Add other SSH options
         ssh_args.extend(["-o", "ConnectTimeout=10"])
@@ -106,6 +142,31 @@ class RemoteOperations:
             ) from _exc
 
         return result
+
+    def execute_local(self, command: str, capture_output: bool = True) -> subprocess.CompletedProcess:
+        """Execute a command on the *local* machine (no SSH).  Platform-aware.
+
+        On Windows uses PowerShell so the full Windows command vocabulary is
+        available.  On POSIX uses the default shell.
+        """
+        try:
+            if os.name == "nt":
+                args = ["powershell", "-NonInteractive", "-NoProfile", "-Command", command]
+                return subprocess.run(
+                    args,
+                    capture_output=capture_output,
+                    text=True,
+                    timeout=_SSH_TIMEOUT,
+                )
+            return subprocess.run(
+                command,
+                shell=True,
+                capture_output=capture_output,
+                text=True,
+                timeout=_SSH_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired as _exc:
+            raise RuntimeError(f"Local command timed out after {_SSH_TIMEOUT}s") from _exc
 
     def upload_file(
         self, local_path: Path, remote_path: str, server_config: dict[str, Any]

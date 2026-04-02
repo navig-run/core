@@ -5,6 +5,9 @@ Initialize app-specific .navig/ directory for hierarchical configuration.
 """
 
 import shutil
+import json
+import os
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -12,6 +15,17 @@ from typing import Any
 import yaml
 
 from navig import console_helper as ch
+from navig.platform.paths import onboarding_json_path
+
+
+_CHAT_ONBOARDING_CANONICAL_STEPS: tuple[tuple[str, str, str], ...] = (
+    ("ai-provider", "Choose AI provider", "Open Providers and choose your AI brain"),
+    ("first-host", "Connect first host", "Add or confirm your first server host"),
+    ("telegram-bot", "Enable Telegram bot", "Verify Telegram bot runtime health"),
+)
+_CHAT_ONBOARDING_CANONICAL_STEP_IDS = {
+    step_id for step_id, _, _ in _CHAT_ONBOARDING_CANONICAL_STEPS
+}
 
 
 def _get_instructions_source_path() -> Path | None:
@@ -602,6 +616,413 @@ def _maybe_send_first_run_ping() -> None:
         ping_install_if_first_time()
     except Exception:  # noqa: BLE001
         pass
+
+
+def _read_marker_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return ""
+
+
+def show_init_status() -> dict[str, Any]:
+    """Display a compact `navig init` status summary and return payload."""
+    from navig import __version__ as navig_version
+    from navig.config import get_config_manager
+
+    navig_dir = Path.home() / ".navig"
+
+    provider_marker = _read_marker_text(navig_dir / ".ai_provider_configured")
+    env_provider = os.environ.get("NAVIG_LLM_PROVIDER", "").strip()
+    active_provider = env_provider or provider_marker or "not configured"
+
+    cfg = get_config_manager(config_dir=navig_dir)
+    hosts_count = len(cfg.list_hosts())
+
+    vault_status = "empty"
+    try:
+        from navig.vault.core import CredentialsVault
+
+        vault = CredentialsVault(
+            vault_path=navig_dir / "credentials" / "vault.db",
+            auto_migrate=False,
+        )
+        creds = vault.list()
+        vault_status = "initialized" if creds else "empty"
+    except (ImportError, RuntimeError, ValueError, OSError):
+        vault_status = "empty"
+
+    telegram_active = (navig_dir / ".telegram_configured").exists() or bool(
+        cfg.global_config.get("telegram", {}).get("bot_token")
+    )
+    matrix_active = (navig_dir / ".matrix_configured").exists() or bool(
+        cfg.global_config.get("matrix", {}).get("homeserver_url")
+    )
+    email_active = (navig_dir / ".email_configured").exists() or bool(
+        cfg.global_config.get("email", {}).get("smtp_host")
+    )
+
+    web_cfg = cfg.global_config.get("web", {}) if isinstance(cfg.global_config, dict) else {}
+    web_search_cfg = web_cfg.get("search", {}) if isinstance(web_cfg, dict) else {}
+    web_provider = str(web_search_cfg.get("provider") or os.environ.get("NAVIG_WEB_SEARCH_PROVIDER") or "auto").strip().lower()
+    if not web_provider:
+        web_provider = "auto"
+
+    def _web_key_from_vault(provider_name: str) -> str:
+        label_map = {
+            "brave": ("web/brave_api_key", "brave/api_key", "brave_api_key"),
+            "perplexity": ("web/perplexity_api_key", "perplexity/api_key", "pplx/api_key"),
+            "gemini": ("web/gemini_api_key", "google/api_key", "google_api_key"),
+            "grok": ("web/grok_api_key", "xai/api_key", "xai_api_key"),
+            "kimi": ("web/kimi_api_key", "moonshot/api_key", "moonshot_api_key"),
+        }
+        try:
+            from navig.vault.core_v2 import get_vault_v2
+
+            vault = get_vault_v2()
+            for label in label_map.get(provider_name, ()):
+                try:
+                    value = (vault.get_secret(label) or "").strip()
+                except Exception:
+                    continue
+                if value:
+                    return value
+        except Exception:
+            pass
+        return ""
+
+    web_key = ""
+    if web_provider and web_provider != "auto":
+        web_key = _web_key_from_vault(web_provider)
+    if not web_key and web_provider == "brave":
+        web_key = str(web_search_cfg.get("api_key") or os.environ.get("BRAVE_API_KEY") or "").strip()
+    if not web_key:
+        api_keys = web_search_cfg.get("api_keys", {}) if isinstance(web_search_cfg, dict) else {}
+        if isinstance(api_keys, dict):
+            web_key = str(api_keys.get(web_provider) or "").strip()
+    web_ready = web_provider in {"auto", "duckduckgo"} or bool(web_key)
+
+    payload = {
+        "provider": active_provider,
+        "hosts_count": hosts_count,
+        "vault": vault_status,
+        "integrations": {
+            "telegram": telegram_active,
+            "matrix": matrix_active,
+            "email": email_active,
+        },
+        "web_search": {
+            "provider": web_provider,
+            "ready": web_ready,
+        },
+        "python_version": sys.version.split()[0],
+        "navig_version": navig_version,
+    }
+
+    ch.header("NAVIG Init Status")
+    ch.info(f"AI provider: {payload['provider']}")
+    ch.info(f"Connected hosts: {payload['hosts_count']}")
+    ch.info(f"Vault: {payload['vault']}")
+
+    integrations = payload["integrations"]
+    labels = []
+    for name in ("telegram", "matrix", "email"):
+        state = "on" if integrations[name] else "off"
+        labels.append(f"{name}={state}")
+    ch.info("Integrations: " + ", ".join(labels))
+    ch.info(
+        f"Web search: {payload['web_search']['provider']} "
+        f"({'ready' if payload['web_search']['ready'] else 'needs key'})"
+    )
+    ch.info(f"Python: {payload['python_version']}")
+    ch.info(f"NAVIG: {payload['navig_version']}")
+
+    return payload
+
+
+def _chat_onboarding_handoff_file(navig_dir: Path | None = None) -> Path:
+    base = navig_dir or (Path.home() / ".navig")
+    return base / "state" / "chat_onboarding_handoff.json"
+
+
+def _onboarding_artifact_file(navig_dir: Path | None = None) -> Path:
+    if navig_dir is not None:
+        state_candidate = navig_dir / "state" / "onboarding.json"
+        legacy_candidate = navig_dir / "onboarding.json"
+        if not state_candidate.exists() and legacy_candidate.exists():
+            return legacy_candidate
+        return state_candidate
+    home_navig_dir = Path.home() / ".navig"
+    home_state_candidate = home_navig_dir / "state" / "onboarding.json"
+    home_legacy_candidate = home_navig_dir / "onboarding.json"
+    if not home_state_candidate.exists() and home_legacy_candidate.exists():
+        return home_legacy_candidate
+    if home_state_candidate.exists():
+        return home_state_candidate
+    return onboarding_json_path()
+
+
+def get_chat_onboarding_step_progress(
+    navig_dir: Path | None = None,
+) -> list[dict[str, Any]]:
+    completed_ids: set[str] = set()
+    artifact_path = _onboarding_artifact_file(navig_dir)
+    if artifact_path.exists():
+        try:
+            payload = json.loads(artifact_path.read_text(encoding="utf-8") or "{}")
+            completed_ids = {
+                str(step.get("id") or "")
+                for step in payload.get("steps", [])
+                if step.get("status") == "completed" and step.get("id")
+            }
+        except (json.JSONDecodeError, OSError, TypeError, ValueError):
+            completed_ids = set()
+
+    progress: list[dict[str, Any]] = []
+    for step_id, label, hint in _CHAT_ONBOARDING_CANONICAL_STEPS:
+        progress.append(
+            {
+                "id": step_id,
+                "label": label,
+                "hint": hint,
+                "completed": step_id in completed_ids,
+            }
+        )
+    return progress
+
+
+def mark_chat_onboarding_step_completed(step_id: str, navig_dir: Path | None = None) -> bool:
+    step_id = str(step_id or "").strip()
+    if step_id not in _CHAT_ONBOARDING_CANONICAL_STEP_IDS:
+        return False
+
+    artifact_path = _onboarding_artifact_file(navig_dir)
+    payload: dict[str, Any] = {}
+    if artifact_path.exists():
+        try:
+            loaded = json.loads(artifact_path.read_text(encoding="utf-8") or "{}")
+            if isinstance(loaded, dict):
+                payload = loaded
+        except (json.JSONDecodeError, OSError, ValueError, TypeError):
+            return False
+
+    steps = payload.get("steps")
+    if not isinstance(steps, list):
+        steps = []
+
+    updated = False
+    found = False
+    for entry in steps:
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("id") or "") != step_id:
+            continue
+        found = True
+        if entry.get("status") != "completed":
+            entry["status"] = "completed"
+            updated = True
+
+    if not found:
+        steps.append({"id": step_id, "status": "completed"})
+        updated = True
+
+    if not updated:
+        return True
+
+    payload["steps"] = steps
+    try:
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        artifact_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return True
+    except OSError:
+        return False
+
+
+def write_chat_onboarding_handoff_state(
+    *,
+    profile: str,
+    token_configured: bool,
+    auto_started: bool,
+    pending: bool = True,
+    navig_dir: Path | None = None,
+) -> None:
+    try:
+        path = _chat_onboarding_handoff_file(navig_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "pending": bool(pending),
+            "profile": str(profile or "quickstart"),
+            "token_configured": bool(token_configured),
+            "auto_started": bool(auto_started),
+            "steps": get_chat_onboarding_step_progress(navig_dir),
+            "created_at": datetime.utcnow().isoformat() + "Z",
+        }
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def consume_chat_onboarding_handoff_state(
+    navig_dir: Path | None = None,
+) -> dict[str, Any] | None:
+    path = _chat_onboarding_handoff_file(navig_dir)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8") or "{}")
+        if not bool(payload.get("pending")):
+            return None
+        payload["pending"] = False
+        payload["consumed_at"] = datetime.utcnow().isoformat() + "Z"
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return payload
+    except Exception:
+        return None
+
+
+def _persist_telegram_bootstrap_token(token: str, navig_dir: Path | None = None) -> bool:
+    token = (token or "").strip()
+    if not token:
+        return False
+
+    base = navig_dir or (Path.home() / ".navig")
+    base.mkdir(parents=True, exist_ok=True)
+    wrote = False
+
+    try:
+        from navig.vault.core_v2 import get_vault_v2
+
+        vault = get_vault_v2()
+        if vault is not None:
+            vault.put("telegram_bot_token", json.dumps({"value": token}).encode())
+            wrote = True
+    except Exception:
+        pass
+
+    try:
+        env_path = base / ".env"
+        existing = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
+        lines = [
+            ln
+            for ln in existing.splitlines()
+            if not ln.startswith("TELEGRAM_BOT_TOKEN=")
+            and not ln.startswith("NAVIG_TELEGRAM_BOT_TOKEN=")
+        ]
+        lines.append(f"NAVIG_TELEGRAM_BOT_TOKEN={token}")
+        lines.append(f"TELEGRAM_BOT_TOKEN={token}")
+        env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        wrote = True
+    except Exception:
+        pass
+
+    try:
+        from navig.config import get_config_manager
+
+        cfg = get_config_manager(config_dir=base)
+        telegram_cfg = dict((cfg.global_config.get("telegram") or {}))
+        telegram_cfg["bot_token"] = token
+        cfg.update_global_config({"telegram": telegram_cfg})
+        wrote = True
+    except Exception:
+        pass
+
+    try:
+        (base / ".telegram_configured").write_text("1", encoding="utf-8")
+        wrote = True
+    except Exception:
+        pass
+
+    os.environ["NAVIG_TELEGRAM_BOT_TOKEN"] = token
+    os.environ["TELEGRAM_BOT_TOKEN"] = token
+    return wrote
+
+
+def _auto_start_chat_runtime() -> bool:
+    try:
+        from navig.daemon.entry import save_default_config
+
+        config_path = save_default_config()
+        cfg = json.loads(config_path.read_text(encoding="utf-8"))
+        cfg["telegram_bot"] = True
+        cfg["gateway"] = True
+        config_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+    try:
+        from navig.commands.service import service_start
+
+        service_start(foreground=False)
+        return True
+    except (SystemExit, Exception):
+        return False
+
+
+def run_chat_first_handoff(
+    *,
+    profile: str = "quickstart",
+    dry_run: bool = False,
+    quiet: bool = False,
+) -> None:
+    if dry_run:
+        return
+
+    from navig.messaging.secrets import resolve_telegram_bot_token
+
+    token = (resolve_telegram_bot_token({}) or "").strip()
+
+    if not quiet:
+        ch.newline()
+        ch.header("Chat-First Onboarding")
+        ch.info("For the best experience, configure NAVIG in Telegram now.")
+
+    if not token and sys.stdin.isatty() and not quiet:
+        ch.info("1) Open Telegram and talk to @BotFather")
+        ch.info("2) Run /newbot and copy your bot token")
+        ch.info("3) Paste token below to finish auto-setup")
+        try:
+            import typer
+
+            entered = typer.prompt("Telegram bot token", default="", show_default=False).strip()
+        except Exception:
+            entered = ""
+        if entered:
+            _persist_telegram_bootstrap_token(entered)
+            token = entered
+            if not quiet:
+                ch.success("Telegram token saved")
+
+    if not token:
+        write_chat_onboarding_handoff_state(
+            profile=profile,
+            token_configured=False,
+            auto_started=False,
+            pending=False,
+        )
+        if not quiet:
+            ch.warning("Telegram token not configured yet.")
+            ch.info("Run: navig vault set telegram_bot_token <token>")
+            ch.info("Then run: navig start")
+        return
+
+    auto_started = _auto_start_chat_runtime()
+    if auto_started:
+        mark_chat_onboarding_step_completed("telegram-bot")
+    write_chat_onboarding_handoff_state(
+        profile=profile,
+        token_configured=True,
+        auto_started=auto_started,
+        pending=True,
+    )
+
+    if not quiet:
+        if auto_started:
+            ch.success("NAVIG is now alive.")
+            ch.info("Open Telegram and say 'hello' to your bot to continue setup.")
+        else:
+            ch.warning("Auto-start could not be verified.")
+            ch.info("Run: navig start")
+            ch.info("Then open Telegram and say 'hello' to your bot.")
 
 
 def run_init(dry_run: bool = False, no_genesis: bool = False, name: str = "") -> None:

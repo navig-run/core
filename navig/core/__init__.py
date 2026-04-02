@@ -24,6 +24,13 @@ Core Utilities (Agent-inspired):
 
 from navig.core.shared_config import Config
 
+# Extracted config managers (for direct imports)
+from navig.core.yaml_io import atomic_write_yaml, log_shadow_anomaly
+from navig.core.hosts import HostManager
+from navig.core.apps import AppManager
+from navig.core.context import ContextManager
+from navig.core.execution import ExecutionSettings
+
 
 # Lazy imports for optional modules
 def get_security():
@@ -60,4 +67,18 @@ def get_hooks():
     }
 
 
-__all__ = ["Config", "get_security", "get_hooks"]
+__all__ = [
+    # Core config
+    "Config",
+    # Extracted managers
+    "HostManager",
+    "AppManager",
+    "ContextManager",
+    "ExecutionSettings",
+    # YAML utilities
+    "atomic_write_yaml",
+    "log_shadow_anomaly",
+    # Lazy accessors
+    "get_security",
+    "get_hooks",
+]

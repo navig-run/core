@@ -407,6 +407,18 @@ echo env('APP_ENV');
   | `navig web hestia` | HestiaCP control panel management |
 
 
+## Web Search Operations (navig_search)
+- **WHEN TO RUN**: User asks to search the web from NAVIG CLI (`navig search ...`)
+- **PROVIDER FLAG**:
+  - `--provider auto` (default): uses configured provider preference and runtime fallback
+  - Explicit options: `brave`, `duckduckgo`, `perplexity`, `gemini`, `grok`, `kimi`
+- **RUNTIME SUPPORT NOTE**:
+  - Current runtime engines execute with Brave or DuckDuckGo.
+  - Non-runtime providers (`perplexity`, `gemini`, `grok`, `kimi`) act as preferences; runtime falls back to Brave (if key available) else DuckDuckGo.
+- **ONBOARDING ALIGNMENT**:
+  - Use `navig init` and complete the **web-search-provider** step to set provider preference and API key (vault-first, config/env fallback).
+
+
 ## Monitoring & Security (navig_monitoring)
 - **WHEN TO RUN**: Health checks, resource monitoring, security audits
 - **TRIGGER PHRASES**:

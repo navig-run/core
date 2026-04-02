@@ -201,3 +201,73 @@ def test_plans_briefing_includes_action_focus(tmp_path, monkeypatch):
     assert "Spaces Progress:" in result.stdout
     assert "Action Focus:" in result.stdout
     assert "Sleep by 10pm" in result.stdout
+
+
+# ─────────────────────────────────────────────────────────────
+# plans summary
+# ─────────────────────────────────────────────────────────────
+
+
+def test_plans_summary_no_spaces(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    result = runner.invoke(plans_app, ["summary", "--path", str(tmp_path / "repo")])
+    assert result.exit_code == 0
+    assert "No spaces discovered" in result.stdout
+
+
+def test_plans_summary_single_space(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    space = home / ".navig" / "spaces" / "devops"
+    space.mkdir(parents=True, exist_ok=True)
+    (space / "CURRENT_PHASE.md").write_text(
+        "---\ntitle: CI Pipeline\nphase: 1\nstatus: active\ncompletion_pct: 60\n---\n\n# CI Pipeline\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(plans_app, ["summary", "--path", str(tmp_path / "repo")])
+    assert result.exit_code == 0
+    assert "CI Pipeline" in result.stdout
+
+
+def test_plans_summary_missing_phase_shows_dash_row(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    good = home / ".navig" / "spaces" / "finance"
+    good.mkdir(parents=True, exist_ok=True)
+    (good / "CURRENT_PHASE.md").write_text(
+        "---\nstatus: active\ncompletion_pct: 30\nlast_updated: 2025-07-01\n---\n\n# Budget",
+        encoding="utf-8",
+    )
+
+    missing = home / ".navig" / "spaces" / "empty"
+    missing.mkdir(parents=True, exist_ok=True)
+
+    result = runner.invoke(plans_app, ["summary", "--path", str(tmp_path / "repo")])
+    assert result.exit_code == 0
+    assert "finance" in result.stdout
+    assert "empty" in result.stdout
+    assert "—" in result.stdout
+
+
+def test_plans_summary_all_spaces_table(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: home)
+
+    for sname in ("alpha", "beta"):
+        space = home / ".navig" / "spaces" / sname
+        space.mkdir(parents=True, exist_ok=True)
+        (space / "CURRENT_PHASE.md").write_text(
+            f"---\nstatus: active\ncompletion_pct: 50\nlast_updated: 2025-07-0{1 if sname == 'alpha' else 2}\n---\n\n# {sname.title()} Phase\n",
+            encoding="utf-8",
+        )
+
+    result = runner.invoke(plans_app, ["summary", "--path", str(tmp_path / "repo")])
+    assert result.exit_code == 0
+    assert "alpha" in result.stdout
+    assert "beta" in result.stdout
+

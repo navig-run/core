@@ -93,6 +93,8 @@ class UsageStats:
     last_checkin: float | None = None
     last_capability_promo: float | None = None
     last_feedback_ask: float | None = None
+    last_idle_nudge: float | None = None  # BUG-3: own cooldown bucket
+    last_wrapup: float | None = None      # BUG-3: own cooldown bucket
     feedback_responses: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -105,6 +107,11 @@ class UserStateTracker:
     The EngagementCoordinator reads this state to decide what proactive
     actions to take.
     """
+
+    # BUG-10: operator-state thresholds as class constants (single source of truth)
+    IDLE_THRESHOLD_MIN: int = 15
+    AWAY_THRESHOLD_HOURS: int = 1
+    JUST_ARRIVED_THRESHOLD_HOURS: int = 2
 
     def __init__(self, state_dir: Path | None = None):
         self.state_dir = state_dir or Path.home() / ".navig" / "engagement"
@@ -173,6 +180,9 @@ class UserStateTracker:
                 hour_counts.keys(), key=lambda h: hour_counts[h], reverse=True
             )[:5]
 
+        # BUG-5: always flush last_seen immediately for restart resilience
+        self._flush_last_seen()
+
         # Auto-save periodically (every 50 interactions)
         if self.stats.total_messages % 50 == 0:
             self._save_state()
@@ -188,6 +198,10 @@ class UserStateTracker:
             self.stats.last_capability_promo = now
         elif event_type == "feedback_ask":
             self.stats.last_feedback_ask = now
+        elif event_type == "idle_nudge":  # BUG-3: own bucket
+            self.stats.last_idle_nudge = now
+        elif event_type == "wrapup":      # BUG-3: own bucket
+            self.stats.last_wrapup = now
         self._save_state()
 
     def record_feedback(self, feedback: str, rating: int | None = None):
@@ -216,11 +230,11 @@ class UserStateTracker:
         gap_hours = gap_seconds / 3600
 
         # Just arrived: first message after 2+ hour gap
-        if gap_hours >= 2:
+        if gap_hours >= self.JUST_ARRIVED_THRESHOLD_HOURS:
             return OperatorState.JUST_ARRIVED
 
         # Away: no activity for 1-2 hours
-        if gap_hours >= 1:
+        if gap_hours >= self.AWAY_THRESHOLD_HOURS:
             return OperatorState.AWAY
 
         # Check for deep work pattern: long session, few messages
@@ -237,8 +251,8 @@ class UserStateTracker:
             if gap_minutes > 15:
                 return OperatorState.WINDING_DOWN
 
-        # Idle: no activity for 15+ minutes
-        if gap_minutes >= 15:
+        # Idle: no activity for N minutes
+        if gap_minutes >= self.IDLE_THRESHOLD_MIN:
             return OperatorState.IDLE
 
         return OperatorState.ACTIVE
@@ -276,6 +290,10 @@ class UserStateTracker:
             ts = self.stats.last_capability_promo
         elif event_type == "feedback_ask":
             ts = self.stats.last_feedback_ask
+        elif event_type == "idle_nudge":      # BUG-3: own bucket
+            ts = self.stats.last_idle_nudge
+        elif event_type == "wrapup":          # BUG-3: own bucket
+            ts = self.stats.last_wrapup
         elif event_type == "last_interaction":
             ts = self.stats.last_seen
 
@@ -367,9 +385,21 @@ class UserStateTracker:
             return True
         return False
 
+    def _flush_last_seen(self) -> None:
+        """Write only last_seen to a lightweight sidecar for restart resilience (BUG-5)."""
+        sidecar = self.state_dir / "last_seen.json"
+        try:
+            sidecar.write_text(
+                json.dumps({"last_seen": self.stats.last_seen}),
+                encoding="utf-8",
+            )
+        except Exception as e:
+            logger.debug("Failed to flush last_seen sidecar: %s", e)
+
     def _load_state(self):
         """Load persisted state from disk."""
         state_file = self.state_dir / "user_state.json"
+        sidecar = self.state_dir / "last_seen.json"
         if state_file.exists():
             try:
                 data = json.loads(state_file.read_text(encoding="utf-8"))
@@ -388,8 +418,21 @@ class UserStateTracker:
                     last_checkin=stats.get("last_checkin"),
                     last_capability_promo=stats.get("last_capability_promo"),
                     last_feedback_ask=stats.get("last_feedback_ask"),
+                    last_idle_nudge=stats.get("last_idle_nudge"),    # BUG-3
+                    last_wrapup=stats.get("last_wrapup"),            # BUG-3
                     feedback_responses=stats.get("feedback_responses", []),
                 )
+                # BUG-5: check sidecar for a more recent last_seen (survives mid-session restart)
+                if sidecar.exists():
+                    try:
+                        sc = json.loads(sidecar.read_text(encoding="utf-8"))
+                        sc_ts = sc.get("last_seen")
+                        if sc_ts and (
+                            self.stats.last_seen is None or sc_ts > self.stats.last_seen
+                        ):
+                            self.stats.last_seen = sc_ts
+                    except Exception:
+                        pass
                 # Load active hours config
                 config = data.get("config", {})
                 self.active_hours_start = config.get("active_hours_start", 8)
@@ -409,6 +452,15 @@ class UserStateTracker:
                     )
             except Exception as e:
                 logger.warning(f"Failed to load user state: {e}")
+        elif sidecar.exists():
+            # No main state yet — at least restore last_seen from sidecar (BUG-5)
+            try:
+                sc = json.loads(sidecar.read_text(encoding="utf-8"))
+                sc_ts = sc.get("last_seen")
+                if sc_ts:
+                    self.stats.last_seen = sc_ts
+            except Exception:
+                pass
 
     def _save_state(self):
         """Persist state to disk."""
@@ -429,6 +481,8 @@ class UserStateTracker:
                     "last_checkin": self.stats.last_checkin,
                     "last_capability_promo": self.stats.last_capability_promo,
                     "last_feedback_ask": self.stats.last_feedback_ask,
+                    "last_idle_nudge": self.stats.last_idle_nudge,
+                    "last_wrapup": self.stats.last_wrapup,
                     "feedback_responses": self.stats.feedback_responses,
                 },
                 "config": {

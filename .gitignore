@@ -5,6 +5,11 @@
 # See: https://git-scm.com/docs/gitignore
 
 # ===============================================
+# Private / local-only docs
+# ===============================================
+CHANGELOG.md
+
+# ===============================================
 # IDE and Editor Files
 # ===============================================
 .vscode/
@@ -26,9 +31,10 @@ track_c_results.txt
 # ===============================================
 # Python
 # ===============================================
-__pycache__/                # Python bytecode cache
-**/__pycache__/             # Python bytecode cache (any depth)
-**/__pycache__              # Python bytecode cache (no trailing slash variant)
+# Python bytecode cache
+__pycache__/
+**/__pycache__/
+**/__pycache__
 *.py[cod]                   # Compiled Python files
 *$py.class                  # Python class files
 *.so                        # Shared objects
@@ -152,6 +158,7 @@ vault.salt                  # Vault salt file
 # .navig/ is TRACKED - plans/, brand/, wiki/, agents/ all live here
 # Only runtime / credential files inside it are ignored (see list below)
 .archive/                   # Local archive folder
+.dev/                       # Local development folder
 nohup.out                   # Background process output
 
 # ===============================================
@@ -228,6 +235,7 @@ cython_debug/               # Cython debug symbols
 
 # NAVIG runtime files inside
 .navig/
+.navig_worktrees/
 .backups/
 node_modules
 
@@ -332,6 +340,7 @@ navig-community/
 
 # Runtime store - live content lives in ~/.navig/store/, not in VCS
 store/
+store/.dev/
 
 # icons/ was moved to .navig/brand/ (tracked); ignore any root-level recreation
 icons/
@@ -344,8 +353,12 @@ navig/plugins/llm-bridge/
 host/crates/**/target/
 **/target/
 
-# Local workspace (WIP, drafts, test scripts, scratch — never commit)
+# Local workspace policy
+# - .dev/: AI working folder (scripts/logs/outputs/scratch) — never commit
+# - .local/: backups/moved artifacts and local temp compatibility — never commit
+.dev/
 .local/
+.lab/
 $null
 
 # pytest local temp dirs (all variants land inside .local/)
@@ -354,4 +367,3 @@ $null
 .pytest_tmp*/
 pytest_tmp*/
 *.pytest_tmp/
-CHANGELOG.md

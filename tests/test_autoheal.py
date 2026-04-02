@@ -1,16 +1,16 @@
-"""
+﻿"""
 Tests for the NAVIG self-healing diagnostic pipeline.
 
 Covers:
   Unit:
-    classify_failure              — 7 tests, one per FailureClass
-    detect_failure_in_response    — 3 tests (hit, miss, host extraction)
-    SSHHealer.keyscan_and_trust   — 3 tests (localhost guard, success, failure)
-    SSHHealer.ensure_ssh_key      — 3 tests (key exists, missing→generated, keygen fails)
-    SSHHealer.probe_ssh_transport — 3 tests (TCP refused, open+transport ok, timeout)
-    AutoHealMixin._run_autofix    — 5 tests (dispatch, DB gate, CMD hint, cap, TIMEOUT)
-    AutoHealMixin._handle_autoheal — 5 tests (on, off, hive on, hive off, status)
-    HealPRSubmitter.store_pending_patch — 2 tests (creates file, list_pending_patches)
+    classify_failure              вЂ” 7 tests, one per FailureClass
+    detect_failure_in_response    вЂ” 3 tests (hit, miss, host extraction)
+    SSHHealer.keyscan_and_trust   вЂ” 3 tests (localhost guard, success, failure)
+    SSHHealer.ensure_ssh_key      вЂ” 3 tests (key exists, missingв†’generated, keygen fails)
+    SSHHealer.probe_ssh_transport вЂ” 3 tests (TCP refused, open+transport ok, timeout)
+    AutoHealMixin._run_autofix    вЂ” 5 tests (dispatch, DB gate, CMD hint, cap, TIMEOUT)
+    AutoHealMixin._handle_autoheal вЂ” 5 tests (on, off, hive on, hive off, status)
+    HealPRSubmitter.store_pending_patch вЂ” 2 tests (creates file, list_pending_patches)
 """
 
 from __future__ import annotations
@@ -31,10 +31,10 @@ from navig.gateway.channels.telegram_autoheal import (
 )
 from navig.selfheal.ssh_healer import HealResult, SSHHealer
 
-# ── Imports under test ───────────────────────────────────────────────────────
+# в”Ђв”Ђ Imports under test в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# в”Ђв”Ђ Helpers в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 
 def _ctx(
@@ -68,7 +68,7 @@ def _make_mixin() -> AutoHealMixin:
 
 
 # ============================================================================
-# classify_failure — pure function, no I/O
+# classify_failure вЂ” pure function, no I/O
 # ============================================================================
 
 
@@ -146,7 +146,7 @@ class TestDetectFailureInResponse(unittest.TestCase):
 
 
 # ============================================================================
-# SSHHealer — async unit tests
+# SSHHealer вЂ” async unit tests
 # ============================================================================
 
 
@@ -357,7 +357,7 @@ class TestHandleAutoheal(unittest.IsolatedAsyncioTestCase):
         sm.update_settings = MagicMock()
         mixin._get_session_manager_safe = MagicMock(return_value=sm)
 
-        await mixin._handle_autoheal(chat_id=100, user_id=200, args="on")
+        await mixin._handle_autoheal(chat_id=100, user_id=200, text="on")
 
         sm.update_settings.assert_called_once_with(100, 200, autoheal_enabled=True)
         mixin.send_message.assert_awaited_once()
@@ -369,7 +369,7 @@ class TestHandleAutoheal(unittest.IsolatedAsyncioTestCase):
         sm = MagicMock()
         mixin._get_session_manager_safe = MagicMock(return_value=sm)
 
-        await mixin._handle_autoheal(chat_id=100, user_id=200, args="off")
+        await mixin._handle_autoheal(chat_id=100, user_id=200, text="off")
 
         sm.update_settings.assert_called_once_with(100, 200, autoheal_enabled=False)
         msg = mixin.send_message.call_args[0][1]
@@ -380,7 +380,7 @@ class TestHandleAutoheal(unittest.IsolatedAsyncioTestCase):
         sm = MagicMock()
         mixin._get_session_manager_safe = MagicMock(return_value=sm)
 
-        await mixin._handle_autoheal(chat_id=100, user_id=200, args="hive on")
+        await mixin._handle_autoheal(chat_id=100, user_id=200, text="hive on")
 
         sm.update_settings.assert_called_once_with(100, 200, autoheal_hive_enabled=True)
         msg = mixin.send_message.call_args[0][1]
@@ -391,7 +391,7 @@ class TestHandleAutoheal(unittest.IsolatedAsyncioTestCase):
         sm = MagicMock()
         mixin._get_session_manager_safe = MagicMock(return_value=sm)
 
-        await mixin._handle_autoheal(chat_id=100, user_id=200, args="hive off")
+        await mixin._handle_autoheal(chat_id=100, user_id=200, text="hive off")
 
         sm.update_settings.assert_called_once_with(100, 200, autoheal_hive_enabled=False)
 
@@ -399,7 +399,7 @@ class TestHandleAutoheal(unittest.IsolatedAsyncioTestCase):
         mixin = _make_mixin()
         mixin._send_autoheal_status = AsyncMock()
 
-        await mixin._handle_autoheal(chat_id=100, user_id=200, args="status")
+        await mixin._handle_autoheal(chat_id=100, user_id=200, text="status")
 
         mixin._send_autoheal_status.assert_awaited_once()
 
@@ -407,13 +407,13 @@ class TestHandleAutoheal(unittest.IsolatedAsyncioTestCase):
         mixin = _make_mixin()
         mixin._send_autoheal_status = AsyncMock()
 
-        await mixin._handle_autoheal(chat_id=100, user_id=200, args="")
+        await mixin._handle_autoheal(chat_id=100, user_id=200, text="")
 
         mixin._send_autoheal_status.assert_awaited_once()
 
     async def test_invalid_args_sends_usage(self) -> None:
         mixin = _make_mixin()
-        await mixin._handle_autoheal(chat_id=100, user_id=200, args="blahblah")
+        await mixin._handle_autoheal(chat_id=100, user_id=200, text="blahblah")
 
         mixin.send_message.assert_awaited_once()
         msg = mixin.send_message.call_args[0][1]
@@ -421,7 +421,7 @@ class TestHandleAutoheal(unittest.IsolatedAsyncioTestCase):
 
 
 # ============================================================================
-# HealPRSubmitter — store and list pending patches
+# HealPRSubmitter вЂ” store and list pending patches
 # ============================================================================
 
 
@@ -476,7 +476,7 @@ class TestHealPRSubmitter(unittest.TestCase):
 
 
 # ============================================================================
-# TelegramSession — new autoheal fields
+# TelegramSession вЂ” new autoheal fields
 # ============================================================================
 
 

@@ -17,6 +17,13 @@ mode_app = typer.Typer(
     no_args_is_help=False,
 )
 
+mode_route_app = typer.Typer(
+    help="Hybrid routing tier slots (small / big / code)",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+mode_app.add_typer(mode_route_app, name="route")
+
 
 @mode_app.callback()
 def mode_callback(ctx: typer.Context):
@@ -184,6 +191,141 @@ def _persist_mode_config(router):
     )
 
     cm.save_global_config(raw)
+
+
+def _normalize_route_tier(tier: str) -> str:
+    mapping = {
+        "small": "small",
+        "s": "small",
+        "big": "big",
+        "b": "big",
+        "code": "coder_big",
+        "coder": "coder_big",
+        "coder_big": "coder_big",
+        "c": "coder_big",
+    }
+    normalized = mapping.get((tier or "").strip().lower())
+    if not normalized:
+        raise ValueError("Tier must be one of: small, big, code")
+    return normalized
+
+
+def _persist_hybrid_route_slot(tier: str, provider: str | None, model: str | None) -> dict[str, str]:
+    """Persist one hybrid routing slot under ai.routing.models.<tier>."""
+    from navig.config import get_config_manager
+
+    cfg_mgr = get_config_manager()
+    global_cfg = dict(cfg_mgr.global_config or {})
+    ai_cfg = dict(global_cfg.get("ai") or {})
+    routing_cfg = dict(ai_cfg.get("routing") or {})
+    models_cfg = dict(routing_cfg.get("models") or {})
+    slot_cfg = dict(models_cfg.get(tier) or {})
+
+    if provider:
+        slot_cfg["provider"] = provider
+    if model:
+        slot_cfg["model"] = model
+
+    if "defaults" not in slot_cfg or not isinstance(slot_cfg.get("defaults"), dict):
+        slot_cfg["defaults"] = {}
+
+    models_cfg[tier] = slot_cfg
+    routing_cfg["enabled"] = True
+    routing_cfg["mode"] = routing_cfg.get("mode") or "rules_then_fallback"
+    routing_cfg["models"] = models_cfg
+    ai_cfg["routing"] = routing_cfg
+    cfg_mgr.update_global_config({"ai": ai_cfg})
+
+    return {
+        "tier": tier,
+        "provider": str(slot_cfg.get("provider") or ""),
+        "model": str(slot_cfg.get("model") or ""),
+    }
+
+
+@mode_route_app.callback()
+def mode_route_callback(ctx: typer.Context):
+    """Hybrid route slot controls (defaults to show)."""
+    if ctx.invoked_subcommand is None:
+        mode_route_show()
+        raise typer.Exit()
+
+
+@mode_route_app.command("show")
+def mode_route_show(
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+):
+    """Show hybrid routing slots (small/big/code)."""
+    from navig.agent.ai_client import get_ai_client
+
+    router = get_ai_client().model_router
+    slots = {
+        "small": {"provider": "", "model": ""},
+        "big": {"provider": "", "model": ""},
+        "coder_big": {"provider": "", "model": ""},
+    }
+
+    if router and getattr(router, "cfg", None):
+        for tier in ("small", "big", "coder_big"):
+            slot = router.cfg.slot_for_tier(tier)
+            slots[tier] = {
+                "provider": slot.provider or "",
+                "model": slot.model or "",
+            }
+
+    if json_output:
+        import json as _json
+
+        typer.echo(_json.dumps(slots, indent=2, sort_keys=True))
+        return
+
+    from rich.console import Console
+    from rich.table import Table
+
+    console = Console()
+    table = Table(title="Hybrid Routing Slots", border_style="dim")
+    table.add_column("Tier", style="cyan", min_width=10)
+    table.add_column("Provider", min_width=14)
+    table.add_column("Model", min_width=24)
+    table.add_row("⚡ Small", slots["small"]["provider"] or "—", slots["small"]["model"] or "—")
+    table.add_row("🧠 Big", slots["big"]["provider"] or "—", slots["big"]["model"] or "—")
+    table.add_row("💻 Code", slots["coder_big"]["provider"] or "—", slots["coder_big"]["model"] or "—")
+    console.print(table)
+
+
+@mode_route_app.command("set")
+def mode_route_set(
+    tier: str = typer.Argument(..., help="Tier: small | big | code"),
+    provider: str | None = typer.Option(
+        None,
+        "--provider",
+        "-p",
+        help="Provider id (openai, xai, ollama, openrouter, ...)",
+    ),
+    model: str | None = typer.Option(None, "--model", "-m", help="Model id/name"),
+):
+    """Set provider/model for one hybrid routing tier slot."""
+    if not provider and not model:
+        typer.echo("Provide at least one of --provider or --model")
+        raise typer.Exit(1)
+
+    try:
+        normalized_tier = _normalize_route_tier(tier)
+    except ValueError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(1) from exc
+
+    updated = _persist_hybrid_route_slot(normalized_tier, provider, model)
+
+    from rich.console import Console
+
+    console = Console()
+    tier_label = {"small": "Small", "big": "Big", "coder_big": "Code"}[normalized_tier]
+    console.print(
+        f"[green]✓[/green] Updated [cyan]{tier_label}[/cyan] slot: "
+        f"[bold]{updated['provider'] or '—'}:{updated['model'] or '—'}[/bold]"
+    )
+    console.print("[dim]Routing is enabled in config (ai.routing.enabled: true). Restart daemon if needed.[/dim]")
 
 
 # ── navig mode list ──────────────────────────────────────

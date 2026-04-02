@@ -793,15 +793,12 @@ def db_dump_cmd(
     """
     from datetime import datetime
 
+    from navig.cli.recovery import require_active_host
     from navig.config import get_config_manager
     from navig.discovery import ServerDiscovery
 
     config_manager = get_config_manager()
-    host_name = options.get("host") or config_manager.get_active_host()
-
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
     if not host_config:
@@ -904,14 +901,11 @@ def db_shell_cmd(
     """
     import subprocess
 
+    from navig.cli.recovery import require_active_host
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    host_name = options.get("host") or config_manager.get_active_host()
-
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
     if not host_config:

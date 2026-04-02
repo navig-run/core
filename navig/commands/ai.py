@@ -1,6 +1,8 @@
 """AI Assistant Commands"""
 
 import logging
+import os
+import platform
 import subprocess
 from typing import Any
 
@@ -29,23 +31,45 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
 
-    context = {
+    # Always inject client platform so the AI gives OS-correct commands.
+    context: dict = {
         "server": server_config,
-        "directory": "/",
+        "directory": "C:\\" if os.name == "nt" else "/",
+        "client_os": f"{platform.system()} {platform.release()}",
+        "client_arch": platform.machine(),
     }
 
     # Gather running processes (optional, can fail gracefully)
+    is_local_host = (
+        bool(server_config.get("is_local"))
+        or str(server_config.get("type", "")).lower() == "local"
+        or server_config.get("host", "") in ("localhost", "127.0.0.1", "::1")
+    )
     try:
-        result = remote_ops.execute_command(
-            "ps aux | grep -E 'nginx|php|mysql' | grep -v grep", server_config
-        )
-        if result.returncode == 0:
-            context["processes"] = result.stdout.strip().split("\n")
+        if os.name == "nt" and is_local_host:
+            # Windows local: tasklist filtered for common services — no SSH needed
+            _r = subprocess.run(
+                ["tasklist", "/FO", "CSV", "/NH"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if _r.returncode == 0:
+                _relevant = [
+                    ln for ln in _r.stdout.splitlines()
+                    if any(k in ln.lower() for k in ("python", "nginx", "mysql", "node", "php", "apache"))
+                ]
+                context["processes"] = _relevant[:20] or ["(no web services detected)"]
+        elif os.name != "nt":
+            result = remote_ops.execute_command(
+                "ps aux | grep -E 'nginx|php|mysql' | grep -v grep", server_config
+            )
+            if result.returncode == 0:
+                context["processes"] = result.stdout.strip().split("\n")
+        # Windows + remote host: skip probe (requires SSH client)
     except (OSError, subprocess.SubprocessError) as e:
-        logger.warning(f"Failed to gather process context: {e}")
-        # Continue without process info - not critical
+        logger.debug(f"Failed to gather process context: {e}")
+        # Continue without process info — not critical
     except Exception as e:
-        logger.warning(f"Unexpected error gathering process context: {e}")
+        logger.debug(f"Unexpected error gathering process context: {e}")
 
     # Get AI response
     try:

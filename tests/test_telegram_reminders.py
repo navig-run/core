@@ -1,3 +1,4 @@
+import json
 import pytest
 from pathlib import Path
 
@@ -270,6 +271,25 @@ async def test_spaces_command_lists_devops_and_sysops(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_status_does_not_mark_onboarding_step_on_view(monkeypatch):
+    bot = _make_dummy_bot()
+    marked: list[str] = []
+
+    monkeypatch.setattr(
+        "navig.commands.init.mark_chat_onboarding_step_completed",
+        lambda step_id, navig_dir=None: marked.append(step_id) or True,
+    )
+    monkeypatch.setattr("navig.spaces.get_default_space", lambda: "default")
+    monkeypatch.setattr("navig.spaces.progress.collect_spaces_progress", lambda: [])
+    monkeypatch.setattr(
+        "navig.spaces.progress.format_spaces_progress_lines",
+        lambda rows, max_items=5: [],
+    )
+    await bot._handle_status(123, 456)
+    assert marked == []
+
+
+@pytest.mark.asyncio
 async def test_intake_flow_writes_space_docs(monkeypatch, tmp_path):
     bot = _make_dummy_bot()
     fake_cfg = _FakeConfigManager(tmp_path / "global")
@@ -295,6 +315,24 @@ async def test_intake_flow_writes_space_docs(monkeypatch, tmp_path):
     assert (health_dir / "CURRENT_PHASE.md").exists()
     assert "Intake" in (health_dir / "VISION.md").read_text(encoding="utf-8")
     assert any("Intake completed" in m[1] for m in bot.messages)
+
+
+@pytest.mark.asyncio
+async def test_intake_does_not_mark_first_host_on_view(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+    marked: list[str] = []
+
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+    monkeypatch.setattr(
+        "navig.commands.init.mark_chat_onboarding_step_completed",
+        lambda step_id, navig_dir=None: marked.append(step_id) or True,
+    )
+
+    await bot._handle_intake(123, 456, "/intake health")
+    assert marked == []
 
 
 @pytest.mark.asyncio
@@ -345,6 +383,118 @@ async def test_natural_language_health_improvement_starts_health_intake(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_natural_language_status_runs_command_immediately(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+    monkeypatch.setattr("navig.spaces.get_default_space", lambda: "default")
+    monkeypatch.setattr("navig.spaces.progress.collect_spaces_progress", lambda: [])
+    monkeypatch.setattr(
+        "navig.spaces.progress.format_spaces_progress_lines",
+        lambda rows, max_items=5: [],
+    )
+
+    handled = await bot._handle_natural_language_request(123, 456, "please show status")
+    assert handled is True
+    assert any("NAVIG Status" in m[1] for m in bot.messages)
+
+
+@pytest.mark.asyncio
+async def test_natural_language_risky_restart_requires_confirmation(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+    ran: list[str] = []
+
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    async def _fake_restart(chat_id, user_id, metadata, arg):
+        ran.append(arg)
+        await bot.send_message(chat_id, f"Restarted: {arg}", parse_mode=None)
+
+    bot._handle_restart = _fake_restart
+
+    handled = await bot._handle_natural_language_request(
+        123,
+        456,
+        "please restart daemon",
+    )
+    assert handled is True
+    assert any("Risky action detected" in m[1] for m in bot.messages)
+    assert ran == []
+
+    confirmed = await bot._handle_nl_pending_reply(123, 456, "yes")
+    assert confirmed is True
+    assert ran == ["daemon"]
+
+
+@pytest.mark.asyncio
+async def test_natural_language_command_missing_args_shows_usage(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    handled = await bot._handle_natural_language_request(123, 456, "can you search")
+    assert handled is True
+    assert any("Usage:" in m[1] for m in bot.messages)
+
+
+@pytest.mark.asyncio
+async def test_natural_language_unmapped_command_shows_suggestions(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    handled = await bot._handle_natural_language_request(
+        123,
+        456,
+        "please check everything quickly",
+    )
+    assert handled is True
+    assert any("Try:" in m[1] for m in bot.messages)
+    keyboard = bot.messages[-1][3].get("keyboard")
+    assert keyboard
+    callback_values = [btn.get("callback_data") for row in keyboard for btn in row]
+    assert any(str(value).startswith("nl_pick:") for value in callback_values)
+
+
+@pytest.mark.asyncio
+async def test_natural_language_ambiguous_command_shows_choices(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    monkeypatch.setattr(
+        bot,
+        "_resolve_nl_command_intent",
+        lambda _text: {
+            "ambiguous": True,
+            "candidates": [
+                {"command": "model", "usage": "/model [big|small|coder|auto]"},
+                {"command": "models", "usage": "/models [big|small|coder|auto]"},
+            ],
+        },
+    )
+
+    handled = await bot._handle_natural_language_request(123, 456, "show model")
+    assert handled is True
+    assert any("multiple matching commands" in m[1].lower() for m in bot.messages)
+
+
+@pytest.mark.asyncio
 async def test_nl_callback_yes_and_cancel(monkeypatch, tmp_path):
     bot = _make_dummy_bot()
     fake_cfg = _FakeConfigManager(tmp_path / "global")
@@ -364,8 +514,105 @@ async def test_nl_callback_yes_and_cancel(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_nl_callback_pick_runs_safe_command(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    ran: list[tuple[str, str]] = []
+
+    async def _fake_exec(**kwargs):
+        ran.append((kwargs.get("command", ""), kwargs.get("args", "")))
+
+    monkeypatch.setattr(bot, "_execute_nl_registry_command", _fake_exec)
+
+    await bot._handle_nl_callback("cb3", "nl_pick:status", 123, 456)
+    assert ran == [("status", "")]
+    assert any("Running /status" in call[1].get("text", "") for call in bot.api_calls)
+
+
+@pytest.mark.asyncio
+async def test_nl_callback_pick_risky_requires_confirmation(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    await bot._handle_nl_callback("cb4", "nl_pick:restart", 123, 456)
+
+    assert any("Risky action detected" in m[1] for m in bot.messages)
+    assert any("Confirmation required" in call[1].get("text", "") for call in bot.api_calls)
+    state = fake_store.get_ai_state(456) or {}
+    pending = ((state.get("context") or {}).get("nl_pending") or {})
+    assert pending.get("active") is True
+    assert pending.get("command") == "restart"
+
+
+@pytest.mark.asyncio
+async def test_nl_callback_pick_missing_args_shows_usage(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    await bot._handle_nl_callback("cb5", "nl_pick:search", 123, 456)
+
+    assert any("needs arguments" in m[1].lower() for m in bot.messages)
+    assert any("Needs arguments" in call[1].get("text", "") for call in bot.api_calls)
+
+
+@pytest.mark.asyncio
+async def test_start_consumes_chat_onboarding_handoff_once(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+
+    onboarding_path = tmp_path / ".navig" / "state" / "onboarding.json"
+    onboarding_path.parent.mkdir(parents=True, exist_ok=True)
+    onboarding_path.write_text(
+        json.dumps(
+            {
+                "steps": [
+                    {"id": "ai-provider", "status": "completed"},
+                    {"id": "first-host", "status": "failed"},
+                    {"id": "telegram-bot", "status": "completed"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    state_path = tmp_path / ".navig" / "state" / "chat_onboarding_handoff.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        '{"pending": true, "profile": "quickstart", "token_configured": true, "auto_started": true}',
+        encoding="utf-8",
+    )
+
+    await bot._handle_start(123, "alice", 456)
+
+    assert any("NAVIG is ready" in msg[1] for msg in bot.messages)
+    assert any("Welcome to NAVIG setup" in msg[1] for msg in bot.messages)
+    assert any("Onboarding progress: `2/3`" in msg[1] for msg in bot.messages)
+    assert any("✅ Choose AI provider" in msg[1] for msg in bot.messages)
+    assert any("⬜ Connect first host" in msg[1] for msg in bot.messages)
+    assert any("• Add or confirm your first server host" in msg[1] for msg in bot.messages)
+
+    first_count = len(bot.messages)
+    await bot._handle_start(123, "alice", 456)
+    second_batch = bot.messages[first_count:]
+    assert any("NAVIG is ready" in msg[1] for msg in second_batch)
+    assert not any("Welcome to NAVIG setup" in msg[1] for msg in second_batch)
+
+
+@pytest.mark.asyncio
 async def test_providers_header_is_clean_and_shows_current_models(monkeypatch):
     bot = _make_dummy_bot()
+    marked: list[str] = []
 
     class _Mode:
         def __init__(self, provider, model):
@@ -401,6 +648,10 @@ async def test_providers_header_is_clean_and_shows_current_models(monkeypatch):
         return False, "127.0.0.1:11435"
 
     bot._probe_bridge_grid = _probe
+    monkeypatch.setattr(
+        "navig.commands.init.mark_chat_onboarding_step_completed",
+        lambda step_id, navig_dir=None: marked.append(step_id) or True,
+    )
     monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
     monkeypatch.setattr(
         "navig.providers.registry.list_enabled_providers",
@@ -409,10 +660,98 @@ async def test_providers_header_is_clean_and_shows_current_models(monkeypatch):
     monkeypatch.setattr("navig.providers.verifier.verify_provider", lambda _m: _Verify())
 
     await bot._handle_providers(123, 456)
+    assert marked == []
     text = bot.messages[-1][1]
     assert "VS Code" not in text
     assert "Base model routing" in text
     assert "💻 Code:" in text
+
+
+@pytest.mark.asyncio
+async def test_providers_does_not_mark_step_when_no_ready_provider(monkeypatch):
+    bot = _make_dummy_bot()
+    marked: list[str] = []
+
+    class _Manifest:
+        id = "nvidia"
+        display_name = "NVIDIA NIM"
+        emoji = "🧩"
+        tier = "cloud"
+        local_probe = None
+        requires_key = True
+
+    class _Verify:
+        key_detected = False
+        local_probe_ok = False
+
+    async def _probe():
+        return False, "127.0.0.1:11435"
+
+    bot._probe_bridge_grid = _probe
+    monkeypatch.setattr(
+        "navig.commands.init.mark_chat_onboarding_step_completed",
+        lambda step_id, navig_dir=None: marked.append(step_id) or True,
+    )
+    monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [_Manifest()])
+    monkeypatch.setattr("navig.providers.verifier.verify_provider", lambda _m: _Verify())
+    monkeypatch.setattr(bot, "_provider_vault_validation_status", lambda _m: (False, False))
+
+    await bot._handle_providers(123, 456)
+    assert marked == []
+
+
+@pytest.mark.asyncio
+async def test_cli_host_use_marks_first_host_on_success(monkeypatch):
+    bot = _make_dummy_bot()
+    marked: list[str] = []
+
+    async def _on_message(*args, **kwargs):
+        return "Host switched to production. Connectivity verified via SSH."
+
+    bot.on_message = _on_message
+    monkeypatch.setattr(
+        "navig.commands.init.mark_chat_onboarding_step_completed",
+        lambda step_id, navig_dir=None: marked.append(step_id) or True,
+    )
+
+    await bot._handle_cli_command(123, 456, {}, "host use production")
+    assert marked == ["first-host"]
+
+
+@pytest.mark.asyncio
+async def test_cli_host_use_does_not_mark_without_connectivity_phrase(monkeypatch):
+    bot = _make_dummy_bot()
+    marked: list[str] = []
+
+    async def _on_message(*args, **kwargs):
+        return "Host switched to production"
+
+    bot.on_message = _on_message
+    monkeypatch.setattr(
+        "navig.commands.init.mark_chat_onboarding_step_completed",
+        lambda step_id, navig_dir=None: marked.append(step_id) or True,
+    )
+
+    await bot._handle_cli_command(123, 456, {}, "host use production")
+    assert marked == []
+
+
+@pytest.mark.asyncio
+async def test_cli_host_use_does_not_mark_first_host_on_failure(monkeypatch):
+    bot = _make_dummy_bot()
+    marked: list[str] = []
+
+    async def _on_message(*args, **kwargs):
+        return "Command exited with code: 2\nHost not found"
+
+    bot.on_message = _on_message
+    monkeypatch.setattr(
+        "navig.commands.init.mark_chat_onboarding_step_completed",
+        lambda step_id, navig_dir=None: marked.append(step_id) or True,
+    )
+
+    await bot._handle_cli_command(123, 456, {}, "host use missing")
+    assert marked == []
 
 
 @pytest.mark.asyncio
@@ -506,11 +845,13 @@ async def test_providers_unconfigured_cloud_shows_provider_row_with_icon_only_ke
 
     await bot._handle_providers(123, 456)
     keyboard = bot.messages[-1][3].get("keyboard") or []
-    rows = [row for row in keyboard if len(row) == 2]
+    # Unconfigured cloud providers produce a single-button stub row that
+    # combines the provider name and the 🔑 configure-action in one button.
+    rows = [row for row in keyboard if len(row) == 1]
     openai_row = next((row for row in rows if any("OpenAI" in btn.get("text", "") for btn in row)), None)
     assert openai_row is not None
-    assert openai_row[0]["text"].endswith("OpenAI")
-    assert openai_row[1]["text"] == "🔑"
+    assert "OpenAI" in openai_row[0]["text"]
+    assert "🔑" in openai_row[0]["text"]
 
 
 @pytest.mark.asyncio

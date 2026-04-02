@@ -11,6 +11,9 @@ from .engine import EngineConfig, EngineState, OnboardingEngine
 from .genesis import load_or_create
 from .steps import build_step_registry
 
+# Maximum number of step-revisit loops allowed in a single session.
+_MAX_REVISIT_DEPTH = 20
+
 
 def should_auto_run_onboarding(argv: Sequence[str] | None = None) -> bool:
     """Return True when first-run onboarding should execute for this invocation."""
@@ -46,6 +49,7 @@ def run_engine_onboarding(
     jump_to_step: str | None = None,
     show_banner: bool = True,
     respect_skip_env: bool = False,
+    _revisit_depth: int = 0,
 ) -> EngineState | None:
     """Run canonical engine onboarding and return final state, or None if skipped."""
     if respect_skip_env and os.getenv("NAVIG_SKIP_ONBOARDING") == "1":
@@ -78,8 +82,12 @@ def run_engine_onboarding(
     engine = OnboardingEngine(cfg, steps, on_step_start=_progress)
 
     if show_banner:
-        sys.stdout.write("\n  Welcome to NAVIG — running first-time setup.\n")
-        sys.stdout.write("  Set NAVIG_SKIP_ONBOARDING=1 to skip automatic setup.\n\n")
+        if force:
+            sys.stdout.write("\n  Welcome back — reconfiguring your existing NAVIG installation.\n")
+            sys.stdout.write("  Your previous settings will be preserved where not overwritten.\n\n")
+        else:
+            sys.stdout.write("\n  Welcome to NAVIG — running first-time setup.\n")
+            sys.stdout.write("  Set NAVIG_SKIP_ONBOARDING=1 to skip automatic setup.\n\n")
         sys.stdout.flush()
 
     previous_guard = os.getenv("NAVIG_ONBOARDING_ACTIVE")
@@ -91,6 +99,22 @@ def run_engine_onboarding(
             os.environ.pop("NAVIG_ONBOARDING_ACTIVE", None)
         else:
             os.environ["NAVIG_ONBOARDING_ACTIVE"] = previous_guard
+
+    # If the review step asked to revisit a specific step, re-run from there.
+    # Limit recursion to avoid infinite loops.
+    if not state.interrupted_at and _revisit_depth < _MAX_REVISIT_DEPTH:
+        review_record = next((s for s in state.steps if s.id == "review"), None)
+        revisit_target = (review_record.output or {}).get("jumpTo", "") if review_record else ""
+        if revisit_target:
+            sys.stdout.write(f"\n  Revisiting step: {revisit_target} …\n\n")
+            sys.stdout.flush()
+            return run_engine_onboarding(
+                force=True,
+                jump_to_step=revisit_target,
+                show_banner=False,
+                respect_skip_env=False,
+                _revisit_depth=_revisit_depth + 1,
+            )
 
     if show_banner:
         if state.interrupted_at:
@@ -133,28 +157,29 @@ def _print_verification_dashboard(state: EngineState, step_tiers: dict[str, str]
 
     deferred = _deferred_integration_commands(state, step_tiers)
     if deferred:
+        col_width = max(len(cmd) for cmd, _ in deferred)
         sys.stdout.write("  Deferred integrations:\n")
-        for cmd in deferred:
-            sys.stdout.write(f"    - {cmd}\n")
+        for cmd, description in deferred:
+            sys.stdout.write(f"    - {cmd:<{col_width}}  {description}\n")
     sys.stdout.write("\n")
 
 
 def _deferred_integration_commands(
     state: EngineState,
     step_tiers: dict[str, str],
-) -> list[str]:
+) -> list[tuple[str, str]]:
     cmd_map = {
-        "matrix": "navig matrix setup",
-        "email": "navig email setup",
-        "social-networks": "navig social setup",
-        "telegram-bot": "navig telegram setup",
+        "matrix": ("navig matrix setup", "receive alerts and run commands via Matrix chat"),
+        "email": ("navig email setup", "SMTP notifications for workflows and alerts"),
+        "social-networks": ("navig social setup", "social network integrations (Twitter/X, etc.)"),
+        "telegram-bot": ("navig telegram setup", "receive alerts and run commands via Telegram bot"),
     }
     status_by_id = {rec.id: rec.status for rec in state.steps}
 
-    deferred: list[str] = []
-    for step_id, cmd in cmd_map.items():
+    deferred: list[tuple[str, str]] = []
+    for step_id, (cmd, description) in cmd_map.items():
         if step_tiers.get(step_id) != "optional":
             continue
         if status_by_id.get(step_id) in ("skipped", "failed"):
-            deferred.append(cmd)
+            deferred.append((cmd, description))
     return deferred

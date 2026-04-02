@@ -106,12 +106,19 @@ class SlashCommandEntry:
     handler: str | None = None  # method name on TelegramCommandsMixin to call directly
     visible: bool = True  # include in /help and setMyCommands
     category: str = "general"  # section heading for /help
+    usage: str = ""  # optional usage hint shown in /help (e.g. "/cmd [option]")
 
 
 _SLASH_REGISTRY: list[SlashCommandEntry] = [
     # --- Core ----------------------------------------------------------------
     SlashCommandEntry(
         "start", "Wake up greeting", handler="_handle_start", category="core"
+    ),
+    SlashCommandEntry(
+        "help",
+        "Full command reference",
+        handler="_handle_help",
+        category="core",
     ),
     SlashCommandEntry(
         "helpme",
@@ -131,6 +138,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Active model routing table",
         handler="_handle_models_command",
         category="core",
+        usage="/models [big|small|coder|auto]",
     ),
     SlashCommandEntry(
         "model",
@@ -138,6 +146,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         handler="_handle_models_command",
         category="core",
         visible=False,
+        usage="/model [big|small|coder|auto]",
     ),
     SlashCommandEntry(
         "routing",
@@ -167,7 +176,11 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "ping", "Quick alive check", handler="_handle_ping", category="core"
     ),
     SlashCommandEntry(
-        "skill", "Run a NAVIG skill - /skill list to browse", category="core"
+        "skill",
+        "Run a NAVIG skill",
+        handler="_handle_skill_cmd",
+        category="core",
+        usage="/skill list  or  /skill <name>",
     ),
     # --- Monitoring ----------------------------------------------------------
     SlashCommandEntry(
@@ -220,16 +233,25 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     ),
     # --- Docker --------------------------------------------------------------
     SlashCommandEntry(
-        "docker", "List containers", cli_template="docker ps", category="docker"
+        "docker",
+        "List containers or view logs",
+        handler="_handle_docker_cmd",
+        category="docker",
+        usage="/docker [ps|logs <name>|restart <name>|all]",
     ),
     SlashCommandEntry(
         "logs",
         "Container logs (+ name)",
         cli_template="docker logs {args} -n 50",
         category="docker",
+        usage="/logs <container-name>",
     ),
     SlashCommandEntry(
-        "restart", "Restart container (+ name) or daemon", category="docker"
+        "restart",
+        "Restart container (+ name) or daemon",
+        handler="_handle_restart_cmd",
+        category="docker",
+        usage="/restart [daemon|<container-name>]",
     ),
     # --- Database ------------------------------------------------------------
     SlashCommandEntry(
@@ -240,6 +262,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Tables in a database (+ db name)",
         cli_template="db tables {args}",
         category="database",
+        usage="/tables <database-name>",
     ),
     # --- Tools ---------------------------------------------------------------
     SlashCommandEntry(
@@ -250,9 +273,11 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Switch active host (+ name)",
         cli_template="host use {args}",
         category="tools",
+        usage="/use <hostname>",
     ),
     SlashCommandEntry(
-        "run", "Execute remote command", cli_template='run "{args}"', category="tools"
+        "run", "Execute remote command", cli_template='run "{args}"', category="tools",
+        usage="/run <shell command>",
     ),
     SlashCommandEntry(
         "backup", "Backup status", cli_template="backup show", category="tools"
@@ -261,19 +286,22 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "plans", "Plans and spaces progress", cli_template="plans status", category="tools"
     ),
     SlashCommandEntry(
-        "plan", "Add a plan goal (+ text)", cli_template="plans add {args}", category="tools"
+        "plan", "Add a plan goal (+ text)", cli_template="plans add {args}", category="tools",
+        usage="/plan <goal text>",
     ),
     SlashCommandEntry(
         "space",
         "Switch active space (+ name)",
         handler="_handle_space",
         category="tools",
+        usage="/space <name>",
     ),
     SlashCommandEntry(
         "spaces",
         "List available spaces",
         handler="_handle_spaces",
         category="tools",
+        usage="/spaces [name]  — name switches directly",
     ),
     SlashCommandEntry(
         "intake",
@@ -287,6 +315,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Convert Markdown to Telegram-friendly format",
         handler="_handle_format",
         category="tools",
+        usage="/format <text>",
     ),
     SlashCommandEntry(
         "fmt",
@@ -296,10 +325,18 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         visible=False,
     ),
     SlashCommandEntry(
-        "think", "Reason through a topic — paginated cards", category="tools"
+        "think",
+        "Reason through a topic — paginated cards",
+        handler="_handle_think",
+        category="tools",
+        usage="/think <topic or question>",
     ),
     SlashCommandEntry(
-        "refine", "Sharpen your idea with AI clarification", category="tools"
+        "refine",
+        "Sharpen your idea with AI clarification",
+        handler="_handle_refine_cmd",
+        category="tools",
+        usage="/refine <idea or text>",
     ),
     # --- Utilities -----------------------------------------------------------
     SlashCommandEntry(
@@ -313,27 +350,31 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     ),
     SlashCommandEntry(
         "weather",
-        "Weather report",
-        cli_template="run \"curl -s 'wttr.in/?format=3'\"",
+        "Weather report (optional city)",
+        handler="_handle_weather",
         category="utilities",
+        usage="/weather [city]",
     ),
     SlashCommandEntry(
         "dns",
         "DNS lookup (+ domain)",
         cli_template='run "dig +short {args}"',
         category="utilities",
+        usage="/dns <domain>",
     ),
     SlashCommandEntry(
         "ssl",
         "SSL cert check (+ domain)",
         cli_template="run \"echo | openssl s_client -connect {args}:443 -servername {args} 2>/dev/null | openssl x509 -noout -dates 2>/dev/null || echo 'no cert found'\"",
         category="utilities",
+        usage="/ssl <domain>",
     ),
     SlashCommandEntry(
         "whois",
         "Domain whois (+ domain)",
         cli_template='run "whois {args} | head -30"',
         category="utilities",
+        usage="/whois <domain>",
     ),
     SlashCommandEntry(
         "netstat",
@@ -350,7 +391,11 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="model",
     ),
     SlashCommandEntry(
-        "providers", "AI Provider Hub", handler="_handle_providers", category="model"
+        "providers",
+        "AI Provider Hub",
+        handler="_handle_providers",
+        category="model",
+        usage="/providers [provider-name]",
     ),
     SlashCommandEntry(
         "provider",
@@ -358,14 +403,37 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         handler="_handle_providers",
         category="model",
         visible=False,
+        usage="/provider [provider-name]",
     ),
     SlashCommandEntry(
-        "mode", "Set focus mode (work, deep-focus, etc.)", category="model"
+        "mode",
+        "Set focus mode (work, deep-focus, etc.)",
+        handler="_handle_mode",
+        category="model",
+        usage="/mode [work|deep-focus|coder|auto|list]",
     ),
-    SlashCommandEntry("big", "Force big model for next message", category="model"),
-    SlashCommandEntry("small", "Force small model for next message", category="model"),
-    SlashCommandEntry("coder", "Force coder model for next message", category="model"),
-    SlashCommandEntry("auto", "Reset to automatic model selection", category="model"),
+    SlashCommandEntry(
+        "big", "Force big model for next message", category="model",
+        handler="_handle_tier_override",
+        usage="/big  (then send your message)",
+    ),
+    SlashCommandEntry(
+        "small", "Force small model for next message", category="model",
+        handler="_handle_tier_override",
+        usage="/small  (then send your message)",
+    ),
+    SlashCommandEntry(
+        "coder", "Force coder model for next message", category="model",
+        handler="_handle_tier_override",
+        usage="/coder  (then send your message)",
+    ),
+    SlashCommandEntry(
+        "auto",
+        "Reset to automatic model selection",
+        handler="_handle_tier_override",
+        category="model",
+        usage="/auto  (then send your message)",
+    ),
     # --- Voice & AI settings -------------------------------------------------
     SlashCommandEntry(
         "voice", "Voice & TTS settings", handler="_handle_voice_menu", category="voice"
@@ -383,8 +451,20 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         handler="_handle_audio_menu",
         category="voice",
     ),
-    SlashCommandEntry("voiceon", "Enable voice input (STT)", category="voice"),
-    SlashCommandEntry("voiceoff", "Disable voice input (STT)", category="voice"),
+    SlashCommandEntry(
+        "voiceon",
+        "Enable voice input (STT)",
+        handler="_handle_voiceon_cmd",
+        category="voice",
+        usage="/voiceon",
+    ),
+    SlashCommandEntry(
+        "voiceoff",
+        "Disable voice input (STT)",
+        handler="_handle_voiceoff_cmd",
+        category="voice",
+        usage="/voiceoff",
+    ),
     # --- Diagnostics ---------------------------------------------------------
     # --- User / profile ------------------------------------------------------
     SlashCommandEntry(
@@ -406,11 +486,19 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         handler="_handle_debug",
         category="diagnostics",
     ),
-    SlashCommandEntry("trace", "Recent conversation history", category="diagnostics"),
+    SlashCommandEntry(
+        "trace",
+        "Recent conversation history",
+        handler="_handle_trace_cmd",
+        category="diagnostics",
+        usage="/trace  or  /trace debug on|off",
+    ),
     SlashCommandEntry(
         "autoheal",
-        "Auto-Heal - /autoheal on|off|status|hive on|hive off",
+        "Auto-Heal daemon",
+        handler="_handle_autoheal",
         category="diagnostics",
+        usage="/autoheal [on|off|status|hive on|hive off]",
     ),
     # --- Digital Ghost / Laravel Port ---
     SlashCommandEntry(
@@ -421,6 +509,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Enable AI auto-replies",
         handler="_handle_auto_start",
         category="ai",
+        usage="/auto_start [persona]",
     ),
     SlashCommandEntry(
         "auto_stop",
@@ -439,6 +528,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Enable autonomous continuation",
         handler="_handle_continue",
         category="ai",
+        usage="/continue [conservative|balanced|aggressive] [space]",
     ),
     SlashCommandEntry(
         "pause",
@@ -460,9 +550,10 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     ),
     SlashCommandEntry(
         "persona",
-        "Switch active AI persona (e.g. /persona tyler)",
+        "Switch active AI persona",
         handler="_handle_persona",
         category="ai",
+        usage="/persona <name>",
     ),
     SlashCommandEntry(
         "personas",
@@ -475,6 +566,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "AI explains any topic",
         handler="_handle_explain_ai",
         category="ai",
+        usage="/explain_ai <topic>",
     ),
     SlashCommandEntry(
         "music", "Convert music links (beta)", handler="_handle_music", category="media"
@@ -484,6 +576,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Generate AI images (beta)",
         handler="_handle_imagegen",
         category="media",
+        usage="/imagegen <prompt>",
     ),
     SlashCommandEntry(
         "profile", "View user profiles", handler="_handle_profile", category="social"
@@ -505,6 +598,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Convert currency (beta)",
         handler="_handle_currency",
         category="utilities",
+        usage="/currency <query>",
     ),
     SlashCommandEntry(
         "crypto_list",
@@ -517,6 +611,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Set reminders",
         handler="_handle_remindme",
         category="utilities",
+        usage="/remindme <text> in <time>  or  at <time>",
     ),
     SlashCommandEntry(
         "myreminders",
@@ -529,6 +624,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Cancel a reminder",
         handler="_handle_cancelreminder",
         category="utilities",
+        usage="/cancelreminder <id>|all",
     ),
     SlashCommandEntry(
         "stats_global",
@@ -537,19 +633,39 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="utilities",
     ),
     SlashCommandEntry(
-        "choice", "Make random choices", handler="_handle_choice", category="utilities"
+        "choice",
+        "Make random choices",
+        handler="_handle_choice",
+        category="utilities",
+        usage="/choice <a> or <b> [or <c>...]  — also accepts , or |",
     ),
     SlashCommandEntry(
-        "kick", "Remove user from chat", handler="_handle_kick", category="admin"
+        "kick",
+        "Remove user from chat",
+        handler="_handle_kick",
+        category="admin",
+        usage="/kick <@user|id>",
     ),
     SlashCommandEntry(
-        "mute", "Silence user temporarily", handler="_handle_mute", category="admin"
+        "mute",
+        "Silence user temporarily",
+        handler="_handle_mute",
+        category="admin",
+        usage="/mute <@user|id>",
     ),
     SlashCommandEntry(
-        "unmute", "Restore user voice", handler="_handle_unmute", category="admin"
+        "unmute",
+        "Restore user voice",
+        handler="_handle_unmute",
+        category="admin",
+        usage="/unmute <@user|id>",
     ),
     SlashCommandEntry(
-        "search", "Find users", handler="_handle_search", category="admin"
+        "search",
+        "Find users",
+        handler="_handle_search",
+        category="admin",
+        usage="/search <query>",
     ),
 ]
 
@@ -586,6 +702,83 @@ class TelegramCommandsMixin:
         "ask me questions",
         "work for",
     )
+    _NL_COMMAND_TRIGGERS: tuple[str, ...] = (
+        "show",
+        "check",
+        "list",
+        "get",
+        "open",
+        "run",
+        "restart",
+        "switch",
+        "use",
+        "set",
+        "enable",
+        "disable",
+        "start",
+        "stop",
+        "cancel",
+        "convert",
+        "explain",
+        "generate",
+        "remind",
+        "mute",
+        "unmute",
+        "kick",
+        "search",
+        "status",
+        "help",
+    )
+    _NL_AMBIGUOUS_COMMANDS: set[str] = {
+        "use",
+        "run",
+        "time",
+        "plan",
+        "mode",
+        "auto",
+        "big",
+        "small",
+        "coder",
+        "pause",
+        "skip",
+        "profile",
+    }
+    _NL_RISKY_COMMANDS: set[str] = {
+        "run",
+        "restart",
+        "docker",
+        "use",
+        "space",
+        "intake",
+        "plan",
+        "kick",
+        "mute",
+        "unmute",
+        "search",
+    }
+    _NL_REQUIRED_ARGS_COMMANDS: set[str] = {
+        "logs",
+        "tables",
+        "use",
+        "run",
+        "plan",
+        "format",
+        "think",
+        "refine",
+        "dns",
+        "ssl",
+        "whois",
+        "currency",
+        "choice",
+        "kick",
+        "mute",
+        "unmute",
+        "search",
+        "persona",
+        "explain_ai",
+        "imagegen",
+        "remindme",
+    }
     _NL_DOMAIN_HINTS: dict[str, str] = {
         "money": "finance",
         "budget": "finance",
@@ -671,50 +864,9 @@ class TelegramCommandsMixin:
         target_message_id = state.get("message_id")
 
         if screen_name == "main":
-            hour = datetime.now().hour
-            if 5 <= hour < 12:
-                greeting = "🌅 Good morning. What do you want to run?"
-            elif 12 <= hour < 18:
-                greeting = "☀️ Good afternoon. Pick your next action."
-            elif 18 <= hour < 23:
-                greeting = "🌆 Good evening. Pick a workflow."
-            else:
-                greeting = "🌙 Late session. Pick your next action."
-            text = "\n".join(
-                [
-                    "✨ *NAVIG Main Menu*",
-                    greeting,
-                    "",
-                    "Use buttons for faster control.",
-                ]
-            )
-            keyboard = [
-                [
-                    {"text": "⚙️ Open Settings", "callback_data": "nav:open:settings"},
-                    {"text": "🧠 Open Models", "callback_data": "nav:open:models"},
-                ],
-                [
-                    {"text": "🔌 Open Providers", "callback_data": "nav:open:providers"},
-                    {"text": "🗂 Open Spaces", "callback_data": "nav:open:spaces"},
-                ],
-                [
-                    {"text": "🧭 Start Intake", "callback_data": "nav:open:intake"},
-                    {"text": "📊 Open Status", "callback_data": "nav:open:status"},
-                ],
-                [{"text": "❌ Cancel", "callback_data": "nav:cancel"}],
-            ]
-            if target_message_id:
-                await self.edit_message(
-                    chat_id,
-                    target_message_id,
-                    text,
-                    parse_mode="Markdown",
-                    keyboard=keyboard,
-                )
-                return
-            sent = await self.send_message(chat_id, text, parse_mode="Markdown", keyboard=keyboard)
-            if sent and isinstance(sent, dict):
-                state["message_id"] = sent.get("message_id")
+            # Main menu has been replaced by the conversational context card.
+            # Delegate to /start so all nav:home / nav:cancel callbacks land here.
+            await self._handle_start(chat_id=chat_id, username="", user_id=user_id)
             return
 
         if screen_name == "help":
@@ -722,7 +874,7 @@ class TelegramCommandsMixin:
             keyboard = [
                 [
                     {"text": "🔙 Back", "callback_data": "nav:back"},
-                    {"text": "🏠 Main Menu", "callback_data": "nav:home"},
+                    {"text": "🏠 Home", "callback_data": "nav:home"},
                 ],
             ]
             if target_message_id:
@@ -759,7 +911,7 @@ class TelegramCommandsMixin:
 
         # Fallback recovery screen
         text = "⚠️ Something went wrong while opening that screen."
-        keyboard = [[{"text": "🏠 Return to Menu", "callback_data": "nav:home"}]]
+        keyboard = [[{"text": "🏠 Home", "callback_data": "nav:home"}]]
         if target_message_id:
             await self.edit_message(chat_id, target_message_id, text, parse_mode=None, keyboard=keyboard)
             return
@@ -829,57 +981,188 @@ class TelegramCommandsMixin:
     def _generate_help_text(deck_enabled: bool = False) -> str:
         """Generate grouped /help output from deduplicated registry entries."""
         cat_labels: dict[str, str] = {
-            "core": "- *core*",
-            "monitoring": "- *monitoring*",
-            "docker": "- *docker*",
-            "database": "- *database*",
-            "tools": "- *tools*",
-            "utilities": "- *utilities*",
-            "model": "- *model control*",
-            "voice": "- *voice & AI settings*",
-            "diagnostics": "- *diagnostics & healing*",
-            "ai": "- *AI features*",
-            "media": "- *media tools*",
-            "social": "- *social*",
-            "admin": "- *business chats / admin*",
+            "core": "\U0001f9ed *core*",
+            "monitoring": "\U0001f4ca *monitoring*",
+            "docker": "\U0001f433 *docker*",
+            "database": "\U0001f5c4 *database*",
+            "tools": "\U0001f527 *tools*",
+            "utilities": "\u2728 *utilities*",
+            "model": "\U0001f9e0 *model control*",
+            "voice": "\U0001f50a *voice & AI*",
+            "diagnostics": "\U0001f6e0 *diagnostics*",
+            "ai": "\U0001f916 *AI features*",
+            "media": "\U0001f3a5 *media*",
+            "social": "\U0001f465 *social*",
+            "admin": "\U0001f510 *admin*",
         }
 
         seen_categories: set[str] = set()
-        lines = ["*things I respond to:*"]
+        lines = [
+            "\U0001f4cb *NAVIG command reference*",
+            "",
+            "*Quick start*",
+            "`/status` · `/models` · `/providers` · `/help`",
+            "You can also type naturally (example: `show status` or `restart daemon`).",
+            "",
+        ]
         for entry in _iter_unique_registry(visible_only=True):
             if entry.category not in seen_categories:
                 seen_categories.add(entry.category)
-                lines.append("\n" + cat_labels.get(entry.category, entry.category))
-            lines.append(f"/{entry.command} - {entry.description}")
+                lines.append("\n" + cat_labels.get(entry.category, f"*{entry.category}*"))
+            if entry.usage:
+                lines.append(f"`{entry.usage}` \u2014 {entry.description}")
+            else:
+                lines.append(f"/{entry.command} \u2014 {entry.description}")
 
         if deck_enabled:
-            lines.append("/deck - Open the command deck")
-        else:
-            lines.append(
-                "\n_Deck UI is disabled. To activate: set `telegram.deck_url` in `~/.navig/config.yaml` and point it at your NAVIG Deck instance._"
-            )
-        lines.append("\n-or just talk. I understand.")
+            lines.append("/deck \u2014 Open the command deck")
+        lines.append("\n\u2014 or just talk to me naturally.")
         return "\n".join(lines)
 
     # -- Core slash handlers ---------------------------------------------------
 
     async def _handle_start(self, chat_id: int, username: str, user_id: int = 0) -> None:
-        """Reset session navigation and render the persistent main menu."""
-        self._reset_navigation_state(chat_id)
-        await self.renderScreen(
-            chat_id=chat_id,
-            screen_name="main",
-            user_id=user_id,
-            username=username,
+        """Send a conversational context card — no navigation menus."""
+        # Active reminder count
+        active_count = 0
+        try:
+            from navig.store.runtime import get_runtime_store
+
+            active_count = len(get_runtime_store().get_user_reminders(user_id) or [])
+        except Exception:
+            pass
+
+        # Current model tier preference
+        tier_raw = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
+        tier = str(tier_raw).capitalize() if tier_raw else "Auto"
+
+        reminder_line = (
+            f"⏰ {active_count} active reminder{'s' if active_count != 1 else ''}"
+            if active_count
+            else "⏰ No active reminders"
         )
+        text = "\n".join(
+            [
+                "🤖 *NAVIG is ready*",
+                "",
+                reminder_line,
+                f"🧠 Model: `{tier}`",
+                "",
+                "Type naturally or use a command:",
+                "`/remindme` · `/myreminders` · `/status` · `/briefing`",
+                "",
+                "Need more? → /helpme",
+            ]
+        )
+        keyboard = [[{"text": "📋 What can I do?", "callback_data": "helpme"}]]
+        await self.send_message(chat_id, text, parse_mode="Markdown", keyboard=keyboard)
+
+        # Onboarding handoff progress block (text only, no navigation buttons)
+        try:
+            from navig.commands.init import (
+                consume_chat_onboarding_handoff_state,
+                get_chat_onboarding_step_progress,
+            )
+
+            handoff = consume_chat_onboarding_handoff_state()
+            steps = get_chat_onboarding_step_progress()
+        except Exception:
+            handoff = None
+            steps = []
+
+        if not handoff:
+            return
+
+        profile = str(handoff.get("profile") or "quickstart")
+        if not steps:
+            steps = handoff.get("steps") or []
+        pending_steps = [step for step in steps if not step.get("completed")]
+        completed_count = len(steps) - len(pending_steps)
+        checklist_lines = []
+        for step in steps:
+            mark = "✅" if step.get("completed") else "⬜"
+            checklist_lines.append(f"{mark} {step.get('label', '')}")
+
+        onboarding_text = "\n".join(
+            [
+                "✨ *Welcome to NAVIG setup*",
+                f"Profile: `{profile}`",
+                "",
+                f"Onboarding progress: `{completed_count}/{len(steps)}`",
+                *checklist_lines,
+                "",
+                "Next steps:",
+                *(f"• {step.get('hint', '')}" for step in pending_steps[:2]),
+                "• Start intake: `/intake`",
+                "• Check status: `/status`",
+            ]
+        )
+        await self.send_message(chat_id, onboarding_text, parse_mode="Markdown")
 
     async def _handle_help(self, chat_id: int) -> None:
-        """Command reference (/help) - auto-generated from _SLASH_REGISTRY."""
-        await self.navigateTo(chat_id, "help")
+        """Command reference (/helpme) — sent directly without navigation."""
+        text = self._generate_help_text(deck_enabled=bool(self._get_deck_url()))
+        await self.send_message(chat_id, text, parse_mode="Markdown")
 
-    async def _handle_ping(self, chat_id: int) -> None:
-        """Quick alive check (/ping)."""
-        await self.send_message(chat_id, "pong.", parse_mode=None)
+    async def _handle_ping(self, chat_id: int, user_id: int = 0) -> None:
+        """Live heartbeat card — version, host, space, tier, reminders, bridge (/ping)."""
+        import asyncio as _asyncio
+
+        lines = ["🏓 *pong* — NAVIG is live", ""]
+
+        # Version
+        try:
+            import navig as _navig_pkg
+
+            ver = getattr(_navig_pkg, "__version__", "unknown")
+        except Exception:
+            ver = "unknown"
+        lines.append(f"Version: `{ver}`")
+
+        # Active host
+        try:
+            from navig.config import load_config
+
+            cfg = load_config()
+            active_host = (cfg.get("active_host") or "—") if cfg else "—"
+        except Exception:
+            active_host = "—"
+        lines.append(f"Host: `{active_host}`")
+
+        # Active space
+        try:
+            from navig.commands.space import get_active_space
+
+            space = get_active_space() or "—"
+        except Exception:
+            space = "—"
+        lines.append(f"Space: `{space}`")
+
+        # Model tier
+        tier_raw = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
+        tier = str(tier_raw).capitalize() if tier_raw else "Auto"
+        lines.append(f"Model: `{tier}`")
+
+        # Active reminders
+        try:
+            from navig.store.runtime import get_runtime_store
+
+            active_count = len(get_runtime_store().get_user_reminders(user_id) or [])
+            lines.append(f"Reminders: `{active_count} active`")
+        except Exception:
+            pass
+
+        # Bridge status (non-blocking, 2 s timeout)
+        try:
+            bridge_ok, bridge_url = await _asyncio.wait_for(
+                self._probe_bridge_grid(), timeout=2.0
+            )
+            bridge_status = f"🟢 {bridge_url}" if bridge_ok else "🔴 offline"
+        except Exception:
+            bridge_status = "❔ unknown"
+        lines.append(f"Bridge: {bridge_status}")
+
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
 
     async def _handle_status(
         self,
@@ -887,7 +1170,7 @@ class TelegramCommandsMixin:
         user_id: int = 0,
         message_id: int | None = None,
     ) -> None:
-        """Space-aware status summary for Telegram users (/status)."""
+        """System status summary for Telegram users (/status)."""
         from navig.spaces import get_default_space
         from navig.spaces.progress import (
             collect_spaces_progress,
@@ -897,30 +1180,61 @@ class TelegramCommandsMixin:
         selected_space = get_default_space()
         rows = collect_spaces_progress()
 
-        lines = ["*NAVIG Status*", "", f"Default space: `{selected_space}`"]
+        lines = ["*NAVIG Status*", ""]
 
-        if rows:
-            lines.append("")
-            lines.append("*Spaces progression:*")
-            lines.extend(format_spaces_progress_lines(rows, max_items=5))
-        else:
-            lines.append("")
-            lines.append("_No spaces discovered in project/global scope yet._")
+        # Active host
+        try:
+            from navig.config import load_config
 
+            cfg = load_config()
+            active_host = (cfg.get("active_host") or "—") if cfg else "—"
+        except Exception:
+            active_host = "—"
+        lines.append(f"Host: `{active_host}`")
+
+        # Model tier
         if hasattr(self, "_get_user_tier_pref"):
             tier = self._get_user_tier_pref(chat_id, user_id)
         else:
             tier = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
-        lines.append("")
-        lines.append(f"Model tier: `{tier or 'auto'}`")
+        lines.append(f"Model: `{tier or 'auto'}`")
 
-        keyboard = [
-            [
-                {"text": "🔙 Back", "callback_data": "nav:back"},
-                {"text": "🏠 Main Menu", "callback_data": "nav:home"},
-            ],
-        ]
+        # Active persona
+        try:
+            from navig.personas.store import get_active_persona
+
+            persona = get_active_persona(user_id, chat_id) or "assistant"
+        except Exception:
+            persona = "assistant"
+        lines.append(f"Persona: `{persona}`")
+
+        # Active reminders
+        try:
+            from navig.store.runtime import get_runtime_store
+
+            active_count = len(get_runtime_store().get_user_reminders(user_id) or [])
+            lines.append(f"Reminders: `{active_count} active`")
+        except Exception:
+            pass
+
+        # Default space + progression
+        lines.append("")
+        lines.append(f"Space: `{selected_space}`")
+        if rows:
+            lines.append("")
+            lines.append("*Progression:*")
+            lines.extend(format_spaces_progress_lines(rows, max_items=5))
+        else:
+            lines.append("_No spaces discovered yet._")
+
+        # Navigation context: show Back / Home only when rendered inside a nav screen
         if message_id:
+            keyboard = [
+                [
+                    {"text": "🔙 Back", "callback_data": "nav:back"},
+                    {"text": "🏠 Home", "callback_data": "nav:home"},
+                ],
+            ]
             await self.edit_message(
                 chat_id,
                 message_id,
@@ -929,9 +1243,7 @@ class TelegramCommandsMixin:
                 keyboard=keyboard,
             )
             return
-        sent = await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown", keyboard=keyboard)
-        if sent and isinstance(sent, dict):
-            self._get_navigation_state(chat_id)["message_id"] = sent.get("message_id")
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
 
     def _runtime_state_with_context(
         self,
@@ -950,6 +1262,46 @@ class TelegramCommandsMixin:
             persona=state.get("persona") or "assistant",
             context=context,
         )
+
+    @staticmethod
+    def _mark_chat_onboarding_step(step_id: str) -> None:
+        try:
+            from navig.commands.init import mark_chat_onboarding_step_completed
+
+            mark_chat_onboarding_step_completed(step_id)
+        except (ImportError, AttributeError, TypeError, ValueError):
+            logger.debug("Failed to mark chat onboarding step: %s", step_id)
+
+    @staticmethod
+    def _is_cli_command_success(response: str) -> bool:
+        txt = str(response or "")
+        if not txt.strip():
+            return False
+        if "Command exited with code:" not in txt:
+            return True
+        import re
+
+        match = re.search(r"Command exited with code:\s*(\d+)", txt)
+        if not match:
+            return False
+        return int(match.group(1)) == 0
+
+    @staticmethod
+    def _has_host_connectivity_confirmation(response: str) -> bool:
+        import re
+
+        txt = str(response or "")
+        if not txt.strip():
+            return False
+
+        patterns = (
+            r"\bconnect(?:ed|ivity)?\b",
+            r"\breachable\b",
+            r"\bssh\s+(?:ok|success|connected)\b",
+            r"\bhost\s+test\s+(?:passed|ok|successful)\b",
+            r"\bconnectivity\s+(?:verified|confirmed|ok|successful)\b",
+        )
+        return any(re.search(pattern, txt, flags=re.IGNORECASE) for pattern in patterns)
 
     def _bootstrap_space_docs(self, space: str, space_path: Path) -> None:
         space_path.mkdir(parents=True, exist_ok=True)
@@ -972,7 +1324,13 @@ class TelegramCommandsMixin:
                 encoding="utf-8",
             )
 
-    async def _handle_spaces(self, chat_id: int, message_id: int | None = None) -> None:
+    async def _handle_spaces(self, chat_id: int, user_id: int = 0, text: str = "", message_id: int | None = None) -> None:
+        # Quick-switch: "/spaces devops" delegates directly to /space
+        arg = text[len("/spaces"):].strip() if text.lower().startswith("/spaces") else ""
+        if arg:
+            await self._handle_space(chat_id=chat_id, user_id=user_id, text=f"/space {arg}")
+            return
+
         from navig.commands.space import get_active_space
         from navig.spaces.contracts import CANONICAL_SPACES
 
@@ -984,13 +1342,15 @@ class TelegramCommandsMixin:
                 marker = "▸"
             lines.append(f"{marker} `{name}`")
         lines.append("\nUse `/space <name>` or choose below.")
-        keyboard = [
-            [
-                {"text": "🔙 Back", "callback_data": "nav:back"},
-                {"text": "🏠 Main Menu", "callback_data": "nav:home"},
-            ],
-            [{"text": "🧭 Start Intake", "callback_data": "nav:open:intake"}],
-        ]
+        keyboard = [[{"text": "🧭 Start Intake", "callback_data": "nav:open:intake"}]]
+        if message_id:
+            keyboard.insert(
+                0,
+                [
+                    {"text": "🔙 Back", "callback_data": "nav:back"},
+                    {"text": "🏠 Home", "callback_data": "nav:home"},
+                ],
+            )
         if message_id:
             await self.edit_message(
                 chat_id,
@@ -1000,9 +1360,7 @@ class TelegramCommandsMixin:
                 keyboard=keyboard,
             )
             return
-        sent = await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown", keyboard=keyboard)
-        if sent and isinstance(sent, dict):
-            self._get_navigation_state(chat_id)["message_id"] = sent.get("message_id")
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown", keyboard=keyboard)
 
     async def _handle_space(self, chat_id: int, user_id: int, text: str = "") -> None:
         from navig.commands.space import _set_active_space, _spaces_dir
@@ -1122,7 +1480,7 @@ class TelegramCommandsMixin:
                     message_id,
                     "🛑 Intake cancelled.",
                     parse_mode=None,
-                    keyboard=[[{"text": "🏠 Main Menu", "callback_data": "nav:home"}]],
+                    keyboard=[[{"text": "🏠 Home", "callback_data": "nav:home"}]],
                 )
             else:
                 await self.send_message(chat_id, "🛑 Intake cancelled.", parse_mode=None)
@@ -1254,11 +1612,323 @@ class TelegramCommandsMixin:
 
         return None, None
 
+    @staticmethod
+    def _nl_phrase_aliases() -> dict[str, tuple[str, ...]]:
+        return {
+            "status": ("system status", "show status", "check status"),
+            "help": ("help", "what can you do", "show commands"),
+            "hosts": ("list hosts", "show hosts", "configured hosts"),
+            "models": ("model routing", "show models", "routing table"),
+            "providers": ("show providers", "provider hub"),
+            "spaces": ("list spaces", "show spaces"),
+            "myreminders": ("my reminders", "show reminders", "list reminders"),
+            "cancelreminder": ("cancel reminder", "remove reminder"),
+            "voiceon": ("enable voice", "turn voice on"),
+            "voiceoff": ("disable voice", "turn voice off"),
+            "restart": ("restart daemon", "restart service", "restart container"),
+            "trace": ("show trace", "trace debug", "recent trace"),
+            "briefing": ("daily briefing", "show briefing"),
+            "ping": ("ping", "heartbeat", "alive check"),
+            "weather": ("weather", "weather in"),
+            "remindme": ("remind me", "set reminder"),
+            "choice": ("choose between", "pick one", "make a choice"),
+            "skill": ("run skill", "list skills", "skill list"),
+            "db": ("list databases", "show databases"),
+        }
+
+    def _extract_nl_args(self, raw_text: str, phrase: str) -> str:
+        match = re.search(re.escape(phrase), raw_text, flags=re.IGNORECASE)
+        if not match:
+            return ""
+        tail = raw_text[match.end() :].strip()
+        tail = re.sub(r"^(for|to|with|in|on)\s+", "", tail, flags=re.IGNORECASE)
+        return tail.strip(" .,!?:;")
+
+    def _resolve_nl_command_intent(self, text: str) -> dict[str, Any] | None:
+        lowered = (text or "").strip().lower()
+        if not lowered or lowered.startswith("/"):
+            return None
+
+        has_trigger = any(re.search(rf"\b{re.escape(w)}\b", lowered) for w in self._NL_COMMAND_TRIGGERS)
+        alias_map = self._nl_phrase_aliases()
+
+        best: dict[str, Any] | None = None
+        candidates: list[dict[str, Any]] = []
+
+        for entry in _iter_unique_registry(visible_only=True):
+            command = entry.command
+            phrases = {command, command.replace("_", " ")}
+            phrases.update(alias_map.get(command, ()))
+
+            for phrase in sorted(phrases, key=len, reverse=True):
+                if not phrase:
+                    continue
+                if not re.search(rf"\b{re.escape(phrase)}\b", lowered):
+                    continue
+
+                starts = lowered.startswith(phrase)
+                if command in self._NL_AMBIGUOUS_COMMANDS and not starts and not has_trigger:
+                    continue
+
+                args = self._extract_nl_args(text, phrase)
+                score = len(phrase) + (4 if starts else 0) + (1 if has_trigger else 0)
+
+                candidate = {
+                    "command": command,
+                    "args": args,
+                    "risk": "risky" if command in self._NL_RISKY_COMMANDS else "safe",
+                    "usage": entry.usage or f"/{command}",
+                    "score": score,
+                }
+                candidates.append(candidate)
+                if not best or score > int(best.get("score", 0)):
+                    best = candidate
+
+        if not best:
+            return None
+
+        # If top two commands tie, ask user to choose instead of guessing.
+        ranked = sorted(candidates, key=lambda x: int(x.get("score", 0)), reverse=True)
+        if len(ranked) > 1:
+            first = ranked[0]
+            second = ranked[1]
+            if (
+                int(first.get("score", 0)) == int(second.get("score", 0))
+                and str(first.get("command") or "") != str(second.get("command") or "")
+            ):
+                return {
+                    "ambiguous": True,
+                    "candidates": [first, second, *ranked[2:4]],
+                }
+
+        command = str(best.get("command") or "")
+        args = str(best.get("args") or "")
+        if command in self._NL_REQUIRED_ARGS_COMMANDS and not args:
+            best["missing_args"] = True
+        return best
+
+    def _suggest_nl_commands(self, text: str, limit: int = 3) -> list[dict[str, str]]:
+        lowered = (text or "").lower()
+        tokens = set(re.findall(r"[a-z0-9_]+", lowered))
+        alias_map = self._nl_phrase_aliases()
+        scored: list[tuple[int, str, str]] = []
+
+        for entry in _iter_unique_registry(visible_only=True):
+            command = entry.command
+            usage = entry.usage or f"/{command}"
+            phrases = {command, command.replace("_", " ")}
+            phrases.update(alias_map.get(command, ()))
+
+            score = 0
+            for phrase in phrases:
+                p_tokens = set(re.findall(r"[a-z0-9_]+", phrase.lower()))
+                if not p_tokens:
+                    continue
+                overlap = len(tokens & p_tokens)
+                if overlap:
+                    score = max(score, overlap)
+                if phrase and phrase.lower() in lowered:
+                    score = max(score, 3)
+
+            if score > 0:
+                scored.append((score, command, usage))
+
+        scored.sort(key=lambda row: (-row[0], row[1]))
+        suggestions = [{"command": c, "usage": u} for _, c, u in scored[:limit]]
+
+        if not suggestions:
+            # Command-first fallback suggestions for action-oriented messages.
+            suggestions = [
+                {"command": "status", "usage": "/status"},
+                {"command": "help", "usage": "/help"},
+                {"command": "hosts", "usage": "/hosts"},
+            ][:limit]
+        return suggestions
+
+    def _nl_command_keyboard(
+        self,
+        commands: list[dict[str, Any]],
+        *,
+        limit: int = 3,
+    ) -> list[list[dict[str, str]]]:
+        rows: list[list[dict[str, str]]] = []
+        for item in commands[:limit]:
+            command = str(item.get("command") or "").strip().lower()
+            usage = str(item.get("usage") or f"/{command}").strip()
+            if not command:
+                continue
+            rows.append(
+                [
+                    {
+                        "text": f"▶ {usage}",
+                        "callback_data": f"nl_pick:{command}",
+                    }
+                ]
+            )
+        if rows:
+            rows.append([{"text": "🛑 Cancel", "callback_data": "nl_cancel"}])
+        return rows
+
+    async def _queue_nl_risky_command_confirmation(
+        self,
+        chat_id: int,
+        user_id: int,
+        command: str,
+        args: str,
+    ) -> None:
+        from navig.store.runtime import get_runtime_store
+
+        store = get_runtime_store()
+        state = store.get_ai_state(user_id) or {}
+        context = dict(state.get("context") or {})
+        pending_id = datetime.now(timezone.utc).isoformat()
+        context["nl_pending"] = {
+            "active": True,
+            "id": pending_id,
+            "intent": "command",
+            "kind": "command",
+            "command": command,
+            "args": args,
+            "created_at": pending_id,
+        }
+        self._runtime_state_with_context(user_id, chat_id, context)
+
+        preview = f"/{command}" + (f" {args}" if args else "")
+        await self.send_message(
+            chat_id,
+            (
+                "⚠️ Risky action detected from natural language.\n"
+                f"Planned command: `{preview}`\n"
+                "Reply `yes` to run now or `cancel` to stop."
+            ),
+            parse_mode="Markdown",
+            keyboard=[
+                [
+                    {"text": "✅ Yes now", "callback_data": "nl_yes"},
+                    {"text": "🛑 Cancel", "callback_data": "nl_cancel"},
+                ]
+            ],
+        )
+
+    async def _handle_nl_command_pick(
+        self,
+        chat_id: int,
+        user_id: int,
+        command: str,
+    ) -> str:
+        cmd = (command or "").strip().lower()
+        entry = next((e for e in _iter_unique_registry(visible_only=True) if e.command == cmd), None)
+        if not cmd or not entry:
+            await self.send_message(chat_id, "Command not available.", parse_mode=None)
+            return "⚠️ Command unavailable"
+
+        usage = entry.usage or f"/{cmd}"
+        if cmd in self._NL_REQUIRED_ARGS_COMMANDS:
+            await self.send_message(
+                chat_id,
+                f"This command needs arguments.\nUsage: `{usage}`",
+                parse_mode="Markdown",
+            )
+            return "ℹ️ Needs arguments"
+
+        if cmd in self._NL_RISKY_COMMANDS:
+            await self._queue_nl_risky_command_confirmation(
+                chat_id=chat_id,
+                user_id=user_id,
+                command=cmd,
+                args="",
+            )
+            return "⚠️ Confirmation required"
+
+        await self._execute_nl_registry_command(
+            chat_id=chat_id,
+            user_id=user_id,
+            command=cmd,
+            args="",
+            text=f"/{cmd}",
+        )
+        return f"✅ Running /{cmd}"
+
+    async def _execute_nl_registry_command(
+        self,
+        chat_id: int,
+        user_id: int,
+        command: str,
+        args: str,
+        text: str,
+        *,
+        is_group: bool = False,
+        username: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        import inspect
+
+        cmd = (command or "").strip().lower()
+        if not cmd:
+            return
+
+        business_chat_only = {"kick", "mute", "unmute", "search"}
+        if cmd in business_chat_only:
+            if not is_group:
+                await self.send_message(
+                    chat_id,
+                    "This command is only available in business chats (groups/supergroups).",
+                    parse_mode=None,
+                )
+                return
+            if hasattr(self, "_is_group_admin") and not await self._is_group_admin(chat_id, user_id):
+                await self.send_message(
+                    chat_id,
+                    "You need group admin rights for this command.",
+                    parse_mode=None,
+                )
+                return
+
+        slash_text = f"/{cmd}" + (f" {args}" if args else "")
+
+        entry = next((e for e in _iter_unique_registry() if e.command == cmd), None)
+        if not entry:
+            await self.send_message(chat_id, "Command not available.", parse_mode=None)
+            return
+
+        if entry.handler:
+            method = getattr(self, entry.handler, None)
+            if method is not None:
+                call_ctx = {
+                    "chat_id": chat_id,
+                    "user_id": user_id,
+                    "username": username,
+                    "metadata": metadata or {},
+                    "is_group": is_group,
+                    "text": slash_text,
+                }
+                try:
+                    sig = inspect.signature(method)
+                    kwargs = {k: v for k, v in call_ctx.items() if k in sig.parameters}
+                except (ValueError, TypeError):
+                    kwargs = {"chat_id": chat_id}
+                await method(**kwargs)
+                return
+
+        navig_cmd = self._match_cli_command(slash_text)
+        if navig_cmd:
+            await self._handle_cli_command(chat_id, user_id, metadata or {}, navig_cmd)
+            return
+
+        await self.send_message(
+            chat_id,
+            f"This command is not executable via natural language yet: `/{cmd}`",
+            parse_mode="Markdown",
+        )
+
     async def _handle_natural_language_request(
         self,
         chat_id: int,
         user_id: int,
         text: str,
+        is_group: bool = False,
+        username: str = "",
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         from navig.store.runtime import get_runtime_store
 
@@ -1300,14 +1970,116 @@ class TelegramCommandsMixin:
                 )
             )
             return True
+
+        resolved = self._resolve_nl_command_intent(text)
+        if not resolved:
+            lowered = (text or "").strip().lower()
+            has_trigger = any(re.search(rf"\b{re.escape(w)}\b", lowered) for w in self._NL_COMMAND_TRIGGERS)
+            if has_trigger:
+                suggestions = self._suggest_nl_commands(text, limit=3)
+                if suggestions:
+                    lines = [
+                        "I couldn’t map that to one exact command.",
+                        "Tap a command below to run it.",
+                        "",
+                        "Try:",
+                    ]
+                    for item in suggestions:
+                        lines.append(f"• `{item['usage']}`")
+                    await self.send_message(
+                        chat_id,
+                        "\n".join(lines),
+                        parse_mode="Markdown",
+                        keyboard=self._nl_command_keyboard(suggestions, limit=3),
+                    )
+                    return True
+            return False
+
+        if resolved.get("ambiguous"):
+            candidates = list(resolved.get("candidates") or [])[:3]
+            if candidates:
+                lines = [
+                    "I found multiple matching commands.",
+                    "Tap a command below to run it.",
+                    "",
+                    "Pick one:",
+                ]
+                for candidate in candidates:
+                    usage = str(candidate.get("usage") or f"/{candidate.get('command')}")
+                    lines.append(f"• `{usage}`")
+                await self.send_message(
+                    chat_id,
+                    "\n".join(lines),
+                    parse_mode="Markdown",
+                    keyboard=self._nl_command_keyboard(candidates, limit=3),
+                )
+                return True
+            return False
+
+        command = str(resolved.get("command") or "")
+        args = str(resolved.get("args") or "")
+        usage = str(resolved.get("usage") or f"/{command}")
+
+        if resolved.get("missing_args"):
+            await self.send_message(
+                chat_id,
+                f"I can run this as `/{command}`, but it needs arguments.\nUsage: `{usage}`",
+                parse_mode="Markdown",
+            )
+            return True
+
+        if str(resolved.get("risk") or "safe") == "risky":
+            await self._queue_nl_risky_command_confirmation(
+                chat_id=chat_id,
+                user_id=user_id,
+                command=command,
+                args=args,
+            )
+            return True
+
+        await self._execute_nl_registry_command(
+            chat_id=chat_id,
+            user_id=user_id,
+            command=command,
+            args=args,
+            text=text,
+            is_group=is_group,
+            username=username,
+            metadata=metadata,
+        )
+        return True
         return False
 
-    async def _run_nl_intent(self, chat_id: int, user_id: int, intent: str, space: str) -> None:
+    async def _run_nl_intent(
+        self,
+        chat_id: int,
+        user_id: int,
+        intent: str,
+        space: str,
+        *,
+        command: str = "",
+        args: str = "",
+        is_group: bool = False,
+        username: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         if intent == "space":
             await self._handle_space(chat_id=chat_id, user_id=user_id, text=f"/space {space}")
             return
         if intent == "intake":
             await self._handle_intake(chat_id=chat_id, user_id=user_id, text=f"/intake {space}")
+            return
+        if intent == "command":
+            await self._execute_nl_registry_command(
+                chat_id=chat_id,
+                user_id=user_id,
+                command=command,
+                args=args,
+                text="",
+                is_group=is_group,
+                username=username,
+                metadata=metadata,
+            )
 
     async def _handle_nl_pending_reply(self, chat_id: int, user_id: int, text: str) -> bool:
         from navig.store.runtime import get_runtime_store
@@ -1332,9 +2104,18 @@ class TelegramCommandsMixin:
         if lowered in {"yes", "ok", "go", "proceed", "run"}:
             intent = str(pending.get("intent") or "")
             space = str(pending.get("space") or "")
+            command = str(pending.get("command") or "")
+            args = str(pending.get("args") or "")
             context["nl_pending"] = {"active": False}
             self._runtime_state_with_context(user_id, chat_id, context)
-            await self._run_nl_intent(chat_id=chat_id, user_id=user_id, intent=intent, space=space)
+            await self._run_nl_intent(
+                chat_id=chat_id,
+                user_id=user_id,
+                intent=intent,
+                space=space,
+                command=command,
+                args=args,
+            )
             return True
 
         await self.send_message(
@@ -1365,9 +2146,18 @@ class TelegramCommandsMixin:
 
         intent = str(pending.get("intent") or "")
         space = str(pending.get("space") or "")
+        command = str(pending.get("command") or "")
+        args = str(pending.get("args") or "")
         context["nl_pending"] = {"active": False}
         self._runtime_state_with_context(user_id, chat_id, context)
-        await self._run_nl_intent(chat_id=chat_id, user_id=user_id, intent=intent, space=space)
+        await self._run_nl_intent(
+            chat_id=chat_id,
+            user_id=user_id,
+            intent=intent,
+            space=space,
+            command=command,
+            args=args,
+        )
 
     async def _handle_nl_callback(
         self,
@@ -1376,6 +2166,19 @@ class TelegramCommandsMixin:
         chat_id: int,
         user_id: int,
     ) -> None:
+        if cb_data.startswith("nl_pick:"):
+            command = cb_data.split(":", 1)[1].strip().lower()
+            ack_text = await self._handle_nl_command_pick(chat_id, user_id, command)
+            await self._api_call(
+                "answerCallbackQuery",
+                {
+                    "callback_query_id": cb_id,
+                    "text": ack_text,
+                    "show_alert": False,
+                },
+            )
+            return
+
         if cb_data == "nl_yes":
             await self._handle_nl_pending_reply(chat_id, user_id, "yes")
             await self._api_call(
@@ -1446,8 +2249,9 @@ class TelegramCommandsMixin:
         )
         await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
 
-    async def _handle_mode(self, chat_id: int, mode_arg: str, user_id: int = 0) -> None:
+    async def _handle_mode(self, chat_id: int, text: str = "", user_id: int = 0) -> None:
         """Set focus/behavior mode. Uses MOOD_REGISTRY with fuzzy matching."""
+        mode_arg = text[len("/mode"):].strip() if text.lower().startswith("/mode") else text.strip()
         from navig.agent.soul import MOOD_REGISTRY, get_mood_profile
 
         _uid = user_id or chat_id
@@ -1518,6 +2322,116 @@ class TelegramCommandsMixin:
 
         await self.send_message(chat_id, mood.transition_message, parse_mode=None)
 
+    async def _handle_tier_override(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        text: str = "",
+    ) -> None:
+        """Handle /big /small /coder /auto from dynamic slash dispatch."""
+        token = (text or "").strip().split(" ", 1)[0].lower()
+        cmd = token.split("@", 1)[0]
+        if cmd not in {"/big", "/small", "/coder", "/auto"}:
+            await self.send_message(
+                chat_id,
+                "Use `/big`, `/small`, `/coder`, or `/auto`.",
+                parse_mode="Markdown",
+            )
+            return
+        if not hasattr(self, "_handle_tier_command"):
+            await self.send_message(
+                chat_id,
+                "Tier command handler unavailable in this channel build.",
+                parse_mode=None,
+            )
+            return
+        await self._handle_tier_command(chat_id, user_id, cmd)
+
+    async def _handle_voiceon_cmd(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        is_group: bool = False,
+    ) -> None:
+        """Enable voice replies from dynamic slash dispatch."""
+        if _HAS_SESSIONS:
+            sm = get_session_manager()
+            sm.set_voice_enabled(chat_id, user_id, True, is_group=is_group)
+        await self.send_message(chat_id, "🔊 Voice replies enabled.", parse_mode=None)
+
+    async def _handle_voiceoff_cmd(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        is_group: bool = False,
+    ) -> None:
+        """Disable voice replies from dynamic slash dispatch."""
+        if _HAS_SESSIONS:
+            sm = get_session_manager()
+            sm.set_voice_enabled(chat_id, user_id, False, is_group=is_group)
+        await self.send_message(
+            chat_id,
+            "🔇 Voice replies disabled. You'll receive text only.",
+            parse_mode=None,
+        )
+
+    async def _handle_trace_cmd(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        text: str = "",
+    ) -> None:
+        """Handle /trace + /trace debug on|off from dynamic slash dispatch."""
+        trace_arg = text.strip()[len("/trace") :].strip().lower() if text else ""
+        if trace_arg in ("debug on", "debug"):
+            self._debug_users.add(user_id)
+            await self.send_message(
+                chat_id,
+                "🔍 Debug mode *ON* — model names will appear in every response.\n"
+                "Run `/trace debug off` to disable.",
+                parse_mode="Markdown",
+            )
+            return
+        if trace_arg == "debug off":
+            self._debug_users.discard(user_id)
+            await self.send_message(
+                chat_id,
+                "🔍 Debug mode *OFF* — model footers hidden.",
+                parse_mode="Markdown",
+            )
+            return
+        await self._handle_trace(chat_id, user_id)
+
+    async def _handle_restart_cmd(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        text: str = "",
+        metadata: dict | None = None,
+    ) -> None:
+        """Delegate /restart from dynamic slash dispatch to TelegramChannel implementation."""
+        restart_arg = text.strip()[len("/restart") :].strip() if text else ""
+        if not restart_arg:
+            restart_arg = "daemon"
+        if hasattr(self, "_handle_restart"):
+            await self._handle_restart(chat_id, user_id, metadata or {}, restart_arg)
+            return
+        await self.send_message(chat_id, "Restart handler unavailable.", parse_mode=None)
+
+    async def _handle_skill_cmd(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        text: str = "",
+        metadata: dict | None = None,
+    ) -> None:
+        """Delegate /skill from dynamic slash dispatch to TelegramChannel implementation."""
+        skill_arg = text.strip()[len("/skill") :].strip() if text else ""
+        if hasattr(self, "_handle_skill"):
+            await self._handle_skill(chat_id, user_id, skill_arg, metadata or {})
+            return
+        await self.send_message(chat_id, "Skill handler unavailable.", parse_mode=None)
+
     # -- Model routing UI ------------------------------------------------------
 
     async def _probe_bridge_grid(self) -> tuple[bool, str]:
@@ -1570,8 +2484,21 @@ class TelegramCommandsMixin:
         chat_id: int,
         user_id: int = 0,
         message_id: int | None = None,
+        text: str = "",
     ) -> None:
-        """Show active model config with interactive switcher keyboard (/models)."""
+        """Show active model config with interactive switcher keyboard (/models).
+
+        /models big|small|coder|auto  — quick-switch tier then confirm.
+        """
+        # Quick-switch: /models big  --  /models auto  etc.
+        tier_arg = ""
+        for prefix in ("/models", "/model", "/routing", "/router"):
+            if text.lower().startswith(prefix):
+                tier_arg = text[len(prefix):].strip().lower()
+                break
+        if tier_arg in ("big", "small", "coder", "auto"):
+            await self._handle_tier_command(chat_id, user_id, f"/{tier_arg}")
+            return
         try:
             from navig.agent.ai_client import get_ai_client
 
@@ -1684,11 +2611,14 @@ class TelegramCommandsMixin:
                     {"text": "- Full table", "callback_data": "ms_info"},
                     {"text": "- Providers ->", "callback_data": "ms_providers"},
                 ],
-                [
-                    {"text": "🔙 Back", "callback_data": "nav:back"},
-                    {"text": "🏠 Main Menu", "callback_data": "nav:home"},
-                ],
             ]
+            if message_id:
+                keyboard.append(
+                    [
+                        {"text": "🔙 Back", "callback_data": "nav:back"},
+                        {"text": "🏠 Home", "callback_data": "nav:home"},
+                    ]
+                )
             text_payload = "\n".join(lines)
             if message_id:
                 await self.edit_message(
@@ -1699,9 +2629,7 @@ class TelegramCommandsMixin:
                     keyboard=keyboard,
                 )
                 return
-            sent = await self.send_message(chat_id, text_payload, keyboard=keyboard)
-            if sent and isinstance(sent, dict):
-                self._get_navigation_state(chat_id)["message_id"] = sent.get("message_id")
+            await self.send_message(chat_id, text_payload, keyboard=keyboard)
 
         except Exception as e:
             await self.send_message(chat_id, f"- Could not read routing info: {e}")
@@ -1711,8 +2639,25 @@ class TelegramCommandsMixin:
         chat_id: int,
         user_id: int = 0,
         message_id: int | None = None,
+        text: str = "",
     ) -> None:
-        """AI Provider Hub - bridge status, active provider, and available providers (/providers)."""
+        """AI Provider Hub - bridge status, active provider, and available providers.
+
+        /providers <name>  — show focused card for that provider.
+        """
+        # Quick-focus: /providers openai  --  /provider anthropic  etc.
+        provider_arg = ""
+        for prefix in ("/providers", "/provider"):
+            if text.lower().startswith(prefix):
+                provider_arg = text[len(prefix):].strip().lower()
+                break
+        if provider_arg:
+            await self.send_message(
+                chat_id,
+                f"*Provider: `{provider_arg}`*\n\nUse `/settings` \u2192 Providers to configure connection details, or check `~/.navig/config.yaml` under `llm_router.modes`.",
+                parse_mode="Markdown",
+            )
+            return
         bridge_online, bridge_url = await self._probe_bridge_grid()
 
         active_prov = ""
@@ -1772,7 +2717,13 @@ class TelegramCommandsMixin:
                     model = getattr(mode_obj, "model", "") or ""
                     provider = getattr(mode_obj, "provider", "") or ""
                     label = model.split("/")[-1] if model else "-"
-                    return f"{provider}:{label}" if provider else label
+                    primary = f"{provider}:{label}" if provider else label
+                    fb_prov = getattr(mode_obj, "fallback_provider", "") or ""
+                    fb_model = getattr(mode_obj, "fallback_model", "") or ""
+                    if fb_prov and fb_prov != provider and fb_model:
+                        fb_label = fb_model.split("/")[-1]
+                        return f"{primary} ↩ {fb_prov}:{fb_label}"
+                    return primary
 
                 lines.append("")
                 lines.append("*Base model routing:*")
@@ -1842,11 +2793,7 @@ class TelegramCommandsMixin:
                     keyboard_rows.append(
                         [
                             {
-                                "text": f"{manifest.emoji} {manifest.display_name}",
-                                "callback_data": f"prov_{manifest.id}",
-                            },
-                            {
-                                "text": "🔑",
+                                "text": f"{manifest.emoji} {manifest.display_name} 🔑",
                                 "callback_data": f"prov_{manifest.id}",
                             }
                         ]
@@ -1879,12 +2826,13 @@ class TelegramCommandsMixin:
         keyboard_rows.append(
             [{"text": f"{noai_prefix}🚫 No AI  — raw mode", "callback_data": "prov_noai"}]
         )
-        keyboard_rows.append(
-            [
-                {"text": "🔙 Back", "callback_data": "nav:back"},
-                {"text": "🏠 Main Menu", "callback_data": "nav:home"},
-            ]
-        )
+        if message_id:
+            keyboard_rows.append(
+                [
+                    {"text": "🔙 Back", "callback_data": "nav:back"},
+                    {"text": "🏠 Home", "callback_data": "nav:home"},
+                ]
+            )
         keyboard_rows.append([{"text": "✖ Close", "callback_data": "prov_close"}])
 
         text_payload = "\n".join(lines)
@@ -2213,20 +3161,29 @@ class TelegramCommandsMixin:
         keyboard.append(
             [
                 {"text": "🔙 Back", "callback_data": "nav:back"},
-                {"text": "🏠 Main Menu", "callback_data": "nav:home"},
+                {"text": "🏠 Home", "callback_data": "nav:home"},
             ]
         )
 
         text_payload = "\n".join(lines)
         if message_id:
-            await self.edit_message(
-                chat_id,
-                message_id,
-                text_payload,
-                parse_mode="HTML",
-                keyboard=keyboard,
-            )
-            return
+            try:
+                await self.edit_message(
+                    chat_id,
+                    message_id,
+                    text_payload,
+                    parse_mode="HTML",
+                    keyboard=keyboard,
+                )
+                return
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "Provider picker edit_message failed for %s in chat %s (message %s): %s. Falling back to send_message.",
+                    prov_id,
+                    chat_id,
+                    message_id,
+                    exc,
+                )
 
         await self.send_message(chat_id, text_payload, keyboard=keyboard, parse_mode="HTML")
 
@@ -2706,7 +3663,7 @@ class TelegramCommandsMixin:
         keyboard_rows.append(
             [
                 {"text": "🔙 Back", "callback_data": "nav:back"},
-                {"text": "🏠 Main Menu", "callback_data": "nav:home"},
+                {"text": "🏠 Home", "callback_data": "nav:home"},
             ]
         )
         if message_id:
@@ -2737,7 +3694,7 @@ class TelegramCommandsMixin:
                 keyboard.append(
                     [
                         {"text": "🔙 Back", "callback_data": "nav:back"},
-                        {"text": "🏠 Main Menu", "callback_data": "nav:home"},
+                        {"text": "🏠 Home", "callback_data": "nav:home"},
                     ]
                 )
                 if message_id:
@@ -2788,7 +3745,7 @@ class TelegramCommandsMixin:
         keyboard_rows.append(
             [
                 {"text": "🔙 Back", "callback_data": "nav:back"},
-                {"text": "🏠 Main Menu", "callback_data": "nav:home"},
+                {"text": "🏠 Home", "callback_data": "nav:home"},
             ]
         )
         if message_id:
@@ -2845,10 +3802,11 @@ class TelegramCommandsMixin:
         self,
         chat_id: int,
         user_id: int,
-        topic: str = "",
+        text: str = "",
         metadata: Any = None,
     ) -> None:
         """/think <topic> — reason via LLM, output in paginated cards."""
+        topic = text[len("/think"):].strip() if text.lower().startswith("/think") else text.strip()
         if not topic:
             await self.send_message(
                 chat_id,
@@ -2889,10 +3847,11 @@ class TelegramCommandsMixin:
         self,
         chat_id: int,
         user_id: int,
-        topic: str = "",
+        text: str = "",
         metadata: Any = None,
     ) -> None:
         """/refine [text] — start the AI clarification + refinement loop."""
+        topic = text[len("/refine"):].strip() if text.lower().startswith("/refine") else text.strip()
         if not topic:
             await self.send_message(
                 chat_id,
@@ -2910,6 +3869,59 @@ class TelegramCommandsMixin:
             text=topic,
             topic="",
         )
+
+    async def _handle_weather(
+        self,
+        chat_id: int,
+        user_id: int,
+        text: str = "",
+        metadata: Any = None,
+    ) -> None:
+        """/weather [city] — show current weather via wttr.in."""
+        city = text[len("/weather"):].strip() if text.lower().startswith("/weather") else text.strip()
+        if city:
+            import re as _re
+            safe_city = _re.sub(r"[^A-Za-z0-9\s\-]", "", city).strip().replace(" ", "+")
+            url = f"wttr.in/{safe_city}?format=4"
+        else:
+            url = "wttr.in/?format=4"
+
+        await self._handle_cli_command(
+            chat_id,
+            user_id,
+            metadata or {},
+            f"run \"curl -s '{url}'\"",
+        )
+
+    async def _handle_docker_cmd(
+        self,
+        chat_id: int,
+        user_id: int,
+        text: str = "",
+        metadata: Any = None,
+    ) -> None:
+        """/docker [ps|logs <name>|restart <name>|all|<name>] — smart container dispatch."""
+        arg = text[len("/docker"):].strip() if text.lower().startswith("/docker") else text.strip()
+
+        if not arg or arg.lower() in ("ps", "all", "list"):
+            cli_cmd = "docker ps"
+        elif arg.lower().startswith("logs "):
+            name = arg[5:].strip()
+            cli_cmd = f"docker logs {name} -n 50"
+        elif arg.lower().startswith("restart "):
+            name = arg[8:].strip()
+            cli_cmd = f"docker restart {name}"
+        elif arg.lower().startswith("stop "):
+            name = arg[5:].strip()
+            cli_cmd = f"docker stop {name}"
+        elif arg.lower().startswith("start "):
+            name = arg[6:].strip()
+            cli_cmd = f"docker start {name}"
+        else:
+            # Treat bare arg as container name — show its logs
+            cli_cmd = f"docker logs {arg} -n 50"
+
+        await self._handle_cli_command(chat_id, user_id, metadata or {}, cli_cmd)
 
     # -- Briefing / deck -------------------------------------------------------
 
@@ -3360,6 +4372,13 @@ class TelegramCommandsMixin:
                     _log.getLogger(__name__).warning(
                         "NLP formatting failed for cli command: %s", _nl_err
                     )
+
+                if (
+                    navig_cmd.strip().startswith("host use")
+                    and self._is_cli_command_success(response)
+                    and self._has_host_connectivity_confirmation(response)
+                ):
+                    self._mark_chat_onboarding_step("first-host")
 
                 await self.send_message(chat_id, response, parse_mode=None)
             else:
@@ -3883,9 +4902,18 @@ class TelegramCommandsMixin:
             remind_at=remind_at,
         )
         when = remind_at.strftime("%Y-%m-%d %H:%M UTC")
+        utc_note = ""
+        if re.match(r"^\s*/?remindme\s+at\s+", text, flags=re.IGNORECASE):
+            utc_note = (
+                "\nℹ️ `at HH:MM` uses server UTC. "
+                "Use `/remindme in <duration> ...` for relative/local timing."
+            )
         await self.send_message(
             chat_id,
-            f"⏰ Reminder set.\nID: `{reminder_id}`\nWhen: `{when}`\nMessage: {message}",
+            (
+                f"⏰ Reminder set.\nID: `{reminder_id}`\nWhen: `{when}`\n"
+                f"Message: {message}{utc_note}"
+            ),
         )
 
     async def _handle_myreminders(self, chat_id: int, user_id: int) -> None:
@@ -3907,14 +4935,34 @@ class TelegramCommandsMixin:
 
     async def _handle_cancelreminder(self, chat_id: int, user_id: int, text: str) -> None:
         arg = text[len("/cancelreminder") :].strip()
+        if not arg:
+            await self.send_message(chat_id, "Usage: `/cancelreminder <id>` or `/cancelreminder all`",
+                parse_mode="Markdown")
+            return
+
+        from navig.store.runtime import get_runtime_store
+        store = get_runtime_store()
+
+        if arg.lower() == "all":
+            reminders = store.get_user_reminders(user_id) or []
+            if not reminders:
+                await self.send_message(chat_id, "No active reminders to cancel.", parse_mode=None)
+                return
+            for r in reminders:
+                rid = r.get("id") if isinstance(r, dict) else getattr(r, "id", None)
+                if rid is not None:
+                    store.cancel_reminder(rid, user_id)
+            await self.send_message(chat_id, f"✅ Cancelled {len(reminders)} reminder{'s' if len(reminders) != 1 else ''}.",
+                parse_mode=None)
+            return
+
         if not arg.isdigit():
-            await self.send_message(chat_id, "Usage: `/cancelreminder <id>`")
+            await self.send_message(chat_id, "Usage: `/cancelreminder <id>` or `/cancelreminder all`",
+                parse_mode="Markdown")
             return
 
         reminder_id = int(arg)
-        from navig.store.runtime import get_runtime_store
-
-        deleted = get_runtime_store().cancel_reminder(reminder_id, user_id)
+        deleted = store.cancel_reminder(reminder_id, user_id)
         if deleted:
             await self.send_message(chat_id, f"✅ Reminder `{reminder_id}` cancelled.")
         else:
@@ -3931,20 +4979,27 @@ class TelegramCommandsMixin:
 
     async def _handle_choice(self, chat_id: int, text: str) -> None:
         args = text[len("/choice") :].strip()
-        if " or " not in args.lower():
+        if not args:
             await self.send_message(
                 chat_id,
-                "Please use 'or' to separate choices. Example: `/choice pizza or burger`",
+                "Usage: `/choice pizza or burger`  — also accepts `,` or `|` as separators.",
                 parse_mode="Markdown",
             )
             return
+        import re
         import random
 
-        choices = [c.strip() for c in args.lower().split(" or ") if c.strip()]
-        if choices:
-            await self.send_message(chat_id, f"🎲 I choose: *{random.choice(choices)}*")
-        else:
-            await self.send_message(chat_id, "Invalid choices.", parse_mode=None)
+        # Normalise separators: | and , become ' or '
+        normalised = re.sub(r"\s*[|,]\s*", " or ", args)
+        choices = [c.strip() for c in re.split(r"\bor\b", normalised, flags=re.IGNORECASE) if c.strip()]
+        if len(choices) < 2:
+            await self.send_message(
+                chat_id,
+                "Please give me at least two options. Example: `/choice tea or coffee`",
+                parse_mode="Markdown",
+            )
+            return
+        await self.send_message(chat_id, f"🎲 I choose: *{random.choice(choices)}*")
 
     async def _handle_kick(self, chat_id: int, text: str) -> None:
         target = text[len("/kick") :].strip()

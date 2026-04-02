@@ -669,6 +669,14 @@ class CallbackHandler:
             return
 
         try:
+            # ── Single-action help button on context card ──
+            if cb_data == "helpme":
+                await self._answer(cb_id, "")
+                handler = getattr(self.channel, "_handle_help", None)
+                if handler:
+                    await handler(chat_id=chat_id)
+                return
+
             if cb_data.startswith("nav:"):
                 await self._handle_navigation_callback(cb_id, cb_data, chat_id, message_id, user_id)
                 return
@@ -870,7 +878,7 @@ class CallbackHandler:
         if not message_id:
             await self.channel.send_message(
                 chat_id,
-                "⚠️ Something went wrong. Use /start to return to menu.",
+                "⚠️ Something went wrong. Use /start to return home.",
                 parse_mode=None,
             )
             return
@@ -879,14 +887,29 @@ class CallbackHandler:
             {
                 "chat_id": chat_id,
                 "message_id": message_id,
-                "text": "⚠️ Something went wrong. You can safely return to the main menu.",
+                "text": "⚠️ Something went wrong. You can safely return home.",
                 "reply_markup": {
                     "inline_keyboard": [
-                        [{"text": "🏠 Return to Menu", "callback_data": "nav:home"}],
+                        [{"text": "🏠 Home", "callback_data": "nav:home"}],
                     ]
                 },
             },
         )
+
+    async def _handle_task_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        """Handle task:* callbacks safely, delegating when channel-level handler exists."""
+        handler = getattr(self.channel, "_handle_task_callback", None)
+        if handler:
+            await handler(cb_id, cb_data, chat_id, message_id, user_id)
+            return
+        await self._answer(cb_id, "Task controls are not available in this build.")
 
     async def _handle_navigation_callback(
         self,
@@ -921,14 +944,10 @@ class CallbackHandler:
 
         if action in {"home", "cancel"}:
             await self._answer(cb_id, "")
-            nav = getattr(self.channel, "navigateTo", None)
-            if nav:
-                await nav(
-                    chat_id=chat_id,
-                    screen="main",
-                    user_id=user_id,
-                    message_id=message_id,
-                )
+            # Main menu has been replaced by the context card — delegate to /start.
+            start_handler = getattr(self.channel, "_handle_start", None)
+            if start_handler:
+                await start_handler(chat_id=chat_id, username="", user_id=user_id)
             return
 
         await self._answer(cb_id, "⚠️ Unknown navigation")
@@ -1202,6 +1221,12 @@ class CallbackHandler:
                     f"✅ {manifest.emoji if manifest else ''} {prov_label} activated for all tiers",
                     show_alert=True,
                 )
+                try:
+                    from navig.commands.init import mark_chat_onboarding_step_completed
+
+                    mark_chat_onboarding_step_completed("ai-provider")
+                except (ImportError, AttributeError, TypeError, ValueError):
+                    logger.debug("Unable to mark ai-provider step after provider activation")
                 await self.channel.send_message(
                     chat_id,
                     f"✅ <b>{prov_label}</b> is now active.\n"
@@ -1221,6 +1246,7 @@ class CallbackHandler:
             "prov_github": "github_models",
             "prov_github_models": "github_models",
             "prov_nvidia": "nvidia",
+            "prov_nvidia_nim": "nvidia",
             "prov_ollama": "ollama",
             "prov_xai": "xai",
             "prov_openai": "openai",
@@ -1258,22 +1284,40 @@ class CallbackHandler:
                         prov_id,
                         exc,
                     )
-                    await self._answer(cb_id, f"⚠️ Couldn't open {prov_id} picker", show_alert=True)
                     try:
-                        await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
-                    except TypeError:
-                        await self.channel._handle_providers(chat_id)
+                        await self.channel._show_provider_model_picker(chat_id, prov_id)
+                        await self._answer(cb_id, "")
+                        return
+                    except Exception:
+                        await self._answer(
+                            cb_id,
+                            f"⚠️ Couldn't open {prov_id} picker",
+                            show_alert=True,
+                        )
+                        try:
+                            await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
+                        except TypeError:
+                            await self.channel._handle_providers(chat_id)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "Provider picker failed for %s: %s",
                     prov_id,
                     exc,
                 )
-                await self._answer(cb_id, f"⚠️ Couldn't open {prov_id} picker", show_alert=True)
                 try:
-                    await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
-                except TypeError:
-                    await self.channel._handle_providers(chat_id)
+                    await self.channel._show_provider_model_picker(chat_id, prov_id)
+                    await self._answer(cb_id, "")
+                    return
+                except Exception:
+                    await self._answer(
+                        cb_id,
+                        f"⚠️ Couldn't open {prov_id} picker",
+                        show_alert=True,
+                    )
+                    try:
+                        await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
+                    except TypeError:
+                        await self.channel._handle_providers(chat_id)
             return
 
         # Deepgram: STT only, no LLM routing
@@ -1445,6 +1489,12 @@ class CallbackHandler:
             if hasattr(self.channel, "_persist_hybrid_router_assignments"):
                 self.channel._persist_hybrid_router_assignments(router.cfg)
             await self._answer(cb_id, f"✅ {tier_label} → {model[:40]}")
+            try:
+                from navig.commands.init import mark_chat_onboarding_step_completed
+
+                mark_chat_onboarding_step_completed("ai-provider")
+            except (ImportError, AttributeError, TypeError, ValueError):
+                logger.debug("Unable to mark ai-provider step after tier assignment")
             await self.channel._show_provider_model_picker(
                 chat_id,
                 prov_id,

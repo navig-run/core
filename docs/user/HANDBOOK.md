@@ -55,6 +55,13 @@ applyTo: '**'
 3. **Database Changes:** Migrations, schema updates, and seeding.
 4. **Server Configurations:** Environment variable adjustments and service configs.
 
+### Repository Local-Only Folders (Agent Hygiene)
+
+- `CHANGELOG.md` is tracked and remains the release/public history source of truth.
+- `.dev/` is the default local AI working folder for scripts, logs, outputs, and scratch artifacts.
+- `.local/` is reserved for backups/moved files and compatibility temp artifacts.
+- Keep repo root clean: do not place scratch files directly in root.
+
 ## 1. Quick Start & Overview
 
 ### What is NAVIG?
@@ -95,7 +102,9 @@ After running `install.sh` / `install.ps1`, finalize setup with:
 
 ```bash
 navig init                        # interactive CLI onboarding (default)
+navig init --status               # show compact init/setup status summary
 navig init --tui                  # opt-in full-screen TUI onboarding
+navig init --profile quickstart   # chat-first bootstrap (Telegram handoff + auto-start)
 navig init --profile operator     # silent, non-interactive (recommended for automation)
 navig init --profile node         # bare minimum: dirs + CLI check only
 navig init --profile architect    # operator + MCP config
@@ -123,6 +132,8 @@ Tier behavior details:
 - `Recommended`: runs full wizard without optional integration prompts
 - `Full`: adds an integrations step with Matrix/SMTP/Social value context and toggles
 
+During `navig init` (engine flow), NAVIG now also offers a dedicated **Web Search Provider** setup step with provider preference capture and API-key onboarding (vault-first, with compatibility fallback).
+
 Verification and completion:
 
 - CLI onboarding now prints step progress (`[n/N %]`) and a verification summary before completion
@@ -134,6 +145,7 @@ You can always configure deferred integrations later from CLI (`navig init`, `na
 
 | Profile | Modules applied |
 |---------|----------------|
+| `quickstart` | alias of `operator` + terminal-to-Telegram onboarding handoff |
 | `node` | config dirs, CLI verify, legacy migration |
 | `operator` | + shell PATH, vault init, Telegram token |
 | `architect` | + MCP config file |
@@ -143,6 +155,11 @@ You can always configure deferred integrations later from CLI (`navig init`, `na
 **Telegram token** — set `NAVIG_TELEGRAM_BOT_TOKEN` before running to have it
 stored automatically (vault + `.env` + `config.yaml`). If absent, the step is
 silently skipped; reconfigure later with `navig init` (interactive).
+
+`quickstart` behavior: when a token is available (or entered during the mini tutorial),
+NAVIG attempts to auto-start daemon + gateway + Telegram bot and writes a one-time
+chat onboarding handoff. On first `/start` in Telegram, the bot displays a continuation
+panel (Providers, Intake, Status) to finish setup in chat.
 
 ```bash
 NAVIG_TELEGRAM_BOT_TOKEN="<token>" navig init --profile operator   # Linux/macOS
@@ -525,6 +542,27 @@ navig db list --help
 navig host monitor show --help
 ```
 
+### Fast Root Help Screen
+
+`navig --help` (and bare `navig`) now prints a compact one-screen command map with:
+
+- status bar (`host`, `profile`, `version`)
+- grouped sections (Core, Connections, Apps & Services, Infrastructure,
+  Security, Environment, Monitoring, Developer)
+- aligned command descriptions for quick scanning
+- high-value examples and a rotating single-line tip
+
+Top-level compatibility aliases are also exposed for operator ergonomics:
+`navig cert`, `navig key`, `navig firewall`, `navig dns`, `navig port`,
+`navig proxy`, `navig env`, `navig secret`, `navig job`, and `navig alias`.
+
+This root screen is intentionally terse. Use topic help for full detail:
+
+```bash
+navig help <topic>
+navig <command> --help
+```
+
 ---
 
 ## 2. Host Management
@@ -769,7 +807,10 @@ navig host info production
 
 ### `navig host test [name]`
 
-Test SSH connection to a host.
+Test host connectivity.
+
+- Remote hosts: SSH connectivity check
+- Local hosts (`type: local` or `is_local: true`): local shell probe (SSH skipped)
 
 **Parameters:**
 | Parameter | Type | Required | Description |
@@ -1029,7 +1070,10 @@ This section documents the most important and frequently used NAVIG functionalit
 
 ### `navig run "<command>"`
 
-Execute a shell command on the remote server.
+Execute a shell command on the selected host context.
+
+- Remote hosts: command runs over SSH
+- Local hosts (`type: local` or `is_local: true`): command runs directly on local machine (no tunnel)
 
 **Parameters:**
 | Parameter | Type | Required | Description |
@@ -1039,6 +1083,21 @@ Execute a shell command on the remote server.
 | `--file`, `-f` | path | No | Read command from file (bypasses escaping) |
 
 *One of `command`, `--stdin`, or `--file` is required.
+
+---
+
+### `navig mode route`
+
+Manage hybrid routing slot assignments (`small`, `big`, `code`) from CLI.
+
+**Commands:**
+```bash
+navig mode route show
+navig mode route show --json
+navig mode route set small --provider ollama --model qwen2.5:3b-instruct
+navig mode route set big --provider openai --model gpt-4o-mini
+navig mode route set code --provider deepseek --model deepseek-coder
+```
 
 ---
 
@@ -4479,11 +4538,18 @@ navig start --foreground     # See live logs
 
 **Single-message navigation UX (v2.4.2x+)**
 
-- `/start` resets Telegram navigation state and opens one persistent *Main Menu* message.
-- Menu/list workflows now prefer in-place updates via `editMessageText` instead of posting new messages.
-- Inline navigation uses `🔙 Back`, `🏠 Main Menu`, and `❌ Cancel` callbacks.
+- `/start` resets Telegram navigation state and shows the conversational context card (home screen).
+- Menu/list workflows prefer in-place updates via `editMessageText` instead of posting new messages.
+- Inline navigation uses `🔙 Back` and `🏠 Home` where applicable.
 - Callback handlers acknowledge actions with `answerCallbackQuery` so the loading spinner clears immediately.
-- If a callback handler fails, NAVIG edits the current message to a recovery screen with `🏠 Return to Menu`.
+- If a callback handler fails, NAVIG shows a recovery screen with a `🏠 Home` action.
+
+Canonical Telegram command reference (complete list, options, aliases, callback actions):
+- `docs/features/TELEGRAM.md`
+
+Natural-language parity:
+- In Telegram, visible slash commands can also be triggered via natural language intents.
+- Risky intents require explicit confirmation (`yes`/`cancel`) before execution.
 
 **Command shortcuts:**
 - `/plans` → `plans status`
@@ -6511,7 +6577,7 @@ Search the web for information.
 |-----------|------|---------|-------------|
 | `query` | string | required | Search query |
 | `--limit`, `-l` | int | 10 | Maximum results |
-| `--provider`, `-p` | string | auto | Provider: auto, brave, duckduckgo |
+| `--provider`, `-p` | string | auto | Provider preference: auto, brave, duckduckgo, perplexity, gemini, grok, kimi |
 | `--json` | flag | false | Output in JSON format |
 | `--plain` | flag | false | Plain text output |
 

@@ -93,8 +93,12 @@ class SetupWizard:
         print("🚀 NAVIG Setup Wizard")
         print("=" * 60)
         print()
-        print("Welcome! This wizard will help you configure NAVIG.")
-        print("It should take about 5 minutes to complete.")
+        if self.reconfigure:
+            print("Welcome back! This wizard will help you update your NAVIG configuration.")
+            print("Your existing settings will be preserved where not overwritten.")
+        else:
+            print("Welcome! This wizard will help you configure NAVIG.")
+            print("It should take about 5 minutes to complete.")
         print()
         print("You can skip any step by pressing Enter.")
         print("Press Ctrl+C at any time to cancel.")
@@ -408,11 +412,10 @@ class SetupWizard:
                     print("  ⚠️ Invalid user IDs. Use numbers only.")
 
             self.config["telegram"] = {
-                "bot_token": "${TELEGRAM_BOT_TOKEN}",
                 "allowed_users": user_ids,
             }
 
-            # Save token securely (vault-first, .env fallback)
+            # Save token securely in vault (vault-first, .env fallback)
             self._save_secret("TELEGRAM_BOT_TOKEN", bot_token)
         else:
             print("  ❌ Invalid bot token.")

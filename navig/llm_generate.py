@@ -125,6 +125,9 @@ def run_llm(
     caller_info: dict[str, Any] | None = None,
     session_id: str | None = None,
     enable_tools: bool = False,
+    cost_tracker: "CostTracker | None" = None,
+    turn: int = 1,
+    effort: "str | None" = None,
 ) -> LLMResult:
     """
     Typed LLM orchestrator — routes through all 4 stages and returns LLMResult.
@@ -201,23 +204,41 @@ def run_llm(
             metadata={"mode": resolved.mode, "reason": resolved.resolution_reason},
         )
 
+    # --- Effort resolution ---
+    thinking_params: dict[str, Any] = {}
+    try:
+        from navig.agent.effort import resolve_effort, get_thinking_params, auto_detect_effort
+
+        if effort is not None:
+            eff_level = resolve_effort(effort)
+        else:
+            eff_level = auto_detect_effort(user_input or _extract_user_text(messages))
+        thinking_params = get_thinking_params(eff_level, provider=selection.provider_name)
+        selection.metadata["effort"] = eff_level.value
+    except Exception as eff_err:
+        logger.debug("Effort resolution failed (non-fatal): %s", eff_err)
+
     logger.debug(
-        "run_llm routing: %s -> %s:%s (strategy: %s)",
+        "run_llm routing: %s -> %s:%s (strategy: %s, effort: %s)",
         selection.metadata.get("mode", mode),
         selection.provider_name,
         selection.model_name,
         selection.strategy_name,
+        selection.metadata.get("effort", "n/a"),
     )
 
     # --- Step 2: Build prompt with context ---
     enriched_messages = _enrich_messages_with_context(messages, context)
 
     # --- Step 3: Dispatch with optional fallback ---
-    if fallback_models:
+    # Auto-read fallback chain from config when not explicitly provided
+    effective_fallbacks = fallback_models or _load_fallback_chain()
+
+    if effective_fallbacks:
         result = _call_with_fallback(
             messages=enriched_messages,
             selection=selection,
-            fallback_models=fallback_models,
+            fallback_models=effective_fallbacks,
             timeout=timeout,
         )
     else:
@@ -225,6 +246,9 @@ def run_llm(
             messages=enriched_messages,
             selection=selection,
             timeout=timeout,
+            cost_tracker=cost_tracker,
+            turn=turn,
+            thinking_params=thinking_params,
         )
 
     # Stamp timing and selection
@@ -241,14 +265,21 @@ def run_llm(
 
 def _call_and_wrap(
     messages: list[dict[str, str]],
-    selection: ModelSelection,
+    selection: "ModelSelection",
     timeout: float,
-) -> LLMResult:
-    """Dispatch a single LLM call and wrap the response in LLMResult."""
+    cost_tracker: "CostTracker | None" = None,
+    turn: int = 1,
+    thinking_params: dict[str, Any] | None = None,
+) -> "LLMResult":
+    """Dispatch a single LLM call and wrap the response in LLMResult.
+
+    Optionally records a :class:`~navig.agent.usage_tracker.UsageEvent`
+    into *cost_tracker* after a successful call.
+    """
     from navig.llm_routing_types import LLMResult
 
     try:
-        content = _call_provider(
+        content, prompt_tokens, completion_tokens, extra = _call_provider_rich(
             provider=selection.provider_name,
             model=selection.model_name,
             messages=messages,
@@ -256,11 +287,33 @@ def _call_and_wrap(
             max_tokens=selection.max_tokens,
             timeout=timeout,
             base_url=selection.base_url or None,
+            thinking_params=thinking_params,
         )
+        # Wire cost tracking
+        if cost_tracker is not None:
+            try:
+                from navig.agent.usage_tracker import UsageEvent
+
+                cost_tracker.record(
+                    UsageEvent(
+                        turn=turn,
+                        model=selection.model_name,
+                        provider=selection.provider_name,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        cache_read_tokens=extra.get("cache_read_tokens", 0),
+                        cache_write_tokens=extra.get("cache_write_tokens", 0),
+                    )
+                )
+            except Exception as tracker_err:
+                logger.debug("CostTracker.record failed (non-fatal): %s", tracker_err)
+
         return LLMResult(
             content=content,
             model=selection.model_name,
             provider=selection.provider_name,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
         )
     except Exception as e:
         logger.warning(
@@ -275,6 +328,123 @@ def _call_and_wrap(
             provider=selection.provider_name,
             finish_reason=f"error:{type(e).__name__}: {e}",
         )
+
+
+def _load_fallback_chain() -> list[str]:
+    """Read ``config.agent.fallback_chain`` from project/global config.
+
+    Returns an empty list when the setting is absent or the config cannot be
+    loaded — this is always safe (it simply disables the fallback).
+
+    The setting accepts a list of ``"provider:model"`` specs, e.g.::
+
+        agent:
+          fallback_chain:
+            - openai:gpt-4o
+            - anthropic:claude-3-5-sonnet-20241022
+            - openrouter:google/gemini-2.5-flash
+    """
+    try:
+        from navig.core.config_loader import load_config
+
+        config = load_config()
+        agent_cfg = getattr(config, "agent", None)
+        if agent_cfg is None:
+            return []
+        chain = getattr(agent_cfg, "fallback_chain", None)
+        if not chain:
+            return []
+        return [str(s) for s in chain if s]
+    except Exception as exc:
+        logger.debug("_load_fallback_chain: config unavailable (%s)", exc)
+        return []
+
+
+def _call_provider_rich(
+    provider: str,
+    model: str,
+    messages: list[dict],
+    temperature: float,
+    max_tokens: int,
+    timeout: float,
+    base_url: str | None = None,
+    thinking_params: dict[str, Any] | None = None,
+) -> tuple[str, int, int, dict]:
+    """Call a provider and return ``(content, prompt_tokens, completion_tokens, extra)``.
+
+    *extra* is a dict that may contain Anthropic-specific fields such as
+    ``cache_read_tokens`` and ``cache_write_tokens``.
+
+    *thinking_params* are provider-specific thinking/reasoning parameters
+    produced by :func:`navig.agent.effort.get_thinking_params`. They are
+    stored on the :class:`CompletionRequest` as ``extra_body`` so the
+    provider client can forward them.
+
+    Falls back to :func:`_call_provider` (returns empty token counts) if the
+    rich path fails.
+    """
+    try:
+        from navig.providers import (
+            CompletionRequest,
+            Message,
+            create_client,
+            get_builtin_provider,
+        )
+        from navig.providers.auth import AuthProfileManager
+
+        provider_cfg = get_builtin_provider(provider)
+        if provider_cfg is None:
+            from navig.llm_router import PROVIDER_BASE_URLS
+            from navig.providers.types import ModelApi, ProviderConfig
+
+            url = base_url or PROVIDER_BASE_URLS.get(provider, "https://openrouter.ai/api/v1")
+            provider_cfg = ProviderConfig(
+                name=provider,
+                base_url=url,
+                api=ModelApi.OPENAI_COMPLETIONS,
+            )
+        elif base_url:
+            provider_cfg.base_url = base_url
+
+        auth_manager = AuthProfileManager()
+        api_key, _ = auth_manager.resolve_auth(provider)
+
+        msgs = [Message(role=m["role"], content=m["content"]) for m in messages]
+        request = CompletionRequest(
+            messages=msgs,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            extra_body=thinking_params if thinking_params else None,
+        )
+        client = create_client(provider_cfg, api_key=api_key, timeout=timeout)
+
+        async def _run():
+            return await client.complete(request)
+
+        result = _safe_run_async(_run)
+        content = result.content or ""
+        prompt_tokens = getattr(result, "prompt_tokens", 0) or 0
+        completion_tokens = getattr(result, "completion_tokens", 0) or 0
+        extra: dict = {
+            "cache_read_tokens": getattr(result, "cache_read_input_tokens", 0) or 0,
+            "cache_write_tokens": getattr(result, "cache_creation_input_tokens", 0) or 0,
+        }
+        return content, prompt_tokens, completion_tokens, extra
+    except Exception as exc:
+        logger.debug("_call_provider_rich via providers system failed: %s — falling back", exc)
+
+    # Fallback: plain string call, no token counts
+    content = _call_provider(
+        provider=provider,
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout=timeout,
+        base_url=base_url,
+    )
+    return content, 0, 0, {}
 
 
 def _call_with_fallback(

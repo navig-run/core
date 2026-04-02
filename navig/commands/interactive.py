@@ -3471,12 +3471,12 @@ def _launch_ask_sessions(state: MenuState) -> None:
     )
     console.print()
     console.print(f"[{COLORS['dim']}]  Commands:[/]")
-    console.print("  [bright_cyan]navig ask sessions[/]          — list all sessions")
-    console.print("  [bright_cyan]navig ask sessions stats[/]    — storage statistics")
-    console.print("  [bright_cyan]navig ask sessions search Q[/] — full-text search")
-    console.print("  [bright_cyan]navig ask sessions view ID[/]  — inspect a session")
-    console.print("  [bright_cyan]navig ask sessions export[/]   — export to JSON/MD/CSV")
-    console.print("  [bright_cyan]navig ask sessions delete ID[/]— delete a session")
+    console.print("  [bright_cyan]navig copilot sessions[/]          — list all sessions")
+    console.print("  [bright_cyan]navig copilot sessions stats[/]    — storage statistics")
+    console.print("  [bright_cyan]navig copilot sessions search Q[/] — full-text search")
+    console.print("  [bright_cyan]navig copilot sessions view ID[/]  — inspect a session")
+    console.print("  [bright_cyan]navig copilot sessions export[/]   — export to JSON/MD/CSV")
+    console.print("  [bright_cyan]navig copilot sessions delete ID[/]— delete a session")
     console.print()
 
     options = [

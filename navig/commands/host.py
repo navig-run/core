@@ -7,6 +7,7 @@ The Schema tracks all assets. Every host. Every operation.
 import os
 import platform
 import shlex
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -882,10 +883,12 @@ def clone_host(options: dict[str, Any]) -> None:
 
 
 def test_host(options: dict[str, Any]) -> None:
-    """Test SSH connection to host.
+    """Test host connectivity.
+
+    Uses SSH for remote hosts and a local shell probe for local hosts.
 
     Raises:
-        RuntimeError: If SSH connection fails
+        RuntimeError: If connectivity check fails
     """
     import subprocess
 
@@ -918,10 +921,36 @@ def test_host(options: dict[str, Any]) -> None:
 
     # Show connection details (unless silent mode)
     if not silent:
-        ch.info(f"Testing SSH connection to '{host_name}'...")
+        ch.info(f"Testing host connectivity for '{host_name}'...")
         ch.dim(f"Host: {host_config.get('host')}")
         ch.dim(f"User: {host_config.get('user')}")
         ch.dim(f"Port: {host_config.get('port', 22)}")
+
+    # Local host path: avoid SSH and run a direct local probe
+    if config_manager.is_local_host(host_name):
+        probe_cmd = [sys.executable, "-c", "print('LOCAL_OK')"]
+        if verbose and not silent:
+            ch.dim(f"Local probe command: {' '.join(probe_cmd)}")
+        try:
+            result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                if not silent:
+                    ch.success(f"Local host '{host_name}' is ready (SSH skipped).")
+                return
+            error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown local error"
+            if not silent:
+                ch.error("Local host test failed", error_msg)
+            raise RuntimeError(f"Local host test failed: {error_msg}")
+        except subprocess.TimeoutExpired as _exc:
+            if not silent:
+                ch.error("Local host test timed out", "Local shell probe exceeded timeout.")
+            raise RuntimeError("Local host test timed out") from _exc
+        except RuntimeError:
+            raise
+        except Exception as e:
+            if not silent:
+                ch.error("Local host test failed", str(e))
+            raise RuntimeError(f"Local host test failed: {e}") from e
 
     # Build SSH command — resolve full path on Windows to avoid FileNotFoundError
     # Note: 32-bit Python on 64-bit Windows has System32→SysWOW64 redirection,

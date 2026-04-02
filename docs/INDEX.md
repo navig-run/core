@@ -49,7 +49,7 @@
 ```powershell
 powershell -ExecutionPolicy Bypass -File navig_quick_setup.ps1 -Fast
 ```
-- **File:** [navig_quick_setup.ps1](navig_quick_setup.ps1)
+- **File:** [../scripts/navig_quick_setup.ps1](../scripts/navig_quick_setup.ps1)
 - **Time:** ~5 minutes
 - **Effort:** 1 command
 - **What it does:** Everything automatically
@@ -58,7 +58,7 @@ powershell -ExecutionPolicy Bypass -File navig_quick_setup.ps1 -Fast
 ```powershell
 powershell -ExecutionPolicy Bypass -File install_navig_windows_enhanced.ps1
 ```
-- **File:** [install_navig_windows_enhanced.ps1](install_navig_windows_enhanced.ps1)
+- **File:** [../scripts/install_navig_windows_enhanced.ps1](../scripts/install_navig_windows_enhanced.ps1)
 - **Time:** ~5-10 minutes
 - **Effort:** Follow prompts
 - **What it does:** Complete setup with optional customization
@@ -69,7 +69,7 @@ powershell -ExecutionPolicy Bypass -File install_navig_windows_enhanced.ps1
 ```bash
 bash navig_quick_setup.sh --fast
 ```
-- **File:** [navig_quick_setup.sh](navig_quick_setup.sh)
+- **File:** [../scripts/navig_quick_setup.sh](../scripts/navig_quick_setup.sh)
 - **Time:** ~5 minutes
 - **Effort:** 1 command
 - **What it does:** Everything automatically
@@ -78,7 +78,7 @@ bash navig_quick_setup.sh --fast
 ```bash
 bash install_navig_linux_enhanced.sh
 ```
-- **File:** [install_navig_linux_enhanced.sh](install_navig_linux_enhanced.sh)
+- **File:** [../scripts/install_navig_linux_enhanced.sh](../scripts/install_navig_linux_enhanced.sh)
 - **Time:** ~5-10 minutes
 - **Effort:** Follow prompts
 - **What it does:** Complete setup with optional customization
@@ -89,14 +89,14 @@ bash install_navig_linux_enhanced.sh
 
 ### Troubleshooting & Maintenance
 
-- **[fix_windows_network_sharing.ps1](fix_windows_network_sharing.ps1)**
+- **[../scripts/fix_windows_network_sharing.ps1](../scripts/fix_windows_network_sharing.ps1)**
   - Diagnose network sharing issues
   - Auto-repair common problems
   - Configure firewall rules
   - Test file sharing functionality
   - **Usage:** `.\fix_windows_network_sharing.ps1 -AutoFix`
 
-- **[mount_remote_drives.ps1](mount_remote_drives.ps1)**
+- **[../scripts/mount_remote_drives.ps1](../scripts/mount_remote_drives.ps1)**
   - Interactive mount wizard
   - Cloud drive setup (rclone)
   - Linux server access (SSHFS)

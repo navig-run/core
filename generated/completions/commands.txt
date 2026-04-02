@@ -89,6 +89,10 @@ navig ai providers
 navig ai run
 navig ai show
 navig ai suggest
+navig alias edit
+navig alias list
+navig alias new
+navig alias run
 navig app add
 navig app edit
 navig app list
@@ -101,6 +105,7 @@ navig approve list
 navig approve no
 navig approve policy
 navig approve yes
+navig ask
 navig assistant analyze
 navig assistant config
 navig assistant context
@@ -142,6 +147,17 @@ navig calendar add
 navig calendar auth
 navig calendar list
 navig calendar sync
+navig cert disable
+navig cert enable
+navig cert hestia add
+navig cert hestia list
+navig cert hestia remove
+navig cert module-disable
+navig cert module-enable
+navig cert recommend
+navig cert reload
+navig cert test
+navig cert vhosts
 navig cloud list
 navig cloud status
 navig config audit
@@ -230,6 +246,13 @@ navig desktop ping
 navig desktop set
 navig desktop tree
 navig dispatch send
+navig dns audit
+navig dns dns
+navig dns firewall
+navig dns interfaces
+navig dns ping
+navig dns ports
+navig dns show
 navig docker compose
 navig docker exec
 navig docker inspect
@@ -245,6 +268,19 @@ navig email search
 navig email send
 navig email setup
 navig email sync
+navig env audit
+navig env backup
+navig env edit
+navig env get
+navig env migrate
+navig env schema install
+navig env set
+navig env set-confirmation-level
+navig env set-mode
+navig env settings
+navig env show
+navig env test
+navig env validate
 navig eval run
 navig evolve fix
 navig evolve optimize
@@ -272,6 +308,13 @@ navig file remove
 navig file show
 navig finance balance
 navig finance status
+navig firewall audit
+navig firewall dns
+navig firewall firewall
+navig firewall interfaces
+navig firewall ping
+navig firewall ports
+navig firewall show
 navig flow add
 navig flow list
 navig flow run
@@ -300,6 +343,12 @@ navig gateway status
 navig gateway stop
 navig gateway test
 navig h list
+navig health down
+navig health health
+navig health info
+navig health logs
+navig health status
+navig health up
 navig heartbeat configure
 navig heartbeat history
 navig heartbeat status
@@ -364,6 +413,28 @@ navig install show
 navig install status
 navig install update
 navig install upgrade
+navig job add
+navig job edit
+navig job list
+navig job remove
+navig job run
+navig job show
+navig job test
+navig key add
+navig key discover-local
+navig key list
+navig key maintenance clean
+navig key maintenance install
+navig key maintenance run
+navig key maintenance show
+navig key maintenance update
+navig key monitor report
+navig key monitor show
+navig key security edit
+navig key security show
+navig key show
+navig key test
+navig key use
 navig kg forget
 navig kg recall
 navig kg remember
@@ -394,6 +465,7 @@ navig local ports
 navig local show
 navig log run
 navig log show
+navig logs logs-cmd
 navig matrix accounts
 navig matrix e2ee blacklist
 navig matrix e2ee devices
@@ -454,6 +526,8 @@ navig migrate config
 navig migrate status
 navig mode detect
 navig mode list
+navig mode route set
+navig mode route show
 navig mode set
 navig mode show
 navig mount add
@@ -506,8 +580,16 @@ navig plans briefing
 navig plans next
 navig plans run
 navig plans status
+navig plans summary
 navig plans sync
 navig plans update
+navig port audit
+navig port dns
+navig port firewall
+navig port interfaces
+navig port ping
+navig port ports
+navig port show
 navig portable create
 navig portable validate
 navig proactive setup
@@ -523,6 +605,11 @@ navig prompts edit
 navig prompts list
 navig prompts remove
 navig prompts show
+navig proxy auto
+navig proxy remove
+navig proxy run
+navig proxy show
+navig proxy update
 navig queue add
 navig queue cancel
 navig queue list
@@ -544,6 +631,11 @@ navig script list
 navig script new
 navig script run
 navig search
+navig secret delete
+navig secret get
+navig secret list
+navig secret set
+navig secret validate
 navig server list
 navig server run
 navig server show
@@ -653,6 +745,11 @@ navig update status
 navig upgrade
 navig user set
 navig user show
+navig vault delete
+navig vault get
+navig vault list
+navig vault set
+navig vault validate
 navig version
 navig voice list-voices
 navig voice speak

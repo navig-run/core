@@ -16,45 +16,119 @@ Plugin Loading:
 5. All enabled plugins with satisfied dependencies are registered
 """
 
+import os
 import shutil
 import sys
+from pathlib import Path
+
+
+def _read_text_file(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return ""
+
+
+def _fast_status_context() -> tuple[str, str]:
+    active_host = os.environ.get("NAVIG_ACTIVE_HOST", "").strip()
+    if not active_host:
+        active_host = _read_text_file(Path.home() / ".navig" / "cache" / "active_host.txt")
+    if not active_host:
+        active_host = "none"
+
+    active_profile = os.environ.get("NAVIG_PROFILE", "").strip()
+    if not active_profile:
+        active_profile = _read_text_file(Path.home() / ".navig" / "active_profile")
+    if not active_profile:
+        active_profile = "default"
+
+    return active_host, active_profile
+
+
+def _fast_rotating_tip() -> str:
+    tips = [
+        "Pro tip: Use 'navig host test' before remote run/db/file operations.",
+        "What's new: 'navig help --schema' exposes machine-readable commands.",
+        "Pro tip: Use '--plain' for scripts and '--json' for structured output.",
+        "What's new: 'navig init --status' reports onboarding readiness.",
+    ]
+    try:
+        import datetime as _dt
+
+        idx = _dt.date.today().toordinal() % len(tips)
+    except Exception:
+        idx = 0
+    return tips[idx]
+
+
+def _format_cmd(name: str, desc: str) -> str:
+    return f"    {name:<13} {desc}"
 
 
 def _fast_help_text(version: str) -> str:
     # Keep this ASCII-only so it works on Windows default consoles.
+    hr = "-" * 66
+    host, profile = _fast_status_context()
     return "\n".join(
         [
-            f"NAVIG v{version}  Server Management CLI",
-            "",
-            "Usage:",
-            "  navig <command> [options]",
-            "",
-            "Common commands:",
-            "  init        Initialize NAVIG configuration",
-            "  menu        Interactive mode",
-            "  host        Manage remote server connections",
-            "  app         Manage applications",
-            "  run         Run a remote command",
-            "  file        File transfer and remote editing",
-            "  db          Database operations",
-            "  backup      Backup and restore NAVIG configuration",
-            "  tunnel      Manage SSH tunnels",
-            "  docker      Docker containers",
-            "  web         Web server operations",
-            "  service     Manage NAVIG daemon (persistent background service)",
-            "  profile     Operating profile (node | builder | operator | architect)",
-            "  mcp         MCP tools and integrations",
-            "  help        In-app help topics",
-            "",
-            "Examples:",
-            "  navig init",
-            "  navig host add",
-            "  navig host use",
-            "  navig run 'uname -a'",
-            "  navig help db",
-            "",
-            "Tip:",
-            "  Use 'navig <command> --help' for command details.",
+            hr,
+            f"  NAVIG v{version}  ·  host: {host}  ·  profile: {profile}",
+            hr,
+            "  Server management from your terminal. Fast, scriptable, exact.",
+            "  CORE",
+            _format_cmd("init", "Initialize NAVIG workspace"),
+            _format_cmd("config", "View or set configuration values"),
+            _format_cmd("profile", "Switch operating profile"),
+            _format_cmd("version", "Show version and build info"),
+            _format_cmd("upgrade", "Upgrade NAVIG to latest release"),
+            _format_cmd("plugin", "Manage plugins and extensions"),
+            "  CONNECTIONS",
+            _format_cmd("host", "Add, remove, switch, or list hosts"),
+            _format_cmd("tunnel", "Open and manage SSH tunnels"),
+            _format_cmd("proxy", "Configure HTTP/SOCKS proxy routing"),
+            _format_cmd("port", "Scan or forward remote ports"),
+            "  APPS & SERVICES",
+            _format_cmd("app", "Deploy, start, stop, or scale apps"),
+            _format_cmd("service", "Manage NAVIG daemon"),
+            _format_cmd("docker", "Build, run, and inspect containers"),
+            _format_cmd("web", "Nginx/Caddy/Apache operations"),
+            _format_cmd("run", "Execute command on active host"),
+            "  INFRASTRUCTURE",
+            _format_cmd("backup", "Backup and restore NAVIG state"),
+            _format_cmd("db", "Query, dump, and restore databases"),
+            _format_cmd("file", "Transfer and edit remote files"),
+            _format_cmd("cron", "Schedule recurring remote jobs"),
+            _format_cmd("job", "Run and monitor one-off jobs"),
+            "  SECURITY",
+            _format_cmd("cert", "Issue, renew, or inspect TLS certs"),
+            _format_cmd("key", "Manage SSH keys and credentials"),
+            _format_cmd("firewall", "View and modify firewall rules"),
+            _format_cmd("secret", "Store encrypted environment secrets"),
+            "  ENVIRONMENT",
+            _format_cmd("env", "View/override environment variables"),
+            _format_cmd("dns", "Query or update DNS records"),
+            "  MONITORING",
+            _format_cmd("status", "Live status of connected hosts"),
+            _format_cmd("health", "Run cross-service health checks"),
+            _format_cmd("logs", "Stream or search host/service logs"),
+            _format_cmd("stats", "CPU, memory, disk, and network metrics"),
+            "  DEVELOPER",
+            _format_cmd("alias", "Create command shortcuts"),
+            _format_cmd("script", "Save and replay command sequences"),
+            _format_cmd("mcp", "MCP tool integrations"),
+            _format_cmd("help", "Browse in-app help topics"),
+            hr,
+            "  EXAMPLES",
+            "    navig host add                         Add a new remote server",
+            "    navig host use staging-01              Switch active host",
+            "    navig run 'df -h'                      Check disk on active host",
+            "    navig logs api --tail 200              Stream last 200 API lines",
+            "    navig cert renew --host prod-01        Renew TLS cert on prod",
+            "    navig db dump mydb -o predeploy.sql    Snapshot DB before deploy",
+            hr,
+            f"  {_fast_rotating_tip()}",
+            "  navig <command> --help   ·   navig help <topic>   ·   navig menu",
+            hr,
         ]
     )
 

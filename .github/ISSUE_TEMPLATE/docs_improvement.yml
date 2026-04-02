@@ -3,18 +3,27 @@ description: Request a docs fix or addition
 title: "[DOCS]: "
 labels: [documentation]
 body:
-  - type: input
-    id: location
-    attributes:
-      label: Doc location
-      placeholder: "e.g. README.md or docs/user/quick-start.md"
   - type: textarea
-    id: issue
+    id: report
     attributes:
-      label: What is missing or unclear?
+      label: Documentation report
+      description: |
+        Scaffold généré par Nero. 
+        Copiez-collez ici le contenu de `github_issue_draft.md`.
+      value: |
+        # Summary (Documentation gap)
+        <!-- What is missing or unclear? -->
+
+        ## Doc location
+        <!-- File path or URL -->
+
+        ## Suggested improvement
+        <!-- Corrected snippet or description -->
+
+        ## Version
+        <!-- navig --version -->
+
+        ## Environment
+        <!-- OS, Python, Shell -->
     validations:
       required: true
-  - type: textarea
-    id: suggestion
-    attributes:
-      label: Suggested improvement

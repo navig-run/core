@@ -50,6 +50,13 @@ def test_slash_entry_has_required_fields():
     assert required.issubset(fields), f"Missing fields: {required - fields}"
 
 
+def test_slash_entry_has_nl_metadata_fields():
+    _, entry_cls = _import_registry()
+    fields = {f.name for f in entry_cls.__dataclass_fields__.values()}  # type: ignore[attr-defined]
+    expected = {"command", "description", "visible", "category"}
+    assert expected.issubset(fields)
+
+
 def test_old_slash_cli_map_is_gone():
     """_SLASH_CLI_MAP must NOT exist on TelegramCommandsMixin after refactor."""
     mixin = _import_mixin()
