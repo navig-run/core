@@ -265,6 +265,14 @@ def _isolate_navig_config_dir(tmp_path_factory):
     import shutil
     import sys
 
+    # -- Pre-cleanup: close any Storage Engine connections from previous runs --
+    # On Windows, WAL mode keeps SQLite files locked; must close before rmtree.
+    try:
+        from navig.storage import get_engine
+        get_engine().close_all()
+    except Exception:  # noqa: BLE001 — best-effort cleanup
+        pass
+
     # -- Pre-cleanup: handle stale temp directories from previous crashed runs --
     # On Windows, SQLite files may remain locked; retry with ignore handler.
     def _onerror_ignore(func, path, exc_info):
@@ -277,16 +285,34 @@ def _isolate_navig_config_dir(tmp_path_factory):
         except Exception:  # noqa: BLE001
             pass  # let pytest create a new numbered dir suffix
 
+    # Get basetemp carefully - on Windows, pre-existing locked files may cause
+    # cleanup failures. Using ignore_errors=True and wrapping in try/except.
+    try:
+        base_tmp = tmp_path_factory.getbasetemp()
+    except PermissionError:
+        # If getbasetemp() fails due to locked files, use a fresh directory
+        import tempfile
+        base_tmp = Path(tempfile.mkdtemp(prefix="navig_pytest_"))
+
     # Clean up any leftover navig_cfg_isolated* directories
-    base_tmp = tmp_path_factory.getbasetemp()
-    for child in base_tmp.iterdir():
-        if child.name.startswith("navig_cfg_isolated"):
-            shutil.rmtree(child, onexc=_onerror_ignore if sys.version_info >= (3, 12) else None, ignore_errors=True)
+    try:
+        for child in base_tmp.iterdir():
+            if child.name.startswith("navig_cfg_isolated"):
+                shutil.rmtree(child, onexc=_onerror_ignore if sys.version_info >= (3, 12) else None, ignore_errors=True)
+    except PermissionError:
+        pass  # Best-effort cleanup — proceed anyway
 
     isolated = tmp_path_factory.mktemp("navig_cfg_isolated")
     old_value = os.environ.get("NAVIG_CONFIG_DIR")
     os.environ["NAVIG_CONFIG_DIR"] = str(isolated)
     yield isolated
+
+    # -- Cleanup: close Storage Engine connections (Windows file lock fix) --
+    try:
+        from navig.storage import get_engine
+        get_engine().close_all()
+    except Exception:  # noqa: BLE001 — best-effort cleanup
+        pass
 
     # -- Cleanup: close any open vault SQLite connections (Windows file lock fix) --
     try:
