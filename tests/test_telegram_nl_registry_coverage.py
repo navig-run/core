@@ -45,6 +45,16 @@ def test_visible_registry_commands_have_nl_resolution_coverage(_nl_bot):
         if not resolved:
             failures.append((entry.command, text, "no_intent"))
             continue
+        if resolved.get("ambiguous"):
+            candidates = [
+                str(item.get("command") or "")
+                for item in (resolved.get("candidates") or [])
+                if isinstance(item, dict)
+            ]
+            if entry.command in candidates:
+                continue
+            failures.append((entry.command, text, f"ambiguous:{candidates}"))
+            continue
         resolved_cmd = str(resolved.get("command") or "")
         if resolved_cmd != entry.command:
             failures.append((entry.command, text, f"resolved_as:{resolved_cmd}"))

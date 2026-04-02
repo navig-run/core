@@ -997,7 +997,14 @@ class TelegramCommandsMixin:
         }
 
         seen_categories: set[str] = set()
-        lines = ["\U0001f4cb *NAVIG command reference*", ""]
+        lines = [
+            "\U0001f4cb *NAVIG command reference*",
+            "",
+            "*Quick start*",
+            "`/status` · `/models` · `/providers` · `/help`",
+            "You can also type naturally (example: `show status` or `restart daemon`).",
+            "",
+        ]
         for entry in _iter_unique_registry(visible_only=True):
             if entry.category not in seen_categories:
                 seen_categories.add(entry.category)
@@ -1646,6 +1653,7 @@ class TelegramCommandsMixin:
         alias_map = self._nl_phrase_aliases()
 
         best: dict[str, Any] | None = None
+        candidates: list[dict[str, Any]] = []
 
         for entry in _iter_unique_registry(visible_only=True):
             command = entry.command
@@ -1672,17 +1680,70 @@ class TelegramCommandsMixin:
                     "usage": entry.usage or f"/{command}",
                     "score": score,
                 }
+                candidates.append(candidate)
                 if not best or score > int(best.get("score", 0)):
                     best = candidate
 
         if not best:
             return None
 
+        # If top two commands tie, ask user to choose instead of guessing.
+        ranked = sorted(candidates, key=lambda x: int(x.get("score", 0)), reverse=True)
+        if len(ranked) > 1:
+            first = ranked[0]
+            second = ranked[1]
+            if (
+                int(first.get("score", 0)) == int(second.get("score", 0))
+                and str(first.get("command") or "") != str(second.get("command") or "")
+            ):
+                return {
+                    "ambiguous": True,
+                    "candidates": [first, second, *ranked[2:4]],
+                }
+
         command = str(best.get("command") or "")
         args = str(best.get("args") or "")
         if command in self._NL_REQUIRED_ARGS_COMMANDS and not args:
             best["missing_args"] = True
         return best
+
+    def _suggest_nl_commands(self, text: str, limit: int = 3) -> list[dict[str, str]]:
+        lowered = (text or "").lower()
+        tokens = set(re.findall(r"[a-z0-9_]+", lowered))
+        alias_map = self._nl_phrase_aliases()
+        scored: list[tuple[int, str, str]] = []
+
+        for entry in _iter_unique_registry(visible_only=True):
+            command = entry.command
+            usage = entry.usage or f"/{command}"
+            phrases = {command, command.replace("_", " ")}
+            phrases.update(alias_map.get(command, ()))
+
+            score = 0
+            for phrase in phrases:
+                p_tokens = set(re.findall(r"[a-z0-9_]+", phrase.lower()))
+                if not p_tokens:
+                    continue
+                overlap = len(tokens & p_tokens)
+                if overlap:
+                    score = max(score, overlap)
+                if phrase and phrase.lower() in lowered:
+                    score = max(score, 3)
+
+            if score > 0:
+                scored.append((score, command, usage))
+
+        scored.sort(key=lambda row: (-row[0], row[1]))
+        suggestions = [{"command": c, "usage": u} for _, c, u in scored[:limit]]
+
+        if not suggestions:
+            # Command-first fallback suggestions for action-oriented messages.
+            suggestions = [
+                {"command": "status", "usage": "/status"},
+                {"command": "help", "usage": "/help"},
+                {"command": "hosts", "usage": "/hosts"},
+            ][:limit]
+        return suggestions
 
     async def _execute_nl_registry_command(
         self,
@@ -1808,6 +1869,27 @@ class TelegramCommandsMixin:
 
         resolved = self._resolve_nl_command_intent(text)
         if not resolved:
+            lowered = (text or "").strip().lower()
+            has_trigger = any(re.search(rf"\b{re.escape(w)}\b", lowered) for w in self._NL_COMMAND_TRIGGERS)
+            if has_trigger:
+                suggestions = self._suggest_nl_commands(text, limit=3)
+                if suggestions:
+                    lines = ["I couldn’t map that to one exact command.", "", "Try:"]
+                    for item in suggestions:
+                        lines.append(f"• `{item['usage']}`")
+                    await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+                    return True
+            return False
+
+        if resolved.get("ambiguous"):
+            candidates = list(resolved.get("candidates") or [])[:3]
+            if candidates:
+                lines = ["I found multiple matching commands.", "", "Pick one:"]
+                for candidate in candidates:
+                    usage = str(candidate.get("usage") or f"/{candidate.get('command')}")
+                    lines.append(f"• `{usage}`")
+                await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+                return True
             return False
 
         command = str(resolved.get("command") or "")

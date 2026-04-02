@@ -53,6 +53,11 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Added usage-guidance fallback for NL intents that map to commands requiring arguments.
   - Updated Telegram docs to describe NL command parity and confirmation behavior.
   - Added deterministic NL parity coverage tests to keep visible slash commands mapped in NL resolution (`tests/test_telegram_nl_registry_coverage.py`).
+- **Telegram command UX overhaul (Phase 8 — command-first suggestions + help polish):**
+  - Improved `/help` formatting with a Quick Start section and natural-language examples for faster onboarding.
+  - NL command resolver now detects tied top matches and asks users to choose instead of guessing the command.
+  - For action-oriented NL requests that don’t map cleanly, Telegram now suggests likely commands (usage-first) instead of silently falling back.
+  - Added regression tests for NL suggestion and ambiguity handling in Telegram reminders suite.
   - `/models big|small|coder|auto` — passing a tier name switches immediately (e.g. `/models big` = same as `/big`). Aliases `/model`, `/routing`, `/router` also accept the tier arg.
   - `/providers <name>` — shows a focused card for the named provider with config guidance; falls back to full hub when no arg given.
   - `/spaces <name>` — quick-switches to a space when a name is passed, skipping the list view.

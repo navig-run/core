@@ -447,6 +447,50 @@ async def test_natural_language_command_missing_args_shows_usage(monkeypatch, tm
 
 
 @pytest.mark.asyncio
+async def test_natural_language_unmapped_command_shows_suggestions(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    handled = await bot._handle_natural_language_request(
+        123,
+        456,
+        "please check everything quickly",
+    )
+    assert handled is True
+    assert any("Try:" in m[1] for m in bot.messages)
+
+
+@pytest.mark.asyncio
+async def test_natural_language_ambiguous_command_shows_choices(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    monkeypatch.setattr(
+        bot,
+        "_resolve_nl_command_intent",
+        lambda _text: {
+            "ambiguous": True,
+            "candidates": [
+                {"command": "model", "usage": "/model [big|small|coder|auto]"},
+                {"command": "models", "usage": "/models [big|small|coder|auto]"},
+            ],
+        },
+    )
+
+    handled = await bot._handle_natural_language_request(123, 456, "show model")
+    assert handled is True
+    assert any("multiple matching commands" in m[1].lower() for m in bot.messages)
+
+
+@pytest.mark.asyncio
 async def test_nl_callback_yes_and_cancel(monkeypatch, tmp_path):
     bot = _make_dummy_bot()
     fake_cfg = _FakeConfigManager(tmp_path / "global")
