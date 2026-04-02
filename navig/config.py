@@ -21,6 +21,7 @@ import yaml
 from navig.core.yaml_io import atomic_write_yaml as _atomic_write_yaml
 from navig.core.yaml_io import log_shadow_anomaly
 from navig.core.hosts import HostManager
+from navig.core.apps import AppManager
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +68,6 @@ class ConfigManager:
         self._explicit_config_dir = config_dir
         self._paths_resolved = False
 
-        # In-memory caches initialized here since they don't depend on paths directly
-        self._app_config_cache: dict[str, dict[str, Any]] = {}
-        self._apps_list_cache: dict[str, tuple[list, float]] = {}
-
         # global_config is loaded lazily on first access (see @property below)
         self._global_config = None
         self._global_config_loaded = False
@@ -80,8 +77,9 @@ class ConfigManager:
         # (fail-fast) instead of delaying errors until mid-operation deep in async code.
         self._resolve_paths()
 
-        # Host management delegated to HostManager (after paths resolved)
+        # Host and App management delegated to specialized managers (after paths resolved)
         self._hosts = HostManager(self)
+        self._apps = AppManager(self)
 
     def _resolve_paths(self):
         if self._paths_resolved:
@@ -1358,164 +1356,28 @@ Context provided with each query:
         return self._hosts.exists(host_name)
 
     def app_exists(self, host_name: str, app_name: str) -> bool:
-        """
-        Check if app exists on host (checks both individual files and embedded format).
-
-        Args:
-            host_name: Host name
-            app_name: App name
-
-        Returns:
-            True if app exists on host, False otherwise
-        """
-        # 1. Check individual files (new format)
-        config_dirs = self._get_config_directories()
-        for config_dir in config_dirs:
-            app_config = self.load_app_from_file(app_name, config_dir)
-            if app_config and app_config.get("host") == host_name:
-                return True
-
-        # 2. Check embedded format (legacy)
-        try:
-            host_config = self.load_host_config(host_name)
-            return "apps" in host_config and app_name in host_config["apps"]
-        except FileNotFoundError:
-            return False
+        """Check if app exists on host. Delegates to AppManager."""
+        return self._apps.exists(host_name, app_name)
 
     def list_hosts(self) -> list:
         """List all configured hosts. Delegates to HostManager."""
         return self._hosts.list_hosts()
 
     def list_apps(self, host_name: str) -> list:
-        """
-        List all apps on a host (supports both individual files and embedded format).
-
-        Args:
-            host_name: Host name
-
-        Returns:
-            Sorted list of app names
-
-        Raises:
-            FileNotFoundError: If host doesn't exist
-        """
-        apps = set()
-
-        # 1. Get apps from individual files (new format)
-        config_dirs = self._get_config_directories()
-        for config_dir in config_dirs:
-            apps_dir = config_dir / "apps"
-            if apps_dir.exists():
-                for app_file in apps_dir.glob("*.yaml"):
-                    try:
-                        with open(app_file) as f:
-                            app_data = yaml.safe_load(f) or {}
-                        # Only include if this app belongs to the specified host
-                        if app_data.get("host") == host_name:
-                            apps.add(app_file.stem)
-                    except Exception:
-                        continue  # Skip invalid files
-
-        # 2. Get apps from host YAML (legacy embedded format)
-        try:
-            host_config = self.load_host_config(host_name)
-            if "apps" in host_config:
-                apps.update(host_config["apps"].keys())
-        except FileNotFoundError:
-            # Host doesn't exist - only return apps from individual files
-            pass
-
-        return sorted(list(apps))
+        """List all apps on a host. Delegates to AppManager."""
+        return self._apps.list_apps(host_name)
 
     def find_hosts_with_app(self, app_name: str) -> list:
-        """
-        Find all hosts that contain a specific app.
-
-        Args:
-            app_name: App name to search for
-
-        Returns:
-            List of host names that contain the app
-        """
-        hosts_with_app = []
-
-        # Search through all hosts
-        for host_name in self.list_hosts():
-            try:
-                if self.app_exists(host_name, app_name):
-                    hosts_with_app.append(host_name)
-            except Exception:
-                # Skip hosts that can't be loaded
-                continue
-
-        return hosts_with_app
+        """Find all hosts containing an app. Delegates to AppManager."""
+        return self._apps.find_hosts_with_app(app_name)
 
     def load_host_config(self, host_name: str, use_cache: bool = True) -> dict[str, Any]:
         """Load host configuration. Delegates to HostManager."""
         return self._hosts.load(host_name, use_cache=use_cache)
 
     def load_app_config(self, host_name: str, app_name: str) -> dict[str, Any]:
-        """
-        Load app configuration (supports both individual files and embedded format).
-
-        Priority:
-        1. Individual app file (.navig/apps/<name>.yaml) - NEW FORMAT
-        2. Embedded in host YAML (host['apps'][name]) - LEGACY FORMAT
-
-        Args:
-            host_name: Host name
-            app_name: App name
-
-        Returns:
-            App configuration dictionary
-
-        Raises:
-            FileNotFoundError: If host or app not found
-            ValueError: If webserver.type is missing (required field)
-        """
-        # 1. Try loading from individual file (new format) first
-        config_dirs = self._get_config_directories()
-        for config_dir in config_dirs:
-            app_config = self.load_app_from_file(app_name, config_dir)
-            if app_config and app_config.get("host") == host_name:
-                # Validate required field
-                if "webserver" not in app_config or "type" not in app_config.get("webserver", {}):
-                    raise ValueError(
-                        f"App '{app_name}' is missing required field 'webserver.type'. "
-                        f"Please edit the app configuration and add this field."
-                    )
-                return app_config
-
-        # 2. Fall back to legacy format (embedded in host YAML)
-        host_config = self.load_host_config(host_name)
-
-        # Check if this is legacy format (has 'apps' field)
-        if "apps" in host_config:
-            # Legacy format: Extract app from host config
-            if app_name not in host_config["apps"]:
-                raise FileNotFoundError(
-                    f"App '{app_name}' not found on host '{host_name}'. "
-                    f"Available apps: {', '.join(host_config['apps'].keys())}"
-                )
-
-            app_config = host_config["apps"][app_name]
-
-            # Validate webserver.type exists (REQUIRED field)
-            if "webserver" not in app_config or "type" not in app_config.get("webserver", {}):
-                raise ValueError(
-                    f"Missing 'webserver.type' in configuration for app '{app_name}' on host '{host_name}'. "
-                    f"Please add 'webserver.type: nginx' or 'webserver.type: apache2' to your app config."
-                )
-
-            return app_config
-        else:
-            # Legacy format: Entire config is the app
-            # In legacy format, the host config IS the app config
-            # We treat the host_name as both host and app
-
-            # For legacy format, webserver type might be in services.web
-            # We don't enforce webserver.type for legacy format (backward compat)
-            return host_config
+        """Load app configuration. Delegates to AppManager."""
+        return self._apps.load(host_name, app_name)
 
     def save_host_config(self, host_name: str, config: dict[str, Any]):
         """Save host configuration. Delegates to HostManager."""
@@ -1528,155 +1390,30 @@ Context provided with each query:
         app_config: dict[str, Any],
         use_individual_file: bool = True,
     ):
-        """
-        Save app configuration (uses individual files by default, legacy embedded format optional).
-
-        Args:
-            host_name: Host name
-            app_name: App name
-            app_config: App configuration dictionary
-            use_individual_file: If True (default), save to individual file; if False, use legacy embedded format
-
-        Raises:
-            FileNotFoundError: If host doesn't exist
-        """
-        if use_individual_file:
-            # NEW FORMAT: Save to individual file
-            # Ensure 'host' field is set
-            app_config["host"] = host_name
-            app_config["name"] = app_name
-
-            # Use app-specific config dir if available, otherwise global
-            navig_dir = self.app_config_dir if self.app_config_dir else self.base_dir
-            self.save_app_to_file(app_name, app_config, navig_dir)
-        else:
-            # LEGACY FORMAT: Save embedded in host YAML
-            # Load host configuration
-            host_config = self.load_host_config(host_name)
-
-            # Ensure apps field exists
-            if "apps" not in host_config:
-                host_config["apps"] = {}
-
-            # Update app
-            host_config["apps"][app_name] = app_config
-
-            # Save host configuration
-            self.save_host_config(host_name, host_config)
+        """Save app configuration. Delegates to AppManager."""
+        self._apps.save(host_name, app_name, app_config, use_individual_file=use_individual_file)
 
     def delete_host_config(self, host_name: str):
         """Delete host configuration. Delegates to HostManager."""
         self._hosts.delete(host_name)
 
     def delete_app_config(self, host_name: str, app_name: str):
-        """
-        Delete app configuration from host (legacy embedded format) or individual file (new format).
-
-        Args:
-            host_name: Host name
-            app_name: App name to delete
-
-        Raises:
-            FileNotFoundError: If host doesn't exist
-        """
-        # Try deleting from new format (individual file) first
-        config_dirs = self._get_config_directories()
-        deleted = False
-
-        for config_dir in config_dirs:
-            app_file = config_dir / "apps" / f"{app_name}.yaml"
-            if app_file.exists():
-                # Verify this app belongs to the specified host
-                try:
-                    with open(app_file) as f:
-                        app_data = yaml.safe_load(f) or {}
-                    if app_data.get("host") == host_name:
-                        app_file.unlink()
-                        deleted = True
-                        if self.verbose:
-                            from navig import console_helper as ch
-
-                            location = "app" if config_dir == self.app_config_dir else "global"
-                            ch.dim(
-                                f"✓ Deleted app '{app_name}' from {location} config (individual file)"
-                            )
-                        return
-                except Exception:
-                    pass  # Continue to legacy format
-
-        # Fall back to legacy format (embedded in host YAML)
-        if not deleted:
-            host_config = self.load_host_config(host_name)
-
-            # Remove app from embedded format
-            if "apps" in host_config and app_name in host_config["apps"]:
-                del host_config["apps"][app_name]
-                self.save_host_config(host_name, host_config)
-                if self.verbose:
-                    from navig import console_helper as ch
-
-                    ch.dim(
-                        f"✓ Deleted app '{app_name}' from host '{host_name}' (legacy embedded format)"
-                    )
+        """Delete app configuration. Delegates to AppManager."""
+        self._apps.delete(host_name, app_name)
 
     # ============================================================================
-    # NEW: Individual App File Support (v2.1 Architecture)
+    # NEW: Individual App File Support (v2.1 Architecture) - Delegates to AppManager
     # ============================================================================
 
     def get_app_file_path(self, app_name: str, navig_dir: Path | None = None) -> Path:
-        """
-        Get path to individual app file (.navig/apps/<name>.yaml).
-
-        Args:
-            app_name: App name
-            navig_dir: Optional .navig directory path (defaults to current working directory)
-
-        Returns:
-            Path to app file
-        """
-        if navig_dir is None:
-            # Use app-specific config if available, otherwise global
-            navig_dir = self.app_config_dir if self.app_config_dir else self.base_dir
-
-        return navig_dir / "apps" / f"{app_name}.yaml"
+        """Get path to individual app file. Delegates to AppManager."""
+        return self._apps.get_file_path(app_name, navig_dir)
 
     def load_app_from_file(
         self, app_name: str, navig_dir: Path | None = None
     ) -> dict[str, Any] | None:
-        """
-        Load app configuration from individual file (.navig/apps/<name>.yaml).
-
-        Args:
-            app_name: App name
-            navig_dir: Optional .navig directory path
-
-        Returns:
-            App configuration dictionary or None if file doesn't exist
-        """
-        app_file = self.get_app_file_path(app_name, navig_dir)
-
-        if not app_file.exists():
-            return None
-
-        try:
-            with open(app_file) as f:
-                app_config = yaml.safe_load(f) or {}
-
-            # Validate required fields
-            if "name" not in app_config:
-                raise ValueError(f"App file missing required field 'name': {app_file}")
-            if "host" not in app_config:
-                raise ValueError(f"App file missing required field 'host': {app_file}")
-
-            # Validate name matches filename
-            if app_config["name"] != app_name:
-                raise ValueError(
-                    f"App name mismatch: filename is '{app_name}.yaml' but name field is '{app_config['name']}'"
-                )
-
-            return app_config
-        except yaml.YAMLError as e:
-            raise ValueError(f"Invalid YAML in app file {app_file}: {e}") from e
+        """Load app configuration from individual file. Delegates to AppManager."""
+        return self._apps.load_from_file(app_name, navig_dir)
 
     def save_app_to_file(
         self,
@@ -1684,85 +1421,12 @@ Context provided with each query:
         app_config: dict[str, Any],
         navig_dir: Path | None = None,
     ):
-        """
-        Save app configuration to individual file (.navig/apps/<name>.yaml).
-
-        Args:
-            app_name: App name
-            app_config: App configuration dictionary
-            navig_dir: Optional .navig directory path
-
-        Raises:
-            ValueError: If required fields are missing or invalid
-        """
-        # Validate required fields
-        if "name" not in app_config:
-            app_config["name"] = app_name
-        if "host" not in app_config:
-            raise ValueError("App configuration must include 'host' field")
-
-        # Validate name matches
-        if app_config["name"] != app_name:
-            raise ValueError(
-                f"App name mismatch: parameter is '{app_name}' but config['name'] is '{app_config['name']}'"
-            )
-
-        # Get app file path
-        app_file = self.get_app_file_path(app_name, navig_dir)
-
-        # Ensure apps directory exists
-        app_file.parent.mkdir(parents=True, exist_ok=True)
-
-        # Add metadata if not present
-        if "metadata" not in app_config:
-            app_config["metadata"] = {}
-        if "created" not in app_config["metadata"]:
-            app_config["metadata"]["created"] = datetime.now().isoformat()
-        app_config["metadata"]["updated"] = datetime.now().isoformat()
-
-        # Save to file
-        _atomic_write_yaml(app_config, app_file)
-
-        if self.verbose:
-            from navig import console_helper as ch
-
-            location = "app" if navig_dir == self.app_config_dir else "global"
-            ch.dim(f"✓ Saved app '{app_name}' to {location} config (individual file)")
+        """Save app configuration to individual file. Delegates to AppManager."""
+        self._apps.save_to_file(app_name, app_config, navig_dir)
 
     def list_apps_from_files(self, navig_dir: Path | None = None) -> list:
-        """
-        List all apps from .navig/apps/ directory (individual files).
-
-        Args:
-            navig_dir: Optional .navig directory path
-
-        Returns:
-            List of app names from individual files
-        """
-        if navig_dir is None:
-            navig_dir = self.app_config_dir if self.app_config_dir else self.base_dir
-
-        apps_dir = navig_dir / "apps"
-
-        if not apps_dir.exists():
-            return []
-
-        apps = []
-        for app_file in apps_dir.glob("*.yaml"):
-            # Extract app name from filename
-            app_name = app_file.stem
-
-            # Validate it's a valid app file (has 'host' field)
-            try:
-                with open(app_file) as f:
-                    app_data = yaml.safe_load(f) or {}
-                if "host" in app_data:
-                    apps.append(app_name)
-            except Exception:
-                # Skip invalid files
-                continue
-
-        return sorted(apps)
+        """List all apps from individual files. Delegates to AppManager."""
+        return self._apps.list_from_files(navig_dir)
 
     def migrate_apps_to_files(
         self,
@@ -1770,74 +1434,8 @@ Context provided with each query:
         navig_dir: Path | None = None,
         remove_from_host: bool = True,
     ) -> dict[str, Any]:
-        """
-        Migrate apps from host YAML (legacy embedded format) to individual files (new format).
-
-        Args:
-            host_name: Host name to migrate apps from
-            navig_dir: Optional .navig directory path (defaults to current working directory)
-            remove_from_host: If True, remove apps from host YAML after migration
-
-        Returns:
-            Dictionary with migration results:
-            {
-                'migrated': ['app1', 'app2'],
-                'skipped': ['app3'],  # Already exists as individual file
-                'errors': {'app4': 'error message'}
-            }
-        """
-        if navig_dir is None:
-            navig_dir = self.app_config_dir if self.app_config_dir else self.base_dir
-
-        results = {"migrated": [], "skipped": [], "errors": {}}
-
-        try:
-            # Load host configuration
-            host_config = self.load_host_config(host_name)
-
-            # Check if host has embedded apps
-            if "apps" not in host_config or not host_config["apps"]:
-                return results  # No apps to migrate
-
-            # Migrate each app
-            for app_name, app_config in host_config["apps"].items():
-                try:
-                    # Check if individual file already exists
-                    app_file = self.get_app_file_path(app_name, navig_dir)
-                    if app_file.exists():
-                        results["skipped"].append(app_name)
-                        continue
-
-                    # Add required fields
-                    app_config["name"] = app_name
-                    app_config["host"] = host_name
-
-                    # Save to individual file
-                    self.save_app_to_file(app_name, app_config, navig_dir)
-                    results["migrated"].append(app_name)
-
-                except Exception as e:
-                    results["errors"][app_name] = str(e)
-
-            # Remove apps from host YAML if requested
-            if remove_from_host and results["migrated"]:
-                host_config["apps"] = {
-                    name: config
-                    for name, config in host_config["apps"].items()
-                    if name not in results["migrated"]
-                }
-
-                # If no apps left, remove the apps field entirely
-                if not host_config["apps"]:
-                    del host_config["apps"]
-
-                # Save updated host config
-                self.save_host_config(host_name, host_config)
-
-        except Exception as e:
-            results["errors"]["_migration"] = str(e)
-
-        return results
+        """Migrate apps from host YAML to individual files. Delegates to AppManager."""
+        return self._apps.migrate_from_host(host_name, navig_dir, remove_from_host)
 
 
 # =============================================================================
