@@ -891,6 +891,9 @@ class TelegramChannel:
                             chat_id=chat_id,
                             user_id=user_id,
                             text=text,
+                            is_group=is_group,
+                            username=username,
+                            metadata=metadata,
                         ):
                             return
                     except AttributeError:

@@ -35,6 +35,21 @@ navig bot
 - Home UX: `/start` shows a context card; `nav:home` returns to that card.
 - Mentions: commands like `/big@YourBot` are supported through dynamic slash dispatch.
 
+## Natural Language = Commands
+
+Telegram now supports command-equivalent natural language for visible slash commands.
+
+- Safe/read-style intents run immediately (example: "show status" → `/status`).
+- Risky intents require explicit confirmation (`yes` / `cancel`) before execution.
+- Missing-argument intents return command usage help instead of guessing.
+
+Risky commands requiring confirmation include remote execution or state-changing actions such as:
+- `/run`, `/restart`, `/docker` mutating operations
+- `/use`, `/space`, `/intake`, `/plan`
+- moderation commands (`/kick`, `/mute`, `/unmute`, `/search`)
+
+This preserves speed for common checks while preventing accidental destructive actions.
+
 ## Command Reference
 
 Legend:

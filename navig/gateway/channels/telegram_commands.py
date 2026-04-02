@@ -702,6 +702,83 @@ class TelegramCommandsMixin:
         "ask me questions",
         "work for",
     )
+    _NL_COMMAND_TRIGGERS: tuple[str, ...] = (
+        "show",
+        "check",
+        "list",
+        "get",
+        "open",
+        "run",
+        "restart",
+        "switch",
+        "use",
+        "set",
+        "enable",
+        "disable",
+        "start",
+        "stop",
+        "cancel",
+        "convert",
+        "explain",
+        "generate",
+        "remind",
+        "mute",
+        "unmute",
+        "kick",
+        "search",
+        "status",
+        "help",
+    )
+    _NL_AMBIGUOUS_COMMANDS: set[str] = {
+        "use",
+        "run",
+        "time",
+        "plan",
+        "mode",
+        "auto",
+        "big",
+        "small",
+        "coder",
+        "pause",
+        "skip",
+        "profile",
+    }
+    _NL_RISKY_COMMANDS: set[str] = {
+        "run",
+        "restart",
+        "docker",
+        "use",
+        "space",
+        "intake",
+        "plan",
+        "kick",
+        "mute",
+        "unmute",
+        "search",
+    }
+    _NL_REQUIRED_ARGS_COMMANDS: set[str] = {
+        "logs",
+        "tables",
+        "use",
+        "run",
+        "plan",
+        "format",
+        "think",
+        "refine",
+        "dns",
+        "ssl",
+        "whois",
+        "currency",
+        "choice",
+        "kick",
+        "mute",
+        "unmute",
+        "search",
+        "persona",
+        "explain_ai",
+        "imagegen",
+        "remindme",
+    }
     _NL_DOMAIN_HINTS: dict[str, str] = {
         "money": "finance",
         "budget": "finance",
@@ -1528,11 +1605,165 @@ class TelegramCommandsMixin:
 
         return None, None
 
+    @staticmethod
+    def _nl_phrase_aliases() -> dict[str, tuple[str, ...]]:
+        return {
+            "status": ("system status", "show status", "check status"),
+            "help": ("help", "what can you do", "show commands"),
+            "hosts": ("list hosts", "show hosts", "configured hosts"),
+            "models": ("model routing", "show models", "routing table"),
+            "providers": ("show providers", "provider hub"),
+            "spaces": ("list spaces", "show spaces"),
+            "myreminders": ("my reminders", "show reminders", "list reminders"),
+            "cancelreminder": ("cancel reminder", "remove reminder"),
+            "voiceon": ("enable voice", "turn voice on"),
+            "voiceoff": ("disable voice", "turn voice off"),
+            "restart": ("restart daemon", "restart service", "restart container"),
+            "trace": ("show trace", "trace debug", "recent trace"),
+            "briefing": ("daily briefing", "show briefing"),
+            "ping": ("ping", "heartbeat", "alive check"),
+            "weather": ("weather", "weather in"),
+            "remindme": ("remind me", "set reminder"),
+            "choice": ("choose between", "pick one", "make a choice"),
+            "skill": ("run skill", "list skills", "skill list"),
+            "db": ("list databases", "show databases"),
+        }
+
+    def _extract_nl_args(self, raw_text: str, phrase: str) -> str:
+        match = re.search(re.escape(phrase), raw_text, flags=re.IGNORECASE)
+        if not match:
+            return ""
+        tail = raw_text[match.end() :].strip()
+        tail = re.sub(r"^(for|to|with|in|on)\s+", "", tail, flags=re.IGNORECASE)
+        return tail.strip(" .,!?:;")
+
+    def _resolve_nl_command_intent(self, text: str) -> dict[str, Any] | None:
+        lowered = (text or "").strip().lower()
+        if not lowered or lowered.startswith("/"):
+            return None
+
+        has_trigger = any(re.search(rf"\b{re.escape(w)}\b", lowered) for w in self._NL_COMMAND_TRIGGERS)
+        alias_map = self._nl_phrase_aliases()
+
+        best: dict[str, Any] | None = None
+
+        for entry in _iter_unique_registry(visible_only=True):
+            command = entry.command
+            phrases = {command, command.replace("_", " ")}
+            phrases.update(alias_map.get(command, ()))
+
+            for phrase in sorted(phrases, key=len, reverse=True):
+                if not phrase:
+                    continue
+                if not re.search(rf"\b{re.escape(phrase)}\b", lowered):
+                    continue
+
+                starts = lowered.startswith(phrase)
+                if command in self._NL_AMBIGUOUS_COMMANDS and not starts and not has_trigger:
+                    continue
+
+                args = self._extract_nl_args(text, phrase)
+                score = len(phrase) + (4 if starts else 0) + (1 if has_trigger else 0)
+
+                candidate = {
+                    "command": command,
+                    "args": args,
+                    "risk": "risky" if command in self._NL_RISKY_COMMANDS else "safe",
+                    "usage": entry.usage or f"/{command}",
+                    "score": score,
+                }
+                if not best or score > int(best.get("score", 0)):
+                    best = candidate
+
+        if not best:
+            return None
+
+        command = str(best.get("command") or "")
+        args = str(best.get("args") or "")
+        if command in self._NL_REQUIRED_ARGS_COMMANDS and not args:
+            best["missing_args"] = True
+        return best
+
+    async def _execute_nl_registry_command(
+        self,
+        chat_id: int,
+        user_id: int,
+        command: str,
+        args: str,
+        text: str,
+        *,
+        is_group: bool = False,
+        username: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        import inspect
+
+        cmd = (command or "").strip().lower()
+        if not cmd:
+            return
+
+        business_chat_only = {"kick", "mute", "unmute", "search"}
+        if cmd in business_chat_only:
+            if not is_group:
+                await self.send_message(
+                    chat_id,
+                    "This command is only available in business chats (groups/supergroups).",
+                    parse_mode=None,
+                )
+                return
+            if hasattr(self, "_is_group_admin") and not await self._is_group_admin(chat_id, user_id):
+                await self.send_message(
+                    chat_id,
+                    "You need group admin rights for this command.",
+                    parse_mode=None,
+                )
+                return
+
+        slash_text = f"/{cmd}" + (f" {args}" if args else "")
+
+        entry = next((e for e in _iter_unique_registry() if e.command == cmd), None)
+        if not entry:
+            await self.send_message(chat_id, "Command not available.", parse_mode=None)
+            return
+
+        if entry.handler:
+            method = getattr(self, entry.handler, None)
+            if method is not None:
+                call_ctx = {
+                    "chat_id": chat_id,
+                    "user_id": user_id,
+                    "username": username,
+                    "metadata": metadata or {},
+                    "is_group": is_group,
+                    "text": slash_text,
+                }
+                try:
+                    sig = inspect.signature(method)
+                    kwargs = {k: v for k, v in call_ctx.items() if k in sig.parameters}
+                except (ValueError, TypeError):
+                    kwargs = {"chat_id": chat_id}
+                await method(**kwargs)
+                return
+
+        navig_cmd = self._match_cli_command(slash_text)
+        if navig_cmd:
+            await self._handle_cli_command(chat_id, user_id, metadata or {}, navig_cmd)
+            return
+
+        await self.send_message(
+            chat_id,
+            f"This command is not executable via natural language yet: `/{cmd}`",
+            parse_mode="Markdown",
+        )
+
     async def _handle_natural_language_request(
         self,
         chat_id: int,
         user_id: int,
         text: str,
+        is_group: bool = False,
+        username: str = "",
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         from navig.store.runtime import get_runtime_store
 
@@ -1574,14 +1805,100 @@ class TelegramCommandsMixin:
                 )
             )
             return True
+
+        resolved = self._resolve_nl_command_intent(text)
+        if not resolved:
+            return False
+
+        command = str(resolved.get("command") or "")
+        args = str(resolved.get("args") or "")
+        usage = str(resolved.get("usage") or f"/{command}")
+
+        if resolved.get("missing_args"):
+            await self.send_message(
+                chat_id,
+                f"I can run this as `/{command}`, but it needs arguments.\nUsage: `{usage}`",
+                parse_mode="Markdown",
+            )
+            return True
+
+        if str(resolved.get("risk") or "safe") == "risky":
+            store = get_runtime_store()
+            state = store.get_ai_state(user_id) or {}
+            context = dict(state.get("context") or {})
+            pending_id = datetime.now(timezone.utc).isoformat()
+            context["nl_pending"] = {
+                "active": True,
+                "id": pending_id,
+                "intent": "command",
+                "kind": "command",
+                "command": command,
+                "args": args,
+                "created_at": pending_id,
+            }
+            self._runtime_state_with_context(user_id, chat_id, context)
+
+            preview = f"/{command}" + (f" {args}" if args else "")
+            await self.send_message(
+                chat_id,
+                (
+                    "⚠️ Risky action detected from natural language.\n"
+                    f"Planned command: `{preview}`\n"
+                    "Reply `yes` to run now or `cancel` to stop."
+                ),
+                parse_mode="Markdown",
+                keyboard=[
+                    [
+                        {"text": "✅ Yes now", "callback_data": "nl_yes"},
+                        {"text": "🛑 Cancel", "callback_data": "nl_cancel"},
+                    ]
+                ],
+            )
+            return True
+
+        await self._execute_nl_registry_command(
+            chat_id=chat_id,
+            user_id=user_id,
+            command=command,
+            args=args,
+            text=text,
+            is_group=is_group,
+            username=username,
+            metadata=metadata,
+        )
+        return True
         return False
 
-    async def _run_nl_intent(self, chat_id: int, user_id: int, intent: str, space: str) -> None:
+    async def _run_nl_intent(
+        self,
+        chat_id: int,
+        user_id: int,
+        intent: str,
+        space: str,
+        *,
+        command: str = "",
+        args: str = "",
+        is_group: bool = False,
+        username: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         if intent == "space":
             await self._handle_space(chat_id=chat_id, user_id=user_id, text=f"/space {space}")
             return
         if intent == "intake":
             await self._handle_intake(chat_id=chat_id, user_id=user_id, text=f"/intake {space}")
+            return
+        if intent == "command":
+            await self._execute_nl_registry_command(
+                chat_id=chat_id,
+                user_id=user_id,
+                command=command,
+                args=args,
+                text="",
+                is_group=is_group,
+                username=username,
+                metadata=metadata,
+            )
 
     async def _handle_nl_pending_reply(self, chat_id: int, user_id: int, text: str) -> bool:
         from navig.store.runtime import get_runtime_store
@@ -1606,9 +1923,18 @@ class TelegramCommandsMixin:
         if lowered in {"yes", "ok", "go", "proceed", "run"}:
             intent = str(pending.get("intent") or "")
             space = str(pending.get("space") or "")
+            command = str(pending.get("command") or "")
+            args = str(pending.get("args") or "")
             context["nl_pending"] = {"active": False}
             self._runtime_state_with_context(user_id, chat_id, context)
-            await self._run_nl_intent(chat_id=chat_id, user_id=user_id, intent=intent, space=space)
+            await self._run_nl_intent(
+                chat_id=chat_id,
+                user_id=user_id,
+                intent=intent,
+                space=space,
+                command=command,
+                args=args,
+            )
             return True
 
         await self.send_message(
@@ -1639,9 +1965,18 @@ class TelegramCommandsMixin:
 
         intent = str(pending.get("intent") or "")
         space = str(pending.get("space") or "")
+        command = str(pending.get("command") or "")
+        args = str(pending.get("args") or "")
         context["nl_pending"] = {"active": False}
         self._runtime_state_with_context(user_id, chat_id, context)
-        await self._run_nl_intent(chat_id=chat_id, user_id=user_id, intent=intent, space=space)
+        await self._run_nl_intent(
+            chat_id=chat_id,
+            user_id=user_id,
+            intent=intent,
+            space=space,
+            command=command,
+            args=args,
+        )
 
     async def _handle_nl_callback(
         self,
@@ -1882,6 +2217,8 @@ class TelegramCommandsMixin:
     ) -> None:
         """Delegate /restart from dynamic slash dispatch to TelegramChannel implementation."""
         restart_arg = text.strip()[len("/restart") :].strip() if text else ""
+        if not restart_arg:
+            restart_arg = "daemon"
         if hasattr(self, "_handle_restart"):
             await self._handle_restart(chat_id, user_id, metadata or {}, restart_arg)
             return

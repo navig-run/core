@@ -4526,6 +4526,10 @@ navig start --foreground     # See live logs
 Canonical Telegram command reference (complete list, options, aliases, callback actions):
 - `docs/features/TELEGRAM.md`
 
+Natural-language parity:
+- In Telegram, visible slash commands can also be triggered via natural language intents.
+- Risky intents require explicit confirmation (`yes`/`cancel`) before execution.
+
 **Command shortcuts:**
 - `/plans` → `plans status`
 - `/plan <goal>` → `plans add <goal>`

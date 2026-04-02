@@ -383,6 +383,70 @@ async def test_natural_language_health_improvement_starts_health_intake(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_natural_language_status_runs_command_immediately(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+    monkeypatch.setattr("navig.spaces.get_default_space", lambda: "default")
+    monkeypatch.setattr("navig.spaces.progress.collect_spaces_progress", lambda: [])
+    monkeypatch.setattr(
+        "navig.spaces.progress.format_spaces_progress_lines",
+        lambda rows, max_items=5: [],
+    )
+
+    handled = await bot._handle_natural_language_request(123, 456, "please show status")
+    assert handled is True
+    assert any("NAVIG Status" in m[1] for m in bot.messages)
+
+
+@pytest.mark.asyncio
+async def test_natural_language_risky_restart_requires_confirmation(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+    ran: list[str] = []
+
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    async def _fake_restart(chat_id, user_id, metadata, arg):
+        ran.append(arg)
+        await bot.send_message(chat_id, f"Restarted: {arg}", parse_mode=None)
+
+    bot._handle_restart = _fake_restart
+
+    handled = await bot._handle_natural_language_request(
+        123,
+        456,
+        "please restart daemon",
+    )
+    assert handled is True
+    assert any("Risky action detected" in m[1] for m in bot.messages)
+    assert ran == []
+
+    confirmed = await bot._handle_nl_pending_reply(123, 456, "yes")
+    assert confirmed is True
+    assert ran == ["daemon"]
+
+
+@pytest.mark.asyncio
+async def test_natural_language_command_missing_args_shows_usage(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    handled = await bot._handle_natural_language_request(123, 456, "can you search")
+    assert handled is True
+    assert any("Usage:" in m[1] for m in bot.messages)
+
+
+@pytest.mark.asyncio
 async def test_nl_callback_yes_and_cancel(monkeypatch, tmp_path):
     bot = _make_dummy_bot()
     fake_cfg = _FakeConfigManager(tmp_path / "global")

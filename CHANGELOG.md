@@ -46,6 +46,12 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Added safe fallback handling for `task:*` callback actions in `telegram_keyboards.py` to prevent callback crashes when task controls are unavailable.
   - Replaced `docs/features/TELEGRAM.md` with a full, registry-aligned Telegram command reference including options, aliases, and inline callback-action families.
   - Updated handbook Telegram section to remove stale Main Menu wording and point to the canonical Telegram command reference.
+- **Telegram command UX overhaul (Phase 7 — natural-language command parity):**
+  - Added generalized NL-to-command resolver for Telegram so visible slash commands can be triggered via natural language (English-first, deterministic matching).
+  - NL execution now routes through existing command handlers/CLI templates instead of duplicating command logic.
+  - Added strict confirmation gate for risky NL actions (`/run`, `/restart`, context-mutating operations, moderation commands): users must confirm with `yes`/`cancel` before execution.
+  - Added usage-guidance fallback for NL intents that map to commands requiring arguments.
+  - Updated Telegram docs to describe NL command parity and confirmation behavior.
   - `/models big|small|coder|auto` — passing a tier name switches immediately (e.g. `/models big` = same as `/big`). Aliases `/model`, `/routing`, `/router` also accept the tier arg.
   - `/providers <name>` — shows a focused card for the named provider with config guidance; falls back to full hub when no arg given.
   - `/spaces <name>` — quick-switches to a space when a name is passed, skipping the list view.
