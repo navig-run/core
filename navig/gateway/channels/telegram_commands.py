@@ -412,17 +412,26 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     ),
     SlashCommandEntry(
         "big", "Force big model for next message", category="model",
+        handler="_handle_tier_override",
         usage="/big  (then send your message)",
     ),
     SlashCommandEntry(
         "small", "Force small model for next message", category="model",
+        handler="_handle_tier_override",
         usage="/small  (then send your message)",
     ),
     SlashCommandEntry(
         "coder", "Force coder model for next message", category="model",
+        handler="_handle_tier_override",
         usage="/coder  (then send your message)",
     ),
-    SlashCommandEntry("auto", "Reset to automatic model selection", category="model"),
+    SlashCommandEntry(
+        "auto",
+        "Reset to automatic model selection",
+        handler="_handle_tier_override",
+        category="model",
+        usage="/auto  (then send your message)",
+    ),
     # --- Voice & AI settings -------------------------------------------------
     SlashCommandEntry(
         "voice", "Voice & TTS settings", handler="_handle_voice_menu", category="voice"
@@ -1208,13 +1217,15 @@ class TelegramCommandsMixin:
                 marker = "▸"
             lines.append(f"{marker} `{name}`")
         lines.append("\nUse `/space <name>` or choose below.")
-        keyboard = [
-            [
-                {"text": "🔙 Back", "callback_data": "nav:back"},
-                {"text": "🏠 Main Menu", "callback_data": "nav:home"},
-            ],
-            [{"text": "🧭 Start Intake", "callback_data": "nav:open:intake"}],
-        ]
+        keyboard = [[{"text": "🧭 Start Intake", "callback_data": "nav:open:intake"}]]
+        if message_id:
+            keyboard.insert(
+                0,
+                [
+                    {"text": "🔙 Back", "callback_data": "nav:back"},
+                    {"text": "🏠 Home", "callback_data": "nav:home"},
+                ],
+            )
         if message_id:
             await self.edit_message(
                 chat_id,
@@ -1224,9 +1235,7 @@ class TelegramCommandsMixin:
                 keyboard=keyboard,
             )
             return
-        sent = await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown", keyboard=keyboard)
-        if sent and isinstance(sent, dict):
-            self._get_navigation_state(chat_id)["message_id"] = sent.get("message_id")
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown", keyboard=keyboard)
 
     async def _handle_space(self, chat_id: int, user_id: int, text: str = "") -> None:
         from navig.commands.space import _set_active_space, _spaces_dir
@@ -1743,6 +1752,31 @@ class TelegramCommandsMixin:
 
         await self.send_message(chat_id, mood.transition_message, parse_mode=None)
 
+    async def _handle_tier_override(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        text: str = "",
+    ) -> None:
+        """Handle /big /small /coder /auto from dynamic slash dispatch."""
+        token = (text or "").strip().split(" ", 1)[0].lower()
+        cmd = token.split("@", 1)[0]
+        if cmd not in {"/big", "/small", "/coder", "/auto"}:
+            await self.send_message(
+                chat_id,
+                "Use `/big`, `/small`, `/coder`, or `/auto`.",
+                parse_mode="Markdown",
+            )
+            return
+        if not hasattr(self, "_handle_tier_command"):
+            await self.send_message(
+                chat_id,
+                "Tier command handler unavailable in this channel build.",
+                parse_mode=None,
+            )
+            return
+        await self._handle_tier_command(chat_id, user_id, cmd)
+
     # -- Model routing UI ------------------------------------------------------
 
     async def _probe_bridge_grid(self) -> tuple[bool, str]:
@@ -1922,11 +1956,14 @@ class TelegramCommandsMixin:
                     {"text": "- Full table", "callback_data": "ms_info"},
                     {"text": "- Providers ->", "callback_data": "ms_providers"},
                 ],
-                [
-                    {"text": "🔙 Back", "callback_data": "nav:back"},
-                    {"text": "🏠 Main Menu", "callback_data": "nav:home"},
-                ],
             ]
+            if message_id:
+                keyboard.append(
+                    [
+                        {"text": "🔙 Back", "callback_data": "nav:back"},
+                        {"text": "🏠 Home", "callback_data": "nav:home"},
+                    ]
+                )
             text_payload = "\n".join(lines)
             if message_id:
                 await self.edit_message(
@@ -1937,9 +1974,7 @@ class TelegramCommandsMixin:
                     keyboard=keyboard,
                 )
                 return
-            sent = await self.send_message(chat_id, text_payload, keyboard=keyboard)
-            if sent and isinstance(sent, dict):
-                self._get_navigation_state(chat_id)["message_id"] = sent.get("message_id")
+            await self.send_message(chat_id, text_payload, keyboard=keyboard)
 
         except Exception as e:
             await self.send_message(chat_id, f"- Could not read routing info: {e}")
@@ -2136,12 +2171,13 @@ class TelegramCommandsMixin:
         keyboard_rows.append(
             [{"text": f"{noai_prefix}🚫 No AI  — raw mode", "callback_data": "prov_noai"}]
         )
-        keyboard_rows.append(
-            [
-                {"text": "🔙 Back", "callback_data": "nav:back"},
-                {"text": "🏠 Main Menu", "callback_data": "nav:home"},
-            ]
-        )
+        if message_id:
+            keyboard_rows.append(
+                [
+                    {"text": "🔙 Back", "callback_data": "nav:back"},
+                    {"text": "🏠 Home", "callback_data": "nav:home"},
+                ]
+            )
         keyboard_rows.append([{"text": "✖ Close", "callback_data": "prov_close"}])
 
         text_payload = "\n".join(lines)

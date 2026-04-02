@@ -160,3 +160,40 @@ async def test_noai_non_command_text_shows_guidance_instead_of_cli(tmp_path: Pat
     await channel._process_update(update)
 
     assert any("No-AI mode expects a command" in msg for msg in captured)
+
+
+@pytest.mark.asyncio
+async def test_tier_command_with_bot_mention_uses_dynamic_registry(tmp_path: Path, monkeypatch):
+    storage = tmp_path / "sessions"
+    sm = SessionManager(storage_dir=storage)
+
+    monkeypatch.setattr("navig.gateway.channels.telegram.HAS_SESSIONS", True)
+    monkeypatch.setattr("navig.gateway.channels.telegram.get_session_manager", lambda: sm)
+
+    channel = TelegramChannel(
+        bot_token="123:FAKE",
+        allowed_users=[42],
+        on_message=lambda *args, **kwargs: None,
+    )
+
+    sent: list[str] = []
+
+    async def _fake_send_message(chat_id: int, text: str, **kwargs):
+        sent.append(text)
+        return {"ok": True}
+
+    channel.send_message = _fake_send_message
+
+    update = {
+        "message": {
+            "chat": {"id": 42, "type": "private"},
+            "from": {"id": 42, "username": "tester"},
+            "text": "/big@navig_test_bot",
+            "message_id": 102,
+        }
+    }
+
+    await channel._process_update(update)
+
+    assert channel._get_user_tier_pref(42, 42) == "big"
+    assert any("Big" in msg for msg in sent)
