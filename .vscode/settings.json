@@ -1,0 +1,19 @@
+{
+  "githubIssues.useLabels": true,
+  "githubPullRequests.queries": [
+    {
+      "query": "is:open repo:navig-run/core",
+      "label": "Waiting for Review"
+    }
+  ],
+  "githubIssues.queries": [
+    {
+      "query": "is:open repo:navig-run/core",
+      "label": "🔥 Navig Core Issues (Upstream)"
+    },
+    {
+      "query": "author:Kalcinator repo:Kalcinator/core",
+      "label": "🌱 My Issues (Drafts)"
+    }
+  ]
+}
