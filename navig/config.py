@@ -23,6 +23,7 @@ from navig.core.yaml_io import log_shadow_anomaly
 from navig.core.hosts import HostManager
 from navig.core.apps import AppManager
 from navig.core.context import ContextManager
+from navig.core.execution import ExecutionSettings
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,7 @@ class ConfigManager:
         self._hosts = HostManager(self)
         self._apps = AppManager(self)
         self._context = ContextManager(self)
+        self._execution = ExecutionSettings(self)
 
     def _resolve_paths(self):
         if self._paths_resolved:
@@ -719,109 +721,28 @@ Context provided with each query:
         return AgentConfig.from_dict(agent_dict)
 
     # ========================================================================
-    # EXECUTION MODE CONFIGURATION
+    # EXECUTION MODE CONFIGURATION - delegates to ExecutionSettings
     # ========================================================================
 
     def get_execution_mode(self) -> str:
-        """
-        Get the current execution mode.
-
-        Checks project-local config first, then falls back to global config.
-
-        Returns:
-            'interactive' (default) or 'auto'
-        """
-        # Check project-local config first
-        local_config_file = Path.cwd() / ".navig" / "config.yaml"
-        if local_config_file.exists():
-            try:
-                with open(local_config_file, encoding="utf-8") as f:
-                    local_config = yaml.safe_load(f) or {}
-                    execution = local_config.get("execution", {})
-                    if "mode" in execution:
-                        return execution["mode"]
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
-
-        # Fall back to global config
-        execution = self.global_config.get("execution", {})
-        return execution.get("mode", "interactive")
+        """Get the current execution mode. Delegates to ExecutionSettings."""
+        return self._execution.get_mode()
 
     def set_execution_mode(self, mode: str) -> None:
-        """
-        Set the execution mode.
-
-        Args:
-            mode: 'interactive' or 'auto'
-
-        Raises:
-            ValueError: If mode is not valid
-        """
-        valid_modes = ["interactive", "auto"]
-        if mode not in valid_modes:
-            raise ValueError(f"Invalid mode '{mode}'. Must be one of: {', '.join(valid_modes)}")
-
-        if "execution" not in self.global_config:
-            self.global_config["execution"] = {}
-        self.global_config["execution"]["mode"] = mode
-        self._save_global_config(self.global_config)
+        """Set the execution mode. Delegates to ExecutionSettings."""
+        self._execution.set_mode(mode)
 
     def get_confirmation_level(self) -> str:
-        """
-        Get the current confirmation level.
-
-        Checks project-local config first, then falls back to global config.
-
-        Returns:
-            'critical', 'standard' (default), or 'verbose'
-        """
-        # Check project-local config first
-        local_config_file = Path.cwd() / ".navig" / "config.yaml"
-        if local_config_file.exists():
-            try:
-                with open(local_config_file, encoding="utf-8") as f:
-                    local_config = yaml.safe_load(f) or {}
-                    execution = local_config.get("execution", {})
-                    if "confirmation_level" in execution:
-                        return execution["confirmation_level"]
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
-
-        # Fall back to global config
-        execution = self.global_config.get("execution", {})
-        return execution.get("confirmation_level", "standard")
+        """Get the current confirmation level. Delegates to ExecutionSettings."""
+        return self._execution.get_confirmation_level()
 
     def set_confirmation_level(self, level: str) -> None:
-        """
-        Set the confirmation level.
-
-        Args:
-            level: 'critical', 'standard', or 'verbose'
-
-        Raises:
-            ValueError: If level is not valid
-        """
-        valid_levels = ["critical", "standard", "verbose"]
-        if level not in valid_levels:
-            raise ValueError(f"Invalid level '{level}'. Must be one of: {', '.join(valid_levels)}")
-
-        if "execution" not in self.global_config:
-            self.global_config["execution"] = {}
-        self.global_config["execution"]["confirmation_level"] = level
-        self._save_global_config(self.global_config)
+        """Set the confirmation level. Delegates to ExecutionSettings."""
+        self._execution.set_confirmation_level(level)
 
     def get_execution_settings(self) -> dict[str, str]:
-        """
-        Get all execution settings.
-
-        Returns:
-            Dict with 'mode' and 'confirmation_level' keys
-        """
-        execution = self.global_config.get("execution", {})
-        return {
-            "mode": execution.get("mode", "interactive"),
-            "confirmation_level": execution.get("confirmation_level", "standard"),
-        }
+        """Get all execution settings. Delegates to ExecutionSettings."""
+        return self._execution.get_settings()
 
     def get_active_server(self) -> str | None:
         """
