@@ -20,6 +20,8 @@ Tool groups
 
 ``register_background_task_tools()`` — background_task_start, _status, _output, _kill
 
+``register_worktree_tools()``       — worktree_create, _list, _merge, _remove
+
 ``register_all_tools()``    — convenience wrapper that calls all of the above
 
 Usage::
@@ -148,6 +150,26 @@ def register_background_task_tools() -> None:
         logger.debug("Background task tools not available (skip): %s", exc)
 
 
+def register_worktree_tools() -> None:
+    """Register worktree_create, _list, _merge, _remove tools (FB-05)."""
+    try:
+        from navig.agent.agent_tool_registry import _AGENT_REGISTRY
+        from navig.agent.tools.worktree_tools import (
+            WorktreeCreateTool,
+            WorktreeListTool,
+            WorktreeMergeTool,
+            WorktreeRemoveTool,
+        )
+
+        _AGENT_REGISTRY.register(WorktreeCreateTool(), toolset="worktree")
+        _AGENT_REGISTRY.register(WorktreeListTool(), toolset="worktree")
+        _AGENT_REGISTRY.register(WorktreeMergeTool(), toolset="worktree")
+        _AGENT_REGISTRY.register(WorktreeRemoveTool(), toolset="worktree")
+        logger.debug("Agent worktree tools registered")
+    except ImportError as exc:
+        logger.debug("Worktree tools not available (skip): %s", exc)
+
+
 def register_all_tools() -> None:
     """Register all available built-in agent tools.
 
@@ -163,6 +185,7 @@ def register_all_tools() -> None:
         ("devops", register_devops_tools),
         ("plan_context", register_plan_context_tools),
         ("background_task", register_background_task_tools),
+        ("worktree", register_worktree_tools),
     ]:
         try:
             fn()

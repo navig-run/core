@@ -235,6 +235,7 @@ cython_debug/               # Cython debug symbols
 
 # NAVIG runtime files inside
 .navig/
+.navig_worktrees/
 .backups/
 node_modules
 
@@ -339,6 +340,7 @@ navig-community/
 
 # Runtime store - live content lives in ~/.navig/store/, not in VCS
 store/
+store/.dev/
 
 # icons/ was moved to .navig/brand/ (tracked); ignore any root-level recreation
 icons/
