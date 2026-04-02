@@ -52,6 +52,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Added strict confirmation gate for risky NL actions (`/run`, `/restart`, context-mutating operations, moderation commands): users must confirm with `yes`/`cancel` before execution.
   - Added usage-guidance fallback for NL intents that map to commands requiring arguments.
   - Updated Telegram docs to describe NL command parity and confirmation behavior.
+  - Added deterministic NL parity coverage tests to keep visible slash commands mapped in NL resolution (`tests/test_telegram_nl_registry_coverage.py`).
   - `/models big|small|coder|auto` — passing a tier name switches immediately (e.g. `/models big` = same as `/big`). Aliases `/model`, `/routing`, `/router` also accept the tier arg.
   - `/providers <name>` — shows a focused card for the named provider with config guidance; falls back to full hub when no arg given.
   - `/spaces <name>` — quick-switches to a space when a name is passed, skipping the list view.
