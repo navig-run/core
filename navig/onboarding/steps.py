@@ -393,6 +393,14 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
 
         providers = _load_providers()
 
+        # Read existing configured provider (if any) to show in reconfigure mode.
+        current_provider_id = ""
+        if marker.exists():
+            try:
+                current_provider_id = marker.read_text(encoding="utf-8").strip()
+            except OSError:
+                pass
+
         sys.stdout.write("\n  Choose your AI provider:\n")
         for i, p in enumerate(providers, start=1):
             local_tag = (
@@ -400,12 +408,16 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
                 if not getattr(p, "requires_key", True)
                 else ""
             )
-            sys.stdout.write(f"    [{i}] {p.display_name}{local_tag}\n")
-        sys.stdout.write("\n")
+            current_tag = "  ← current" if p.id == current_provider_id else ""
+            sys.stdout.write(f"    [{i}] {p.display_name}{local_tag}{current_tag}\n")
+        skip_hint = " (keep existing)" if current_provider_id else " for now"
+        sys.stdout.write(f"    [s] Skip{skip_hint}\n\n")
         sys.stdout.flush()
 
         try:
-            choice_raw = typer.prompt("  Provider", default="1")
+            choice_raw = typer.prompt("  Provider", default="s")
+            if choice_raw.strip().lower() in ("s", "skip", ""):
+                return StepResult(status="skipped", output={"reason": "skipped by user"})
             idx = int(choice_raw.strip()) - 1
             if idx < 0 or idx >= len(providers):
                 raise ValueError("out of range")
@@ -880,21 +892,40 @@ def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
 
         import typer
 
+        # Read existing configured provider (if any) to show in reconfigure mode.
+        current_search_provider = ""
+        try:
+            import yaml  # type: ignore[import]
+
+            _cfg_path = navig_dir / "config.yaml"
+            if _cfg_path.exists():
+                _cfg = yaml.safe_load(_cfg_path.read_text(encoding="utf-8")) or {}
+                current_search_provider = str(
+                    ((_cfg.get("web") or {}).get("search") or {}).get("provider") or ""
+                ).strip()
+        except (OSError, yaml.YAMLError):
+            pass
+
         sys.stdout.write("\n  Search provider\n\n")
-        for idx, (_, label, _) in enumerate(_WEB_SEARCH_PROVIDER_CATALOG, start=1):
-            sys.stdout.write(f"    [{idx}] {label}\n")
-        sys.stdout.write("    [s] Skip for now\n\n")
+        for idx, (pid, label, _) in enumerate(_WEB_SEARCH_PROVIDER_CATALOG, start=1):
+            current_tag = "  ← current" if pid == current_search_provider else ""
+            sys.stdout.write(f"    [{idx}] {label}{current_tag}\n")
+        skip_hint = " (keep existing)" if current_search_provider else " for now"
+        sys.stdout.write(f"    [s] Skip{skip_hint}\n\n")
         sys.stdout.flush()
 
         try:
-            choice_raw = typer.prompt("  Provider", default="1").strip().lower()
+            choice_raw = typer.prompt("  Provider", default="s").strip().lower()
         except KeyboardInterrupt:
             raise
         except EOFError:
             choice_raw = "s"
 
         if choice_raw in ("s", "skip", ""):
-            _persist_provider("auto")
+            # In reconfigure mode, preserve the existing provider value.
+            # On fresh init, fall back to "auto" so the config entry exists.
+            if not current_search_provider:
+                _persist_provider("auto")
             return StepResult(status="skipped", output={"reason": "skipped by user"})
 
         try:
