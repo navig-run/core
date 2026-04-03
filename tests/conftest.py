@@ -291,7 +291,6 @@ def _isolate_navig_config_dir(tmp_path_factory):
         base_tmp = tmp_path_factory.getbasetemp()
     except PermissionError:
         # If getbasetemp() fails due to locked files, use a fresh directory
-        import tempfile
         base_tmp = Path(tempfile.mkdtemp(prefix="navig_pytest_"))
 
     # Clean up any leftover navig_cfg_isolated* directories
@@ -302,7 +301,14 @@ def _isolate_navig_config_dir(tmp_path_factory):
     except PermissionError:
         pass  # Best-effort cleanup — proceed anyway
 
-    isolated = tmp_path_factory.mktemp("navig_cfg_isolated")
+    # Use tempfile.mkdtemp instead of tmp_path_factory.mktemp("navig_cfg_isolated")
+    # because pytest may try to recycle/remove older numbered dirs with the same
+    # prefix (e.g. navig_cfg_isolated0), which fails on Windows if a stale
+    # SQLite handle still holds a lock from a prior crashed run.
+    try:
+        isolated = Path(tempfile.mkdtemp(prefix="navig_cfg_isolated_", dir=str(base_tmp)))
+    except Exception:  # noqa: BLE001
+        isolated = Path(tempfile.mkdtemp(prefix="navig_cfg_isolated_"))
     old_value = os.environ.get("NAVIG_CONFIG_DIR")
     os.environ["NAVIG_CONFIG_DIR"] = str(isolated)
     yield isolated
