@@ -2,16 +2,15 @@
 plugins/nlp_aliases.py — Multilingual NLP trigger aliases (EN / FR / RU).
 Passive: reply to any message (or write inline) with a trigger word.
 Skill  : skills/nlp_aliases.md
-AI     : uses OPENROUTER_API_KEY or OPENAI_API_KEY from env / ~/.navig/config.yaml
+AI     : delegates to navig.llm_generate.llm_generate() which transparently
+         resolves credentials from the NAVIG Vault, config manager, and the
+         LLM mode router (supports OpenRouter, OpenAI, Ollama, NVIDIA NIMs,
+         and any other configured provider — including local instances).
 """
 
 from __future__ import annotations
 
-import json
-import os
 import re
-import urllib.request
-from pathlib import Path
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -102,54 +101,23 @@ def _detect(text: str):
     return None
 
 
-def _ai_key():
+def _call_llm(prompt: str) -> str | None:
+    """
+    Delegate to navig.llm_generate.llm_generate() which transparently resolves
+    credentials via the NAVIG Vault and routes through the LLM mode router.
+    Supports all configured providers: OpenRouter, OpenAI, Ollama, NVIDIA NIMs, etc.
+
+    Returns the response text, or None if the call fails or no provider is available.
+    """
     try:
-        import yaml
+        from navig.llm_generate import llm_generate
 
-        p = Path.home() / ".navig" / "config.yaml"
-        if p.exists():
-            cfg = yaml.safe_load(p.read_text()) or {}
-            k = cfg.get("openrouter_api_key") or os.environ.get("OPENROUTER_API_KEY")
-            if k:
-                return "openrouter", k
-            k = cfg.get("openai_api_key") or os.environ.get("OPENAI_API_KEY")
-            if k:
-                return "openai", k
-    except Exception:
-        pass
-    k = os.environ.get("OPENROUTER_API_KEY")
-    if k:
-        return "openrouter", k
-    k = os.environ.get("OPENAI_API_KEY")
-    if k:
-        return "openai", k
-    return None
-
-
-def _call_ai(prompt, provider, key) -> str | None:
-    url = (
-        "https://openrouter.ai/api/v1/chat/completions"
-        if provider == "openrouter"
-        else "https://api.openai.com/v1/chat/completions"
-    )
-    model = "openai/gpt-4o-mini" if provider == "openrouter" else "gpt-4o-mini"
-    body = json.dumps(
-        {
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 800,
-        }
-    ).encode()
-    req = urllib.request.Request(
-        url,
-        data=body,
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return json.loads(r.read())["choices"][0]["message"]["content"]
-    except Exception:
+        return llm_generate(
+            messages=[{"role": "user", "content": prompt}],
+            mode="big_tasks",
+            max_tokens=800,
+        )
+    except Exception:  # noqa: BLE001 — best-effort; caller shows fallback message
         return None
 
 
@@ -197,19 +165,18 @@ class NLPAliasPlugin(BotPlugin):
             return
         status = await msg.reply_text(f"{act['emoji']} Processing…")
         prompt = act["prompt"].format(text=body)
-        creds = _ai_key()
-        if creds:
-            provider, key2 = creds
-            resp = await asyncio.to_thread(_call_ai, prompt, provider, key2)
-            if resp:
-                await status.edit_text(
-                    f"{act['emoji']} *{act['label']}:*\n\n{resp}", parse_mode="Markdown"
-                )
-                return
+        resp = await asyncio.to_thread(_call_llm, prompt)
+        if resp:
+            await status.edit_text(
+                f"{act['emoji']} *{act['label']}:*\n\n{resp}", parse_mode="Markdown"
+            )
+            return
         await status.edit_text(
             f"{act['emoji']} *{act['label']} detected* ✓\n\n"
             f"Target: _{body[:200]}_\n\n"
-            "⚠️ No AI key configured. Add `openrouter_api_key` to `~/.navig/config.yaml` to enable responses.",
+            "⚠️ No AI provider available. Configure a provider via:\n"
+            "`navig vault set openrouter/api_key <your-key>`\n"
+            "or set up a local model with `navig ai`.",
             parse_mode="Markdown",
         )
 
