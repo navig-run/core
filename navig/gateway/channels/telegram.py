@@ -1100,6 +1100,40 @@ class TelegramChannel:
                 )
                 await self.send_message(chat_id, f"❌ {err_msg}", parse_mode=None)
 
+        else:
+            # on_message handler not configured — respond contextually instead
+            # of silently dropping the message (fixes #36).
+            # Slash commands that provide guidance (/help, /start) don't need AI;
+            # respond with useful info so users aren't left wondering what happened.
+            _cmd = (text or "").strip().split()[0].lower() if text else ""
+            if _cmd == "/help":
+                await self.send_message(
+                    chat_id,
+                    "ℹ️ Available commands:\n/start — begin setup\n/help — show this help",
+                    parse_mode=None,
+                )
+            elif _cmd == "/start":
+                await self.send_message(
+                    chat_id,
+                    "👋 AI is not configured yet. Complete setup first, then send a message.\n"
+                    "Use /help to see available commands.",
+                    parse_mode=None,
+                )
+            elif _cmd.startswith("/"):
+                await self.send_message(
+                    chat_id,
+                    "❌ That command is not available yet because AI is not configured. "
+                    "Use /help to see available commands or /start to begin setup.",
+                    parse_mode=None,
+                )
+            else:
+                await self.send_message(
+                    chat_id,
+                    "❌ AI is not configured yet. Use /help to see available commands "
+                    "or /start to begin setup.",
+                    parse_mode=None,
+                )
+
     async def _keep_typing(self, chat_id: int, interval: float = 4.0):
         """Re-send 'typing' indicator every ``interval`` seconds until cancelled."""
         try:

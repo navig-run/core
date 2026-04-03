@@ -111,3 +111,36 @@ def test_cli_search_forwards_provider_option(monkeypatch):
     result = runner.invoke(app, ["search", "hello world", "--provider", "brave", "--limit", "3"])
     assert result.exit_code == 0, result.output
     assert seen == {"query": "hello world", "count": 3, "provider": "brave"}
+
+
+def _ok_tavily(query: str, api_key: str, count: int = 5, timeout_seconds: int = 30) -> WebSearchResult:
+    return WebSearchResult(
+        success=True,
+        query=query,
+        provider="tavily",
+        results=[SearchResult(title="t", url="u", snippet=f"k={api_key}")],
+    )
+
+
+def test_web_search_explicit_provider_tavily_uses_tavily(monkeypatch):
+    """Tavily is a first-class runtime provider — selecting it should call _search_tavily,
+    not fall back to DuckDuckGo (regression guard for #42 follow-up)."""
+    monkeypatch.setattr("navig.tools.web.REQUESTS_AVAILABLE", True)
+    monkeypatch.setattr("navig.tools.web._search_brave", _ok_brave)
+    monkeypatch.setattr("navig.tools.web._search_duckduckgo", _ok_ddg)
+    monkeypatch.setattr("navig.tools.web._search_tavily", _ok_tavily)
+    monkeypatch.setattr(
+        "navig.tools.web.get_web_config",
+        lambda config_manager=None: {
+            "search": {
+                "provider": "tavily",
+                "api_key": "cfg-tavily-key",
+                "api_keys": {"tavily": "cfg-tavily-key"},
+            }
+        },
+    )
+
+    result = web_search("python", provider="tavily", use_cache=False)
+    assert result.success is True
+    assert result.provider == "tavily"
+    assert result.results and "cfg-tavily-key" in result.results[0].snippet

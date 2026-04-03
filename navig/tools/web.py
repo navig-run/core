@@ -48,6 +48,7 @@ DEFAULT_USER_AGENT = (
 
 BRAVE_SEARCH_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 DUCKDUCKGO_ENDPOINT = "https://api.duckduckgo.com/"
+TAVILY_SEARCH_ENDPOINT = "https://api.tavily.com/search"
 
 _WEB_PROVIDER_ALIASES: dict[str, str] = {
     "": "auto",
@@ -63,6 +64,7 @@ _WEB_PROVIDER_ALIASES: dict[str, str] = {
     "xai": "grok",
     "kimi": "kimi",
     "moonshot": "kimi",
+    "tavily": "tavily",
 }
 
 _WEB_PROVIDER_ENV_VARS: dict[str, tuple[str, ...]] = {
@@ -71,6 +73,7 @@ _WEB_PROVIDER_ENV_VARS: dict[str, tuple[str, ...]] = {
     "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
     "grok": ("XAI_API_KEY", "GROK_KEY"),
     "kimi": ("KIMI_API_KEY", "MOONSHOT_API_KEY"),
+    "tavily": ("TAVILY_API_KEY",),
 }
 
 _WEB_PROVIDER_VAULT_LABELS: dict[str, tuple[str, ...]] = {
@@ -79,6 +82,7 @@ _WEB_PROVIDER_VAULT_LABELS: dict[str, tuple[str, ...]] = {
     "gemini": ("web/gemini_api_key", "google/api_key", "google_api_key"),
     "grok": ("web/grok_api_key", "xai/api_key", "xai_api_key"),
     "kimi": ("web/kimi_api_key", "moonshot/api_key", "moonshot_api_key"),
+    "tavily": ("web/tavily_api_key", "tavily/api_key", "tavily_api_key"),
 }
 
 
@@ -632,6 +636,67 @@ def _search_duckduckgo(
         )
 
 
+def _search_tavily(
+    query: str,
+    api_key: str,
+    count: int = 5,
+    timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+) -> WebSearchResult:
+    """Search using Tavily Search API (RAG-optimized, LLM-native)."""
+    try:
+        payload = {
+            "api_key": api_key,
+            "query": query,
+            "search_depth": "basic",
+            "max_results": min(count, 10),
+            "include_answer": False,
+        }
+
+        response = requests.post(
+            TAVILY_SEARCH_ENDPOINT,
+            json=payload,
+            timeout=timeout_seconds,
+            headers={"Content-Type": "application/json"},
+        )
+
+        if response.status_code == 401:
+            return WebSearchResult(
+                success=False,
+                query=query,
+                provider="tavily",
+                error="Tavily API key is invalid or expired.",
+            )
+
+        if response.status_code != 200:
+            return WebSearchResult(
+                success=False,
+                query=query,
+                provider="tavily",
+                error=f"Tavily API error {response.status_code}: {response.text[:500]}",
+            )
+
+        data = response.json()
+        results = [
+            SearchResult(
+                title=item.get("title", ""),
+                url=item.get("url", ""),
+                snippet=item.get("content", ""),
+                age=None,
+            )
+            for item in data.get("results", [])[:count]
+        ]
+
+        return WebSearchResult(success=True, results=results, query=query, provider="tavily")
+
+    except Exception as e:
+        return WebSearchResult(
+            success=False,
+            query=query,
+            provider="tavily",
+            error=f"Tavily search failed: {str(e)}",
+        )
+
+
 def web_search(
     query: str,
     count: int = 5,
@@ -731,8 +796,8 @@ def web_search(
 
     selected_key = _resolve_key(selected_provider, search_cfg)
 
-    # Runtime engine currently supports Brave + DuckDuckGo.
-    if selected_provider not in ("brave", "duckduckgo"):
+    # Runtime engine supports Brave, DuckDuckGo, and Tavily.
+    if selected_provider not in ("brave", "duckduckgo", "tavily"):
         brave_key = _resolve_key("brave", search_cfg)
         if brave_key:
             selected_provider = "brave"
@@ -742,7 +807,21 @@ def web_search(
             selected_key = ""
 
     # Perform search
-    if selected_provider == "brave":
+    if selected_provider == "tavily":
+        if not selected_key:
+            return WebSearchResult(
+                success=False,
+                query=query,
+                provider="tavily",
+                error=(
+                    "Tavily API key not configured.\n"
+                    "1. Get a free API key: https://app.tavily.com/\n"
+                    "2. Set it via: navig init (web search provider step)\n"
+                    "   Or set TAVILY_API_KEY environment variable"
+                ),
+            )
+        result = _search_tavily(query, selected_key, count, timeout_seconds)
+    elif selected_provider == "brave":
         if not selected_key:
             return WebSearchResult(
                 success=False,
