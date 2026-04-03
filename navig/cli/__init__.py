@@ -116,94 +116,20 @@ def _get_ai_assistant():
 
 
 # ============================================================================
-# CENTRALIZED HELP SYSTEM
+# HELP & CALLBACK SYSTEM
 # ============================================================================
-# Single source of truth for all CLI help text.
-# Format: "command": {"desc": "description", "commands": {"cmd": "desc", ...}}
-#
-# Standardization rules:
-# - Descriptions: Start with verb (Manage, Execute, Control)
-# - Commands: lowercase verb phrase, no period
-# - Consistent verbs: list/add/remove/show/edit/test/run/use
-
-from navig.cli.help_dictionaries import HELP_REGISTRY
-
-
-def show_subcommand_help(name: str, ctx: typer.Context = None):
-    """Display compact help for a subcommand using the help registry."""
-    from rich.console import Console
-    from rich.table import Table
-
-    # Use legacy_windows=True to avoid Unicode encoding issues on some Windows consoles
-    console = Console(legacy_windows=True)
-
-    if name not in HELP_REGISTRY:
-        # Fallback to default Typer help if not in registry
-        return False
-
-    info = HELP_REGISTRY[name]
-
-    console.print()
-    console.print(f"[bold cyan]navig {name}[/bold cyan] [dim]-[/dim] [white]{info['desc']}[/white]")
-    console.print("[dim]" + "=" * 75 + "[/dim]")
-
-    # Commands table
-    cmd_table = Table(box=None, show_header=False, padding=(0, 2), collapse_padding=True)
-    cmd_table.add_column("Command", style="cyan", min_width=12)
-    cmd_table.add_column("Description", style="dim")
-
-    for cmd, desc in info["commands"].items():
-        cmd_table.add_row(cmd, desc)
-
-    console.print(cmd_table)
-
-    console.print("[dim]" + "=" * 75 + "[/dim]")
-    console.print(f"[yellow]navig {name} <cmd> --help[/yellow] [dim]for command details[/dim]")
-    console.print()
-
-    return True
-
-
-def make_subcommand_callback(name: str):
-    """Create a callback function for a subcommand that shows custom help."""
-
-    def callback(ctx: typer.Context):
-        if ctx.invoked_subcommand is None:
-            if show_subcommand_help(name, ctx):
-                raise typer.Exit()
-
-    return callback
-
-
-def show_compact_help():
-    """Render navig/help/index.md with Rich Markdown, or fall back to bare text."""
-    from pathlib import Path as _Path
-
-    _help_index = _Path(__file__).resolve().parent.parent / "help" / "index.md"
-    if _help_index.exists():
-        try:
-            from rich.console import Console as _Console
-            from rich.markdown import Markdown as _MD
-
-            _Console(legacy_windows=True).print(_MD(_help_index.read_text(encoding="utf-8")))
-            raise typer.Exit()
-        except typer.Exit:
-            raise
-        except Exception:
-            pass
-    # Fallback: minimal text so --help never crashes
-    from navig import __version__ as _v  # noqa: PLC0415
-
-    typer.echo(f"NAVIG v{_v}")
-    typer.echo("  navig <command> [options]")
-    typer.echo("  navig help <cmd>  for details")
-    raise typer.Exit()
-
-
-def help_callback(ctx: typer.Context, value: bool):
-    """Callback for --help flag."""
-    if value:
-        show_compact_help()
+# Callback implementations live in navig/cli/_callbacks.py — single source of truth.
+# Re-exported here so ``from navig.cli import show_subcommand_help`` keeps working.
+from navig.cli._callbacks import (  # noqa: E402
+    _get_hacker_quotes,
+    _schema_callback,
+    help_callback,
+    make_subcommand_callback,
+    show_compact_help,
+    show_subcommand_help,
+    version_callback,
+)
+from navig.cli.help_dictionaries import HELP_REGISTRY  # noqa: E402
 
 
 # Initialize CLI app
@@ -215,56 +141,6 @@ app = typer.Typer(
     invoke_without_command=True,
     no_args_is_help=False,
 )
-
-# Global state (lazy via _get_config_manager())
-
-
-# ============================================================================
-# HACKER CULTURE & TECHNOLOGY QUOTES
-# ============================================================================
-# Quote list lives in navig/cli/_quotes.py and is imported lazily inside
-# version_callback() and the 'version' command body.  This avoids parsing
-# the 90-line list on every CLI import where quotes are never shown.
-
-_HACKER_QUOTES: list | None = None  # populated on first use below
-
-
-def _get_hacker_quotes() -> list:
-    global _HACKER_QUOTES
-    if _HACKER_QUOTES is None:
-        from navig.cli._quotes import HACKER_QUOTES as _q
-
-        _HACKER_QUOTES = _q
-    return _HACKER_QUOTES
-
-
-# ============================================================================
-# GLOBAL FLAGS (applied via context)
-# ============================================================================
-
-
-def _schema_callback(value: bool):
-    """Output machine-readable command schema as JSON and exit."""
-    if value:
-        import json as _json
-
-        from navig.cli.registry import get_schema
-
-        _schema = get_schema()
-        typer.echo(_json.dumps(_schema, indent=2))
-        raise typer.Exit()
-
-
-def version_callback(value: bool):
-    """Show version and exit."""
-    if value:
-        ch.info(f"NAVIG v{__version__}")
-        # Select and display a random quote
-        import random
-
-        quote, author = random.choice(_get_hacker_quotes())
-        ch.dim(f"💬 {quote} - {author}")
-        raise typer.Exit()
 
 
 @app.callback(invoke_without_command=True)

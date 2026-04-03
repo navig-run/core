@@ -17,7 +17,8 @@ def show_subcommand_help(name: str, ctx: typer.Context | None = None):
     from rich.console import Console
     from rich.table import Table
 
-    console = Console()
+    # legacy_windows=True avoids Unicode encoding issues on some Windows consoles
+    console = Console(legacy_windows=True)
 
     if name not in HELP_REGISTRY:
         return False

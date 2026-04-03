@@ -10,6 +10,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Run: git log v2.4.20..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
 
 ### Changed
+- **CLI help registry hotfix**: Restored topic-registry resolution in `navig help` after callback extraction by re-linking `HELP_REGISTRY` in `navig/cli/__init__.py`; this prevents `NameError` failures on `navig help` without a topic.
 - **CLI Dead Code Removal**: Removed 335 lines of dead code from `navig/cli/__init__.py`. The `system_app` and `mcp_app` inline Typer definitions were defined but never registered (superseded by external modules via `_EXTERNAL_CMD_MAP`). File reduced from 10,050 to 9,715 lines. Commands `navig system` and `navig mcp` continue working via their canonical external modules.
 - **Telegram unconfigured-AI fallback**: When `on_message` is not set, slash commands (`/help`, `/start`) now receive contextual responses instead of a silent drop or a generic error. Free-text messages still show the "AI not configured" hint.
 - **conftest.py basetemp reliability**: `pytest_sessionstart` now resolves the `.local/.pytest_tmp` directory relative to `session.config.rootpath` (falls back to `rootdir`) instead of the CWD, so pytest invocations from subdirectories no longer fail to create the temp dir.
