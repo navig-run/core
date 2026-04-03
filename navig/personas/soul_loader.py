@@ -7,9 +7,10 @@ Consolidates the two divergent load paths that previously existed in:
 Search order:
   1. Active persona's soul.md  (~/.navig/personas/<active>/soul.md)
   2. Active space SOUL.md      (~/.navig/spaces/<active_space>/SOUL.md)
-  3. Legacy workspace SOUL.md  (~/.navig/workspace/SOUL.md)   ← backward-compat
-  4. Package default            navig/resources/SOUL.default.md
-  5. Context fallback           navig/agent/context/SOUL.md
+  3. Workspace IDENTITY.md     (~/.navig/workspace/IDENTITY.md)  ← RFC #37 Phase 1
+  4. Legacy workspace SOUL.md  (~/.navig/workspace/SOUL.md)      ← backward-compat
+  5. Package default            navig/resources/SOUL.default.md
+  6. Context fallback           navig/agent/context/SOUL.md
 """
 from __future__ import annotations
 
@@ -33,7 +34,7 @@ def load_soul(
     active_space: str | None = None,
     cwd: Path | None = None,
 ) -> str:
-    """Return soul content following the 5-level priority chain.
+    """Return soul content following the 6-level priority chain.
 
     Parameters
     ----------
@@ -43,6 +44,13 @@ def load_soul(
         If given, check ~/.navig/spaces/<active_space>/SOUL.md.
     cwd:
         Working directory for project-local persona/space resolution.
+
+    Notes
+    -----
+    Step 3 (``~/.navig/workspace/IDENTITY.md``) is the Phase-1 landing path for
+    the modular identity architecture described in RFC #37.  When present, it is
+    used instead of the legacy ``SOUL.md`` monolith.  Existing installations that
+    only have ``SOUL.md`` are not affected.
     """
     # 1. Active persona soul.md
     if persona_name:
@@ -63,18 +71,26 @@ def load_soul(
         if space_soul:
             return space_soul
 
-    # 3. Legacy workspace SOUL.md (kept for backward compatibility)
+    # 3. Workspace IDENTITY.md — modular identity file (RFC #37, Phase 1)
+    #    Checked before the legacy SOUL.md to allow file-driven identity without
+    #    replacing the full SOUL.md monolith. Fully additive: existing SOUL.md
+    #    users are not affected.
+    identity_md = _try_read(Path.home() / ".navig" / "workspace" / "IDENTITY.md")
+    if identity_md:
+        return identity_md
+
+    # 4. Legacy workspace SOUL.md (kept for backward compatibility)
     legacy = _try_read(Path.home() / ".navig" / "workspace" / "SOUL.md")
     if legacy:
         return legacy
 
-    # 4. Rich package default
+    # 5. Rich package default
     pkg_default = Path(__file__).parent.parent / "resources" / "SOUL.default.md"
     pkg_content = _try_read(pkg_default)
     if pkg_content:
         return pkg_content
 
-    # 5. Minimal context fallback
+    # 6. Minimal context fallback
     context_soul = Path(__file__).parent.parent / "agent" / "context" / "SOUL.md"
     fallback = _try_read(context_soul)
     if fallback:
