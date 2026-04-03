@@ -799,12 +799,39 @@ def show_init_status() -> dict[str, Any]:
     providers_detected = sorted(detected_provider_sources.keys())
 
     next_actions: list[str] = []
+    readiness_issues: list[dict[str, str]] = []
     if active_provider == "not configured" and not providers_detected:
+        readiness_issues.append(
+            {
+                "code": "ai-provider-missing",
+                "summary": "AI provider is not configured",
+                "command": "navig init --provider",
+            }
+        )
         next_actions.append("navig init --provider")
     if hosts_count == 0:
+        readiness_issues.append(
+            {
+                "code": "host-missing",
+                "summary": "No remote hosts connected",
+                "command": "navig host add <name>",
+            }
+        )
         next_actions.append("navig host add <name>")
     if not web_ready:
+        readiness_issues.append(
+            {
+                "code": "web-search-not-ready",
+                "summary": f"Web search provider '{web_provider}' needs an API key",
+                "command": "navig init --reconfigure",
+            }
+        )
         next_actions.append("navig init --reconfigure")
+
+    readiness_total_checks = 3
+    readiness_failures = len(readiness_issues)
+    readiness_score = max(0, int(((readiness_total_checks - readiness_failures) / readiness_total_checks) * 100))
+    readiness_state = "ready" if readiness_failures == 0 else "needs-attention"
 
     payload = {
         "provider": active_provider,
@@ -823,6 +850,11 @@ def show_init_status() -> dict[str, Any]:
         "web_search": {
             "provider": web_provider,
             "ready": web_ready,
+        },
+        "readiness": {
+            "state": readiness_state,
+            "score": readiness_score,
+            "issues": readiness_issues,
         },
         "next_actions": next_actions,
         "python_version": sys.version.split()[0],
@@ -850,6 +882,11 @@ def show_init_status() -> dict[str, Any]:
         f"Web search: {payload['web_search']['provider']} "
         f"({'ready' if payload['web_search']['ready'] else 'needs key'})"
     )
+    ch.info(f"Readiness: {payload['readiness']['state']} ({payload['readiness']['score']}%)")
+    if payload["readiness"]["issues"]:
+        ch.info("Readiness issues:")
+        for issue in payload["readiness"]["issues"]:
+            ch.info(f"  - {issue['summary']} -> {issue['command']}")
     if payload["next_actions"]:
         ch.info("Next actions:")
         for action in payload["next_actions"]:

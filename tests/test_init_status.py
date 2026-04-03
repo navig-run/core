@@ -58,6 +58,9 @@ def test_show_init_status_returns_expected_payload(tmp_path: Path, monkeypatch, 
     assert payload["integrations"]["email"] is False
     assert payload["web_search"]["provider"] in {"auto", "brave", "duckduckgo", "perplexity", "gemini", "grok", "kimi"}
     assert isinstance(payload["web_search"]["ready"], bool)
+    assert payload.get("readiness", {}).get("state") in {"ready", "needs-attention"}
+    assert isinstance(payload.get("readiness", {}).get("score"), int)
+    assert isinstance(payload.get("readiness", {}).get("issues", []), list)
     assert isinstance(payload.get("next_actions", []), list)
     assert payload["python_version"]
     assert payload["navig_version"]
@@ -147,6 +150,47 @@ def test_show_init_status_surfaces_next_actions_for_unconfigured_state(
 
     assert "navig init --provider" in payload["next_actions"]
     assert "navig host add <name>" in payload["next_actions"]
+    assert payload["readiness"]["state"] == "needs-attention"
+    assert payload["readiness"]["score"] < 100
+    issue_codes = {issue["code"] for issue in payload["readiness"]["issues"]}
+    assert "ai-provider-missing" in issue_codes
+    assert "host-missing" in issue_codes
+    assert "Readiness:" in out
+    assert "Readiness issues:" in out
     assert "Next actions:" in out
     assert "navig init --provider" in out
     assert "navig host add <name>" in out
+
+
+def test_show_init_status_readiness_ready_when_basics_configured(
+    tmp_path: Path,
+    monkeypatch,
+):
+    home = _isolate_home(tmp_path, monkeypatch)
+    navig_dir = home / ".navig"
+    navig_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setenv("NAVIG_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("NAVIG_WEB_SEARCH_PROVIDER", "auto")
+
+    from navig.config import ConfigManager
+
+    cm = ConfigManager(config_dir=navig_dir)
+    cm.save_host_config(
+        "localhost",
+        {
+            "name": "localhost",
+            "host": "localhost",
+            "user": "local",
+            "is_local": True,
+            "apps": {},
+        },
+    )
+
+    from navig.commands.init import show_init_status
+
+    payload = show_init_status()
+
+    assert payload["readiness"]["state"] == "ready"
+    assert payload["readiness"]["score"] == 100
+    assert payload["readiness"]["issues"] == []
