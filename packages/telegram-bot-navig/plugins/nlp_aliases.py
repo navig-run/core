@@ -2,16 +2,13 @@
 plugins/nlp_aliases.py — Multilingual NLP trigger aliases (EN / FR / RU).
 Passive: reply to any message (or write inline) with a trigger word.
 Skill  : skills/nlp_aliases.md
-AI     : uses OPENROUTER_API_KEY or OPENAI_API_KEY from env / ~/.navig/config.yaml
+AI     : routes through NAVIG's LLM layer (vault-aware, provider-agnostic).
+         Falls back to a direct API call only when the core is unavailable.
 """
 
 from __future__ import annotations
 
-import json
-import os
 import re
-import urllib.request
-from pathlib import Path
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -102,55 +99,36 @@ def _detect(text: str):
     return None
 
 
-def _ai_key():
+def _call_ai_via_navig(prompt: str) -> str | None:
+    """Route AI calls through NAVIG core (vault-aware, provider-agnostic)."""
+    # Primary: canonical typed orchestrator.
     try:
-        import yaml
+        from navig.llm_generate import run_llm  # type: ignore[import]
 
-        p = Path.home() / ".navig" / "config.yaml"
-        if p.exists():
-            cfg = yaml.safe_load(p.read_text()) or {}
-            k = cfg.get("openrouter_api_key") or os.environ.get("OPENROUTER_API_KEY")
-            if k:
-                return "openrouter", k
-            k = cfg.get("openai_api_key") or os.environ.get("OPENAI_API_KEY")
-            if k:
-                return "openai", k
+        result = run_llm(
+            messages=[{"role": "user", "content": prompt}],
+            user_input=prompt,
+            mode="chat",
+            max_tokens=800,
+        )
+        content = getattr(result, "content", "")
+        if isinstance(content, str) and content.strip():
+            return content.strip()
     except Exception:
         pass
-    k = os.environ.get("OPENROUTER_API_KEY")
-    if k:
-        return "openrouter", k
-    k = os.environ.get("OPENAI_API_KEY")
-    if k:
-        return "openai", k
-    return None
 
-
-def _call_ai(prompt, provider, key) -> str | None:
-    url = (
-        "https://openrouter.ai/api/v1/chat/completions"
-        if provider == "openrouter"
-        else "https://api.openai.com/v1/chat/completions"
-    )
-    model = "openai/gpt-4o-mini" if provider == "openrouter" else "gpt-4o-mini"
-    body = json.dumps(
-        {
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 800,
-        }
-    ).encode()
-    req = urllib.request.Request(
-        url,
-        data=body,
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
-        method="POST",
-    )
+    # Secondary: legacy NAVIG adapter (still vault/config aware).
     try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return json.loads(r.read())["choices"][0]["message"]["content"]
+        from navig.ai import ask_ai_with_context  # type: ignore[import]
+
+        content = ask_ai_with_context(prompt=prompt, model=None)
+        if isinstance(content, str) and content.strip():
+            return content.strip()
     except Exception:
-        return None
+        pass
+
+    # No direct provider HTTP fallback here: keep one source of truth in NAVIG core.
+    return None
 
 
 class NLPAliasPlugin(BotPlugin):
@@ -197,19 +175,17 @@ class NLPAliasPlugin(BotPlugin):
             return
         status = await msg.reply_text(f"{act['emoji']} Processing…")
         prompt = act["prompt"].format(text=body)
-        creds = _ai_key()
-        if creds:
-            provider, key2 = creds
-            resp = await asyncio.to_thread(_call_ai, prompt, provider, key2)
-            if resp:
-                await status.edit_text(
-                    f"{act['emoji']} *{act['label']}:*\n\n{resp}", parse_mode="Markdown"
-                )
-                return
+        resp = await asyncio.to_thread(_call_ai_via_navig, prompt)
+        if resp:
+            await status.edit_text(
+                f"{act['emoji']} *{act['label']}:*\n\n{resp}", parse_mode="Markdown"
+            )
+            return
         await status.edit_text(
             f"{act['emoji']} *{act['label']} detected* ✓\n\n"
             f"Target: _{body[:200]}_\n\n"
-            "⚠️ No AI key configured. Add `openrouter_api_key` to `~/.navig/config.yaml` to enable responses.",
+            "⚠️ AI not configured. Run `navig init` to set up your AI provider, "
+            "then try again.",
             parse_mode="Markdown",
         )
 
