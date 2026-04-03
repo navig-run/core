@@ -1374,7 +1374,17 @@ class TelegramCommandsMixin:
                 "show_alert": False,
             },
         )
-        await self._handle_cli_command(chat_id, user_id, {}, navig_cmd)
+        try:
+            await self._handle_cli_command(chat_id, user_id, {}, navig_cmd)
+        finally:
+            await self.send_message(
+                chat_id,
+                "✅ Setup fix command finished. Refresh status to verify readiness.",
+                parse_mode=None,
+                keyboard=[
+                    [{"text": "🔄 Refresh status", "callback_data": "nav:open:status"}],
+                ],
+            )
 
     def _runtime_state_with_context(
         self,

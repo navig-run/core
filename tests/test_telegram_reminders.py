@@ -372,6 +372,13 @@ async def test_status_fix_callback_executes_selected_command(monkeypatch):
     answer_calls = [p for m, p in bot.api_calls if m == "answerCallbackQuery"]
     assert answer_calls
     assert answer_calls[-1].get("text") == "🚀 Running setup fix"
+    assert bot.messages
+    last_message = bot.messages[-1]
+    assert "Refresh status" in last_message[1]
+    keyboard = last_message[3].get("keyboard")
+    assert keyboard
+    callbacks = [btn.get("callback_data") for row in keyboard for btn in row]
+    assert "nav:open:status" in callbacks
 
 
 @pytest.mark.asyncio
