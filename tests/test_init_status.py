@@ -97,3 +97,31 @@ def test_init_profile_quickstart_maps_to_operator_and_runs_chat_handoff(monkeypa
     assert result.exit_code == 0, result.output
     run_install.assert_called_once_with(profile="operator", dry_run=False, quiet=False)
     run_handoff.assert_called_once_with(profile="quickstart", dry_run=False, quiet=False)
+
+
+def test_show_init_status_aggregates_ai_credentials_from_env_and_config(
+    tmp_path: Path,
+    monkeypatch,
+):
+    home = _isolate_home(tmp_path, monkeypatch)
+    navig_dir = home / ".navig"
+    navig_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-test")
+
+    from navig.config import ConfigManager
+
+    cm = ConfigManager(config_dir=navig_dir)
+    cm.update_global_config({"openrouter_api_key": "sk-or-test"})
+
+    from navig.commands.init import show_init_status
+
+    payload = show_init_status()
+
+    detected = set(payload.get("providers_detected", []))
+    assert "openai" in detected
+    assert "openrouter" in detected
+
+    sources = payload.get("provider_sources", {})
+    assert "env" in sources.get("openai", [])
+    assert "config" in sources.get("openrouter", [])

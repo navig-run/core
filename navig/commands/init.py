@@ -702,8 +702,109 @@ def show_init_status() -> dict[str, Any]:
             web_key = str(api_keys.get(web_provider) or "").strip()
     web_ready = web_provider in {"auto", "duckduckgo"} or bool(web_key)
 
+    _fallback_env_vars: dict[str, tuple[str, ...]] = {
+        "openrouter": ("OPENROUTER_API_KEY",),
+        "openai": ("OPENAI_API_KEY",),
+        "anthropic": ("ANTHROPIC_API_KEY", "CLAUDE_API_KEY"),
+        "groq": ("GROQ_API_KEY",),
+        "google": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+        "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+        "nvidia": ("NVIDIA_API_KEY", "NIM_API_KEY"),
+        "xai": ("XAI_API_KEY", "GROK_KEY"),
+        "mistral": ("MISTRAL_API_KEY",),
+        "github_models": ("GITHUB_TOKEN", "GH_TOKEN"),
+    }
+
+    _fallback_cfg_keys: dict[str, tuple[str, ...]] = {
+        "openrouter": ("openrouter_api_key",),
+        "openai": ("openai_api_key",),
+        "anthropic": ("anthropic_api_key",),
+        "groq": ("groq_api_key",),
+        "google": ("google_api_key", "gemini_api_key"),
+        "gemini": ("google_api_key", "gemini_api_key"),
+        "nvidia": ("nvidia_api_key", "nim_api_key"),
+        "xai": ("xai_api_key", "grok_key"),
+        "mistral": ("mistral_api_key",),
+        "github_models": ("github_token", "gh_token"),
+    }
+
+    detected_provider_sources: dict[str, set[str]] = {}
+
+    try:
+        from navig.providers.registry import list_enabled_providers
+
+        provider_ids = [
+            str(p.id)
+            for p in list_enabled_providers()
+            if str(getattr(p, "id", "")).strip()
+        ]
+    except Exception:
+        provider_ids = [
+            "openrouter",
+            "openai",
+            "anthropic",
+            "groq",
+            "gemini",
+            "nvidia",
+            "xai",
+            "mistral",
+            "github_models",
+        ]
+
+    provider_ids = sorted(set(provider_ids))
+
+    for provider_id in provider_ids:
+        sources: set[str] = set()
+
+        # env
+        env_vars = _fallback_env_vars.get(provider_id, ())
+        if any((os.environ.get(v, "") or "").strip() for v in env_vars):
+            sources.add("env")
+
+        # config.yaml (legacy/plaintext fallback)
+        for cfg_key in _fallback_cfg_keys.get(provider_id, ()):
+            cfg_val = str(cfg.global_config.get(cfg_key) or "").strip()
+            if cfg_val:
+                sources.add("config")
+                break
+
+        # vault v2
+        try:
+            from navig.vault.core_v2 import get_vault_v2
+
+            vault_v2 = get_vault_v2()
+            if vault_v2 is not None:
+                candidate_labels: list[str] = [f"{provider_id}/api_key"]
+                try:
+                    from navig.vault.resolver import vault_labels_for_env
+
+                    for env_name in env_vars:
+                        candidate_labels.extend(vault_labels_for_env(env_name))
+                except Exception:
+                    pass
+                for label in candidate_labels:
+                    try:
+                        secret = (vault_v2.get_secret(label) or "").strip()
+                    except Exception:
+                        continue
+                    if secret:
+                        sources.add("vault")
+                        break
+        except Exception:
+            pass
+
+        if sources:
+            detected_provider_sources[provider_id] = sources
+
+    providers_detected = sorted(detected_provider_sources.keys())
+
     payload = {
         "provider": active_provider,
+        "providers_detected": providers_detected,
+        "provider_sources": {
+            provider: sorted(list(sources))
+            for provider, sources in sorted(detected_provider_sources.items())
+        },
         "hosts_count": hosts_count,
         "vault": vault_status,
         "integrations": {
@@ -720,6 +821,12 @@ def show_init_status() -> dict[str, Any]:
     }
 
     ch.header("NAVIG Init Status")
+    if providers_detected:
+        formatted = []
+        for provider in providers_detected:
+            src = "/".join(payload["provider_sources"].get(provider, []))
+            formatted.append(f"{provider} ({src})" if src else provider)
+        ch.info("AI credentials: " + ", ".join(formatted))
     ch.info(f"AI provider: {payload['provider']}")
     ch.info(f"Connected hosts: {payload['hosts_count']}")
     ch.info(f"Vault: {payload['vault']}")

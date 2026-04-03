@@ -372,6 +372,78 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
                 return val
         return ""
 
+    def _config_has_key(provider_id: str) -> bool:
+        key_map: dict[str, tuple[str, ...]] = {
+            "openrouter": ("openrouter_api_key",),
+            "openai": ("openai_api_key",),
+            "anthropic": ("anthropic_api_key",),
+            "groq": ("groq_api_key",),
+            "google": ("google_api_key", "gemini_api_key"),
+            "gemini": ("google_api_key", "gemini_api_key"),
+            "nvidia": ("nvidia_api_key", "nim_api_key"),
+            "xai": ("xai_api_key", "grok_key"),
+            "mistral": ("mistral_api_key",),
+            "github_models": ("github_token", "gh_token"),
+        }
+        try:
+            import yaml  # type: ignore[import]
+
+            cfg_path = navig_dir / "config.yaml"
+            if not cfg_path.exists():
+                return False
+            cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+            for key in key_map.get(provider_id, ()): 
+                if str(cfg.get(key) or "").strip():
+                    return True
+        except Exception:  # noqa: BLE001
+            return False
+        return False
+
+    def _vault_has_key(provider_id: str) -> bool:
+        try:
+            from navig.vault.core_v2 import get_vault_v2
+
+            vault = get_vault_v2()
+            if vault is None:
+                return False
+
+            labels = [f"{provider_id}/api_key"]
+            try:
+                from navig.vault.resolver import vault_labels_for_env
+
+                try:
+                    from navig.providers.registry import get_provider
+
+                    manifest = get_provider(provider_id)
+                    env_vars = tuple(getattr(manifest, "env_vars", ()) or ())
+                except Exception:  # noqa: BLE001
+                    env_vars = ()
+                for env_name in env_vars:
+                    labels.extend(vault_labels_for_env(env_name))
+            except Exception:  # noqa: BLE001
+                pass
+
+            for label in labels:
+                try:
+                    secret = (vault.get_secret(label) or "").strip()
+                except Exception:
+                    continue
+                if secret:
+                    return True
+        except Exception:  # noqa: BLE001
+            return False
+        return False
+
+    def _detected_sources(provider_id: str) -> list[str]:
+        sources: list[str] = []
+        if _fast_path_key(provider_id):
+            sources.append("env")
+        if _vault_has_key(provider_id):
+            sources.append("vault")
+        if _config_has_key(provider_id):
+            sources.append("config")
+        return sources
+
     def run() -> StepResult:
         # Environment-variable fast path (works in CI / non-TTY)
         provider = os.environ.get("NAVIG_LLM_PROVIDER", "").strip()
@@ -393,6 +465,26 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
 
         providers = _load_providers()
 
+        source_by_provider: dict[str, list[str]] = {
+            p.id: _detected_sources(p.id) for p in providers
+        }
+
+        try:
+            current_provider = marker.read_text(encoding="utf-8").strip() if marker.exists() else ""
+        except (OSError, UnicodeError):
+            current_provider = ""
+        default_idx = 0
+        if current_provider:
+            for i, p in enumerate(providers):
+                if p.id == current_provider:
+                    default_idx = i
+                    break
+        else:
+            for i, p in enumerate(providers):
+                if source_by_provider.get(p.id):
+                    default_idx = i
+                    break
+
         sys.stdout.write("\n  Choose your AI provider:\n")
         for i, p in enumerate(providers, start=1):
             local_tag = (
@@ -400,12 +492,15 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
                 if not getattr(p, "requires_key", True)
                 else ""
             )
-            sys.stdout.write(f"    [{i}] {p.display_name}{local_tag}\n")
+            sources = source_by_provider.get(p.id, [])
+            ready_tag = f"  (already configured: {'/'.join(sources)})" if sources else ""
+            active_tag = "  (current)" if p.id == current_provider else ""
+            sys.stdout.write(f"    [{i}] {p.display_name}{local_tag}{ready_tag}{active_tag}\n")
         sys.stdout.write("\n")
         sys.stdout.flush()
 
         try:
-            choice_raw = typer.prompt("  Provider", default="1")
+            choice_raw = typer.prompt("  Provider", default=str(default_idx + 1))
             idx = int(choice_raw.strip()) - 1
             if idx < 0 or idx >= len(providers):
                 raise ValueError("out of range")
@@ -421,18 +516,31 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         pid = chosen.id
         label = chosen.display_name
         requires_key = getattr(chosen, "requires_key", True)
+        existing_sources = source_by_provider.get(pid, [])
 
         if not requires_key:
             # Local provider — no key needed
             api_key = "local"
         else:
             try:
-                api_key = _prompt_masked(f"  {label} API key", default="").strip()
+                prompt_text = f"  {label} API key"
+                if existing_sources:
+                    prompt_text += " (Enter to keep existing)"
+                api_key = _prompt_masked(prompt_text, default="").strip()
             except KeyboardInterrupt:
                 raise
             except EOFError:
                 return StepResult(status="skipped", output={"reason": "interrupted"})
             if not api_key:
+                if existing_sources:
+                    marker.write_text(pid, encoding="utf-8")
+                    return StepResult(
+                        status="completed",
+                        output={
+                            "provider": pid,
+                            "keySource": "existing:" + "/".join(existing_sources),
+                        },
+                    )
                 return StepResult(status="skipped", output={"reason": "no key entered"})
 
         # Persist in vault if available, else fall back to marker file
