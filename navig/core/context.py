@@ -195,10 +195,15 @@ class ContextManager:
                 if app_name:
                     # Determine if this is project or user cache
                     local_navig_dir = Path.cwd() / ".navig"
-                    if local_navig_dir.exists() and self._config.active_app_file.is_relative_to(
-                        local_navig_dir
-                    ):
-                        source = "project"
+                    if local_navig_dir.exists():
+                        try:
+                            # Use Path.relative_to() instead of is_relative_to() (Python 3.9+)
+                            # to determine whether the active_app_file is under the local
+                            # project .navig directory.
+                            self._config.active_app_file.relative_to(local_navig_dir)
+                            source = "project"
+                        except ValueError:
+                            source = "user"
                     else:
                         source = "user"
                     return (app_name, source) if return_source else app_name
@@ -241,7 +246,7 @@ class ContextManager:
     # Set Active Host
     # =========================================================================
 
-    def set_active_host(self, host_name: str, local: bool = None):
+    def set_active_host(self, host_name: str, local: bool | None = None):
         """
         Set active host.
 
@@ -292,14 +297,15 @@ class ContextManager:
     # Set Active App
     # =========================================================================
 
-    def set_active_app(self, app_name: str, local: bool = False):
+    def set_active_app(self, app_name: str, local: bool | None = None):
         """
         Set active app (global or local scope).
 
         Args:
             app_name: App name to set as active
             local: If True, set as local active app (current directory only)
-                  If False, set as global active app (default)
+                   If False, set as global active app only
+                   If None (default), set as both local (if available) and global
 
         Raises:
             FileNotFoundError: If local=True and .navig/ directory doesn't exist in current directory
@@ -307,9 +313,12 @@ class ContextManager:
 
         Note: Global mode does not validate if app exists on active host
         """
-        if local:
+        # Update local .navig config if applicable
+        if local is not False:
             self.set_active_app_local(app_name)
-        else:
+
+        # Update global cache if applicable
+        if local is not True:
             self._config.active_app_file.write_text(app_name, encoding="utf-8")
 
     def set_active_app_local(self, app_name: str, directory: Path | None = None):
