@@ -30,13 +30,24 @@ def test_load_env(monkeypatch):
         def __init__(self, *args, **kwargs):
             pass
 
+        @classmethod
+        def cwd(cls):
+            return cls()
+
+        def resolve(self):
+            return self
+
+        @property
+        def parent(self):
+            return self
+
         def exists(self):
             return True
 
         def __truediv__(self, other):
             return self
 
-    monkeypatch.setattr(tw.Path, "cwd", lambda: MockPath())
+    monkeypatch.setattr(tw, "Path", MockPath)
     monkeypatch.setattr(tw, "NAVIG_HOME", MockPath())
 
     loaded = []
@@ -44,11 +55,9 @@ def test_load_env(monkeypatch):
     def mock_load_dotenv(path):
         loaded.append(path)
 
-    import navig.daemon.telegram_worker
+    import dotenv
 
-    monkeypatch.setattr(
-        navig.daemon.telegram_worker, "load_dotenv", mock_load_dotenv, raising=False
-    )
+    monkeypatch.setattr(dotenv, "load_dotenv", mock_load_dotenv)
 
     tw._load_env()
     assert len(loaded) in (0, 1)
