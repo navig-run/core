@@ -61,7 +61,7 @@ def test_runtime_secrets_step_imports_env_into_vault(monkeypatch, tmp_path: Path
     fake_vault = _FakeVault()
     step = _runtime_step(tmp_path)
 
-    monkeypatch.setenv("OPENAI_API_KEY", "env-openai")
+    monkeypatch.setenv("SERPAPI_KEY", "env-serpapi")
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("navig.vault.core_v2.get_vault_v2", lambda: fake_vault)
     monkeypatch.setattr("typer.confirm", lambda *args, **kwargs: True)
@@ -71,8 +71,8 @@ def test_runtime_secrets_step_imports_env_into_vault(monkeypatch, tmp_path: Path
     result = step.run()
 
     assert result.status == "completed"
-    assert fake_vault.secrets["openai/api_key"] == "env-openai"
-    assert "OpenAI API key" in result.output["importedFromEnv"]
+    assert fake_vault.secrets["serpapi/key"] == "env-serpapi"
+    assert "SerpAPI key" in result.output["importedFromEnv"]
 
 
 def test_runtime_secrets_step_stores_google_json_in_both_labels(
