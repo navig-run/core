@@ -371,3 +371,108 @@ def test_review_step_eoferror_exits_cleanly(monkeypatch, tmp_path: Path) -> None
     result = step.run()
     assert result.status == "skipped"
     assert result.output["jumpTo"] == ""
+
+
+# ── Regression: false-positive [✓] completed on --reconfigure ────────────────
+
+
+def test_matrix_step_reconfigure_with_skipped_marker_re_prompts(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """On --reconfigure, a previously-skipped matrix step must re-prompt, not return completed."""
+    marker = tmp_path / ".matrix_configured"
+    marker.write_text("skipped", encoding="utf-8")
+
+    step = next(step for step in _registry(tmp_path) if step.id == "matrix")
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    # User presses Enter again — still no URL.
+    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "")
+
+    result = step.run()
+
+    assert result.status == "skipped"
+    assert result.output["reason"] == "no homeserver URL provided"
+
+
+def test_email_step_reconfigure_with_skipped_marker_re_prompts(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """On --reconfigure, a previously-skipped email step must re-prompt, not return completed."""
+    marker = tmp_path / ".email_configured"
+    marker.write_text("skipped", encoding="utf-8")
+
+    step = next(step for step in _registry(tmp_path) if step.id == "email")
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    # User presses Enter — blank SMTP host.
+    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "")
+
+    result = step.run()
+
+    assert result.status == "skipped"
+    assert result.output["reason"] == "no SMTP host provided"
+
+
+def test_social_networks_step_reconfigure_with_skipped_marker_re_prompts(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """On --reconfigure, a previously-skipped social-networks step must re-prompt."""
+    marker = tmp_path / ".social_configured"
+    marker.write_text("skipped", encoding="utf-8")
+
+    step = next(step for step in _registry(tmp_path) if step.id == "social-networks")
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    # User declines again.
+    monkeypatch.setattr("typer.confirm", lambda *args, **kwargs: False)
+
+    result = step.run()
+
+    assert result.status == "skipped"
+    assert result.output["reason"] == "user declined"
+
+
+def test_web_search_provider_empty_api_key_returns_skipped(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Selecting a catalog provider but leaving the API key blank must return skipped."""
+    step = next(step for step in _registry(tmp_path) if step.id == "web-search-provider")
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("sys.stdout.write", lambda *a: None)
+    monkeypatch.setattr("sys.stdout.flush", lambda: None)
+
+    # typer.prompt is only called once (for the provider-index selection).
+    # The API key prompt goes through _prompt_masked, which is mocked separately.
+    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "1")  # choose perplexity
+
+    # _prompt_masked returns "" — user pressed Enter for the API key.
+    monkeypatch.setattr("navig.onboarding.steps._prompt_masked", lambda *a, **kw: "")
+
+    result = step.run()
+
+    assert result.status == "skipped"
+    assert "API key" in result.output.get("reason", "")
+    assert result.output.get("provider") == "perplexity"
+
+
+def test_web_search_provider_with_api_key_returns_completed(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Selecting a catalog provider and supplying a valid API key must return completed."""
+    step = next(step for step in _registry(tmp_path) if step.id == "web-search-provider")
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("sys.stdout.write", lambda *a: None)
+    monkeypatch.setattr("sys.stdout.flush", lambda: None)
+
+    # typer.prompt is only called once (for the provider-index selection).
+    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "2")  # choose brave
+    monkeypatch.setattr("navig.onboarding.steps._prompt_masked", lambda *a, **kw: "my-brave-key")
+
+    result = step.run()
+
+    assert result.status == "completed"
+    assert result.output.get("provider") == "brave"
+

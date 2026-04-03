@@ -917,15 +917,31 @@ def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
             except EOFError:
                 entered_key = ""
 
+        if not entered_key:
+            # Provider selected but no API key supplied — save the provider choice
+            # so the user doesn't have to re-select it, but report the step as
+            # skipped because the provider is not functional without a key.
+            _persist_provider(provider_id)
+            return StepResult(
+                status="skipped",
+                output={
+                    "provider": provider_id,
+                    "reason": f"API key required for {provider_id} but not provided",
+                },
+            )
+
+        # entered_key is guaranteed non-empty here (the `if not entered_key` guard
+        # above returned early if it was empty). keySource reflects how the key
+        # was obtained: env variable vs. interactive prompt.
         provider_written = _persist_provider(provider_id)
-        key_target = _persist_key(provider_id, entered_key) if entered_key else "none"
+        key_target = _persist_key(provider_id, entered_key)
 
         return StepResult(
             status="completed",
             output={
                 "provider": provider_id,
                 "providerSaved": provider_written,
-                "keySource": "environment" if env_key else ("interactive" if entered_key else "none"),
+                "keySource": "environment" if env_key else "interactive",
                 "keyTarget": key_target,
             },
         )
@@ -1249,7 +1265,9 @@ def _step_matrix(navig_dir: Path) -> OnboardingStep:
 
     def run() -> StepResult:
         if marker.exists():
-            return StepResult(status="completed", output={"note": "already configured"})
+            content = marker.read_text(encoding="utf-8").strip()
+            if content and content != "skipped":
+                return StepResult(status="completed", output={"note": "already configured"})
 
         tty = _tty_check()
         if tty is not None:
@@ -1357,7 +1375,9 @@ def _step_email(navig_dir: Path) -> OnboardingStep:
 
     def run() -> StepResult:
         if marker.exists():
-            return StepResult(status="completed", output={"note": "already configured"})
+            content = marker.read_text(encoding="utf-8").strip()
+            if content and content != "skipped":
+                return StepResult(status="completed", output={"note": "already configured"})
 
         tty = _tty_check()
         if tty is not None:
@@ -1426,7 +1446,9 @@ def _step_social_networks(navig_dir: Path) -> OnboardingStep:
 
     def run() -> StepResult:
         if marker.exists():
-            return StepResult(status="completed", output={"note": "already configured"})
+            content = marker.read_text(encoding="utf-8").strip()
+            if content and content != "skipped":
+                return StepResult(status="completed", output={"note": "already configured"})
 
         tty = _tty_check()
         if tty is not None:
@@ -1574,7 +1596,13 @@ def _step_review(navig_dir: Path) -> OnboardingStep:
                 steps_summary = data.get("steps", [])
                 sys.stdout.write("\n  Onboarding summary:\n")
                 for s in steps_summary:
-                    status_icon = "✓" if s.get("status") == "completed" else "·"
+                    step_status = s.get("status", "?")
+                    if step_status == "completed":
+                        status_icon = "✓"
+                    elif step_status == "failed":
+                        status_icon = "✗"
+                    else:
+                        status_icon = "·"
                     step_id = s.get("id", "?")
                     sys.stdout.write(
                         f"    [{status_icon}] {step_id} — {s.get('status', '?')}\n"
