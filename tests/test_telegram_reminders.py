@@ -285,8 +285,52 @@ async def test_status_does_not_mark_onboarding_step_on_view(monkeypatch):
         "navig.spaces.progress.format_spaces_progress_lines",
         lambda rows, max_items=5: [],
     )
+    monkeypatch.setattr(
+        "navig.commands.init.get_init_status_payload",
+        lambda: {"readiness": {"state": "ready", "score": 100, "issues": []}},
+    )
     await bot._handle_status(123, 456)
     assert marked == []
+
+
+@pytest.mark.asyncio
+async def test_status_shows_setup_readiness_and_fix_commands(monkeypatch):
+    bot = _make_dummy_bot()
+
+    monkeypatch.setattr("navig.spaces.get_default_space", lambda: "default")
+    monkeypatch.setattr("navig.spaces.progress.collect_spaces_progress", lambda: [])
+    monkeypatch.setattr(
+        "navig.spaces.progress.format_spaces_progress_lines",
+        lambda rows, max_items=5: [],
+    )
+    monkeypatch.setattr(
+        "navig.commands.init.get_init_status_payload",
+        lambda: {
+            "readiness": {
+                "state": "needs-attention",
+                "score": 34,
+                "issues": [
+                    {
+                        "summary": "AI provider is not configured",
+                        "command": "navig init --provider",
+                    },
+                    {
+                        "summary": "No remote hosts connected",
+                        "command": "navig host add <name>",
+                    },
+                ],
+            }
+        },
+    )
+
+    await bot._handle_status(123, 456)
+
+    output = "\n".join(msg[1] for msg in bot.messages)
+    assert "Setup readiness:" in output
+    assert "needs-attention" in output
+    assert "Setup fixes:" in output
+    assert "navig init --provider" in output
+    assert "navig host add <name>" in output
 
 
 @pytest.mark.asyncio

@@ -625,7 +625,7 @@ def _read_marker_text(path: Path) -> str:
         return ""
 
 
-def show_init_status() -> dict[str, Any]:
+def show_init_status(*, render: bool = True) -> dict[str, Any]:
     """Display a compact `navig init` status summary and return payload."""
     from navig import __version__ as navig_version
     from navig.config import get_config_manager
@@ -756,19 +756,16 @@ def show_init_status() -> dict[str, Any]:
     for provider_id in provider_ids:
         sources: set[str] = set()
 
-        # env
         env_vars = _fallback_env_vars.get(provider_id, ())
         if any((os.environ.get(v, "") or "").strip() for v in env_vars):
             sources.add("env")
 
-        # config.yaml (legacy/plaintext fallback)
         for cfg_key in _fallback_cfg_keys.get(provider_id, ()):
             cfg_val = str(cfg.global_config.get(cfg_key) or "").strip()
             if cfg_val:
                 sources.add("config")
                 break
 
-        # vault v2
         try:
             from navig.vault.core_v2 import get_vault_v2
 
@@ -830,7 +827,10 @@ def show_init_status() -> dict[str, Any]:
 
     readiness_total_checks = 3
     readiness_failures = len(readiness_issues)
-    readiness_score = max(0, int(((readiness_total_checks - readiness_failures) / readiness_total_checks) * 100))
+    readiness_score = max(
+        0,
+        int(((readiness_total_checks - readiness_failures) / readiness_total_checks) * 100),
+    )
     readiness_state = "ready" if readiness_failures == 0 else "needs-attention"
 
     payload = {
@@ -861,40 +861,48 @@ def show_init_status() -> dict[str, Any]:
         "navig_version": navig_version,
     }
 
-    ch.header("NAVIG Init Status")
-    if providers_detected:
-        formatted = []
-        for provider in providers_detected:
-            src = "/".join(payload["provider_sources"].get(provider, []))
-            formatted.append(f"{provider} ({src})" if src else provider)
-        ch.info("AI credentials: " + ", ".join(formatted))
-    ch.info(f"AI provider: {payload['provider']}")
-    ch.info(f"Connected hosts: {payload['hosts_count']}")
-    ch.info(f"Vault: {payload['vault']}")
+    if render:
+        ch.header("NAVIG Init Status")
+        if providers_detected:
+            formatted = []
+            for provider in providers_detected:
+                src = "/".join(payload["provider_sources"].get(provider, []))
+                formatted.append(f"{provider} ({src})" if src else provider)
+            ch.info("AI credentials: " + ", ".join(formatted))
+        ch.info(f"AI provider: {payload['provider']}")
+        ch.info(f"Connected hosts: {payload['hosts_count']}")
+        ch.info(f"Vault: {payload['vault']}")
 
-    integrations = payload["integrations"]
-    labels = []
-    for name in ("telegram", "matrix", "email"):
-        state = "on" if integrations[name] else "off"
-        labels.append(f"{name}={state}")
-    ch.info("Integrations: " + ", ".join(labels))
-    ch.info(
-        f"Web search: {payload['web_search']['provider']} "
-        f"({'ready' if payload['web_search']['ready'] else 'needs key'})"
-    )
-    ch.info(f"Readiness: {payload['readiness']['state']} ({payload['readiness']['score']}%)")
-    if payload["readiness"]["issues"]:
-        ch.info("Readiness issues:")
-        for issue in payload["readiness"]["issues"]:
-            ch.info(f"  - {issue['summary']} -> {issue['command']}")
-    if payload["next_actions"]:
-        ch.info("Next actions:")
-        for action in payload["next_actions"]:
-            ch.info(f"  - {action}")
-    ch.info(f"Python: {payload['python_version']}")
-    ch.info(f"NAVIG: {payload['navig_version']}")
+        integrations = payload["integrations"]
+        labels = []
+        for name in ("telegram", "matrix", "email"):
+            state = "on" if integrations[name] else "off"
+            labels.append(f"{name}={state}")
+        ch.info("Integrations: " + ", ".join(labels))
+        ch.info(
+            f"Web search: {payload['web_search']['provider']} "
+            f"({'ready' if payload['web_search']['ready'] else 'needs key'})"
+        )
+        ch.info(
+            f"Readiness: {payload['readiness']['state']} ({payload['readiness']['score']}%)"
+        )
+        if payload["readiness"]["issues"]:
+            ch.info("Readiness issues:")
+            for issue in payload["readiness"]["issues"]:
+                ch.info(f"  - {issue['summary']} -> {issue['command']}")
+        if payload["next_actions"]:
+            ch.info("Next actions:")
+            for action in payload["next_actions"]:
+                ch.info(f"  - {action}")
+        ch.info(f"Python: {payload['python_version']}")
+        ch.info(f"NAVIG: {payload['navig_version']}")
 
     return payload
+
+
+def get_init_status_payload() -> dict[str, Any]:
+    """Build `navig init` status payload without printing output."""
+    return show_init_status(render=False)
 
 
 def _chat_onboarding_handoff_file(navig_dir: Path | None = None) -> Path:

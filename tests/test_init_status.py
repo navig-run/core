@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -73,7 +74,7 @@ def test_init_status_flag_calls_show_init_status(monkeypatch):
         result = runner.invoke(app, ["init", "--status"])
 
     assert result.exit_code == 0, result.output
-    show_status.assert_called_once()
+    show_status.assert_called_once_with(render=True)
     run_engine.assert_not_called()
 
 
@@ -89,7 +90,63 @@ def test_init_already_configured_also_shows_init_status(monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert "already configured" in result.output.lower()
-    show_status.assert_called_once()
+    show_status.assert_called_once_with(render=True)
+
+
+def test_init_status_flag_json_outputs_payload(monkeypatch):
+    fake_payload = {
+        "provider": "not configured",
+        "readiness": {
+            "state": "needs-attention",
+            "score": 0,
+            "issues": [
+                {
+                    "code": "ai-provider-missing",
+                    "summary": "AI provider is not configured",
+                    "command": "navig init --provider",
+                }
+            ],
+        },
+        "next_actions": ["navig init --provider"],
+    }
+    with patch(
+        "navig.commands.init.show_init_status", MagicMock(return_value=fake_payload)
+    ) as show_status, patch(
+        "navig.onboarding.runner.run_engine_onboarding", MagicMock()
+    ) as run_engine:
+        result = runner.invoke(app, ["--json", "init", "--status"])
+
+    assert result.exit_code == 0, result.output
+    show_status.assert_called_once_with(render=False)
+    run_engine.assert_not_called()
+    parsed = json.loads(result.output)
+    assert parsed["readiness"]["state"] == "needs-attention"
+    assert parsed["readiness"]["issues"][0]["code"] == "ai-provider-missing"
+    assert parsed["next_actions"] == ["navig init --provider"]
+
+
+def test_init_json_when_already_configured_returns_machine_payload(monkeypatch):
+    fake_payload = {
+        "provider": "openai",
+        "readiness": {"state": "ready", "score": 100, "issues": []},
+        "next_actions": [],
+    }
+    with patch(
+        "navig.commands.init.show_init_status", MagicMock(return_value=fake_payload)
+    ) as show_status, patch(
+        "navig.commands.init._maybe_send_first_run_ping",
+        MagicMock(),
+        create=True,
+    ), patch(
+        "navig.onboarding.runner.run_engine_onboarding", MagicMock(return_value=None)
+    ):
+        result = runner.invoke(app, ["--json", "init"])
+
+    assert result.exit_code == 0, result.output
+    show_status.assert_called_once_with(render=False)
+    parsed = json.loads(result.output)
+    assert parsed["already_configured"] is True
+    assert parsed["readiness"]["state"] == "ready"
 
 
 def test_init_profile_quickstart_maps_to_operator_and_runs_chat_handoff(monkeypatch):

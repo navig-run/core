@@ -1217,6 +1217,33 @@ class TelegramCommandsMixin:
         except Exception:
             pass
 
+        # Setup readiness (CLI parity with `navig init --status`)
+        try:
+            from navig.commands.init import get_init_status_payload
+
+            init_status = get_init_status_payload()
+            readiness = init_status.get("readiness", {}) if isinstance(init_status, dict) else {}
+            readiness_state = str(readiness.get("state") or "needs-attention")
+            readiness_score = int(readiness.get("score") or 0)
+            lines.append(f"Setup readiness: `{readiness_state}` ({readiness_score}%)")
+
+            issues = readiness.get("issues", []) if isinstance(readiness, dict) else []
+            if isinstance(issues, list) and issues:
+                lines.append("")
+                lines.append("*Setup fixes:*")
+                for issue in issues[:2]:
+                    if not isinstance(issue, dict):
+                        continue
+                    summary = str(issue.get("summary") or "").strip()
+                    command = str(issue.get("command") or "").strip()
+                    if summary and command:
+                        lines.append(f"• {summary} -> `{command}`")
+                remaining = len(issues) - 2
+                if remaining > 0:
+                    lines.append(f"• +{remaining} more in `navig init --status`")
+        except Exception:
+            pass
+
         # Default space + progression
         lines.append("")
         lines.append(f"Space: `{selected_space}`")
