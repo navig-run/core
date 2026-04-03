@@ -58,6 +58,8 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "cred-profile": ("navig.commands.vault", "profile_app"),
     "flux": ("navig.commands.flux", "flux_app"),
     "fx": ("navig.commands.flux", "flux_app"),
+    # ── AI sub-app extraction ─────────────────────────────────────────────────
+    "ai": ("navig.commands.ai", "ai_app"),
     # ── Phase 2a: gateway extracted from inline block ─────────────────────────
     "gateway": ("navig.commands.gateway", "gateway_app"),
     "cortex": ("navig.commands.cortex", "cortex_app"),

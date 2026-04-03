@@ -736,6 +736,25 @@ def show_settings():
         ch.dim("  Set with: navig config set openrouter_api_key <key>")
 
 
+# Map config key names that are sensitive → (vault provider, credential type)
+_SENSITIVE_CFG_TO_VAULT: dict[str, tuple[str, str]] = {
+    "openrouter_api_key": ("openrouter", "api_key"),
+    "openai_api_key":     ("openai",     "api_key"),
+    "anthropic_api_key":  ("anthropic",  "api_key"),
+    "groq_api_key":       ("groq",       "api_key"),
+    "google_api_key":     ("google",     "api_key"),
+    "gemini_api_key":     ("google",     "api_key"),
+    "nvidia_api_key":     ("nvidia",     "api_key"),
+    "nim_api_key":        ("nvidia",     "api_key"),
+    "xai_api_key":        ("xai",        "api_key"),
+    "grok_key":           ("xai",        "api_key"),
+    "mistral_api_key":    ("mistral",    "api_key"),
+    "github_token":       ("github_models", "token"),
+    "gh_token":           ("github_models", "token"),
+    "telegram_bot_token": ("telegram",   "token"),
+}
+
+
 def set_config(key: str, value: str):
     """
     Set a global configuration value.
@@ -770,6 +789,29 @@ def set_config(key: str, value: str):
         config_manager.update_global_config({key: value})
 
     ch.success(f"Set {key} = {value}")
+
+    # Best-effort vault write-through for known sensitive config keys (#62)
+    vault_entry = _SENSITIVE_CFG_TO_VAULT.get(key.lower())
+    if vault_entry and value:
+        vault_provider, vault_cred_type = vault_entry
+        try:
+            from navig.vault import get_vault  # noqa: PLC0415
+
+            _vault = get_vault()
+            existing = _vault.get(vault_provider, caller="config.set")
+            if existing is not None:
+                _vault.update(existing.id, data={vault_cred_type: value})
+            else:
+                _vault.add(
+                    provider=vault_provider,
+                    credential_type=vault_cred_type,
+                    data={vault_cred_type: value},
+                    profile_id="default",
+                    label=vault_provider.replace("_", " ").title(),
+                )
+            ch.dim(f"  Also stored in vault under [{vault_provider}/{vault_cred_type}]")
+        except Exception:  # noqa: BLE001
+            pass  # vault unavailable — config write is sufficient
 
 
 def get_config(key: str):

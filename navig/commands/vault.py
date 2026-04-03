@@ -707,6 +707,48 @@ def vault_list(
 
     _console().print(table)
 
+    # ── Detect AI provider keys that exist outside the vault (#62) ────────────
+    if not (provider or profile):
+        import os  # noqa: PLC0415
+
+        _AI_SIGNALS: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
+            ("openrouter", ("OPENROUTER_API_KEY",),               ("openrouter_api_key",)),
+            ("openai",     ("OPENAI_API_KEY",),                   ("openai_api_key",)),
+            ("anthropic",  ("ANTHROPIC_API_KEY", "CLAUDE_API_KEY"), ("anthropic_api_key",)),
+            ("groq",       ("GROQ_API_KEY",),                     ("groq_api_key",)),
+            ("gemini",     ("GEMINI_API_KEY", "GOOGLE_API_KEY"),   ("google_api_key", "gemini_api_key")),
+            ("nvidia",     ("NVIDIA_API_KEY", "NIM_API_KEY"),      ("nvidia_api_key", "nim_api_key")),
+            ("xai",        ("XAI_API_KEY", "GROK_KEY"),           ("xai_api_key", "grok_key")),
+            ("mistral",    ("MISTRAL_API_KEY",),                  ("mistral_api_key",)),
+        ]
+        vault_providers = {c.provider for c in creds}
+        try:
+            from navig.config import get_config_manager  # noqa: PLC0415
+            _gcfg = get_config_manager().global_config
+        except Exception:  # noqa: BLE001
+            _gcfg = {}
+
+        external: list[tuple[str, str]] = []
+        for prov_id, env_keys, cfg_keys in _AI_SIGNALS:
+            if prov_id in vault_providers:
+                continue
+            for env_key in env_keys:
+                if os.environ.get(env_key, "").strip():
+                    external.append((prov_id, f"env:{env_key}"))
+                    break
+            else:
+                for cfg_key in cfg_keys:
+                    if str(_gcfg.get(cfg_key) or "").strip():
+                        external.append((prov_id, f"config:{cfg_key}"))
+                        break
+
+        if external:
+            con = _console()
+            con.print("\n[dim]Credentials detected outside vault:[/dim]")
+            for prov_id, source in external:
+                con.print(f"  [yellow]•[/yellow] [cyan]{prov_id}[/cyan] [dim]({source})[/dim] — not synced to vault")
+            con.print("[dim]  → Sync with: navig vault set <provider> <value>[/dim]")
+
 
 @vault_app.command("validate")
 def vault_validate(
