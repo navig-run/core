@@ -310,6 +310,19 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
     """Interactive — choose AI provider and store API key in vault."""
     marker = navig_dir / ".ai_provider_configured"
 
+    def _has_vault_key(provider_id: str) -> bool:
+        """Return True when a provider API key already exists in vault."""
+        try:
+            from navig.vault.core_v2 import get_vault_v2
+
+            vault = get_vault_v2()
+            if vault is None:
+                return False
+            value = vault.get_secret(f"{provider_id}/api_key")
+            return bool(str(value).strip())
+        except Exception:  # noqa: BLE001
+            return False
+
     def _load_providers():
         """Load provider list dynamically from the registry at runtime."""
         try:
@@ -397,6 +410,14 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         import typer
 
         providers = _load_providers()
+        existing_vault = {p.id: _has_vault_key(p.id) for p in providers}
+
+        configured = [p for p in providers if existing_vault.get(p.id, False)]
+        if configured:
+            configured_list = ", ".join(p.display_name for p in configured)
+            sys.stdout.write(
+                f"\n  Existing vault credentials detected: {configured_list}\n"
+            )
 
         sys.stdout.write("\n  Choose your AI provider:\n")
         for i, p in enumerate(providers, start=1):
@@ -405,12 +426,19 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
                 if not getattr(p, "requires_key", True)
                 else ""
             )
-            sys.stdout.write(f"    [{i}] {p.display_name}{local_tag}\n")
+            vault_tag = "  (vault key saved)" if existing_vault.get(p.id, False) else ""
+            sys.stdout.write(f"    [{i}] {p.display_name}{local_tag}{vault_tag}\n")
         sys.stdout.write("\n")
         sys.stdout.flush()
 
+        default_idx = 1
+        for i, p in enumerate(providers, start=1):
+            if existing_vault.get(p.id, False):
+                default_idx = i
+                break
+
         try:
-            choice_raw = typer.prompt("  Provider", default="1")
+            choice_raw = typer.prompt("  Provider", default=str(default_idx))
             idx = int(choice_raw.strip()) - 1
             if idx < 0 or idx >= len(providers):
                 raise ValueError("out of range")
@@ -426,32 +454,53 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         pid = chosen.id
         label = chosen.display_name
         requires_key = getattr(chosen, "requires_key", True)
+        keep_existing = False
 
         if not requires_key:
             # Local provider — no key needed
             api_key = "local"
         else:
-            try:
-                api_key = _prompt_masked(f"  {label} API key", default="").strip()
-            except KeyboardInterrupt:
-                raise
-            except EOFError:
-                return StepResult(status="skipped", output={"reason": "interrupted"})
-            if not api_key:
-                return StepResult(status="skipped", output={"reason": "no key entered"})
+            if existing_vault.get(pid, False):
+                try:
+                    keep_choice = (
+                        typer.prompt(
+                            f"  Existing {label} key found in vault. Keep it? (Y/n)",
+                            default="y",
+                        )
+                        .strip()
+                        .lower()
+                    )
+                except KeyboardInterrupt:
+                    raise
+                except EOFError:
+                    keep_choice = "y"
+                keep_existing = keep_choice in ("", "y", "yes")
+
+            if keep_existing:
+                api_key = ""
+            else:
+                try:
+                    api_key = _prompt_masked(f"  {label} API key", default="").strip()
+                except KeyboardInterrupt:
+                    raise
+                except EOFError:
+                    return StepResult(status="skipped", output={"reason": "interrupted"})
+                if not api_key:
+                    return StepResult(status="skipped", output={"reason": "no key entered"})
 
         # Persist in vault if available, else fall back to marker file
-        try:
-            from navig.vault.core_v2 import get_vault_v2
+        if api_key:
+            try:
+                from navig.vault.core_v2 import get_vault_v2
 
-            vault = get_vault_v2()
-            if vault is not None:
-                vault.put(
-                    f"{pid}/api_key",
-                    json.dumps({"value": api_key}).encode(),
-                )
-        except Exception:  # noqa: BLE001
-            pass
+                vault = get_vault_v2()
+                if vault is not None:
+                    vault.put(
+                        f"{pid}/api_key",
+                        json.dumps({"value": api_key}).encode(),
+                    )
+            except Exception:  # noqa: BLE001
+                pass
 
         # ── Optional fallback provider ────────────────────────────────────
         fallback_pid = ""
@@ -516,7 +565,10 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
                 pass  # best-effort; never block onboarding
 
         marker.write_text(pid, encoding="utf-8")
-        out: dict = {"provider": pid, "keySource": "interactive"}
+        out: dict = {
+            "provider": pid,
+            "keySource": "vault-existing" if keep_existing else "interactive",
+        }
         if fallback_pid:
             out["fallback_provider"] = fallback_pid
         return StepResult(status="completed", output=out)
