@@ -55,6 +55,11 @@ _WEB_SEARCH_PROVIDER_CATALOG: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "Kimi (Moonshot)    (Moonshot web search)",
         ("KIMI_API_KEY", "MOONSHOT_API_KEY"),
     ),
+    (
+        "tavily",
+        "Tavily             (RAG-optimized, LLM-native search)",
+        ("TAVILY_API_KEY",),
+    ),
 )
 
 
@@ -886,6 +891,7 @@ def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
         "xai": "grok",
         "kimi": "kimi",
         "moonshot": "kimi",
+        "tavily": "tavily",
     }
 
     def _persist_provider(preferred_provider: str) -> bool:
