@@ -49,6 +49,7 @@ def run_engine_onboarding(
     jump_to_step: str | None = None,
     show_banner: bool = True,
     respect_skip_env: bool = False,
+    skip_if_configured: bool = False,
     _revisit_depth: int = 0,
 ) -> EngineState | None:
     """Run canonical engine onboarding and return final state, or None if skipped."""
@@ -56,7 +57,12 @@ def run_engine_onboarding(
         return None
 
     navig_dir = Path.home() / ".navig"
-    if not force and (navig_dir / "onboarding.json").exists() and not jump_to_step:
+    if (
+        skip_if_configured
+        and not force
+        and (navig_dir / "onboarding.json").exists()
+        and not jump_to_step
+    ):
         return None
 
     cfg = EngineConfig(
@@ -156,6 +162,11 @@ def _print_verification_dashboard(state: EngineState, step_tiers: dict[str, str]
     )
 
     deferred = _deferred_integration_commands(state, step_tiers)
+    if not state.interrupted_at and (status_counts.get("skipped", 0) > 0 or status_counts.get("failed", 0) > 0):
+        sys.stdout.write(
+            "  Recommended next: navig init --reconfigure  "
+            "(finish skipped/failed setup steps)\n"
+        )
     if deferred:
         col_width = max(len(cmd) for cmd, _ in deferred)
         sys.stdout.write("  Deferred integrations:\n")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 
@@ -92,3 +93,17 @@ def test_no_banner_when_show_banner_false():
     output = buf.getvalue()
     assert "Welcome" not in output
     assert "first-time" not in output
+
+
+def test_skip_if_configured_returns_none(tmp_path: Path):
+    """When skip_if_configured=True and onboarding artifact exists, runner returns None."""
+    navig_dir = tmp_path / ".navig"
+    navig_dir.mkdir(parents=True, exist_ok=True)
+    (navig_dir / "onboarding.json").write_text("{}", encoding="utf-8")
+
+    with patch("pathlib.Path.home", return_value=tmp_path):
+        from navig.onboarding.runner import run_engine_onboarding
+
+        state = run_engine_onboarding(skip_if_configured=True, show_banner=True)
+
+    assert state is None

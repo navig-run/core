@@ -1883,6 +1883,7 @@ def init_command(
         jump_to_step=jump_to_step,
         show_banner=True,
         respect_skip_env=False,
+        skip_if_configured=True,
     )
 
     if state is None and not reconfigure and not provider:

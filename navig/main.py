@@ -279,7 +279,11 @@ def _check_first_run() -> None:
         if not should_auto_run_onboarding(sys.argv):
             return
 
-        run_engine_onboarding(show_banner=True, respect_skip_env=True)
+        run_engine_onboarding(
+            show_banner=True,
+            respect_skip_env=True,
+            skip_if_configured=True,
+        )
     except Exception as exc:  # never crash main on onboarding failure
         _eprint(f"[dim]First-run setup skipped: {exc}[/dim]")
 

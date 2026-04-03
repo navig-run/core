@@ -168,6 +168,15 @@ class TestPrintVerificationDashboard:
 
         assert "Deferred integrations" not in output
 
+    def test_recommended_next_command_shown_when_steps_not_finished(self) -> None:
+        state = _make_state(("ai-provider", "skipped"), ("matrix", "completed"))
+        tiers = {"ai-provider": "recommended", "matrix": "optional"}
+
+        output = self._capture_dashboard(state, tiers)
+
+        assert "Recommended next:" in output
+        assert "navig init --reconfigure" in output
+
     def test_description_appears_on_same_line_as_command(self) -> None:
         state = _make_state(("matrix", "skipped"))
         tiers = _optional_tiers("matrix")
