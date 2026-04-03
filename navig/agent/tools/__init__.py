@@ -170,6 +170,22 @@ def register_worktree_tools() -> None:
         logger.debug("Worktree tools not available (skip): %s", exc)
 
 
+def register_coordinator_tools() -> None:
+    """Register coordinator_run and coordinator_status tools (FB-01)."""
+    try:
+        from navig.agent.agent_tool_registry import _AGENT_REGISTRY
+        from navig.agent.tools.coordinator_tools import (
+            CoordinatorRunTool,
+            CoordinatorStatusTool,
+        )
+
+        _AGENT_REGISTRY.register(CoordinatorRunTool(), toolset="coordinator")
+        _AGENT_REGISTRY.register(CoordinatorStatusTool(), toolset="coordinator")
+        logger.debug("Agent coordinator tools registered")
+    except ImportError as exc:
+        logger.debug("Coordinator tools not available (skip): %s", exc)
+
+
 def register_all_tools() -> None:
     """Register all available built-in agent tools.
 
@@ -186,6 +202,7 @@ def register_all_tools() -> None:
         ("plan_context", register_plan_context_tools),
         ("background_task", register_background_task_tools),
         ("worktree", register_worktree_tools),
+        ("coordinator", register_coordinator_tools),
     ]:
         try:
             fn()
