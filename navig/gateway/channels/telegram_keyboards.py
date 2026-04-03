@@ -730,6 +730,16 @@ class CallbackHandler:
                     await self._answer(cb_id, "⚠️ Action unavailable")
                 return
 
+            # ── Setup-fix callbacks from /status (stfix:*) — no store needed ──
+            if cb_data.startswith("stfix:"):
+                handler = getattr(self.channel, "_handle_status_fix_callback", None)
+                if handler:
+                    self._answered_callback_ids.add(cb_id)
+                    await handler(cb_id, cb_data, chat_id, user_id)
+                else:
+                    await self._answer(cb_id, "⚠️ Setup fix unavailable")
+                return
+
             # ── Audio deep menu (audio:*) — no store needed ──
             if cb_data.startswith("audio:"):
                 try:

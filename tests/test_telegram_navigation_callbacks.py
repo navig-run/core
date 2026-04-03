@@ -162,3 +162,37 @@ async def test_provider_picker_delegate_accepts_decorated_signature(monkeypatch)
         "selected_tier": "b",
         "message_id": 303,
     }
+
+
+@pytest.mark.asyncio
+async def test_stfix_callback_routes_to_channel_handler(monkeypatch):
+    channel = TelegramChannel(
+        bot_token="123:FAKE",
+        allowed_users=[42],
+        on_message=lambda *args, **kwargs: None,
+    )
+
+    called: list[tuple[str, str, int, int]] = []
+
+    async def _status_fix_handler(self, cb_id: str, cb_data: str, chat_id: int, user_id: int):
+        called.append((cb_id, cb_data, chat_id, user_id))
+
+    monkeypatch.setattr(
+        TelegramChannel,
+        "_handle_status_fix_callback",
+        _status_fix_handler,
+        raising=False,
+    )
+
+    handler = CallbackHandler(channel)
+
+    await handler.handle(
+        {
+            "id": "cb-stfix",
+            "data": "stfix:host-missing",
+            "message": {"chat": {"id": 700}, "message_id": 701},
+            "from": {"id": 42},
+        }
+    )
+
+    assert called == [("cb-stfix", "stfix:host-missing", 700, 42)]

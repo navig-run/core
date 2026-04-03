@@ -1217,6 +1217,8 @@ class TelegramCommandsMixin:
         except Exception:
             pass
 
+        status_fix_issues: list[dict[str, str]] = []
+
         # Setup readiness (CLI parity with `navig init --status`)
         try:
             from navig.commands.init import get_init_status_payload
@@ -1231,6 +1233,7 @@ class TelegramCommandsMixin:
             if isinstance(issues, list) and issues:
                 lines.append("")
                 lines.append("*Setup fixes:*")
+                status_fix_issues = [i for i in issues if isinstance(i, dict)]
                 for issue in issues[:2]:
                     if not isinstance(issue, dict):
                         continue
@@ -1256,12 +1259,24 @@ class TelegramCommandsMixin:
 
         # Navigation context: show Back / Home only when rendered inside a nav screen
         if message_id:
-            keyboard = [
+            keyboard: list[list[dict[str, str]]] = []
+            for issue in status_fix_issues[:2]:
+                code = str(issue.get("code") or "").strip()
+                summary = str(issue.get("summary") or "").strip()
+                if not code:
+                    continue
+                title = summary or "Run setup fix"
+                if len(title) > 36:
+                    title = title[:33] + "..."
+                keyboard.append(
+                    [{"text": f"🛠 {title}", "callback_data": f"stfix:{code}"}]
+                )
+            keyboard.append(
                 [
                     {"text": "🔙 Back", "callback_data": "nav:back"},
                     {"text": "🏠 Home", "callback_data": "nav:home"},
                 ],
-            ]
+            )
             await self.edit_message(
                 chat_id,
                 message_id,
@@ -1270,7 +1285,96 @@ class TelegramCommandsMixin:
                 keyboard=keyboard,
             )
             return
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+        keyboard = None
+        fix_buttons: list[list[dict[str, str]]] = []
+        for issue in status_fix_issues[:2]:
+            code = str(issue.get("code") or "").strip()
+            summary = str(issue.get("summary") or "").strip()
+            if not code:
+                continue
+            title = summary or "Run setup fix"
+            if len(title) > 36:
+                title = title[:33] + "..."
+            fix_buttons.append(
+                [{"text": f"🛠 {title}", "callback_data": f"stfix:{code}"}]
+            )
+        if fix_buttons:
+            keyboard = fix_buttons
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown", keyboard=keyboard)
+
+    async def _handle_status_fix_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        user_id: int,
+    ) -> None:
+        """Execute one readiness recovery command selected from Telegram /status."""
+        issue_code = cb_data.split(":", 1)[1].strip() if ":" in cb_data else ""
+        if not issue_code:
+            await self._api_call(
+                "answerCallbackQuery",
+                {
+                    "callback_query_id": cb_id,
+                    "text": "⚠️ Invalid setup action",
+                    "show_alert": False,
+                },
+            )
+            return
+
+        try:
+            from navig.commands.init import get_init_status_payload
+
+            payload = get_init_status_payload()
+            readiness = payload.get("readiness", {}) if isinstance(payload, dict) else {}
+            issues = readiness.get("issues", []) if isinstance(readiness, dict) else []
+        except Exception:
+            issues = []
+
+        selected = None
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            if str(issue.get("code") or "").strip() == issue_code:
+                selected = issue
+                break
+
+        if not selected:
+            await self._api_call(
+                "answerCallbackQuery",
+                {
+                    "callback_query_id": cb_id,
+                    "text": "✅ Already resolved",
+                    "show_alert": False,
+                },
+            )
+            return
+
+        command = str(selected.get("command") or "").strip()
+        if not command:
+            await self._api_call(
+                "answerCallbackQuery",
+                {
+                    "callback_query_id": cb_id,
+                    "text": "⚠️ No command available",
+                    "show_alert": False,
+                },
+            )
+            return
+
+        navig_cmd = command
+        if navig_cmd.lower().startswith("navig "):
+            navig_cmd = navig_cmd[6:]
+
+        await self._api_call(
+            "answerCallbackQuery",
+            {
+                "callback_query_id": cb_id,
+                "text": "🚀 Running setup fix",
+                "show_alert": False,
+            },
+        )
+        await self._handle_cli_command(chat_id, user_id, {}, navig_cmd)
 
     def _runtime_state_with_context(
         self,

@@ -311,10 +311,12 @@ async def test_status_shows_setup_readiness_and_fix_commands(monkeypatch):
                 "score": 34,
                 "issues": [
                     {
+                        "code": "ai-provider-missing",
                         "summary": "AI provider is not configured",
                         "command": "navig init --provider",
                     },
                     {
+                        "code": "host-missing",
                         "summary": "No remote hosts connected",
                         "command": "navig host add <name>",
                     },
@@ -331,6 +333,45 @@ async def test_status_shows_setup_readiness_and_fix_commands(monkeypatch):
     assert "Setup fixes:" in output
     assert "navig init --provider" in output
     assert "navig host add <name>" in output
+
+    keyboard = bot.messages[-1][3].get("keyboard")
+    assert keyboard
+    flat_callbacks = [btn.get("callback_data") for row in keyboard for btn in row]
+    assert "stfix:ai-provider-missing" in flat_callbacks
+    assert "stfix:host-missing" in flat_callbacks
+
+
+@pytest.mark.asyncio
+async def test_status_fix_callback_executes_selected_command(monkeypatch):
+    bot = _make_dummy_bot()
+    executed: list[str] = []
+
+    monkeypatch.setattr(
+        "navig.commands.init.get_init_status_payload",
+        lambda: {
+            "readiness": {
+                "issues": [
+                    {
+                        "code": "host-missing",
+                        "summary": "No remote hosts connected",
+                        "command": "navig host add prod",
+                    }
+                ]
+            }
+        },
+    )
+
+    async def _fake_cli(chat_id, user_id, metadata, navig_cmd):
+        executed.append(navig_cmd)
+
+    bot._handle_cli_command = _fake_cli
+
+    await bot._handle_status_fix_callback("cb-fix", "stfix:host-missing", 123, 456)
+
+    assert executed == ["host add prod"]
+    answer_calls = [p for m, p in bot.api_calls if m == "answerCallbackQuery"]
+    assert answer_calls
+    assert answer_calls[-1].get("text") == "🚀 Running setup fix"
 
 
 @pytest.mark.asyncio
