@@ -97,6 +97,14 @@ def test_help_json_sources_key(capsys):
     assert "registry" in data["sources"]
 
 
+def test_root_schema_outputs_json(capsys):
+    code, out, _err = _invoke_cli(["--schema"], capsys)
+    assert code == 0
+    data = json.loads(out)
+    assert "commands" in data
+    assert isinstance(data["commands"], list)
+
+
 # ---------------------------------------------------------------------------
 # navig help <topic>
 # ---------------------------------------------------------------------------
