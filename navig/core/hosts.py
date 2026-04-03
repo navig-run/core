@@ -38,7 +38,7 @@ class ConfigProvider(Protocol):
     @property
     def verbose(self) -> bool: ...
 
-    def _get_config_directories(self) -> list[Path]: ...
+    def get_config_directories(self) -> list[Path]: ...
 
     def _is_directory_accessible(self, directory: Path) -> bool: ...
 
@@ -89,7 +89,7 @@ class HostManager:
         Returns:
             True if host exists, False otherwise
         """
-        config_dirs = self._config._get_config_directories()
+        config_dirs = self._config.get_config_directories()
 
         for config_dir in config_dirs:
             try:
@@ -117,7 +117,7 @@ class HostManager:
         Returns:
             Sorted list of host names
         """
-        config_dirs = self._config._get_config_directories()
+        config_dirs = self._config.get_config_directories()
 
         # Build signature from mtimes + file count for cache invalidation
         max_mtime = 0.0
@@ -217,7 +217,7 @@ class HostManager:
         if use_cache and host_name in self._host_config_cache:
             return self._host_config_cache[host_name]
 
-        config_dirs = self._config._get_config_directories()
+        config_dirs = self._config.get_config_directories()
 
         try:
             from navig.core.config_loader import load_config
@@ -320,7 +320,7 @@ class HostManager:
         """
         self.invalidate_cache(host_name)
 
-        config_dirs = self._config._get_config_directories()
+        config_dirs = self._config.get_config_directories()
 
         for config_dir in config_dirs:
             # Delete from new format

@@ -242,7 +242,7 @@ class ConfigManager:
             pass  # best-effort cleanup; ignore access/IO errors
         return False
 
-    def _get_config_directories(self) -> list[Path]:
+    def get_config_directories(self) -> list[Path]:
         """
         Get list of configuration directories in priority order.
 
