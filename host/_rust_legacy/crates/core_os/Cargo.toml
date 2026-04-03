@@ -16,7 +16,7 @@ keyring = { workspace = true }
 core_config = { path = "../core_config" }
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.52"
+winreg = "0.56"
 
 [features]
 default = []
