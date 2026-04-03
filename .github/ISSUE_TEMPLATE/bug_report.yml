@@ -1,7 +1,7 @@
 name: Bug report
 description: Report a reproducible defect in NAVIG Core
 title: "[BUG]: "
-labels: [BUG]
+labels: [bug]
 body:
   - type: textarea
     id: report

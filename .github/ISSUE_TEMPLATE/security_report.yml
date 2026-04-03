@@ -1,6 +1,6 @@
 name: Security report
 description: Report a potential security issue (private process preferred)
-title: "[Security]: "
+title: "[SECURITY]: "
 labels: [security]
 body:
   - type: markdown

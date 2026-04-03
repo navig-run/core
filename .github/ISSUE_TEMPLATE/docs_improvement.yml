@@ -1,6 +1,6 @@
 name: Documentation improvement
-description: Report a docs gap, error or request an addition
-title: "[Docs]: "
+description: Request a docs fix or addition
+title: "[DOCS]: "
 labels: [documentation]
 body:
   - type: textarea

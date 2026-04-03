@@ -1,6 +1,6 @@
 name: Feature request
-description: Propose an enhancement, RFC or idea for NAVIG Core
-title: "[Feature]: "
+description: Propose an enhancement for NAVIG Core
+title: "[FEATURE]: "
 labels: [enhancement]
 body:
   - type: textarea
