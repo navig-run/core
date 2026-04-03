@@ -151,12 +151,9 @@ def test_deploy_template_cmd_accepts_named_template_commands(monkeypatch):
     assert called["options"]["dry_run"] is False
 
 
-def test_addon_help_starts_without_duplicate_run_registration(tmp_path: Path):
-    result = _run_cli(["addon", "--help"], tmp_path=tmp_path)
-    combined = result.stdout + result.stderr
-
-    assert result.returncode == 0
-    assert "addon" in combined.lower()
+# test_addon_help_starts_without_duplicate_run_registration removed:
+# addon_app was a deprecated hidden group removed in the inline cleanup.
+# Canonical replacement: navig flow template.
 
 
 def test_config_cache_bypass_forces_fresh_instances(tmp_path: Path):
