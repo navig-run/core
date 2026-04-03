@@ -148,6 +148,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 - **Migration ANSI color fix**: Removed module-level `Console(stderr=True)` from `navig/core/migrations.py` that broke Windows VT processing for all subsequent stdout output. Migration log messages now route through the centralized `console_helper` singleton (#38).
+- **Vault state sync**: `navig config set <sensitive-key>` now performs a best-effort write-through to the CredentialsVault for 14 known AI/integration API keys (OpenAI, Anthropic, Groq, Google, NVIDIA, xAI, Mistral, OpenRouter, GitHub Models, Telegram), so `navig vault list` reflects the key immediately without a separate `vault set` step. `navig vault list` also now shows a "Credentials detected outside vault" footer for AI provider keys found in environment variables or config but not yet synced to the vault, with a one-liner sync hint (#62).
 
 ## [2.4.20] - 2026-03-31
 
