@@ -13,6 +13,10 @@ applyTo: '**'
 6. Squash merge `feature/*` into `develop` via PR
 7. On conflicts: explain both sides + risks, then provide a patch
 8. **Never push to `main` or `develop` without user confirmation.**
+9. **One issue per PR** — never group unrelated issues into a single branch or PR.
+   Each fix/feature gets its own `feature/<slug>` branch, its own PR, and references
+   exactly one `Closes #N` in the PR body. Batch PRs (e.g. `fix: resolve N open issues
+   (#A, #B, #C…)`) are forbidden. See `github-practices.instructions.md` for full policy.
 
 ---
 

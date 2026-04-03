@@ -102,3 +102,14 @@
 - [ ] `docs/user/HANDBOOK.md` updated if CLI usage changed
 - [ ] No bare `except: pass` without explanation
 - [ ] Windows compatibility checked for any shell/process calls
+- [ ] PR addresses **exactly one issue** — `Closes #N` present in `## Closes` section
+- [ ] Issue has a prior analysis comment posted before the PR was opened
+- [ ] Automated comment bodies use real newlines (not literal `\n` escape sequences)
+- [ ] No C0 control characters (U+0000–U+001F except `\n`/`\t`) in any comment text
+
+---
+
+## GitHub Practices
+
+For the full one-PR-per-issue policy, comment quality standards, issue lifecycle rules,
+and anti-patterns, see `.github/instructions/github-practices.instructions.md`.
