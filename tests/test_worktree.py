@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import shutil
 import subprocess
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch, call
 
@@ -79,7 +82,6 @@ class TestWorktreeDataclass:
         assert d["deleted"] is False
 
     def test_age_seconds_increases(self, tmp_path):
-        import time
         wt = Worktree(name="x", path=tmp_path, branch="navig/x")
         assert wt.age_seconds >= 0
         assert wt.age_seconds < 2.0
@@ -372,7 +374,6 @@ class TestWorktreeManagerRemove:
         async def fake_git(cmd: str):
             captured.append(cmd)
             return _completed(0)
-        import os
         with patch.object(mgr, "_run_git", side_effect=fake_git):
             with patch("os.name", "posix"):
                 await mgr.remove("w", force=True)
@@ -409,7 +410,6 @@ class TestWorktreeManagerRemove:
                 return _completed(1, stderr="locked")
             return _completed(0)
 
-        import shutil
         with patch("navig.agent.worktree.os.name", "nt"):
             with patch("navig.agent.worktree.WINDOWS_RETRY_ATTEMPTS", 1):
                 with patch("navig.agent.worktree.WINDOWS_RETRY_DELAY", 0):
