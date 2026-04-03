@@ -5,14 +5,27 @@ import os
 import socket
 import sys
 from pathlib import Path
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
 from .engine import EngineConfig, EngineState, OnboardingEngine
 from .genesis import load_or_create
 from .steps import build_step_registry
 
+if TYPE_CHECKING:
+    from rich.console import Console as RichConsole
+
 # Maximum number of step-revisit loops allowed in a single session.
 _MAX_REVISIT_DEPTH = 20
+
+
+def _get_console() -> RichConsole | None:
+    """Return a Rich Console writing to stdout, or None if Rich is unavailable."""
+    try:
+        from rich.console import Console
+
+        return Console()
+    except ImportError:
+        return None
 
 
 def should_auto_run_onboarding(argv: Sequence[str] | None = None) -> bool:
@@ -71,24 +84,48 @@ def run_engine_onboarding(
     step_total = len(steps)
     started = {"n": 0}
 
+    # Initialise a stdout console once so that ANSI/VT processing is enabled for
+    # the entire wizard session — including on Windows where it must be activated
+    # per handle.  Reusing the same instance avoids repeated handle probing.
+    _con = _get_console()
+
+    def _con_print(text: str) -> None:
+        """Write *text* via Rich console when available, falling back to stdout."""
+        if _con is not None:
+            _con.print(text)
+        else:
+            sys.stdout.write(text.rstrip("\n") + "\n")
+            sys.stdout.flush()
+
     def _progress(step: object) -> None:
         started["n"] += 1
         pct = int((started["n"] / max(step_total, 1)) * 100)
         title = getattr(step, "title", str(step))
         tier = getattr(step, "tier", "essential")
-        sys.stdout.write(f"  [{started['n']}/{step_total} {pct:>3}%] · {title} ({tier})...\n")
-        sys.stdout.flush()
+        if _con is not None:
+            _con.print(
+                f"  [{started['n']}/{step_total} {pct:>3}%] [dim]·[/dim] {title}"
+                f" [dim]({tier})[/dim]..."
+            )
+        else:
+            sys.stdout.write(f"  [{started['n']}/{step_total} {pct:>3}%] · {title} ({tier})...\n")
+            sys.stdout.flush()
 
     engine = OnboardingEngine(cfg, steps, on_step_start=_progress)
 
     if show_banner:
         if force:
-            sys.stdout.write("\n  Welcome back — reconfiguring your existing NAVIG installation.\n")
-            sys.stdout.write("  Your previous settings will be preserved where not overwritten.\n\n")
+            _con_print(
+                "\n  [bold]Welcome back[/bold] — reconfiguring your existing NAVIG installation."
+            )
+            _con_print(
+                "  Your previous settings will be preserved where not overwritten.\n"
+            )
         else:
-            sys.stdout.write("\n  Welcome to NAVIG — running first-time setup.\n")
-            sys.stdout.write("  Set NAVIG_SKIP_ONBOARDING=1 to skip automatic setup.\n\n")
-        sys.stdout.flush()
+            _con_print("\n  Welcome to NAVIG — running first-time setup.")
+            _con_print(
+                "  Set [dim]NAVIG_SKIP_ONBOARDING=1[/dim] to skip automatic setup.\n"
+            )
 
     previous_guard = os.getenv("NAVIG_ONBOARDING_ACTIVE")
     os.environ["NAVIG_ONBOARDING_ACTIVE"] = "1"
@@ -106,8 +143,7 @@ def run_engine_onboarding(
         review_record = next((s for s in state.steps if s.id == "review"), None)
         revisit_target = (review_record.output or {}).get("jumpTo", "") if review_record else ""
         if revisit_target:
-            sys.stdout.write(f"\n  Revisiting step: {revisit_target} …\n\n")
-            sys.stdout.flush()
+            _con_print(f"\n  Revisiting step: {revisit_target} …\n")
             return run_engine_onboarding(
                 force=True,
                 jump_to_step=revisit_target,
@@ -118,50 +154,72 @@ def run_engine_onboarding(
 
     if show_banner:
         if state.interrupted_at:
-            sys.stdout.write("\n  Setup paused. Run 'navig init' to resume.\n\n")
+            _con_print("\n  [yellow]Setup paused.[/yellow] Run [bold]navig init[/bold] to resume.\n")
         else:
-            sys.stdout.write("\n  Setup complete. Run 'navig --help' to get started.\n\n")
-        _print_verification_dashboard(state, step_tiers)
-        sys.stdout.flush()
+            _con_print(
+                "\n  [green]Setup complete.[/green] Run [bold]navig --help[/bold] to get started.\n"
+            )
+        _print_verification_dashboard(state, step_tiers, _con)
 
     return state
 
 
-def _print_verification_dashboard(state: EngineState, step_tiers: dict[str, str]) -> None:
+def _print_verification_dashboard(
+    state: EngineState,
+    step_tiers: dict[str, str],
+    con: RichConsole | None = None,
+) -> None:
     status_counts = Counter(rec.status for rec in state.steps)
     tier_counts = Counter(step_tiers.get(rec.id, "essential") for rec in state.steps)
     total = max(len(state.steps), 1)
     completed = status_counts.get("completed", 0)
     finished_pct = int((completed / total) * 100)
 
-    sys.stdout.write("  Verification summary\n")
-    sys.stdout.write("  ───────────────────\n")
-    sys.stdout.write(
-        "  Steps: "
-        f"✔ completed={status_counts.get('completed', 0)}  "
-        f"• skipped={status_counts.get('skipped', 0)}  "
-        f"✖ failed={status_counts.get('failed', 0)}\n"
-    )
-    sys.stdout.write(f"  Completion: {finished_pct}%\n")
-    if state.interrupted_at:
-        sys.stdout.write(f"  State: interrupted at {state.interrupted_at}\n")
-    else:
-        sys.stdout.write("  State: finished ✔\n")
+    def _out(text: str) -> None:
+        if con is not None:
+            con.print(text)
+        else:
+            sys.stdout.write(text + "\n")
 
-    sys.stdout.write(
-        "  Tiers: "
-        f"essential={tier_counts.get('essential', 0)}  "
-        f"recommended={tier_counts.get('recommended', 0)}  "
-        f"optional={tier_counts.get('optional', 0)}\n"
+    _out("  [bold]Verification summary[/bold]" if con else "  Verification summary")
+    _out("  [dim]───────────────────[/dim]" if con else "  ───────────────────")
+    completed_count = status_counts.get("completed", 0)
+    skipped_count = status_counts.get("skipped", 0)
+    failed_count = status_counts.get("failed", 0)
+    if con:
+        fail_open = "[red]" if failed_count else "[dim]"
+        fail_close = "[/red]" if failed_count else "[/dim]"
+        _out(
+            f"  Steps:  [green]✔ completed={completed_count}[/green]"
+            f"  [dim]• skipped={skipped_count}[/dim]"
+            f"  {fail_open}✖ failed={failed_count}{fail_close}"
+        )
+    else:
+        _out(
+            f"  Steps: ✔ completed={completed_count}  • skipped={skipped_count}  ✖ failed={failed_count}"
+        )
+    _out(f"  Completion: {finished_pct}%")
+    if state.interrupted_at:
+        _out(f"  State: interrupted at {state.interrupted_at}")
+    else:
+        _out("  State: [green]finished ✔[/green]" if con else "  State: finished ✔")
+
+    _out(
+        f"  Tiers: essential={tier_counts.get('essential', 0)}"
+        f"  recommended={tier_counts.get('recommended', 0)}"
+        f"  optional={tier_counts.get('optional', 0)}"
     )
 
     deferred = _deferred_integration_commands(state, step_tiers)
     if deferred:
         col_width = max(len(cmd) for cmd, _ in deferred)
-        sys.stdout.write("  Deferred integrations:\n")
+        _out("  Deferred integrations:")
         for cmd, description in deferred:
-            sys.stdout.write(f"    - {cmd:<{col_width}}  {description}\n")
-    sys.stdout.write("\n")
+            if con:
+                _out(f"    [dim]-[/dim] [bold]{cmd:<{col_width}}[/bold]  {description}")
+            else:
+                _out(f"    - {cmd:<{col_width}}  {description}")
+    _out("")
 
 
 def _deferred_integration_commands(
