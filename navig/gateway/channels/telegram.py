@@ -1100,6 +1100,16 @@ class TelegramChannel:
                 )
                 await self.send_message(chat_id, f"❌ {err_msg}", parse_mode=None)
 
+        else:
+            # AI handler not configured — inform the user instead of silently
+            # dropping the message (fixes #36).
+            await self.send_message(
+                chat_id,
+                "❌ AI is not configured yet. Use /help to see available commands "
+                "or /start to begin setup.",
+                parse_mode=None,
+            )
+
     async def _keep_typing(self, chat_id: int, interval: float = 4.0):
         """Re-send 'typing' indicator every ``interval`` seconds until cancelled."""
         try:

@@ -137,6 +137,14 @@ _STEP_LABELS: dict[str, str] = {
     "first-host": "first host",
     "telegram-bot": "telegram",
     "skills-activation": "skills",
+    # Phase 2 — optional / extended
+    "sigil-genesis": "identity sigil",
+    "core-navig": "core setup",
+    "web-search-provider": "web search",
+    "matrix-bot": "matrix",
+    "email-smtp": "email",
+    "social-link": "social",
+    "import-secrets": "import secrets",
 }
 
 _LABEL_W = 18  # visual column width for step labels

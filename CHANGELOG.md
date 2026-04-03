@@ -10,6 +10,13 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Run: git log v2.4.20..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
 
 ### Added
+- **Tavily search provider** (#42): Added Tavily to the web-search-provider onboarding catalog (`_WEB_SEARCH_PROVIDER_CATALOG`) and `provider_aliases` normalization map in `navig/onboarding/steps.py`.
+- **Onboarding step labels** (#45): Added missing human-readable labels for `sigil-genesis`, `core-navig`, `web-search-provider`, `matrix-bot`, `email-smtp`, `social-link`, and `import-secrets` in `navig/onboarding/renderer.py` so the setup summary displays friendly names instead of raw step IDs.
+
+### Fixed
+- **Pytest basetemp on fresh clone** (#34): Created root `conftest.py` with `pytest_sessionstart` hook that ensures `.local/.pytest_tmp` exists before collection, preventing `--basetemp` failures on first run.
+- **`navig help <cmd>` order-agnostic** (#47): `_normalize_help_compat_args()` in `navig/main.py` now rewrites leading `navig help db` → `navig db --help` (previously only trailing `navig db help` was normalized).
+- **Telegram silent drop when AI unconfigured** (#36): Added an `else` branch to the `if self.on_message:` gate in `navig/gateway/channels/telegram.py` so the bot sends a helpful fallback message instead of silently ignoring user input when the AI handler is not configured.
 - **FTS5 Session Search** (F-13): Full-text search for conversation messages using SQLite FTS5 extension. `ConversationStore` schema bumped to v2 with `messages_fts` virtual table (`porter unicode61` tokenizer) and automatic INSERT/UPDATE/DELETE triggers. `fts_search()` method returns BM25-ranked results with score and snippet. `search_content()` upgraded to use FTS5 MATCH with LIKE fallback for robustness. Migration backfills existing messages into FTS index on upgrade. 15 new tests in `test_conversation_store.py`.
 - **Worktree Isolation** (FB-05): `WorktreeManager` async git worktree lifecycle manager for parallel agent workers. `Worktree` dataclass tracks name, path, branch, created_at, merged, deleted, `age_seconds` property, and `to_dict()`. `WorktreeManager` supports `create(name, base_branch)` — validates name (alphanumeric/hyphens/underscores), checks `MAX_WORKTREES=10` cap, verifies git repo, creates branch `navig/<name>` and worktree under `.navig_worktrees/`. `merge_back(name, target_branch)` auto-detects HEAD branch when target omitted, checks for new commits via `git log`, attempts `git merge --no-edit`, aborts on conflict and returns False. `remove(name, force)` idempotent removal with Windows retry loop (3×1s), `shutil.rmtree` fallback on exhaustion, `git branch -D` cleanup. `cleanup_all()` removes all worktrees, prunes stale references, removes empty base dir, returns count. `list_worktrees()` returns active (non-deleted) dicts. `get_worktree(name)` returns `Worktree | None` (None for deleted). `active_count` property. Async context manager calls `cleanup_all()` on `__aexit__`. Module-level singleton via `get_manager(repo_root)`/`reset_manager()`. Four agent tools: `worktree_create` (params: name required, base_branch optional), `worktree_list` (no params), `worktree_merge` (params: name required, target_branch optional), `worktree_remove` (params: name required, force optional bool). All registered under `"worktree"` toolset. `.navig_worktrees/` added to `.gitignore`. 86 tests.
 - **Background Tasks** (FB-04): `BackgroundTaskManager` async subprocess manager for the agent system. `BackgroundTask` dataclass tracks task_id, label, command, pid, started_at, completed_at, exit_code, output_file, `is_running` property, and `duration` property. Manager supports `start(command, label, cwd)` — spawns a subprocess shell with stdout/stderr captured to disk, returns immediately. `_monitor()` asyncio background task waits for process exit, records exit code, and closes file handles. `status(task_id)` returns dict with running/completed state, duration, exit_code, output line count, and pid. `get_output(task_id, tail=50)` reads last N lines from the output log file. `kill(task_id)` terminates then force-kills after 5s timeout. `list_tasks()` returns status dicts for all tracked tasks sorted by id. `cleanup(max_age=3600)` removes completed task records older than max_age and deletes output log files. `shutdown()` terminates all running tasks and awaits all monitor coroutines for clean teardown (important on Windows). `MAX_CONCURRENT=10` limit enforced at start. Module-level singleton via `get_manager()`/`reset_manager()`. Four agent tools: `background_task_start` (params: command required, label optional, cwd optional), `background_task_status` (params: task_id optional — 0 or omit lists all), `background_task_output` (params: task_id required, tail optional default 50), `background_task_kill` (params: task_id required). All registered under `"background_task"` toolset. Output dir: `~/.navig/bg_tasks/`. Windows-compatible with `encoding="utf-8", errors="replace"` for all file handles. 71 tests.
@@ -2243,14 +2250,13 @@ Full implementation of Phase 1 & Phase 2 autonomous agent capabilities:
 
 ### �📊 Autonomous Agent Gap Analysis (2025-02-02)
 
-- **Comprehensive Gap Analysis** - [docs/GAP_ANALYSIS.md](docs/GAP_ANALYSIS.md)
+- **Comprehensive Gap Analysis** 
   - Computer Understanding & Control - Desktop/browser automation gaps identified
   - Browser Capabilities - Playwright integration roadmap
   - API Integration - Webhook receiver, background token refresh needed
   - MCP Integration - MCP Client capability missing (server works)
   - UX/DX & Workflow - Approval flows, task queue recommendations
   - Priority roadmap with complexity estimates
-  - Competitor comparison: NAVIG vs Claude Desktop, Codex CLI, Reference Agent
 
 ### 🤖 Autonomous Agent System (2025-02-03)
 
