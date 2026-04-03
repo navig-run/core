@@ -4070,32 +4070,8 @@ def web_hestia_remove(
         raise typer.Exit(1)
 
 
-# Legacy aliases for backward compatibility (hidden)
-@app.command("webserver-list-vhosts", hidden=True)
-def webserver_list_vhosts_cmd(ctx: typer.Context):
-    """[DEPRECATED: Use 'navig web vhosts']"""
-    ch.warning("'navig webserver-list-vhosts' is deprecated. Use 'navig web vhosts' instead.")
-    from navig.commands.webserver import list_vhosts
-
-    list_vhosts(ctx.obj)
-
-
-@app.command("webserver-test-config", hidden=True)
-def webserver_test_config_cmd(ctx: typer.Context):
-    """[DEPRECATED: Use 'navig web test']"""
-    ch.warning("'navig webserver-test-config' is deprecated. Use 'navig web test' instead.")
-    from navig.commands.webserver import test_config
-
-    test_config(ctx.obj)
-
-
-@app.command("webserver-reload", hidden=True)
-def webserver_reload_cmd(ctx: typer.Context):
-    """[DEPRECATED: Use 'navig web reload']"""
-    ch.warning("'navig webserver-reload' is deprecated. Use 'navig web reload' instead.")
-    from navig.commands.webserver import reload_server
-
-    reload_server(ctx.obj)
+# Deprecated hidden webserver aliases removed.
+# Canonical commands: `navig web vhosts`, `navig web test`, `navig web reload`.
 
 
 
