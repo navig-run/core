@@ -798,6 +798,14 @@ def show_init_status() -> dict[str, Any]:
 
     providers_detected = sorted(detected_provider_sources.keys())
 
+    next_actions: list[str] = []
+    if active_provider == "not configured" and not providers_detected:
+        next_actions.append("navig init --provider")
+    if hosts_count == 0:
+        next_actions.append("navig host add <name>")
+    if not web_ready:
+        next_actions.append("navig init --reconfigure")
+
     payload = {
         "provider": active_provider,
         "providers_detected": providers_detected,
@@ -816,6 +824,7 @@ def show_init_status() -> dict[str, Any]:
             "provider": web_provider,
             "ready": web_ready,
         },
+        "next_actions": next_actions,
         "python_version": sys.version.split()[0],
         "navig_version": navig_version,
     }
@@ -841,6 +850,10 @@ def show_init_status() -> dict[str, Any]:
         f"Web search: {payload['web_search']['provider']} "
         f"({'ready' if payload['web_search']['ready'] else 'needs key'})"
     )
+    if payload["next_actions"]:
+        ch.info("Next actions:")
+        for action in payload["next_actions"]:
+            ch.info(f"  - {action}")
     ch.info(f"Python: {payload['python_version']}")
     ch.info(f"NAVIG: {payload['navig_version']}")
 

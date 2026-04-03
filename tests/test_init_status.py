@@ -58,6 +58,7 @@ def test_show_init_status_returns_expected_payload(tmp_path: Path, monkeypatch, 
     assert payload["integrations"]["email"] is False
     assert payload["web_search"]["provider"] in {"auto", "brave", "duckduckgo", "perplexity", "gemini", "grok", "kimi"}
     assert isinstance(payload["web_search"]["ready"], bool)
+    assert isinstance(payload.get("next_actions", []), list)
     assert payload["python_version"]
     assert payload["navig_version"]
 
@@ -125,3 +126,27 @@ def test_show_init_status_aggregates_ai_credentials_from_env_and_config(
     sources = payload.get("provider_sources", {})
     assert "env" in sources.get("openai", [])
     assert "config" in sources.get("openrouter", [])
+
+
+def test_show_init_status_surfaces_next_actions_for_unconfigured_state(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    home = _isolate_home(tmp_path, monkeypatch)
+    navig_dir = home / ".navig"
+    navig_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.delenv("NAVIG_LLM_PROVIDER", raising=False)
+    monkeypatch.delenv("NAVIG_WEB_SEARCH_PROVIDER", raising=False)
+
+    from navig.commands.init import show_init_status
+
+    payload = show_init_status()
+    out = capsys.readouterr().out
+
+    assert "navig init --provider" in payload["next_actions"]
+    assert "navig host add <name>" in payload["next_actions"]
+    assert "Next actions:" in out
+    assert "navig init --provider" in out
+    assert "navig host add <name>" in out
