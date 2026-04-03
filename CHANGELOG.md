@@ -31,6 +31,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Telegram `/status` readiness parity**: Chat status now includes setup readiness state/score and up to two concrete recovery commands from init readiness diagnostics, aligning Telegram guidance with CLI `navig init --status` output.
 - **Telegram `/status` one-tap fixes**: Status cards now include inline `🛠` buttons (`stfix:*`) for the top readiness issues; tapping a button runs the mapped setup recovery command directly through the existing CLI gateway path.
 - **Telegram post-fix refresh CTA**: After a one-tap setup fix runs, Telegram now posts a `🔄 Refresh status` button (`nav:open:status`) so users can immediately verify readiness improvements with one tap.
+- **Telegram setup-fix dedup guard**: Repeated taps on the same `stfix:*` action are now deduplicated while a fix is running, returning `⏳ Setup fix already running` instead of launching duplicate commands.
 
 ### Added
 - **Coordinator Mode** (FB-01): Added `CoordinatorAgent` plan→execute→synthesise orchestration with worker specs/results, dependency-aware batching, model hint resolution, and synthesis fallback. Added agent tools `coordinator_run` and `coordinator_status`, registered under the `"coordinator"` toolset via `register_all_tools()`. Added regression tests in `tests/test_coordinator.py`.

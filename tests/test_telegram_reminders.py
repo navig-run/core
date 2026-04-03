@@ -1,3 +1,4 @@
+import asyncio
 import json
 import pytest
 from pathlib import Path
@@ -379,6 +380,50 @@ async def test_status_fix_callback_executes_selected_command(monkeypatch):
     assert keyboard
     callbacks = [btn.get("callback_data") for row in keyboard for btn in row]
     assert "nav:open:status" in callbacks
+
+
+@pytest.mark.asyncio
+async def test_status_fix_callback_deduplicates_inflight_runs(monkeypatch):
+    bot = _make_dummy_bot()
+    started = asyncio.Event()
+    release = asyncio.Event()
+    executed: list[str] = []
+
+    monkeypatch.setattr(
+        "navig.commands.init.get_init_status_payload",
+        lambda: {
+            "readiness": {
+                "issues": [
+                    {
+                        "code": "host-missing",
+                        "summary": "No remote hosts connected",
+                        "command": "navig host add prod",
+                    }
+                ]
+            }
+        },
+    )
+
+    async def _fake_cli(chat_id, user_id, metadata, navig_cmd):
+        executed.append(navig_cmd)
+        started.set()
+        await release.wait()
+
+    bot._handle_cli_command = _fake_cli
+
+    task1 = asyncio.create_task(
+        bot._handle_status_fix_callback("cb-fix-1", "stfix:host-missing", 123, 456)
+    )
+    await started.wait()
+
+    await bot._handle_status_fix_callback("cb-fix-2", "stfix:host-missing", 123, 456)
+
+    release.set()
+    await task1
+
+    assert executed == ["host add prod"]
+    answer_calls = [p for m, p in bot.api_calls if m == "answerCallbackQuery"]
+    assert any(call.get("text") == "⏳ Setup fix already running" for call in answer_calls)
 
 
 @pytest.mark.asyncio

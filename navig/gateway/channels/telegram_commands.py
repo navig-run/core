@@ -1366,6 +1366,25 @@ class TelegramCommandsMixin:
         if navig_cmd.lower().startswith("navig "):
             navig_cmd = navig_cmd[6:]
 
+        in_flight = getattr(self, "_status_fix_inflight", None)
+        if not isinstance(in_flight, set):
+            in_flight = set()
+            setattr(self, "_status_fix_inflight", in_flight)
+
+        inflight_key = (int(chat_id), int(user_id), issue_code)
+        if inflight_key in in_flight:
+            await self._api_call(
+                "answerCallbackQuery",
+                {
+                    "callback_query_id": cb_id,
+                    "text": "⏳ Setup fix already running",
+                    "show_alert": False,
+                },
+            )
+            return
+
+        in_flight.add(inflight_key)
+
         await self._api_call(
             "answerCallbackQuery",
             {
@@ -1377,6 +1396,7 @@ class TelegramCommandsMixin:
         try:
             await self._handle_cli_command(chat_id, user_id, {}, navig_cmd)
         finally:
+            in_flight.discard(inflight_key)
             await self.send_message(
                 chat_id,
                 "✅ Setup fix command finished. Refresh status to verify readiness.",
