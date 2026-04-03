@@ -145,6 +145,9 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Init web search onboarding: added `web-search-provider` step in engine onboarding with premium provider picker UX (Perplexity/Brave/Gemini/Grok/Kimi), vault-first API-key persistence with compatibility fallback, env alias normalization (`ddg`/`google`/`xai`/`moonshot`) with invalid-value safe fallback to `auto`, `navig init --status` web-search readiness reporting, and `navig search --provider ...` routing wired to runtime provider resolution.
 - Proactive/reminder hardening: reminder delivery now uses capped retries (max 3) with failure finalization, engagement cooldown buckets are split (`checkin` vs `idle_nudge` vs `wrapup`), notifier/engine share a process-level engagement coordinator singleton, scheduled task last-run state survives restarts, AI auto-mode sessions expire after 24h inactivity with user-visible notice, and proactive poll intervals are configurable via `proactive.*_interval_sec`.
 
+### Fixed
+- **Migration ANSI color fix**: Removed module-level `Console(stderr=True)` from `navig/core/migrations.py` that broke Windows VT processing for all subsequent stdout output. Migration log messages now route through the centralized `console_helper` singleton (#38).
+
 ## [2.4.20] - 2026-03-31
 
 ### Added

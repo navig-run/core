@@ -11,10 +11,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from packaging import version as pkg_version
-from rich.console import Console
-
-# Use stderr for migration logs to avoid polluting stdout (JSON output)
-stderr_console = Console(stderr=True)
 
 # Current configuration version
 CURRENT_VERSION = "1.0"
@@ -104,19 +100,20 @@ class MigrationManager:
         modified = False
         migrated_config = config.copy()
 
-        # Log to stderr to allow clean stdout for JSON output
-        stderr_console.print(f"[blue]ℹ[/blue] Applying {len(pending)} configuration migrations...")
+        from navig import console_helper as ch
+
+        ch.info(f"Applying {len(pending)} configuration migrations...")
 
         for migration in pending:
             try:
-                stderr_console.print(
-                    f"[dim]  - [{migration.from_version} -> {migration.to_version}] {migration.description}[/dim]"
+                ch.dim(
+                    f"  - [{migration.from_version} -> {migration.to_version}] {migration.description}"
                 )
                 migrated_config = migration.apply(migrated_config)
                 migrated_config["version"] = migration.to_version
                 modified = True
             except Exception as e:
-                stderr_console.print(f"[red]✗[/red] Migration failed: {e}")
+                ch.error(f"Migration failed: {e}")
                 # Stop processing on failure to avoid corruption
                 break
 
