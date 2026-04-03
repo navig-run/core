@@ -142,15 +142,19 @@ class LocalConnection(ConnectionAdapter):
     providing the same interface as SSH connections for remote hosts.
     """
 
-    def __init__(self, os_type: str | None = None):
+    def __init__(self, os_type: str | None = None, working_directory: "Path | None" = None):
         """
         Initialize local connection.
 
         Args:
             os_type: Override OS detection ('windows', 'linux', 'darwin').
                      If None, auto-detect using platform.system()
+            working_directory: Optional working directory for subprocess execution.
+                               Forwarded as ``cwd`` to all subprocess calls.
         """
         import platform
+
+        self._working_directory = working_directory
 
         if os_type:
             self._os_type = os_type.lower()
@@ -184,20 +188,27 @@ class LocalConnection(ConnectionAdapter):
 
         try:
             if self._os_type == "windows":
-                # On Windows, use PowerShell for better compatibility
+                # On Windows, use PowerShell for better compatibility.
+                # Use explicit encoding + errors="replace" instead of text=True to
+                # prevent UnicodeDecodeError in subprocess readerthread when
+                # PowerShell outputs non-UTF-8 bytes (fixes #48).
                 result = subprocess.run(
                     ["powershell", "-NoProfile", "-Command", command],
                     capture_output=capture_output,
-                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     timeout=cmd_timeout,
+                    cwd=self._working_directory,
                 )
             else:
                 # On Unix systems, use bash -c (safer than raw shell=True)
                 result = subprocess.run(
                     ["bash", "-c", command],
                     capture_output=capture_output,
-                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     timeout=cmd_timeout,
+                    cwd=self._working_directory,
                 )
 
             return CommandResult(

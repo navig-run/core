@@ -227,6 +227,48 @@ def test_matrix_step_skips_when_no_url_entered(monkeypatch, tmp_path: Path) -> N
     assert (tmp_path / ".matrix_configured").read_text(encoding="utf-8") == "skipped"
 
 
+def test_matrix_step_rerun_with_skipped_marker_stays_skipped(
+    monkeypatch, tmp_path: Path
+) -> None:
+    step = next(step for step in _registry(tmp_path) if step.id == "matrix")
+    (tmp_path / ".matrix_configured").write_text("skipped", encoding="utf-8")
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+
+    result = step.run()
+
+    assert result.status == "skipped"
+    assert result.output["reason"] == "non-interactive environment"
+
+
+def test_email_step_rerun_with_skipped_marker_stays_skipped(
+    monkeypatch, tmp_path: Path
+) -> None:
+    step = next(step for step in _registry(tmp_path) if step.id == "email")
+    (tmp_path / ".email_configured").write_text("skipped", encoding="utf-8")
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+
+    result = step.run()
+
+    assert result.status == "skipped"
+    assert result.output["reason"] == "non-interactive environment"
+
+
+def test_social_step_rerun_with_skipped_marker_stays_skipped(
+    monkeypatch, tmp_path: Path
+) -> None:
+    step = next(step for step in _registry(tmp_path) if step.id == "social-networks")
+    (tmp_path / ".social_configured").write_text("skipped", encoding="utf-8")
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+
+    result = step.run()
+
+    assert result.status == "skipped"
+    assert result.output["reason"] == "non-interactive environment"
+
+
 def test_review_step_returns_jump_target_when_user_declines(monkeypatch, tmp_path: Path) -> None:
     artifact = tmp_path / "onboarding.json"
     artifact.write_text(

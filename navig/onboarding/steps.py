@@ -1356,7 +1356,7 @@ def _step_matrix(navig_dir: Path) -> OnboardingStep:
     config_path = navig_dir / "config.yaml"
 
     def run() -> StepResult:
-        if marker.exists():
+        if marker.exists() and marker.read_text(encoding="utf-8").strip() != "skipped":
             return StepResult(status="completed", output={"note": "already configured"})
 
         tty = _tty_check()
@@ -1464,7 +1464,7 @@ def _step_email(navig_dir: Path) -> OnboardingStep:
     config_path = navig_dir / "config.yaml"
 
     def run() -> StepResult:
-        if marker.exists():
+        if marker.exists() and marker.read_text(encoding="utf-8").strip() != "skipped":
             return StepResult(status="completed", output={"note": "already configured"})
 
         tty = _tty_check()
@@ -1533,7 +1533,7 @@ def _step_social_networks(navig_dir: Path) -> OnboardingStep:
     marker = navig_dir / ".social_configured"
 
     def run() -> StepResult:
-        if marker.exists():
+        if marker.exists() and marker.read_text(encoding="utf-8").strip() != "skipped":
             return StepResult(status="completed", output={"note": "already configured"})
 
         tty = _tty_check()
