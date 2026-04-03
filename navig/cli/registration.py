@@ -168,6 +168,8 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "package": ("navig.commands.package", "package_app"),
     "pack": ("navig.commands.package", "package_app"),
     "packs": ("navig.commands.package", "package_app"),
+    # ── P1-14: memory extracted from inline block ─────────────────────────────
+    "memory": ("navig.commands.memory", "memory_app"),
 }
 
 # Hidden command aliases (short forms and deprecated names)
