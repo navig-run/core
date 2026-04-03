@@ -1,8 +1,11 @@
-﻿# Changelog
+# Changelog
 
 All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+> Note: To keep this file manageable, only unreleased and recent versions are listed here.
+> Older entries have been moved to `CHANGELOG-ARCHIVE.md` (and/or yearly files such as `CHANGELOG-2025.md`).
 
 ## [Unreleased]
 
@@ -215,11 +218,11 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - feat: animated TUI onboarding, navig upgrade cmd, auto-install textual
 - docs: rewrite public-facing Markdown for v2.4.13 release
-- chore: portability-audit fixes вЂ” v2.4.13 publish readiness
+- chore: portability-audit fixes — v2.4.13 publish readiness
 - chore: remove all tracked __pycache__ and .pyc files from git index
-- feat: major update вЂ” mesh, browser, memory, gateway, new commands + gitignore hardening
+- feat: major update — mesh, browser, memory, gateway, new commands + gitignore hardening
 - perf(QUANTUM-V E+B+A): batch monitor SSH 27->4 round-trips, docker lazy dispatch, production install mode
-- perf(sessions): fast-scan mode for list/stats/delete вЂ” reads header line only, skips GBs of JSONL
+- perf(sessions): fast-scan mode for list/stats/delete — reads header line only, skips GBs of JSONL
 - chore(dev): add pydantic + numpy to dev extras
 - perf: navig help fast path + McpBridge port pre-check + disable debug_log
 - feat(memory): wire existing memory module into all AI paths
@@ -232,7 +235,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - chore: remove top-level __pycache__ from tracking
 - chore: remove tracked __pycache__ files from repo
 - chore: update gitignore for runtime artifacts
-- docs: rewrite README вЂ” pro-grade, one-command install, donation links, full doc index
+- docs: rewrite README — pro-grade, one-command install, donation links, full doc index
 - fix(agent): auto-resolve GitHub Models token from vault/config + enhance /models command
 - fix(bot): fix SOUL personality + multi-model fallback chain
 - feat(core): GitHub Models routing, vault CLI improvements, personality fix
@@ -240,14 +243,9 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - perf(cli): optimize startup from 886ms to ~450ms (50% faster)
 - feat(storage): unified SQLite engine with PRAGMA profiles, write batching & query timing
 - feat(store): implement SQLite local-first migration (Phases 1-3)
-- feat(matrix): Phase 4 вЂ” persistent store, stats webhook, PG mirror
-- feat(matrix): Phase 3 вЂ” E2EE key verification, device trust, SAS flow
-- feat(matrix): Phase 2 вЂ” inbox bridge, notifications, file sharing
-
-All notable changes to NAVIG are documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+- feat(matrix): Phase 4 — persistent store, stats webhook, PG mirror
+- feat(matrix): Phase 3 — E2EE key verification, device trust, SAS flow
+- feat(matrix): Phase 2 — inbox bridge, notifications, file sharing
 
 ## [2.4.13] - 2026-03-12
 
