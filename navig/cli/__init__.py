@@ -1730,6 +1730,7 @@ def onboarding_alias(
 
 @app.command("init")
 def init_command(
+    ctx: typer.Context,
     reconfigure: bool = typer.Option(
         False,
         "--reconfigure",
@@ -1832,11 +1833,15 @@ def init_command(
             pass
     from navig.commands.onboard import run_onboard
     from navig.onboarding.runner import run_engine_onboarding
+    want_json = bool(getattr(ctx, "obj", {}) and ctx.obj.get("json"))
 
     if status:
+        import json as _json
         from navig.commands.init import show_init_status
 
-        show_init_status()
+        payload = show_init_status(render=not want_json)
+        if want_json:
+            typer.echo(_json.dumps(payload, indent=2, ensure_ascii=False))
         return
 
     if settings:
@@ -1887,14 +1892,19 @@ def init_command(
     )
 
     if state is None and not reconfigure and not provider:
+        import json as _json
         from rich.console import Console as _C
         from navig.commands.init import show_init_status
 
-        _C().print(
-            "[green]NAVIG is already configured.[/green] "
-            "Use [bold]navig init --reconfigure[/bold] to run setup again."
-        )
-        show_init_status()
+        payload = show_init_status(render=not want_json)
+        if want_json:
+            payload = {**payload, "already_configured": True}
+            typer.echo(_json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            _C().print(
+                "[green]NAVIG is already configured.[/green] "
+                "Use [bold]navig init --reconfigure[/bold] to run setup again."
+            )
         return
 
     try:
