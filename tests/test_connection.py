@@ -5,6 +5,7 @@ Test suite for ConnectionAdapter classes (LocalConnection, SSHConnection).
 
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -61,6 +62,20 @@ class TestLocalConnection:
         """Test LocalConnection with explicit OS type."""
         conn = LocalConnection(os_type="linux")
         assert conn._os_type == "linux"
+
+    def test_local_connection_with_working_directory(self, tmp_path):
+        """Test LocalConnection forwards working_directory to subprocess.run."""
+        conn = LocalConnection(working_directory=tmp_path)
+
+        with patch("navig.core.connection.subprocess.run") as mock_run:
+            mock_run.return_value.stdout = "ok"
+            mock_run.return_value.stderr = ""
+            mock_run.return_value.returncode = 0
+
+            result = conn.run("echo ok", timeout=5.0)
+
+        assert result.exit_code == 0
+        assert mock_run.call_args.kwargs.get("cwd") == str(tmp_path)
 
     def test_run_simple_command(self):
         """Test running a simple command."""
