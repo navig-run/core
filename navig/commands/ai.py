@@ -47,14 +47,24 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
     )
     try:
         if os.name == "nt" and is_local_host:
-            # Windows local: tasklist filtered for common services — no SSH needed
+            # Windows local: tasklist filtered for common services — no SSH needed.
+            # Do NOT pass text=True here — we decode manually so that non-UTF-8
+            # bytes in tasklist output (e.g. OEM code page cp850/cp1252 on
+            # French/European Windows) don't crash the subprocess readerthread
+            # with UnicodeDecodeError.
             _r = subprocess.run(
                 ["tasklist", "/FO", "CSV", "/NH"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True, timeout=10,
             )
             if _r.returncode == 0:
+                try:
+                    _stdout = _r.stdout.decode("utf-8")
+                except UnicodeDecodeError:
+                    import locale as _locale
+                    _enc = _locale.getpreferredencoding(False) or "cp1252"
+                    _stdout = _r.stdout.decode(_enc, errors="replace")
                 _relevant = [
-                    ln for ln in _r.stdout.splitlines()
+                    ln for ln in _stdout.splitlines()
                     if any(k in ln.lower() for k in ("python", "nginx", "mysql", "node", "php", "apache"))
                 ]
                 context["processes"] = _relevant[:20] or ["(no web services detected)"]
