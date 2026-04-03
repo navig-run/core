@@ -149,6 +149,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 - **Migration ANSI color fix**: Removed module-level `Console(stderr=True)` from `navig/core/migrations.py` that broke Windows VT processing for all subsequent stdout output. Migration log messages now route through the centralized `console_helper` singleton (#38).
 - **Vault state sync**: `navig config set <sensitive-key>` now performs a best-effort write-through to the CredentialsVault for 14 known AI/integration API keys (OpenAI, Anthropic, Groq, Google, NVIDIA, xAI, Mistral, OpenRouter, GitHub Models, Telegram), so `navig vault list` reflects the key immediately without a separate `vault set` step. `navig vault list` also now shows a "Credentials detected outside vault" footer for AI provider keys found in environment variables or config but not yet synced to the vault, with a one-liner sync hint (#62).
+- **Modular identity — IDENTITY.md Phase 1 (RFC #37)**: `soul_loader.py` now recognises `~/.navig/workspace/IDENTITY.md` as step 3 in the 6-level priority chain (between active-space SOUL.md and the legacy workspace SOUL.md). When present, `IDENTITY.md` is used as the agent's runtime identity without requiring the full `SOUL.md` monolith. Existing installations that only have `SOUL.md` are unaffected. Playbook lazy-loading and `GUARDRAILS.md` splitting are deferred to Phase 2 (#37).
 
 ## [2.4.20] - 2026-03-31
 
