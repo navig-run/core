@@ -2585,15 +2585,6 @@ def tunnel_run(ctx: typer.Context):
     start_tunnel(ctx.obj)
 
 
-@tunnel_app.command("start", hidden=True)
-def tunnel_start(ctx: typer.Context):
-    """[DEPRECATED: Use 'navig tunnel run'] Start SSH tunnel."""
-    deprecation_warning("navig tunnel start", "navig tunnel run")
-    from navig.commands.tunnel import start_tunnel
-
-    start_tunnel(ctx.obj)
-
-
 @tunnel_app.command("remove")
 def tunnel_remove(ctx: typer.Context):
     """Stop and remove SSH tunnel (canonical command)."""
@@ -2602,27 +2593,9 @@ def tunnel_remove(ctx: typer.Context):
     stop_tunnel(ctx.obj)
 
 
-@tunnel_app.command("stop", hidden=True)
-def tunnel_stop(ctx: typer.Context):
-    """[DEPRECATED: Use 'navig tunnel remove'] Stop SSH tunnel."""
-    deprecation_warning("navig tunnel stop", "navig tunnel remove")
-    from navig.commands.tunnel import stop_tunnel
-
-    stop_tunnel(ctx.obj)
-
-
 @tunnel_app.command("update")
 def tunnel_update(ctx: typer.Context):
     """Restart tunnel (canonical command)."""
-    from navig.commands.tunnel import restart_tunnel
-
-    restart_tunnel(ctx.obj)
-
-
-@tunnel_app.command("restart", hidden=True)
-def tunnel_restart(ctx: typer.Context):
-    """[DEPRECATED: Use 'navig tunnel update'] Restart tunnel."""
-    deprecation_warning("navig tunnel restart", "navig tunnel update")
     from navig.commands.tunnel import restart_tunnel
 
     restart_tunnel(ctx.obj)
@@ -2640,21 +2613,6 @@ def tunnel_show(
     ctx.obj["plain"] = plain
     if json:
         ctx.obj["json"] = True
-    show_tunnel_status(ctx.obj)
-
-
-@tunnel_app.command("status", hidden=True)
-def tunnel_status(
-    ctx: typer.Context,
-    plain: bool = typer.Option(
-        False, "--plain", help="Output plain text (running/stopped) for scripting"
-    ),
-):
-    """[DEPRECATED: Use 'navig tunnel show'] Show tunnel status."""
-    deprecation_warning("navig tunnel status", "navig tunnel show")
-    from navig.commands.tunnel import show_tunnel_status
-
-    ctx.obj["plain"] = plain
     show_tunnel_status(ctx.obj)
 
 
