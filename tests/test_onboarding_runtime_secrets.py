@@ -75,6 +75,108 @@ def test_runtime_secrets_step_imports_env_into_vault(monkeypatch, tmp_path: Path
     assert "OpenAI API key" in result.output["importedFromEnv"]
 
 
+def test_runtime_secrets_emits_retroactive_update_for_openai_key(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Importing OPENAI_API_KEY should emit a retroactive update for ai-provider."""
+    fake_vault = _FakeVault()
+    step = _runtime_step(tmp_path)
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-openai")
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("navig.vault.core_v2.get_vault_v2", lambda: fake_vault)
+    monkeypatch.setattr("typer.confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "")
+    monkeypatch.setattr("builtins.input", lambda *args, **kwargs: "")
+
+    result = step.run()
+
+    assert result.status == "completed"
+    # Retroactive update should be present
+    updates = result.output.get("_retroactiveUpdates", [])
+    assert len(updates) == 1
+    upd = updates[0]
+    assert upd["id"] == "ai-provider"
+    assert upd["status"] == "completed"
+    assert upd["output"]["provider"] == "openai"
+    assert upd["output"]["keySource"] == "environment"
+
+    # ai-provider marker file should be written
+    assert (tmp_path / ".ai_provider_configured").exists()
+    assert (tmp_path / ".ai_provider_configured").read_text(encoding="utf-8") == "openai"
+
+
+def test_runtime_secrets_emits_retroactive_update_for_anthropic_key(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Importing ANTHROPIC_API_KEY should emit a retroactive update for ai-provider."""
+    fake_vault = _FakeVault()
+    step = _runtime_step(tmp_path)
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("navig.vault.core_v2.get_vault_v2", lambda: fake_vault)
+    monkeypatch.setattr("typer.confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "")
+    monkeypatch.setattr("builtins.input", lambda *args, **kwargs: "")
+
+    result = step.run()
+
+    assert result.status == "completed"
+    updates = result.output.get("_retroactiveUpdates", [])
+    assert len(updates) == 1
+    assert updates[0]["id"] == "ai-provider"
+    assert updates[0]["output"]["provider"] == "anthropic"
+
+    assert (tmp_path / ".ai_provider_configured").read_text(encoding="utf-8") == "anthropic"
+
+
+def test_runtime_secrets_no_retroactive_update_for_non_ai_keys(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Importing SerpAPI or Deepgram keys should NOT emit an ai-provider retroactive update."""
+    fake_vault = _FakeVault()
+    step = _runtime_step(tmp_path)
+
+    monkeypatch.setenv("SERPAPI_KEY", "serpapi-test-key")
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("navig.vault.core_v2.get_vault_v2", lambda: fake_vault)
+    monkeypatch.setattr("typer.confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "")
+    monkeypatch.setattr("builtins.input", lambda *args, **kwargs: "")
+
+    result = step.run()
+
+    assert result.status == "completed"
+    assert "_retroactiveUpdates" not in result.output
+    assert not (tmp_path / ".ai_provider_configured").exists()
+
+
+def test_runtime_secrets_only_first_ai_provider_emits_retroactive_update(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """When both OPENAI and ANTHROPIC keys are set, only one retroactive update is emitted."""
+    fake_vault = _FakeVault()
+    step = _runtime_step(tmp_path)
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-test")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("navig.vault.core_v2.get_vault_v2", lambda: fake_vault)
+    monkeypatch.setattr("typer.confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "")
+    monkeypatch.setattr("builtins.input", lambda *args, **kwargs: "")
+
+    result = step.run()
+
+    assert result.status == "completed"
+    updates = result.output.get("_retroactiveUpdates", [])
+    # Only one retroactive update regardless of how many AI keys were imported
+    assert len(updates) == 1
+    # Should be the first AI provider encountered (openai appears before anthropic in _ENV_KEY_IMPORTS)
+    assert updates[0]["output"]["provider"] == "openai"
+
+
 def test_runtime_secrets_step_stores_google_json_in_both_labels(
     monkeypatch, tmp_path: Path
 ) -> None:

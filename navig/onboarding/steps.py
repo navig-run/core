@@ -1467,6 +1467,14 @@ _ENV_KEY_IMPORTS: list[tuple[str, str, str]] = [
     ("DEEPGRAM_API_KEY", "deepgram/api_key", "Deepgram API key"),
 ]
 
+# Subset of _ENV_KEY_IMPORTS that map to NAVIG AI-provider IDs.
+# When runtime-secrets imports one of these, the ai-provider step is
+# retroactively marked as completed so the onboarding summary is accurate.
+_AI_PROVIDER_ENV_MAP: dict[str, str] = {
+    "OPENAI_API_KEY": "openai",
+    "ANTHROPIC_API_KEY": "anthropic",
+}
+
 
 def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
     """Import runtime API keys from environment into the NAVIG vault."""
@@ -1488,6 +1496,10 @@ def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
             vault = None
 
         imported: list[str] = []
+        # Tracks the first AI-provider key imported so we can retroactively
+        # mark the ai-provider step as completed in the onboarding summary.
+        _ai_provider_retroactive: dict | None = None
+        _ai_provider_marker = navig_dir / ".ai_provider_configured"
 
         # ── 1. Offer to import env-var API keys ──────────────────────────
         import typer
@@ -1503,6 +1515,23 @@ def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
                     if vault is not None:
                         vault.put(vault_label, json.dumps({"value": val}).encode())
                     imported.append(display_name)
+                    # If this is an AI-provider key and we haven't already
+                    # scheduled a retroactive update, prepare one now and write
+                    # the ai-provider marker so verify() reflects reality.
+                    is_ai_provider_key = env_var in _AI_PROVIDER_ENV_MAP
+                    should_emit_ai_update = _ai_provider_retroactive is None and is_ai_provider_key
+                    if should_emit_ai_update:
+                        provider_id = _AI_PROVIDER_ENV_MAP[env_var]
+                        _ai_provider_marker.write_text(provider_id, encoding="utf-8")
+                        _ai_provider_retroactive = {
+                            "id": "ai-provider",
+                            "status": "completed",
+                            "output": {
+                                "provider": provider_id,
+                                "keySource": "environment",
+                                "note": "configured via runtime-secrets",
+                            },
+                        }
             except KeyboardInterrupt:
                 raise
             except EOFError:
@@ -1535,9 +1564,12 @@ def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
                 pass
 
         marker.write_text("1", encoding="utf-8")
+        out: dict[str, object] = {"importedFromEnv": imported}
+        if _ai_provider_retroactive is not None:
+            out["_retroactiveUpdates"] = [_ai_provider_retroactive]
         return StepResult(
             status="completed",
-            output={"importedFromEnv": imported},
+            output=out,
         )
 
     def verify() -> bool:
