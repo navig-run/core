@@ -7588,103 +7588,10 @@ app.add_typer(wiki_app, name="wiki")
 
 
 # ============================================================================
-# DISPATCH - MULTI-NETWORK RELIABLE MESSAGE ROUTER
+# DISPATCH / CONTACTS — deferred to _register_external_commands
 # ============================================================================
-
-
-class _LazyDispatchGroup(TyperGroup):
-    _loaded: bool = False
-
-    def _ensure_loaded(self) -> None:
-        if self._loaded:
-            return
-        from typer.main import get_command
-
-        from navig.commands import dispatch as dispatch_module
-
-        cmd = get_command(dispatch_module.dispatch_app)
-        if hasattr(cmd, "commands"):
-            for name, c in cmd.commands.items():
-                if name not in self.commands:
-                    self.add_command(c, name)
-        self._loaded = True
-
-    def get_command(self, ctx, cmd_name):
-        self._ensure_loaded()
-        return super().get_command(ctx, cmd_name)
-
-    def list_commands(self, ctx):
-        self._ensure_loaded()
-        return super().list_commands(ctx)
-
-
-dispatch_app = typer.Typer(
-    help="Multi-network reliable message dispatch (Telegram, Discord, Matrix)",
-    invoke_without_command=True,
-    no_args_is_help=False,
-    cls=_LazyDispatchGroup,
-)
-
-
-@dispatch_app.callback()
-def dispatch_cli_callback(ctx: typer.Context):
-    """Dispatch commands - run without subcommand for help."""
-    if ctx.invoked_subcommand is None:
-        show_subcommand_help("dispatch", ctx)
-        raise typer.Exit()
-
-
-app.add_typer(dispatch_app, name="dispatch")
-
-
-# ============================================================================
-# CONTACTS - ADDRESS BOOK FOR NL ROUTING
-# ============================================================================
-
-
-class _LazyContactsGroup(TyperGroup):
-    _loaded: bool = False
-
-    def _ensure_loaded(self) -> None:
-        if self._loaded:
-            return
-        from typer.main import get_command
-
-        from navig.commands import dispatch as dispatch_module
-
-        cmd = get_command(dispatch_module.contacts_app)
-        if hasattr(cmd, "commands"):
-            for name, c in cmd.commands.items():
-                if name not in self.commands:
-                    self.add_command(c, name)
-        self._loaded = True
-
-    def get_command(self, ctx, cmd_name):
-        self._ensure_loaded()
-        return super().get_command(ctx, cmd_name)
-
-    def list_commands(self, ctx):
-        self._ensure_loaded()
-        return super().list_commands(ctx)
-
-
-contacts_app = typer.Typer(
-    help="Address book for NL contact routing (Phase 2)",
-    invoke_without_command=True,
-    no_args_is_help=False,
-    cls=_LazyContactsGroup,
-)
-
-
-@contacts_app.callback()
-def contacts_cli_callback(ctx: typer.Context):
-    """Contacts commands - run without subcommand for help."""
-    if ctx.invoked_subcommand is None:
-        show_subcommand_help("contacts", ctx)
-        raise typer.Exit()
-
-
-app.add_typer(contacts_app, name="contacts")
+# Inline lazy-loading stubs removed — dispatch and contacts are registered via
+# _EXTERNAL_CMD_MAP → navig.commands.dispatch (dispatch_app, contacts_app).
 
 
 # ============================================================================
