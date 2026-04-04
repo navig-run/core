@@ -525,7 +525,7 @@ class IntentParser:
                 compiled = re.compile(pattern, re.IGNORECASE)
                 self._patterns.append((compiled, cmd, args, conf))
             except re.error as e:
-                logger.warning(f"Invalid pattern '{pattern}': {e}")
+                logger.warning("Invalid pattern '%s': %s", pattern, e)
 
     async def parse_intent(
         self,
@@ -661,7 +661,7 @@ Determine the user's intent and extract any parameters. Respond with JSON only."
             return self._parse_ai_response(response, message)
 
         except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse AI response as JSON: {e}")
+            logger.warning("Failed to parse AI response as JSON: %s", e)
             return IntentParseResult(
                 command=None,
                 args={},
@@ -698,7 +698,7 @@ Determine the user's intent and extract any parameters. Respond with JSON only."
 
             # Validate command exists
             if command and command not in COMMAND_HANDLER_MAP:
-                logger.warning(f"AI returned unknown command: {command}")
+                logger.warning("AI returned unknown command: %s", command)
                 command = None
                 confidence = 0.0
 
@@ -717,7 +717,7 @@ Determine the user's intent and extract any parameters. Respond with JSON only."
             return result
 
         except (json.JSONDecodeError, ValueError, TypeError) as e:
-            logger.warning(f"Failed to parse AI response: {e}")
+            logger.warning("Failed to parse AI response: %s", e)
             return IntentParseResult(
                 command=None,
                 args={},

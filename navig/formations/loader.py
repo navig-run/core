@@ -124,7 +124,7 @@ def discover_formations() -> dict[str, Path]:
                         )
 
             except (json.JSONDecodeError, KeyError) as e:
-                logger.warning(f"[FORMATION] Skipping {subdir}: {e}")
+                logger.warning("[FORMATION] Skipping %s: %s", subdir, e)
 
     return formation_map
 
@@ -147,12 +147,12 @@ def read_profile(workspace_dir: Path | None = None) -> ProfileConfig | None:
     try:
         data = json.loads(profile_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
-        logger.error(f"[FORMATION] Invalid JSON in profile.json: {e}")
+        logger.error("[FORMATION] Invalid JSON in profile.json: %s", e)
         return None
 
     errors = validate_profile_data(data, path=profile_path)
     if errors:
-        logger.error(f"[FORMATION] Invalid profile.json: {'; '.join(errors)}")
+        logger.error("[FORMATION] Invalid profile.json: %s", '; '.join(errors))
         return None
 
     return ProfileConfig.from_dict(data)
@@ -206,7 +206,7 @@ def _read_doc(agent_dir: Path, doc_path: str) -> str:
     try:
         return full_path.read_text(encoding="utf-8").strip()
     except Exception as e:
-        logger.warning(f"[FORMATION] Could not read doc {full_path}: {e}")
+        logger.warning("[FORMATION] Could not read doc %s: %s", full_path, e)
         return ""
 
 
@@ -277,14 +277,14 @@ def _load_agent_from_directory(agent_dir: Path) -> AgentSpec | None:
     try:
         data = json.loads(manifest.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
-        logger.error(f"[FORMATION] Invalid JSON in {manifest}: {e}")
+        logger.error("[FORMATION] Invalid JSON in %s: %s", manifest, e)
         return None
 
     # Validate required fields
     required = ["id", "name", "role"]
     missing = [f for f in required if f not in data]
     if missing:
-        logger.error(f"[FORMATION] Agent {manifest} missing required fields: {missing}")
+        logger.error("[FORMATION] Agent %s missing required fields: %s", manifest, missing)
         return None
 
     # Read linked markdown docs
@@ -366,13 +366,13 @@ def load_formation(formation_dir: Path) -> Formation | None:
     try:
         formation = validate_formation_file(manifest_path)
     except FormationValidationError as e:
-        logger.error(f"[FORMATION] {e}")
+        logger.error("[FORMATION] %s", e)
         return None
 
     # Load agents from agents/ directory
     agents_dir = formation_dir / "agents"
     if not agents_dir.is_dir():
-        logger.warning(f"[FORMATION] No agents/ directory in {formation_dir}")
+        logger.warning("[FORMATION] No agents/ directory in %s", formation_dir)
         return formation
 
     for agent_id in formation.agents:
@@ -395,20 +395,20 @@ def load_formation(formation_dir: Path) -> Formation | None:
             if agent_file.exists():
                 agent = validate_agent_file(agent_file)
                 formation.loaded_agents[agent_id] = agent
-                logger.debug(f"[FORMATION] Loaded agent: {agent.name} ({agent.id})")
+                logger.debug("[FORMATION] Loaded agent: %s (%s)", agent.name, agent.id)
             else:
                 logger.warning(
                     f"[FORMATION] Agent '{agent_id}' not found at {agent_dir} or {agent_file}"
                 )
         except FormationValidationError as e:
-            logger.warning(f"[FORMATION] Skipping agent '{agent_id}': {e}")
+            logger.warning("[FORMATION] Skipping agent '%s': %s", agent_id, e)
 
     loaded = len(formation.loaded_agents)
     expected = len(formation.agents)
     if loaded < expected:
-        logger.warning(f"[FORMATION] Loaded {loaded}/{expected} agents for '{formation.id}'")
+        logger.warning("[FORMATION] Loaded %s/%s agents for '%s'", loaded, expected, formation.id)
     else:
-        logger.info(f"[FORMATION] Formation '{formation.name}' loaded with {loaded} agents")
+        logger.info("[FORMATION] Formation '%s' loaded with %s agents", formation.name, loaded)
 
     return formation
 
@@ -445,7 +445,7 @@ def get_active_formation(workspace_dir: Path | None = None) -> Formation | None:
             )
             formation_dir = resolve_formation(DEFAULT_PROFILE)
         if formation_dir is None:
-            logger.warning(f"[FORMATION] Default profile '{DEFAULT_PROFILE}' not found")
+            logger.warning("[FORMATION] Default profile '%s' not found", DEFAULT_PROFILE)
             return None
 
     return load_formation(formation_dir)
@@ -475,6 +475,6 @@ def list_available_formations() -> list[Formation]:
                     formations.append(formation)
                     seen_ids.add(formation.id)
             except FormationValidationError as e:
-                logger.warning(f"[FORMATION] Skipping {subdir.name}: {e}")
+                logger.warning("[FORMATION] Skipping %s: %s", subdir.name, e)
 
     return formations

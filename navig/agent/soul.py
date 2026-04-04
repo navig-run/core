@@ -290,20 +290,20 @@ class Soul(Component):
             try:
                 self._soul_content = self.SOUL_FILE.read_text(encoding="utf-8")
                 self._soul_loaded_from = self.SOUL_FILE
-                logger.debug(f"Soul: Loaded SOUL.md from {self.SOUL_FILE}")
+                logger.debug("Soul: Loaded SOUL.md from %s", self.SOUL_FILE)
                 return
             except Exception as e:
-                logger.warning(f"Soul: Failed to load user SOUL.md: {e}")
+                logger.warning("Soul: Failed to load user SOUL.md: %s", e)
 
         # Try bundled default
         if self.SOUL_DEFAULT.exists():
             try:
                 self._soul_content = self.SOUL_DEFAULT.read_text(encoding="utf-8")
                 self._soul_loaded_from = self.SOUL_DEFAULT
-                logger.debug(f"Soul: Loaded default SOUL.md from {self.SOUL_DEFAULT}")
+                logger.debug("Soul: Loaded default SOUL.md from %s", self.SOUL_DEFAULT)
                 return
             except Exception as e:
-                logger.warning(f"Soul: Failed to load default SOUL.md: {e}")
+                logger.warning("Soul: Failed to load default SOUL.md: %s", e)
 
         # No SOUL.md found - will use built-in profile
         logger.debug("Soul: No SOUL.md found, using built-in personality profile")
@@ -337,7 +337,7 @@ class Soul(Component):
             content = self._generate_default_soul()
 
         self.SOUL_FILE.write_text(content, encoding="utf-8")
-        logger.info(f"Soul: Created user SOUL.md at {self.SOUL_FILE}")
+        logger.info("Soul: Created user SOUL.md at %s", self.SOUL_FILE)
 
         # Reload
         self._load_soul_file()

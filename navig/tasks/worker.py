@@ -216,17 +216,17 @@ class TaskWorker:
                 await self.queue.complete(task.id, result=result)
                 self._stats["tasks_completed"] += 1
 
-                logger.info(f"Task completed: {task.id} ({task.name})")
+                logger.info("Task completed: %s (%s)", task.id, task.name)
 
             except asyncio.TimeoutError:
                 await self.queue.fail(task.id, f"Task timed out after {timeout}s")
                 self._stats["tasks_failed"] += 1
-                logger.error(f"Task timeout: {task.id}")
+                logger.error("Task timeout: %s", task.id)
 
         except Exception as e:
             await self.queue.fail(task.id, str(e))
             self._stats["tasks_failed"] += 1
-            logger.error(f"Task failed: {task.id} - {e}")
+            logger.error("Task failed: %s - %s", task.id, e)
 
         finally:
             self._tasks.pop(task.id, None)

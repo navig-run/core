@@ -131,10 +131,10 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
                 context["processes"] = result.stdout.strip().split("\n")
         # Windows + remote host: skip probe (requires SSH client)
     except (OSError, subprocess.SubprocessError) as e:
-        logger.debug(f"Failed to gather process context: {e}")
+        logger.debug("Failed to gather process context: %s", e)
         # Continue without process info — not critical
     except Exception as e:
-        logger.debug(f"Unexpected error gathering process context: {e}")
+        logger.debug("Unexpected error gathering process context: %s", e)
 
     # Get AI response
     try:

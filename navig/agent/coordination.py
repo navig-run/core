@@ -158,7 +158,7 @@ class AgentRegistry:
     def register(self, agent: AgentInfo) -> bool:
         """Register an agent."""
         if agent.agent_id in self._agents:
-            logger.warning(f"Agent {agent.agent_id} already registered, updating")
+            logger.warning("Agent %s already registered, updating", agent.agent_id)
 
         self._agents[agent.agent_id] = agent
 
@@ -169,7 +169,7 @@ class AgentRegistry:
             if agent.agent_id not in self._capabilities_index[cap]:
                 self._capabilities_index[cap].append(agent.agent_id)
 
-        logger.info(f"Registered agent: {agent.name} ({agent.agent_id})")
+        logger.info("Registered agent: %s (%s)", agent.name, agent.agent_id)
         return True
 
     def unregister(self, agent_id: str) -> bool:
@@ -186,7 +186,7 @@ class AgentRegistry:
                     a for a in self._capabilities_index[cap] if a != agent_id
                 ]
 
-        logger.info(f"Unregistered agent: {agent.name} ({agent_id})")
+        logger.info("Unregistered agent: %s (%s)", agent.name, agent_id)
         return True
 
     def get(self, agent_id: str) -> AgentInfo | None:
@@ -261,7 +261,7 @@ class MessageBus:
             return None
 
         if message.to_agent not in self._handlers:
-            logger.warning(f"No handler for agent {message.to_agent}")
+            logger.warning("No handler for agent %s", message.to_agent)
             return None
 
         if wait_response:
@@ -276,7 +276,7 @@ class MessageBus:
             try:
                 return await asyncio.wait_for(future, timeout=timeout)
             except asyncio.TimeoutError:
-                logger.warning(f"Timeout waiting for response to {message.message_id}")
+                logger.warning("Timeout waiting for response to %s", message.message_id)
                 self._pending_responses.pop(message.message_id, None)
                 return None
 
@@ -322,12 +322,12 @@ class MessageBus:
                                 future.set_result(response)
 
                     except Exception as e:
-                        logger.error(f"Error handling message: {e}")
+                        logger.error("Error handling message: %s", e)
 
             except asyncio.TimeoutError:
                 continue
             except Exception as e:
-                logger.error(f"Error in message processor: {e}")
+                logger.error("Error in message processor: %s", e)
 
     async def start(self):
         """Start the message bus."""
@@ -411,7 +411,7 @@ class AgentCoordinator:
         if to_agent is None:
             candidates = self.registry.find_by_capability(task.task_type)
             if not candidates:
-                logger.warning(f"No agent found for task type: {task.task_type}")
+                logger.warning("No agent found for task type: %s", task.task_type)
                 return TaskResult(
                     task_id=task.task_id,
                     success=False,
@@ -529,7 +529,7 @@ class AgentCoordinator:
                     ),
                 )
             except Exception as e:
-                logger.error(f"Speculative context gather failed: {e}")
+                logger.error("Speculative context gather failed: %s", e)
                 return ""
 
         # Return the un-awaited task so the caller can gather it later

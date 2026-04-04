@@ -33,7 +33,7 @@ class WikiDocument:
     title: str
     content: str
     folder: str
-    chunks: list[str] = None
+    chunks: list[str] | None = None
 
     def __post_init__(self):
         if self.chunks is None:

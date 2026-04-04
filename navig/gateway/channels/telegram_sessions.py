@@ -182,7 +182,7 @@ class SessionManager:
                 session = TelegramSession.from_dict(data)
                 self._sessions[session.session_key] = session
             except Exception as e:
-                logger.error(f"Failed to load session {session_file}: {e}")
+                logger.error("Failed to load session %s: %s", session_file, e)
 
     def _save_session(self, session: TelegramSession):
         """Save session to disk."""
@@ -200,7 +200,7 @@ class SessionManager:
                     tmp_file.unlink()
                 except OSError:
                     pass
-            logger.error(f"Failed to save session: {e}")
+            logger.error("Failed to save session: %s", e)
 
     def get_or_create_session(
         self, chat_id: int, user_id: int, is_group: bool = False, username: str = ""

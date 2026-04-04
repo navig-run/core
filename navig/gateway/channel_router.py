@@ -218,7 +218,7 @@ class ChannelRouter:
             if response:
                 return response
         except Exception as e:
-            logger.error(f"Conversational agent error: {e}")
+            logger.error("Conversational agent error: %s", e)
 
         # Fallback to full AI processing
         return await self.gateway.run_agent_turn(
@@ -243,7 +243,7 @@ class ChannelRouter:
                         len(self._soul_content),
                     )
             except Exception as e:
-                logger.warning(f"Could not load SOUL.md: {e}")
+                logger.warning("Could not load SOUL.md: %s", e)
 
         if session_key not in self._conv_agents:
             from navig.agent.conversational import ConversationalAgent
@@ -325,7 +325,7 @@ class ChannelRouter:
         elif command.startswith("navig "):
             command = command[6:]
 
-        logger.info(f"Executing NAVIG command: {command}")
+        logger.info("Executing NAVIG command: %s", command)
 
         try:
             import asyncio as _asyncio

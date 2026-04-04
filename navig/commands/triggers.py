@@ -649,7 +649,7 @@ class TriggerManager:
             from navig.debug_logger import get_logger
 
             logger = get_logger()
-            logger.info(f"[TRIGGER] {message}")
+            logger.info("[TRIGGER] %s", message)
             return True, ""
         else:
             return False, f"Unknown notification channel: {channel}"

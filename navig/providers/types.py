@@ -7,7 +7,7 @@ Supports multiple AI providers with unified interface.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Literal, Union
+from typing import Any, Literal
 
 
 class ModelApi(str, Enum):
@@ -180,7 +180,7 @@ class OAuthCredential:
     type: str = field(default="oauth", init=False)
 
 
-AuthProfileCredential = Union[ApiKeyCredential, TokenCredential, OAuthCredential]
+AuthProfileCredential = ApiKeyCredential | TokenCredential | OAuthCredential
 
 
 @dataclass

@@ -306,7 +306,7 @@ class TelegramChannel:
         except Exception as e:
             await self._session.close()
             self._session = None
-            logger.error(f"Failed to connect to Telegram: {e}")
+            logger.error("Failed to connect to Telegram: %s", e)
             raise RuntimeError(f"Telegram connection failed: {e}") from e
 
         if not me:
@@ -323,7 +323,7 @@ class TelegramChannel:
         # Token is valid — mark running and complete setup
         self._running = True
         self._bot_username = me.get("username", "")
-        logger.info(f"Telegram bot started: @{self._bot_username}")
+        logger.info("Telegram bot started: @%s", self._bot_username)
 
         # Auth status
         if self.require_auth:
@@ -380,9 +380,9 @@ class TelegramChannel:
             if default_chat:
                 self._notifier = TelegramNotifier(self, default_chat)
                 await self._notifier.start()
-                logger.info(f"Telegram notifier started for chat {default_chat}")
+                logger.info("Telegram notifier started for chat %s", default_chat)
         except Exception as e:
-            logger.error(f"Failed to start notifier: {e}")
+            logger.error("Failed to start notifier: %s", e)
 
     async def stop(self):
         """Stop the Telegram channel."""
@@ -433,13 +433,13 @@ class TelegramChannel:
                 if result.get("ok"):
                     return result.get("result")
                 else:
-                    logger.error(f"Telegram API error: {result.get('description')}")
+                    logger.error("Telegram API error: %s", result.get('description'))
                     return None
         except asyncio.TimeoutError:
             logger.error("Telegram API call timed out: %s", method)
             return None
         except Exception as e:
-            logger.error(f"Telegram API call failed: {e}")
+            logger.error("Telegram API call failed: %s", e)
             return None
 
     async def _poll_updates(self):
@@ -463,7 +463,7 @@ class TelegramChannel:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Polling error: {e}")
+                logger.error("Polling error: %s", e)
                 await asyncio.sleep(5)
 
     async def _poll_due_reminders(self):
@@ -554,7 +554,7 @@ class TelegramChannel:
 
         result = await self._api_call("setWebhook", params)
         if result is not None:
-            logger.info(f"Telegram webhook set: {self.webhook_url}")
+            logger.info("Telegram webhook set: %s", self.webhook_url)
         else:
             logger.error("Failed to set Telegram webhook — falling back to polling")
             self._use_webhook = False
@@ -586,7 +586,7 @@ class TelegramChannel:
             await self._process_update(update)
             return True
         except Exception as e:
-            logger.error(f"Webhook update processing error: {e}")
+            logger.error("Webhook update processing error: %s", e)
             return False
 
     async def _process_update(self, update: dict):
@@ -768,7 +768,7 @@ class TelegramChannel:
                     )
 
                     if not should_respond:
-                        logger.debug(f"Skipping group message (no mention): {text[:50]}")
+                        logger.debug("Skipping group message (no mention): %s", text[:50])
                         return
 
                     # Strip mention from text
@@ -1089,7 +1089,7 @@ class TelegramChannel:
             except Exception as e:
                 import traceback
 
-                logger.error(f"Message handler error: {e}\n{traceback.format_exc()}")
+                logger.error("Message handler error: %s\n%s", e, traceback.format_exc())
                 # Friendly error — no robotic entity-speak
                 err_msg = random.choice(
                     [

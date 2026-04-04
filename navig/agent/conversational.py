@@ -1270,7 +1270,7 @@ For conversation, respond naturally without JSON.
             return response
 
         except Exception as e:
-            logger.error(f"AI response error: {e}")
+            logger.error("AI response error: %s", e)
             err = str(e).lower()
             if (
                 "no ai provider available" in err

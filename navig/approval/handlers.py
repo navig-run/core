@@ -64,7 +64,7 @@ class TelegramApprovalHandler:
             )
 
         except Exception as e:
-            logger.error(f"Failed to send Telegram approval request: {e}")
+            logger.error("Failed to send Telegram approval request: %s", e)
 
     async def handle_callback(self, callback_data: str, user_id: str) -> tuple[bool, str]:
         """
@@ -207,7 +207,7 @@ class GatewayApprovalHandler:
                 else:
                     callback(request)
             except Exception as e:
-                logger.error(f"Approval callback error: {e}")
+                logger.error("Approval callback error: %s", e)
 
         return request_id
 

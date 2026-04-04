@@ -208,7 +208,7 @@ class NavigGateway:
 
             get_registry().initialize(self.storage_dir / "workspace")
         except Exception as e:
-            logger.error(f"Failed to initialize formation registry: {e}")
+            logger.error("Failed to initialize formation registry: %s", e)
 
         # Start HTTP server
         await self._start_http_server()
@@ -234,7 +234,7 @@ class NavigGateway:
         # Wire unified comms dispatcher
         await self._init_comms()
 
-        logger.info(f"✅ NAVIG Gateway started on {self.config.host}:{self.config.port}")
+        logger.info("✅ NAVIG Gateway started on %s:%s", self.config.host, self.config.port)
         print(f"\n✅ NAVIG Gateway running at http://{self.config.host}:{self.config.port}")
         print(f"   Heartbeat: {'enabled' if self.config.heartbeat_enabled else 'disabled'}")
         print(f"   Storage: {self.storage_dir}")
@@ -435,7 +435,7 @@ class NavigGateway:
             new_interval = self.config.heartbeat_interval
 
             if old_interval != new_interval:
-                logger.info(f"Heartbeat interval changed: {old_interval} → {new_interval}")
+                logger.info("Heartbeat interval changed: %s → %s", old_interval, new_interval)
                 await self.heartbeat_runner.update_config()
 
     async def _process_message_queue(self):
@@ -605,7 +605,7 @@ class NavigGateway:
             self.approval_manager.register_handler("gateway", gateway_handler)
             logger.info("Approval manager initialized")
         except ImportError as e:
-            logger.warning(f"Approval module not available: {e}")
+            logger.warning("Approval module not available: %s", e)
 
         try:
             # Initialize browser controller (disabled by default)
@@ -620,7 +620,7 @@ class NavigGateway:
             )
             logger.info("Browser controller initialized (not started)")
         except ImportError as e:
-            logger.warning(f"Browser module not available: {e}")
+            logger.warning("Browser module not available: %s", e)
 
         try:
             # Initialize MCP client manager
@@ -638,13 +638,13 @@ class NavigGateway:
                         url=server_cfg.get("url"),
                     )
                 except Exception as e:
-                    logger.warning(f"Failed to connect MCP server {server_cfg.get('name')}: {e}")
+                    logger.warning("Failed to connect MCP server %s: %s", server_cfg.get('name'), e)
 
             logger.info(
                 f"MCP client manager initialized with {len(self.mcp_client_manager.clients)} clients"
             )
         except ImportError as e:
-            logger.warning(f"MCP module not available: {e}")
+            logger.warning("MCP module not available: %s", e)
 
         try:
             # Initialize webhook receiver
@@ -665,7 +665,7 @@ class NavigGateway:
 
             logger.info("Webhook receiver initialized")
         except ImportError as e:
-            logger.warning(f"Webhook module not available: {e}")
+            logger.warning("Webhook module not available: %s", e)
 
         try:
             # Initialize task queue and worker
@@ -681,7 +681,7 @@ class NavigGateway:
             await self.task_worker.start()
             logger.info("Task queue and worker initialized")
         except ImportError as e:
-            logger.warning(f"Tasks module not available: {e}")
+            logger.warning("Tasks module not available: %s", e)
 
         # ── Flux Mesh: LAN-local peer discovery ──────────────────────
         try:
@@ -701,7 +701,7 @@ class NavigGateway:
             else:
                 logger.info("[mesh] Mesh discovery disabled by config (mesh.enabled=false)")
         except Exception as e:
-            logger.warning(f"[mesh] Mesh discovery init failed — node runs isolated: {e}")
+            logger.warning("[mesh] Mesh discovery init failed — node runs isolated: %s", e)
 
     def _register_task_handlers(self):
         """Register built-in task handlers."""
@@ -897,7 +897,7 @@ class NavigGateway:
                         context["files"][filename] = filepath.read_text(encoding="utf-8")
                         break
                     except Exception as e:
-                        logger.warning(f"Failed to read {filename}: {e}")
+                        logger.warning("Failed to read %s: %s", filename, e)
 
         # Load today's memory log
         today = datetime.now().strftime("%Y-%m-%d")
@@ -967,7 +967,7 @@ class NavigGateway:
             )
             return response
         except Exception as e:
-            logger.error(f"AI call failed: {e}")
+            logger.error("AI call failed: %s", e)
             return f"Error: {e}"
 
     def _build_system_prompt(self, context: dict[str, Any]) -> str:
@@ -1024,7 +1024,7 @@ class NavigGateway:
         if handler:
             await handler.send(message, to=to)
         else:
-            logger.warning(f"No handler for channel: {channel}")
+            logger.warning("No handler for channel: %s", channel)
 
     async def deliver_message(self, channel: str, to: str | None, content: str):
         """Deliver message to a specific channel/recipient."""
@@ -1032,7 +1032,7 @@ class NavigGateway:
         if handler:
             await handler.send(content, to=to)
         else:
-            logger.warning(f"Cannot deliver to channel: {channel}")
+            logger.warning("Cannot deliver to channel: %s", channel)
 
     async def enqueue_system_event(self, text: str, agent_id: str = "default"):
         """Enqueue a system event for processing."""

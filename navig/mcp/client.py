@@ -122,7 +122,7 @@ class MCPClient:
     async def connect(self):
         """Connect to MCP server and initialize protocol."""
         if self.is_connected:
-            logger.warning(f"MCP client {self.id} already connected")
+            logger.warning("MCP client %s already connected", self.id)
             return
 
         # Create transport based on config
@@ -181,7 +181,7 @@ class MCPClient:
         self._initialized = False
         self._server_info = {}
 
-        logger.info(f"MCP client {self.id} disconnected")
+        logger.info("MCP client %s disconnected", self.id)
 
     async def call_tool(self, name: str, arguments: dict[str, Any] = None) -> Any:
         """
@@ -299,7 +299,7 @@ class MCPClient:
         self._server_info = result.get("serverInfo", {})
         self._capabilities = MCPCapabilities.from_dict(result)
 
-        logger.debug(f"MCP server: {self._server_info.get('name', 'unknown')}")
+        logger.debug("MCP server: %s", self._server_info.get('name', 'unknown'))
 
         # Send initialized notification
         await self._send_notification(MCPMethod.INITIALIZED, {})
@@ -309,7 +309,7 @@ class MCPClient:
         response = await self._send_request(MCPMethod.TOOLS_LIST, {})
 
         if response.is_error:
-            logger.warning(f"Failed to list tools: {response.get_error_message()}")
+            logger.warning("Failed to list tools: %s", response.get_error_message())
             return
 
         result = response.result or {}
@@ -324,7 +324,7 @@ class MCPClient:
         response = await self._send_request(MCPMethod.RESOURCES_LIST, {})
 
         if response.is_error:
-            logger.warning(f"Failed to list resources: {response.get_error_message()}")
+            logger.warning("Failed to list resources: %s", response.get_error_message())
             return
 
         result = response.result or {}
@@ -339,7 +339,7 @@ class MCPClient:
         response = await self._send_request(MCPMethod.PROMPTS_LIST, {})
 
         if response.is_error:
-            logger.warning(f"Failed to list prompts: {response.get_error_message()}")
+            logger.warning("Failed to list prompts: %s", response.get_error_message())
             return
 
         result = response.result or {}

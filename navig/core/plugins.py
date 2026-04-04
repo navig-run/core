@@ -185,7 +185,7 @@ class Plugin(ABC):
     def __init__(self):
         self._registry: PluginRegistry | None = None
         self._config: dict[str, Any] = {}
-        self._hooks: list[str] = []  # Registered hook IDs for cleanup
+        self._hooks: list[tuple[str, str, Callable]] = []  # (hook_id, event_key, handler)
 
     @property
     def name(self) -> str:
@@ -253,8 +253,9 @@ class Plugin(ABC):
             from navig.core.hooks import register_hook
 
             register_hook(event_key, handler, priority)
+            # Store (event_key, handler) so _cleanup_hooks can unregister by reference.
             hook_id = f"{event_key}:{id(handler)}"
-            self._hooks.append(hook_id)
+            self._hooks.append((hook_id, event_key, handler))
             return hook_id
         except ImportError:
             pass  # optional dependency not installed; feature disabled
@@ -263,12 +264,10 @@ class Plugin(ABC):
     def _cleanup_hooks(self) -> None:
         """Unregister all hooks registered by this plugin."""
         try:
-            from navig.core.hooks import unregister_hook  # noqa: F401
+            from navig.core.hooks import unregister_hook
 
-            for hook_id in self._hooks:
-                # Parse hook ID and unregister
-                if ":" in hook_id:
-                    pass  # Note: Full unregister would need handler reference
+            for _hook_id, event_key, handler in self._hooks:
+                unregister_hook(event_key, handler)
             self._hooks.clear()
         except ImportError:
             pass  # optional dependency not installed; feature disabled
@@ -321,9 +320,18 @@ class PluginRegistry:
         if self._initialized:
             return
 
+        # Use paths.config_dir() as the single source of truth for ~/.navig
+        # so this stays consistent with ConfigManager and assistant_utils.
+        try:
+            from navig.platform import paths as _paths
+
+            navig_home = _paths.config_dir()
+        except Exception:
+            navig_home = Path.home() / ".navig"
+
         # Default plugin directories
         self._plugin_dirs = [
-            Path.home() / ".navig" / "plugins",
+            navig_home / "plugins",
             Path(__file__).parent.parent / "plugins",  # Built-in plugins
         ]
 
@@ -500,7 +508,7 @@ class PluginRegistry:
             # Update info
             info.instance = instance
             info.state = PluginState.LOADED
-            info.loaded_at = datetime.utcnow()
+            info.loaded_at = datetime.now()  # utcnow() is deprecated in Py3.12+
             info.error = None
 
             self._load_order.append(name)
@@ -533,7 +541,7 @@ class PluginRegistry:
                 info.instance.on_enable()
 
             info.state = PluginState.ENABLED
-            info.enabled_at = datetime.utcnow()
+            info.enabled_at = datetime.now()  # utcnow() is deprecated in Py3.12+
             info.error = None
 
             self._trigger_hook("plugin:enabled", {"plugin": name})

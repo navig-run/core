@@ -9,7 +9,7 @@ import platform
 import shlex
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import typer
 
@@ -1248,7 +1248,7 @@ def host_list(
 @host_app.command("use")
 def host_use(
     ctx: typer.Context,
-    name: Optional[str] = typer.Argument(None, help="Host name to activate"),
+    name: str | None = typer.Argument(None, help="Host name to activate"),
     default: bool = typer.Option(False, "--default", "-d", help="Also set as default host"),
 ):
     """Switch active host context (global)."""

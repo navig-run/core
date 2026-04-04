@@ -13,12 +13,12 @@ from pathlib import Path
 from navig import console_helper as ch
 
 # ─────────────────────────────────────────────────────────────────────────────
-# QUANTUM VELOCITY K1: Eliminate Windows WMI bottleneck
-#
-# BEFORE: platform.system() → platform.uname() → _wmi.exec_query(~73ms on Win)
-# AFTER:  sys.platform is a string constant set at interpreter init time → 0ms
-#
-# sys.platform values: 'win32' (Windows), 'darwin' (macOS), 'linux' (Linux)
+# Delegate to the canonical platform path module (paths.config_dir).
+# Historical note: this module previously returned ~/Documents/.navig/ on
+# Windows, differing from the ~/.navig/ that navig.platform.paths and
+# navig.config use. The mismatch meant assistant state was written to a
+# directory that the main config system never read. Fixed by delegating to
+# the single source of truth.
 # ─────────────────────────────────────────────────────────────────────────────
 _IS_WINDOWS: bool = sys.platform == "win32"
 
@@ -28,22 +28,15 @@ def get_navig_directory() -> Path:
     """
     Get the NAVIG configuration directory based on platform.
 
+    Delegates to :func:`navig.platform.paths.config_dir` which is the
+    single source of truth for the NAVIG config root across all modules.
+
     Returns:
-        Path to .navig directory:
-        - Linux/macOS: ~/.navig/
-        - Windows: ~/Documents/.navig/
-
-    Performance: @lru_cache ensures Path.home() is only resolved once per
-    process. The result is constant within a single invocation.
+        Path to .navig directory (e.g. ~/.navig/ on all platforms).
     """
-    home = Path.home()
+    from navig.platform import paths as _paths
 
-    if _IS_WINDOWS:
-        navig_dir = home / "Documents" / ".navig"
-    else:
-        navig_dir = home / ".navig"
-
-    return navig_dir
+    return _paths.config_dir()
 
 
 def ensure_navig_directory() -> Path:

@@ -31,7 +31,7 @@ def _resolve_telegram_token_from_vault_v2() -> str:
             if value:
                 return value
     except Exception:
-        pass
+        pass  # best-effort: vault unavailable or not configured
     return ""
 
 
@@ -74,7 +74,7 @@ def _resolve_telegram_token_from_vault_v1() -> str:
                 if value:
                     return value
     except Exception:
-        pass
+        pass  # best-effort: vault unavailable or not configured
     return ""
 
 
@@ -103,7 +103,7 @@ def _resolve_telegram_token_from_env_file() -> str:
             if key in ("NAVIG_TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_TOKEN") and value:
                 return value
     except Exception:
-        pass
+        pass  # best-effort: .env file unreadable; skip this resolution path
     return ""
 
 
@@ -193,7 +193,7 @@ def _resolve_telegram_uid_from_vault_v2() -> str | None:
             if value:
                 return value
     except Exception:
-        pass
+        pass  # best-effort: vault unavailable or not configured
     return None
 
 
@@ -209,7 +209,7 @@ def _resolve_telegram_uid_from_vault_v1() -> str | None:
                 if uid:
                     return uid
     except Exception:
-        pass
+        pass  # best-effort: vault unavailable or not configured
     return None
 
 
@@ -232,7 +232,7 @@ def _resolve_telegram_uid_from_env_file() -> str | None:
             if key == "NAVIG_TELEGRAM_UID" and value:
                 return value
     except Exception:
-        pass
+        pass  # best-effort: .env file unreadable; skip this resolution path
     return None
 
 
@@ -293,7 +293,7 @@ def resolve_telegram_uid(raw_config: dict[str, Any] | None = None) -> str | None
                 )
                 return uid
     except Exception:
-        pass
+        pass  # best-effort: config manager unavailable or global config not loaded
 
     return None
 

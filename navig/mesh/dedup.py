@@ -116,7 +116,7 @@ class HandoffQueue:
         now = time.monotonic()
         deadline = now + ttl
         self._queue.append((message, now, deadline))
-        logger.debug(f"[handoff] Queued message (queue_depth={len(self._queue)}, ttl={ttl}s)")
+        logger.debug("[handoff] Queued message (queue_depth=%s, ttl=%ss)", len(self._queue), ttl)
 
     def is_empty(self) -> bool:
         return len(self._queue) == 0
@@ -157,9 +157,9 @@ class HandoffQueue:
                 delivered += 1
             except Exception as exc:
                 # Do not crash the drain loop; log and skip
-                logger.error(f"[handoff] Failed to deliver queued message: {exc}")
+                logger.error("[handoff] Failed to deliver queued message: %s", exc)
                 dropped += 1
 
         if delivered or dropped:
-            logger.info(f"[handoff] Drain complete: {delivered} delivered, {dropped} dropped")
+            logger.info("[handoff] Drain complete: %s delivered, %s dropped", delivered, dropped)
         return delivered, dropped

@@ -32,7 +32,6 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -337,7 +336,7 @@ class WorktreeManager:
             if not wt.deleted
         ]
 
-    def get_worktree(self, name: str) -> Optional[Worktree]:
+    def get_worktree(self, name: str) -> Worktree | None:
         """Look up a tracked worktree by name."""
         wt = self._worktrees.get(name)
         if wt and not wt.deleted:
@@ -388,7 +387,7 @@ class WorktreeManager:
 # Module-level singleton (mirroring background_task.py pattern)
 # ─────────────────────────────────────────────────────────────
 
-_manager: Optional[WorktreeManager] = None
+_manager: WorktreeManager | None = None
 
 
 def get_manager(repo_root: str | Path | None = None) -> WorktreeManager:

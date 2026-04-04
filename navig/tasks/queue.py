@@ -224,7 +224,7 @@ class TaskQueue:
             for dep_id in task.dependencies:
                 if dep_id not in self._tasks and dep_id not in self._completed:
                     # Allow non-existent dependencies (they might be added later)
-                    logger.warning(f"Task {task.id} depends on unknown task {dep_id}")
+                    logger.warning("Task %s depends on unknown task %s", task.id, dep_id)
 
             # Determine initial status
             if task.dependencies:
@@ -242,7 +242,7 @@ class TaskQueue:
                 heapq.heappush(self._heap, task)
                 self._task_added_event.set()
 
-            logger.debug(f"Task added: {task.id} ({task.name})")
+            logger.debug("Task added: %s (%s)", task.id, task.name)
             self._persist()
 
             return task
@@ -322,7 +322,7 @@ class TaskQueue:
             # Check if any waiting tasks can now run
             self._check_waiting_tasks()
 
-            logger.debug(f"Task completed: {task_id} ({task.name})")
+            logger.debug("Task completed: %s (%s)", task_id, task.name)
             self._persist()
 
             return task
@@ -357,11 +357,11 @@ class TaskQueue:
                 task.status = TaskStatus.QUEUED
                 # Re-add to heap after delay
                 asyncio.create_task(self._delayed_requeue(task))
-                logger.debug(f"Task retry scheduled: {task_id} (attempt {task.retry_count})")
+                logger.debug("Task retry scheduled: %s (attempt %s)", task_id, task.retry_count)
             else:
                 task.status = TaskStatus.FAILED
                 task.completed_at = datetime.now()
-                logger.debug(f"Task failed: {task_id} ({task.name}) - {error}")
+                logger.debug("Task failed: %s (%s) - %s", task_id, task.name, error)
 
             self._persist()
             return task
@@ -395,7 +395,7 @@ class TaskQueue:
             task.status = TaskStatus.CANCELLED
             task.completed_at = datetime.now()
 
-            logger.debug(f"Task cancelled: {task_id}")
+            logger.debug("Task cancelled: %s", task_id)
             self._persist()
 
             return task
@@ -487,7 +487,7 @@ class TaskQueue:
             with open(self._persist_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
         except Exception as e:
-            logger.error(f"Failed to persist task queue: {e}")
+            logger.error("Failed to persist task queue: %s", e)
 
     def _load_from_disk(self):
         """Load queue state from disk."""
@@ -513,9 +513,9 @@ class TaskQueue:
                     if task.status != TaskStatus.WAITING:
                         heapq.heappush(self._heap, task)
 
-            logger.info(f"Loaded {len(self._tasks)} tasks from disk")
+            logger.info("Loaded %s tasks from disk", len(self._tasks))
         except Exception as e:
-            logger.error(f"Failed to load task queue: {e}")
+            logger.error("Failed to load task queue: %s", e)
 
     def get_stats(self) -> dict[str, Any]:
         """Get queue statistics."""

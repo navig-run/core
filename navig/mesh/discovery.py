@@ -122,7 +122,7 @@ def _parse_packet(
             is_self=False,
         )
     except Exception as e:
-        logger.debug(f"[mesh.discovery] Bad packet: {e}")
+        logger.debug("[mesh.discovery] Bad packet: %s", e)
         return None
 
 
@@ -205,11 +205,11 @@ class MeshDiscovery:
             self._sender = _create_sender_socket()
             self._receiver = _create_receiver_socket()
         except Exception as e:
-            logger.warning(f"[mesh.discovery] Socket init failed — mesh disabled: {e}")
+            logger.warning("[mesh.discovery] Socket init failed — mesh disabled: %s", e)
             self._running = False
             return
 
-        logger.info(f"[mesh.discovery] Starting on {MCAST_GROUP}:{MCAST_PORT}")
+        logger.info("[mesh.discovery] Starting on %s:%s", MCAST_GROUP, MCAST_PORT)
         self._listen_task = asyncio.create_task(self._listen_loop())
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         self._probe_task = asyncio.create_task(self._probe_loop())
@@ -259,7 +259,7 @@ class MeshDiscovery:
                 f"[mesh.discovery] Sent {ptype} seq={self._seq} ({len(data)} bytes)"
             )
         except Exception as e:
-            logger.warning(f"[mesh.discovery] Send error: {e}")
+            logger.warning("[mesh.discovery] Send error: %s", e)
 
     async def _heartbeat_loop(self) -> None:
         try:
@@ -311,15 +311,15 @@ class MeshDiscovery:
                 rtt_ms = (time.monotonic() - t0) * 1000
                 if resp.status == 200:
                     self._registry.record_probe_success(peer.node_id, rtt_ms)
-                    logger.debug(f"[mesh.probe] {peer.node_id} OK rtt={rtt_ms:.0f}ms")
+                    logger.debug("[mesh.probe] %s OK rtt=%.0fms", peer.node_id, rtt_ms)
                 else:
                     self._registry.record_probe_failure(peer.node_id)
-                    logger.debug(f"[mesh.probe] {peer.node_id} HTTP {resp.status}")
+                    logger.debug("[mesh.probe] %s HTTP %s", peer.node_id, resp.status)
         except ImportError:
             pass  # aiohttp not installed — skip probing silently
         except Exception as e:
             self._registry.record_probe_failure(peer.node_id)
-            logger.debug(f"[mesh.probe] {peer.node_id} failed: {e}")
+            logger.debug("[mesh.probe] %s failed: %s", peer.node_id, e)
 
     # ──────────────────────────── Receive ────────────────────────────
 
@@ -334,7 +334,7 @@ class MeshDiscovery:
                     continue
                 except Exception as e:
                     if self._running:
-                        logger.debug(f"[mesh.discovery] Recv error: {e}")
+                        logger.debug("[mesh.discovery] Recv error: %s", e)
         except asyncio.CancelledError:
             pass  # task cancelled; expected during shutdown
 
@@ -370,7 +370,7 @@ class MeshDiscovery:
         if ptype == "goodbye":
             self._registry.remove_peer(record.node_id)
             self._peer_seqs.pop(record.node_id, None)
-            logger.info(f"[mesh.discovery] Peer left: {record.node_id}")
+            logger.info("[mesh.discovery] Peer left: %s", record.node_id)
             return
 
         # hello or heartbeat → upsert; reset circuit breaker on any live contact

@@ -96,6 +96,12 @@ def test_mesh_help_command_is_available(tmp_path: Path):
         "space",
         "server",
         "inbox",
+        "council",
+        "cron",
+        "flux",
+        "formation",
+        "migrate",
+        "mount",
     ],
 )
 def test_domain_launcher_non_tty_exits_cleanly_with_hint(tmp_path: Path, domain: str):
@@ -112,6 +118,7 @@ def test_domain_launcher_non_tty_exits_cleanly_with_hint(tmp_path: Path, domain:
         encoding="utf-8",
         env=_cli_env(tmp_path),
         stdin=subprocess.DEVNULL,
+        timeout=20,
     )
     combined = result.stdout + result.stderr
 
@@ -134,6 +141,7 @@ def test_task_non_tty_lists_workflows_without_launcher_hint(tmp_path: Path):
         encoding="utf-8",
         env=_cli_env(tmp_path),
         stdin=subprocess.DEVNULL,
+        timeout=20,
     )
     combined = result.stdout + result.stderr
 

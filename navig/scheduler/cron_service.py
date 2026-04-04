@@ -187,7 +187,7 @@ class CronParser:
             return cls._next_cron_time(schedule, from_time)
 
         # Default to 1 hour
-        logger.warning(f"Could not parse schedule: {schedule}, defaulting to 1 hour")
+        logger.warning("Could not parse schedule: %s, defaulting to 1 hour", schedule)
         return from_time + timedelta(hours=1)
 
     @classmethod
@@ -310,10 +310,10 @@ class CronService:
 
                 self._job_counter = data.get("counter", 0)
 
-                logger.info(f"Loaded {len(self.jobs)} cron jobs")
+                logger.info("Loaded %s cron jobs", len(self.jobs))
 
             except Exception as e:
-                logger.error(f"Failed to load cron jobs: {e}")
+                logger.error("Failed to load cron jobs: %s", e)
 
     def _save_jobs(self) -> None:
         """Save jobs to disk."""
@@ -352,7 +352,7 @@ class CronService:
         # Start scheduler loop
         self._task = asyncio.create_task(self._scheduler_loop())
 
-        logger.info(f"Cron service started with {len(self.jobs)} jobs")
+        logger.info("Cron service started with %s jobs", len(self.jobs))
 
     async def stop(self) -> None:
         """Stop the cron service."""
@@ -402,7 +402,7 @@ class CronService:
         self.jobs[job.id] = job
         self._save_jobs()
 
-        logger.info(f"Added cron job: {name} ({schedule})")
+        logger.info("Added cron job: %s (%s)", name, schedule)
 
         return job
 
@@ -432,7 +432,7 @@ class CronService:
         del self.jobs[job_id]
         self._save_jobs()
 
-        logger.info(f"Removed cron job: {job_id}")
+        logger.info("Removed cron job: %s", job_id)
         return True
 
     def enable_job(self, job_id: str) -> bool:
@@ -495,13 +495,13 @@ class CronService:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Scheduler loop error: {e}")
+                logger.error("Scheduler loop error: %s", e)
                 await asyncio.sleep(30)
 
     async def _run_job(self, job: CronJob) -> None:
         """Execute a cron job."""
         async with self._semaphore:
-            logger.info(f"Running cron job: {job.name}")
+            logger.info("Running cron job: %s", job.name)
 
             start_time = datetime.now()
             job.last_run = start_time
@@ -517,7 +517,7 @@ class CronService:
                 job.last_output = output[:5000]  # Limit output size
                 job.retry_count = 0
 
-                logger.info(f"Cron job completed: {job.name}")
+                logger.info("Cron job completed: %s", job.name)
 
                 # Emit success event
                 if self.gateway.event_queue:
@@ -537,14 +537,14 @@ class CronService:
                 job.last_output = "Job timed out"
                 job.retry_count += 1
 
-                logger.error(f"Cron job timed out: {job.name}")
+                logger.error("Cron job timed out: %s", job.name)
 
             except Exception as e:
                 job.last_status = JobStatus.FAILED
                 job.last_output = str(e)
                 job.retry_count += 1
 
-                logger.error(f"Cron job failed: {job.name} - {e}")
+                logger.error("Cron job failed: %s - %s", job.name, e)
 
                 # Emit failure event
                 if self.gateway.event_queue:
@@ -570,7 +570,7 @@ class CronService:
             ):
                 # Schedule retry sooner
                 job.next_run = datetime.now() + timedelta(minutes=5)
-                logger.info(f"Job {job.name} will retry in 5 minutes")
+                logger.info("Job %s will retry in 5 minutes", job.name)
 
             self._save_jobs()
 
@@ -614,7 +614,7 @@ class CronService:
         if not job:
             return None
 
-        logger.info(f"Manual trigger: {job.name}")
+        logger.info("Manual trigger: %s", job.name)
         await self._run_job(job)
 
         return job.last_output

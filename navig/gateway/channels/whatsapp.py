@@ -227,11 +227,11 @@ class WhatsAppChannel:
                     return True
                 else:
                     error = await response.text()
-                    logger.error(f"Failed to send WhatsApp message: {error}")
+                    logger.error("Failed to send WhatsApp message: %s", error)
                     return False
 
         except Exception as e:
-            logger.error(f"Error sending WhatsApp message: {e}")
+            logger.error("Error sending WhatsApp message: %s", e)
             return False
 
     async def _handle_incoming_message(self, message: WhatsAppMessage):
@@ -266,7 +266,7 @@ class WhatsAppChannel:
             await self._send_message(reply_to, response)
 
         except Exception as e:
-            logger.error(f"Error handling WhatsApp message: {e}")
+            logger.error("Error handling WhatsApp message: %s", e)
             reply_to = message.group_id if message.is_group else message.from_number
             await self._send_message(
                 reply_to, "❌ Sorry, I encountered an error processing your request."
@@ -335,7 +335,7 @@ class WhatsAppChannel:
 
         while self._running:
             try:
-                logger.info(f"Connecting to WhatsApp bridge at {self.config.bridge_ws_url}")
+                logger.info("Connecting to WhatsApp bridge at %s", self.config.bridge_ws_url)
 
                 headers = {}
                 if self.config.api_key:
@@ -377,17 +377,17 @@ class WhatsAppChannel:
                                 logger.warning("WhatsApp disconnected")
 
                         except json.JSONDecodeError:
-                            logger.warning(f"Invalid JSON from bridge: {raw_message[:100]}")
+                            logger.warning("Invalid JSON from bridge: %s", raw_message[:100])
                         except Exception as e:
-                            logger.error(f"Error processing bridge message: {e}")
+                            logger.error("Error processing bridge message: %s", e)
 
             except websockets.ConnectionClosed:
                 logger.warning("WhatsApp bridge connection closed")
             except Exception as e:
-                logger.error(f"WhatsApp bridge error: {e}")
+                logger.error("WhatsApp bridge error: %s", e)
 
             if self._running:
-                logger.info(f"Reconnecting in {reconnect_delay}s...")
+                logger.info("Reconnecting in %ss...", reconnect_delay)
                 await asyncio.sleep(reconnect_delay)
                 reconnect_delay = min(reconnect_delay * 2, self._max_reconnect_delay)
 
@@ -435,7 +435,7 @@ class WhatsAppChannel:
                     data = await response.json()
                     return data.get("qr")
         except Exception as e:
-            logger.error(f"Error getting QR code: {e}")
+            logger.error("Error getting QR code: %s", e)
 
         return None
 
@@ -456,7 +456,7 @@ class WhatsAppChannel:
                 if response.status == 200:
                     return await response.json()
         except Exception as e:
-            logger.error(f"Error getting status: {e}")
+            logger.error("Error getting status: %s", e)
 
         return {"connected": False, "error": "Unable to reach bridge"}
 

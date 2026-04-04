@@ -401,7 +401,7 @@ class ElectionManager:
             self._current_epoch = max(self._current_epoch, incoming_epoch)
             self._proposed_this_epoch = False
 
-        logger.info(f"[election] New leader: {record.node_id} (epoch={incoming_epoch})")
+        logger.info("[election] New leader: %s (epoch=%s)", record.node_id, incoming_epoch)
 
     async def _on_yield(self, record: NodeRecord, raw: dict) -> None:
         """

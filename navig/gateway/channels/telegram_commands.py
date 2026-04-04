@@ -4322,7 +4322,7 @@ class TelegramCommandsMixin:
                     raw = ln.split("=", 1)[1].strip()
                     if raw and raw != "n/a":
                         since = f" - since {raw.split()[-2]}"
-            icon = "-" if state == "active" else "-"
+            icon = "✅" if state == "active" else "❌"
             lines.append(f"{icon} *Daemon:* {state}{since}")
         except Exception:
             lines.append("- *Daemon:* status unavailable")

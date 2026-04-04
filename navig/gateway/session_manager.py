@@ -188,7 +188,7 @@ class SessionManager:
         # AI client for summarization (lazy loaded)
         self._ai = None
 
-        logger.info(f"SessionManager initialized: {self.storage_dir}")
+        logger.info("SessionManager initialized: %s", self.storage_dir)
 
     def _sanitize_key(self, session_key: str) -> str:
         """Sanitize session key for use as filename."""
@@ -227,13 +227,13 @@ class SessionManager:
         if session_file.exists():
             try:
                 data = json.loads(session_file.read_text(encoding="utf-8"))
-                logger.debug(f"Loaded session: {session_key}")
+                logger.debug("Loaded session: %s", session_key)
                 return Session.from_dict(data)
             except Exception as e:
-                logger.error(f"Failed to load session {session_key}: {e}")
+                logger.error("Failed to load session %s: %s", session_key, e)
 
         # Create new session
-        logger.debug(f"Created new session: {session_key}")
+        logger.debug("Created new session: %s", session_key)
         return Session(key=session_key)
 
     async def save_session(self, session: Session):
@@ -247,15 +247,15 @@ class SessionManager:
                     json.dumps(session.to_dict(), indent=2, ensure_ascii=False),
                     encoding="utf-8",
                 )
-                logger.debug(f"Saved session: {session.key}")
+                logger.debug("Saved session: %s", session.key)
             except Exception as e:
-                logger.error(f"Failed to save session {session.key}: {e}")
+                logger.error("Failed to save session %s: %s", session.key, e)
 
     async def save_all(self):
         """Save all cached sessions to disk."""
         for session in self.sessions.values():
             await self.save_session(session)
-        logger.info(f"Saved {len(self.sessions)} sessions")
+        logger.info("Saved %s sessions", len(self.sessions))
 
     async def add_message(
         self,
@@ -299,7 +299,7 @@ class SessionManager:
 
     async def _compact_session(self, session: Session):
         """Summarize old messages to free up context."""
-        logger.info(f"Compacting session: {session.key}")
+        logger.info("Compacting session: %s", session.key)
 
         # Keep recent messages
         keep_count = self.compaction_keep_messages
@@ -327,7 +327,7 @@ class SessionManager:
             }
         ] + recent
 
-        logger.info(f"Compacted {len(old)} messages to summary")
+        logger.info("Compacted %s messages to summary", len(old))
 
     async def _summarize_messages(self, messages: list[dict]) -> str:
         """Generate AI summary of messages."""
@@ -355,7 +355,7 @@ Summary:"""
             return summary.strip()
 
         except Exception as e:
-            logger.error(f"Summarization failed: {e}")
+            logger.error("Summarization failed: %s", e)
             # Fallback: just note what was compacted
             return f"[{len(messages)} earlier messages compacted]"
 
@@ -365,7 +365,7 @@ Summary:"""
         session.messages = []
         session.metadata = {}
         await self.save_session(session)
-        logger.info(f"Cleared session: {session_key}")
+        logger.info("Cleared session: %s", session_key)
 
     async def delete_session(self, session_key: str):
         """Delete a session entirely."""
@@ -378,7 +378,7 @@ Summary:"""
             session_file = self._get_session_file(session_key)
             if session_file.exists():
                 session_file.unlink()
-                logger.info(f"Deleted session: {session_key}")
+                logger.info("Deleted session: %s", session_key)
 
     async def list_sessions(
         self,
@@ -420,7 +420,7 @@ Summary:"""
                 )
 
             except Exception as e:
-                logger.warning(f"Failed to read session file {session_file}: {e}")
+                logger.warning("Failed to read session file %s: %s", session_file, e)
 
         # Sort by updated_at descending
         sessions.sort(key=lambda s: s.get("updated_at") or "", reverse=True)

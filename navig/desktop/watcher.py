@@ -170,7 +170,7 @@ class _NavigFileHandler:
                 else:
                     self.callback(file_event)
             except Exception as e:
-                logger.error(f"File watcher callback error: {e}")
+                logger.error("File watcher callback error: %s", e)
 
     async def _call_callback(self, event: FileEvent):
         """Call callback asynchronously."""
@@ -180,7 +180,7 @@ class _NavigFileHandler:
             else:
                 self.callback(event)
         except Exception as e:
-            logger.error(f"File watcher callback error: {e}")
+            logger.error("File watcher callback error: %s", e)
 
 
 class FileWatcher:
@@ -288,7 +288,7 @@ class FileWatcher:
         self._observers[path] = observer
         self._handlers[path] = handler
 
-        logger.info(f"Watching: {path} (patterns={patterns}, recursive={recursive})")
+        logger.info("Watching: %s (patterns=%s, recursive=%s)", path, patterns, recursive)
 
         # Auto-start if already running
         if self._started:
@@ -304,7 +304,7 @@ class FileWatcher:
         if observer:
             observer.stop()
             observer.join(timeout=5)
-            logger.info(f"Stopped watching: {path}")
+            logger.info("Stopped watching: %s", path)
 
     async def start(self):
         """Start all observers."""
@@ -317,7 +317,7 @@ class FileWatcher:
             if not observer.is_alive():
                 observer.start()
 
-        logger.info(f"FileWatcher started with {len(self._observers)} paths")
+        logger.info("FileWatcher started with %s paths", len(self._observers))
 
     async def stop(self):
         """Stop all observers."""

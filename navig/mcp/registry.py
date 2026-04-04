@@ -97,13 +97,13 @@ class MCPClientManager:
                         return client, tool
         return None
 
-    async def call_tool(self, name: str, arguments: dict[str, Any] = None) -> Any:
+    async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any:
         """
         Call a tool, routing to the correct client.
 
         Args:
             name: Tool name
-            arguments: Tool arguments
+            arguments: Tool arguments (None is normalised to {} per MCP spec)
 
         Returns:
             Tool result
@@ -117,7 +117,8 @@ class MCPClientManager:
             raise ValueError(f"Tool not found: {name} (available: {available})")
 
         client, tool = result
-        return await client.call_tool(name, arguments)
+        # Normalise None → {} — MCP spec requires arguments to be an object.
+        return await client.call_tool(name, arguments or {})
 
     async def add_client(self, config: MCPClientConfig) -> MCPClient:
         """
@@ -171,7 +172,7 @@ class MCPClientManager:
                 # Connect in background to not block startup
                 self._fire_and_forget(self._connect_with_retry(client))
 
-        logger.info(f"MCP Client Manager started with {len(self._clients)} clients")
+        logger.info("MCP Client Manager started with %s clients", len(self._clients))
 
     async def stop(self):
         """Stop all clients."""
@@ -269,7 +270,7 @@ class MCPClientManager:
         for attempt in range(max_attempts):
             try:
                 await client.connect()
-                logger.info(f"MCP client {client.id} connected")
+                logger.info("MCP client %s connected", client.id)
                 return
             except Exception as e:
                 logger.warning(
@@ -278,7 +279,7 @@ class MCPClientManager:
                 if attempt < max_attempts - 1:
                     await asyncio.sleep(retry_delay * (attempt + 1))
 
-        logger.error(f"MCP client {client.id} failed to connect after {max_attempts} attempts")
+        logger.error("MCP client %s failed to connect after %s attempts", client.id, max_attempts)
 
     async def _schedule_reconnect(self, client: MCPClient, delay: float = 30.0):
         """Schedule reconnection attempt for a client."""

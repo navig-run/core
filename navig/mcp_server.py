@@ -380,13 +380,19 @@ class MCPProtocolHandler:
         self._running = False
 
 
-def start_mcp_server(mode: str = "stdio", port: int = 3001, token: str | None = None):
+def start_mcp_server(
+    mode: str = "stdio",
+    port: int = 3001,
+    token: str | None = None,
+    host: str = "127.0.0.1",
+):
     """Start the NAVIG MCP server.
 
     Args:
-        mode: Server mode - 'stdio' for stdin/stdout, 'websocket' for WS
-        port: Port for WebSocket mode (default 3001)
+        mode: Server mode — 'stdio', 'websocket', or 'http'
+        port: Port for WebSocket/HTTP mode (default 3001)
         token: Optional auth token; auto-generated if None in websocket mode
+        host: Bind address for HTTP/WebSocket modes (default 127.0.0.1)
     """
     handler = MCPProtocolHandler()
 
@@ -394,8 +400,190 @@ def start_mcp_server(mode: str = "stdio", port: int = 3001, token: str | None = 
         handler.run_stdio()
     elif mode == "websocket":
         _run_websocket_server(handler, port, token)
+    elif mode == "http":
+        _run_http_server(handler, host=host, port=port, token=token)
     else:
-        raise ValueError(f"Unknown mode: {mode}. Use 'stdio' or 'websocket'.")
+        raise ValueError(f"Unknown mode: {mode!r}. Use 'stdio', 'websocket', or 'http'.")
+
+
+def _build_http_app(
+    handler: "MCPProtocolHandler",
+    host: str = "127.0.0.1",
+    port: int = 3001,
+    token: str | None = None,
+) -> "Any":
+    """Build and return an aiohttp Application for the MCP HTTP transport.
+
+    Extracted from ``_run_http_server`` so the app can be created in unit
+    tests without spinning up a real TCP server.
+
+    Args:
+        handler: Protocol handler (can be a mock in tests)
+        host: Bind host (used only in SSE endpoint-event URL)
+        port: Bind port (used only in SSE endpoint-event URL)
+        token: Optional Bearer token; ``None`` = open server
+
+    Returns:
+        ``aiohttp.web.Application`` instance.
+    """
+    from aiohttp import web
+
+    session_token = token
+
+    _CORS_HEADERS = {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    }
+
+    def _check_auth(request: web.Request) -> bool:
+        if not session_token:
+            return True
+        auth = request.headers.get("Authorization", "")
+        return auth == f"Bearer {session_token}"
+
+    async def handle_options(request: web.Request) -> web.Response:
+        return web.Response(
+            status=200,
+            headers={**_CORS_HEADERS, "Access-Control-Max-Age": "86400"},
+        )
+
+    async def handle_health(request: web.Request) -> web.Response:
+        body = json.dumps({"status": "ok", "server": "navig-mcp", "transport": "http"})
+        return web.Response(body=body, content_type="application/json", headers=_CORS_HEADERS)
+
+    async def handle_sse(request: web.Request) -> web.StreamResponse:
+        """GET /mcp — SSE stream for server-initiated notifications."""
+        if not _check_auth(request):
+            raise web.HTTPUnauthorized(reason="Invalid or missing Bearer token")
+
+        response = web.StreamResponse(
+            status=200,
+            headers={
+                **_CORS_HEADERS,
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
+        await response.prepare(request)
+        # Send an endpoint event per MCP Streamable HTTP spec, then keepalives
+        mcp_url = f"http://{host}:{port}/mcp"
+        await response.write(f"event: endpoint\ndata: {mcp_url}\n\n".encode())
+        try:
+            while True:
+                await asyncio.sleep(25)
+                await response.write(b": keepalive\n\n")
+        except (ConnectionResetError, asyncio.CancelledError):
+            pass
+        return response
+
+    async def handle_post(request: web.Request) -> web.Response:
+        """POST /mcp — handle JSON-RPC 2.0 request."""
+        if not _check_auth(request):
+            err_body = json.dumps({
+                "jsonrpc": "2.0",
+                "error": {"code": -32000, "message": "Unauthorized"},
+                "id": None,
+            })
+            return web.Response(
+                status=401, body=err_body,
+                content_type="application/json", headers=_CORS_HEADERS,
+            )
+
+        try:
+            body = await request.text()
+            message = json.loads(body)
+        except Exception as exc:
+            parse_err = json.dumps({
+                "jsonrpc": "2.0",
+                "error": {"code": -32700, "message": f"Parse error: {exc}"},
+                "id": None,
+            })
+            return web.Response(
+                status=400, body=parse_err,
+                content_type="application/json", headers=_CORS_HEADERS,
+            )
+
+        response_obj = handler.handle_message(message)
+        if response_obj is None:
+            # Notification (no id) — acknowledged, no body
+            return web.Response(status=202, headers=_CORS_HEADERS)
+
+        return web.Response(
+            status=200,
+            body=json.dumps(response_obj, default=str),
+            content_type="application/json",
+            headers=_CORS_HEADERS,
+        )
+
+    app = web.Application()
+    app.router.add_options("/mcp", handle_options)
+    app.router.add_get("/mcp", handle_sse)
+    app.router.add_post("/mcp", handle_post)
+    app.router.add_get("/health", handle_health)
+    app.router.add_get("/", handle_health)  # root alias
+    return app
+
+
+def _run_http_server(
+    handler: MCPProtocolHandler,
+    host: str = "127.0.0.1",
+    port: int = 3001,
+    token: str | None = None,
+) -> None:
+    """Run NAVIG as a Streamable HTTP MCP server.
+
+    Implements the MCP 2024-11-05 Streamable HTTP transport:
+      POST /mcp   — JSON-RPC 2.0 request → JSON-RPC 2.0 response
+      GET  /mcp   — SSE stream for server-push notifications
+      OPTIONS /mcp — CORS preflight
+      GET  /health — liveness check
+
+    Perplexity AI integration:
+      In Perplexity → Add custom connector → paste the /mcp URL printed below.
+      If a token is set, also configure it as a Bearer token in Perplexity.
+    """
+    try:
+        from aiohttp import web  # noqa: F401  (ensure importable)
+    except ImportError as _exc:
+        ch.error("HTTP transport requires the 'aiohttp' package.")
+        ch.info("Install with:  pip install aiohttp")
+        raise SystemExit(1) from _exc
+
+    app = _build_http_app(handler, host=host, port=port, token=token)
+
+    async def _serve() -> None:
+        from aiohttp import web
+
+        mcp_url = f"http://{host}:{port}/mcp"
+        ch.success(f"NAVIG MCP HTTP server listening on {mcp_url}")
+        if token:
+            ch.info(f"Auth token: {token}")
+            ch.dim("Clients must send:  Authorization: Bearer <token>")
+        else:
+            ch.dim("No authentication required (open server).")
+        ch.console.print("")
+        ch.console.print("  [bold]Perplexity → Add custom connector → MCP Server URL:[/bold]")
+        ch.console.print(f"  [bold green]{mcp_url}[/bold green]")
+        ch.console.print("")
+        ch.dim("Press Ctrl+C to stop.")
+
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, host, port)
+        await site.start()
+        try:
+            await asyncio.Future()  # run forever
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            pass
+        finally:
+            await runner.cleanup()
+
+    try:
+        asyncio.run(_serve())
+    except KeyboardInterrupt:
+        ch.info("MCP HTTP server stopped.")
 
 
 def _run_websocket_server(handler: MCPProtocolHandler, port: int, token: str | None = None):
@@ -693,6 +881,23 @@ def generate_claude_mcp_config() -> dict[str, Any]:
     }
 
 
+def generate_perplexity_mcp_config(host: str = "127.0.0.1", port: int = 3001, token: str | None = None) -> dict[str, Any]:
+    """Generate Perplexity AI custom-connector configuration.
+
+    Copy the returned ``mcp_server_url`` and paste it into:
+    Perplexity → Settings → Add custom connector → MCP Server URL
+    """
+    url = f"http://{host}:{port}/mcp"
+    cfg: dict[str, Any] = {
+        "name": "NAVIG",
+        "description": "NAVIG CLI — server ops, database queries, wiki, and agent control",
+        "mcp_server_url": url,
+    }
+    if token:
+        cfg["authorization"] = f"Bearer {token}"
+    return cfg
+
+
 # =============================================================================
 # Memory MCP Tool Handlers (module-level, importable for testing)
 # =============================================================================
@@ -751,11 +956,18 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="NAVIG MCP Server")
     parser.add_argument("--websocket", action="store_true", help="Run in WebSocket mode")
-    parser.add_argument("--port", type=int, default=3001, help="WebSocket port (default 3001)")
+    parser.add_argument("--http", action="store_true", help="Run in HTTP (Streamable HTTP) mode")
+    parser.add_argument("--port", type=int, default=3001, help="Port for WebSocket/HTTP mode (default 3001)")
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="Bind host (default 127.0.0.1)")
     parser.add_argument(
-        "--token", type=str, default=None, help="Auth token (auto-generated if omitted)"
+        "--token", type=str, default=None, help="Auth token (auto-generated if omitted for websocket)"
     )
     args = parser.parse_args()
 
-    mode = "websocket" if args.websocket or args.port != 3001 else "stdio"
-    start_mcp_server(mode=mode, port=args.port, token=args.token)
+    if args.http:
+        mode = "http"
+    elif args.websocket or args.port != 3001:
+        mode = "websocket"
+    else:
+        mode = "stdio"
+    start_mcp_server(mode=mode, port=args.port, token=args.token, host=args.host)

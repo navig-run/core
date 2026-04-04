@@ -23,7 +23,7 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ class TodoItem:
     title: str
     status: TodoStatus = TodoStatus.NOT_STARTED
     created_at: float = field(default_factory=time.time)
-    completed_at: Optional[float] = None
+    completed_at: float | None = None
 
     def __post_init__(self) -> None:
         if len(self.title) > MAX_TITLE_LENGTH:
@@ -130,7 +130,7 @@ class TodoList:
         self.items.append(item)
         return item
 
-    def update(self, item_id: int, status: TodoStatus) -> Optional[str]:
+    def update(self, item_id: int, status: TodoStatus) -> str | None:
         """Update the status of an item by id.
 
         Enforces the single-in-progress constraint: setting an item
@@ -154,7 +154,7 @@ class TodoList:
                 )
 
         item.status = status
-        nudge: Optional[str] = None
+        nudge: str | None = None
 
         if status == TodoStatus.COMPLETED:
             item.completed_at = time.time()
@@ -173,7 +173,7 @@ class TodoList:
         completed = sum(1 for i in self.items if i.status == TodoStatus.COMPLETED)
         return f"{completed}/{len(self.items)} completed"
 
-    def get_current(self) -> Optional[TodoItem]:
+    def get_current(self) -> TodoItem | None:
         """Return the in-progress item, or ``None``."""
         for item in self.items:
             if item.status == TodoStatus.IN_PROGRESS:
@@ -241,7 +241,7 @@ class TodoPersistence:
         with open(self.file, "a", encoding="utf-8") as f:
             f.write(json.dumps(todo_list.to_dict()) + "\n")
 
-    def load_latest(self) -> Optional[TodoList]:
+    def load_latest(self) -> TodoList | None:
         """Load the most recent snapshot, or ``None`` if nothing saved."""
         if not self.file.exists():
             return None

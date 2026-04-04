@@ -136,7 +136,7 @@ class DesktopController:
         img = _pyautogui.screenshot(region=region)
         img.save(str(path))
 
-        logger.info(f"Desktop screenshot saved: {path}")
+        logger.info("Desktop screenshot saved: %s", path)
         return str(path)
 
     def click(
@@ -329,7 +329,7 @@ class DesktopController:
             if location:
                 return (location.left, location.top, location.width, location.height)
         except Exception as e:
-            logger.warning(f"Image locate failed: {e}")
+            logger.warning("Image locate failed: %s", e)
 
         return None
 
@@ -350,7 +350,7 @@ class DesktopController:
             )
             return [(loc.left, loc.top, loc.width, loc.height) for loc in locations]
         except Exception as e:
-            logger.warning(f"Image locate failed: {e}")
+            logger.warning("Image locate failed: %s", e)
 
         return []
 

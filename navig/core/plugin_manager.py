@@ -18,7 +18,7 @@ class PluginInstance:
 
     def start(self):
         cmd = self.entrypoint.split()
-        self.logger.info(f"Starting plugin process: {cmd}")
+        self.logger.info("Starting plugin process: %s", cmd)
         self.process = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,
@@ -40,13 +40,13 @@ class PluginInstance:
                     message = json.loads(line)
                     self._handle_message(message)
                 except json.JSONDecodeError:
-                    self.logger.warning(f"Received non-JSON from plugin: {line.strip()}")
+                    self.logger.warning("Received non-JSON from plugin: %s", line.strip())
 
     def _read_stderr(self):
         while self.process and self.process.poll() is None:
             line = self.process.stderr.readline()
             if line:
-                self.logger.error(f"STDERR: {line.strip()}")
+                self.logger.error("STDERR: %s", line.strip())
 
     def _handle_message(self, message: dict[str, Any]):
         msg_id = message.get("id")

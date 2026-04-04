@@ -92,7 +92,7 @@ def gateway_start(
 
         _raw = get_config_manager()._load_global_config()
     except Exception as _e:
-        _logger.debug(f"Could not load gateway start config: {_e}")
+        _logger.debug("Could not load gateway start config: %s", _e)
         _raw = {}
     _gw_cfg = _raw.get("gateway") or {}
     if port is None:

@@ -410,18 +410,23 @@ Context provided with each query:
         Returns:
             Path to the local host configuration file
         """
-        import platform
         import socket
+        import sys
 
         local_host_file = self.hosts_dir / "local.yaml"
 
         if local_host_file.exists():
             return local_host_file
 
-        # Auto-detect OS
-        os_name = platform.system().lower()
-        if os_name == "darwin":
+        # Use sys.platform (0 ns, no WMI) instead of platform.system() which
+        # triggers a WMI query on Windows Python 3.12+ that can hang forever.
+        _p = sys.platform
+        if _p == "win32":
+            os_name = "windows"
+        elif _p == "darwin":
             os_name = "macos"
+        else:
+            os_name = "linux"
 
         # Get hostname
         try:
@@ -434,7 +439,7 @@ Context provided with each query:
             "hostname": hostname,
             "type": "local",
             "os": os_name,
-            "description": f"Local machine ({platform.system()} {platform.release()})",
+            "description": f"Local machine ({os_name})",
             "created": datetime.now().isoformat(),
             "tags": ["local", os_name],
         }

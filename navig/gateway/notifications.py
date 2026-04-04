@@ -308,7 +308,7 @@ class TelegramNotifier(ChannelNotifier):
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Scheduler error: {e}")
+                logger.error("Scheduler error: %s", e)
                 await asyncio.sleep(60)
 
     async def _run_task(self, task: ScheduledTask):
@@ -318,7 +318,7 @@ class TelegramNotifier(ChannelNotifier):
             if notification:
                 await self.send(notification)
         except Exception as e:
-            logger.error(f"Task {task.name} failed: {e}")
+            logger.error("Task %s failed: %s", task.name, e)
 
     async def _process_queue(self):
         """Process pending notifications."""
@@ -359,7 +359,7 @@ class TelegramNotifier(ChannelNotifier):
             message = notification.to_telegram_message()
             await self.channel.send_message(self.chat_id, message)
         except Exception as e:
-            logger.error(f"Failed to send notification: {e}")
+            logger.error("Failed to send notification: %s", e)
 
     async def _send_batched(self, notifications: list[Notification]):
         """Send batched notifications."""
@@ -374,7 +374,7 @@ class TelegramNotifier(ChannelNotifier):
         try:
             await self.channel.send_message(self.chat_id, message)
         except Exception as e:
-            logger.error(f"Failed to send batched notifications: {e}")
+            logger.error("Failed to send batched notifications: %s", e)
 
     def _should_suppress(self, notification: Notification) -> bool:
         """Check if notification should be held (quiet hours / DND mode)."""
@@ -593,7 +593,7 @@ class TelegramNotifier(ChannelNotifier):
                 metadata=result.metadata,
             )
         except Exception as e:
-            logger.error(f"Engagement tick failed: {e}")
+            logger.error("Engagement tick failed: %s", e)
             return None
 
     def _get_engagement_coordinator(self):
@@ -622,7 +622,7 @@ class TelegramNotifier(ChannelNotifier):
                 command=command,
             )
         except Exception as e:
-            logger.debug(f"Failed to record interaction: {e}")
+            logger.debug("Failed to record interaction: %s", e)
 
 
 class NotificationManager:
@@ -689,9 +689,9 @@ class NotificationManager:
         for name, channel in self._channels.items():
             try:
                 await channel.start()
-                logger.info(f"Started {name} notifications")
+                logger.info("Started %s notifications", name)
             except Exception as e:
-                logger.error(f"Failed to start {name}: {e}")
+                logger.error("Failed to start %s: %s", name, e)
 
     async def stop_all(self):
         """Stop all notification channels."""
@@ -712,7 +712,7 @@ class NotificationManager:
             try:
                 await channel.send_alert(title, message, priority)
             except Exception as e:
-                logger.error(f"Failed to broadcast to channel: {e}")
+                logger.error("Failed to broadcast to channel: %s", e)
 
 
 def get_notification_manager() -> NotificationManager:

@@ -22,7 +22,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Union
+from typing import Any
 
 logger = logging.getLogger("navig.tools.schemas")
 
@@ -150,7 +150,7 @@ class ToolResult:
 
 
 # Type alias for parsed actions
-LLMAction = Union[ToolCallAction, RespondAction, MultiStepAction]
+LLMAction = ToolCallAction | RespondAction | MultiStepAction
 
 
 # =============================================================================

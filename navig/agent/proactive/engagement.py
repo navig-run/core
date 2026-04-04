@@ -503,7 +503,7 @@ class EngagementCoordinator:
             try:
                 callback(result)
             except Exception as e:
-                logger.warning(f"Engagement delivery callback failed: {e}")
+                logger.warning("Engagement delivery callback failed: %s", e)
 
     def _get_capability_promoter(self):
         """Lazy-load the capability promoter to avoid circular imports."""

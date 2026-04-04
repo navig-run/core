@@ -95,7 +95,7 @@ class ConfigWatcher:
         global_config_path = config_manager.global_config_dir / "config.yaml"
         if global_config_path.exists():
             self._watchers["global_config"] = FileWatcher(global_config_path)
-            logger.debug(f"Watching global config: {global_config_path}")
+            logger.debug("Watching global config: %s", global_config_path)
 
         # Workspace files
         workspace_path = config_manager.global_config_dir / "workspace"
@@ -111,13 +111,13 @@ class ConfigWatcher:
                 file_path = workspace_path / ws_file
                 if file_path.exists():
                     self._watchers[f"ws_{ws_file}"] = FileWatcher(file_path)
-                    logger.debug(f"Watching workspace file: {file_path}")
+                    logger.debug("Watching workspace file: %s", file_path)
 
         # Project config (if in project context)
         project_config_path = Path(".navig/config.yaml")
         if project_config_path.exists():
             self._watchers["project_config"] = FileWatcher(project_config_path)
-            logger.debug(f"Watching project config: {project_config_path}")
+            logger.debug("Watching project config: %s", project_config_path)
 
     def on_config_change(self, callback: Callable[[], None]) -> None:
         """Register callback for config changes."""
@@ -162,7 +162,7 @@ class ConfigWatcher:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Error in config watcher: {e}")
+                logger.error("Error in config watcher: %s", e)
                 await asyncio.sleep(self.poll_interval)
 
     async def _check_changes(self) -> None:
@@ -172,7 +172,7 @@ class ConfigWatcher:
 
         for name, watcher in self._watchers.items():
             if watcher.has_changed():
-                logger.info(f"Detected change: {name}")
+                logger.info("Detected change: %s", name)
 
                 if name.endswith("_config"):
                     config_changed = True
@@ -205,7 +205,7 @@ class ConfigWatcher:
                 else:
                     callback()
             except Exception as e:
-                logger.error(f"Error in config change callback: {e}")
+                logger.error("Error in config change callback: %s", e)
 
         # Emit system event
         if self.gateway.event_queue:
@@ -213,7 +213,7 @@ class ConfigWatcher:
 
     async def _handle_workspace_change(self, filename: str) -> None:
         """Handle workspace file change."""
-        logger.info(f"Workspace file changed: {filename}")
+        logger.info("Workspace file changed: %s", filename)
 
         # Read new content
         workspace_path = self.gateway.config_manager.global_config_dir / "workspace"
@@ -232,7 +232,7 @@ class ConfigWatcher:
                 if wm.sync_to_user_profile():
                     logger.info("Synced USER.md preferences to UserProfile")
             except Exception as e:
-                logger.warning(f"Failed to sync USER.md to UserProfile: {e}")
+                logger.warning("Failed to sync USER.md to UserProfile: %s", e)
 
         # Call registered callbacks
         for callback in self._callbacks["workspace"]:
@@ -242,7 +242,7 @@ class ConfigWatcher:
                 else:
                     callback(filename)
             except Exception as e:
-                logger.error(f"Error in workspace change callback: {e}")
+                logger.error("Error in workspace change callback: %s", e)
 
         # Emit system event
         if self.gateway.event_queue:
@@ -258,13 +258,13 @@ class ConfigWatcher:
         """Add a new file to watch."""
         if name not in self._watchers:
             self._watchers[name] = FileWatcher(path)
-            logger.debug(f"Added watch: {name} -> {path}")
+            logger.debug("Added watch: %s -> %s", name, path)
 
     def remove_watch(self, name: str) -> None:
         """Remove a file from watching."""
         if name in self._watchers:
             del self._watchers[name]
-            logger.debug(f"Removed watch: {name}")
+            logger.debug("Removed watch: %s", name)
 
 
 class WorkspaceManager:
@@ -405,7 +405,7 @@ Last updated: Never
             file_path = self.base_path / filename
             if not file_path.exists():
                 file_path.write_text(content, encoding="utf-8")
-                logger.info(f"Created workspace file: {filename}")
+                logger.info("Created workspace file: %s", filename)
 
     def read_file(self, filename: str) -> str:
         """Read a workspace file."""
@@ -419,7 +419,7 @@ Last updated: Never
         self.base_path.mkdir(parents=True, exist_ok=True)
         file_path = self.base_path / filename
         file_path.write_text(content, encoding="utf-8")
-        logger.debug(f"Updated workspace file: {filename}")
+        logger.debug("Updated workspace file: %s", filename)
 
     def append_to_file(self, filename: str, content: str) -> None:
         """Append content to a workspace file."""

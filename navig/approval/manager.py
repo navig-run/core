@@ -129,13 +129,13 @@ class ApprovalManager:
             handler: Handler instance with handle_request method
         """
         self._handlers[name] = handler
-        logger.debug(f"Registered approval handler: {name}")
+        logger.debug("Registered approval handler: %s", name)
 
     def unregister_handler(self, name: str) -> None:
         """Unregister an approval handler."""
         if name in self._handlers:
             del self._handlers[name]
-            logger.debug(f"Unregistered approval handler: {name}")
+            logger.debug("Unregistered approval handler: %s", name)
 
     def get_handler(self, name: str) -> Any | None:
         """Get a registered handler by name."""
@@ -187,7 +187,7 @@ class ApprovalManager:
 
         # Check auto-approve users
         if self.policy.is_user_auto_approved(user_id):
-            logger.debug(f"Auto-approved (trusted user): {command}")
+            logger.debug("Auto-approved (trusted user): %s", command)
             return True
 
         # Check auto-evolve (VS Code-side toggle) — gate: audit log must be live
@@ -209,12 +209,12 @@ class ApprovalManager:
 
         # Auto-approve safe commands
         if level == ApprovalLevel.SAFE:
-            logger.debug(f"Auto-approved (safe): {command}")
+            logger.debug("Auto-approved (safe): %s", command)
             return True
 
         # Auto-deny never commands
         if level == ApprovalLevel.NEVER:
-            logger.warning(f"Auto-denied (never): {command}")
+            logger.warning("Auto-denied (never): %s", command)
             return False
 
         # Create approval request
@@ -247,7 +247,7 @@ class ApprovalManager:
                 else:
                     callback(request)
             except Exception as e:
-                logger.error(f"Approval callback error: {e}")
+                logger.error("Approval callback error: %s", e)
 
         try:
             # Wait for response or timeout
@@ -285,7 +285,7 @@ class ApprovalManager:
         """
         request = self._pending.get(request_id)
         if not request:
-            logger.warning(f"Approval request not found: {request_id}")
+            logger.warning("Approval request not found: %s", request_id)
             return False
 
         request.status = ApprovalStatus.APPROVED if approved else ApprovalStatus.DENIED
@@ -295,7 +295,7 @@ class ApprovalManager:
         if future and not future.done():
             future.set_result(approved)
 
-        logger.info(f"Approval {request_id}: {'approved' if approved else 'denied'}")
+        logger.info("Approval %s: %s", request_id, 'approved' if approved else 'denied')
         return True
 
     def get_pending(self, channel: str | None = None, user_id: str | None = None) -> list:
@@ -364,9 +364,9 @@ class ApprovalManager:
                         future.set_result(False)  # Deny on expiry
 
                 if expired_ids:
-                    logger.debug(f"Cleaned up {len(expired_ids)} expired approval requests")
+                    logger.debug("Cleaned up %s expired approval requests", len(expired_ids))
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Approval cleanup error: {e}")
+                logger.error("Approval cleanup error: %s", e)

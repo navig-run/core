@@ -134,10 +134,10 @@ class SystemEventQueue:
                 # Load counter
                 self._event_counter = data.get("counter", 0)
 
-                logger.info(f"Loaded {len(self._pending)} pending events")
+                logger.info("Loaded %s pending events", len(self._pending))
 
             except Exception as e:
-                logger.error(f"Failed to load events: {e}")
+                logger.error("Failed to load events: %s", e)
 
     def _save_events(self) -> None:
         """Save pending events to disk."""
@@ -223,7 +223,7 @@ class SystemEventQueue:
         # Queue for processing
         await self._queue.put(event)
 
-        logger.debug(f"Event emitted: {event_type} (id={event.id})")
+        logger.debug("Event emitted: %s (id=%s)", event_type, event.id)
 
         return event.id
 
@@ -242,7 +242,7 @@ class SystemEventQueue:
                 self._subscribers[event_type] = []
             self._subscribers[event_type].append(handler)
 
-        logger.debug(f"Subscribed to event: {event_type}")
+        logger.debug("Subscribed to event: %s", event_type)
 
     def unsubscribe(self, event_type: str, handler: EventHandler) -> None:
         """Unsubscribe from events."""
@@ -269,11 +269,11 @@ class SystemEventQueue:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Error in event processor: {e}")
+                logger.error("Error in event processor: %s", e)
 
     async def _process_event(self, event: SystemEvent) -> None:
         """Process a single event."""
-        logger.debug(f"Processing event: {event.event_type} (id={event.id})")
+        logger.debug("Processing event: %s (id=%s)", event.event_type, event.id)
 
         handlers = []
 
@@ -294,7 +294,7 @@ class SystemEventQueue:
                     handler(event)
             except Exception as e:
                 errors.append(str(e))
-                logger.error(f"Handler error for {event.event_type}: {e}")
+                logger.error("Handler error for %s: %s", event.event_type, e)
 
         # Mark as processed
         event.processed = True
@@ -451,7 +451,7 @@ class SmartNotificationFilter:
         if cache_key in self._recent:
             last_sent = self._recent[cache_key]
             if (now - last_sent).total_seconds() < self.cooldown_seconds:
-                logger.debug(f"Suppressing duplicate notification: {notification_type}")
+                logger.debug("Suppressing duplicate notification: %s", notification_type)
                 await self.event_queue.emit(
                     EventTypes.NOTIFICATION_SUPPRESSED,
                     {"reason": "duplicate", "type": notification_type},

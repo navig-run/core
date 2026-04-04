@@ -122,7 +122,7 @@ async def route_to_best_peer(
     if target_node_id:
         peer = next((r for r in registry.get_peers() if r.node_id == target_node_id), None)
         if peer is None:
-            logger.warning(f"[mesh.router] Target node {target_node_id!r} not in registry")
+            logger.warning("[mesh.router] Target node %s not in registry", target_node_id!r)
             return None
     else:
         peer = registry.get_best_peer(capability)
@@ -295,7 +295,7 @@ async def _forward(peer: NodeRecord, body: dict) -> dict | None:
         ):
             rtt_ms = (time.monotonic() - t0) * 1000
             if resp.status != 200:
-                logger.warning(f"[mesh.router] Peer {peer.node_id} returned HTTP {resp.status}")
+                logger.warning("[mesh.router] Peer %s returned HTTP %s", peer.node_id, resp.status)
                 _get_metrics(peer.node_id).record_failure()
                 get_registry().record_probe_failure(peer.node_id)
                 return None
@@ -314,7 +314,7 @@ async def _forward(peer: NodeRecord, body: dict) -> dict | None:
             return data
 
     except Exception as e:
-        logger.warning(f"[mesh.router] Forward to {peer.node_id} failed: {e}")
+        logger.warning("[mesh.router] Forward to %s failed: %s", peer.node_id, e)
         _get_metrics(peer.node_id).record_failure()
         get_registry().record_probe_failure(peer.node_id)
         return None

@@ -425,7 +425,7 @@ class NodeRegistry:
     def set_target(self, node_id: str) -> None:
         """Set the active routing target. Stored in memory only (not persisted)."""
         self._target_node_id = node_id
-        logger.info(f"[mesh.registry] Routing target set to {node_id}")
+        logger.info("[mesh.registry] Routing target set to %s", node_id)
 
     def clear_target(self) -> None:
         """Clear the active routing target — commands run locally."""
@@ -468,14 +468,14 @@ class NodeRegistry:
         ]
         for nid in stale:
             del self._peers[nid]
-            logger.debug(f"[mesh.registry] Evicted stale peer {nid}")
+            logger.debug("[mesh.registry] Evicted stale peer %s", nid)
 
     def _save_to_disk(self) -> None:
         try:
             data = [r.to_dict() for r in self._peers.values() if not r.is_self]
             self._peers_file.write_text(json.dumps(data, indent=2))
         except Exception as e:
-            logger.warning(f"[mesh.registry] Failed to save peers: {e}")
+            logger.warning("[mesh.registry] Failed to save peers: %s", e)
 
     def _load_from_disk(self) -> None:
         if not self._peers_file.exists():
@@ -486,9 +486,9 @@ class NodeRegistry:
                 record = NodeRecord.from_dict(d)
                 if record.node_id != self._self.node_id:
                     self._peers[record.node_id] = record
-            logger.info(f"[mesh.registry] Loaded {len(data)} cached peers from disk")
+            logger.info("[mesh.registry] Loaded %s cached peers from disk", len(data))
         except Exception as e:
-            logger.warning(f"[mesh.registry] Failed to load peers cache: {e}")
+            logger.warning("[mesh.registry] Failed to load peers cache: %s", e)
 
 
 # ─────────────────────────── Singleton ───────────────────────────────

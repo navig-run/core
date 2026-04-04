@@ -451,7 +451,7 @@ class UserStateTracker:
                         notifications_enabled=prefs.get("notifications_enabled", True),
                     )
             except Exception as e:
-                logger.warning(f"Failed to load user state: {e}")
+                logger.warning("Failed to load user state: %s", e)
         elif sidecar.exists():
             # No main state yet — at least restore last_seen from sidecar (BUG-5)
             try:
@@ -502,7 +502,7 @@ class UserStateTracker:
             }
             state_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
         except Exception as e:
-            logger.warning(f"Failed to save user state: {e}")
+            logger.warning("Failed to save user state: %s", e)
 
 
 # ── Singleton accessor ────────────────────────────────────────

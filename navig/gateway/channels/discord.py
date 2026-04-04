@@ -140,14 +140,14 @@ class DiscordChannel:
 
         @self.bot.event
         async def on_ready():
-            logger.info(f"Discord bot connected as {self.bot.user}")
+            logger.info("Discord bot connected as %s", self.bot.user)
 
             # Sync slash commands
             try:
                 synced = await self.bot.tree.sync()
-                logger.info(f"Synced {len(synced)} slash command(s)")
+                logger.info("Synced %s slash command(s)", len(synced))
             except Exception as e:
-                logger.error(f"Failed to sync commands: {e}")
+                logger.error("Failed to sync commands: %s", e)
 
         @self.bot.event
         async def on_message(message: discord.Message):
@@ -205,7 +205,7 @@ class DiscordChannel:
                     await self._send_response(message.channel, response)
 
                 except Exception as e:
-                    logger.error(f"Error handling Discord message: {e}")
+                    logger.error("Error handling Discord message: %s", e)
                     await message.channel.send(
                         "❌ Sorry, I encountered an error processing your request."
                     )
@@ -257,7 +257,7 @@ class DiscordChannel:
                 await self._send_interaction_response(interaction, response)
 
             except Exception as e:
-                logger.error(f"Error handling slash command: {e}")
+                logger.error("Error handling slash command: %s", e)
                 await interaction.followup.send(
                     "❌ Sorry, I encountered an error processing your request."
                 )
@@ -417,7 +417,7 @@ class DiscordChannel:
         try:
             await self.bot.start(self.config.token)
         except Exception as e:
-            logger.error(f"Discord bot error: {e}")
+            logger.error("Discord bot error: %s", e)
             self._running = False
             raise
 

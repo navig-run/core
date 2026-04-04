@@ -82,7 +82,7 @@ def _webhook_handler(gw: NavigGateway):
             if not accepted:
                 return web.json_response({"error": "Rejected"}, status=403)
         except Exception as e:
-            logger.error(f"Webhook handler error: {e}")
+            logger.error("Webhook handler error: %s", e)
             # Still return 200 so Telegram doesn't retry
             pass
 

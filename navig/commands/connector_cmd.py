@@ -388,6 +388,16 @@ def _ensure_connectors_loaded() -> None:
 
         logging.getLogger("navig.connectors").debug("Calendar load failed: %s", exc)
 
+    # Perplexity AI
+    try:
+        from navig.connectors.perplexity.connector import PerplexityConnector
+
+        registry.register(PerplexityConnector)
+    except Exception as exc:
+        import logging
+
+        logging.getLogger("navig.connectors").debug("Perplexity load failed: %s", exc)
+
 
 def _register_oauth_config(connector_id: str, auth) -> None:
     """Register OAuth config for known connectors."""

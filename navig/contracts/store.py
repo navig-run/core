@@ -190,7 +190,7 @@ class RuntimeStore:
             self._write_file("missions.json", [m.to_dict() for m in self._missions.values()])
             self._write_file("receipts.json", [r.to_dict() for r in self._receipts.values()])
         except Exception as e:
-            logger.warning(f"[RuntimeStore] Flush failed: {e}")
+            logger.warning("[RuntimeStore] Flush failed: %s", e)
 
     def _load(self) -> None:
         """Load state from disk (silently ignore missing files)."""
@@ -216,7 +216,7 @@ class RuntimeStore:
                 except Exception:  # noqa: BLE001
                     pass  # best-effort; failure is non-critical
         except Exception as e:
-            logger.debug(f"[RuntimeStore] Load skipped: {e}")
+            logger.debug("[RuntimeStore] Load skipped: %s", e)
 
     def _write_file(self, name: str, data) -> None:
         path = self._dir / name

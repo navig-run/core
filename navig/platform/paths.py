@@ -13,10 +13,17 @@ Usage:
 
 All other modules should import paths from here instead of
 doing ad-hoc `sys.platform == 'win32'` checks.
+
+Performance note:
+    OS detection uses `sys.platform` (set at interpreter init, 0 ns)
+    instead of `platform.system()` which triggers a WMI query on
+    Windows Python 3.12+ that can hang for 73 ms to infinity.
+    `platform` is still imported for non-hot-path uses (platform_info).
 """
 
 import os
 import platform
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -29,18 +36,24 @@ def current_os() -> str:
     """
     Detect current OS. Returns 'windows', 'linux', 'macos', or 'wsl'.
     Cached after first call.
+
+    Uses ``sys.platform`` (a string constant, set at interpreter startup)
+    rather than ``platform.system()`` which triggers a WMI query on
+    Windows Python 3.12+ that can block for 73 ms to infinity.
     """
     global _DETECTED_OS
     if _DETECTED_OS is not None:
         return _DETECTED_OS
 
-    system = platform.system().lower()
-    if system == "windows":
+    # sys.platform is a constant — no OS calls, no WMI, no subprocess.
+    # Values: 'win32' (all Windows), 'darwin' (macOS), 'linux' (Linux/WSL)
+    _p = sys.platform
+    if _p == "win32":
         _DETECTED_OS = "windows"
-    elif system == "darwin":
+    elif _p == "darwin":
         _DETECTED_OS = "macos"
-    elif system == "linux":
-        # Check for WSL
+    elif _p == "linux":
+        # Check for WSL via /proc/version (fast file read, no WMI)
         try:
             with open("/proc/version") as f:
                 if "microsoft" in f.read().lower():
@@ -50,7 +63,8 @@ def current_os() -> str:
         except (FileNotFoundError, PermissionError):
             _DETECTED_OS = "linux"
     else:
-        _DETECTED_OS = "linux"  # Fallback for BSD, etc.
+        # FreeBSD, OpenBSD, Cygwin etc. — treat as Linux-like
+        _DETECTED_OS = "linux"
 
     return _DETECTED_OS
 

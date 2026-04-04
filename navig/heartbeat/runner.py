@@ -117,7 +117,7 @@ class HeartbeatRunner:
         self._running = True
         self._task = asyncio.create_task(self._run_loop())
 
-        logger.info(f"Heartbeat runner started (interval: {self.config.interval_minutes}m)")
+        logger.info("Heartbeat runner started (interval: %sm)", self.config.interval_minutes)
 
         # Emit start event
         if self.gateway.event_queue:
@@ -171,7 +171,7 @@ class HeartbeatRunner:
         import random
 
         initial_delay = random.randint(10, 60)
-        logger.debug(f"Heartbeat initial delay: {initial_delay}s")
+        logger.debug("Heartbeat initial delay: %ss", initial_delay)
         await asyncio.sleep(initial_delay)
 
         while self._running:
@@ -190,7 +190,7 @@ class HeartbeatRunner:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Heartbeat loop error: {e}")
+                logger.error("Heartbeat loop error: %s", e)
                 # Wait before retrying
                 await asyncio.sleep(self.config.retry_delay_seconds)
 
@@ -332,7 +332,7 @@ Begin the health check now. Be thorough but efficient.
     async def _handle_result(self, result: HeartbeatResult) -> None:
         """Handle heartbeat result."""
         if result.suppressed:
-            logger.info(f"Heartbeat OK (duration: {result.duration_seconds:.1f}s)")
+            logger.info("Heartbeat OK (duration: %.1fs)", result.duration_seconds)
 
             # Emit event but don't notify
             if self.gateway.event_queue:
@@ -349,7 +349,7 @@ Begin the health check now. Be thorough but efficient.
             return
 
         if not result.success:
-            logger.error(f"Heartbeat failed: {result.error}")
+            logger.error("Heartbeat failed: %s", result.error)
 
             # Notify about failure
             await self._notify_issue(f"[!] Heartbeat check failed: {result.error}")
@@ -367,7 +367,7 @@ Begin the health check now. Be thorough but efficient.
             return
 
         if result.issues_found:
-            logger.warning(f"Heartbeat found {len(result.issues_found)} issues")
+            logger.warning("Heartbeat found %s issues", len(result.issues_found))
 
             # Format and send notification
             issue_text = "\n".join(f"- {i}" for i in result.issues_found)
@@ -381,7 +381,7 @@ Begin the health check now. Be thorough but efficient.
                     else:
                         callback(result.issues_found)
                 except Exception as e:
-                    logger.error(f"Issue callback error: {e}")
+                    logger.error("Issue callback error: %s", e)
 
         # Complete event
         if self.gateway.event_queue:
@@ -405,7 +405,7 @@ Begin the health check now. Be thorough but efficient.
                 else:
                     callback(result)
             except Exception as e:
-                logger.error(f"Complete callback error: {e}")
+                logger.error("Complete callback error: %s", e)
 
     async def _notify_issue(self, message: str) -> None:
         """Send notification about an issue."""

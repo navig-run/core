@@ -413,12 +413,12 @@ class EventBridge:
         filt = subscription or SubscriptionFilter.accept_all()
         self._clients[id(ws)] = (ws, filt)
         self._stats["clients_registered"] += 1
-        logger.debug(f"Client registered: {id(ws)} filter={filt.to_dict()}")
+        logger.debug("Client registered: %s filter=%s", id(ws), filt.to_dict())
 
     def unregister_client(self, ws: WebSocketLike) -> None:
         """Remove a WebSocket client."""
         self._clients.pop(id(ws), None)
-        logger.debug(f"Client unregistered: {id(ws)}")
+        logger.debug("Client unregistered: %s", id(ws))
 
     def update_client_filter(self, ws: WebSocketLike, subscription: SubscriptionFilter) -> bool:
         """Update the subscription filter for an existing client."""
@@ -563,7 +563,7 @@ class EventBridge:
         except Exception as e:
             # Silently fail if native daemon isn't running yet
             _logger = logging.getLogger("navig.event_bridge.ipc")
-            _logger.debug(f"IPC offload skipped: {e}")
+            _logger.debug("IPC offload skipped: %s", e)
 
     # ------------------------------------------------------------------
     # Normalisation helpers

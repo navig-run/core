@@ -97,7 +97,7 @@ React to specific points. Challenge weak ideas, support strong ones, propose alt
         if not response_text:
             response_text = "[NO RESPONSE]"
     except Exception as e:
-        logger.error(f"[COUNCIL] Agent '{agent.id}' AI call failed: {e}")
+        logger.error("[COUNCIL] Agent '%s' AI call failed: %s", agent.id, e)
         response_text = f"[ERROR: {e}]"
 
     duration_ms = int((time.time() - start) * 1000)
@@ -168,7 +168,7 @@ def run_council(
     previous_context = ""
 
     for round_num in range(1, rounds + 1):
-        logger.info(f"[COUNCIL] Round {round_num}/{rounds}")
+        logger.info("[COUNCIL] Round %s/%s", round_num, rounds)
         round_responses: list[dict[str, Any]] = []
 
         # Build list of agents to call
@@ -215,7 +215,7 @@ def run_council(
                         results_by_id[agent_id] = result
                     except (FuturesTimeout, TimeoutError):
                         agent = formation.loaded_agents.get(agent_id)
-                        logger.warning(f"[COUNCIL] Agent '{agent_id}' timed out ({timeout}s)")
+                        logger.warning("[COUNCIL] Agent '%s' timed out (%ss)", agent_id, timeout)
                         results_by_id[agent_id] = {
                             "agent": agent_id,
                             "name": agent.name if agent else agent_id,
@@ -226,7 +226,7 @@ def run_council(
                         }
                     except Exception as e:
                         agent = formation.loaded_agents.get(agent_id)
-                        logger.error(f"[COUNCIL] Agent '{agent_id}' error: {e}")
+                        logger.error("[COUNCIL] Agent '%s' error: %s", agent_id, e)
                         results_by_id[agent_id] = {
                             "agent": agent_id,
                             "name": agent.name if agent else agent_id,
@@ -326,5 +326,5 @@ As {default_agent.name}, wrap this up. Highlight where the team AGREED and where
     except (FuturesTimeout, TimeoutError):
         return "[TIMEOUT during synthesis]"
     except Exception as e:
-        logger.error(f"[COUNCIL] Final decision synthesis failed: {e}")
+        logger.error("[COUNCIL] Final decision synthesis failed: %s", e)
         return f"[ERROR during synthesis: {e}]"

@@ -296,7 +296,7 @@ class BrowserController:
         else:
             await self._page.screenshot(path=str(path), full_page=full_page)
 
-        logger.info(f"Screenshot saved: {path}")
+        logger.info("Screenshot saved: %s", path)
         return str(path)
 
     async def screenshot_base64(self, quality: int = 60) -> str:

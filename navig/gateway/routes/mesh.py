@@ -124,7 +124,7 @@ async def _bootstrap_peer(url: str, gw: NavigGateway) -> dict | None:
         return record.to_dict()
 
     except Exception as e:
-        logger.warning(f"[mesh.routes] Bootstrap failed for {url}: {e}")
+        logger.warning("[mesh.routes] Bootstrap failed for %s: %s", url, e)
         return None
 
 
@@ -218,7 +218,7 @@ def _set_target(gw: NavigGateway):
 
         # Mark as current target in registry
         registry.set_target(match.node_id)  # type: ignore[attr-defined]
-        logger.info(f"[mesh.routes] Target set to {match.node_id}")
+        logger.info("[mesh.routes] Target set to %s", match.node_id)
         return json_ok({"target": match.to_dict()})
 
     return h
@@ -261,12 +261,12 @@ def _scan(gw: NavigGateway):
                 try:
                     await discovery.probe_lan_range()
                 except Exception as e:
-                    logger.warning(f"[mesh.routes] Scan error: {e}")
+                    logger.warning("[mesh.routes] Scan error: %s", e)
 
             asyncio.create_task(_do_scan())
             return json_ok({"scanning": True, "hint": "poll /mesh/peers in ~2s"})
         except Exception as e:
-            logger.warning(f"[mesh.routes] Could not start scan: {e}")
+            logger.warning("[mesh.routes] Could not start scan: %s", e)
             return json_ok({"scanning": False, "error": str(e)})
 
     return h

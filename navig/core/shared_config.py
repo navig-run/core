@@ -56,9 +56,6 @@ class ConfigSingleton:
                 self.global_config_dir = Path.home() / ".navig"
                 self.global_config_path = self.global_config_dir / "config.yaml"
 
-                # Project-local config path
-                self.project_config_path = Path.cwd() / ".navig" / "config.yaml"
-
                 # Cache directory
                 self.cache_dir = self.global_config_dir / "cache"
 
@@ -72,6 +69,15 @@ class ConfigSingleton:
                 # Load configuration
                 self._load()
                 self._initialized = True
+
+    @property
+    def project_config_path(self) -> Path:
+        """Project-local config path, resolved lazily against current CWD.
+
+        Resolved each time so that callers who change directory after the
+        singleton was first created still see the correct project config.
+        """
+        return Path.cwd() / ".navig" / "config.yaml"
 
     def _load(self) -> None:
         """Load configuration from disk (global + project-local)."""
@@ -117,10 +123,12 @@ class ConfigSingleton:
         self.plugins_dir.mkdir(parents=True, exist_ok=True)
 
     def _save_global(self) -> None:
-        """Save global configuration to disk."""
+        """Save global configuration to disk (atomic write)."""
         self._ensure_dirs()
-        with open(self.global_config_path, "w", encoding="utf-8") as f:
+        tmp = self.global_config_path.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
             yaml.dump(self._global_data, f, default_flow_style=False, allow_unicode=True)
+        tmp.replace(self.global_config_path)  # atomic rename
 
     def _save_project(self) -> None:
         """Save project-local configuration to disk."""

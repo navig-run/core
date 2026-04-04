@@ -111,7 +111,7 @@ class HookEvent:
     type: str
     action: str
     context: dict[str, Any] = field(default_factory=dict)
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=datetime.now)  # utcnow deprecated in Py3.12+
     messages: list[str] = field(default_factory=list)
     cancel: bool = False
     data: dict[str, Any] = field(default_factory=dict)
@@ -161,7 +161,7 @@ class HookRegistry:
         # Sort by priority (stable sort preserves registration order for same priority)
         self._handlers[event_key].sort(key=lambda x: x[0])
 
-        logger.debug(f"Registered hook: {event_key} (priority={priority})")
+        logger.debug("Registered hook: %s (priority=%s)", event_key, priority)
 
     def unregister(self, event_key: str, handler: HookHandler) -> bool:
         """
@@ -186,7 +186,7 @@ class HookRegistry:
 
         removed = len(self._handlers.get(event_key, [])) < original_len
         if removed:
-            logger.debug(f"Unregistered hook: {event_key}")
+            logger.debug("Unregistered hook: %s", event_key)
         return removed
 
     def clear(self, event_key: str | None = None) -> None:
@@ -199,7 +199,7 @@ class HookRegistry:
         """
         if event_key:
             self._handlers.pop(event_key, None)
-            logger.debug(f"Cleared hooks for: {event_key}")
+            logger.debug("Cleared hooks for: %s", event_key)
         else:
             self._handlers.clear()
             logger.debug("Cleared all hooks")
@@ -348,7 +348,7 @@ async def trigger_hook(
             if asyncio.iscoroutine(result):
                 await result
         except Exception as e:
-            logger.error(f"Hook error [{event.event_key}]: {e.__class__.__name__}: {e}")
+            logger.error("Hook error [%s]: %s: %s", event.event_key, e.__class__.__name__, e)
             # Continue with other handlers
 
     return event
@@ -381,10 +381,10 @@ def trigger_hook_sync(
         try:
             result = handler(event)
             if asyncio.iscoroutine(result):
-                logger.warning(f"Async handler skipped in sync context: {handler.__name__}")
+                logger.warning("Async handler skipped in sync context: %s", handler.__name__)
                 result.close()  # Prevent coroutine warning
         except Exception as e:
-            logger.error(f"Hook error [{event.event_key}]: {e.__class__.__name__}: {e}")
+            logger.error("Hook error [%s]: %s: %s", event.event_key, e.__class__.__name__, e)
 
     return event
 

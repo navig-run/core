@@ -10,9 +10,16 @@ Key concepts
 - **TaskHandle**: cancellable reference returned from :meth:`CommandQueue.enqueue`.
 - **LaneClearedError**: raised inside a pending coroutine when its lane is cleared.
 
+Concurrency note
+----------------
+Each lane always uses **exactly one worker** (fully serialised).  The
+``max_workers_per_lane`` constructor parameter is reserved for a future
+multi-worker mode and currently raises ``ValueError`` for values > 1 to
+prevent callers from relying on concurrency that does not exist yet.
+
 Usage
 -----
-    q = CommandQueue(max_workers_per_lane=1)
+    q = CommandQueue()                         # default single-worker lanes
 
     handle = await q.enqueue("main", some_coroutine())
     result = await handle.wait()          # raises LaneClearedError if cleared
@@ -174,8 +181,11 @@ class CommandQueue:
     Parameters
     ----------
     max_workers_per_lane:
-        How many tasks may *run concurrently within a single lane*.
-        Default 1 (fully serialized per lane).
+        Must be 1 for now.  Each lane always uses a single worker so that
+        tasks within the same lane are fully serialised.
+        Passing a value > 1 raises :exc:`ValueError` to prevent callers
+        from expecting concurrency that does not exist.  Multi-worker lanes
+        are reserved for a future release.
     default_timeout:
         Per-task execution timeout in seconds.  0 = no timeout.
     """
@@ -188,6 +198,12 @@ class CommandQueue:
     ) -> None:
         if max_workers_per_lane < 1:
             raise ValueError("max_workers_per_lane must be >= 1")
+        if max_workers_per_lane > 1:
+            raise ValueError(
+                "max_workers_per_lane > 1 is not yet supported. "
+                "Each lane is always serialised (1 worker). "
+                "For concurrent work, use multiple lanes."
+            )
         self._max_workers = max_workers_per_lane
         self._default_timeout = default_timeout
         self._lanes: dict[str, _LaneState] = {}

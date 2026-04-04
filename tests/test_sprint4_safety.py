@@ -506,7 +506,8 @@ class TestRoutePolicyGates:
 
         gw = self._gw_with_policy("allow")
         # Patch asyncio.create_task so teardown doesn't actually exit
-        with patch("navig.gateway.routes.daemon.asyncio.create_task"):
+        with patch("navig.gateway.routes.daemon.asyncio.create_task") as create_task:
+            create_task.side_effect = lambda coro: coro.close()
             resp = self._run(_daemon_stop(gw)(self._req(gw)))
         assert resp.status == 200
 

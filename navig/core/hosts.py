@@ -179,7 +179,7 @@ class HostManager:
                                     if not host_value or "." in str(host_value):
                                         hosts.add(yaml_file.stem)
                                 except Exception:
-                                    pass
+                                    pass  # best-effort: skip unparseable YAML host file
                     except (PermissionError, OSError) as e:
                         if self._config.verbose:
                             from navig import console_helper as ch

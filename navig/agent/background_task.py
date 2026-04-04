@@ -16,7 +16,6 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -40,10 +39,10 @@ class BackgroundTask:
     task_id: int
     label: str
     command: str
-    pid: Optional[int] = None
+    pid: int | None = None
     started_at: float = field(default_factory=time.time)
-    completed_at: Optional[float] = None
-    exit_code: Optional[int] = None
+    completed_at: float | None = None
+    exit_code: int | None = None
     output_file: str = ""
 
     @property

@@ -88,10 +88,12 @@ class CrashHandler:
             filename = f"crash-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
             log_path = log_dir / filename
 
-            # Gather system info
+            # Gather system info — use sys.platform instead of platform.platform()
+            # because platform.platform() calls platform.uname() which on Windows
+            # Python 3.12+ triggers a WMI query that can hang indefinitely.
             sys_info = {
-                "platform": platform.platform(),
-                "python": platform.python_version(),
+                "platform": sys.platform,
+                "python": platform.python_version(),  # pure string, no WMI
                 "argv": sys.argv,
                 "cwd": str(Path.cwd()),
                 "env_debug": os.environ.get(ENV_DEBUG_VAR),

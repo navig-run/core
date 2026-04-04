@@ -53,7 +53,7 @@ def _resolve_version() -> str:
             if isinstance(version, str) and version.strip():
                 return version.strip()
         except Exception:
-            pass
+            pass  # best-effort: pyproject.toml unreadable or missing version field
 
     try:
         from importlib.metadata import PackageNotFoundError, version  # noqa: F401

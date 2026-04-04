@@ -82,7 +82,7 @@ class StdioTransport(MCPTransport):
                     value = os.environ.get(env_var, "")
                 full_env[key] = value
 
-        logger.debug(f"Starting MCP server: {self.command} {' '.join(self.args)}")
+        logger.debug("Starting MCP server: %s %s", self.command, ' '.join(self.args))
 
         try:
             self._process = await asyncio.create_subprocess_exec(
@@ -101,7 +101,7 @@ class StdioTransport(MCPTransport):
             # Start stderr reader for debugging
             self._stderr_task = asyncio.create_task(self._read_stderr())
 
-            logger.info(f"MCP stdio transport connected: {self.command}")
+            logger.info("MCP stdio transport connected: %s", self.command)
 
         except FileNotFoundError as _exc:
             raise RuntimeError(
@@ -214,15 +214,15 @@ class StdioTransport(MCPTransport):
                             future.set_result(data)
                     else:
                         # Notification from server
-                        logger.debug(f"MCP notification: {data[:100]}")
+                        logger.debug("MCP notification: %s", data[:100])
 
                 except json.JSONDecodeError:
-                    logger.warning(f"Invalid JSON from MCP server: {data[:100]}")
+                    logger.warning("Invalid JSON from MCP server: %s", data[:100])
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"MCP reader error: {e}")
+                logger.error("MCP reader error: %s", e)
                 break
 
     async def _read_stderr(self):
@@ -235,7 +235,7 @@ class StdioTransport(MCPTransport):
 
                 text = line.decode().strip()
                 if text:
-                    logger.debug(f"MCP stderr: {text}")
+                    logger.debug("MCP stderr: %s", text)
 
             except asyncio.CancelledError:
                 break
@@ -248,6 +248,18 @@ class SSETransport(MCPTransport):
     SSE (Server-Sent Events) transport for MCP servers.
 
     Connects to HTTP endpoint for sending and receives via SSE.
+
+    .. warning::
+        The SSE *receive* path is not yet implemented.  The transport can
+        *send* requests via HTTP POST but cannot read server-pushed SSE
+        events.  ``_sse_task`` was declared but never started, meaning any
+        MCP server that responds via SSE (per the HTTP+SSE spec) will be
+        silently ignored and every `send()` call will hang for 30 s before
+        timing out.
+
+        To use this transport, implement ``_sse_listen_loop()`` that reads
+        ``text/event-stream`` lines and resolves pending futures.
+        Track issue: NAVIG-BUG-004.
     """
 
     def __init__(
@@ -263,7 +275,13 @@ class SSETransport(MCPTransport):
         self._pending: dict[Any, asyncio.Future] = {}
 
     async def connect(self):
-        """Create HTTP session and start SSE listener."""
+        """Create HTTP session.
+
+        .. warning::
+            SSE listener is not started.  Requests via :meth:`send` will
+            time out because no reader resolves pending futures.
+            See NAVIG-BUG-004.
+        """
         try:
             import aiohttp
         except ImportError as _exc:
@@ -272,7 +290,11 @@ class SSETransport(MCPTransport):
             ) from _exc
 
         self._session = aiohttp.ClientSession(headers=self.headers)
-        logger.info(f"MCP SSE transport connected: {self.url}")
+        logger.info("MCP SSE transport connected: %s", self.url)
+        logger.warning(
+            "SSETransport: SSE listener not implemented (NAVIG-BUG-004). "
+            "Requests will rely on synchronous HTTP response bodies only."
+        )
 
     async def disconnect(self):
         """Close HTTP session."""
@@ -295,7 +317,13 @@ class SSETransport(MCPTransport):
         logger.info("MCP SSE transport disconnected")
 
     async def send(self, data: str) -> str | None:
-        """Send request via HTTP POST."""
+        """
+        Send request via HTTP POST and return the response body.
+
+        Note: This does **not** use the SSE push path — it reads
+        the HTTP response body directly.  Servers that push responses
+        via SSE will not work correctly until NAVIG-BUG-004 is resolved.
+        """
         if not self._session:
             raise RuntimeError("Transport not connected")
 

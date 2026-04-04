@@ -228,7 +228,7 @@ class StealthController:
                 raise ValueError(f"Element not found: {selector}")
         else:
             await self._page.screenshot(path=str(path), full_page=full_page)
-        logger.info(f"Stealth screenshot: {path}")
+        logger.info("Stealth screenshot: %s", path)
         return str(path)
 
     async def get_content(self) -> str:
