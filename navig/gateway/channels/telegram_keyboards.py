@@ -1203,6 +1203,13 @@ class CallbackHandler:
                     models = await self.channel._resolve_provider_models(prov_id_a, manifest=manifest)
 
                 if not models:
+                    if manifest and getattr(manifest, "tier", "") == "local":
+                        if prov_id_a == "llamacpp":
+                            models = ["llama.cpp/default", "llama3.2"]
+                        elif prov_id_a == "ollama":
+                            models = ["qwen2.5:7b", "phi3.5"]
+
+                if not models:
                     prov_label = manifest.display_name if manifest else prov_id_a
                     await self._answer(
                         cb_id,

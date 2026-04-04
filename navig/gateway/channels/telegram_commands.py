@@ -2879,11 +2879,11 @@ class TelegramCommandsMixin:
             user_pref = getattr(self, "_user_model_prefs", {}).get(user_id, "")
 
         lines = ["🎛️ *AI Providers*", ""]
-        lines.append(_format_bridge_status(bridge_online, bridge_url))
-        if bridge_online:
-            lines.append("- Bridge is active; other providers remain available as fallback.")
-        else:
-            lines.append("- Bridge is optional; configure any compatible bridge endpoint to enable it.")
+        bridge_active = active_prov == "bridge_copilot"
+        if bridge_online or bridge_active:
+            lines.append(_format_bridge_status(bridge_online, bridge_url))
+            if bridge_online:
+                lines.append("- Bridge is active; other providers remain available as fallback.")
         lines.append(
             "- Hybrid routing = separate `Small` / `Big` / `Code` slots, each with its own provider:model."
         )
@@ -2935,14 +2935,12 @@ class TelegramCommandsMixin:
             lines.append("")
             lines.append(f"🎚️ *Selected preference:* `{label}`")
 
-        keyboard_rows: list = [
-            [
-                {
-                    "text": f"{_ni('bolt')} Bridge — {'online' if bridge_online else 'offline'}",
-                    "callback_data": "prov_bridge",
-                }
-            ],
-        ]
+        keyboard_rows: list = []
+        bridge_button = None
+        if bridge_online or bridge_active:
+            bridge_suffix = " ✅" if bridge_active else ""
+            bridge_button = [{"text": f"{_ni('bolt')} Bridge{bridge_suffix}", "callback_data": "prov_bridge"}]
+        bridge_inserted = False
         ready_provider_count = 0
 
         for manifest in providers:
@@ -2968,30 +2966,28 @@ class TelegramCommandsMixin:
             except Exception:
                 ready = False
 
+            if not ready:
+                continue
+
+            ready_provider_count += 1
             is_active = manifest.id == active_prov
-
-            if ready:
-                ready_provider_count += 1
-                status_icon = "🟢" if is_active else "🔘"
-                btn = {
-                    "text": f"{status_icon} {manifest.emoji} {manifest.display_name}",
-                    "callback_data": f"prov_{manifest.id}",
-                }
-            else:
-                # Unconfigured provider — still clickable, opens picker with
-                # a missing-key banner so the user can browse models.
-                btn = {
-                    "text": f"🔴 {manifest.emoji} {manifest.display_name}",
-                    "callback_data": f"prov_{manifest.id}",
-                }
-
+            active_suffix = " ✅" if is_active else ""
+            btn = {
+                "text": f"{manifest.emoji} {manifest.display_name}{active_suffix}",
+                "callback_data": f"prov_{manifest.id}",
+            }
             keyboard_rows.append([btn])
+
+            if manifest.id == "ollama" and bridge_button and not bridge_inserted:
+                keyboard_rows.append(bridge_button)
+                bridge_inserted = True
+
+        if bridge_button and not bridge_inserted:
+            keyboard_rows.append(bridge_button)
 
         if ready_provider_count == 0:
             lines.append("")
-            lines.append(
-                "ℹ️ No vault-backed cloud providers are ready. Save key in vault and run `navig cred test --provider <name>` when possible."
-            )
+            lines.append("ℹ️ No configured providers found.")
 
         noai_prefix = "✅ " if user_pref == "noai" else ""
         keyboard_rows.append(
@@ -3092,6 +3088,24 @@ class TelegramCommandsMixin:
                 logger.debug("Could not fetch live Ollama models: %s", exc)
             if not models:
                 models = ["qwen2.5:7b", "qwen2.5:3b", "phi3.5", "llama3.2"]
+            return models
+
+        if prov_id == "llamacpp":
+            try:
+                import aiohttp
+
+                async with (
+                    aiohttp.ClientSession() as session,
+                    session.get("http://127.0.0.1:8080/v1/models", timeout=2) as response,
+                ):
+                    data = await response.json()
+                    live = [m["id"] for m in data.get("data", []) if m.get("id")]
+                    if live:
+                        models = live
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Could not fetch live llama.cpp models: %s", exc)
+            if not models:
+                models = ["llama.cpp/default", "llama3.2", "qwen2.5:7b"]
             return models
 
         try:
