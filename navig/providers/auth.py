@@ -10,6 +10,8 @@ import os
 import time
 from pathlib import Path
 
+from navig.platform import paths
+
 from .types import (
     PROVIDER_ENV_VARS,
     ApiKeyCredential,
@@ -45,7 +47,7 @@ class AuthProfileManager:
             config_dir: Path to NAVIG config directory (default: ~/.navig)
         """
         if config_dir is None:
-            config_dir = Path.home() / ".navig"
+            config_dir = paths.config_dir()
         self.config_dir = config_dir
         self.credentials_dir = config_dir / "credentials"
         self.store_path = self.credentials_dir / "auth-profiles.json"

@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
+from navig.platform import paths
+
 from .engine import EngineConfig, EngineState, OnboardingEngine
 from .genesis import load_or_create
 from .steps import build_step_registry
@@ -28,7 +30,7 @@ def should_auto_run_onboarding(argv: Sequence[str] | None = None) -> bool:
     if any(v in os.environ for v in ("_NAVIG_COMPLETE", "COMP_WORDS", "_TYPER_COMPLETE")):
         return False
 
-    navig_dir = Path.home() / ".navig"
+    navig_dir = paths.config_dir()
     if (navig_dir / "onboarding.json").exists():
         return False
 
@@ -56,7 +58,7 @@ def run_engine_onboarding(
     if respect_skip_env and os.getenv("NAVIG_SKIP_ONBOARDING") == "1":
         return None
 
-    navig_dir = Path.home() / ".navig"
+    navig_dir = paths.config_dir()
     if (
         skip_if_configured
         and not force

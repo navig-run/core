@@ -9,6 +9,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from navig.platform import paths
+
 from navig import console_helper as ch
 
 
@@ -136,7 +138,7 @@ class MCPManager:
             config_dir: Configuration directory (default: ~/.navig/mcp/)
         """
         if config_dir is None:
-            config_dir = Path.home() / ".navig" / "mcp"
+            config_dir = paths.config_dir() / "mcp"
 
         self.config_dir = Path(config_dir)
         self.config_dir.mkdir(parents=True, exist_ok=True)

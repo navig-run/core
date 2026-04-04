@@ -22,6 +22,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from navig.platform import paths
+
 _BUILTIN_YAML = Path(__file__).parent / "builtin.yaml"
 _DEFAULT_MODE = "builder"
 
@@ -101,7 +103,7 @@ def get_mode(name: str) -> ModeProfile | None:
 
 
 def _navig_home() -> Path:
-    return Path.home() / ".navig"
+    return paths.config_dir()
 
 
 def _pin_path() -> Path:
