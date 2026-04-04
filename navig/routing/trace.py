@@ -10,12 +10,13 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import asdict, dataclass, field
-from pathlib import Path
 from typing import Any
+
+from navig.platform import paths
 
 logger = logging.getLogger(__name__)
 
-TRACE_LOG_PATH = Path.home() / ".navig" / "logs" / "router_traces.jsonl"
+TRACE_LOG_PATH = paths.config_dir() / "logs" / "router_traces.jsonl"
 
 
 @dataclass

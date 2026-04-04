@@ -37,6 +37,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any, TypeVar
 
+from navig.platform import paths
+
 logger = logging.getLogger("navig.perf.profiler")
 
 T = TypeVar("T")
@@ -47,7 +49,7 @@ T = TypeVar("T")
 
 SAMPLE_EVERY: int = 100  # Profile 1 in every N calls
 TOP_FUNCTIONS: int = 20  # Number of hot functions to store per sample
-PERF_DIR: Path = Path.home() / ".navig" / "perf"
+PERF_DIR: Path = paths.config_dir() / "perf"
 REGRESSION_THRESHOLD_PCT: float = 20.0  # Alert if cumtime grows by > this %
 
 # ─────────────────────────────────────────────────────────────────────────────
