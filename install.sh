@@ -613,8 +613,8 @@ main() {
         row_step "navig" "removing old version..."
         $PIP_EXE uninstall navig -y > /dev/null 2>&1 || true
     fi
-    local spec="navig"
-    [ -n "$_VERSION" ] && spec="navig==$_VERSION"
+    local spec="navig[interactive]"
+    [ -n "$_VERSION" ] && spec="navig[interactive]==$_VERSION"
     row_step "navig" "pip install $spec ..."
     if [ "$_DRY_RUN" != "1" ]; then
         install_navig_pip "$spec" || {
@@ -622,7 +622,7 @@ main() {
                 "pip install failed" \
                 "pip exited with a non-zero code while installing navig." \
                 "Run manually to see the full output." \
-                "$PYTHON_EXE -m pip install --upgrade navig"
+                "$PYTHON_EXE -m pip install --upgrade navig[interactive]"
             exit 1
         }
     fi
@@ -656,7 +656,40 @@ main() {
         printf "%s\n" "${clean_ver}" > "$HOME/.navig/install.marker"
         log_verbose "Wrote install marker: $HOME/.navig/install.marker"
         _write_terminal_json
-
+        # ── Optional: fzf (best picker UI) ───────────────────────
+        if ! command -v fzf > /dev/null 2>&1; then
+            _fzf_installed=0
+            case "${OS_TYPE:-}" in
+                macos)
+                    if command -v brew > /dev/null 2>&1; then
+                        row_step "fzf" "installing via brew..."
+                        brew install fzf > /dev/null 2>&1 && _fzf_installed=1 || true
+                    fi ;;
+                linux)
+                    if command -v apt-get > /dev/null 2>&1; then
+                        row_step "fzf" "installing via apt..."
+                        sudo apt-get install -y -qq fzf > /dev/null 2>&1 && _fzf_installed=1 || true
+                    elif command -v pacman > /dev/null 2>&1; then
+                        row_step "fzf" "installing via pacman..."
+                        sudo pacman -S --noconfirm --quiet fzf > /dev/null 2>&1 && _fzf_installed=1 || true
+                    elif command -v dnf > /dev/null 2>&1; then
+                        row_step "fzf" "installing via dnf..."
+                        sudo dnf install -y -q fzf > /dev/null 2>&1 && _fzf_installed=1 || true
+                    fi ;;
+            esac
+            if [ "$_fzf_installed" = "1" ]; then
+                row_ok "fzf" "installed (best picker UI)"
+            else
+                log_hint "fzf optional — install for the best picker UI:"
+                case "${OS_TYPE:-}" in
+                    macos)  log_hint "  brew install fzf" ;;
+                    linux)  log_hint "  sudo apt install fzf  (or pacman -S fzf / dnf install fzf)" ;;
+                    *)      log_hint "  https://github.com/junegunn/fzf#installation" ;;
+                esac
+            fi
+        else
+            row_ok "fzf" "already installed"
+        fi
         # ── Done ──────────────────────────────────────────────
         print_done "$clean_ver"
     fi

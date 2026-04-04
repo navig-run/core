@@ -1466,6 +1466,21 @@ def _step_core_navig(navig_dir: Path) -> OnboardingStep:
             (navig_dir / sub).mkdir(parents=True, exist_ok=True)
 
         marker.write_text("1", encoding="utf-8")
+
+        # Advisory: remind user to install fzf for the best picker experience.
+        # readchar is now a hard dep so Tier 2 is always available post-install;
+        # fzf (Tier 1) is a system binary we cannot install via pip.
+        if shutil.which("fzf") is None:
+            from navig import console_helper as ch  # noqa: PLC0415
+
+            ch.dim("  Tip: install fzf for the best picker UI (Tier 1 selector):")
+            if sys.platform == "win32":
+                ch.dim("    winget install junegunn.fzf")
+            elif sys.platform == "darwin":
+                ch.dim("    brew install fzf")
+            else:
+                ch.dim("    sudo apt install fzf   # or: pacman -S fzf / dnf install fzf")
+
         return StepResult(status="completed", output={"navig_dir": str(navig_dir)})
 
     def verify() -> bool:

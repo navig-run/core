@@ -311,7 +311,7 @@ function Add-NavigBinToPath { param([string]$BinDir)
 
 # ── pip install ───────────────────────────────────────────────
 function Install-Navig { param([string]$PythonExe, [string]$PinVersion)
-    $spec    = if ($PinVersion) { "navig==$PinVersion" } else { "navig" }
+    $spec    = if ($PinVersion) { "navig[interactive]==$PinVersion" } else { "navig[interactive]" }
     $pipArgs = @("-m", "pip", "install", "--quiet", "--disable-pip-version-check", "--upgrade", $spec)
     $tmp     = [IO.Path]::GetTempFileName()
     try {
@@ -606,7 +606,7 @@ function Main {
 
     # ── Install ───────────────────────────────────────────────
     Print-Section "Install"
-    $spec = if ($Version) { "navig==$Version" } else { "navig" }
+    $spec = if ($Version) { "navig[interactive]==$Version" } else { "navig[interactive]" }
     Write-Step "navig" "pip install $spec ..."
     $ok = Install-Navig -PythonExe $pythonExe -PinVersion $Version
     if (-not $ok) {
@@ -614,7 +614,7 @@ function Main {
             "pip install failed" `
             "pip exited with a non-zero code while installing navig." `
             "Run the command below manually to see the full error output." `
-            "$pythonExe -m pip install --upgrade navig"
+            "$pythonExe -m pip install --upgrade navig[interactive]"
         exit 1
     }
     Write-Ok "navig" "installed"
@@ -627,6 +627,31 @@ function Main {
 
     Initialize-NavigConfig
     Write-TerminalCapabilities
+
+    # ── Optional: fzf (best picker UI) ───────────────────────
+    if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) {
+        $hasWinget = Get-Command winget -ErrorAction SilentlyContinue
+        if ($hasWinget) {
+            Write-Step "fzf" "installing via winget..."
+            try {
+                $r = Start-Process winget -ArgumentList @(
+                    'install', '--id', 'junegunn.fzf',
+                    '--silent', '--accept-source-agreements', '--accept-package-agreements'
+                ) -NoNewWindow -Wait -PassThru -ErrorAction SilentlyContinue
+                if ($r -and $r.ExitCode -eq 0) {
+                    Write-Ok "fzf" "installed (best picker UI)"
+                } else {
+                    Write-NavHint "fzf optional — install manually: winget install junegunn.fzf"
+                }
+            } catch {
+                Write-NavHint "fzf optional — install manually: winget install junegunn.fzf"
+            }
+        } else {
+            Write-NavHint "fzf optional — install for the best picker UI: winget install junegunn.fzf"
+        }
+    } else {
+        Write-Ok "fzf" "already installed"
+    }
 
     # ── Verify ────────────────────────────────────────────────
     Print-Section "Verify"

@@ -19,6 +19,17 @@ import sys
 from dataclasses import dataclass, field
 from typing import Sequence
 
+# Track which one-time hints have already been shown this process lifetime.
+_hints_shown: set[str] = set()
+
+
+def _hint(key: str, message: str) -> None:
+    """Print *message* to stderr at most once per session (TTY only)."""
+    if key in _hints_shown or not sys.stderr.isatty():
+        return
+    _hints_shown.add(key)
+    print(f"  │ {message}", file=sys.stderr)
+
 
 @dataclass
 class CommandEntry:
@@ -88,6 +99,12 @@ def fzf_or_fallback(
     # ------------------------------------------------------------------
     # Tier 2 — readchar arrow-key selector
     # ------------------------------------------------------------------
+    if sys.stdin.isatty():
+        _hint(
+            "fzf",
+            "Tip: install fzf for the best picker — "
+            "winget install junegunn.fzf  /  brew install fzf  /  apt install fzf",
+        )
     return _arrow_selector(commands, prompt)
 
 
@@ -107,6 +124,10 @@ def _arrow_selector(
     try:
         import readchar  # noqa: PLC0415
     except ImportError:
+        _hint(
+            "readchar",
+            "Tip: pip install navig[interactive]  to enable arrow-key navigation",
+        )
         return _numbered_prompt(commands, prompt)
 
     import os  # noqa: PLC0415
