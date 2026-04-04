@@ -2972,16 +2972,16 @@ class TelegramCommandsMixin:
 
             if ready:
                 ready_provider_count += 1
-                prefix = "✅ " if is_active else ""
+                status_icon = "🟢" if is_active else "🔘"
                 btn = {
-                    "text": f"{prefix}{manifest.emoji} {manifest.display_name}",
+                    "text": f"{status_icon} {manifest.emoji} {manifest.display_name}",
                     "callback_data": f"prov_{manifest.id}",
                 }
             else:
                 # Unconfigured provider — still clickable, opens picker with
                 # a missing-key banner so the user can browse models.
                 btn = {
-                    "text": f"{manifest.emoji} {manifest.display_name} 🔑",
+                    "text": f"🔴 {manifest.emoji} {manifest.display_name}",
                     "callback_data": f"prov_{manifest.id}",
                 }
 
@@ -3356,8 +3356,7 @@ class TelegramCommandsMixin:
         for offset, m in enumerate(page_models):
             idx = start + offset
             short_m = m.split("/")[-1].split(":")[-1]
-            marker = "✅" if current[tier_name] == m else "•"
-            lines.append(f"{marker} {idx}. {short_m}")
+            lines.append(f"{idx}. {short_m}")
 
         if not router_active:
             lines.append("")
@@ -3370,15 +3369,15 @@ class TelegramCommandsMixin:
         keyboard.append(
             [
                 {
-                    "text": (f"{_ni('tick')} " if selected_tier == "s" else "") + f"{_ni('bolt')} Small",
+                    "text": f"{_ni('bolt')} Small",
                     "callback_data": f"pmv_{prov_id}_s_{page}",
                 },
                 {
-                    "text": (f"{_ni('tick')} " if selected_tier == "b" else "") + f"{_ni('brain')} Big",
+                    "text": f"{_ni('brain')} Big",
                     "callback_data": f"pmv_{prov_id}_b_{page}",
                 },
                 {
-                    "text": (f"{_ni('tick')} " if selected_tier == "c" else "") + f"{_ni('computer')} Code",
+                    "text": f"{_ni('computer')} Code",
                     "callback_data": f"pmv_{prov_id}_c_{page}",
                 },
             ]
@@ -3387,11 +3386,10 @@ class TelegramCommandsMixin:
             idx = start + offset
             short = m.split("/")[-1].split(":")[-1]
             label = short if len(short) <= 42 else short[:39] + "..."
-            marker = "✅" if current[tier_name] == m else "•"
             keyboard.append(
                 [
                     {
-                        "text": f"{marker} {label}",
+                        "text": f"{label}",
                         "callback_data": f"pms_{prov_id}_{idx}_{selected_tier}_{page}",
                     }
                 ]
