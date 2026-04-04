@@ -28,6 +28,24 @@ def _get_config():
     return get_config_manager()
 
 
+def _format_openrouter_missing_key_error(config_manager, server_name: str) -> str:
+    """Build host-aware guidance for missing OpenRouter key in ask flow."""
+    ai_cfg = (config_manager.global_config or {}).get("ai") or {}
+    source_checks = [
+        f"OPENROUTER_API_KEY={'set' if os.getenv('OPENROUTER_API_KEY') else 'missing'}",
+        f"ai.api_key={'set' if ai_cfg.get('api_key') else 'missing'}",
+        (
+            "openrouter_api_key="
+            f"{'set' if (config_manager.global_config or {}).get('openrouter_api_key') else 'missing'}"
+        ),
+    ]
+    return (
+        f"OpenRouter API key not configured for active host '{server_name}'. "
+        f"Checked sources: {', '.join(source_checks)}. "
+        "Set one with: navig config set ai.api_key <key>"
+    )
+
+
 def ask_ai(question: str, model: str | None, options: dict[str, Any]):
     """Ask AI about server, get context-aware answers."""
     from navig.ai import AIAssistant
@@ -37,10 +55,23 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
     config_manager = get_config_manager()
     ai = AIAssistant(config_manager)
 
-    server_name = options.get("app") or config_manager.get_active_server()
+    server_name = (
+        options.get("app")
+        or options.get("host")
+        or config_manager.get_active_server()
+    )
+    if not server_name:
+        compat_active = str((config_manager.global_config or {}).get("active_host") or "").strip()
+        if compat_active and config_manager.host_exists(compat_active):
+            server_name = compat_active
+
     if not server_name:
         from navig.cli.recovery import require_active_server
-        server_name = require_active_server(options, config_manager)
+        server_name = require_active_server(
+            options,
+            config_manager,
+            allow_local_bootstrap=False,
+        )
 
     # Gather context
     ch.dim("The Schema's engines are analyzing...\n")
@@ -96,9 +127,15 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
         ch.print_markdown(response)
 
     except ValueError as e:
-        ch.error(str(e))
+        message = str(e)
+        if "OpenRouter API key not configured" in message:
+            ch.error(_format_openrouter_missing_key_error(config_manager, server_name))
+        else:
+            ch.error(message)
+        raise typer.Exit(2) from e
     except Exception as e:
         ch.error(f"AI communication failed: {e}")
+        raise typer.Exit(1) from e
 
 
 # ============================================================================
@@ -109,15 +146,65 @@ ai_app = typer.Typer(
     help="AI-powered assistance for diagnostics, optimization, and knowledge",
     invoke_without_command=True,
     no_args_is_help=False,
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
 )
 
 
 @ai_app.callback()
 def ai_callback(ctx: typer.Context):
-    """AI Assistant - run without subcommand for help."""
-    if ctx.invoked_subcommand is None:
-        show_subcommand_help("ai", ctx)
+    """AI Assistant — ask anything, or run a subcommand."""
+    if ctx.invoked_subcommand is not None:
+        return
+
+    query_parts = [a for a in (ctx.args or []) if not a.startswith("-")]
+    if query_parts:
+        # Hybrid routing: classify intent and dispatch
+        from navig.commands.ai_router import (
+            CONFIDENCE_THRESHOLD,
+            classify_intent,
+            top_two_intents,
+        )
+
+        text = " ".join(query_parts)
+        best = classify_intent(text)
+
+        if best.confidence >= CONFIDENCE_THRESHOLD:
+            _dispatch_hybrid(ctx, best.subcommand, text)
+        else:
+            top2 = top_two_intents(text)
+            ch.warning(f"Ambiguous input — top interpretations:")
+            for i, r in enumerate(top2, 1):
+                ch.dim(f"  {i}. navig ai {r.subcommand}  (confidence {r.confidence:.0%})")
+            ch.dim("Run one of the above directly, or navig ai ask \"<question>\" to ask freely.")
         raise typer.Exit()
+
+    show_subcommand_help("ai", ctx)
+    raise typer.Exit()
+
+
+def _dispatch_hybrid(ctx: typer.Context, subcommand: str, text: str) -> None:
+    """Route hybrid natural-language input to the matching subcommand."""
+    ch.dim(f"→ routing to: navig ai {subcommand}")
+    if subcommand == "ask":
+        ask_ai(text, None, ctx.obj or {})
+    elif subcommand == "diagnose":
+        from navig.commands.assistant import analyze_cmd
+        analyze_cmd(ctx.obj or {})
+    elif subcommand == "suggest":
+        ask_ai(
+            "Analyze the current server configuration and suggest optimizations.",
+            None, ctx.obj or {},
+        )
+    elif subcommand == "show":
+        from navig.commands.assistant import status_cmd
+        status_cmd(ctx.obj or {})
+    elif subcommand == "run":
+        from navig.commands.assistant import analyze_cmd
+        analyze_cmd(ctx.obj or {})
+    elif subcommand == "explain":
+        ask_ai(f"Explain: {text}", None, ctx.obj or {})
+    else:
+        ask_ai(text, None, ctx.obj or {})
 
 
 @ai_app.command("ask")
@@ -140,13 +227,36 @@ def ai_ask(
 @ai_app.command("explain")
 def ai_explain(
     ctx: typer.Context,
-    log_file: str = typer.Argument(..., help="Log file path to explain"),
-    lines: int = typer.Option(50, "--lines", "-n", help="Number of lines to analyze"),
+    log_file: str = typer.Argument(..., help="Log file or command to explain"),
+    lines: int = typer.Option(50, "--lines", "-n", help="Number of tail lines to read (for files)"),
 ):
-    """[DEPRECATED: Use 'navig ask'] Explain logs/errors using AI."""
+    """[DEPRECATED: Use 'navig ask'] Explain a log file, error output, or shell command."""
     from navig.deprecation import deprecation_warning as _dw
     _dw("navig ai explain <file>", "navig ask 'explain <file>'")
-    question = f"Analyze and explain the last {lines} lines of the log file at {log_file}. Identify any errors, warnings, or issues and suggest solutions."
+
+    # Try to read as a file; fall back to treating as a command/concept string
+    from pathlib import Path
+    file_path = Path(log_file)
+    if file_path.exists() and file_path.is_file():
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="replace")
+            tail = "\n".join(content.splitlines()[-lines:])
+            question = (
+                f"Analyze and explain the following log content from '{log_file}'.\n"
+                f"Identify errors, warnings, or issues and suggest concrete solutions.\n\n"
+                f"Log content:\n{tail}"
+            )
+        except OSError as exc:
+            ch.error(f"Cannot read '{log_file}': {exc}")
+            raise typer.Exit(1) from exc
+    else:
+        # Treat as a shell command or concept
+        question = (
+            f"Explain the following shell command or concept in plain language.\n"
+            f"Cover what it does, any risks, and when to use it.\n\n"
+            f"  {log_file}"
+        )
+
     ask_ai(question, None, ctx.obj)
 
 
@@ -432,10 +542,11 @@ def ai_providers(
         console.print("[dim]Configure AirLLM: navig ai airllm --configure[/dim]")
         console.print("[dim]OAuth login: navig ai login openai-codex[/dim]")
 
-    except ImportError:
+    except ImportError as exc:
         console.print(
             "[yellow]Provider system not available. Install httpx: pip install httpx[/yellow]"
         )
+        raise typer.Exit(1) from exc
 
 
 @ai_app.command("airllm")
@@ -777,10 +888,11 @@ def ai_logout(
             for pid in removed:
                 console.print(f"[dim]  Removed: {pid}[/dim]")
         else:
-            console.print(f"[yellow]No credentials found for {provider}[/yellow]")
+            console.print("Already logged out.")
 
-    except ImportError:
+    except ImportError as exc:
         console.print("[yellow]Provider system not available.[/yellow]")
+        raise typer.Exit(1) from exc
 
 
 # ============================================================================
