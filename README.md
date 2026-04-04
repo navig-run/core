@@ -24,6 +24,26 @@
 
 ---
 
+## Prerequisites
+
+NAVIG CLI uses [Nerd Font](https://www.nerdfonts.com/) glyphs for Powerline-style status bars and icons. Install once per machine:
+
+```powershell
+pwsh scripts/Install-NerdFont.ps1
+```
+
+| Platform | Recommended terminal | Additional step |
+|---|---|---|
+| Windows | Windows Terminal | Script patches automatically |
+| macOS | iTerm2 or Kitty | Set font to **JetBrainsMono Nerd Font Mono** after script runs |
+| Linux | Kitty, Alacritty, GNOME Terminal | Set font manually after script runs |
+
+VS Code is patched automatically on all platforms. Restart VS Code and your terminal after running the script.
+
+> **Offline install**: set `$env:NAVIG_FONT_ZIP` to a local zip path, or pass `-LocalZip <path>`.
+
+---
+
 ## What is NAVIG?
 
 NAVIG is a **terminal-first infrastructure CLI and runtime** for people who are tired of juggling SSH sessions, scattered scripts, disconnected dashboards, and ad-hoc credentials just to keep their systems running.

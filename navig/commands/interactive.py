@@ -3286,7 +3286,7 @@ def show_quick_help(state: MenuState):
   [C,H,?]      System options
 
 [{COLORS["accent"]}]Common Commands:[/{COLORS["accent"]}]
-  navig menu          Open this interactive menu
+    navig init --status Show setup readiness
   navig help          Show full help
   navig host use X    Switch to host X
   navig app use X     Switch to app X

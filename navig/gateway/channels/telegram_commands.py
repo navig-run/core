@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any
 
 from navig.platform.paths import global_config_path, msg_trace_path
+from navig.ui.icons import icon as _ni
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +85,8 @@ except ImportError:
 def _format_bridge_status(online: bool, url: str) -> str:
     """Return a single Markdown line describing Bridge Grid status (DUP-5 fix)."""
     if online:
-        return f"⚡ *Bridge:* online at `{url}`"
-    return f"⚡ *Bridge:* offline (`{url}`)"
+        return f"{_ni('bolt')} *Bridge:* online at `{url}`"
+    return f"{_ni('bolt')} *Bridge:* offline (`{url}`)"
 
 
 def _escape_markdown_v2(text: str) -> str:
@@ -915,7 +916,7 @@ class TelegramCommandsMixin:
             return
 
         # Fallback recovery screen
-        text = "⚠️ Something went wrong while opening that screen."
+        text = f"{_ni('warn')} Something went wrong while opening that screen."
         keyboard = [[{"text": "🏠 Home", "callback_data": "nav:home"}]]
         if target_message_id:
             await self.edit_message(chat_id, target_message_id, text, parse_mode=None, keyboard=keyboard)
@@ -1006,7 +1007,7 @@ class TelegramCommandsMixin:
                 ],
             ),
             (
-                "🧠 AI and Models",
+                f"{_ni('brain')} AI and Models",
                 [
                     ("/settings", "Main configuration hub"),
                     ("/voice", "Voice and TTS settings"),
@@ -1082,16 +1083,16 @@ class TelegramCommandsMixin:
         tier = str(tier_raw).capitalize() if tier_raw else "Auto"
 
         reminder_line = (
-            f"⏰ {active_count} active reminder{'s' if active_count != 1 else ''}"
+            f"{_ni('reminder')} {active_count} active reminder{'s' if active_count != 1 else ''}"
             if active_count
-            else "⏰ No active reminders"
+            else f"{_ni('reminder')} No active reminders"
         )
         text = "\n".join(
             [
-                "🤖 *NAVIG is ready*",
+                f"{_ni('robot')} *NAVIG is ready*",
                 "",
                 reminder_line,
-                f"🧠 Model: `{tier}`",
+                f"{_ni('brain')} Model: `{tier}`",
                 "",
                 "Type naturally or use a command:",
                 "`/remindme` · `/myreminders` · `/status` · `/briefing`",
@@ -2417,7 +2418,7 @@ class TelegramCommandsMixin:
         if getattr(self, "allowed_users", None):
             is_allowed = user_id in self.allowed_users
             lines.append(
-                f"🔐 Auth: {'✅ Allowed' if is_allowed else '❌ Not in allowed list'}"
+                f"{_ni('auth')} Auth: {_ni('tick') + ' Allowed' if is_allowed else 'Not in allowed list'}"
             )
 
         # Model tier preference
@@ -2425,7 +2426,7 @@ class TelegramCommandsMixin:
             tier = self._get_user_tier_pref(chat_id, user_id)
         else:
             tier = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
-        lines.append(f"🧠 Model tier: `{tier or 'auto'}`")
+        lines.append(f"{_ni('brain')} Model tier: `{tier or 'auto'}`")
 
         # Voice & focus from session
         if _HAS_SESSIONS:
@@ -2434,12 +2435,12 @@ class TelegramCommandsMixin:
                 session = sm.get_or_create_session(chat_id, user_id)
                 voice_on = getattr(session, "voice_replies_enabled", False)
                 focus = getattr(session, "focus_mode", "balance")
-                lines.append(f"🔊 Voice replies: {'on' if voice_on else 'off'}")
-                lines.append(f"🎯 Focus mode: `{focus}`")
+                lines.append(f"{_ni('voice')} Voice replies: {'on' if voice_on else 'off'}")
+                lines.append(f"{_ni('focus')} Focus mode: `{focus}`")
                 # Session count
                 try:
                     all_s = sm.get_all_sessions_for_user(user_id)
-                    lines.append(f"📝 Sessions: {len(all_s)}")
+                    lines.append(f"{_ni('note')} Sessions: {len(all_s)}")
                 except Exception:  # noqa: BLE001
                     pass  # best-effort; failure is non-critical
             except Exception as _e:
@@ -2447,7 +2448,7 @@ class TelegramCommandsMixin:
 
         # Debug mode flag
         if getattr(self, "_debug_users", None) and user_id in self._debug_users:
-            lines.append("🔍 Debug mode: on")
+            lines.append(f"{_ni('debug')} Debug mode: on")
 
         lines.append("")
         lines.append(
@@ -2793,29 +2794,11 @@ class TelegramCommandsMixin:
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
-            if hasattr(self, "_get_user_tier_pref"):
-                user_pref = self._get_user_tier_pref(chat_id, user_id)
-            else:
-                user_pref = self._user_model_prefs.get(user_id, "")
-            check = lambda t: " -" if user_pref == t else ""  # noqa: E731
+            # Read-only status view — tier switching is done via /providers
             keyboard = [
                 [
-                    {
-                        "text": f"- Small{check('small')}",
-                        "callback_data": "ms_tier_small",
-                    },
-                    {"text": f"- Big{check('big')}", "callback_data": "ms_tier_big"},
-                ],
-                [
-                    {
-                        "text": f"- Code{check('coder_big')}",
-                        "callback_data": "ms_tier_coder",
-                    },
-                    {"text": f"- Auto{check('')}", "callback_data": "ms_tier_auto"},
-                ],
-                [
-                    {"text": "- Full table", "callback_data": "ms_info"},
-                    {"text": "- Providers ->", "callback_data": "ms_providers"},
+                    {"text": "📊 Full table", "callback_data": "ms_info"},
+                    {"text": "🔌 Providers →", "callback_data": "ms_providers"},
                 ],
             ]
             if message_id:
@@ -2933,9 +2916,9 @@ class TelegramCommandsMixin:
 
                 lines.append("")
                 lines.append("*Base model routing:*")
-                lines.append(f"⚡ Small: `{_slot(small)}`")
-                lines.append(f"🧠 Big: `{_slot(big)}`")
-                lines.append(f"💻 Code: `{_slot(code)}`")
+                lines.append(f"{_ni('bolt')} Small: `{_slot(small)}`")
+                lines.append(f"{_ni('brain')} Big: `{_slot(big)}`")
+                lines.append(f"{_ni('computer')} Code: `{_slot(code)}`")
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
@@ -2955,7 +2938,7 @@ class TelegramCommandsMixin:
         keyboard_rows: list = [
             [
                 {
-                    "text": f"⚡ Bridge — {'online' if bridge_online else 'offline'}",
+                    "text": f"{_ni('bolt')} Bridge — {'online' if bridge_online else 'offline'}",
                     "callback_data": "prov_bridge",
                 }
             ],
@@ -2978,8 +2961,6 @@ class TelegramCommandsMixin:
                     vault_has_key, vault_validated = self._provider_vault_validation_status(
                         manifest
                     )
-                    # Cloud providers become selectable only after successful
-                    # validation (or explicit env-detected key path).
                     ready = key_detected or bool(vault_validated)
                 elif manifest.requires_key:
                     ready = key_detected
@@ -2988,32 +2969,23 @@ class TelegramCommandsMixin:
             except Exception:
                 ready = False
 
-            if not ready:
-                # Show unconfigured cloud providers as grayed-out configure stubs
-                if (
-                    getattr(manifest, "tier", "") == "cloud"
-                    and getattr(manifest, "requires_key", False)
-                    and not vault_has_key
-                    and not key_detected
-                ):
-                    keyboard_rows.append(
-                        [
-                            {
-                                "text": f"{manifest.emoji} {manifest.display_name} 🔑",
-                                "callback_data": f"prov_{manifest.id}",
-                            }
-                        ]
-                    )
-                continue
-
-            ready_provider_count += 1
-
             is_active = manifest.id == active_prov
-            prefix = "✅ " if is_active else ""
-            btn = {
-                "text": f"{prefix}{manifest.emoji} {manifest.display_name}",
-                "callback_data": f"prov_{manifest.id}",
-            }
+
+            if ready:
+                ready_provider_count += 1
+                prefix = "✅ " if is_active else ""
+                btn = {
+                    "text": f"{prefix}{manifest.emoji} {manifest.display_name}",
+                    "callback_data": f"prov_{manifest.id}",
+                }
+            else:
+                # Unconfigured provider — still clickable, opens picker with
+                # a missing-key banner so the user can browse models.
+                btn = {
+                    "text": f"{manifest.emoji} {manifest.display_name} 🔑",
+                    "callback_data": f"prov_{manifest.id}",
+                }
+
             button_row.append(btn)
             if len(button_row) == 2:
                 keyboard_rows.append(list(button_row))
@@ -3235,6 +3207,52 @@ class TelegramCommandsMixin:
         ai_cfg["routing"] = routing_cfg
         cfg_mgr.update_global_config({"ai": ai_cfg})
 
+    # ── Tier → LLM-mode mapping ─────────────────────────────────────────
+    _TIER_TO_MODES: dict[str, list[str]] = {
+        "small": ["small_talk", "summarize"],
+        "big": ["big_tasks", "research"],
+        "coder_big": ["coding"],
+    }
+
+    def _update_llm_mode_router(
+        self, provider_id: str, tier_models: dict[str, str]
+    ) -> None:
+        """Update the LLM Mode Router for the given tiers and persist to config.
+
+        Parameters
+        ----------
+        provider_id:
+            The canonical provider id (e.g. ``"openai"``).
+        tier_models:
+            Mapping of tier → model name, e.g.
+            ``{"small": "gpt-4o-mini", "big": "gpt-4o", "coder_big": "gpt-4o"}``.
+        """
+        try:
+            from navig.llm_router import get_llm_router
+            from navig.config import get_config_manager
+
+            router = get_llm_router()
+            if not router:
+                return
+
+            for tier, model in tier_models.items():
+                for mode_name in self._TIER_TO_MODES.get(tier, []):
+                    router.update_mode(mode_name, provider=provider_id, model=model)
+
+            # Persist to global config under ``llm_router.llm_modes``
+            all_modes = router.get_all_modes()
+            cfg_mgr = get_config_manager()
+            global_cfg = dict(cfg_mgr.global_config or {})
+            llm_router_cfg = dict(global_cfg.get("llm_router") or {})
+            llm_router_cfg["llm_modes"] = all_modes
+            cfg_mgr.update_global_config({"llm_router": llm_router_cfg})
+        except Exception:  # noqa: BLE001
+            logger.debug(
+                "Failed to persist LLM mode router assignments for %s",
+                provider_id,
+                exc_info=True,
+            )
+
     @error_handled
     @typing_context
     async def _show_provider_model_picker(
@@ -3246,7 +3264,7 @@ class TelegramCommandsMixin:
         message_id: int | None = None,
     ) -> None:
         """Show tier-first model picker for a provider with edit-in-place pagination."""
-        emoji, name = "🤖", prov_id
+        emoji, name = _ni("robot"), prov_id
         models: list[str] = []
         try:
             from navig.providers.registry import _INDEX as PROV_INDEX
@@ -3262,9 +3280,28 @@ class TelegramCommandsMixin:
 
         if not models:
             await self.send_message(
-                chat_id, f"⚠️ No models found for {prov_id}.", parse_mode=None
+                chat_id, f"{_ni('warn')} No models found for {prov_id}.", parse_mode=None
             )
             return
+
+        # Check API key status for banner display
+        _key_missing = False
+        _key_hint = ""
+        if manifest and getattr(manifest, "requires_key", False):
+            try:
+                from navig.providers.verifier import verify_provider as _vp
+
+                _vr = _vp(manifest)
+                if not getattr(_vr, "key_detected", False):
+                    vault_ok, _ = self._provider_vault_validation_status(manifest)
+                    if not vault_ok:
+                        _key_missing = True
+                        env_hint = " / ".join(manifest.env_vars[:2]) if manifest.env_vars else ""
+                        vault_hint = manifest.vault_keys[0] if manifest.vault_keys else ""
+                        parts = [p for p in [env_hint, f"vault '{vault_hint}'" if vault_hint else ""] if p]
+                        _key_hint = " or ".join(parts) if parts else "provider config"
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; display continues without banner
 
         # Resolve currently-assigned models for each tier
         current: dict = {"small": None, "big": None, "coder_big": None}
@@ -3283,7 +3320,7 @@ class TelegramCommandsMixin:
             pass  # best-effort; failure is non-critical
 
         # Build tier display labels using HTML (safe for all model name chars)
-        tier_emoji = {"small": "⚡", "big": "🧠", "coder_big": "💻"}
+        tier_emoji = {"small": _ni("bolt"), "big": _ni("brain"), "coder_big": _ni("computer")}
         tier_label = {"small": "Small", "big": "Big", "coder_big": "Code"}
 
         def _tier_line(tier: str) -> str:
@@ -3311,13 +3348,18 @@ class TelegramCommandsMixin:
         lines = [
             f"<b>{emoji} {name}</b> — assign model to tier",
             "",
+        ]
+        if _key_missing:
+            lines.append(f"⚠️ <i>API key not configured — set {_key_hint}</i>")
+            lines.append("")
+        lines.extend([
             _tier_line("small"),
             _tier_line("big"),
             _tier_line("coder_big"),
             "",
             viewing_line,
             "Tap a model below to assign it.",
-        ]
+        ])
         for offset, m in enumerate(page_models):
             idx = start + offset
             short_m = m.split("/")[-1].split(":")[-1]
@@ -3327,7 +3369,7 @@ class TelegramCommandsMixin:
         if not router_active:
             lines.append("")
             lines.append(
-                "⚠️ <i>Hybrid routing is disabled. Enable "
+                f"{_ni('warn')} <i>Hybrid routing is disabled. Enable "
                 "<code>routing.enabled: true</code> in your config, then restart NAVIG to apply tier assignments.</i>"
             )
 
@@ -3335,15 +3377,15 @@ class TelegramCommandsMixin:
         keyboard.append(
             [
                 {
-                    "text": ("✅ " if selected_tier == "s" else "") + "⚡ Small",
+                    "text": (f"{_ni('tick')} " if selected_tier == "s" else "") + f"{_ni('bolt')} Small",
                     "callback_data": f"pmv_{prov_id}_s_{page}",
                 },
                 {
-                    "text": ("✅ " if selected_tier == "b" else "") + "🧠 Big",
+                    "text": (f"{_ni('tick')} " if selected_tier == "b" else "") + f"{_ni('brain')} Big",
                     "callback_data": f"pmv_{prov_id}_b_{page}",
                 },
                 {
-                    "text": ("✅ " if selected_tier == "c" else "") + "💻 Code",
+                    "text": (f"{_ni('tick')} " if selected_tier == "c" else "") + f"{_ni('computer')} Code",
                     "callback_data": f"pmv_{prov_id}_c_{page}",
                 },
             ]

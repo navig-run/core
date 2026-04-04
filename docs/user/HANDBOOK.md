@@ -307,7 +307,7 @@ navig start                        # Start gateway + bot (background)
 navig start --foreground           # Start with live logs
 navig bot status                   # Check if bot is running
 navig bot stop                     # Stop all services
-navig menu                         # Interactive menu
+navig init --status                # Setup readiness dashboard
 
 # ═══ PILLAR 1: INFRASTRUCTURE ═══
 navig host list                    # List hosts
@@ -384,85 +384,26 @@ navig hestia       → navig web hestia
 
 ---
 
-## 1.6 Interactive Menu Command Center
+## 1.6 Command-First Navigation
 
-The **Interactive Menu** (`navig menu`) provides a comprehensive, visual command center for navigating all NAVIG capabilities. It's organized into three pillars for intuitive access.
+NAVIG uses a command-first UX: each capability is reachable directly without a global navigation menu.
 
-### Launch the Menu
+### Core entrypoints
 
 ```bash
-navig menu          # Start interactive menu
+navig --help                 # Top-level command map
+navig help <topic>           # In-app docs for a specific area
+navig init --status          # Setup readiness and next actions
 ```
 
-### Three-Pillar Organization
-
-The menu is organized into three main categories:
-
-#### SYSOPS (Infrastructure)
-| Key | Menu Item | Description |
-|-----|-----------|-------------|
-| 1 | Host Management | Servers, SSH, discovery |
-| 2 | File Operations | Upload, download, browse |
-| 3 | Database Operations | SQL, backup, restore |
-| 4 | Webserver Control | Nginx, Apache, vhosts |
-| 5 | Docker Management | Containers, images, compose |
-| 6 | System Maintenance | Updates, health, services |
-| 7 | Monitoring & Security | Resources, firewall, audit |
-
-#### DEVOPS (Applications)
-| Key | Menu Item | Description |
-|-----|-----------|-------------|
-| A | Application Management | Apps, configs, deploy |
-| R | Remote Execution | Run commands via SSH |
-| T | Tunnel Management | SSH tunnels, port forward |
-| F | Flow Automation | Workflows, templates |
-| L | Local Operations | System info, network |
-
-#### LIFEOPS (Automation)
-| Key | Menu Item | Description |
-|-----|-----------|-------------|
-| G | Agent & Gateway | Autonomous mode, 24/7 operation |
-| M | MCP Server Management | AI tool integrations |
-| P | AI Assistant | Insights, recommendations |
-| W | Wiki & Knowledge | Docs, search, RAG |
-| B | Backup & Config | Export, import, settings |
-
-#### System
-| Key | Menu Item | Description |
-|-----|-----------|-------------|
-| C | Configuration | Settings, context |
-| H | Command History | Recent commands |
-| ? | Quick Help | Keyboard shortcuts |
-| I | Initialize | Project setup (if not initialized) |
-| 0 | Exit | Quit menu |
-
-### Status Dashboard
-
-The menu displays a compact status dashboard showing:
-- **Host Status**: Active host with IP (● active / ○ not set)
-- **App Status**: Active application (● active / ○ not set)
-- **Last Command**: Most recent command with success/failure indicator
-
-### Keyboard Navigation
-
-| Key | Action |
-|-----|--------|
-| ↑/↓ | Navigate menu options |
-| Enter | Select highlighted option |
-| 0/ESC | Go back / Exit menu |
-| Ctrl+C | Quick exit (any menu) |
-
-### Standalone Submenus
-
-Each menu can also be launched directly from CLI:
+### Group-first discovery
 
 ```bash
-navig host          # Host management menu
-navig app           # App management menu
-navig db            # Database operations menu
-navig tunnel        # Tunnel management menu
-navig flow          # Flow automation menu
-navig local         # Local operations menu
+navig host --help            # Host management
+navig app --help             # Application management
+navig db --help              # Database operations
+navig file --help            # File operations
+navig flow --help            # Workflow automation
 ```
 
 ---
@@ -4567,12 +4508,11 @@ These are available for controlled rollout while backend orchestration component
 `/remindme`, `/myreminders`, and `/cancelreminder` are now live and backed by RuntimeStore.
 Due reminders are delivered by the Telegram worker background loop (poll interval ~15s).
 
-**Interactive Menu:**
+**Command-first setup:**
 ```bash
-navig menu
-# Navigate to: Agent & Gateway (G)
-# Select: T - Start Telegram Bot (with Gateway)
-# Or: B - Start Telegram Bot (standalone)
+navig gateway start           # Start gateway runtime
+navig bot start --gateway     # Start Telegram bot via gateway
+navig bot status              # Verify bot and gateway status
 ```
 
 **Manual Setup:**

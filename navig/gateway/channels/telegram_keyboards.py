@@ -1195,17 +1195,8 @@ class CallbackHandler:
             prov_id_a = cb_data[len("prov_activate_"):]
             try:
                 from navig.providers.registry import get_provider
-                from navig.agent.ai_client import get_ai_client
 
                 manifest = get_provider(prov_id_a)
-                router = get_ai_client().model_router
-                if not router or not router.is_active:
-                    await self._answer(
-                        cb_id,
-                        "⚠️ Hybrid routing disabled — set routing.enabled: true and restart",
-                        show_alert=True,
-                    )
-                    return
 
                 models = []
                 if hasattr(self.channel, "_resolve_provider_models"):
@@ -1221,13 +1212,25 @@ class CallbackHandler:
                     return
 
                 defaults = self.channel._select_curated_tier_defaults(prov_id_a, models)
-                for tier in ("small", "big", "coder_big"):
-                    slot = router.cfg.slot_for_tier(tier)
-                    slot.provider = prov_id_a
-                    slot.model = defaults[tier]
 
-                if hasattr(self.channel, "_persist_hybrid_router_assignments"):
-                    self.channel._persist_hybrid_router_assignments(router.cfg)
+                # Update hybrid router if active (optional layer)
+                try:
+                    from navig.agent.ai_client import get_ai_client
+
+                    router = get_ai_client().model_router
+                    if router and router.is_active:
+                        for tier in ("small", "big", "coder_big"):
+                            slot = router.cfg.slot_for_tier(tier)
+                            slot.provider = prov_id_a
+                            slot.model = defaults[tier]
+                        if hasattr(self.channel, "_persist_hybrid_router_assignments"):
+                            self.channel._persist_hybrid_router_assignments(router.cfg)
+                except Exception:  # noqa: BLE001
+                    logger.debug("Hybrid router update skipped (not active or unavailable)")
+
+                # Always update LLM Mode Router (primary routing layer)
+                if hasattr(self.channel, "_update_llm_mode_router"):
+                    self.channel._update_llm_mode_router(prov_id_a, defaults)
 
                 prov_label = manifest.display_name if manifest else prov_id_a
                 await self._answer(
@@ -1253,76 +1256,6 @@ class CallbackHandler:
                 await self._answer(cb_id, f"⚠️ Activation failed: {exc}", show_alert=True)
             return
 
-        # Providers that open a full model↔tier picker
-        # Static map for known providers + dynamic fallback via registry
-        picker_map: dict = {
-            "prov_openrouter": "openrouter",
-            "prov_github": "github_models",
-            "prov_github_models": "github_models",
-            "prov_nvidia": "nvidia",
-            "prov_nvidia_nim": "nvidia",
-            "prov_ollama": "ollama",
-            "prov_xai": "xai",
-            "prov_openai": "openai",
-            "prov_anthropic": "anthropic",
-            "prov_google": "google",
-            "prov_groq": "groq",
-            "prov_mistral": "mistral",
-            "prov_llamacpp": "llamacpp",
-            "prov_airllm": "airllm",
-        }
-        if cb_data in picker_map:
-            prov_id = picker_map[cb_data]
-            # Answer the callback immediately so Telegram removes the loading
-            # spinner regardless of how long the picker takes to render.
-            await self._answer(cb_id, "")
-            try:
-                await self.channel._show_provider_model_picker(
-                    chat_id,
-                    prov_id,
-                    page=0,
-                    selected_tier="s",
-                    message_id=message_id,
-                )
-            except TypeError as exc:
-                err = str(exc)
-                signature_mismatch = (
-                    "unexpected keyword argument" in err
-                    or "positional argument" in err
-                    or "required positional argument" in err
-                )
-                if signature_mismatch:
-                    await self.channel._show_provider_model_picker(chat_id, prov_id=prov_id)
-                else:
-                    logger.warning(
-                        "Provider picker failed for %s: %s",
-                        prov_id,
-                        exc,
-                    )
-                    try:
-                        await self.channel._show_provider_model_picker(chat_id, prov_id)
-                    except Exception:
-                        # Callback already answered; fall back to providers hub silently.
-                        try:
-                            await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
-                        except TypeError:
-                            await self.channel._handle_providers(chat_id)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "Provider picker failed for %s: %s",
-                    prov_id,
-                    exc,
-                )
-                try:
-                    await self.channel._show_provider_model_picker(chat_id, prov_id)
-                except Exception:
-                    # Callback already answered; fall back to providers hub silently.
-                    try:
-                        await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
-                    except TypeError:
-                        await self.channel._handle_providers(chat_id)
-            return
-
         # Deepgram: STT only, no LLM routing
         if cb_data == "prov_deepgram":
             await self._answer(
@@ -1332,32 +1265,39 @@ class CallbackHandler:
             )
             return
 
-        # Generic fallback: look up provider in registry for a live description
-        prov_id = cb_data[len("prov_") :]  # strip "prov_" prefix
+        # ── Dynamic provider picker: any prov_{id} opens the model picker ───
+        # Legacy aliases for providers whose registry id differs from callback
+        _PROV_ALIASES: dict[str, str] = {
+            "github": "github_models",
+            "nvidia_nim": "nvidia",
+        }
+        prov_id = cb_data[len("prov_"):]  # strip "prov_" prefix
+        prov_id = _PROV_ALIASES.get(prov_id, prov_id)
+
         try:
             from navig.providers.registry import get_provider
-            from navig.providers.verifier import verify_provider
 
             manifest = get_provider(prov_id)
-            if manifest:
-                result = verify_provider(manifest)
-                if result.key_detected or not manifest.requires_key:
-                    key_status = "✅ configured"
-                else:
-                    env_hint = " or ".join(manifest.env_vars[:2]) if manifest.env_vars else "—"
-                    vault_hint = manifest.vault_keys[0] if manifest.vault_keys else "—"
-                    key_status = f"⬜ not found — set {env_hint}" + (
-                        f" or vault '{vault_hint}'" if vault_hint != "—" else ""
-                    )
-                toast = (
-                    f"{manifest.emoji} {manifest.display_name} — "
-                    f"{manifest.description[:80]}{'…' if len(manifest.description) > 80 else ''} | "
-                    f"Key: {key_status}"
-                )
-                await self._answer(cb_id, toast, show_alert=True)
-                return
         except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
+            manifest = None
+
+        if manifest:
+            await self._answer(cb_id, "")
+            try:
+                await self.channel._show_provider_model_picker(
+                    chat_id,
+                    prov_id,
+                    page=0,
+                    selected_tier="s",
+                    message_id=message_id,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Provider picker failed for %s: %s", prov_id, exc)
+                try:
+                    await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
+                except TypeError:
+                    await self.channel._handle_providers(chat_id)
+            return
 
         await self._answer(cb_id, f"Provider info unavailable for '{prov_id}'")
 
@@ -1465,48 +1405,41 @@ class CallbackHandler:
             return
         model = models[model_idx]
 
-        # Update the live hybrid router config in-place (session-level override)
+        # --- Update hybrid router (optional) ---
         try:
             from navig.agent.ai_client import get_ai_client
 
             router = get_ai_client().model_router
-            if not router or not router.is_active:
-                await self._answer(
-                    cb_id,
-                    "⚠️ Hybrid router not active",
-                    show_alert=True,
-                )
-                await self.channel.send_message(
-                    chat_id,
-                    "⚠️ <b>Hybrid router not active</b>\n\n"
-                    "Hybrid routing means Small/Big/Code can each use different provider:model slots.\n"
-                    "To enable model-tier assignment, set this in your config:\n\n"
-                    "<pre>routing:\n  enabled: true</pre>\n\n"
-                    "Then restart NAVIG and try again.",
-                    parse_mode="HTML",
-                )
-                return
-            slot = router.cfg.slot_for_tier(tier)
-            slot.provider = prov_id
-            slot.model = model
-            if hasattr(self.channel, "_persist_hybrid_router_assignments"):
-                self.channel._persist_hybrid_router_assignments(router.cfg)
-            await self._answer(cb_id, f"✅ {tier_label} → {model[:40]}")
-            try:
-                from navig.commands.init import mark_chat_onboarding_step_completed
+            if router and router.is_active:
+                slot = router.cfg.slot_for_tier(tier)
+                slot.provider = prov_id
+                slot.model = model
+                if hasattr(self.channel, "_persist_hybrid_router_assignments"):
+                    self.channel._persist_hybrid_router_assignments(router.cfg)
+        except Exception:
+            logger.debug("Hybrid router update skipped for pms_ assignment")
 
-                mark_chat_onboarding_step_completed("ai-provider")
-            except (ImportError, AttributeError, TypeError, ValueError):
-                logger.debug("Unable to mark ai-provider step after tier assignment")
-            await self.channel._show_provider_model_picker(
-                chat_id,
-                prov_id,
-                page=page,
-                selected_tier=tier_code,
-                message_id=message_id,
-            )
-        except Exception as e:
-            await self._answer(cb_id, f"Error: {e}", show_alert=True)
+        # --- Always update primary LLM Mode Router ---
+        try:
+            if hasattr(self.channel, "_update_llm_mode_router"):
+                self.channel._update_llm_mode_router(prov_id, {tier: model})
+        except Exception:
+            logger.debug("LLM mode router update failed for pms_ assignment")
+
+        await self._answer(cb_id, f"✅ {tier_label} → {model[:40]}")
+        try:
+            from navig.commands.init import mark_chat_onboarding_step_completed
+
+            mark_chat_onboarding_step_completed("ai-provider")
+        except (ImportError, AttributeError, TypeError, ValueError):
+            logger.debug("Unable to mark ai-provider step after tier assignment")
+        await self.channel._show_provider_model_picker(
+            chat_id,
+            prov_id,
+            page=page,
+            selected_tier=tier_code,
+            message_id=message_id,
+        )
 
     async def _handle_debug_callback(
         self,

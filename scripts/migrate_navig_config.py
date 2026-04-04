@@ -392,12 +392,12 @@ def migrate_config(dry_run=False, force=False):
 
         if source_dir.exists():
             print_info("\nNext steps:")
-            print_info("  1. Verify all hosts appear in 'navig menu'")
+            print_info("  1. Verify all hosts appear in 'navig host list'")
             print_info("  2. Test host configurations")
             print_info("  3. Manually delete source directory if everything works")
         else:
             print_info("\nNext steps:")
-            print_info("  1. Verify all hosts appear in 'navig menu'")
+            print_info("  1. Verify all hosts appear in 'navig host list'")
             print_info("  2. Test host configurations")
             print_info(f"  3. All done! Configuration consolidated to: {dest_dir}")
 

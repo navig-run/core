@@ -4175,14 +4175,6 @@ Pull memory chunks from a remote NAVIG formation.
 navig memory sync
 ```
 
-## `navig menu`
-**Status:** `stable` · **Since:** 2.4.21
-Launch interactive menu interface.
-**Examples:**
-```sh
-navig menu
-```
-
 ## `navig mesh peers`
 **Status:** `stable` · **Since:** 2.4.21
 List all known mesh peers (alias for 'mesh status').

@@ -1,4 +1,4 @@
-"""
+﻿"""
 plugins/nlp_aliases.py — Multilingual NLP trigger aliases (EN / FR / RU).
 Passive: reply to any message (or write inline) with a trigger word.
 Skill  : skills/nlp_aliases.md
@@ -14,6 +14,15 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 try:
+    from navig.ui.icons import icon as _ni
+except ImportError:  # running outside NAVIG runtime
+    def _ni(name: str) -> str:  # type: ignore[misc]  # noqa: E302
+        _fb = {"search": "🔍", "pencil": "✏", "improve": "⬆", "puzzle": "🧩",
+               "globe": "🌐", "idea": "💡", "note": "📝", "palette": "🎨",
+               "clipboard": "📋", "brain": "🧠"}
+        return _fb.get(name, "?")
+
+try:
     from plugin_base import BotPlugin, PluginMeta
 except ImportError:
     from ..plugin_base import BotPlugin, PluginMeta  # type: ignore
@@ -22,61 +31,61 @@ _ACTIONS: dict[str, dict] = {
     "explain": {
         "aliases": ["explain", "explique", "объясни", "explain this"],
         "prompt": "Explain clearly and concisely:\n\n{text}",
-        "emoji": "🔍",
+        "emoji": _ni("search"),
         "label": "Explanation",
     },
     "correct": {
         "aliases": ["correct", "corrige", "исправь", "fix this"],
         "prompt": "Correct grammar and spelling. Show corrected text only:\n\n{text}",
-        "emoji": "✏️",
+        "emoji": _ni("pencil"),
         "label": "Correction",
     },
     "improve": {
         "aliases": ["improve", "améliore", "улучши", "make it better"],
         "prompt": "Improve clarity and style:\n\n{text}",
-        "emoji": "⬆️",
+        "emoji": _ni("improve"),
         "label": "Improved",
     },
     "simplify": {
         "aliases": ["simplify", "simplifie", "упрости", "make it simple"],
         "prompt": "Simplify so a 12-year-old understands:\n\n{text}",
-        "emoji": "🧩",
+        "emoji": _ni("puzzle"),
         "label": "Simplified",
     },
     "translate": {
         "aliases": ["translate", "traduis", "переведи", "перевод"],
         "prompt": "Translate to English if non-English, else to Russian:\n\n{text}",
-        "emoji": "🌐",
+        "emoji": _ni("globe"),
         "label": "Translation",
     },
     "brainstorm": {
         "aliases": ["brainstorm", "идеи", "remue-méninges", "give ideas"],
         "prompt": "Brainstorm 5 creative ideas about:\n\n{text}",
-        "emoji": "💡",
+        "emoji": _ni("idea"),
         "label": "Ideas",
     },
     "proofread": {
         "aliases": ["proofread", "proof", "relis", "проверь"],
         "prompt": "Proofread and list all corrections:\n\n{text}",
-        "emoji": "📝",
+        "emoji": _ni("note"),
         "label": "Proofread",
     },
     "creative": {
         "aliases": ["creative", "créatif", "креатив", "make it creative"],
         "prompt": "Rewrite in a creative, engaging way:\n\n{text}",
-        "emoji": "🎨",
+        "emoji": _ni("palette"),
         "label": "Creative",
     },
     "summary": {
         "aliases": ["summary", "summarize", "résumé", "резюме", "tl;dr", "кратко"],
         "prompt": "Summarize in 3-5 sentences:\n\n{text}",
-        "emoji": "📋",
+        "emoji": _ni("clipboard"),
         "label": "Summary",
     },
     "context": {
         "aliases": ["context", "contexte", "контекст", "analyse", "analyze", "анализ"],
         "prompt": "Analyze: identify sentiment, key points, and notable observations:\n\n{text}",
-        "emoji": "🧠",
+        "emoji": _ni("brain"),
         "label": "Analysis",
     },
 }
@@ -184,7 +193,7 @@ class NLPAliasPlugin(BotPlugin):
         await status.edit_text(
             f"{act['emoji']} *{act['label']} detected* ✓\n\n"
             f"Target: _{body[:200]}_\n\n"
-            "⚠️ AI not configured. Run `navig init` to set up your AI provider, "
+            "{_ni("warn")} AI not configured. Run `navig init` to set up your AI provider, "
             "then try again.",
             parse_mode="Markdown",
         )

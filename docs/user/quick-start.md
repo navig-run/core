@@ -102,7 +102,6 @@ Run any group without a subcommand to enter interactive mode:
 ```bash
 navig host      # Interactive host menu
 navig db        # Interactive database menu
-navig menu      # Full interactive interface
 ```
 
 ## Common Workflows

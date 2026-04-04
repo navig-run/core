@@ -11,6 +11,7 @@ class _FakeChannel:
         self._user_model_prefs = {}
         self.picker_calls = []
         self.persist_calls = 0
+        self.llm_mode_calls = []
 
     async def _api_call(self, method, data):
         self.api_calls.append((method, data))
@@ -52,6 +53,9 @@ class _FakeChannel:
 
     def _persist_hybrid_router_assignments(self, router_cfg):
         self.persist_calls += 1
+
+    def _update_llm_mode_router(self, provider_id, tier_models):
+        self.llm_mode_calls.append((provider_id, tier_models))
 
 
 @pytest.mark.asyncio
@@ -209,6 +213,9 @@ async def test_provider_activate_uses_curated_defaults_and_persists(monkeypatch)
     assert _Router.cfg.coder_big.model == "grok-3"
     assert channel.persist_calls == 1
     assert marked == ["ai-provider"]
+    # LLM mode router must also be updated with curated defaults
+    assert len(channel.llm_mode_calls) == 1
+    assert channel.llm_mode_calls[0][0] == "xai"
 
 
 @pytest.mark.asyncio
@@ -260,6 +267,50 @@ async def test_provider_model_assignment_marks_onboarding_step(monkeypatch):
     assert _Router.cfg.small.provider == "xai"
     assert _Router.cfg.small.model == "grok-3"
     assert marked == ["ai-provider"]
+    # LLM mode router must also be updated for the single tier
+    assert len(channel.llm_mode_calls) == 1
+    assert channel.llm_mode_calls[0] == ("xai", {"small": "grok-3"})
+
+
+@pytest.mark.asyncio
+async def test_provider_model_assignment_updates_llm_without_hybrid_router(monkeypatch):
+    """pms_ assignment must update LLM Mode Router even when hybrid router is not active."""
+    channel = _FakeChannel()
+    handler = CallbackHandler(channel)
+
+    class _Manifest:
+        id = "xai"
+        emoji = "⚡"
+        display_name = "xAI / Grok"
+
+    class _Router:
+        is_active = False  # hybrid disabled
+        cfg = None
+
+    class _Client:
+        model_router = _Router()
+
+    marked: list[str] = []
+
+    monkeypatch.setattr("navig.providers.registry.get_provider", lambda _prov_id: _Manifest())
+    monkeypatch.setattr("navig.agent.ai_client.get_ai_client", lambda: _Client())
+    monkeypatch.setattr(
+        "navig.commands.init.mark_chat_onboarding_step_completed",
+        lambda step_id, navig_dir=None: marked.append(step_id) or True,
+    )
+
+    await handler._handle_provider_model_callback(
+        cb_id="cb-5",
+        cb_data="pms_xai_0_b_0",
+        chat_id=130,
+        message_id=230,
+        user_id=330,
+    )
+
+    # Should NOT block — onboarding marked and LLM router updated
+    assert marked == ["ai-provider"]
+    assert len(channel.llm_mode_calls) == 1
+    assert channel.llm_mode_calls[0] == ("xai", {"big": "grok-3"})
 
 
 @pytest.mark.asyncio

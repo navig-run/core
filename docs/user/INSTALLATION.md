@@ -280,7 +280,7 @@ This removes the package but keeps your source code intact.
 
 After installation, you can:
 
-1. **Run the interactive menu**: `navig`
+1. **Check setup status**: `navig init --status`
 2. **Add a host**: `navig host add <name>`
 3. **View help**: `navig --help`
 4. **Check specific command help**: `navig host --help`

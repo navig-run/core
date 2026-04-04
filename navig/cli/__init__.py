@@ -699,28 +699,9 @@ def version_command(
         navig version
         navig version --json
     """
-    import platform
-    import sys
+    from navig.commands.upgrade import run_version
 
-    if json_output:
-        import json
-
-        info = {
-            "navig_version": __version__,
-            "python_version": sys.version.split()[0],
-            "platform": platform.system(),
-            "platform_release": platform.release(),
-            "machine": platform.machine(),
-        }
-        print(json.dumps(info, indent=2))
-    else:
-        ch.info(f"NAVIG v{__version__}")
-        ch.dim(f"Python {sys.version.split()[0]} on {platform.system()} {platform.release()}")
-        # Show a random quote
-        import random
-
-        quote, author = random.choice(_get_hacker_quotes())
-        ch.dim(f"💬 {quote} - {author}")
+    run_version(json_output=json_output)
 
 
 @app.command("upgrade")
@@ -741,178 +722,9 @@ def upgrade_command(
         navig upgrade            # Upgrade to latest
         navig upgrade --check    # Check if an upgrade is available
     """
-    import shutil
-    import subprocess
-    import sys
-    from pathlib import Path
+    from navig.commands.upgrade import run_upgrade
 
-    from rich.console import Console as _RC
-
-    _con = _RC()
-    src_dir = Path(__file__).resolve().parent.parent.parent  # navig/cli/__init__.py → navig-core/
-    is_git = (src_dir / ".git").exists()
-
-    # ------------------------------------------------------------------ check
-    if check:
-        if is_git:
-            try:
-                # Show current commit without any network call
-                log = subprocess.run(
-                    ["git", "-C", str(src_dir), "log", "--oneline", "-1"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-                commit = log.stdout.strip()
-                _con.print(f"[green]✓[/green] NAVIG v{__version__}  [dim]{commit}[/dim]")
-                _con.print("[dim]Run [bold]navig upgrade[/bold] to pull latest commits.[/dim]")
-            except Exception as exc:
-                _con.print(f"[dim]Could not read git info: {exc}[/dim]")
-        else:
-            _con.print(f"[green]✓[/green] NAVIG v{__version__}")
-            _con.print(
-                "[dim]Run [bold]navig upgrade[/bold] to upgrade to the latest release.[/dim]"
-            )
-        return
-
-    # ---------------------------------------------------------------- upgrade
-    old_version = __version__
-    success = False
-
-    if is_git:
-        _con.print(f"[cyan]▶[/cyan] Pulling latest from git… [dim]({src_dir})[/dim]")
-        _git_env = {**__import__("os").environ, "GIT_TERMINAL_PROMPT": "0"}
-        try:
-            pull = subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(src_dir),
-                    "-c",
-                    "http.connectTimeout=10",
-                    "-c",
-                    "http.lowSpeedLimit=0",
-                    "-c",
-                    "http.lowSpeedTime=20",
-                    "pull",
-                    "--ff-only",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                env=_git_env,
-            )
-            if pull.returncode != 0:
-                err = pull.stderr.strip()
-                _con.print(f"[red]✗[/red] git pull failed:\n[dim]{err[:300]}[/dim]")
-                raise SystemExit(1)
-            if "Already up to date" in pull.stdout and not force:
-                _con.print(f"[green]✓[/green] Already up-to-date (v{old_version})")
-                return
-            _con.print(f"[dim]{pull.stdout.strip()}[/dim]")
-        except FileNotFoundError as _exc:
-            _con.print("[red]✗[/red] git not found — install git and retry")
-            raise SystemExit(1) from _exc
-        except subprocess.TimeoutExpired:
-            _con.print(
-                "[yellow]⚠[/yellow] git pull timed out (slow network) — reinstalling from local source"
-            )
-
-        # Re-install editable so any new entry points or deps are picked up
-        _con.print("[cyan]▶[/cyan] Reinstalling package…")
-        uv = shutil.which("uv")
-        if uv:
-            cmd = [
-                uv,
-                "pip",
-                "install",
-                "--python",
-                sys.executable,
-                "-e",
-                str(src_dir),
-                "-q",
-            ]
-        else:
-            cmd = [sys.executable, "-m", "pip", "install", "-e", str(src_dir), "-q"]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        if r.returncode != 0:
-            _con.print(
-                f"[yellow]⚠[/yellow] Reinstall warning:\n[dim]{r.stderr.strip()[:300]}[/dim]"
-            )
-        success = True
-
-    else:
-        # PyPI install — use uv or pip
-        uv = shutil.which("uv")
-        if uv:
-            _con.print("[cyan]▶[/cyan] Upgrading via [bold]uv[/bold]…")
-            cmd = [
-                uv,
-                "pip",
-                "install",
-                "--python",
-                sys.executable,
-                "--upgrade",
-                "navig",
-            ]
-            if force:
-                cmd.append("--reinstall")
-        else:
-            _con.print("[cyan]▶[/cyan] Upgrading via [bold]pip[/bold]…")
-            cmd = [
-                sys.executable,
-                "-m",
-                "pip",
-                "install",
-                "--upgrade",
-                "navig",
-                "--disable-pip-version-check",
-                "-q",
-            ]
-            if force:
-                cmd.append("--force-reinstall")
-
-        try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-            if r.returncode != 0:
-                _con.print(f"[red]✗[/red] Upgrade failed:\n[dim]{r.stderr.strip()[:400]}[/dim]")
-                raise SystemExit(1)
-            success = True
-        except subprocess.TimeoutExpired as _exc:
-            _con.print("[red]✗[/red] Upgrade timed out — check your network connection")
-            raise SystemExit(1) from _exc
-
-    if success:
-        # Re-import to get new version string
-        try:
-            import importlib
-
-            import navig as _nav
-
-            importlib.reload(_nav)
-            new_version = _nav.__version__
-        except Exception:
-            new_version = "?"
-        if new_version != old_version:
-            _con.print(
-                f"[bold green]✓[/bold green] Upgraded [cyan]v{old_version}[/cyan] → [bold cyan]v{new_version}[/bold cyan]"
-            )
-        else:
-            _con.print(f"[bold green]✓[/bold green] NAVIG v{new_version} is ready")
-
-        # Sync the PATH entry point if it differs from the venv script
-        # (handles cases where an old navig.exe lives in ~/.local/bin)
-        try:
-            _venv_exe = (
-                Path(__file__).resolve().parent.parent.parent / ".venv" / "Scripts" / "navig.exe"
-            )
-            _path_navig = shutil.which("navig")
-            _path_exe = Path(_path_navig) if _path_navig else None
-            if _venv_exe.exists() and _path_exe and _path_exe.exists() and _venv_exe != _path_exe:
-                shutil.copy2(str(_venv_exe), str(_path_exe))
-                _con.print(f"[dim]↳ PATH entry point updated: {_path_exe}[/dim]")
-        except Exception:
-            pass  # Never fail the upgrade over a PATH sync issue
+    run_upgrade(check=check, force=force)
 
 
 @app.command("update", hidden=True)
@@ -958,20 +770,10 @@ def help_command(
     ),
 ):
     """In-app help system for predictable, AI-friendly help output."""
-    import json as jsonlib
-    from pathlib import Path
+    from navig.commands.help_cmd import run_help
 
-    from rich.console import Console
-    from rich.table import Table
-
-    from navig.cli.registry import get_schema as _get_schema
-
-    # --schema: emit the canonical command registry and exit
-    if schema_out:
-        from navig.cli.registry import get_schema as _get_schema
-
-        typer.echo(jsonlib.dumps(_get_schema(), indent=2))
-        raise typer.Exit()
+    run_help(ctx, topic=topic, plain=plain, json_output=json_output, raw=raw, schema_out=schema_out)
+    return  # run_help raises typer.Exit internally
 
     console = Console()
     # Help markdown files live at navig/help/, one level above navig/cli/
@@ -1152,13 +954,6 @@ def help_command(
         show_subcommand_help(normalized, ctx)
         raise typer.Exit()
 
-    ch.error(
-        f"Unknown help topic: {topic}",
-        "Run 'navig help' to list topics or 'navig <cmd> --help' for command help.",
-    )
-    raise typer.Exit(1)
-
-
 @app.command("docs")
 def docs_command(
     ctx: typer.Context,
@@ -1196,124 +991,9 @@ def docs_command(
         navig docs "database backup"    # Search for backup instructions
         navig docs --json "config"      # JSON output for automation
     """
-    import json as jsonlib
-    from pathlib import Path
+    from navig.commands.docs_cmd import run_docs
 
-    from rich.console import Console
-
-    # Force UTF-8 encoding for console to handle emoji on Windows
-    console = Console(force_terminal=True)
-
-    # Find docs directory (project root or installed package)
-    project_docs = Path(__file__).resolve().parent.parent / "docs"
-    pkg_docs = Path(__file__).resolve().parent / "docs"
-
-    if project_docs.exists():
-        docs_dir = project_docs
-    elif pkg_docs.exists():
-        docs_dir = pkg_docs
-    else:
-        ch.error(
-            "Documentation directory not found.",
-            "Make sure NAVIG is installed correctly with docs/ available.",
-        )
-        raise typer.Exit(1)
-
-    want_json = bool(json_output or ctx.obj.get("json"))
-    want_plain = plain or ctx.obj.get("raw")
-
-    # List all docs if no query
-    if not query:
-        md_files = sorted(docs_dir.glob("**/*.md"))
-        topics = []
-        for f in md_files:
-            rel_path = f.relative_to(docs_dir)
-            # Get first heading as title
-            try:
-                content = f.read_text(encoding="utf-8")
-                lines = content.split("\n")
-                title = None
-                for line in lines:
-                    if line.startswith("# "):
-                        title = line[2:].strip()
-                        break
-                topics.append(
-                    {
-                        "file": str(rel_path),
-                        "title": title or f.stem,
-                    }
-                )
-            except Exception:
-                topics.append({"file": str(rel_path), "title": f.stem})
-
-        if want_json:
-            console.print(jsonlib.dumps({"topics": topics}, indent=2))
-        else:
-            console.print("[bold cyan]NAVIG Documentation[/bold cyan]")
-            console.print(f"Found {len(topics)} documentation files.\n")
-            for item in topics:
-                # Use safe ASCII output - strip emoji that can't be encoded
-                title = item["title"]
-                try:
-                    # Test if title can be encoded in console encoding
-                    title.encode(console.encoding or "utf-8")
-                except (UnicodeEncodeError, LookupError):
-                    # Strip non-ASCII characters
-                    title = "".join(c for c in title if ord(c) < 128)
-                console.print(f"  [cyan]*[/cyan] [yellow]{item['file']}[/yellow]: {title.strip()}")
-            console.print("\n[dim]Use 'navig docs <query>' to search documentation.[/dim]")
-        raise typer.Exit()
-
-    # Search docs
-    try:
-        from navig.tools.web import search_docs
-
-        results = search_docs(query=query, docs_path=docs_dir, max_results=limit)
-
-        if want_json:
-            console.print(
-                jsonlib.dumps(
-                    {
-                        "query": query,
-                        "results": [
-                            {
-                                "file": r.get("file"),
-                                "title": r.get("title"),
-                                "excerpt": r.get("excerpt"),
-                                "score": r.get("score"),
-                            }
-                            for r in results
-                        ],
-                    },
-                    indent=2,
-                )
-            )
-        else:
-            if not results:
-                console.print(f"[yellow]No results found for '{query}'.[/yellow]")
-                console.print(
-                    "[dim]Try different keywords or check 'navig docs' for all topics.[/dim]"
-                )
-            else:
-                console.print(f"[bold cyan]Search Results for '{query}'[/bold cyan]\n")
-                for i, r in enumerate(results, 1):
-                    console.print(f"[bold white]{i}. {r.get('title', 'Untitled')}[/bold white]")
-                    console.print(f"   [dim]{r.get('file')}[/dim]")
-                    if r.get("excerpt"):
-                        excerpt = (
-                            r["excerpt"][:300] + "..."
-                            if len(r.get("excerpt", "")) > 300
-                            else r.get("excerpt", "")
-                        )
-                        console.print(f"   {excerpt}")
-                    console.print()
-
-    except ImportError as e:
-        ch.error(f"Search tools not available: {e}")
-        raise typer.Exit(1) from e
-    except Exception as e:
-        ch.error(f"Documentation search failed: {e}")
-        raise typer.Exit(1) from e
+    run_docs(ctx, query=query, limit=limit, plain=plain, json_output=json_output)
 
 
 @app.command("fetch")
@@ -1361,66 +1041,9 @@ def fetch_command(
         navig fetch https://docs.python.org/3/ --json
         navig fetch https://github.com/user/repo --max-chars 10000
     """
-    import json as jsonlib
+    from navig.commands.docs_cmd import run_fetch
 
-    from rich.console import Console
-    from rich.markdown import Markdown
-
-    console = Console()
-    want_json = bool(json_output or ctx.obj.get("json"))
-    want_plain = plain or ctx.obj.get("raw")
-
-    try:
-        from navig.tools.web import web_fetch
-
-        console.print(f"[dim]Fetching {url}...[/dim]") if not want_json else None
-
-        result = web_fetch(
-            url=url,
-            extract_mode=mode,
-            max_chars=max_chars,
-            timeout_seconds=timeout,
-        )
-
-        if want_json:
-            console.print(
-                jsonlib.dumps(
-                    {
-                        "success": result.success,
-                        "url": url,
-                        "final_url": result.final_url,
-                        "title": result.title,
-                        "content": result.text[:max_chars] if result.text else None,
-                        "truncated": result.truncated,
-                        "error": result.error if not result.success else None,
-                    },
-                    indent=2,
-                )
-            )
-        elif result.success:
-            if want_plain:
-                if result.title:
-                    console.print(f"Title: {result.title}")
-                console.print(f"URL: {result.final_url or url}\n")
-                console.print(result.text)
-            else:
-                console.print(f"[bold cyan]{result.title or 'Untitled'}[/bold cyan]")
-                console.print(f"[dim]{result.final_url or url}[/dim]\n")
-                console.print(Markdown(result.text[:20000]))
-                if result.truncated:
-                    console.print(
-                        "\n[yellow]Content truncated. Use --max-chars to increase limit.[/yellow]"
-                    )
-        else:
-            ch.error(f"Failed to fetch URL: {result.error}")
-            raise typer.Exit(1)
-
-    except ImportError as e:
-        ch.error(f"Web tools not available: {e}")
-        raise typer.Exit(1) from e
-    except Exception as e:
-        ch.error(f"Fetch failed: {e}")
-        raise typer.Exit(1) from e
+    run_fetch(ctx, url=url, mode=mode, max_chars=max_chars, timeout=timeout, plain=plain, json_output=json_output)
 
 
 @app.command("search")
@@ -1465,79 +1088,9 @@ def search_command(
         1. Get API key from https://brave.com/search/api/
         2. Set in config: navig config set web.search.api_key=YOUR_KEY
     """
-    import json as jsonlib
+    from navig.commands.docs_cmd import run_search
 
-    from rich.console import Console
-
-    console = Console()
-    want_json = bool(json_output or ctx.obj.get("json"))
-    want_plain = plain or ctx.obj.get("raw")
-
-    try:
-        from navig.tools.web import web_search
-
-        (console.print(f"[dim]Searching for '{query}'...[/dim]") if not want_json else None)
-
-        result = web_search(
-            query=query,
-            count=limit,
-            provider=provider,
-        )
-
-        if want_json:
-            console.print(
-                jsonlib.dumps(
-                    {
-                        "success": result.success,
-                        "query": query,
-                        "results": (
-                            [
-                                {
-                                    "title": r.title,
-                                    "url": r.url,
-                                    "snippet": r.snippet,
-                                }
-                                for r in result.results
-                            ]
-                            if result.results
-                            else []
-                        ),
-                        "error": result.error if not result.success else None,
-                    },
-                    indent=2,
-                )
-            )
-        elif result.success and result.results:
-            if want_plain:
-                for i, r in enumerate(result.results, 1):
-                    console.print(f"{i}. {r.title}")
-                    console.print(f"   {r.url}")
-                    if r.snippet:
-                        console.print(f"   {r.snippet[:200]}")
-                    console.print()
-            else:
-                console.print(f"[bold cyan]Search Results for '{query}'[/bold cyan]\n")
-                for i, r in enumerate(result.results, 1):
-                    console.print(f"[bold white]{i}. {r.title}[/bold white]")
-                    console.print(f"   [blue underline]{r.url}[/blue underline]")
-                    if r.snippet:
-                        console.print(f"   [dim]{r.snippet[:200]}[/dim]")
-                    console.print()
-        elif result.success:
-            console.print("[yellow]No results found.[/yellow]")
-        else:
-            ch.error(f"Search failed: {result.error}")
-            console.print("\n[dim]Tip: Set up Brave Search API for better results:[/dim]")
-            console.print("[dim]  1. Get key from https://brave.com/search/api/[/dim]")
-            console.print("[dim]  2. navig config set web.search.api_key=YOUR_KEY[/dim]")
-            raise typer.Exit(1)
-
-    except ImportError as e:
-        ch.error(f"Web tools not available: {e}")
-        raise typer.Exit(1) from e
-    except Exception as e:
-        ch.error(f"Search failed: {e}")
-        raise typer.Exit(1) from e
+    run_search(ctx, query=query, limit=limit, provider=provider, plain=plain, json_output=json_output)
 
 
 # ============================================================================
@@ -2575,65 +2128,6 @@ def quick_start(
 # ============================================================================
 # MEMORY MANAGEMENT — extracted to navig/commands/memory.py (P1-14)
 # ============================================================================
-
-
-# ============================================================================
-# INTERACTIVE MENU
-# ============================================================================
-
-
-@app.command("menu")
-def menu_command(ctx: typer.Context):
-    """
-    Launch interactive menu interface.
-
-    Navigate NAVIG using a terminal UI with arrow keys and keyboard shortcuts.
-    Mr. Robot inspired theme with Rich formatting.
-
-    Features:
-    - Host and app management
-    - Database operations
-    - File transfers
-    - System monitoring
-    - Command history tracking
-
-    Navigation:
-    - Arrow keys or numbers to select menu items
-    - Enter to confirm selection
-    - ESC or 'q' to go back
-    - '?' for help
-    - Ctrl+C to exit
-
-    Note: If experiencing freezes on Windows, questionary may need to be uninstalled.
-    The menu will work fine with number-based selection only.
-    """
-    try:
-        from navig.commands.interactive import launch_menu
-
-        launch_menu(ctx.obj)
-    except ImportError as e:
-        ch.error(f"Failed to load interactive menu: {e}")
-        ch.info("Ensure Rich is installed: pip install rich")
-        sys.exit(1)
-    except Exception as e:
-        ch.error(f"Interactive menu error: {e}")
-        sys.exit(1)
-
-
-@app.command("interactive", hidden=True)
-def interactive_command(ctx: typer.Context):
-    """Alias for 'menu' command - launch interactive interface."""
-    try:
-        from navig.commands.interactive import launch_menu
-
-        launch_menu(ctx.obj)
-    except ImportError as e:
-        ch.error(f"Failed to load interactive menu: {e}")
-        ch.info("Ensure Rich is installed: pip install rich")
-        sys.exit(1)
-    except Exception as e:
-        ch.error(f"Interactive menu error: {e}")
-        sys.exit(1)
 
 
 # ── config legacy extension block removed ───────────────────────────────────

@@ -131,7 +131,7 @@ def _fast_help_text(version: str) -> str:
             "    navig db dump mydb -o predeploy.sql    Snapshot DB before deploy",
             hr,
             f"  {_fast_rotating_tip()}",
-            "  navig <command> --help   ·   navig help <topic>   ·   navig menu",
+            "  navig <command> --help   ·   navig help <topic>",
             hr,
         ]
     )

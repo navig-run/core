@@ -2165,7 +2165,7 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
         console.print(
             "  2. Configure AI:      [#2c8bb7]navig ai providers --add openrouter[/#2c8bb7]"
         )
-        console.print("  3. Start interactive: [#2c8bb7]navig menu[/#2c8bb7]")
+        console.print("  3. Inspect setup:     [#2c8bb7]navig init --status[/#2c8bb7]")
         console.print()
 
         cheat = Table(
@@ -2182,7 +2182,7 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
         cheat.add_row("navig file", "Transfer files", "navig file upload ./app /srv")
         cheat.add_row("navig db", "Database operations", "navig db query 'SELECT 1'")
         cheat.add_row("navig flow", "Automate a workflow", "navig flow run deploy")
-        cheat.add_row("navig menu", "Interactive TUI", "navig menu")
+        cheat.add_row("navig init --status", "Show readiness", "navig init --status")
         cheat.add_row("navig doctor", "Self-diagnostics", "navig doctor")
         console.print(cheat)
 
@@ -2192,7 +2192,7 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
             "[dim]▸ Run [/dim][#2c8bb7]navig <command> --help[/#2c8bb7][dim] for full options on any command.[/dim]"
         )
         console.print(
-            "[dim]▸ Use [/dim][#2c8bb7]navig menu[/#2c8bb7][dim] for an interactive point-and-click interface.[/dim]"
+            "[dim]▸ Use [/dim][#2c8bb7]navig help <topic>[/#2c8bb7][dim] to explore command groups quickly.[/dim]"
         )
         console.print(
             "[dim]▸ Run [/dim][#2c8bb7]navig doctor[/#2c8bb7][dim] if anything looks wrong.[/dim]"

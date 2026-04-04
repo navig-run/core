@@ -751,20 +751,21 @@ def confirm_operation(
     console.print()
 
     # Choose icon and color based on operation type
+    from navig.ui.icons import icon as _ni  # lazy: avoids startup Rich import
     if operation_type == "critical":
-        icon = "⚠️"
+        op_icon = _ni("warn")
         title_color = Colors.ERROR
         title_text = "Confirm DESTRUCTIVE operation"
     elif operation_type == "standard":
-        icon = "📝"
+        op_icon = _ni("note")
         title_color = Colors.WARNING
         title_text = "Confirm operation"
     else:
-        icon = "ℹ️"
+        op_icon = _ni("info")
         title_color = Colors.INFO
         title_text = "Confirm action"
 
-    console.print(f"[{title_color}]{icon} {title_text}:[/{title_color}]")
+    console.print(f"[{title_color}]{op_icon} {title_text}:[/{title_color}]")
     console.print(f"  [bold]{operation_name}[/bold]")
 
     if host:

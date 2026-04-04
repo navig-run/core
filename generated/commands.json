@@ -6781,19 +6781,6 @@
     {
       "aliases": [],
       "examples": [
-        "navig menu"
-      ],
-      "handler": "menu_command",
-      "module": "navig.cli",
-      "path": "navig menu",
-      "since": "2.4.21",
-      "status": "stable",
-      "summary": "Launch interactive menu interface.",
-      "tags": []
-    },
-    {
-      "aliases": [],
-      "examples": [
         "navig mesh peers"
       ],
       "handler": "peers",
