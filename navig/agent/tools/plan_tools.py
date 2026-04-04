@@ -17,9 +17,9 @@ FA-01 implementation.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any
 
+from navig.platform import paths
 from navig.tools.registry import BaseTool, StatusCallback, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -234,7 +234,7 @@ class GetPlanContextTool(BaseTool):
 
             space = args.get("space") or get_default_space()
             ctx = PlanContext(
-                space_root=str(Path.home() / ".navig" / "spaces"),
+                space_root=str(paths.config_dir() / "spaces"),
                 mcp_enabled=mcp_enabled,
             )
             snapshot = ctx.gather(space)

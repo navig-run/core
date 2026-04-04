@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from navig.platform import paths
+
 logger = logging.getLogger(__name__)
 
 _FRONTMATTER_RE = re.compile(r"^---\n([\s\S]*?)\n---\n?", re.MULTILINE)
@@ -82,7 +84,7 @@ class PlanContext:
         ``Path.cwd()``.
     """
 
-    space_root: str = field(default_factory=lambda: str(Path.home() / ".navig" / "spaces"))
+    space_root: str = field(default_factory=lambda: str(paths.config_dir() / "spaces"))
     mcp_enabled: bool = False
     cwd: Path = field(default_factory=Path.cwd)
 

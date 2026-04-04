@@ -21,6 +21,8 @@ import shutil
 import sys
 from pathlib import Path
 
+from navig.platform import paths
+
 
 def _read_text_file(path: Path) -> str:
     try:
@@ -32,13 +34,15 @@ def _read_text_file(path: Path) -> str:
 def _fast_status_context() -> tuple[str, str]:
     active_host = os.environ.get("NAVIG_ACTIVE_HOST", "").strip()
     if not active_host:
-        active_host = _read_text_file(Path.home() / ".navig" / "cache" / "active_host.txt")
+        active_host = _read_text_file(paths.cache_dir() / "active_host.txt")
+    if not active_host:
+        active_host = _read_text_file(paths.config_dir() / "cache" / "active_host.txt")
     if not active_host:
         active_host = "none"
 
     active_profile = os.environ.get("NAVIG_PROFILE", "").strip()
     if not active_profile:
-        active_profile = _read_text_file(Path.home() / ".navig" / "active_profile")
+        active_profile = _read_text_file(paths.config_dir() / "active_profile")
     if not active_profile:
         active_profile = "default"
 
@@ -482,8 +486,10 @@ def _should_skip_plugin_loading(argv: list[str]) -> bool:
         import json
         from pathlib import Path
 
-        # We can't easily import Config here without overhead, so we construct the default path
-        cache_file = Path.home() / ".navig" / "data" / "plugins_cache.json"
+        cache_file = paths.data_dir() / "plugins_cache.json"
+        legacy_cache_file = paths.config_dir() / "data" / "plugins_cache.json"
+        if not cache_file.exists() and legacy_cache_file.exists():
+            cache_file = legacy_cache_file
         if cache_file.exists():
             with open(cache_file, encoding="utf-8") as f:
                 cached_data = json.load(f)
@@ -506,7 +512,7 @@ def _should_skip_plugin_loading(argv: list[str]) -> bool:
 
         _logging.getLogger(__name__).warning(
             "Plugin cache corrupted at %s — skipping cache check",
-            Path.home() / ".navig" / "data" / "plugins_cache.json",
+            cache_file,
         )
     except Exception as e:
         import logging as _logging
