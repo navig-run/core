@@ -120,6 +120,9 @@ class RoutingConfig:
     small: ModelSlot = field(default_factory=ModelSlot)
     big: ModelSlot = field(default_factory=ModelSlot)
     coder_big: ModelSlot = field(default_factory=ModelSlot)
+    # Model used for router_llm_json classification calls.
+    # When empty, falls back to the small model slot.
+    router_model: str = ""
 
     # Legacy compat: flat accessors
     @property
@@ -219,6 +222,9 @@ class RoutingConfig:
                     gh_token = os.environ.get("GITHUB_TOKEN", "")
                 if gh_token:
                     slot.api_key = gh_token
+
+        # Router model for router_llm_json classification calls
+        cfg.router_model = data.get("router_model") or ""
 
         # Validate
         if cfg.enabled and cfg.mode != "single":
@@ -418,8 +424,9 @@ async def llm_route(
 ) -> RoutingDecision:
     """Use the small model to classify the request (router-LLM JSON mode)."""
     try:
+        _classifier = cfg.router_model or cfg.small.model
         raw = await chat_fn(
-            model=cfg.small.model,
+            model=_classifier,
             messages=[
                 {"role": "system", "content": _ROUTER_SYSTEM_PROMPT},
                 {"role": "user", "content": message[:500]},

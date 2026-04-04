@@ -391,6 +391,20 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     ),
     # --- Model control -------------------------------------------------------
     SlashCommandEntry(
+        "ai",
+        "Current AI provider + model — switch with one tap",
+        handler="_handle_ai_command",
+        category="model",
+        usage="/ai  — shows provider/model picker with inline keyboard",
+    ),
+    SlashCommandEntry(
+        "ai_model",
+        "AI model picker (alias)",
+        handler="_handle_ai_command",
+        category="model",
+        visible=False,
+    ),
+    SlashCommandEntry(
         "settings",
         "Main config hub - audio, providers, focus, model",
         handler="_handle_settings_hub",
@@ -2822,6 +2836,111 @@ class TelegramCommandsMixin:
 
         except Exception as e:
             await self.send_message(chat_id, f"- Could not read routing info: {e}")
+
+    async def _handle_ai_command(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        text: str = "",
+        message_id: int | None = None,
+    ) -> None:
+        """/ai — Unified AI provider + model picker with inline keyboard.
+
+        Shows current provider, active model, tier, context size, and cost tier
+        for each slot.  Inline keyboard lets the user switch tier (small/big/coder)
+        in one tap without typing model names.
+        """
+        _TIER_ICONS = {
+            "small":    ("⚡", "Small"),
+            "big":      ("🧠", "Big"),
+            "coder_big":("💻", "Coder"),
+        }
+        _COST_TIERS: dict[str, str] = {
+            "ollama": "🖥️ local",  "local": "🖥️ local",
+            "openai": "💰 paid",   "anthropic": "💰 paid",
+            "groq":   "🆓 free",   "openrouter": "💰 paid",
+            "deepseek": "💰 paid", "mistral": "💰 paid",
+            "google":   "💰 paid", "github_models": "🆓 free",
+            "xai":      "💰 paid", "perplexity": "💰 paid",
+        }
+
+        current_tier = ""
+        if hasattr(self, "_get_user_tier_pref"):
+            current_tier = self._get_user_tier_pref(chat_id, user_id)
+        else:
+            current_tier = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
+
+        # Resolve current slot info from LLMModeRouter
+        slot_lines: dict[str, str] = {}
+        try:
+            from navig.llm_router import get_llm_router
+            lr = get_llm_router()
+            if lr:
+                mode_map = {"small": "small_talk", "big": "big_tasks", "coder_big": "coding"}
+                for slot, mode in mode_map.items():
+                    cfg = lr.get_config(mode)
+                    prov = cfg.provider or ""
+                    mdl  = (cfg.model or "").split("/")[-1]  # short name
+                    ctx  = str(cfg.max_tokens)
+                    cost = _COST_TIERS.get(prov.lower(), "")
+                    slot_lines[slot] = f"`{prov}:{mdl}`  {cost}  {ctx}t"
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
+
+        tier_label = {"": "auto", "small": "small", "big": "big",
+                      "coder_big": "coder", "noai": "no AI"}.get(current_tier, current_tier)
+
+        lines = [
+            "🤖 *AI Configuration*",
+            "",
+            f"Active tier: `{tier_label}`",
+            "",
+            "*Available slots:*",
+        ]
+        for slot in ("small", "big", "coder_big"):
+            icon, name = _TIER_ICONS[slot]
+            is_active = current_tier == slot
+            check = " ✓" if is_active else ""
+            info = slot_lines.get(slot, "")
+            lines.append(f"{icon} {name}{check}: {info}")
+
+        lines += [
+            "",
+            "Tap to switch tier for this session:",
+        ]
+
+        # Build tier-picker keyboard (max 2 buttons per row)
+        tier_rows: list = []
+        tier_order = [("small", "⚡ Small"), ("big", "🧠 Big"),
+                       ("coder_big", "💻 Coder"), ("", "🔄 Auto")]
+        row: list = []
+        for tier_key, btn_label in tier_order:
+            check = " ✓" if current_tier == tier_key else ""
+            row.append({
+                "text": f"{btn_label}{check}",
+                "callback_data": f"aitier_{tier_key or 'auto'}",
+            })
+            if len(row) == 2:
+                tier_rows.append(row)
+                row = []
+        if row:
+            tier_rows.append(row)
+
+        # Navigation buttons
+        tier_rows.append([
+            {"text": "🎛️ All providers", "callback_data": "nav:providers"},
+            {"text": "✖ Close",          "callback_data": "ai_close"},
+        ])
+
+        payload = "\n".join(lines)
+        if message_id:
+            await self.edit_message(
+                chat_id, message_id, payload,
+                parse_mode="Markdown", keyboard=tier_rows,
+            )
+        else:
+            await self.send_message(chat_id, payload,
+                                    parse_mode="Markdown", keyboard=tier_rows)
 
     async def _handle_providers(
         self,

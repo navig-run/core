@@ -5,8 +5,10 @@ from pathlib import Path
 from typing import Any
 
 import typer
+from rich import box
 from rich import print as rprint
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
 
 from navig.cli._callbacks import show_subcommand_help
@@ -676,12 +678,82 @@ def set_confirmation_level(level: str):
         raise typer.Exit(1) from e
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Key → env-var mapping used by _source_label()
+# ─────────────────────────────────────────────────────────────────────────────
+_ENV_KEY_MAP: dict[str, list[str]] = {
+    "ai.api_key":          ["NAVIG_API_KEY", "OPENAI_API_KEY"],
+    "openrouter_api_key":  ["OPENROUTER_API_KEY"],
+    "telegram.bot_token": ["TELEGRAM_BOT_TOKEN", "NAVIG_TELEGRAM_BOT_TOKEN"],
+    "openai_api_key":      ["OPENAI_API_KEY"],
+    "anthropic_api_key":   ["ANTHROPIC_API_KEY"],
+    "groq_api_key":        ["GROQ_API_KEY"],
+}
+
+_DEPRECATED_KEYS: dict[str, tuple[str, str]] = {
+    "tunnel_auto_cleanup": ("tunnel.auto_cleanup",      "Move to 'tunnel.auto_cleanup'"),
+    "tunnel_port_range":   ("tunnel.port_range",        "Move to 'tunnel.port_range'"),
+    "ai_model_preference": ("ai.model_preference",     "Move to 'ai.model_preference'"),
+    "openrouter_api_key":  ("ai.api_key",              "Move to 'ai.api_key'"),
+}
+
+
+def _source_label(key_path: str, gc: dict, defaults: dict) -> str:
+    """Return source tag: env var | config file | default."""
+    import os
+
+    for env_var in _ENV_KEY_MAP.get(key_path, []):
+        if os.getenv(env_var):
+            return "[dim cyan]env var[/]"
+
+    def _walk(d: dict, path: str):
+        for part in path.split("."):
+            if not isinstance(d, dict):
+                return None
+            d = d.get(part)  # type: ignore[assignment]
+        return d
+
+    gc_val = _walk(gc, key_path)
+    def_val = _walk(defaults, key_path)
+    if gc_val is not None and gc_val != def_val:
+        return "[dim yellow]config file[/]"
+    return "[dim]default[/]"
+
+
+def _mask_secret(value: str | None) -> str:
+    if not value:
+        return "[red]not set[/]"
+    if len(value) <= 12:
+        return "[green]✓ configured[/]"
+    return f"[green]✓[/] [dim]{value[:6]}…{value[-4:]}[/]"
+
+
+def _bool_icon(val: bool) -> str:
+    return "[green]✓[/]" if val else "[red]✗[/]"
+
+
+def _section_table(rows: list[tuple[str, str, str]], gc: dict, defaults: dict) -> Table:
+    """Build a simple 3-column inner table for a config panel."""
+    t = Table(box=box.SIMPLE, show_header=True, pad_edge=False,
+              header_style="bold dim", show_edge=False)
+    t.add_column("Setting",  style="cyan",    min_width=28, no_wrap=True)
+    t.add_column("Value",    min_width=28)
+    t.add_column("Source",   min_width=10)
+    for label, value, key_path in rows:
+        t.add_row(label, value, _source_label(key_path, gc, defaults))
+    return t
+
+
 def show_settings():
     """
-    Display current NAVIG settings including execution mode and confirmation level.
+    Display current NAVIG settings grouped by functional domain.
+
+    Shows current value, config source, and any deprecated keys.
+    Use --json for clean canonical output.
 
     Examples:
         navig config settings
+        navig config settings --json
     """
     config_manager = get_config_manager()
     console = Console()
@@ -693,49 +765,155 @@ def show_settings():
     active_app = config_manager.get_active_app()
     default_host = global_config.get("default_host")
 
-    # Create table
-    table = Table(title="NAVIG Settings", show_header=True)
-    table.add_column("Setting", style="cyan")
-    table.add_column("Value", style="green")
-    table.add_column("Description", style="dim")
+    # Load defaults for source attribution
+    defaults: dict = {}
+    try:
+        from navig.core.config_loader import load_config as _load_config
+        _defaults_file = Path(__file__).resolve().parents[2] / "config" / "defaults.yaml"
+        if _defaults_file.exists():
+            defaults = _load_config(_defaults_file, strict=False) or {}
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
 
-    # Execution settings
-    table.add_row(
-        "Execution Mode",
-        execution_settings["mode"],
-        "interactive: prompts | auto: no prompts",
-    )
-    table.add_row(
-        "Confirmation Level",
-        execution_settings["confirmation_level"],
-        "critical | standard | verbose",
-    )
+    gc = global_config
+    ai = gc.get("ai") or {}
+    routing = ai.get("routing") or {}
+    models = routing.get("models") or {}
 
-    # Active context
-    table.add_row("Active Host", active_host or "(none)", "Currently selected host")
-    table.add_row("Active App", active_app or "(none)", "Currently selected app")
-    table.add_row("Default Host", default_host or "(none)", "Fallback when no active host")
+    # Helper: resolve model from nested or legacy flat key
+    def _model(slot: str) -> str:
+        nested = models.get(slot, {}).get("model")
+        if nested:
+            return nested
+        legacy = routing.get(f"{slot}_model", "")
+        return legacy or "[dim]not set[/]"
 
-    # Other settings
-    table.add_row("Log Level", global_config.get("log_level", "INFO"), "Logging verbosity")
-    table.add_row(
-        "Tunnel Auto-Cleanup",
-        str(global_config.get("tunnel_auto_cleanup", True)),
-        "Auto-stop tunnels when done",
-    )
-    table.add_row("Config Directory", str(config_manager.base_dir), "Configuration storage path")
+    # ── 🤖 AI ──────────────────────────────────────────────────────────────
+    routing_mode = routing.get("mode", "single")
+    routing_enabled = routing.get("enabled", False)
+    model_pref = ai.get("model_preference") or []
+    from navig.ai import _get_model_preference
+    model_pref = _get_model_preference(gc)
+    primary = model_pref[0] if model_pref else "[dim]not set[/]"
 
-    console.print()
-    console.print(table)
-    console.print()
+    console.print(Panel(
+        _section_table([
+            ("Default provider",       ai.get("default_provider") or "[dim]auto (mode-based routing)[/]", "ai.default_provider"),
+            ("Primary model",          primary,                                                             "ai.model_preference"),
+            ("Temperature",            str(ai.get("temperature", 0.7)),                                    "ai.temperature"),
+            ("Max tokens",             str(ai.get("max_tokens", 4096)),                                    "ai.max_tokens"),
+            ("API key",                _mask_secret(ai.get("api_key")
+                                         or gc.get("openrouter_api_key")),                                 "ai.api_key"),
+            ("Tier routing",           f"{_bool_icon(routing_enabled)} ({routing_mode})",                  "ai.routing.enabled"),
+            ("Prefer local (Ollama)",  _bool_icon(routing.get("prefer_local", True)),                      "ai.routing.prefer_local"),
+            ("Small model",            _model("small"),                                                    "ai.routing.models.small.model"),
+            ("Big model",              _model("big"),                                                      "ai.routing.models.big.model"),
+            ("Router model override",   routing.get("router_model") or "[dim]uses small model[/]",         "ai.routing.router_model"),
+        ], gc, defaults),
+        title="[bold cyan]🤖  AI[/]", border_style="cyan", expand=False,
+    ))
 
-    # Show API key status (not the key itself)
-    api_key = global_config.get("openrouter_api_key", "")
-    if api_key:
-        ch.success("OpenRouter API Key: ✓ configured")
+    # ── 📱 Telegram ────────────────────────────────────────────────────────
+    tg = gc.get("telegram") or {}
+    try:
+        from navig.messaging.secrets import resolve_telegram_bot_token
+        tg_token = resolve_telegram_bot_token(gc)
+    except Exception:  # noqa: BLE001
+        tg_token = tg.get("bot_token")
+
+    console.print(Panel(
+        _section_table([
+            ("Bot token",            _mask_secret(tg_token),                                       "telegram.bot_token"),
+            ("Allowed users",        str(tg.get("allowed_users") or []),                           "telegram.allowed_users"),
+            ("Require auth",         _bool_icon(tg.get("require_auth", True)),                    "telegram.require_auth"),
+            ("Session isolation",    _bool_icon(tg.get("session_isolation", True)),               "telegram.session_isolation"),
+            ("Group activation",     tg.get("group_activation_mode", "mention"),                  "telegram.group_activation_mode"),
+            ("Deck URL",             tg.get("deck_url") or "[dim]not set[/]",                     "telegram.deck_url"),
+        ], gc, defaults),
+        title="[bold magenta]📱  Telegram[/]", border_style="magenta", expand=False,
+    ))
+
+    # ── 🔗 Tunnel ──────────────────────────────────────────────────────────
+    tn = gc.get("tunnel") or {}
+    console.print(Panel(
+        _section_table([
+            ("Auto cleanup",   _bool_icon(tn.get("auto_cleanup", True)),      "tunnel.auto_cleanup"),
+            ("Port range",     str(tn.get("port_range", [3307, 3399])),       "tunnel.port_range"),
+            ("Default timeout", f"{tn.get('default_timeout', 300)}s",         "tunnel.default_timeout"),
+        ], gc, defaults),
+        title="[bold blue]🔗  Tunnel[/]", border_style="blue", expand=False,
+    ))
+
+    # ── 🧠 Memory ──────────────────────────────────────────────────────────
+    mem = gc.get("memory") or {}
+    console.print(Panel(
+        _section_table([
+            ("Enabled",             _bool_icon(mem.get("enabled", True)),                              "memory.enabled"),
+            ("Index on startup",    _bool_icon(mem.get("index_on_startup", False)),                    "memory.index_on_startup"),
+            ("Embedding provider",  mem.get("embedding_provider", "openai"),                         "memory.embedding_provider"),
+            ("Embedding model",     mem.get("embedding_model", "text-embedding-3-small"),             "memory.embedding_model"),
+        ], gc, defaults),
+        title="[bold green]🧠  Memory[/]", border_style="green", expand=False,
+    ))
+
+    # ── 🖥️ Deck ────────────────────────────────────────────────────────────
+    dk = gc.get("deck") or {}
+    console.print(Panel(
+        _section_table([
+            ("Enabled",   _bool_icon(dk.get("enabled", True)),   "deck.enabled"),
+            ("Port",      str(dk.get("port", 3080)),             "deck.port"),
+            ("Bind",      dk.get("bind", "127.0.0.1"),           "deck.bind"),
+            ("Dev mode",  _bool_icon(dk.get("dev_mode", False)), "deck.dev_mode"),
+        ], gc, defaults),
+        title="[bold yellow]🖥️  Deck[/]", border_style="yellow", expand=False,
+    ))
+
+    # ── 🌐 Gateway ─────────────────────────────────────────────────────────
+    gw = gc.get("gateway") or {}
+    console.print(Panel(
+        _section_table([
+            ("Enabled",      _bool_icon(gw.get("enabled", False)),             "gateway.enabled"),
+            ("Listen",       f"{gw.get('host', '127.0.0.1')}:{gw.get('port', 8765)}", "gateway.port"),
+            ("Require auth", _bool_icon(gw.get("require_auth", True)),         "gateway.require_auth"),
+        ], gc, defaults),
+        title="[bold]🌐  Gateway[/]", border_style="white", expand=False,
+    ))
+
+    # ── ⚙️ Execution & Context ─────────────────────────────────────────────
+    ex = gc.get("execution") or {}
+    console.print(Panel(
+        _section_table([
+            ("Mode",               execution_settings.get("mode", "interactive"),            "execution.mode"),
+            ("Confirmation level", execution_settings.get("confirmation_level", "standard"), "execution.confirmation_level"),
+            ("Auto-confirm safe",  _bool_icon(ex.get("auto_confirm_safe", False)),            "execution.auto_confirm_safe"),
+            ("Timeout",            f"{ex.get('timeout_seconds', 60)}s",                       "execution.timeout_seconds"),
+            ("Active host",        active_host or "[dim]none[/]",                            "active_host"),
+            ("Active app",         active_app  or "[dim]none[/]",                            "active_app"),
+            ("Default host",       default_host or "[dim]none[/]",                           "default_host"),
+            ("Log level",          gc.get("log_level", "INFO"),                             "log_level"),
+            ("Config dir",         str(config_manager.base_dir),                            "config_dir"),
+            ("Debug mode",         _bool_icon(gc.get("debug_mode", False)),                 "debug_mode"),
+        ], gc, defaults),
+        title="[bold]⚙️  Execution & Context[/]", border_style="white", expand=False,
+    ))
+
+    # ── ⚠️ Deprecated Keys ─────────────────────────────────────────────────
+    found = [(k, *v) for k, v in _DEPRECATED_KEYS.items() if k in gc]
+    if found:
+        dep = Table(box=box.SIMPLE, show_header=True, pad_edge=False,
+                    header_style="bold yellow", show_edge=False)
+        dep.add_column("Legacy Key",     style="yellow", min_width=26)
+        dep.add_column("Canonical Path", style="cyan",   min_width=26)
+        dep.add_column("Migration Hint")
+        for legacy_key, canonical, hint in found:
+            dep.add_row(legacy_key, canonical, hint)
+        console.print(Panel(
+            dep,
+            title="[bold yellow]⚠️  Deprecated Keys — migrate before v2.0[/]",
+            border_style="yellow", expand=False,
+        ))
     else:
-        ch.warning("OpenRouter API Key: ✗ not configured")
-        ch.dim("  Set with: navig config set openrouter_api_key <key>")
+        console.print("[dim green]✓ No deprecated keys found.[/]")
 
 
 # Map config key names that are sensitive → (vault provider, credential type)

@@ -704,6 +704,11 @@ class CallbackHandler:
                 await self._handle_provider_callback(cb_id, cb_data, chat_id, message_id, user_id)
                 return
 
+            # ── AI tier picker callbacks (aitier_* / ai_close) — no store needed ──
+            if cb_data.startswith("aitier_") or cb_data == "ai_close":
+                await self._handle_ai_tier_callback(cb_id, cb_data, chat_id, message_id, user_id)
+                return
+
             # ── Settings callbacks (st_*) — no store needed ──
             if cb_data.startswith("st_"):
                 await self._handle_settings_callback(cb_id, cb_data, chat_id, message_id, user_id)
@@ -1112,6 +1117,58 @@ class CallbackHandler:
             return
 
         await self._answer(cb_id, "⚠️ Unknown model action")
+
+    async def _handle_ai_tier_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        """Handle /ai tier-picker inline buttons (aitier_* / ai_close callbacks)."""
+        if cb_data == "ai_close":
+            await self._answer(cb_id, "✖ Closed")
+            try:
+                await self.channel._api_call(
+                    "deleteMessage",
+                    {"chat_id": chat_id, "message_id": message_id},
+                )
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
+            return
+
+        # aitier_{key} — key is "auto", "small", "big", or "coder_big"
+        tier_raw = cb_data[len("aitier_"):]
+        tier_key = "" if tier_raw == "auto" else tier_raw
+
+        if hasattr(self.channel, "_set_user_tier_pref"):
+            self.channel._set_user_tier_pref(chat_id, user_id, tier_key)
+        else:
+            # Fallback: write directly to _user_model_prefs dict
+            prefs = getattr(self.channel, "_user_model_prefs", None)
+            if prefs is not None:
+                if tier_key:
+                    prefs[user_id] = tier_key
+                else:
+                    prefs.pop(user_id, None)
+
+        # Re-render the /ai panel in-place to reflect the selection
+        handler = getattr(self.channel, "_handle_ai_command", None)
+        if handler:
+            try:
+                await handler(chat_id=chat_id, user_id=user_id, message_id=message_id)
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; if edit fails, still ack the tap
+
+        tier_labels = {
+            "": "🔄 Auto",
+            "small": "⚡ Small",
+            "big": "🧠 Big",
+            "coder_big": "💻 Coder",
+        }
+        label = tier_labels.get(tier_key, tier_key)
+        await self._answer(cb_id, f"{label} tier selected")
 
     async def _handle_provider_callback(
         self,

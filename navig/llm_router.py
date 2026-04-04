@@ -585,6 +585,10 @@ class LLMModeRouter:
 
     def __init__(self, config: dict[str, Any] | None = None):
         self._raw_config = config or {}
+        # ai.default_provider — user-level provider override applied after mode routing
+        self._default_provider: str = (
+            (self._raw_config.get("ai") or {}).get("default_provider") or ""
+        )
         self._router_config: LLMRouterConfig | None = None
         self._load_config()
 
@@ -640,7 +644,7 @@ class LLMModeRouter:
 
     # ── Main routing logic ────────────────────────────────
 
-    def get_config(
+    def _get_config_impl(
         self,
         mode_hint: str,
         prefer_uncensored: bool | None = None,
@@ -718,6 +722,27 @@ class LLMModeRouter:
             resolution_reason=f"Direct route: {provider}:{model}",
             api_key_env=_get_env_var_name(provider),
         )
+
+    def get_config(
+        self,
+        mode_hint: str,
+        prefer_uncensored: bool | None = None,
+    ) -> ResolvedLLMConfig:
+        """Resolve a mode hint into a full LLM configuration.
+
+        Applies ``ai.default_provider`` override when set — lets the user pin a
+        preferred provider without touching per-mode config.
+        """
+        resolved = self._get_config_impl(mode_hint, prefer_uncensored)
+        if self._default_provider and resolved.provider != self._default_provider:
+            resolved.provider = self._default_provider
+            resolved.base_url = PROVIDER_BASE_URLS.get(self._default_provider, "")
+            resolved.api_key_env = _get_env_var_name(self._default_provider)
+            resolved.resolution_reason = (
+                f"{resolved.resolution_reason} "
+                f"[default_provider override: {self._default_provider}]"
+            )
+        return resolved
 
     def _try_uncensored_routing(
         self, mode: str, mode_cfg: LLMModeConfig

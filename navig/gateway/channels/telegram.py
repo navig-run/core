@@ -2213,6 +2213,24 @@ class TelegramChannel:
 
         await TelegramCommandsMixin._handle_ping(self, chat_id, user_id=user_id)
 
+    async def _handle_ai_command(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        text: str = "",
+        message_id: int | None = None,
+    ) -> None:
+        """Delegate to canonical AI tier-picker handler (/ai)."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_ai_command(
+            self,
+            chat_id,
+            user_id=user_id,
+            text=text,
+            message_id=message_id,
+        )
+
     async def _handle_spaces(
         self,
         chat_id: int,

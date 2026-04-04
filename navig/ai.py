@@ -24,6 +24,36 @@ from navig.ai_context import get_ai_context_manager
 logger = logging.getLogger(__name__)
 
 
+_DEFAULT_MODELS = [
+    "deepseek/deepseek-coder-33b-instruct",
+    "google/gemini-flash-1.5",
+    "qwen/qwen-2.5-72b-instruct",
+]
+
+
+def _get_model_preference(global_config: dict) -> list[str]:
+    """Return model preference list from canonical 'ai.model_preference'.
+
+    Falls back to legacy top-level 'ai_model_preference' with a deprecation
+    warning so existing ~/.navig/config.yaml files keep working.
+    """
+    ai_cfg = global_config.get("ai") or {}
+    canonical = ai_cfg.get("model_preference")
+    if canonical:
+        return list(canonical)
+    legacy = global_config.get("ai_model_preference")
+    if legacy:
+        import warnings
+        warnings.warn(
+            "Config key 'ai_model_preference' is deprecated. "
+            "Move it to 'ai.model_preference' in ~/.navig/config.yaml.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        return list(legacy)
+    return list(_DEFAULT_MODELS)
+
+
 class AIAssistant:
     """
     Multi-provider AI integration for context-aware server assistance.
@@ -209,20 +239,13 @@ class AIAssistant:
         if model_override:
             model = model_override
         else:
-            models = self.config.global_config.get("ai_model_preference", [])
+            models = _get_model_preference(self.config.global_config)
             model = models[0] if models else "gpt-4o-mini"
 
         # Build fallback models
         fallback_models = []
         if not model_override:
-            all_models = self.config.global_config.get(
-                "ai_model_preference",
-                [
-                    "openrouter:deepseek/deepseek-coder-33b-instruct",
-                    "openai:gpt-4o-mini",
-                    "anthropic:claude-3-haiku-20240307",
-                ],
-            )
+            all_models = _get_model_preference(self.config.global_config)
             fallback_models = all_models[1:] if len(all_models) > 1 else []
 
         request = CompletionRequest(
@@ -261,15 +284,7 @@ class AIAssistant:
         if model_override:
             models = [model_override]
         else:
-            models = self.config.global_config.get(
-                "ai_model_preference",
-                [
-                    "deepseek/deepseek-coder-33b-instruct",
-                    "google/gemini-flash-1.5",
-                    "qwen/qwen-2.5-72b-instruct",
-                    "meta-llama/llama-3.3-70b-instruct",
-                ],
-            )
+            models = _get_model_preference(self.config.global_config)
 
         # Try each model in fallback chain
         for model in models:
@@ -499,7 +514,7 @@ def ask_ai_with_context(
 
     # Determine model
     if not model:
-        models = config_mgr.global_config.get("ai_model_preference", [])
+        models = _get_model_preference(config_mgr.global_config)
         model = models[0] if models else "google/gemini-2.5-flash"
 
     # Call OpenRouter API

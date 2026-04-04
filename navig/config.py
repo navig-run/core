@@ -528,6 +528,31 @@ Context provided with each query:
         # ── 2. Slow path: full YAML parse ────────────────────────────────────
         slow_result = self._load_global_config(validate=False)
 
+        # ── 2b. Background Pydantic validation ──────────────────────────────
+        # Runs in a daemon thread so it does not block startup.  Issues are
+        # reported as logger.warning() entries, never as exceptions.
+        import threading as _thr
+        import logging as _log
+
+        def _bg_validate(cfg_snapshot: dict) -> None:
+            try:
+                from navig.core.config_schema import validate_global_config
+                result = validate_global_config(cfg_snapshot, strict=False)
+                if result is None:
+                    _log.getLogger(__name__).debug(
+                        "Config schema: validation returned None (schema issues present). "
+                        "Run 'navig config validate' for details."
+                    )
+            except Exception:  # noqa: BLE001
+                pass  # validation must never crash startup
+
+        _thr.Thread(
+            target=_bg_validate,
+            args=(slow_result,),
+            daemon=True,
+            name="navig-config-validate",
+        ).start()
+
         # ── 3. Persist cache for next invocation ────────────────────────────
         if global_config_file.exists():
             try:

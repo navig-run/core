@@ -131,7 +131,9 @@ if PYDANTIC_AVAILABLE:
         fallback_enabled: bool = True
         # New: nested model slots
         models: AIModelsConfig | None = None
-        # Legacy flat keys (backward compat)
+        # Legacy flat keys (backward compat) ─ use ai.routing.models.* instead
+        # These are read by agent/model_router.py RoutingConfig.from_dict() when
+        # the models block is absent.  Will be removed in v2.0.
         small_model: str = ""
         big_model: str = ""
         small_provider: str = "ollama"
@@ -143,7 +145,16 @@ if PYDANTIC_AVAILABLE:
         small_ctx: int = Field(default=2048, ge=256, le=131072)
         big_ctx: int = Field(default=4096, ge=256, le=131072)
         router_model: str | None = None
+        """Override the small model for router_llm_json classification calls.
+
+        When set, this model is used instead of the small model slot to classify
+        each incoming message.  Wired into agent/model_router.py llm_route().
+        """
         router_max_tokens: int = Field(default=80, ge=1, le=1000)
+        """Max tokens allowed for the router classification response.
+
+        Reserved: reads from config but effect limited to router prompt length.
+        """
 
         model_config = ConfigDict(extra="allow")
 

@@ -185,7 +185,20 @@ class TunnelManager:
                 local_port = preferred_port
             except OSError:
                 # Port conflict. Shifting to stealth mode.
-                port_range = self.config.global_config.get("tunnel_port_range", [3307, 3399])
+                _gc = self.config.global_config
+                _nested_range = (_gc.get("tunnel") or {}).get("port_range")
+                if _nested_range:
+                    port_range = _nested_range
+                else:
+                    _flat_range = _gc.get("tunnel_port_range")
+                    if _flat_range:
+                        logger.warning(
+                            "Config key 'tunnel_port_range' is deprecated; "
+                            "use 'tunnel.port_range' in ~/.navig/config.yaml."
+                        )
+                        port_range = _flat_range
+                    else:
+                        port_range = [3307, 3399]
                 local_port = self._find_available_port(port_range[0], port_range[1])
 
         # Build SSH tunnel command
