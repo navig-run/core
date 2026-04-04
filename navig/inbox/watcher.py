@@ -23,6 +23,8 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
+from navig.platform import paths
+
 logger = logging.getLogger("navig.inbox.watcher")
 
 # ── Callbacks ─────────────────────────────────────────────────
@@ -34,12 +36,7 @@ FileCB = Callable[[Path], None]  # called for each detected file
 
 
 def _global_inbox_dir() -> Path:
-    try:
-        from navig.platform.paths import navig_data_dir
-
-        return navig_data_dir() / "inbox"
-    except Exception:
-        return Path.home() / ".navig" / "inbox"
+    return paths.data_dir() / "inbox"
 
 
 def _project_inbox_dir(project_root: Path | None = None) -> Path:

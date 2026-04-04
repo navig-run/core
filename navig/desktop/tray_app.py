@@ -37,6 +37,8 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
+from navig.platform import paths
+
 # Fix console encoding on Windows
 if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -45,7 +47,7 @@ if sys.platform == "win32":
 # ---------------------------------------------------------------------------
 # Logging setup — write to ~/.navig/logs/tray.log
 # ---------------------------------------------------------------------------
-LOG_DIR = Path.home() / ".navig" / "logs"
+LOG_DIR = paths.config_dir() / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / "tray.log"
 
@@ -67,7 +69,7 @@ REGISTRY_KEY = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
 REGISTRY_VALUE = "NavigTray"
 PYTHON_EXE = sys.executable
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-NAVIG_DIR = Path.home() / ".navig"
+NAVIG_DIR = paths.config_dir()
 SETTINGS_FILE = NAVIG_DIR / "tray_settings.json"
 HEALTH_INTERVAL = 15  # seconds
 
@@ -349,7 +351,7 @@ class NavigTray:
             daemon_pid = self.daemon.process.pid
         else:
             try:
-                pid_file = Path.home() / ".navig" / "daemon" / "supervisor.pid"
+                pid_file = paths.config_dir() / "daemon" / "supervisor.pid"
                 if pid_file.exists():
                     daemon_pid = int(pid_file.read_text().strip())
             except Exception:  # noqa: BLE001
@@ -398,7 +400,7 @@ class NavigTray:
         # Clean up PID/state files
         for f in ["supervisor.pid", "state.json"]:
             try:
-                p = Path.home() / ".navig" / "daemon" / f
+                p = paths.config_dir() / "daemon" / f
                 p.unlink(missing_ok=True)
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
@@ -417,7 +419,7 @@ class NavigTray:
             return True
         # Check PID file for externally started daemon
         try:
-            daemon_pid_file = Path.home() / ".navig" / "daemon" / "supervisor.pid"
+            daemon_pid_file = paths.config_dir() / "daemon" / "supervisor.pid"
             if daemon_pid_file.exists():
                 pid = int(daemon_pid_file.read_text().strip())
                 if sys.platform == "win32":

@@ -26,6 +26,8 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+from navig.platform import paths
+
 from navig.identity.models import SocialLink, UserProfile
 
 logger = logging.getLogger(__name__)
@@ -58,7 +60,7 @@ def get_identity_store(db_path: Path | None = None) -> IdentityStore:
     global _store
     if _store is None:
         if db_path is None:
-            db_path = Path.home() / ".navig" / "identity.db"
+            db_path = paths.data_dir() / "identity.db"
         _store = IdentityStore(db_path)
     return _store
 

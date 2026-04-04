@@ -14,6 +14,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from navig.platform import paths
+
 logger = logging.getLogger(__name__)
 
 
@@ -149,7 +151,7 @@ class SessionManager:
         max_messages: int = 100,
         session_timeout_days: int = 7,
     ):
-        self.storage_dir = storage_dir or (Path.home() / ".navig" / "telegram_sessions")
+        self.storage_dir = storage_dir or paths.data_dir() / "telegram_sessions"
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
         self.max_messages = max_messages

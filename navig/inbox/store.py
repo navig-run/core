@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from navig.platform import paths
+
 # Runtime path helper (avoids circular imports)
 _DEFAULT_DB: Path | None = None
 
@@ -24,12 +26,7 @@ def _inbox_db() -> Path:
     global _DEFAULT_DB
     if _DEFAULT_DB is not None:
         return _DEFAULT_DB
-    try:
-        from navig.platform.paths import navig_data_dir
-
-        return navig_data_dir() / "inbox.db"
-    except Exception:
-        return Path.home() / ".navig" / "runtime" / "inbox.db"
+    return paths.data_dir() / "inbox.db"
 
 
 # ── Dataclasses ──────────────────────────────────────────────
