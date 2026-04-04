@@ -605,83 +605,17 @@ def main(
             # User passed something like: navig "check disk space"
             # Treat as natural language query → start AI chat
             query = " ".join(non_flag_args)
-            _run_ai_chat(query, single_query=True)
+            from navig.commands.chat import run_ai_chat
+            run_ai_chat(query, single_query=True)
         else:
             # No args - show help
             show_compact_help()
 
 
-def _run_ai_chat(initial_query: str = None, single_query: bool = False):
-    """Run interactive AI chat or process single query."""
-    from rich.console import Console
-
-    console = Console()
-
-    try:
-        from navig.ai import AIAssistant  # noqa: PLC0415
-
-        _cfg = _get_config_manager()
-        ai = AIAssistant(_cfg)
-
-        if single_query and initial_query:
-            # Single query mode - run and exit
-            import asyncio
-
-            response = asyncio.run(ai.chat(initial_query, []))
-            console.print(response)
-            return
-
-        # Interactive mode
-        console.print("\n🤖 [bold cyan]NAVIG AI Chat[/bold cyan]")
-        console.print("   Type your question or command. Type 'exit' or 'quit' to leave.\n")
-
-        conversation = []
-
-        # Process initial query if provided
-        if initial_query:
-            import asyncio
-
-            console.print(f"[dim]You:[/dim] {initial_query}")
-            response = asyncio.run(ai.chat(initial_query, conversation))
-            console.print(f"\n{response}\n")
-            conversation.append({"role": "user", "content": initial_query})
-            conversation.append({"role": "assistant", "content": response})
-
-        # Interactive loop
-        import asyncio
-
-        while True:
-            try:
-                user_input = input("You: ").strip()
-
-                if not user_input:
-                    continue
-
-                if user_input.lower() in ("exit", "quit", "q", "bye"):
-                    console.print("\n👋 Goodbye!")
-                    break
-
-                response = asyncio.run(ai.chat(user_input, conversation))
-                console.print(f"\n{response}\n")
-
-                conversation.append({"role": "user", "content": user_input})
-                conversation.append({"role": "assistant", "content": response})
-
-                # Keep conversation manageable
-                if len(conversation) > 20:
-                    conversation = conversation[-20:]
-
-            except KeyboardInterrupt:
-                console.print("\n👋 Goodbye!")
-                break
-            except EOFError:
-                break
-
-    except ImportError as e:
-        ch.error(f"AI module not available: {e}")
-        ch.info("Ensure NAVIG is installed correctly: pip install -e .")
-    except Exception as e:
-        ch.error(f"AI chat error: {e}")
+def _run_ai_chat(initial_query: str | None = None, single_query: bool = False) -> None:
+    """Run interactive AI chat — delegates to navig.commands.chat."""
+    from navig.commands.chat import run_ai_chat
+    run_ai_chat(initial_query, single_query=single_query)
 
 
 @app.command("version")
@@ -738,7 +672,8 @@ def chat_command(
     query: str | None = typer.Argument(None, help="Optional initial query"),
 ):
     """Start interactive AI chat (alias for running 'navig' with a query)."""
-    _run_ai_chat(query, single_query=False)
+    from navig.commands.chat import run_ai_chat
+    run_ai_chat(query, single_query=False)
 
 
 @app.command("help")
@@ -1105,6 +1040,8 @@ def whoami_command(
     ),
 ) -> None:
     """Show your NAVIG node identity sigil card."""
+    from navig.commands.whoami import run_whoami
+
     if debug:
         try:
             from navig.platform.paths import navig_config_dir
