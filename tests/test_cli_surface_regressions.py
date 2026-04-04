@@ -92,6 +92,8 @@ def test_mesh_help_command_is_available(tmp_path: Path):
         "mode",
         "matrix",
         "plans",
+        "agent",
+        "space",
     ],
 )
 def test_domain_launcher_non_tty_exits_cleanly_with_hint(tmp_path: Path, domain: str):
