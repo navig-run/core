@@ -2101,103 +2101,9 @@ def task_complete(
     raise typer.Exit(result.returncode)
 
 
-context_app = typer.Typer(
-    help="Manage host/app context for current project",
-    invoke_without_command=True,
-    no_args_is_help=False,
-)
-app.add_typer(context_app, name="context")
-app.add_typer(context_app, name="ctx", hidden=True)
-
-
-@context_app.callback()
-def context_callback(ctx: typer.Context):
-    """Context management - shows current context if no subcommand."""
-    if ctx.invoked_subcommand is None:
-        from navig.commands.context import show_context
-
-        show_context(ctx.obj)
-        raise typer.Exit()
-
-
-@context_app.command("show")
-def context_show(
-    ctx: typer.Context,
-    plain: bool = typer.Option(False, "--plain", help="One-line output for scripting"),
-    json_out: bool = typer.Option(False, "--json", help="JSON output"),
-):
-    """
-    Show current context resolution.
-
-    Displays which host/app is active and where the context is resolved from
-    (environment variable, project config, user cache, or default).
-
-    Examples:
-        navig context show
-        navig context show --json
-        navig context --plain
-    """
-    from navig.commands.context import show_context
-
-    ctx.obj["plain"] = plain
-    if json_out:
-        ctx.obj["json"] = True
-    show_context(ctx.obj)
-
-
-@context_app.command("set")
-def context_set(
-    ctx: typer.Context,
-    host: str | None = typer.Option(None, "--host", "-h", help="Host to set as project default"),
-    app_name: str | None = typer.Option(None, "--app", "-a", help="App to set as project default"),
-):
-    """
-    Set project-local context in .navig/config.yaml.
-
-    This creates a project-specific context that takes precedence over
-    the global user context (set with 'navig host use').
-
-    Examples:
-        navig context set --host production
-        navig context set --host staging --app myapp
-        navig context set --app backend
-    """
-    from navig.commands.context import set_context
-
-    set_context(host=host, app=app_name, opts=ctx.obj)
-
-
-@context_app.command("clear")
-def context_clear(ctx: typer.Context):
-    """
-    Clear project-local context.
-
-    Removes active_host and active_app from .navig/config.yaml.
-    After clearing, context will resolve from global user settings.
-
-    Examples:
-        navig context clear
-    """
-    from navig.commands.context import clear_context
-
-    clear_context(ctx.obj)
-
-
-@context_app.command("init")
-def context_init(ctx: typer.Context):
-    """
-    Initialize .navig directory in current project.
-
-    Creates .navig/config.yaml with the current active host.
-    If a legacy .navig file exists, it will be migrated.
-    Also adds .navig/ to .gitignore if in a git repository.
-
-    Examples:
-        navig context init
-    """
-    from navig.commands.context import init_context
-
-    init_context(ctx.obj)
+# ── context_app: extracted to navig/commands/context.py ─────────────────────
+# Registration via _EXTERNAL_CMD_MAP in registration.py
+# Aliases: "context" (canonical), "ctx" (hidden)
 
 
 # ============================================================================
@@ -4004,62 +3910,8 @@ def flow_template_run(
 # (flow_app, registered via _EXTERNAL_CMD_MAP → navig.commands.flow).
 
 
-# ============================================================================
-# WIKI MANAGEMENT
-# ============================================================================
-
-# Lazy-load wiki commands so `navig --help` stays fast.
-from typer.core import TyperGroup
-
-
-class _LazyWikiGroup(TyperGroup):
-    _loaded: bool = False
-
-    def _ensure_loaded(self) -> None:
-        if self._loaded:
-            return
-
-        # Import only when the user actually invokes `navig wiki ...`.
-        from typer.main import get_command
-
-        from navig.commands import wiki as wiki_module
-
-        wiki_click_cmd = get_command(wiki_module.wiki_app)
-        # Copy subcommands from the real wiki group into this group.
-        if hasattr(wiki_click_cmd, "commands"):
-            for name, cmd in wiki_click_cmd.commands.items():
-                # Avoid overwriting anything already registered.
-                if name not in self.commands:
-                    self.add_command(cmd, name)
-
-        self._loaded = True
-
-    def get_command(self, ctx, cmd_name):
-        self._ensure_loaded()
-        return super().get_command(ctx, cmd_name)
-
-    def list_commands(self, ctx):
-        self._ensure_loaded()
-        return super().list_commands(ctx)
-
-
-wiki_app = typer.Typer(
-    help="Wiki & knowledge base management",
-    invoke_without_command=True,
-    no_args_is_help=False,
-    cls=_LazyWikiGroup,
-)
-
-
-@wiki_app.callback()
-def wiki_callback(ctx: typer.Context):
-    """Wiki commands - run without subcommand for help."""
-    if ctx.invoked_subcommand is None:
-        show_subcommand_help("wiki", ctx)
-        raise typer.Exit()
-
-
-app.add_typer(wiki_app, name="wiki")
+# ── wiki_app: extracted to navig/commands/wiki.py ──────────────────────────
+# Registration via _EXTERNAL_CMD_MAP in registration.py
 
 
 # ============================================================================

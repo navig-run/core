@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import typer
+
 from navig import console_helper as ch
 from navig.config import get_config_manager
 
@@ -325,3 +327,90 @@ def init_context(opts: dict[str, Any] = None) -> None:
             with open(gitignore, "a", encoding="utf-8") as f:
                 f.write("\n# NAVIG project context\n.navig/\n")
             ch.dim("Added .navig/ to .gitignore")
+
+
+context_app = typer.Typer(
+    help="Manage host/app context for current project",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@context_app.callback()
+def context_callback(ctx: typer.Context):
+    """Context management - shows current context if no subcommand."""
+    if ctx.invoked_subcommand is None:
+        show_context(ctx.obj)
+        raise typer.Exit()
+
+
+@context_app.command("show")
+def context_show(
+    ctx: typer.Context,
+    plain: bool = typer.Option(False, "--plain", help="One-line output for scripting"),
+    json_out: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """
+    Show current context resolution.
+
+    Displays which host/app is active and where the context is resolved from
+    (environment variable, project config, user cache, or default).
+
+    Examples:
+        navig context show
+        navig context show --json
+        navig context --plain
+    """
+    ctx.obj["plain"] = plain
+    if json_out:
+        ctx.obj["json"] = True
+    show_context(ctx.obj)
+
+
+@context_app.command("set")
+def context_set(
+    ctx: typer.Context,
+    host: str | None = typer.Option(None, "--host", "-h", help="Host to set as project default"),
+    app_name: str | None = typer.Option(None, "--app", "-a", help="App to set as project default"),
+):
+    """
+    Set project-local context in .navig/config.yaml.
+
+    This creates a project-specific context that takes precedence over
+    the global user context (set with 'navig host use').
+
+    Examples:
+        navig context set --host production
+        navig context set --host staging --app myapp
+        navig context set --app backend
+    """
+    set_context(host=host, app=app_name, opts=ctx.obj)
+
+
+@context_app.command("clear")
+def context_clear(ctx: typer.Context):
+    """
+    Clear project-local context.
+
+    Removes active_host and active_app from .navig/config.yaml.
+    After clearing, context will resolve from global user settings.
+
+    Examples:
+        navig context clear
+    """
+    clear_context(ctx.obj)
+
+
+@context_app.command("init")
+def context_init(ctx: typer.Context):
+    """
+    Initialize .navig directory in current project.
+
+    Creates .navig/config.yaml with the current active host.
+    If a legacy .navig file exists, it will be migrated.
+    Also adds .navig/ to .gitignore if in a git repository.
+
+    Examples:
+        navig context init
+    """
+    init_context(ctx.obj)

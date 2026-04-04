@@ -79,6 +79,8 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "net": ("navig.commands.net", "net_app"),
     "host": ("navig.commands.host", "host_app"),
     "h": ("navig.commands.host", "host_app"),
+    "context": ("navig.commands.context", "context_app"),
+    "ctx": ("navig.commands.context", "context_app"),
     "app": ("navig.commands.app", "app_app"),
     "a": ("navig.commands.app", "app_app"),
     "file": ("navig.commands.files", "file_app"),
@@ -98,6 +100,7 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "env": ("navig.cli.__init__", "config_app"),
     "secret": ("navig.commands.vault", "vault_app"),
     "job": ("navig.commands.flow", "flow_app"),
+    "wiki": ("navig.commands.wiki", "wiki_app"),
     "alias": ("navig.commands.script", "script_app"),
     "server": ("navig.commands.server", "server_app"),
     "s": ("navig.commands.server", "server_app"),
@@ -188,7 +191,7 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
 
 # Hidden command aliases (short forms and deprecated names)
 _HIDDEN_COMMANDS: frozenset[str] = frozenset({
-    "tg", "mx", "fx", "h", "a", "f", "l", "s", "database", "hist"
+    "tg", "mx", "fx", "h", "a", "f", "l", "s", "database", "hist", "ctx"
 })
 
 
