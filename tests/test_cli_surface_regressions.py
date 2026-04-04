@@ -75,19 +75,19 @@ def test_mesh_help_command_is_available(tmp_path: Path):
 
 
 def test_bot_start_uses_configured_gateway_port_when_unspecified(monkeypatch):
-    import navig.cli as cli
+    import navig.commands.gateway as gw_mod
 
     recorded: dict[str, list[str]] = {}
 
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "token")
-    monkeypatch.setattr(cli, "_load_gateway_cli_defaults", lambda: (8789, "127.0.0.1"))
+    monkeypatch.setattr(gw_mod, "_load_gateway_cli_defaults", lambda: (8789, "127.0.0.1"))
     monkeypatch.setattr(
         subprocess,
         "Popen",
         lambda cmd, **kwargs: recorded.setdefault("cmd", cmd) or SimpleNamespace(),
     )
 
-    cli.bot_start(gateway=True, port=None, background=True)
+    gw_mod.bot_start(gateway=True, port=None, background=True)
 
     assert recorded["cmd"][-1] == "8789"
     assert "None" not in recorded["cmd"]
@@ -95,11 +95,12 @@ def test_bot_start_uses_configured_gateway_port_when_unspecified(monkeypatch):
 
 def test_quick_start_uses_configured_gateway_port_when_unspecified(monkeypatch):
     import navig.cli as cli
+    import navig.commands.gateway as gw_mod
 
     recorded: dict[str, list[str]] = {}
 
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "token")
-    monkeypatch.setattr(cli, "_load_gateway_cli_defaults", lambda: (8789, "127.0.0.1"))
+    monkeypatch.setattr(gw_mod, "_load_gateway_cli_defaults", lambda: (8789, "127.0.0.1"))
     monkeypatch.setattr(
         subprocess,
         "Popen",

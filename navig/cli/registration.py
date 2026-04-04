@@ -74,6 +74,10 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "server-template": ("navig.commands.server_template", "server_template_app"),
     # ── Phase 2a: gateway extracted from inline block ─────────────────────────
     "gateway": ("navig.commands.gateway", "gateway_app"),
+    "bot": ("navig.commands.gateway", "bot_app"),
+    "heartbeat": ("navig.commands.gateway", "heartbeat_app"),
+    "approve": ("navig.commands.gateway", "approve_app"),
+    "queue": ("navig.commands.gateway", "queue_app"),
     "cortex": ("navig.commands.cortex", "cortex_app"),
     "desktop": ("navig.commands.desktop", "desktop_app"),
     "net": ("navig.commands.net", "net_app"),

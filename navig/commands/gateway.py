@@ -33,6 +33,20 @@ def _gateway_request_headers() -> dict[str, str]:
     return gateway_request_headers()
 
 
+def _gw_request(method: str, path: str, **kwargs):
+    """Send an authenticated request to the local gateway."""
+    from navig.gateway.client import gateway_request
+
+    return gateway_request(method, path, **kwargs)
+
+
+def _load_gateway_cli_defaults() -> tuple[int, str]:
+    """Return gateway port/host from config with stable CLI fallbacks."""
+    from navig.gateway.client import gateway_cli_defaults
+
+    return gateway_cli_defaults()
+
+
 gateway_app = typer.Typer(
     name="gateway",
     help="Manage the autonomous agent gateway",
@@ -604,3 +618,698 @@ def stop_cmd(ctx: dict[str, Any]) -> None:
 def session_cmd(ctx: dict[str, Any]) -> None:
     """Wrapper for gateway session list command (interactive menu)."""
     gateway_session(action="list", session_key=None)
+
+
+# ============================================================================
+# BOT - TELEGRAM BOT LAUNCHER
+# ============================================================================
+
+bot_app = typer.Typer(
+    help="Telegram bot and multi-channel agent launcher",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@bot_app.callback()
+def bot_callback(ctx: typer.Context):
+    """Bot commands - run without subcommand to start bot."""
+    if ctx.invoked_subcommand is None:
+        # Default action: start bot in direct mode
+        ctx.invoke(bot_start)
+
+
+@bot_app.command("start")
+def bot_start(
+    gateway: bool = typer.Option(
+        False, "--gateway", "-g", help="Start with gateway (session persistence)"
+    ),
+    port: int | None = typer.Option(
+        None,
+        "--port",
+        "-p",
+        help="Gateway port (default: gateway.port from config, fallback 8789)",
+    ),
+    background: bool = typer.Option(False, "--background", "-b", help="Run in background"),
+):
+    """
+    Start the NAVIG Telegram bot.
+
+    By default runs in direct mode (standalone).
+    Use --gateway to start both gateway and bot together.
+
+    Examples:
+        navig bot                    # Start bot (direct mode)
+        navig bot --gateway          # Start gateway + bot together
+        navig bot -g -p 9000         # Gateway on custom port
+    """
+    import os
+    import subprocess
+    import sys
+
+    # Check for telegram token (vault-first, env/config fallback)
+    from navig.messaging.secrets import resolve_telegram_bot_token
+
+    telegram_token = resolve_telegram_bot_token()
+    if not telegram_token:
+        ch.error("TELEGRAM_BOT_TOKEN not set!")
+        ch.info("  Get token from @BotFather on Telegram")
+        ch.info("  Add to .env file: TELEGRAM_BOT_TOKEN=your-token")
+        raise typer.Exit(1)
+
+    if gateway:
+        if port is None:
+            port, _host = _load_gateway_cli_defaults()
+        ch.info("Starting NAVIG with Gateway + Telegram Bot...")
+        ch.info(f"  Gateway: http://localhost:{port}")
+        ch.info("  Bot: Telegram")
+        cmd = [
+            sys.executable,
+            "-m",
+            "navig.daemon.telegram_worker",
+            "--port",
+            str(port),
+        ]
+        if background:
+            if sys.platform == "win32":
+                subprocess.Popen(
+                    cmd,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            else:
+                subprocess.Popen(
+                    cmd,
+                    start_new_session=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            ch.success("Started in background")
+        else:
+            os.execv(sys.executable, cmd)
+    else:
+        ch.info("Starting NAVIG Telegram Bot (direct mode)...")
+        ch.warning("⚠️  Conversations reset on bot restart")
+        ch.info("   Use 'navig bot --gateway' for session persistence")
+        cmd = [sys.executable, "-m", "navig.daemon.telegram_worker", "--no-gateway"]
+        if background:
+            if sys.platform == "win32":
+                subprocess.Popen(
+                    cmd,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            else:
+                subprocess.Popen(
+                    cmd,
+                    start_new_session=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            ch.success("Started in background")
+        else:
+            os.execv(sys.executable, cmd)
+
+
+@bot_app.command("status")
+def bot_status():
+    """Check if bot is running."""
+    import subprocess
+    import sys
+
+    patterns = r"navig\.daemon\.telegram_worker|navig\.daemon\.entry|navig gateway start"
+
+    try:
+        if sys.platform == "win32":
+            ps_cmd = (
+                "(Get-CimInstance Win32_Process -Filter \"Name='python.exe' OR Name='pythonw.exe'\") "
+                f"| Where-Object {{ $_.CommandLine -match '{patterns}' }} "
+                "| Select-Object -ExpandProperty ProcessId"
+            )
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps_cmd],
+                capture_output=True,
+                text=True,
+            )
+            pids = [line.strip() for line in result.stdout.splitlines() if line.strip().isdigit()]
+            if pids:
+                ch.success("Bot appears to be running")
+                ch.info(f"  PIDs: {', '.join(pids)}")
+            else:
+                ch.warning("Bot does not appear to be running")
+        else:
+            result = subprocess.run(["pgrep", "-f", patterns], capture_output=True, text=True)
+            if result.returncode == 0:
+                ch.success("Bot is running")
+                ch.info(f"  PIDs: {result.stdout.strip()}")
+            else:
+                ch.warning("Bot is not running")
+    except Exception as e:
+        ch.error(f"Could not check status: {e}")
+
+
+@bot_app.command("stop")
+def bot_stop():
+    """Stop all running NAVIG bot/gateway processes."""
+    import subprocess
+    import sys
+
+    patterns = r"navig\.daemon\.telegram_worker|navig\.daemon\.entry|navig gateway start"
+
+    try:
+        if sys.platform == "win32":
+            ps_cmd = (
+                "(Get-CimInstance Win32_Process -Filter \"Name='python.exe' OR Name='pythonw.exe'\") "
+                f"| Where-Object {{ $_.CommandLine -match '{patterns}' }} "
+                "| Select-Object -ExpandProperty ProcessId"
+            )
+            find_result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps_cmd],
+                capture_output=True,
+                text=True,
+            )
+            pids = [
+                line.strip() for line in find_result.stdout.splitlines() if line.strip().isdigit()
+            ]
+            if not pids:
+                ch.warning("No running processes found")
+                return
+            for pid in pids:
+                subprocess.run(
+                    ["taskkill", "/PID", pid, "/T", "/F"],
+                    capture_output=True,
+                    text=True,
+                )
+            ch.success(f"Stopped NAVIG bot/gateway processes: {', '.join(pids)}")
+        else:
+            result = subprocess.run(["pkill", "-f", patterns], capture_output=True, text=True)
+            if result.returncode == 0:
+                ch.success("Stopped NAVIG bot/gateway")
+            else:
+                ch.warning("No running processes found")
+    except Exception as e:
+        ch.error(f"Error stopping: {e}")
+
+
+# ============================================================================
+# HEARTBEAT - PERIODIC HEALTH CHECKS
+# ============================================================================
+
+heartbeat_app = typer.Typer(
+    help="Periodic health check system",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@heartbeat_app.callback()
+def heartbeat_callback(ctx: typer.Context):
+    """Heartbeat commands - run without subcommand for help."""
+    from navig.cli._callbacks import show_subcommand_help
+
+    if ctx.invoked_subcommand is None:
+        show_subcommand_help("heartbeat", ctx)
+        raise typer.Exit()
+
+
+@heartbeat_app.command("status")
+def heartbeat_status():
+    """Show heartbeat status."""
+    from datetime import datetime
+
+    import requests
+
+    try:
+        response = _gw_request("GET", "/status", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            hb = data.get("heartbeat", {})
+            config = data.get("config", {})
+
+            if hb.get("running"):
+                ch.success("Heartbeat is running")
+
+                interval = config.get("heartbeat_interval", "30m")
+                ch.info(f"  Interval: {interval}")
+
+                next_run = hb.get("next_run")
+                if next_run:
+                    try:
+                        next_dt = datetime.fromisoformat(next_run.replace("Z", "+00:00"))
+                        now = datetime.now(next_dt.tzinfo) if next_dt.tzinfo else datetime.now()
+                        diff = next_dt - now
+                        minutes = int(diff.total_seconds() / 60)
+                        if minutes > 0:
+                            ch.info(f"  Next check: in {minutes} minutes")
+                        else:
+                            ch.info("  Next check: imminent")
+                    except Exception:
+                        ch.info(f"  Next check: {next_run}")
+                else:
+                    ch.info("  Next check: unknown")
+
+                last_run = hb.get("last_run")
+                if last_run:
+                    ch.info(f"  Last run: {last_run}")
+                else:
+                    ch.info("  Last run: never")
+            else:
+                ch.warning("Heartbeat is not running")
+                ch.info("Start gateway to enable heartbeat: navig gateway start")
+        else:
+            ch.error(f"Failed to get status: {response.status_code}")
+    except requests.exceptions.ConnectionError:
+        ch.warning("Gateway is not running")
+        ch.info("Start with: navig gateway start")
+    except Exception as e:
+        ch.error(f"Error: {e}")
+
+
+@heartbeat_app.command("trigger")
+def heartbeat_trigger():
+    """Trigger an immediate heartbeat check."""
+    import requests
+
+    ch.info("Triggering heartbeat check...")
+
+    try:
+        response = _gw_request("POST", "/heartbeat/trigger", timeout=300)
+        if response.status_code == 200:
+            result = response.json()
+            if result.get("suppressed"):
+                ch.success("HEARTBEAT_OK - All systems healthy")
+            elif result.get("issues"):
+                ch.warning(f"Issues found: {len(result['issues'])}")
+                for issue in result["issues"]:
+                    ch.warning(f"  • {issue}")
+            else:
+                ch.success("Heartbeat completed")
+        else:
+            ch.error(f"Heartbeat failed: {response.status_code}")
+    except requests.exceptions.ConnectionError:
+        ch.warning("Gateway is not running")
+        ch.info("Start with: navig gateway start")
+    except Exception as e:
+        ch.error(f"Error: {e}")
+
+
+@heartbeat_app.command("history")
+def heartbeat_history(
+    limit: int = typer.Option(10, "--limit", "-n", help="Number of entries to show"),
+):
+    """Show heartbeat history."""
+    import requests
+
+    try:
+        response = _gw_request("GET", f"/heartbeat/history?limit={limit}", timeout=5)
+        if response.status_code == 200:
+            history = response.json().get("history", [])
+            if history:
+                ch.info(f"Heartbeat history (last {len(history)}):")
+                for entry in history:
+                    status = "✅" if entry.get("success") else "❌"
+                    suppressed = " (OK)" if entry.get("suppressed") else ""
+                    ch.info(
+                        f"  {status} {entry.get('timestamp', '?')}{suppressed} - {entry.get('duration', 0):.1f}s"
+                    )
+            else:
+                ch.info("No heartbeat history")
+        else:
+            ch.error(f"Failed to get history: {response.status_code}")
+    except requests.exceptions.ConnectionError:
+        ch.warning("Gateway is not running")
+    except Exception as e:
+        ch.error(f"Error: {e}")
+
+
+@heartbeat_app.command("configure")
+def heartbeat_configure(
+    interval: int = typer.Option(None, "--interval", "-i", help="Interval in minutes"),
+    enable: bool = typer.Option(None, "--enable/--disable", help="Enable/disable heartbeat"),
+):
+    """Configure heartbeat settings."""
+    from navig.config import ConfigManager
+
+    config_manager = ConfigManager()
+
+    if interval is not None or enable is not None:
+        config = config_manager.global_config
+        if "heartbeat" not in config:
+            config["heartbeat"] = {}
+
+        if interval is not None:
+            config["heartbeat"]["interval"] = interval
+            ch.success(f"Set heartbeat interval to {interval} minutes")
+
+        if enable is not None:
+            config["heartbeat"]["enabled"] = enable
+            ch.success(f"Heartbeat {'enabled' if enable else 'disabled'}")
+
+        config_manager.save_global()
+    else:
+        config = config_manager.global_config
+        hb = config.get("heartbeat", {})
+        ch.info("Heartbeat configuration:")
+        ch.info(f"  Enabled: {hb.get('enabled', True)}")
+        ch.info(f"  Interval: {hb.get('interval', 30)} minutes")
+        ch.info(f"  Timeout: {hb.get('timeout', 300)} seconds")
+
+
+# ============================================================================
+# APPROVAL SYSTEM (Human-in-the-loop for agent actions)
+# ============================================================================
+
+approve_app = typer.Typer(
+    help="Human approval system for agent actions",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@approve_app.callback()
+def approve_callback(ctx: typer.Context):
+    """Approval management - run without subcommand to list pending."""
+    if ctx.invoked_subcommand is None:
+        approve_list()
+
+
+@approve_app.command("list")
+def approve_list():
+    """List pending approval requests."""
+    import requests
+
+    try:
+        response = _gw_request("GET", "/approval/pending", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            pending = data.get("pending", [])
+
+            if not pending:
+                ch.info("No pending approval requests")
+                return
+
+            ch.info(f"Pending approval requests ({len(pending)}):")
+            for req in pending:
+                level_color = {
+                    "confirm": "yellow",
+                    "dangerous": "red",
+                    "never": "bright_red",
+                }.get(req.get("level", ""), "white")
+
+                ch.console.print(
+                    f"  [{req['id']}] {req['action']} ({req['level']}) - {req.get('description', '')}",
+                    style=level_color,
+                )
+        else:
+            ch.error(f"Failed: {response.status_code}")
+    except requests.exceptions.ConnectionError:
+        ch.warning("Gateway is not running")
+    except Exception as e:
+        ch.error(f"Error: {e}")
+
+
+@approve_app.command("yes")
+def approve_yes(
+    request_id: str = typer.Argument(..., help="Approval request ID"),
+    reason: str = typer.Option("", "--reason", "-r", help="Optional reason"),
+):
+    """Approve a pending request."""
+    import requests
+
+    try:
+        response = _gw_request(
+            "POST",
+            f"/approval/{request_id}/respond",
+            json={"approved": True, "reason": reason},
+            timeout=5,
+        )
+        if response.status_code == 200:
+            ch.success(f"Request {request_id} approved")
+        elif response.status_code == 404:
+            ch.error(f"Request {request_id} not found")
+        else:
+            ch.error(f"Failed: {response.json().get('error', 'Unknown error')}")
+    except requests.exceptions.ConnectionError:
+        ch.warning("Gateway is not running")
+    except Exception as e:
+        ch.error(f"Error: {e}")
+
+
+@approve_app.command("no")
+def approve_no(
+    request_id: str = typer.Argument(..., help="Approval request ID"),
+    reason: str = typer.Option("", "--reason", "-r", help="Optional reason"),
+):
+    """Deny a pending request."""
+    import requests
+
+    try:
+        response = _gw_request(
+            "POST",
+            f"/approval/{request_id}/respond",
+            json={"approved": False, "reason": reason},
+            timeout=5,
+        )
+        if response.status_code == 200:
+            ch.success(f"Request {request_id} denied")
+        elif response.status_code == 404:
+            ch.error(f"Request {request_id} not found")
+        else:
+            ch.error(f"Failed: {response.json().get('error', 'Unknown error')}")
+    except requests.exceptions.ConnectionError:
+        ch.warning("Gateway is not running")
+    except Exception as e:
+        ch.error(f"Error: {e}")
+
+
+@approve_app.command("policy")
+def approve_policy():
+    """Show approval policy (patterns and levels)."""
+    try:
+        from navig.approval import ApprovalPolicy
+
+        policy = ApprovalPolicy.default()
+
+        ch.info("Approval Policy Patterns:")
+        ch.console.print("\n[bold green]SAFE (no approval needed):[/bold green]")
+        for pattern in policy.patterns.get("safe", []):
+            ch.console.print(f"  • {pattern}")
+
+        ch.console.print("\n[bold yellow]CONFIRM (requires approval):[/bold yellow]")
+        for pattern in policy.patterns.get("confirm", []):
+            ch.console.print(f"  • {pattern}")
+
+        ch.console.print("\n[bold red]DANGEROUS (always confirm):[/bold red]")
+        for pattern in policy.patterns.get("dangerous", []):
+            ch.console.print(f"  • {pattern}")
+
+        ch.console.print("\n[bold bright_red]NEVER (always denied):[/bold bright_red]")
+        for pattern in policy.patterns.get("never", []):
+            ch.console.print(f"  • {pattern}")
+    except ImportError:
+        ch.error("Approval module not available")
+    except Exception as e:
+        ch.error(f"Error: {e}")
+
+
+# ============================================================================
+# TASK QUEUE (Async operations queue)
+# ============================================================================
+
+queue_app = typer.Typer(
+    help="Task queue for async operations",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@queue_app.callback()
+def queue_callback(ctx: typer.Context):
+    """Task queue - run without subcommand to list tasks."""
+    if ctx.invoked_subcommand is None:
+        queue_list()
+
+
+@queue_app.command("list")
+def queue_list(
+    status: str | None = typer.Option(None, "--status", "-s", help="Filter by status"),
+    limit: int = typer.Option(20, "--limit", "-n", help="Max tasks to show"),
+):
+    """List queued tasks."""
+    import requests
+
+    try:
+        params = {"limit": limit}
+        if status:
+            params["status"] = status
+
+        response = _gw_request("GET", "/tasks", params=params, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            tasks = data.get("tasks", [])
+
+            if not tasks:
+                ch.info("No tasks in queue")
+                return
+
+            ch.info(f"Tasks ({len(tasks)}):")
+            for task in tasks:
+                status_color = {
+                    "pending": "blue",
+                    "queued": "cyan",
+                    "running": "yellow",
+                    "completed": "green",
+                    "failed": "red",
+                    "cancelled": "dim",
+                }.get(task.get("status", ""), "white")
+
+                ch.console.print(
+                    f"  [{task['id']}] {task['name']} - {task['status']}",
+                    style=status_color,
+                )
+        elif response.status_code == 503:
+            ch.warning("Tasks module not available")
+        else:
+            ch.error(f"Failed: {response.status_code}")
+    except requests.exceptions.ConnectionError:
+        ch.warning("Gateway is not running")
+    except Exception as e:
+        ch.error(f"Error: {e}")
+
+
+@queue_app.command("add")
+def queue_add(
+    name: str = typer.Argument(..., help="Task name"),
+    handler: str = typer.Argument(..., help="Handler to execute"),
+    params: str | None = typer.Option(None, "--params", "-p", help="JSON params"),
+    priority: int = typer.Option(50, "--priority", help="Priority (lower = higher)"),
+):
+    """Add a task to the queue."""
+    import json as json_mod
+
+    import requests
+
+    try:
+        task_params = {}
+        if params:
+            task_params = json_mod.loads(params)
+
+        response = _gw_request(
+            "POST",
+            "/tasks",
+            json={
+                "name": name,
+                "handler": handler,
+                "params": task_params,
+                "priority": priority,
+            },
+            timeout=5,
+        )
+        if response.status_code == 200:
+            data = response.json()
+            ch.success(f"Task added: {data.get('id')}")
+        elif response.status_code == 503:
+            ch.warning("Tasks module not available")
+        else:
+            ch.error(f"Failed: {response.json().get('error', 'Unknown error')}")
+    except json_mod.JSONDecodeError:
+        ch.error("Invalid JSON in --params")
+    except requests.exceptions.ConnectionError:
+        ch.warning("Gateway is not running")
+    except Exception as e:
+        ch.error(f"Error: {e}")
+
+
+@queue_app.command("show")
+def queue_show(
+    task_id: str = typer.Argument(..., help="Task ID"),
+):
+    """Show task details."""
+    import requests
+
+    try:
+        response = _gw_request("GET", f"/tasks/{task_id}", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            ch.info(f"Task: {data.get('name', 'unknown')}")
+            ch.console.print(f"  ID: {data.get('id')}")
+            ch.console.print(f"  Handler: {data.get('handler')}")
+            ch.console.print(f"  Status: {data.get('status')}")
+            ch.console.print(f"  Priority: {data.get('priority')}")
+            if data.get("error"):
+                ch.console.print(f"  Error: {data.get('error')}", style="red")
+            if data.get("result"):
+                ch.console.print(f"  Result: {data.get('result')}")
+        elif response.status_code == 404:
+            ch.error(f"Task {task_id} not found")
+        elif response.status_code == 503:
+            ch.warning("Tasks module not available")
+        else:
+            ch.error(f"Failed: {response.status_code}")
+    except requests.exceptions.ConnectionError:
+        ch.warning("Gateway is not running")
+    except Exception as e:
+        ch.error(f"Error: {e}")
+
+
+@queue_app.command("cancel")
+def queue_cancel(
+    task_id: str = typer.Argument(..., help="Task ID to cancel"),
+):
+    """Cancel a pending task."""
+    import requests
+
+    try:
+        response = _gw_request("POST", f"/tasks/{task_id}/cancel", timeout=5)
+        if response.status_code == 200:
+            ch.success(f"Task {task_id} cancelled")
+        elif response.status_code == 404:
+            ch.error(f"Task {task_id} not found")
+        elif response.status_code == 503:
+            ch.warning("Tasks module not available")
+        else:
+            ch.error(f"Failed: {response.json().get('error', 'Unknown error')}")
+    except requests.exceptions.ConnectionError:
+        ch.warning("Gateway is not running")
+    except Exception as e:
+        ch.error(f"Error: {e}")
+
+
+@queue_app.command("stats")
+def queue_stats():
+    """Show queue statistics."""
+    import requests
+
+    try:
+        response = _gw_request("GET", "/tasks/stats", timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+
+            ch.info("Task Queue Statistics:")
+            ch.console.print(f"  Total tasks: {data.get('total_tasks', 0)}")
+            ch.console.print(f"  Heap size: {data.get('heap_size', 0)}")
+            ch.console.print(f"  Completed: {data.get('completed_count', 0)}")
+
+            counts = data.get("status_counts", {})
+            if counts:
+                ch.console.print("\n  Status breakdown:")
+                for status, count in counts.items():
+                    ch.console.print(f"    {status}: {count}")
+
+            worker = data.get("worker", {})
+            if worker:
+                ch.console.print("\n  Worker:")
+                ch.console.print(f"    Running: {worker.get('running', False)}")
+                ch.console.print(f"    Active tasks: {worker.get('active_tasks', 0)}")
+                ch.console.print(f"    Completed: {worker.get('tasks_completed', 0)}")
+                ch.console.print(f"    Failed: {worker.get('tasks_failed', 0)}")
+        elif response.status_code == 503:
+            ch.warning("Tasks module not available")
+        else:
+            ch.error(f"Failed: {response.status_code}")
+    except requests.exceptions.ConnectionError:
+        ch.warning("Gateway is not running")
+    except Exception as e:
+        ch.error(f"Error: {e}")
