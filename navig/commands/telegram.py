@@ -355,7 +355,7 @@ def prune_sessions(
 def telegram_status():
     """Show Telegram bot status."""
     from navig.config import get_config_manager
-    from navig.messaging.secrets import resolve_telegram_bot_token
+    from navig.messaging.secrets import resolve_telegram_bot_token, resolve_telegram_uid
 
     cm = get_config_manager()
     config = cm._load_global_config()
@@ -375,6 +375,13 @@ def telegram_status():
         ch.console.print("  [red]✗[/red] Bot token missing")
         ch.dim("    Configure with: navig init")
         return
+
+    uid = resolve_telegram_uid(config)
+    if uid:
+        ch.console.print(f"  [green]✓[/green] Owner UID configured ({uid})")
+    else:
+        ch.console.print("  [dim]○ Owner UID not set[/dim]")
+        ch.dim("    Configure with: navig vault set telegram.user_id <your-uid>")
 
     allowed = tg_config.get("allowed_users", [])
     ch.console.print(f"  Users: {len(allowed)} allowed")

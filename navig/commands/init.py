@@ -1194,6 +1194,7 @@ def run_init_command(
     dry_run: bool = False,
     quiet: bool = False,
     tui: bool = False,
+    tui_capable: bool | None = None,
 ) -> None:
     """State-aware NAVIG setup gateway — routes to installer pipeline or interactive flow."""
     import typer
@@ -1244,7 +1245,11 @@ def run_init_command(
         use_tui = False
 
     if use_tui:
-        _tui_capable = bool(sys.stdin.isatty() and sys.stdout.isatty())
+        _tui_capable = (
+            bool(tui_capable)
+            if tui_capable is not None
+            else bool(sys.stdin.isatty() and sys.stdout.isatty())
+        )
         if not _tui_capable:
             from rich.console import Console as _C
 

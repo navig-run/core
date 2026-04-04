@@ -52,6 +52,7 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
     from navig.config import get_config_manager
     from navig.remote import RemoteOperations
 
+    options = options or {}
     config_manager = get_config_manager()
     ai = AIAssistant(config_manager)
 
@@ -73,10 +74,25 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
             allow_local_bootstrap=False,
         )
 
+    if not config_manager.host_exists(server_name):
+        ch.error(
+            f"Active host '{server_name}' not found",
+            "Use 'navig host list' and 'navig host use <name>'",
+        )
+        raise typer.Exit(2)
+
     # Gather context
     ch.dim("The Schema's engines are analyzing...\n")
 
-    server_config = config_manager.load_server_config(server_name)
+    try:
+        server_config = config_manager.load_server_config(server_name)
+    except FileNotFoundError as e:
+        ch.error(
+            f"Host configuration for '{server_name}' not found",
+            "Use 'navig host list' and 'navig host use <name>'",
+        )
+        raise typer.Exit(2) from e
+
     remote_ops = RemoteOperations(config_manager)
 
     # Always inject client platform so the AI gives OS-correct commands.

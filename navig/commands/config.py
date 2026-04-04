@@ -11,8 +11,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from navig.cli._callbacks import show_subcommand_help
 from navig import console_helper as ch
+from navig.cli._callbacks import show_subcommand_help
 from navig.config import get_config_manager
 from navig.migration import migrate_all_configs
 from navig.platform import paths
@@ -816,14 +816,17 @@ def show_settings():
     # ── 📱 Telegram ────────────────────────────────────────────────────────
     tg = gc.get("telegram") or {}
     try:
-        from navig.messaging.secrets import resolve_telegram_bot_token
+        from navig.messaging.secrets import resolve_telegram_bot_token, resolve_telegram_uid
         tg_token = resolve_telegram_bot_token(gc)
+        tg_uid = resolve_telegram_uid(gc)
     except Exception:  # noqa: BLE001
         tg_token = tg.get("bot_token")
+        tg_uid = None
 
     console.print(Panel(
         _section_table([
             ("Bot token",            _mask_secret(tg_token),                                       "telegram.bot_token"),
+            ("Owner UID",            tg_uid or "[dim]not set[/]",                                 "telegram.user_id"),
             ("Allowed users",        str(tg.get("allowed_users") or []),                           "telegram.allowed_users"),
             ("Require auth",         _bool_icon(tg.get("require_auth", True)),                    "telegram.require_auth"),
             ("Session isolation",    _bool_icon(tg.get("session_isolation", True)),               "telegram.session_isolation"),
@@ -950,6 +953,20 @@ def set_config(key: str, value: str):
         navig config set default_host production
     """
     config_manager = get_config_manager()
+    normalized_key = key.strip().lower()
+
+    if normalized_key in {"active_host", "active_server"}:
+        if not config_manager.host_exists(value):
+            ch.error(
+                f"Host '{value}' not found",
+                "Use 'navig host list' to see available hosts",
+            )
+            raise typer.Exit(1)
+
+        config_manager.set_active_host(value, local=False)
+        config_manager.update_global_config({"active_host": value})
+        ch.success(f"Set {key} = {value}")
+        return
 
     # Handle nested keys (e.g., execution.mode)
     if "." in key:

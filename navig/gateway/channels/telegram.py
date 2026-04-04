@@ -41,9 +41,9 @@ except ImportError:
 
 # Session management
 try:
-    from navig.gateway.channels.telegram_sessions import MentionGate  # noqa: F401
-    from navig.gateway.channels.telegram_sessions import SessionManager  # noqa: F401
     from navig.gateway.channels.telegram_sessions import (
+        MentionGate,  # noqa: F401
+        SessionManager,  # noqa: F401
         get_mention_gate,
         get_session_manager,
     )

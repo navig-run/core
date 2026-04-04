@@ -62,6 +62,7 @@ def test_resolve_telegram_token_from_config_yaml_emits_deprecation_warning(
 
     monkeypatch.setattr(mod, "_resolve_telegram_token_from_vault_v2", lambda: "")
     monkeypatch.setattr(mod, "_resolve_telegram_token_from_vault_v1", lambda: "")
+    monkeypatch.setattr(mod, "_resolve_telegram_token_from_env_file", lambda: "")
     monkeypatch.delenv("NAVIG_TELEGRAM_BOT_TOKEN", raising=False)
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
 

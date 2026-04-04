@@ -174,7 +174,10 @@ def test_hierarchical_config():
         try:
             os.chdir(temp_outside)
 
-            config_mgr = ConfigManager(verbose=True)
+            # Force global config resolution in this phase so the test remains
+            # deterministic even if an unrelated ancestor directory contains
+            # its own .navig/ (common in shared temp roots on CI/dev machines).
+            config_mgr = ConfigManager(config_dir=Path.home() / ".navig", verbose=True)
             loaded_config = config_mgr.load_host_config("test-server")
 
             if loaded_config:

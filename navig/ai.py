@@ -12,14 +12,14 @@ import asyncio
 import concurrent.futures as _cf
 import json
 import logging
+import os
 from typing import Any, ClassVar
 
 import requests
 
-from navig.platform import paths
-
 from navig import console_helper as ch
 from navig.ai_context import get_ai_context_manager
+from navig.platform import paths
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,28 @@ def _get_model_preference(global_config: dict) -> list[str]:
         )
         return list(legacy)
     return list(_DEFAULT_MODELS)
+
+
+def _resolve_openrouter_api_key(
+    global_config: dict,
+    *,
+    return_source: bool = False,
+) -> str | tuple[str, str]:
+    """Resolve OpenRouter API key from env + canonical/legacy config keys."""
+    env_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    if env_key:
+        return (env_key, "env") if return_source else env_key
+
+    ai_cfg = global_config.get("ai") or {}
+    canonical_key = str(ai_cfg.get("api_key") or "").strip()
+    if canonical_key:
+        return (canonical_key, "ai.api_key") if return_source else canonical_key
+
+    legacy_key = str(global_config.get("openrouter_api_key") or "").strip()
+    if legacy_key:
+        return (legacy_key, "openrouter_api_key") if return_source else legacy_key
+
+    return ("", "none") if return_source else ""
 
 
 class AIAssistant:
@@ -273,11 +295,12 @@ class AIAssistant:
         model_override: str | None = None,
     ) -> str:
         """Ask using OpenRouter fallback mode."""
-        api_key = self.config.global_config.get("openrouter_api_key")
+        api_key = _resolve_openrouter_api_key(self.config.global_config)
         if not api_key:
             raise ValueError(
                 "OpenRouter API key not configured. "
-                "Set it in ~/.navig/config.yaml or use 'navig config set openrouter_api_key <key>'"
+                "Checked: OPENROUTER_API_KEY env, ai.api_key, openrouter_api_key. "
+                "Set it with 'navig config set ai.api_key <key>'"
             )
 
         # Determine model to use
@@ -494,10 +517,13 @@ def ask_ai_with_context(
     from navig.config import get_config_manager
 
     config_mgr = get_config_manager()
-    ai_key = config_mgr.global_config.get("openrouter_api_key")
+    ai_key = _resolve_openrouter_api_key(config_mgr.global_config)
 
     if not ai_key:
-        return "Error: OpenRouter API key not configured. Set it in ~/.navig/config.yaml"
+        return (
+            "Error: OpenRouter API key not configured. "
+            "Checked OPENROUTER_API_KEY env, ai.api_key, openrouter_api_key."
+        )
 
     # Build messages
     messages = []

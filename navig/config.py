@@ -12,20 +12,20 @@ New Architecture (v2.0):
 
 import logging
 import os
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from navig.platform import paths
-
-from navig.core.yaml_io import atomic_write_yaml as _atomic_write_yaml
-from navig.core.yaml_io import log_shadow_anomaly
-from navig.core.hosts import HostManager
 from navig.core.apps import AppManager
 from navig.core.context import ContextManager
 from navig.core.execution import ExecutionSettings
+from navig.core.hosts import HostManager
+from navig.core.yaml_io import atomic_write_yaml as _atomic_write_yaml
+from navig.core.yaml_io import log_shadow_anomaly
+from navig.platform import paths
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,9 @@ class ConfigManager:
         """
         self.verbose = verbose
 
-        # Global config directory (always controlled by NAVIG_CONFIG_DIR or ~/.navig)
+        # Global config directory: always driven by the NAVIG_CONFIG_DIR env var (or
+        # ~/.navig by default).  The explicitly supplied config_dir (used in tests)
+        # controls base_dir / apps_dir / hosts_dir but NOT global_config_dir.
         self.global_config_dir = paths.config_dir()
 
         # Explicit config dir tracking
@@ -269,6 +271,13 @@ class ConfigManager:
                     from navig import console_helper as ch
 
                     ch.warning(f"App config directory not accessible: {self.app_config_dir}")
+
+        # When an explicit config_dir was supplied (e.g. in tests), also include
+        # base_dir so that legacy files written there can be discovered even when
+        # base_dir differs from global_config_dir.
+        if self._explicit_config_dir is not None and self.base_dir != self.global_config_dir:
+            if self._is_directory_accessible(self.base_dir):
+                directories.append(self.base_dir)
 
         # Always add global config as fallback (should always be accessible)
         if self._is_directory_accessible(self.global_config_dir):
@@ -490,8 +499,6 @@ Context provided with each query:
                     fast_result = cached["_config"]
 
                     # ── Shadow Execution: validate fast result in background ──
-                    import threading
-
                     def _shadow_verify(fr: dict, cfg_file: Path, cfgmgr: "ConfigManager") -> None:
                         try:
                             slow_result = cfgmgr._load_global_config(validate=False)
@@ -531,22 +538,19 @@ Context provided with each query:
         # ── 2b. Background Pydantic validation ──────────────────────────────
         # Runs in a daemon thread so it does not block startup.  Issues are
         # reported as logger.warning() entries, never as exceptions.
-        import threading as _thr
-        import logging as _log
-
         def _bg_validate(cfg_snapshot: dict) -> None:
             try:
                 from navig.core.config_schema import validate_global_config
                 result = validate_global_config(cfg_snapshot, strict=False)
                 if result is None:
-                    _log.getLogger(__name__).debug(
+                    logger.debug(
                         "Config schema: validation returned None (schema issues present). "
                         "Run 'navig config validate' for details."
                     )
             except Exception:  # noqa: BLE001
                 pass  # validation must never crash startup
 
-        _thr.Thread(
+        threading.Thread(
             target=_bg_validate,
             args=(slow_result,),
             daemon=True,

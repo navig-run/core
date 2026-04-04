@@ -262,6 +262,13 @@ class TestActiveContext:
         config_manager.set_active_host("myhost")
         assert config_manager.get_active_host() == "myhost"
 
+    def test_get_active_host_from_global_active_host_key(self, config_manager, sample_host_config):
+        """Test compatibility fallback to global config active_host key."""
+        config_manager.save_host_config("myhost", sample_host_config)
+
+        config_manager.update_global_config({"active_host": "myhost"})
+        assert config_manager.get_active_host() == "myhost"
+
     def test_set_active_host_not_found(self, config_manager):
         """Test set_active_host with nonexistent host."""
         with pytest.raises(ValueError) as exc_info:

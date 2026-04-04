@@ -200,11 +200,23 @@ def require_active_host(options: dict, cfg: "ConfigManager") -> str:  # type: ig
 # ── require_active_server ────────────────────────────────────────────────────
 
 
-def require_active_server(options: dict, cfg: "ConfigManager") -> str:  # type: ignore[return]
+def require_active_server(
+    options: dict,
+    cfg: "ConfigManager",
+    *,
+    allow_local_bootstrap: bool = True,
+) -> str:  # type: ignore[return]
     """Return the active server name (legacy API), or prompt the user.
 
     Used by commands that call ``config_manager.get_active_server()``
     (tunnel, database, ai).
+
+    Args:
+        options: CLI options dictionary.
+        cfg: Config manager.
+        allow_local_bootstrap: When True, no-host environments may auto-bootstrap
+            localhost. Set to False for flows that must not silently pivot to
+            localhost.
 
     Replace patterns like::
 
@@ -229,9 +241,10 @@ def require_active_server(options: dict, cfg: "ConfigManager") -> str:  # type: 
         servers = cfg.list_hosts()
 
     if not servers:
-        local_bootstrap = _bootstrap_local_host(cfg)
-        if local_bootstrap:
-            return local_bootstrap
+        if allow_local_bootstrap:
+            local_bootstrap = _bootstrap_local_host(cfg)
+            if local_bootstrap:
+                return local_bootstrap
         empty_list_recovery("server", "host discover-local")
         raise typer.Exit(0)
 

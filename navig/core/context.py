@@ -118,7 +118,16 @@ class ContextManager:
             except (PermissionError, OSError):
                 pass  # best-effort cleanup; ignore access/IO errors
 
-        # Priority 5: Fall back to default host from global config
+        # Priority 5: Compatibility fallback to global config active_host
+        configured_active_host = self._config.global_config.get("active_host")
+        if configured_active_host and self._config.host_exists(configured_active_host):
+            return (
+                (configured_active_host, "config")
+                if return_source
+                else configured_active_host
+            )
+
+        # Priority 6: Fall back to default host from global config
         default_host = self._config.global_config.get("default_host")
         if default_host and self._config.host_exists(default_host):
             return (default_host, "default") if return_source else default_host

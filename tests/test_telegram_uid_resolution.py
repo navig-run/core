@@ -136,28 +136,15 @@ def test_no_uid_returns_none(monkeypatch):
     monkeypatch.setattr(mod, "_resolve_telegram_uid_from_vault_v1", lambda: None)
     monkeypatch.setattr(mod, "_resolve_telegram_uid_from_env_file", lambda: None)
     monkeypatch.delenv("NAVIG_TELEGRAM_UID", raising=False)
-    # Stub out config manager to avoid disk reads
+    # Stub config manager so no disk read / real config bleeds in
+    from types import SimpleNamespace
     monkeypatch.setattr(
-        mod,
-        "resolve_telegram_uid",
-        lambda raw_config=None: None,  # replace for isolation
+        "navig.config.get_config_manager",
+        lambda: SimpleNamespace(global_config={}),
+        raising=False,
     )
 
-    # Call the real function with stubs already in place
-    mod2 = importlib.reload(importlib.import_module("navig.messaging.secrets"))
-    monkeypatch.setattr(mod2, "_resolve_telegram_uid_from_vault_v2", lambda: None)
-    monkeypatch.setattr(mod2, "_resolve_telegram_uid_from_vault_v1", lambda: None)
-    monkeypatch.setattr(mod2, "_resolve_telegram_uid_from_env_file", lambda: None)
-    monkeypatch.delenv("NAVIG_TELEGRAM_UID", raising=False)
-    # Stub config manager to return empty telegram block
-    monkeypatch.setattr(
-        mod2,
-        "resolve_telegram_uid",
-        mod2.resolve_telegram_uid,  # restore real fn after reload
-    )
-
-    # Call with no config and all stubs empty
-    result = mod2.resolve_telegram_uid({})
+    result = mod.resolve_telegram_uid({})
     assert result is None
 
 

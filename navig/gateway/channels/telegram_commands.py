@@ -835,7 +835,7 @@ class TelegramCommandsMixin:
         store = getattr(self, "_telegram_nav_state", None)
         if not isinstance(store, dict):
             store = {}
-            setattr(self, "_telegram_nav_state", store)
+            self._telegram_nav_state = store
         return store
 
     def _get_navigation_state(self, chat_id: int) -> dict[str, Any]:
@@ -1429,7 +1429,7 @@ class TelegramCommandsMixin:
         in_flight = getattr(self, "_status_fix_inflight", None)
         if not isinstance(in_flight, set):
             in_flight = set()
-            setattr(self, "_status_fix_inflight", in_flight)
+            self._status_fix_inflight = in_flight
 
         inflight_key = (int(chat_id), int(user_id), issue_code)
         if inflight_key in in_flight:
@@ -3228,8 +3228,9 @@ class TelegramCommandsMixin:
             return models
 
         try:
-            import aiohttp
             import os
+
+            import aiohttp
 
             endpoint = ""
             headers = {}
@@ -3354,8 +3355,8 @@ class TelegramCommandsMixin:
             ``{"small": "gpt-4o-mini", "big": "gpt-4o", "coder_big": "gpt-4o"}``.
         """
         try:
-            from navig.llm_router import get_llm_router
             from navig.config import get_config_manager
+            from navig.llm_router import get_llm_router
 
             router = get_llm_router()
             if not router:
@@ -4897,8 +4898,8 @@ class TelegramCommandsMixin:
         """Check current auto-reply status."""
         state = None
         try:
-            from navig.store.runtime import get_runtime_store
             from navig.core.continuation import policy_from_context
+            from navig.store.runtime import get_runtime_store
 
             state = get_runtime_store().get_ai_state(user_id)
         except Exception as e:
@@ -5132,8 +5133,8 @@ class TelegramCommandsMixin:
     async def _handle_persona_info(self, chat_id: int, user_id: int) -> None:
         """Show details about the currently active persona."""
         try:
-            from navig.personas.manager import get_active_persona_config
             from navig.personas.loader import load_persona
+            from navig.personas.manager import get_active_persona_config
             from navig.personas.renderer import render_persona_info
 
             config = await get_active_persona_config(user_id, chat_id)
@@ -5376,7 +5377,6 @@ class TelegramCommandsMixin:
             )
             return
         import re
-        import random
 
         # Normalise separators: | and , become ' or '
         normalised = re.sub(r"\s*[|,]\s*", " or ", args)

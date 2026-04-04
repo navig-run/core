@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+import typer
+
 
 def test_bootstrap_local_host_prefers_existing_localhost():
     from navig.cli import recovery
@@ -67,3 +70,30 @@ def test_require_active_server_uses_bootstrap(monkeypatch):
     selected = recovery.require_active_server({}, cfg)
 
     assert selected == "localhost"
+
+
+def test_require_active_server_skips_bootstrap_when_disabled(monkeypatch):
+    from navig.cli import recovery
+
+    cfg = SimpleNamespace()
+    cfg.get_active_server = lambda: None
+    cfg.list_hosts = lambda: []
+
+    called = {"bootstrap": False, "empty": False}
+
+    def _fake_bootstrap(_cfg):
+        called["bootstrap"] = True
+        return "localhost"
+
+    def _fake_empty(_resource, _add_cmd):
+        called["empty"] = True
+        raise typer.Exit(0)
+
+    monkeypatch.setattr(recovery, "_bootstrap_local_host", _fake_bootstrap)
+    monkeypatch.setattr(recovery, "empty_list_recovery", _fake_empty)
+
+    with pytest.raises(typer.Exit):
+        recovery.require_active_server({}, cfg, allow_local_bootstrap=False)
+
+    assert called["empty"] is True
+    assert called["bootstrap"] is False

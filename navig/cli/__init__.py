@@ -673,6 +673,11 @@ def onboarding_alias(
     run_onboard(flow=flow, non_interactive=non_interactive)
 
 
+def _init_tui_capable() -> bool:
+    """Return whether current terminal supports interactive TUI onboarding."""
+    return bool(sys.stdin.isatty() and sys.stdout.isatty())
+
+
 @app.command("init")
 def init_command(
     ctx: typer.Context,
@@ -754,6 +759,7 @@ def init_command(
         dry_run=dry_run,
         quiet=quiet,
         tui=tui,
+        tui_capable=_init_tui_capable(),
     )
 
 
