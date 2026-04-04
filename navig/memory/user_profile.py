@@ -16,10 +16,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from navig.platform import paths
+
 
 def _get_memory_dir() -> Path:
     """Get the memory directory path."""
-    return Path.home() / ".navig" / "memory"
+    return paths.data_dir() / "memory"
 
 
 def _ensure_dir(path: Path) -> None:

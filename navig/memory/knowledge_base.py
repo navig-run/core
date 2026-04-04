@@ -108,8 +108,9 @@ class KnowledgeBase:
     - Optional vector embeddings for semantic search
 
     Usage:
+        from navig.platform import paths
         kb = KnowledgeBase(
-            db_path=Path.home() / '.navig' / 'knowledge.db',
+            db_path=paths.data_dir() / 'knowledge.db',
             embedding_provider=LocalEmbeddingProvider(),
         )
 

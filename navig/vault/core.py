@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from navig.platform import paths
+
 from .encryption import VaultEncryption
 from .secret_str import SecretStr
 from .storage import VaultStorage
@@ -58,7 +60,7 @@ class CredentialsVault:
         result = vault.test(cred_id)
     """
 
-    DEFAULT_VAULT_PATH = Path.home() / ".navig" / "credentials" / "vault.db"
+    DEFAULT_VAULT_PATH = paths.config_dir() / "credentials" / "vault.db"
     ACTIVE_PROFILE_FILE = "active_profile"
 
     def __init__(

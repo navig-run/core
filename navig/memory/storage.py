@@ -121,8 +121,10 @@ class MemoryStorage:
     - Embedding cache to avoid re-embedding unchanged content
     - Thread-safe with connection pooling
 
-    Usage:
-        storage = MemoryStorage(Path.home() / '.navig' / 'memory' / 'index.db')
+    Usage::
+
+        from navig.platform import paths
+        storage = MemoryStorage(paths.data_dir() / 'memory' / 'index.db')
 
         # Store chunks
         storage.upsert_chunks(chunks)

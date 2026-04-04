@@ -72,9 +72,11 @@ class MemoryIndexer:
     - Embedding generation with caching
     - Progress tracking
 
-    Usage:
+    Usage::
+
+        from navig.platform import paths
         indexer = MemoryIndexer(storage, embedding_provider)
-        result = indexer.index_directory(Path.home() / '.navig' / 'memory')
+        result = indexer.index_directory(paths.data_dir() / 'memory')
     """
 
     # File patterns to index

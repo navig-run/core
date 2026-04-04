@@ -94,8 +94,10 @@ class ConversationStore(BaseStore):
     Stores messages with session keys for multi-tenant support.
     Thread-safe with connection pooling via ``BaseStore``.
 
-    Usage:
-        store = ConversationStore(Path.home() / '.navig' / 'memory.db')
+    Usage::
+
+        from navig.platform import paths
+        store = ConversationStore(paths.data_dir() / 'memory.db')
 
         # Add message
         msg = Message(session_key='task-123', role='user', content='Hello')

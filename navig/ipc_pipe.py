@@ -49,6 +49,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from navig.platform import paths
+
 logger = logging.getLogger("navig.ipc_pipe")
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -64,7 +66,7 @@ SHADOW_PROMOTE_AFTER: int = 100
 IPC_TIMEOUT_S: float = 2.0
 
 # File used to record that the pipe path has been validated and promoted
-_PROMOTED_FLAG: Path = Path.home() / ".navig" / ".ipc_promoted"
+_PROMOTED_FLAG: Path = paths.config_dir() / ".ipc_promoted"
 
 # In-memory shadow match counter (resets each process)
 _shadow_match_count: int = 0

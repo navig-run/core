@@ -30,6 +30,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from navig.platform import paths
+
 logger = logging.getLogger("navig.memory.snapshot")
 
 
@@ -151,7 +153,7 @@ def _get_snapshot_dir() -> Path:
     local = Path.cwd() / ".navig" / "memory" / "api_state"
     if (Path.cwd() / ".navig").is_dir():
         return local
-    global_dir = Path.home() / ".navig" / "memory" / "api_state"
+    global_dir = paths.data_dir() / "memory" / "api_state"
     return global_dir
 
 
