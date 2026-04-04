@@ -3545,41 +3545,8 @@ def config_backup_cmd(
 # Aliases: "skills" (canonical), "skill" (hidden)
 
 
-# ============================================================================
-# SCAFFOLD COMMANDS (Lazy-loaded)
-# ============================================================================
-scaffold_app = typer.Typer(
-    help="Scaffold project structures from templates",
-    invoke_without_command=True,
-    no_args_is_help=False,
-)
-app.add_typer(scaffold_app, name="scaffold")
-
-
-@scaffold_app.callback(invoke_without_command=True)
-def scaffold_callback(ctx: typer.Context):
-    """Scaffold management - run without subcommand for help."""
-    if ctx.invoked_subcommand is None:
-        show_subcommand_help("scaffold", ctx)
-        raise typer.Exit()
-
-
-@scaffold_app.command("apply")
-def scaffold_apply(
-    template_path: Path = typer.Argument(..., help="Path to YAML template file"),
-    target_dir: str = typer.Option(
-        ".", "--target-dir", "-d", help="Target directory (local or remote)"
-    ),
-    host: str | None = typer.Option(
-        None, "--host", "-h", help="Remote host to deploy to (defaults to local)"
-    ),
-    set_var: list[str] | None = typer.Option(None, "--set", help="Set variable like key=value"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Simulate without creating files"),
-):
-    """Generate files/directories from a template."""
-    from navig.commands.scaffold import apply
-
-    apply(template_path, target_dir, host, set_var, dry_run)
+# ── scaffold_app: extracted to navig/commands/scaffold.py ──────────────────
+# Registration via _EXTERNAL_CMD_MAP in registration.py
 
 
 # ── flow_template_app: extracted to navig/commands/flow.py ─────────────────

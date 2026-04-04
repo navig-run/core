@@ -7,15 +7,28 @@ from pathlib import Path
 
 import typer
 
+from navig.cli._callbacks import show_subcommand_help
 from navig import console_helper as ch
 from navig.config import get_config_manager
 from navig.core.scaffolder import Scaffolder
 from navig.remote import RemoteOperations
 
-app = typer.Typer(help="Scaffold project structures from templates")
+scaffold_app = typer.Typer(
+    help="Scaffold project structures from templates",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
 
 
-@app.command("apply")
+@scaffold_app.callback(invoke_without_command=True)
+def scaffold_callback(ctx: typer.Context):
+    """Scaffold management - run without subcommand for help."""
+    if ctx.invoked_subcommand is None:
+        show_subcommand_help("scaffold", ctx)
+        raise typer.Exit()
+
+
+@scaffold_app.command("apply")
 def apply(
     template_path: Path = typer.Argument(..., help="Path to YAML template file", exists=True),
     target_dir: str = typer.Option(
@@ -145,7 +158,7 @@ def apply(
                 os.unlink(archive_path)
 
 
-@app.command("validate")
+@scaffold_app.command("validate")
 def validate(template_path: Path):
     """Validate a template file syntax."""
     scaffolder = Scaffolder()
@@ -157,3 +170,7 @@ def validate(template_path: Path):
     except ValueError as e:
         ch.error(str(e))
         raise typer.Exit(1) from e
+
+
+# Backward compatibility for older imports expecting `app`
+app = scaffold_app
