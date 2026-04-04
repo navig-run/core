@@ -1099,56 +1099,9 @@ def settings_command(
 # All registered lazily via _EXTERNAL_CMD_MAP / _register_external_commands()
 
 
-# ============================================================================
-# FILE OPERATIONS (Canonical 'file' group)
-# ============================================================================
-
-# ── task_app: extracted to navig/commands/workflow.py ───────────────────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
-
-
-# ── context_app: extracted to navig/commands/context.py ─────────────────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
-# Aliases: "context" (canonical), "ctx" (hidden)
-
-
-# ── index_app: extracted to navig/commands/index.py ────────────────────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
-
-
-# ── history_app: extracted to navig/commands/history.py ─────────────────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
-# Aliases: "history" (canonical), "hist" (hidden)
-
-
-# ============================================================================
-# App MANAGEMENT COMMANDS
-# ============================================================================
-
-# ============================================================================
-# TUNNEL — extracted to navig.commands.tunnel :: tunnel_app
-# ============================================================================
-
-
-# ============================================================================
-# MONITOR / SECURITY — removed (deprecated)
-# ============================================================================
-# Inline monitor_app (~190 lines) and security_app (~265 lines) removed.
-# Canonical commands: `navig host monitor` and `navig host security`
-# (sub-apps of host_app in navig.commands.host, via _EXTERNAL_CMD_MAP).
-# Legacy flat aliases (monitor-resources, monitor-disk, monitor-services,
-# monitor-network, health-check, monitoring-report, firewall-status,
-# firewall-add, firewall-remove, fail2ban-status, security-scan) also removed.
-
-
-# ============================================================================
-# SYSTEM MAINTENANCE — deferred to _register_external_commands
-# ============================================================================
-# Inline system_app removed (~175 lines). Canonical source: navig.commands.system_cmd
-# (registered via _EXTERNAL_CMD_MAP). Legacy flat aliases also removed:
-#   update-packages, clean-packages, rotate-logs, cleanup-temp,
-#   check-filesystem, system-maintenance
-
+# ── Extracted sub-apps (all via _EXTERNAL_CMD_MAP in registration.py):
+# task/workflow, context/ctx, index, history/hist, tunnel, system_cmd
+# monitor/security → navig.commands.host (sub-apps of host_app)
 
 # ============================================================================
 # REMOTE COMMAND EXECUTION
@@ -1341,29 +1294,7 @@ def suggest_command(
         )
 
 
-# ── trigger_app: extracted to navig/commands/triggers.py ────────────────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
-
-
-# ── insights_app: extracted to navig/commands/insights.py ───────────────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
-
-
-# ============================================================================
-# INSTALL — Community asset installer (brain/<type>/)
-# ============================================================================
-
-# ── install_app: extracted to navig/commands/install.py ─────────────────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
-
-
-# ============================================================================
-# QUICK ACTIONS - Shortcuts for frequent operations
-# ============================================================================
-
-# ── quick_app: extracted to navig/commands/suggest.py ──────────────────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
-# Aliases: "quick" (canonical), "q" (hidden)
+# ── triggers, insights, install_app, quick_app → via _EXTERNAL_CMD_MAP
 
 
 @app.command("quickstart")
@@ -1385,39 +1316,8 @@ def install_package(
     install_remote_package(package, ctx.obj)
 
 
-# ============================================================================
-# LOCAL MACHINE MANAGEMENT (Canonical 'hosts', 'software', 'local' groups)
-# ============================================================================
-
-# Hosts file management
-# ── hosts_app: extracted to navig/commands/local.py ────────────────────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
-
-
-# ── software_app: extracted to navig/commands/local.py ─────────────────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
-
-
-# ── local_app: extracted to navig/commands/local.py ────────────────────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
-
-
-# ============================================================================
-# ── web_app: extracted to navig/commands/webserver.py ──────────────────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
-# Includes nested `navig web hestia ...` subcommands
-
-
-# Deprecated hidden webserver aliases removed.
-# Canonical commands: `navig web vhosts`, `navig web test`, `navig web reload`.
-
-
-
-# ============================================================================
-# AI ASSISTANT — extracted to navig/commands/ai.py (P1-14)
-# ============================================================================
-# ai_app + ai_memory_app (929 lines, 18 commands) → navig.commands.ai :: ai_app
-# Registered via _EXTERNAL_CMD_MAP in registration.py.
+# ── hosts/software/local → navig.commands.local, web_app → navig.commands.webserver
+# ── ai_app + ai_memory_app → navig.commands.ai  (all via _EXTERNAL_CMD_MAP)
 
 
 @app.command("ask")
@@ -1452,25 +1352,9 @@ def ai_legacy(
 
 
 
-# ============================================================================
-# HESTIA / TEMPLATE / ADDON — removed (deprecated)
-# ============================================================================
-# Inline hestia_app (~140 lines), template_app (~100 lines), addon_app (~85 lines)
-# removed. Canonical commands: `navig web hestia` (web_hestia_app sub-app),
-# `navig flow template`. These deprecated wrappers called deprecation_warning()
-# and delegated to navig.commands.hestia / navig.commands.template.
+# ── hestia/template/addon removed; server_template_app, mcp_app → via _EXTERNAL_CMD_MAP
 
-
-# ── server_template_app: extracted to navig/commands/server_template.py ─────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
-
-
-# mcp_app inline block removed — canonical: navig.commands.mcp_cmd via _EXTERNAL_CMD_MAP
-
-
-# ============================================================================
-# App INITIALIZATION
-# ============================================================================
+# ── App INITIALIZATION
 
 
 @app.command("init-local")
@@ -1501,77 +1385,11 @@ def init_local_command(
     init_app(ctx.obj)
 
 
-# ── config_app + schema_app: extracted to navig/commands/config.py ─────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
+# ── config_app/schema_app, backup_app, flow_app, skills_app, scaffold_app,
+# ── wiki_app, dispatch/contacts → all via _EXTERNAL_CMD_MAP in registration.py
 
 
-# ============================================================================
-# CONFIGURATION BACKUP & EXPORT COMMANDS
-# ============================================================================
-
-# ============================================================================
-# BACKUP — extracted to navig.commands.backup :: backup_app
-# ============================================================================
-
-
-# ============================================================================
-# INTERACTIVE MENU
-# ============================================================================
-
-# ============================================================================
-# WORKFLOW COMMANDS
-# ============================================================================
-
-# ── flow_app: extracted to navig/commands/flow.py ──────────────────────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
-
-
-# ── skills_app: extracted to navig/commands/skills.py ──────────────────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
-# Aliases: "skills" (canonical), "skill" (hidden)
-
-
-# ── scaffold_app: extracted to navig/commands/scaffold.py ──────────────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
-
-
-# ── flow_template_app: extracted to navig/commands/flow.py ─────────────────
-# Registered as nested `navig flow template ...` inside flow_app
-
-
-
-# ============================================================================
-# WORKFLOW — removed (deprecated)
-# ============================================================================
-# Inline workflow_app (~120 lines) removed. Canonical command: `navig flow`
-# (flow_app, registered via _EXTERNAL_CMD_MAP → navig.commands.flow).
-
-
-# ── wiki_app: extracted to navig/commands/wiki.py ──────────────────────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
-
-
-# ============================================================================
-# DISPATCH / CONTACTS — deferred to _register_external_commands
-# ============================================================================
-# Inline lazy-loading stubs removed — dispatch and contacts are registered via
-# _EXTERNAL_CMD_MAP → navig.commands.dispatch (dispatch_app, contacts_app).
-
-
-# ============================================================================
-# BRIDGE / FARMORE / COPILOT — deferred to _register_external_commands
-# ============================================================================
-# QUANTUM VELOCITY K4: These were imported eagerly at module level, paying the
-# full import cost (~30-60ms) even for unrelated commands like `navig host list`.
-# They are now registered lazily via _EXTERNAL_CMD_MAP in _register_external_commands
-# and only imported when the user actually invokes `navig bridge|farmore|copilot`.
-# (entries added to _EXTERNAL_CMD_MAP below)
-
-
-# ── Shared gateway helpers: moved to navig/commands/gateway.py ─────────────
-
-# ── bot_app: extracted to navig/commands/gateway.py ────────────────────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
+# ── bridge/farmore/copilot, bot_app → navig.commands.gateway via _EXTERNAL_CMD_MAP
 
 
 # ============================================================================
@@ -1608,32 +1426,8 @@ def quick_start(
     run_quick_start(bot=bot, gateway=gateway, port=port, background=background)
 
 
-# ── heartbeat_app: extracted to navig/commands/gateway.py ──────────────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
-
-
-# ============================================================================
-# CRON — deferred to _register_external_commands
-# ============================================================================
-# Inline cron_app removed (~215 lines). Full implementation lives in
-# navig.commands.cron (cron_app) and is registered via _EXTERNAL_CMD_MAP.
-
-
-# ── approve_app: extracted to navig/commands/gateway.py ────────────────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
-
-
-# ── queue_app: extracted to navig/commands/gateway.py ──────────────────────
-# Registration via _EXTERNAL_CMD_MAP in registration.py
-
-
-# ============================================================================
-# MEMORY MANAGEMENT — extracted to navig/commands/memory.py (P1-14)
-# ============================================================================
-
-
-# ── config legacy extension block removed ───────────────────────────────────
-# Additional config subcommands are now defined in `navig.commands.config`.
+# ── heartbeat_app, cron_app, approve_app, queue_app → navig.commands.gateway / _EXTERNAL_CMD_MAP
+# ── memory_app → navig.commands.memory via _EXTERNAL_CMD_MAP
 
 
 
