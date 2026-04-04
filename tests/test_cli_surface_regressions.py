@@ -79,7 +79,7 @@ def test_mesh_help_command_is_available(tmp_path: Path):
     assert "Mesh topology management" in combined
 
 
-@pytest.mark.parametrize("domain", ["host", "db", "file", "app", "docker"])
+@pytest.mark.parametrize("domain", ["host", "db", "file", "app", "docker", "log", "wiki"])
 def test_domain_launcher_non_tty_exits_cleanly_with_hint(tmp_path: Path, domain: str):
     """Domain launchers should not hang/crash in non-interactive subprocesses.
 
