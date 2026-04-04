@@ -1179,3 +1179,181 @@ def run_init(dry_run: bool = False, no_genesis: bool = False, name: str = "") ->
     except PermissionError as e:
         _write_init_log(f"init failed: {e}")
         raise click.exceptions.Exit(1) from e
+
+
+# ── CLI gateway functions (called by navig/cli/__init__.py thin wrappers) ────
+
+def run_init_command(
+    ctx: Any,
+    *,
+    reconfigure: bool = False,
+    provider: bool = False,
+    settings: bool = False,
+    status: bool = False,
+    profile: str = "",
+    dry_run: bool = False,
+    quiet: bool = False,
+    tui: bool = False,
+) -> None:
+    """State-aware NAVIG setup gateway — routes to installer pipeline or interactive flow."""
+    import typer
+
+    # ── Installer pipeline (non-interactive) ─────────────────────────────────
+    if profile:
+        from navig.installer import run_install
+        from navig.installer.profiles import VALID_PROFILES
+
+        valid_profiles = set(VALID_PROFILES) | {"quickstart"}
+        effective_profile = "operator" if profile == "quickstart" else profile
+
+        if profile not in valid_profiles:
+            typer.echo(
+                f"Unknown profile '{profile}'. Valid: {', '.join(sorted(valid_profiles))}",
+                err=True,
+            )
+            raise SystemExit(1)
+
+        run_install(profile=effective_profile, dry_run=dry_run, quiet=quiet)
+        if profile == "quickstart":
+            run_chat_first_handoff(profile=profile, dry_run=dry_run, quiet=quiet)
+        return
+
+    # ── Interactive onboarding ────────────────────────────────────────────────
+    from navig.commands.onboard import run_onboard
+    from navig.onboarding.runner import run_engine_onboarding
+
+    want_json = bool(getattr(ctx, "obj", {}) and ctx.obj.get("json"))
+
+    if status:
+        import json as _json
+
+        payload = show_init_status(render=not want_json)
+        if want_json:
+            typer.echo(_json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+
+    if settings:
+        from navig.commands.status import show_status
+
+        show_status({"all": True, "plain": False})
+        return
+
+    ui_mode = os.getenv("NAVIG_INIT_UI", "auto").strip().lower()
+    use_tui = tui or ui_mode == "tui"
+    if ui_mode == "cli":
+        use_tui = False
+
+    if use_tui:
+        _tui_capable = bool(sys.stdin.isatty() and sys.stdout.isatty())
+        if not _tui_capable:
+            from rich.console import Console as _C
+
+            _C().print(
+                "[yellow]TUI unavailable in this terminal; falling back to CLI onboarding.[/yellow]"
+            )
+        else:
+            flow = "manual" if (reconfigure or provider) else "auto"
+            try:
+                run_onboard(flow=flow)
+                try:
+                    _maybe_send_first_run_ping()
+                except Exception:  # noqa: BLE001
+                    pass
+                return
+            except Exception:
+                from rich.console import Console as _C
+
+                _C().print(
+                    "[yellow]TUI launch failed; falling back to CLI onboarding.[/yellow]"
+                )
+
+    jump_to_step = "ai-provider" if provider else None
+    state = run_engine_onboarding(
+        force=reconfigure,
+        jump_to_step=jump_to_step,
+        show_banner=True,
+        respect_skip_env=False,
+        skip_if_configured=True,
+    )
+
+    if state is None and not reconfigure and not provider:
+        import json as _json
+        from rich.console import Console as _C
+
+        payload = show_init_status(render=not want_json)
+        if want_json:
+            payload = {**payload, "already_configured": True}
+            typer.echo(_json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            _C().print(
+                "\n[green]✓ NAVIG is already configured.[/green] "
+                "Use [bold]navig init --reconfigure[/bold] to run setup again."
+            )
+        return
+
+    try:
+        _maybe_send_first_run_ping()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def run_init_rollback(
+    last: bool = True,
+    profile: str = "",
+    dry_run: bool = False,
+) -> None:
+    """Roll back the most recent installer run."""
+    from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
+    from navig.installer.runner import rollback as run_rollback
+    from navig.installer.state import load_last
+
+    try:
+        from navig.platform.paths import navig_config_dir
+
+        config_dir = navig_config_dir()
+    except Exception:
+        import pathlib
+
+        config_dir = pathlib.Path.home() / ".navig"
+
+    records = load_last(config_dir=config_dir, profile=profile or None)
+    if not records:
+        ch.warning("No installer history found — nothing to roll back.")
+        return
+
+    actions: list[Action] = []
+    results: list[Result] = []
+    for rec in records:
+        a = Action(
+            id=rec.get("action_id", "?"),
+            description=rec.get("description", ""),
+            module=rec.get("module", "?"),
+            reversible=rec.get("reversible", False),
+        )
+        r = Result(
+            action_id=a.id,
+            state=ModuleState(rec.get("state", "skipped")),
+            message=rec.get("message", ""),
+            undo_data=rec.get("undo_data") or {},
+        )
+        actions.append(a)
+        results.append(r)
+
+    reversible = [
+        (a, r) for a, r in zip(actions, results) if a.reversible and r.state == ModuleState.APPLIED
+    ]
+    if not reversible:
+        ch.info("No reversible applied actions found in the last run.")
+        return
+
+    ch.info(f"Rolling back {len(reversible)} action(s):")
+    for a, _ in reversible:
+        ch.dim(f"  ↩  {a.description}")
+
+    if dry_run:
+        ch.warning("[dry-run] No changes made.")
+        return
+
+    ctx = InstallerContext(config_dir=config_dir, profile=profile or "?")
+    run_rollback(actions=actions, results=results, ctx=ctx)
+    ch.success("Rollback complete.")

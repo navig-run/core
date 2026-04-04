@@ -1048,124 +1048,18 @@ def init_command(
         navig init --reconfigure # always run wizard
         navig init --provider    # configure AI provider
     """
-    # ── Installer pipeline (non-interactive) ─────────────────────────────────
-    if profile:
-        from navig.installer import run_install
-        from navig.installer.profiles import VALID_PROFILES
-
-        valid_profiles = set(VALID_PROFILES) | {"quickstart"}
-        effective_profile = "operator" if profile == "quickstart" else profile
-
-        if profile not in valid_profiles:
-            import typer as _t
-
-            _t.echo(
-                f"Unknown profile '{profile}'. Valid: {', '.join(sorted(valid_profiles))}",
-                err=True,
-            )
-            raise SystemExit(1)
-
-        run_install(profile=effective_profile, dry_run=dry_run, quiet=quiet)
-        if profile == "quickstart":
-            from navig.commands.init import run_chat_first_handoff
-
-            run_chat_first_handoff(profile=profile, dry_run=dry_run, quiet=quiet)
-        return
-
-    # ── Interactive onboarding (canonical engine flow + optional TUI) ───────
-    import os
-    import sys
-
-    try:
-        from navig.commands.init import _maybe_send_first_run_ping
-    except (ImportError, AttributeError):
-        def _maybe_send_first_run_ping() -> None:  # type: ignore[misc]
-            pass
-    from navig.commands.onboard import run_onboard
-    from navig.onboarding.runner import run_engine_onboarding
-    want_json = bool(getattr(ctx, "obj", {}) and ctx.obj.get("json"))
-
-    if status:
-        import json as _json
-        from navig.commands.init import show_init_status
-
-        payload = show_init_status(render=not want_json)
-        if want_json:
-            typer.echo(_json.dumps(payload, indent=2, ensure_ascii=False))
-        return
-
-    if settings:
-        from navig.commands.status import show_status
-
-        show_status({"all": True, "plain": False})
-        return
-
-    # UI mode selector (additive, backward-compatible):
-    # - default: CLI engine flow (current stable behavior)
-    # - opt-in: --tui or NAVIG_INIT_UI=tui
-    # - force classic: NAVIG_INIT_UI=cli
-    ui_mode = os.getenv("NAVIG_INIT_UI", "auto").strip().lower()
-    use_tui = tui or ui_mode == "tui"
-    if ui_mode == "cli":
-        use_tui = False
-
-    if use_tui:
-        if not _init_tui_capable():
-            from rich.console import Console as _C
-
-            _C().print(
-                "[yellow]TUI unavailable in this terminal; falling back to CLI onboarding.[/yellow]"
-            )
-        else:
-            flow = "manual" if (reconfigure or provider) else "auto"
-            try:
-                run_onboard(flow=flow)
-                try:
-                    _maybe_send_first_run_ping()
-                except Exception:  # noqa: BLE001
-                    pass
-                return
-            except Exception:
-                from rich.console import Console as _C
-
-                _C().print(
-                    "[yellow]TUI launch failed; falling back to CLI onboarding.[/yellow]"
-                )
-
-    jump_to_step = "ai-provider" if provider else None
-    state = run_engine_onboarding(
-        force=reconfigure,
-        jump_to_step=jump_to_step,
-        show_banner=True,
-        respect_skip_env=False,
-        skip_if_configured=True,
+    from navig.commands.init import run_init_command
+    run_init_command(
+        ctx,
+        reconfigure=reconfigure,
+        provider=provider,
+        settings=settings,
+        status=status,
+        profile=profile,
+        dry_run=dry_run,
+        quiet=quiet,
+        tui=tui,
     )
-
-    if state is None and not reconfigure and not provider:
-        import json as _json
-        from rich.console import Console as _C
-        from navig.commands.init import show_init_status
-
-        payload = show_init_status(render=not want_json)
-        if want_json:
-            payload = {**payload, "already_configured": True}
-            typer.echo(_json.dumps(payload, indent=2, ensure_ascii=False))
-        else:
-            _C().print(
-                "\n[green]✓ NAVIG is already configured.[/green] "
-                "Use [bold]navig init --reconfigure[/bold] to run setup again."
-            )
-        return
-
-    try:
-        _maybe_send_first_run_ping()
-    except Exception:  # noqa: BLE001
-        pass
-
-
-def _init_tui_capable() -> bool:
-    """Return True when this terminal can run full-screen init TUI."""
-    return bool(sys.stdin.isatty() and sys.stdout.isatty())
 
 
 @app.command("init-rollback")
@@ -1198,63 +1092,8 @@ def init_rollback_command(
         navig init-rollback --profile operator # undo last operator run
         navig init-rollback --dry-run          # preview rollback
     """
-    from navig.installer.contracts import InstallerContext, ModuleState
-    from navig.installer.runner import rollback as run_rollback
-    from navig.installer.state import load_last
-
-    try:
-        from navig.platform.paths import navig_config_dir
-
-        config_dir = navig_config_dir()
-    except Exception:
-        import pathlib
-
-        config_dir = pathlib.Path.home() / ".navig"
-
-    records = load_last(config_dir=config_dir, profile=profile or None)
-    if not records:
-        ch.warning("No installer history found — nothing to roll back.")
-        return
-
-    from navig.installer.contracts import Action, Result
-
-    # Reconstruct minimal Action / Result pairs from the manifest
-    actions: list[Action] = []
-    results: list[Result] = []
-    for rec in records:
-        a = Action(
-            id=rec.get("action_id", "?"),
-            description=rec.get("description", ""),
-            module=rec.get("module", "?"),
-            reversible=rec.get("reversible", False),
-        )
-        r = Result(
-            action_id=a.id,
-            state=ModuleState(rec.get("state", "skipped")),
-            message=rec.get("message", ""),
-            undo_data=rec.get("undo_data") or {},
-        )
-        actions.append(a)
-        results.append(r)
-
-    reversible = [
-        (a, r) for a, r in zip(actions, results) if a.reversible and r.state == ModuleState.APPLIED
-    ]
-    if not reversible:
-        ch.info("No reversible applied actions found in the last run.")
-        return
-
-    ch.info(f"Rolling back {len(reversible)} action(s):")
-    for a, _ in reversible:
-        ch.dim(f"  ↩  {a.description}")
-
-    if dry_run:
-        ch.warning("[dry-run] No changes made.")
-        return
-
-    ctx = InstallerContext(config_dir=config_dir, profile=profile or "?")
-    run_rollback(actions=actions, results=results, ctx=ctx)
-    ch.success("Rollback complete.")
+    from navig.commands.init import run_init_rollback
+    run_init_rollback(last=last, profile=profile, dry_run=dry_run)
 
 
 @app.command("whoami")
@@ -1430,26 +1269,6 @@ def run_command(
     """
     from navig.commands.remote import run_remote_command
 
-    # Suggest using --b64 for risky/complex shell strings.
-    if command and not b64 and not stdin and not file and not interactive:
-        # Only warn about ACTUAL quoting/escaping problems
-        # Safe: semicolons (;), pipes (|), redirects (>, <) - these work fine in quoted strings
-        # Risky: nested quotes, JSON braces, dollar signs (variable expansion), backticks
-        risky_markers = [
-            '"\'"',  # nested quotes: "...'..."
-            "'\"",  # nested quotes: '..."...'
-            '{"',  # JSON object start
-            '"}',  # JSON object end
-            '["',  # JSON array with string
-            '"]',  # JSON array with string
-            "$(",  # command substitution
-            "`",  # backticks (command substitution)
-            "\\n",  # literal newlines in command string
-            "\\t",  # literal tabs
-        ]
-        if any(m in command for m in risky_markers):
-            ch.warning("This command looks complex; consider --b64 for safer quoting.")
-            ch.dim('Example: navig run --b64 "curl -d \'{\\"k\\":\\"v\\"}\' ..."')
     # Merge command-level options with global options
     options = ctx.obj.copy()
     if yes:
@@ -1848,83 +1667,8 @@ def quick_start(
         navig start --no-gateway     # Bot only (standalone)
         navig start --no-bot         # Gateway only
     """
-    import os
-    import subprocess
-
-    if bot:
-        from navig.messaging.secrets import resolve_telegram_bot_token
-
-        telegram_token = resolve_telegram_bot_token()
-        if not telegram_token:
-            ch.error("TELEGRAM_BOT_TOKEN not set!")
-            ch.info("  Get token from @BotFather on Telegram")
-            ch.info("  Add to .env file: TELEGRAM_BOT_TOKEN=your-token")
-            raise typer.Exit(1)
-
-    if gateway and port is None:
-        from navig.commands.gateway import _load_gateway_cli_defaults
-
-        port, _host = _load_gateway_cli_defaults()
-
-    if gateway and bot:
-        ch.info("Starting NAVIG (Gateway + Telegram Bot)...")
-        cmd = [
-            sys.executable,
-            "-m",
-            "navig.daemon.telegram_worker",
-            "--port",
-            str(port),
-        ]
-        if background:
-            if sys.platform == "win32":
-                subprocess.Popen(
-                    cmd,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            else:
-                subprocess.Popen(
-                    cmd,
-                    start_new_session=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            ch.success("Started in background")
-            ch.info(f"  Gateway: http://localhost:{port}")
-            ch.info("  Status: navig bot status")
-            ch.info("  Stop: navig bot stop")
-        else:
-            os.execv(sys.executable, cmd)
-
-    elif bot:
-        ch.info("Starting NAVIG Telegram Bot (standalone)...")
-        ch.warning("⚠️  Conversations reset on restart")
-        cmd = [sys.executable, "-m", "navig.daemon.telegram_worker", "--no-gateway"]
-        if background:
-            if sys.platform == "win32":
-                subprocess.Popen(
-                    cmd,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            else:
-                subprocess.Popen(
-                    cmd,
-                    start_new_session=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            ch.success("Started in background")
-        else:
-            os.execv(sys.executable, cmd)
-
-    elif gateway:
-        from navig.commands.gateway import gateway_start
-
-        ch.info(f"Starting NAVIG Gateway on port {port}...")
-        gateway_start(port=port, host="0.0.0.0", background=background)
+    from navig.commands.start import run_quick_start
+    run_quick_start(bot=bot, gateway=gateway, port=port, background=background)
 
 
 # ── heartbeat_app: extracted to navig/commands/gateway.py ──────────────────
