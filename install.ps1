@@ -387,6 +387,29 @@ function Initialize-NavigConfig {
     Write-NavVerbose "Config: $base\"
 }
 
+function Write-TerminalCapabilities {
+    # Write ~\.navig\terminal.json with unicode/nerd_font capability flags.
+    # nerd_font is set to false here; the terminal-setup onboarding step updates it.
+    $base = Join-Path $env:USERPROFILE ".navig"
+    $data = [ordered]@{
+        unicode    = [bool]$script:NavUnicode
+        nerd_font  = $false
+        checked_at = (Get-Date -Format "o")
+    }
+    $json = $data | ConvertTo-Json -Compress
+    try {
+        [System.IO.File]::WriteAllText(
+            (Join-Path $base "terminal.json"),
+            $json,
+            [System.Text.Encoding]::UTF8
+        )
+        Write-NavVerbose "Wrote terminal.json"
+    } catch {
+        Write-NavVerbose "Could not write terminal.json: $_"
+    }
+}
+
+
 # ── Uninstall ─────────────────────────────────────────────────
 $script:UninstallFailures = @()
 
@@ -603,6 +626,7 @@ function Main {
     }
 
     Initialize-NavigConfig
+    Write-TerminalCapabilities
 
     # ── Verify ────────────────────────────────────────────────
     Print-Section "Verify"

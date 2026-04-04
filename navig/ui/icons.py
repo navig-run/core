@@ -13,7 +13,7 @@ Usage:
 
 from __future__ import annotations
 
-from navig.ui.theme import SAFE_MODE
+from navig.ui.theme import NERD_FONT_AVAILABLE, SAFE_MODE
 
 # (rich_icon, safe_icon)
 _ICONS: dict[str, tuple[str, str]] = {
@@ -120,7 +120,12 @@ _NF_ICONS: dict[str, str] = {
 def nf_icon(name: str) -> str:
     """Return the Nerd Font glyph for *name*, falling back to ``icon(name)``.
 
-    Callers that want NF glyphs should use this; callers that only need a
-    terminal-safe symbol should use ``icon()``.
+    If ``NERD_FONT_AVAILABLE`` is False (no Nerd Font detected / installed),
+    returns the same value as ``icon(name)`` so callers never get replacement
+    boxes on unconfigured terminals.  Callers that prefer Nerd Font glyphs
+    should use this; callers that only need a terminal-safe symbol use
+    ``icon()``.
     """
+    if not NERD_FONT_AVAILABLE:
+        return icon(name)
     return _NF_ICONS.get(name, icon(name))

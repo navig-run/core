@@ -80,6 +80,7 @@ def build_step_registry(
     steps = [
         # ── Phase 1: bootstrap ────────────────────────────────────────────
         _step_workspace_init(navig_dir),
+        _step_terminal_setup(navig_dir),
         _step_workspace_templates(navig_dir),
         _step_config_file(navig_dir, genesis, config.reset),
         _step_configure_ssh(navig_dir),
@@ -196,6 +197,102 @@ def _prompt_masked(text: str, default: str = "") -> str:
 
 # ── Individual step factories ──────────────────────────────────────────────
 
+
+
+def _step_terminal_setup(navig_dir: Path) -> OnboardingStep:
+    """Detect Nerd Font availability; offer install on first run.
+
+    Phase 1, bootstrap — runs non-interactively when no TTY; silently
+    records the result to ``~/.navig/terminal.json`` so ``nf_icon()``
+    and NAVIG_NERD_FONT checks on subsequent runs skip re-probing.
+
+    If a TTY is present and no font is found, the user is offered a
+    one-line install prompt (Windows: runs Install-NerdFont.ps1 via pwsh;
+    macOS/Linux: prints the brew one-liner and skips).
+    """
+    terminal_json = navig_dir / "terminal.json"
+
+    def run() -> StepResult:
+        from navig import console_helper as ch
+        from navig.ui._capabilities import (
+            probe_nerd_font,
+            try_install_nerd_font,
+            write_terminal_json,
+        )
+
+        # Active probe
+        nerd_font_found = probe_nerd_font()
+        if nerd_font_found:
+            write_terminal_json(navig_dir, nerd_font=True)
+            return StepResult(
+                status="completed",
+                output={"nerd_font": True, "action": "detected"},
+            )
+
+        # No font — skip silently when no TTY (CI, pipes, SSH without allocation)
+        if not sys.stdout.isatty():
+            write_terminal_json(navig_dir, nerd_font=False)
+            return StepResult(
+                status="skipped",
+                output={"nerd_font": False, "reason": "no-tty"},
+            )
+
+        # Interactive offer
+        ch.dim("  Nerd Font glyphs extend NAVIG icons (Powerline separators, provider icons).")
+        try:
+            reply = input("  Install JetBrainsMono Nerd Font now? [Y/n] ").strip().lower()
+        except (EOFError, OSError):
+            write_terminal_json(navig_dir, nerd_font=False)
+            return StepResult(
+                status="skipped",
+                output={"nerd_font": False, "reason": "no-input"},
+            )
+
+        if reply in ("", "y", "yes"):
+            installed = try_install_nerd_font()
+            write_terminal_json(navig_dir, nerd_font=installed)
+            if installed:
+                ch.success("  JetBrainsMono Nerd Font installed.")
+                ch.dim("  Restart your terminal and VS Code to activate.")
+                return StepResult(
+                    status="completed",
+                    output={"nerd_font": True, "action": "installed"},
+                )
+            # Auto-install unavailable (macOS/Linux or no pwsh)
+            if sys.platform == "win32":
+                ch.dim("  Automatic install failed. Run manually:")
+                ch.dim("    pwsh scripts/Install-NerdFont.ps1")
+            elif sys.platform == "darwin":
+                ch.dim("  Run to install:")
+                ch.dim("    brew install --cask font-jetbrains-mono-nerd-font")
+            else:
+                ch.dim("  Install via your distro or download from https://www.nerdfonts.com")
+            return StepResult(
+                status="skipped",
+                output={"nerd_font": False, "reason": "install-unavailable"},
+            )
+
+        # User declined
+        write_terminal_json(navig_dir, nerd_font=False)
+        ch.dim("  Skipped. Icons will use Unicode/ASCII fallbacks.")
+        ch.dim("  Set NAVIG_NERD_FONT=1 or re-run \'navig init\' to enable later.")
+        return StepResult(
+            status="skipped",
+            output={"nerd_font": False, "reason": "declined"},
+        )
+
+    def verify() -> bool:
+        return terminal_json.exists()
+
+    return OnboardingStep(
+        id="terminal-setup",
+        title="Detect terminal icon capabilities",
+        run=run,
+        verify=verify,
+        on_failure="skip",
+        independent=True,
+        phase="bootstrap",
+    )
 
 def _step_workspace_init(navig_dir: Path) -> OnboardingStep:
     workspace = navig_dir / "workspace"

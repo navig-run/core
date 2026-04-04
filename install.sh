@@ -35,6 +35,18 @@ _init_term() {
     fi
 }
 
+# ── Terminal capabilities persistence ────────────────────────
+_write_terminal_json() {
+    # Write ~/.navig/terminal.json with unicode flag.
+    # nerd_font is seeded to false; terminal-setup onboarding step updates it.
+    local base="$HOME/.navig"
+    local ts; ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "")
+    local nf="false"
+    printf '{"unicode":%s,"nerd_font":%s,"checked_at":"%s"}\n' \
+        "$NAV_U" "$nf" "$ts" > "$base/terminal.json" 2>/dev/null || true
+}
+
+
 # ── Colors ────────────────────────────────────────────────────
 _RST=""  _DIM=""  _WHT=""  _CYN=""  _GRN=""  _RED=""  _YLW=""  _GRY=""
 _init_colors() {
@@ -643,6 +655,7 @@ main() {
         mkdir -p "$HOME/.navig"
         printf "%s\n" "${clean_ver}" > "$HOME/.navig/install.marker"
         log_verbose "Wrote install marker: $HOME/.navig/install.marker"
+        _write_terminal_json
 
         # ── Done ──────────────────────────────────────────────
         print_done "$clean_ver"
