@@ -51,7 +51,10 @@ def fzf_or_fallback(
 
     # Build display entries (aligned name + description columns)
     entries = [f"{cmd.name:<26} {cmd.description}" for cmd in commands]
-    index_map: dict[str, CommandEntry] = dict(zip(entries, commands))
+    # Use stripped keys so fzf's stripped output (no trailing spaces) resolves correctly.
+    # When description is empty the padded entry ends with whitespace; fzf returns the
+    # line stripped, so a plain dict(zip(entries, commands)) would always miss.
+    index_map: dict[str, CommandEntry] = {e.strip(): cmd for e, cmd in zip(entries, commands)}
 
     # ------------------------------------------------------------------
     # Tier 1 — fzf
