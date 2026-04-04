@@ -81,6 +81,7 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "h": ("navig.commands.host", "host_app"),
     "context": ("navig.commands.context", "context_app"),
     "ctx": ("navig.commands.context", "context_app"),
+    "index": ("navig.commands.index", "index_app"),
     "app": ("navig.commands.app", "app_app"),
     "a": ("navig.commands.app", "app_app"),
     "file": ("navig.commands.files", "file_app"),
