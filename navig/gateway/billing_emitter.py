@@ -31,6 +31,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from navig.platform import paths
+
 
 def _now_iso() -> str:
     return (
@@ -65,7 +67,7 @@ class BillingEmitter:
 
     def __init__(self, log_path: Path | None = None) -> None:
         if log_path is None:
-            log_path = Path.home() / ".navig" / "runtime" / "billing.jsonl"
+            log_path = paths.config_dir() / "runtime" / "billing.jsonl"
         self._path = log_path
         self._lock = threading.Lock()
         self._path.parent.mkdir(parents=True, exist_ok=True)

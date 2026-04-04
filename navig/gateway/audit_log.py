@@ -42,10 +42,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from navig.platform import paths
+
 logger = logging.getLogger(__name__)
 
 # Default path — can be overridden via AuditLog(path=...)
-_DEFAULT_PATH = Path.home() / ".navig" / "runtime" / "audit.jsonl"
+_DEFAULT_PATH = paths.config_dir() / "runtime" / "audit.jsonl"
 
 
 class AuditLog:
