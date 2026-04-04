@@ -115,6 +115,28 @@ def test_domain_launcher_non_tty_exits_cleanly_with_hint(tmp_path: Path, domain:
     assert f"navig {domain} --help" in combined.lower()
 
 
+def test_task_non_tty_lists_workflows_without_launcher_hint(tmp_path: Path):
+    """`navig task` uses direct listing behavior in non-TTY mode.
+
+    This command currently does not route through the launcher fallback hint
+    path; it should still exit cleanly and render its workflow table.
+    """
+    result = subprocess.run(
+        [sys.executable, "-m", "navig", "task"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=_cli_env(tmp_path),
+        stdin=subprocess.DEVNULL,
+    )
+    combined = result.stdout + result.stderr
+
+    assert result.returncode == 0
+    assert "available workflows" in combined.lower()
+    assert "non-tty detected" not in combined.lower()
+
+
 def test_bot_start_uses_configured_gateway_port_when_unspecified(monkeypatch):
     import navig.commands.gateway as gw_mod
 
