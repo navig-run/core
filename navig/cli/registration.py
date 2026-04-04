@@ -60,6 +60,12 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "fx": ("navig.commands.flux", "flux_app"),
     # ── AI sub-app extraction ─────────────────────────────────────────────────
     "ai": ("navig.commands.ai", "ai_app"),
+    # ── Batch extraction: backup, tunnel, skills ──────────────────────────────
+    "backup": ("navig.commands.backup", "backup_app"),
+    "tunnel": ("navig.commands.tunnel", "tunnel_app"),
+    "t": ("navig.commands.tunnel", "tunnel_app"),
+    "skills": ("navig.commands.skills", "skills_app"),
+    "skill": ("navig.commands.skills", "skills_app"),
     # ── Phase 2a: gateway extracted from inline block ─────────────────────────
     "gateway": ("navig.commands.gateway", "gateway_app"),
     "cortex": ("navig.commands.cortex", "cortex_app"),
@@ -82,7 +88,7 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "firewall": ("navig.cli.__init__", "local_app"),
     "dns": ("navig.cli.__init__", "local_app"),
     "port": ("navig.cli.__init__", "local_app"),
-    "proxy": ("navig.cli.__init__", "tunnel_app"),
+    "proxy": ("navig.commands.tunnel", "tunnel_app"),
     "env": ("navig.cli.__init__", "config_app"),
     "secret": ("navig.commands.vault", "vault_app"),
     "job": ("navig.commands.flow", "flow_app"),

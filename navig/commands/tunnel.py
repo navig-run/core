@@ -166,3 +166,63 @@ def auto_tunnel(options: dict[str, Any]):
     else:
         ch.error(f"✗ Recovery failed: {result['message']}")
         ch.info("Try manually restarting: navig tunnel restart")
+
+
+# ============================================================================
+# TYPER SUB-APP — extracted from navig/cli/__init__.py
+# ============================================================================
+
+import typer  # noqa: E402
+
+from navig.cli._callbacks import show_subcommand_help  # noqa: E402
+
+tunnel_app = typer.Typer(
+    help="Manage SSH tunnels",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@tunnel_app.callback()
+def tunnel_callback(ctx: typer.Context):
+    """Tunnel management - run without subcommand for help."""
+    if ctx.invoked_subcommand is None:
+        show_subcommand_help("tunnel", ctx)
+        raise typer.Exit()
+
+
+@tunnel_app.command("run")
+def tunnel_run(ctx: typer.Context):
+    """Start SSH tunnel for active server (canonical command)."""
+    start_tunnel(ctx.obj)
+
+
+@tunnel_app.command("remove")
+def tunnel_remove(ctx: typer.Context):
+    """Stop and remove SSH tunnel (canonical command)."""
+    stop_tunnel(ctx.obj)
+
+
+@tunnel_app.command("update")
+def tunnel_update(ctx: typer.Context):
+    """Restart tunnel (canonical command)."""
+    restart_tunnel(ctx.obj)
+
+
+@tunnel_app.command("show")
+def tunnel_show(
+    ctx: typer.Context,
+    plain: bool = typer.Option(False, "--plain", help="Output plain text for scripting"),
+    json: bool = typer.Option(False, "--json", help="Output JSON"),
+):
+    """Show tunnel status (canonical command)."""
+    ctx.obj["plain"] = plain
+    if json:
+        ctx.obj["json"] = True
+    show_tunnel_status(ctx.obj)
+
+
+@tunnel_app.command("auto")
+def tunnel_auto(ctx: typer.Context):
+    """Auto-start tunnel if needed, auto-stop when done."""
+    auto_tunnel(ctx.obj)

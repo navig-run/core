@@ -907,3 +907,333 @@ def restore_backup_cmd(backup_name: str, component: str | None, options: dict[st
     ch.warning("   Please review backup contents in:")
     ch.warning(f"   {backup_dir}")
     ch.warning("   Then manually restore files/databases as needed")
+
+
+# ============================================================================
+# TYPER SUB-APP — extracted from navig/cli/__init__.py
+# ============================================================================
+
+import typer  # noqa: E402
+
+from navig.cli._callbacks import show_subcommand_help  # noqa: E402
+from navig.deprecation import deprecation_warning  # noqa: E402
+
+backup_app = typer.Typer(
+    help="Backup and export NAVIG configuration",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@backup_app.callback()
+def backup_callback(ctx: typer.Context):
+    """Backup management - run without subcommand for help."""
+    if ctx.invoked_subcommand is None:
+        show_subcommand_help("backup", ctx)
+        raise typer.Exit()
+
+
+@backup_app.command("export")
+def backup_export(
+    ctx: typer.Context,
+    output: Path | None = typer.Option(
+        None, "--output", "-o", help="Output file path (auto-generated if not provided)"
+    ),
+    format: str = typer.Option(
+        "archive", "--format", "-f", help="Output format: 'archive' (tar.gz) or 'json'"
+    ),
+    include_secrets: bool = typer.Option(
+        False,
+        "--include-secrets",
+        help="Include unredacted secrets (passwords, API keys)",
+    ),
+    encrypt: bool = typer.Option(
+        False, "--encrypt", "-e", help="Encrypt the output with a password"
+    ),
+    password: str | None = typer.Option(
+        None, "--password", "-p", help="Encryption password (prompted if not provided)"
+    ),
+):
+    """
+    Export NAVIG configuration to a backup file.
+
+    Creates a portable backup of all hosts, apps, and settings.
+    By default, sensitive data (passwords, API keys) is redacted.
+
+    Examples:
+        navig backup export
+        navig backup export --format json --output ~/my-backup.json
+        navig backup export --include-secrets --encrypt
+    """
+    from navig.commands.config_backup import export_config
+
+    export_config(
+        {
+            "output": output,
+            "format": format,
+            "include_secrets": include_secrets,
+            "encrypt": encrypt,
+            "password": password,
+            "yes": ctx.obj.get("yes", False),
+            "confirm": ctx.obj.get("confirm", False),
+            "json": ctx.obj.get("json", False),
+        }
+    )
+
+
+@backup_app.command("import")
+def backup_import(
+    ctx: typer.Context,
+    file: Path = typer.Argument(..., help="Backup file to import"),
+    merge: bool = typer.Option(
+        True,
+        "--merge/--replace",
+        help="Merge with existing config (default) or replace",
+    ),
+    password: str | None = typer.Option(
+        None, "--password", "-p", help="Decryption password (prompted if needed)"
+    ),
+):
+    """
+    Import NAVIG configuration from a backup file.
+
+    Restores hosts, apps, and settings from a previous export.
+
+    Examples:
+        navig backup import navig-config-20241206.tar.gz
+        navig backup import backup.json --replace
+        navig backup import encrypted-backup.tar.gz.enc --password mypassword
+    """
+    from navig.commands.config_backup import import_config
+
+    import_config(
+        {
+            "file": file,
+            "merge": merge,
+            "password": password,
+            "yes": ctx.obj.get("yes", False),
+            "confirm": ctx.obj.get("confirm", False),
+            "json": ctx.obj.get("json", False),
+        }
+    )
+
+
+@backup_app.command("show")
+def backup_show(
+    ctx: typer.Context,
+    file: Path | None = typer.Argument(None, help="Backup file to inspect"),
+    password: str | None = typer.Option(
+        None, "--password", "-p", help="Decryption password if encrypted"
+    ),
+    plain: bool = typer.Option(False, "--plain", help="Output plain text for scripting"),
+):
+    """Show backup details or list all backups (canonical command)."""
+    if file:
+        from navig.commands.navig_backup import inspect_export
+
+        inspect_export(
+            {
+                "file": file,
+                "password": password,
+                "json": ctx.obj.get("json", False),
+            }
+        )
+    else:
+        from navig.commands.navig_backup import list_exports
+
+        list_exports(
+            {
+                "json": ctx.obj.get("json", False),
+                "plain": plain,
+            }
+        )
+
+
+@backup_app.command("run")
+def backup_run(
+    ctx: typer.Context,
+    config: bool = typer.Option(False, "--config", help="Backup system configuration files"),
+    db_all: bool = typer.Option(False, "--db-all", help="Backup all databases"),
+    hestia: bool = typer.Option(False, "--hestia", help="Backup HestiaCP configuration"),
+    web: bool = typer.Option(False, "--web", help="Backup web server configuration"),
+    all: bool = typer.Option(False, "--all", help="Run comprehensive backup"),
+    restore: str | None = typer.Option(
+        None, "--restore", help="Restore from a comprehensive backup by name"
+    ),
+    component: str | None = typer.Option(None, "--component", help="Specific component to restore"),
+    name: str | None = typer.Option(None, "--name", "-n", help="Custom backup name"),
+    compress: str = typer.Option(
+        "gzip",
+        "--compress",
+        "-c",
+        help="Compression for database backups: none|gzip|zstd",
+    ),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
+):
+    """Run server backup/restore operations (system config, DBs, Hestia, web)."""
+    selected_count = sum(
+        1 for flag in [config, db_all, hestia, web, all, restore is not None] if flag
+    )
+
+    if selected_count != 1:
+        ch.error(
+            "Choose exactly one backup operation.",
+            "Use one of: --config, --db-all, --hestia, --web, --all, or --restore <name>.",
+        )
+        raise typer.Exit(1)
+
+    if restore is not None:
+        ctx.obj["force"] = force
+        restore_backup_cmd(restore, component, ctx.obj)
+        return
+
+    if config:
+        backup_system_config(name, ctx.obj)
+    elif db_all:
+        backup_all_databases(name, compress, ctx.obj)
+    elif hestia:
+        backup_hestia(name, ctx.obj)
+    elif web:
+        backup_web_config(name, ctx.obj)
+    else:
+        backup_all(name, compress, ctx.obj)
+
+
+@backup_app.command("restore")
+def backup_restore(
+    ctx: typer.Context,
+    backup_name: str = typer.Argument(..., help="Backup name to restore from"),
+    component: str | None = typer.Option(
+        None, "--component", "-c", help="Specific component to restore"
+    ),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
+):
+    """Restore from a comprehensive backup by name."""
+    ctx.obj["force"] = force
+    restore_backup_cmd(backup_name, component, ctx.obj)
+
+
+@backup_app.command("list", hidden=True)
+def backup_list(
+    ctx: typer.Context,
+    plain: bool = typer.Option(
+        False, "--plain", help="Output plain text (one backup per line) for scripting"
+    ),
+):
+    """[DEPRECATED: Use 'navig backup show'] List available backups."""
+    deprecation_warning("navig backup list", "navig backup show")
+    from navig.commands.config_backup import list_exports
+
+    list_exports(
+        {
+            "json": ctx.obj.get("json", False),
+            "plain": plain,
+        }
+    )
+
+
+@backup_app.command("inspect", hidden=True)
+def backup_inspect(
+    ctx: typer.Context,
+    file: Path = typer.Argument(..., help="Backup file to inspect"),
+    password: str | None = typer.Option(
+        None, "--password", "-p", help="Decryption password if encrypted"
+    ),
+):
+    """[DEPRECATED: Use 'navig backup show <file>'] Inspect backup contents."""
+    deprecation_warning("navig backup inspect", "navig backup show <file>")
+    from navig.commands.config_backup import inspect_export
+
+    inspect_export(
+        {
+            "file": file,
+            "password": password,
+            "json": ctx.obj.get("json", False),
+        }
+    )
+
+
+@backup_app.command("remove")
+def backup_remove(
+    ctx: typer.Context,
+    file: Path = typer.Argument(..., help="Backup file to delete"),
+):
+    """Remove/delete a backup file (canonical command)."""
+    from navig.commands.config_backup import delete_export
+
+    delete_export(
+        {
+            "file": file,
+            "yes": ctx.obj.get("yes", False),
+            "confirm": ctx.obj.get("confirm", False),
+            "json": ctx.obj.get("json", False),
+        }
+    )
+
+
+@backup_app.command("delete", hidden=True)
+def backup_delete(
+    ctx: typer.Context,
+    file: Path = typer.Argument(..., help="Backup file to delete"),
+):
+    """[DEPRECATED: Use 'navig backup remove'] Delete backup file."""
+    deprecation_warning("navig backup delete", "navig backup remove")
+    from navig.commands.config_backup import delete_export
+
+    delete_export(
+        {
+            "file": file,
+            "yes": ctx.obj.get("yes", False),
+            "confirm": ctx.obj.get("confirm", False),
+            "json": ctx.obj.get("json", False),
+        }
+    )
+
+
+@backup_app.command("config")
+def backup_config_cmd(
+    ctx: typer.Context,
+    output: Path | None = typer.Option(
+        None, "--output", "-o", help="Output file path (auto-generated if not provided)"
+    ),
+    format: str = typer.Option(
+        "archive", "--format", "-f", help="Output format: 'archive' (tar.gz) or 'json'"
+    ),
+    include_secrets: bool = typer.Option(
+        False,
+        "--include-secrets",
+        help="Include unredacted secrets (passwords, API keys)",
+    ),
+    encrypt: bool = typer.Option(
+        False, "--encrypt", "-e", help="Encrypt the output with a password"
+    ),
+    password: str | None = typer.Option(
+        None, "--password", "-p", help="Encryption password (prompted if not provided)"
+    ),
+):
+    """
+    Backup/export NAVIG configuration (hosts, apps, settings).
+
+    Canonical alias for: navig backup export
+    The inverse of: navig backup import
+
+    Examples:
+        navig backup config
+        navig backup config --format json --output ~/my-backup.json
+        navig backup config --include-secrets --encrypt
+    """
+    obj = ctx.obj or {}
+    from navig.commands.config_backup import export_config
+
+    export_config(
+        {
+            "output": output,
+            "format": format,
+            "include_secrets": include_secrets,
+            "encrypt": encrypt,
+            "password": password,
+            "yes": obj.get("yes", False),
+            "confirm": obj.get("confirm", False),
+            "json": obj.get("json", False),
+        }
+    )

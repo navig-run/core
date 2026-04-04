@@ -570,3 +570,257 @@ def _invoke_shell(command: str, cwd: Path) -> int:
     except Exception as e:
         ch.error(f"Shell execution failed: {e}")
         return 1
+
+
+# ============================================================================
+# TYPER SUB-APP — extracted from navig/cli/__init__.py
+# ============================================================================
+
+from pathlib import Path  # noqa: E402
+
+import typer  # noqa: E402
+
+from navig.cli._callbacks import show_subcommand_help  # noqa: E402
+
+skills_app = typer.Typer(
+    help="Manage AI skill definitions",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@skills_app.callback()
+def skills_callback(ctx: typer.Context):
+    """Skills management - run without subcommand for help."""
+    if ctx.invoked_subcommand is None:
+        show_subcommand_help("skills", ctx)
+        raise typer.Exit()
+
+
+@skills_app.command("list")
+def skills_list(
+    ctx: typer.Context,
+    skills_dir: Path | None = typer.Option(
+        None,
+        "--dir",
+        help="Optional skills directory override",
+    ),
+    plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+):
+    """List available AI skills."""
+    ctx.obj["plain"] = plain
+    if json_output:
+        ctx.obj["json"] = True
+    if skills_dir:
+        ctx.obj["skills_dir"] = str(skills_dir)
+    list_skills_cmd(ctx.obj)
+
+
+@skills_app.command("tree")
+def skills_tree(
+    ctx: typer.Context,
+    skills_dir: Path | None = typer.Option(
+        None,
+        "--dir",
+        help="Optional skills directory override",
+    ),
+    plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+):
+    """Show skills grouped by category."""
+    ctx.obj["plain"] = plain
+    if json_output:
+        ctx.obj["json"] = True
+    if skills_dir:
+        ctx.obj["skills_dir"] = str(skills_dir)
+    tree_skills_cmd(ctx.obj)
+
+
+@skills_app.command("show")
+def skills_show(
+    ctx: typer.Context,
+    name: str = typer.Argument(
+        ...,
+        help="Skill name (e.g., 'docker-manage', 'git-basics', 'official/docker-ops')",
+    ),
+    skills_dir: Path | None = typer.Option(
+        None,
+        "--dir",
+        help="Optional skills directory override",
+    ),
+    plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
+    json_output: bool = typer.Option(False, "--json", help="Output JSON"),
+):
+    """Show detailed skill information (commands, examples, metadata)."""
+    ctx.obj["plain"] = plain
+    if json_output:
+        ctx.obj["json"] = True
+    if skills_dir:
+        ctx.obj["skills_dir"] = str(skills_dir)
+    show_skill_cmd(name, ctx.obj)
+
+
+@skills_app.command("run")
+def skills_run(
+    ctx: typer.Context,
+    spec: str = typer.Argument(
+        ...,
+        help="Skill spec: <skill-name>:<command> or <skill-name> (runs entrypoint)",
+    ),
+    args: list[str] | None = typer.Argument(None, help="Arguments passed to the skill command"),
+    skills_dir: Path | None = typer.Option(
+        None,
+        "--dir",
+        help="Optional skills directory override",
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Auto-confirm risky commands"),
+    json_output: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """
+    Run a skill command.
+
+    Spec format:
+      <skill>:<command>  — run a named navig-command from the skill
+      <skill>            — run the skill's entrypoint (main.py / index.js)
+
+    Examples:
+        navig skills run docker-manage:ps
+        navig skills run git-basics:git-status
+        navig skills run file-operations:list-files /var/log
+        navig skills run my-custom-skill   # runs entrypoint
+    """
+    if json_output:
+        ctx.obj["json"] = True
+    if yes:
+        ctx.obj["yes"] = True
+    if skills_dir:
+        ctx.obj["skills_dir"] = str(skills_dir)
+    exit_code = run_skill_cmd(spec, args or [], ctx.obj)
+    if exit_code != 0:
+        raise typer.Exit(exit_code)
+
+
+@skills_app.command("synthesize")
+def skills_synthesize(
+    ctx: typer.Context,
+    min_occurrences: int = typer.Option(
+        3,
+        "--min-occurrences",
+        "-m",
+        min=1,
+        help="Minimum pattern repetitions to consider.",
+    ),
+    limit: int = typer.Option(
+        10,
+        "--limit",
+        "-n",
+        min=1,
+        max=100,
+        help="Maximum number of patterns to analyse.",
+    ),
+    apply: bool = typer.Option(
+        False, "--apply", help="Write approved skill YAML to ~/.navig/skills/."
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing any files."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Auto-approve all safe drafts."),
+) -> None:
+    """
+    Synthesize new skill YAML files from repeated command patterns.
+
+    Scans ~/.navig/data/pattern_log.sqlite, clusters repeated sequences,
+    and generates ready-to-use NAVIG skill definitions.
+
+    Examples:
+        navig skills synthesize                  # preview top patterns
+        navig skills synthesize --apply          # generate + save skills
+        navig skills synthesize --min-occurrences 5 --apply --yes
+    """
+    try:
+        from navig.agent.pattern_analyzer import PatternAnalyzer  # type: ignore
+        from navig.agent.pattern_observer import (  # type: ignore
+            DEFAULT_DB_PATH,
+            PatternObserver,
+        )
+        from navig.agent.skill_drafter import SkillDrafter  # type: ignore
+    except ImportError as exc:
+        ch.error(f"Synthesis pipeline not available: {exc}")
+        raise typer.Exit(1) from exc
+
+    observer = PatternObserver(DEFAULT_DB_PATH)
+    records = observer.get_recent(limit=500)
+
+    if not records:
+        ch.warn(
+            "No command patterns found in pattern log.\n"
+            "  Run a few commands first to build the pattern database.\n"
+            f"  Log path: {DEFAULT_DB_PATH}"
+        )
+        raise typer.Exit(0)
+
+    analyzer = PatternAnalyzer(min_occurrences=min_occurrences, max_results=limit)
+    scored = analyzer.score_by_frequency(records)
+
+    if not scored:
+        ch.warn(
+            f"No patterns found with ≥{min_occurrences} occurrences.\n"
+            "  Try lowering --min-occurrences."
+        )
+        raise typer.Exit(0)
+
+    drafter = SkillDrafter()
+
+    # -- Preview table --------------------------------------------------------
+    from rich.table import Table
+
+    table = Table(title=f"Top {len(scored)} Synthesisable Patterns", show_lines=True)
+    table.add_column("#", style="dim", width=3)
+    table.add_column("Sequence", style="cyan")
+    table.add_column("Occurrences", justify="right")
+    table.add_column("Score", justify="right")
+    table.add_column("Safe")
+
+    drafts = []
+    for idx, pattern in enumerate(scored, 1):
+        draft = drafter.draft(pattern)
+        drafts.append(draft)
+        safe_icon = "[green]✓[/green]" if draft.safe else "[red]✗[/red]"
+        table.add_row(
+            str(idx),
+            " → ".join(list(pattern.sequence)[:4]),
+            str(pattern.occurrences),
+            f"{pattern.score:.0f}",
+            safe_icon,
+        )
+
+    ch.console.print(table)
+
+    if dry_run:
+        ch.dim("  (dry-run: no files written)")
+        raise typer.Exit(0)
+
+    if not apply:
+        ch.dim("\nRun with --apply to save skill YAML files.")
+        raise typer.Exit(0)
+
+    # -- Apply ----------------------------------------------------------------
+    saved = 0
+    skipped = 0
+    for draft in drafts:
+        if not draft.safe:
+            if yes:
+                ch.warn(f"Skipping unsafe draft: {draft.name}")
+                skipped += 1
+                continue
+            choice = typer.confirm(
+                f"Draft '{draft.name}' has safety warnings. Save anyway?", default=False
+            )
+            if not choice:
+                skipped += 1
+                continue
+
+        path = drafter.apply(draft)
+        ch.success(f"Saved: {path}")
+        saved += 1
+
+    ch.print(f"\n[bold]{saved}[/bold] skill(s) saved, {skipped} skipped.")
