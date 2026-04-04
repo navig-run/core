@@ -17,7 +17,9 @@ class _FakeChannel:
         return {"ok": True}
 
     async def send_message(self, chat_id, text, parse_mode=None, **kwargs):
-        self.api_calls.append(("sendMessage", {"chat_id": chat_id, "text": text, "parse_mode": parse_mode, **kwargs}))
+        self.api_calls.append(
+            ("sendMessage", {"chat_id": chat_id, "text": text, "parse_mode": parse_mode, **kwargs})
+        )
         return {"ok": True}
 
     def _set_one_shot_noai(self, user_id: int) -> None:
@@ -258,3 +260,75 @@ async def test_provider_model_assignment_marks_onboarding_step(monkeypatch):
     assert _Router.cfg.small.provider == "xai"
     assert _Router.cfg.small.model == "grok-3"
     assert marked == ["ai-provider"]
+
+
+@pytest.mark.asyncio
+async def test_provider_callback_answered_before_picker_renders():
+    """answerCallbackQuery must be sent before _show_provider_model_picker is called."""
+    events: list[str] = []
+
+    class _OrderTrackChannel(_FakeChannel):
+        async def _api_call(self, method, data):
+            events.append(f"api:{method}")
+            return {"ok": True}
+
+        async def send_message(self, chat_id, text, parse_mode=None, **kwargs):
+            events.append("send_message")
+            return {"ok": True}
+
+        async def _show_provider_model_picker(
+            self,
+            chat_id,
+            prov_id,
+            page=0,
+            selected_tier="s",
+            message_id=None,
+        ):
+            events.append("picker")
+            self.picker_calls.append((chat_id, prov_id, page, selected_tier, message_id))
+
+    channel = _OrderTrackChannel()
+    handler = CallbackHandler(channel)
+
+    await handler._handle_provider_callback(
+        cb_id="cb-order",
+        cb_data="prov_nvidia",
+        chat_id=200,
+        message_id=300,
+        user_id=400,
+    )
+
+    assert "api:answerCallbackQuery" in events
+    assert "picker" in events
+    answer_idx = events.index("api:answerCallbackQuery")
+    picker_idx = events.index("picker")
+    assert answer_idx < picker_idx, (
+        f"answerCallbackQuery (pos {answer_idx}) must fire before picker (pos {picker_idx}); "
+        f"events={events}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_provider_callback_double_failure_no_show_alert_toast():
+    """When picker fails twice the callback must NOT emit a show_alert error toast."""
+    channel = _FakeChannel()  # always raises in _show_provider_model_picker
+    handler = CallbackHandler(channel)
+
+    await handler._handle_provider_callback(
+        cb_id="cb-toast",
+        cb_data="prov_openai",
+        chat_id=201,
+        message_id=301,
+        user_id=401,
+    )
+
+    show_alert_answers = [
+        payload
+        for method, payload in channel.api_calls
+        if method == "answerCallbackQuery" and payload.get("show_alert") is True
+    ]
+    assert show_alert_answers == [], (
+        f"Expected no show_alert toast on double failure, got: {show_alert_answers}"
+    )
+    # Fallback to providers hub should have been triggered
+    assert channel.provider_renders, "Expected providers hub fallback after double failure"

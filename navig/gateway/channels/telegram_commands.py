@@ -3252,13 +3252,17 @@ class TelegramCommandsMixin:
         tier_code_to_name = {"s": "small", "b": "big", "c": "coder_big"}
         tier_name = tier_code_to_name[selected_tier]
 
-        page_size = max(1, len(models))
+        _PAGE_SIZE = 20
+        page_size = _PAGE_SIZE
         total_pages = max(1, (len(models) + page_size - 1) // page_size)
         page = min(max(0, page), total_pages - 1)
         start = page * page_size
         end = start + page_size
         page_models = models[start:end]
 
+        viewing_line = f"Viewing: {tier_emoji[tier_name]} {tier_label[tier_name]}"
+        if total_pages > 1:
+            viewing_line += f" — page {page + 1}/{total_pages}"
         lines = [
             f"<b>{emoji} {name}</b> — assign model to tier",
             "",
@@ -3266,7 +3270,7 @@ class TelegramCommandsMixin:
             _tier_line("big"),
             _tier_line("coder_big"),
             "",
-            f"Viewing: {tier_emoji[tier_name]} {tier_label[tier_name]}",
+            viewing_line,
             "Tap a model below to assign it.",
         ]
         for offset, m in enumerate(page_models):
@@ -3312,6 +3316,19 @@ class TelegramCommandsMixin:
                     }
                 ]
             )
+
+        if total_pages > 1:
+            page_nav: list[dict[str, str]] = []
+            if page > 0:
+                page_nav.append(
+                    {"text": "⬅️ Prev", "callback_data": f"prov_page_{prov_id}_{page - 1}"}
+                )
+            page_nav.append({"text": f"📄 {page + 1}/{total_pages}", "callback_data": "prov_back"})
+            if page < total_pages - 1:
+                page_nav.append(
+                    {"text": "Next ➡️", "callback_data": f"prov_page_{prov_id}_{page + 1}"}
+                )
+            keyboard.append(page_nav)
 
         keyboard.append(
             [

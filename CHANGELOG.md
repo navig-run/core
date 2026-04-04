@@ -9,6 +9,10 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Add entries here until the next release, then move them under a new version heading. -->
 <!-- Run: git log v2.4.20..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
 
+### Fixed
+- **Telegram provider picker "Couldn't open … picker" error eliminated** (#58): `answerCallbackQuery` is now sent to Telegram *before* `_show_provider_model_picker` is called in `_handle_provider_callback` (`telegram_keyboards.py`), preventing the loading-spinner timeout and removing the erroneous `show_alert` error toast that appeared when the picker's internal failure cascaded through the `@error_handled` recovery path.
+- **Telegram provider picker oversized-keyboard crash fixed** (#58): `_show_provider_model_picker` (`telegram_commands.py`) previously used `page_size = max(1, len(models))`, placing all models on a single page. For providers with large live model lists (e.g. OpenRouter with 200+ entries) this produced a keyboard that exceeded Telegram's message-size limit, causing `send_message` to throw and triggering the double-failure error path. The page size is now capped at `_PAGE_SIZE = 20`. ⬅️ Prev / Next ➡️ navigation buttons appear automatically when `total_pages > 1`, using the existing `prov_page_{prov_id}_{page}` callback format.
+
 ### Changed
 - **CLI tunnel alias cleanup**: Removed hidden deprecated tunnel aliases `start`, `stop`, `restart`, and `status` from `navig/cli/__init__.py`; canonical tunnel commands remain `run`, `remove`, `update`, and `show`.
 - **CLI web alias cleanup**: Removed hidden deprecated top-level aliases `webserver-list-vhosts`, `webserver-test-config`, and `webserver-reload` from `navig/cli/__init__.py`; canonical `navig web ...` commands remain unchanged.

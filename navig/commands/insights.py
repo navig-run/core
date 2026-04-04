@@ -1070,3 +1070,152 @@ def generate_report(
     show_top_commands(5, time_range)
     ch.console.print("")
     show_anomalies(time_range)
+
+
+# ============================================================================
+# TYPER SUB-APP — extracted from navig/cli/__init__.py
+# ============================================================================
+
+import typer  # noqa: E402
+
+from navig.cli._callbacks import show_subcommand_help  # noqa: E402
+
+insights_app = typer.Typer(
+    help="Operations analytics and insights",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@insights_app.callback()
+def insights_callback(ctx: typer.Context):
+    """Operations insights - analytics on your command patterns."""
+    if ctx.invoked_subcommand is None:
+        show_insights_summary()
+        raise typer.Exit()
+
+
+@insights_app.command("show")
+def insights_show_cmd(
+    ctx: typer.Context,
+    time_range: str = typer.Option(
+        "week", "--range", "-r", help="Time range: today, week, month, all"
+    ),
+    plain: bool = typer.Option(False, "--plain", help="Plain text output"),
+    json_out: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """Show insights summary with key metrics."""
+    show_insights_summary(time_range=time_range, plain=plain, json_out=json_out)
+
+
+@insights_app.command("hosts")
+def insights_hosts_cmd(
+    ctx: typer.Context,
+    time_range: str = typer.Option(
+        "week", "--range", "-r", help="Time range: today, week, month, all"
+    ),
+    plain: bool = typer.Option(False, "--plain", help="Plain text output"),
+    json_out: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """
+    Show host health scores and trends.
+
+    Calculates a health score (0-100) for each host based on:
+    - Success rate (60% weight)
+    - Average latency (40% weight)
+
+    Also shows if host performance is improving, stable, or declining.
+    """
+    show_host_health(time_range=time_range, plain=plain, json_out=json_out)
+
+
+@insights_app.command("commands")
+def insights_commands_cmd(
+    ctx: typer.Context,
+    limit: int = typer.Option(10, "--limit", "-n", help="Number of commands to show"),
+    time_range: str = typer.Option(
+        "week", "--range", "-r", help="Time range: today, week, month, all"
+    ),
+    plain: bool = typer.Option(False, "--plain", help="Plain text output"),
+    json_out: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """Show most frequently used commands with success rates."""
+    show_top_commands(limit=limit, time_range=time_range, plain=plain, json_out=json_out)
+
+
+@insights_app.command("time")
+def insights_time_cmd(
+    ctx: typer.Context,
+    time_range: str = typer.Option(
+        "week", "--range", "-r", help="Time range: today, week, month, all"
+    ),
+    plain: bool = typer.Option(False, "--plain", help="Plain text output"),
+    json_out: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """
+    Show time-based usage patterns.
+
+    Displays a breakdown of operations by hour, showing:
+    - Activity levels throughout the day
+    - Success rates per time period
+    - Most common commands at each hour
+    """
+    show_time_patterns(time_range=time_range, plain=plain, json_out=json_out)
+
+
+@insights_app.command("anomalies")
+def insights_anomalies_cmd(
+    ctx: typer.Context,
+    time_range: str = typer.Option(
+        "week", "--range", "-r", help="Time range: today, week, month, all"
+    ),
+    plain: bool = typer.Option(False, "--plain", help="Plain text output"),
+    json_out: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """
+    Detect unusual patterns and potential issues.
+
+    Analyzes:
+    - Error rate spikes
+    - Unusual command frequencies
+    - Inactive hosts
+    - Performance degradation
+    """
+    show_anomalies(time_range=time_range, plain=plain, json_out=json_out)
+
+
+@insights_app.command("recommend")
+def insights_recommend_cmd(
+    ctx: typer.Context,
+    time_range: str = typer.Option(
+        "week", "--range", "-r", help="Time range: today, week, month, all"
+    ),
+    plain: bool = typer.Option(False, "--plain", help="Plain text output"),
+    json_out: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """Get personalized recommendations based on your usage."""
+    show_recommendations(time_range=time_range, plain=plain, json_out=json_out)
+
+
+@insights_app.command("report")
+def insights_report_cmd(
+    ctx: typer.Context,
+    time_range: str = typer.Option(
+        "week", "--range", "-r", help="Time range: today, week, month, all"
+    ),
+    output: str | None = typer.Option(None, "--output", "-o", help="Save report to file"),
+    json_out: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """
+    Generate a full analytics report.
+
+    Includes:
+    - Overall statistics
+    - Host health scores
+    - Top commands
+    - Detected anomalies
+    - Personalized recommendations
+
+    Can be exported to JSON for further analysis.
+    """
+    generate_report(time_range=time_range, output_file=output, json_out=json_out)

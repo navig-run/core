@@ -1296,3 +1296,204 @@ def show_trigger_stats():
         ch.console.print(f"\n[bold]Recent Activity (last {len(history)}):[/bold]")
         ch.console.print(f"  Success: {recent_success}")
         ch.console.print(f"  Failed: {recent_fail}")
+
+
+# ============================================================================
+# TYPER SUB-APP — extracted from navig/cli/__init__.py
+# ============================================================================
+
+import typer  # noqa: E402
+
+from navig.cli._callbacks import show_subcommand_help  # noqa: E402
+
+trigger_app = typer.Typer(
+    help="Event-driven automation triggers",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@trigger_app.callback()
+def trigger_callback(ctx: typer.Context):
+    """Event-driven automation triggers - run without subcommand for list."""
+    if ctx.invoked_subcommand is None:
+        list_triggers()
+        raise typer.Exit()
+
+
+@trigger_app.command("list")
+def trigger_list_cmd(
+    ctx: typer.Context,
+    type_filter: str | None = typer.Option(None, "--type", "-t", help="Filter by trigger type"),
+    status: str | None = typer.Option(
+        None, "--status", "-s", help="Filter by status (enabled/disabled)"
+    ),
+    tag: str | None = typer.Option(None, "--tag", help="Filter by tag"),
+    plain: bool = typer.Option(False, "--plain", help="Plain text output"),
+    json_out: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """List all configured triggers."""
+    list_triggers(
+        type_filter=type_filter,
+        status_filter=status,
+        tag=tag,
+        plain=plain,
+        json_out=json_out,
+    )
+
+
+@trigger_app.command("show")
+def trigger_show_cmd(
+    ctx: typer.Context,
+    trigger_id: str = typer.Argument(..., help="Trigger ID to show"),
+    plain: bool = typer.Option(False, "--plain", help="Plain text output"),
+    json_out: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """Show detailed trigger information."""
+    show_trigger(trigger_id, plain=plain, json_out=json_out)
+
+
+@trigger_app.command("add")
+def trigger_add_cmd(
+    ctx: typer.Context,
+    name: str | None = typer.Argument(None, help="Trigger name"),
+    action: str | None = typer.Option(None, "--action", "-a", help="Action to execute"),
+    trigger_type: str = typer.Option(
+        "manual",
+        "--type",
+        "-t",
+        help="Trigger type (health, schedule, threshold, manual)",
+    ),
+    description: str = typer.Option("", "--desc", "-d", help="Description"),
+    schedule: str = typer.Option(
+        "", "--schedule", help="Schedule expression (for schedule triggers)"
+    ),
+    host: str = typer.Option("", "--host", help="Target host (for threshold triggers)"),
+    condition: str = typer.Option(
+        "", "--condition", "-c", help="Condition (format: 'target op value')"
+    ),
+):
+    """
+    Create a new trigger.
+
+    Interactive mode (no args):
+        navig trigger add
+
+    Quick mode:
+        navig trigger add "Disk Alert" --action "notify:telegram" --type threshold --host prod --condition "disk gte 80"
+        navig trigger add "Daily Backup" --action "workflow:backup" --type schedule --schedule "0 2 * * *"
+        navig trigger add "Health Check" --action "host test" --type health
+
+    Action formats:
+        - navig command: "host list", "db dump", etc.
+        - workflow: "workflow:deploy", "workflow:backup"
+        - notify: "notify:telegram", "notify:console"
+        - webhook: "webhook:https://example.com/hook"
+    """
+    if name is None:
+        add_trigger_interactive()
+    else:
+        if not action:
+            from navig import console_helper as _ch
+
+            _ch.error(
+                "Action is required for quick mode. Use --action or run without args for interactive mode."
+            )
+            return
+        add_trigger_quick(
+            name=name,
+            action=action,
+            trigger_type=trigger_type,
+            description=description,
+            schedule=schedule,
+            host=host,
+            condition=condition,
+        )
+
+
+@trigger_app.command("remove")
+def trigger_remove_cmd(
+    ctx: typer.Context,
+    trigger_id: str = typer.Argument(..., help="Trigger ID to remove"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
+):
+    """Remove a trigger."""
+    remove_trigger(trigger_id, force=force)
+
+
+@trigger_app.command("enable")
+def trigger_enable_cmd(
+    ctx: typer.Context,
+    trigger_id: str = typer.Argument(..., help="Trigger ID to enable"),
+):
+    """Enable a disabled trigger."""
+    enable_trigger(trigger_id)
+
+
+@trigger_app.command("disable")
+def trigger_disable_cmd(
+    ctx: typer.Context,
+    trigger_id: str = typer.Argument(..., help="Trigger ID to disable"),
+):
+    """Disable a trigger (stops it from firing)."""
+    disable_trigger(trigger_id)
+
+
+@trigger_app.command("test")
+def trigger_test_cmd(
+    ctx: typer.Context,
+    trigger_id: str = typer.Argument(..., help="Trigger ID to test"),
+):
+    """
+    Test a trigger (dry run).
+
+    Shows what actions would be executed without actually running them.
+    """
+    test_trigger(trigger_id)
+
+
+@trigger_app.command("fire")
+def trigger_fire_cmd(
+    ctx: typer.Context,
+    trigger_id: str = typer.Argument(..., help="Trigger ID to fire"),
+):
+    """
+    Manually fire a trigger.
+
+    Executes all actions associated with the trigger immediately,
+    regardless of conditions or cooldown.
+    """
+    fire_trigger(trigger_id)
+
+
+@trigger_app.command("history")
+def trigger_history_cmd(
+    ctx: typer.Context,
+    trigger_id: str | None = typer.Argument(None, help="Filter by trigger ID"),
+    limit: int = typer.Option(20, "--limit", "-n", help="Max entries to show"),
+    plain: bool = typer.Option(False, "--plain", help="Plain text output"),
+    json_out: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """Show trigger execution history."""
+    show_trigger_history(
+        trigger_id=trigger_id,
+        limit=limit,
+        plain=plain,
+        json_out=json_out,
+    )
+
+
+@trigger_app.command("clear-history")
+def trigger_clear_history_cmd(
+    ctx: typer.Context,
+    trigger_id: str | None = typer.Argument(None, help="Clear history for specific trigger only"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
+):
+    """Clear trigger execution history."""
+    clear_trigger_history(trigger_id=trigger_id, force=force)
+
+
+@trigger_app.command("stats")
+def trigger_stats_cmd(ctx: typer.Context):
+    """Show trigger statistics."""
+    show_trigger_stats()
