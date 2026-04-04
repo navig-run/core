@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
+from navig import console_helper as ch
 from navig.platform import paths
 
 from .engine import EngineConfig, EngineState, OnboardingEngine
@@ -85,23 +86,21 @@ def run_engine_onboarding(
         if jump_to_step:
             # In targeted-jump mode the total-step fraction is misleading
             # (only the target step plus its tail run). Use ordinal only.
-            sys.stdout.write(f"  [step {started['n']}] · {title}...\n")
+            ch.dim(f"  [step {started['n']}] · {title}...")
         else:
             pct = int((started["n"] / max(step_total, 1)) * 100)
             tier = getattr(step, "tier", "essential")
-            sys.stdout.write(f"  [{started['n']}/{step_total} {pct:>3}%] · {title} ({tier})...\n")
-        sys.stdout.flush()
+            ch.dim(f"  [{started['n']}/{step_total} {pct:>3}%] · {title} ({tier})...")
 
     engine = OnboardingEngine(cfg, steps, on_step_start=_progress)
 
     if show_banner:
         if force:
-            sys.stdout.write("\n  Welcome back — reconfiguring your existing NAVIG installation.\n")
-            sys.stdout.write("  Your previous settings will be preserved where not overwritten.\n\n")
+            ch.info("Welcome back — reconfiguring your existing NAVIG installation.")
+            ch.dim("  Your previous settings will be preserved where not overwritten.")
         else:
-            sys.stdout.write("\n  Welcome to NAVIG — running first-time setup.\n")
-            sys.stdout.write("  Set NAVIG_SKIP_ONBOARDING=1 to skip automatic setup.\n\n")
-        sys.stdout.flush()
+            ch.info("Welcome to NAVIG — running first-time setup.")
+            ch.dim("  Set NAVIG_SKIP_ONBOARDING=1 to skip automatic setup.")
 
     previous_guard = os.getenv("NAVIG_ONBOARDING_ACTIVE")
     os.environ["NAVIG_ONBOARDING_ACTIVE"] = "1"
@@ -119,8 +118,7 @@ def run_engine_onboarding(
         review_record = next((s for s in state.steps if s.id == "review"), None)
         revisit_target = (review_record.output or {}).get("jumpTo", "") if review_record else ""
         if revisit_target:
-            sys.stdout.write(f"\n  Revisiting step: {revisit_target} …\n\n")
-            sys.stdout.flush()
+            ch.step(f"Revisiting step: {revisit_target} …")
             return run_engine_onboarding(
                 force=True,
                 jump_to_step=revisit_target,
@@ -131,17 +129,15 @@ def run_engine_onboarding(
 
     if show_banner:
         if state.interrupted_at:
-            sys.stdout.write("\n  Setup paused. Run 'navig init' to resume.\n\n")
+            ch.warning("Setup paused. Run 'navig init' to resume.")
         else:
-            sys.stdout.write("\n  Setup complete. Run 'navig --help' to get started.\n\n")
+            ch.success("Setup complete. Run 'navig --help' to get started.")
         _print_verification_dashboard(state, step_tiers)
-        sys.stdout.flush()
 
     return state
 
 
 def _print_verification_dashboard(state: EngineState, step_tiers: dict[str, str]) -> None:
-    from navig import console_helper as ch
 
     status_counts = Counter(rec.status for rec in state.steps)
     tier_counts = Counter(step_tiers.get(rec.id, "essential") for rec in state.steps)
@@ -193,7 +189,6 @@ def _print_verification_dashboard(state: EngineState, step_tiers: dict[str, str]
         col_width = max(len(cmd) for cmd, _ in deferred)
         for cmd, description in deferred:
             ch.dim(f"    → {cmd:<{col_width}}  {description}")
-    sys.stdout.write("\n")
 
 
 def _deferred_integration_commands(

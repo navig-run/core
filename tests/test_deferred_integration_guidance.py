@@ -174,7 +174,7 @@ class TestPrintVerificationDashboard:
 
         output = self._capture_dashboard(state, tiers)
 
-        assert "Recommended next:" in output
+        assert "Recommended" in output
         assert "navig init --reconfigure" in output
 
     def test_description_appears_on_same_line_as_command(self) -> None:

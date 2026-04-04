@@ -11,7 +11,6 @@ when the artifact (onboarding.json) already contained a "completed" record for i
 
 from __future__ import annotations
 
-import io
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -213,14 +212,15 @@ def test_runner_progress_uses_ordinal_when_jump_set() -> None:
         on_failure="skip",
     )
 
-    buf = io.StringIO()
+    captured_lines: list[str] = []
 
     with (
         patch("navig.onboarding.runner.load_or_create") as mock_genesis,
         patch("navig.onboarding.runner.build_step_registry", return_value=[fake_step] * 18),
         patch("navig.onboarding.runner.OnboardingEngine") as mock_engine_cls,
-        patch("sys.stdout", buf),
+        patch("navig.onboarding.runner.ch") as mock_ch,
     ):
+        mock_ch.dim = lambda msg: captured_lines.append(msg)
         mock_genesis.return_value = MagicMock()
         engine_instance = MagicMock()
         engine_instance.run.return_value = fake_state
@@ -241,7 +241,7 @@ def test_runner_progress_uses_ordinal_when_jump_set() -> None:
             show_banner=False,
         )
 
-    output = buf.getvalue()
+    output = "\n".join(captured_lines)
 
     # Must use ordinal format
     assert "[step 1]" in output, (
@@ -288,14 +288,15 @@ def test_runner_progress_uses_fraction_when_no_jump() -> None:
         on_failure="skip",
     )
 
-    buf = io.StringIO()
+    captured_lines: list[str] = []
 
     with (
         patch("navig.onboarding.runner.load_or_create") as mock_genesis,
         patch("navig.onboarding.runner.build_step_registry", return_value=[fake_step] * 5),
         patch("navig.onboarding.runner.OnboardingEngine") as mock_engine_cls,
-        patch("sys.stdout", buf),
+        patch("navig.onboarding.runner.ch") as mock_ch,
     ):
+        mock_ch.dim = lambda msg: captured_lines.append(msg)
         mock_genesis.return_value = MagicMock()
         engine_instance = MagicMock()
         engine_instance.run.return_value = fake_state
@@ -311,7 +312,7 @@ def test_runner_progress_uses_fraction_when_no_jump() -> None:
 
         run_engine_onboarding(force=False, show_banner=False)
 
-    output = buf.getvalue()
+    output = "\n".join(captured_lines)
 
     assert "/5" in output, (
         f"Expected '/5' fraction in progress output for normal run.\nGot: {output!r}"

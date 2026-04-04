@@ -424,6 +424,8 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
 
         import typer
 
+        from navig import console_helper as ch
+
         providers = _load_providers()
 
         source_by_provider: dict[str, list[str]] = {
@@ -446,7 +448,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
                     default_idx = i
                     break
 
-        sys.stdout.write("\n  Choose your AI provider:\n")
+        ch.info("Choose your AI provider:")
         for i, p in enumerate(providers, start=1):
             local_tag = (
                 "  (local, no key needed)"
@@ -456,9 +458,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             sources = source_by_provider.get(p.id, [])
             ready_tag = f"  (already configured: {'/'.join(sources)})" if sources else ""
             active_tag = "  (current)" if p.id == current_provider else ""
-            sys.stdout.write(f"    [{i}] {p.display_name}{local_tag}{ready_tag}{active_tag}\n")
-        sys.stdout.write("\n")
-        sys.stdout.flush()
+            ch.dim(f"    [{i}] {p.display_name}{local_tag}{ready_tag}{active_tag}")
 
         try:
             choice_raw = typer.prompt("  Provider", default=str(default_idx + 1))
@@ -561,16 +561,15 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         # ── Optional fallback provider ────────────────────────────────────
         fallback_pid = ""
         try:
-            sys.stdout.write(
-                "\n  Configure a fallback provider? "
-                "(used when primary is unavailable — press Enter to skip)\n\n"
+            ch.info(
+                "Configure a fallback provider? "
+                "(used when primary is unavailable — press Enter to skip)"
             )
             fallback_providers = [p for p in providers if p.id != pid]
             for i, p in enumerate(fallback_providers, start=1):
                 local_tag = "" if getattr(p, "requires_key", True) else "  (local)"
-                sys.stdout.write(f"    [{i}] {p.display_name}{local_tag}\n")
-            sys.stdout.write("    [s] Skip\n\n")
-            sys.stdout.flush()
+                ch.dim(f"    [{i}] {p.display_name}{local_tag}")
+            ch.dim("    [s] Skip")
             fb_raw = typer.prompt("  Fallback provider", default="s").strip().lower()
             if fb_raw not in ("s", "skip", ""):
                 try:
@@ -1025,11 +1024,12 @@ def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
 
         import typer
 
-        sys.stdout.write("\n  Search provider\n\n")
+        from navig import console_helper as ch
+
+        ch.info("Search provider")
         for idx, (_, label, _) in enumerate(_WEB_SEARCH_PROVIDER_CATALOG, start=1):
-            sys.stdout.write(f"    [{idx}] {label}\n")
-        sys.stdout.write("    [s] Skip for now\n\n")
-        sys.stdout.flush()
+            ch.dim(f"    [{idx}] {label}")
+        ch.dim("    [s] Skip for now")
 
         try:
             choice_raw = typer.prompt("  Provider", default="1").strip().lower()
@@ -1252,11 +1252,11 @@ def _step_skills_activation(navig_dir: Path) -> OnboardingStep:
 
         import typer
 
-        sys.stdout.write("\n  Available skill packs:\n")
+        from navig import console_helper as ch
+
+        ch.info("Available skill packs:")
         for i, pack in enumerate(available, start=1):
-            sys.stdout.write(f"    [{i}] {pack}\n")
-        sys.stdout.write("\n")
-        sys.stdout.flush()
+            ch.dim(f"    [{i}] {pack}")
 
         try:
             selection = typer.prompt(
@@ -1637,6 +1637,8 @@ def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
         # ── 1. Offer to import env-var API keys ──────────────────────────
         import typer
 
+        from navig import console_helper as ch
+
         for env_var, vault_label, display_name in _ENV_KEY_IMPORTS:
             val = os.environ.get(env_var, "").strip()
             if not val:
@@ -1654,8 +1656,7 @@ def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
                 break
 
         # ── 2. Offer Google service-account JSON ─────────────────────────
-        sys.stdout.write("  Paste Google service account JSON (or blank to skip):\n")
-        sys.stdout.flush()
+        ch.dim("  Paste Google service account JSON (or blank to skip):")
 
         lines: list[str] = []
         try:
@@ -1760,8 +1761,6 @@ def _step_review(navig_dir: Path, step_titles: dict[str, str] | None = None) -> 
                             ch.error(f"  {sid:<24} {title}")
                         else:
                             ch.dim(f"    [·] {sid:<24} {title}")
-                    sys.stdout.write("\n")
-                sys.stdout.flush()
             except Exception:  # noqa: BLE001
                 pass
 
@@ -1770,10 +1769,7 @@ def _step_review(navig_dir: Path, step_titles: dict[str, str] | None = None) -> 
 
         # Show the valid step IDs so the user can make an informed choice.
         if known_ids:
-            sys.stdout.write(
-                "  Valid step IDs: " + ", ".join(known_ids) + "\n\n"
-            )
-            sys.stdout.flush()
+            ch.dim("  Valid step IDs: " + ", ".join(known_ids))
 
         jump_to = ""
         while True:
@@ -1792,11 +1788,8 @@ def _step_review(navig_dir: Path, step_titles: dict[str, str] | None = None) -> 
                 # Valid choice (or no known IDs to validate against).
                 break
 
-            sys.stdout.write(
-                f"  Unknown step ID '{jump_to}'.\n"
-                f"  Valid IDs: {', '.join(known_ids)}\n\n"
-            )
-            sys.stdout.flush()
+            ch.warning(f"  Unknown step ID '{jump_to}'.")
+            ch.dim(f"  Valid IDs: {', '.join(known_ids)}")
 
         return StepResult(status="skipped", output={"jumpTo": jump_to})
 
