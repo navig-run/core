@@ -93,10 +93,11 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "l": ("navig.commands.log", "log_app"),
     "local": ("navig.commands.local", "local_app"),
     "config": ("navig.commands.config", "config_app"),
+    "web": ("navig.commands.webserver", "web_app"),
     "stats": ("navig.commands.stats", "stats_app"),
     "health": ("navig.commands.stack", "stack_app"),
     # Top-level compatibility aliases for common ops nouns
-    "cert": ("navig.cli.__init__", "web_app"),
+    "cert": ("navig.commands.webserver", "web_app"),
     "key": ("navig.commands.host", "host_app"),
     "firewall": ("navig.commands.local", "local_app"),
     "dns": ("navig.commands.local", "local_app"),

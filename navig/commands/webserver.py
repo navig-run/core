@@ -9,11 +9,14 @@ reloading/restarting operations.
 import json
 from typing import Any
 
+import typer
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from navig.cli._callbacks import show_subcommand_help
+from navig import console_helper as ch
 from navig.config import get_config_manager
 from navig.remote import RemoteOperations
 
@@ -143,6 +146,178 @@ def list_vhosts(options: dict[str, Any]) -> None:
         console.print(f"[red]✗ Error listing virtual hosts: {e}[/red]")
         if json_output:
             console.print(json.dumps({"error": str(e)}, indent=2))
+
+
+web_app = typer.Typer(
+    help="Web server management (Nginx/Apache vhosts, sites, modules)",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@web_app.callback()
+def web_callback(ctx: typer.Context):
+    """Web server management - run without subcommand for help."""
+    if ctx.invoked_subcommand is None:
+        show_subcommand_help("web", ctx)
+        raise typer.Exit()
+
+
+@web_app.command("vhosts")
+def web_vhosts_new(ctx: typer.Context):
+    """List virtual hosts (enabled and available)."""
+    list_vhosts(ctx.obj)
+
+
+@web_app.command("test")
+def web_test_new(ctx: typer.Context):
+    """Test web server configuration syntax."""
+    test_config(ctx.obj)
+
+
+@web_app.command("enable")
+def web_enable_new(
+    ctx: typer.Context,
+    site_name: str = typer.Argument(..., help="Site name to enable"),
+):
+    """Enable a web server site."""
+    ctx.obj["site_name"] = site_name
+    enable_site(ctx.obj)
+
+
+@web_app.command("disable")
+def web_disable_new(
+    ctx: typer.Context,
+    site_name: str = typer.Argument(..., help="Site name to disable"),
+):
+    """Disable a web server site."""
+    ctx.obj["site_name"] = site_name
+    disable_site(ctx.obj)
+
+
+@web_app.command("module-enable")
+def web_module_enable_new(
+    ctx: typer.Context,
+    module_name: str = typer.Argument(..., help="Module name to enable"),
+):
+    """Enable Apache module (Apache only)."""
+    ctx.obj["module_name"] = module_name
+    enable_module(ctx.obj)
+
+
+@web_app.command("module-disable")
+def web_module_disable_new(
+    ctx: typer.Context,
+    module_name: str = typer.Argument(..., help="Module name to disable"),
+):
+    """Disable Apache module (Apache only)."""
+    ctx.obj["module_name"] = module_name
+    disable_module(ctx.obj)
+
+
+@web_app.command("reload")
+def web_reload_new(ctx: typer.Context):
+    """Safely reload web server (tests config first)."""
+    reload_server(ctx.obj)
+
+
+@web_app.command("recommend")
+def web_recommend_new(ctx: typer.Context):
+    """Display performance tuning recommendations."""
+    get_recommendations(ctx.obj)
+
+
+web_hestia_app = typer.Typer(
+    help="HestiaCP control panel management",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+web_app.add_typer(web_hestia_app, name="hestia")
+
+
+@web_hestia_app.callback()
+def web_hestia_callback(ctx: typer.Context):
+    """HestiaCP management - run without subcommand for interactive menu."""
+    if ctx.invoked_subcommand is None:
+        from navig.commands.interactive import launch_hestia_menu
+
+        launch_hestia_menu()
+        raise typer.Exit()
+
+
+@web_hestia_app.command("list")
+def web_hestia_list(
+    ctx: typer.Context,
+    users: bool = typer.Option(False, "--users", "-u", help="List HestiaCP users"),
+    domains: bool = typer.Option(False, "--domains", "-d", help="List HestiaCP domains"),
+    user_filter: str | None = typer.Option(None, "--user", help="Filter domains by username"),
+    plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
+):
+    """List HestiaCP resources (users, domains)."""
+    ctx.obj["plain"] = plain
+    if users:
+        from navig.commands.hestia import list_domains_cmd
+
+        list_domains_cmd(user_filter, ctx.obj)
+    else:
+        from navig.commands.hestia import list_users_cmd
+
+        list_users_cmd(ctx.obj)
+
+
+@web_hestia_app.command("add")
+def web_hestia_add(
+    ctx: typer.Context,
+    resource: str = typer.Argument(..., help="Resource type: user or domain"),
+    name: str = typer.Argument(..., help="Username or domain name"),
+    password: str | None = typer.Option(None, "--password", "-p", help="Password (for user)"),
+    email: str | None = typer.Option(None, "--email", "-e", help="Email (for user)"),
+    user: str | None = typer.Option(None, "--user", "-u", help="Username (for domain)"),
+):
+    """Add HestiaCP user or domain."""
+    if resource == "user":
+        if not password or not email:
+            ch.error("Password and email required for user creation")
+            raise typer.Exit(1)
+        from navig.commands.hestia import add_user_cmd
+
+        add_user_cmd(name, password, email, ctx.obj)
+    elif resource == "domain":
+        if not user:
+            ch.error("Username required for domain creation (--user)")
+            raise typer.Exit(1)
+        from navig.commands.hestia import add_domain_cmd
+
+        add_domain_cmd(user, name, ctx.obj)
+    else:
+        ch.error(f"Unknown resource type: {resource}. Use 'user' or 'domain'.")
+        raise typer.Exit(1)
+
+
+@web_hestia_app.command("remove")
+def web_hestia_remove(
+    ctx: typer.Context,
+    resource: str = typer.Argument(..., help="Resource type: user or domain"),
+    name: str = typer.Argument(..., help="Username or domain name"),
+    user: str | None = typer.Option(None, "--user", "-u", help="Username (for domain)"),
+    force: bool = typer.Option(False, "--force", "-f", help="Force deletion without confirmation"),
+):
+    """Remove HestiaCP user or domain."""
+    ctx.obj["force"] = force
+    if resource == "user":
+        from navig.commands.hestia import delete_user_cmd
+
+        delete_user_cmd(name, ctx.obj)
+    elif resource == "domain":
+        if not user:
+            ch.error("Username required for domain deletion (--user)")
+            raise typer.Exit(1)
+        from navig.commands.hestia import delete_domain_cmd
+
+        delete_domain_cmd(user, name, ctx.obj)
+    else:
+        ch.error(f"Unknown resource type: {resource}. Use 'user' or 'domain'.")
+        raise typer.Exit(1)
 
 
 def test_config(options: dict[str, Any]) -> None:
