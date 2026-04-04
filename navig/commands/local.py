@@ -9,6 +9,9 @@ Provides:
 - system info: Display local system information
 """
 
+import typer
+
+from navig.cli._callbacks import show_subcommand_help
 from navig import console_helper as ch
 
 # Lazy imports for heavy modules
@@ -581,3 +584,80 @@ def network_dns(hostname: str, options: dict = None):
         return
 
     console.print(result.stdout)
+
+
+local_app = typer.Typer(
+    help="Local machine management (system info, security, network)",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@local_app.callback()
+def local_callback(ctx: typer.Context):
+    """Local system management - run without subcommand for help."""
+    if ctx.invoked_subcommand is None:
+        show_subcommand_help("local", ctx)
+        raise typer.Exit()
+
+
+@local_app.command("show")
+def local_show_cmd(
+    ctx: typer.Context,
+    info: bool = typer.Option(True, "--info", "-i", help="Show system information"),
+    resources: bool = typer.Option(False, "--resources", "-r", help="Show resource usage"),
+):
+    """Show local system information."""
+    if resources:
+        resource_usage(ctx.obj)
+    else:
+        system_info(ctx.obj)
+
+
+@local_app.command("audit")
+def local_audit_cmd(
+    ctx: typer.Context,
+    ai: bool = typer.Option(False, "--ai", "-a", help="Include AI analysis"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed information"),
+):
+    """Run local security audit."""
+    ctx.obj["ai"] = ai
+    ctx.obj["verbose"] = verbose
+    security_audit(ctx.obj)
+
+
+@local_app.command("ports")
+def local_ports_cmd(ctx: typer.Context):
+    """Show open/listening ports on local machine."""
+    security_ports(ctx.obj)
+
+
+@local_app.command("firewall")
+def local_firewall_cmd(ctx: typer.Context):
+    """Show local firewall status."""
+    security_firewall(ctx.obj)
+
+
+@local_app.command("ping")
+def local_ping_cmd(
+    ctx: typer.Context,
+    host: str = typer.Argument(..., help="Host to ping"),
+    count: int = typer.Option(4, "--count", "-c", help="Number of pings"),
+):
+    """Ping a host from local machine."""
+    network_ping(host, count, ctx.obj)
+
+
+@local_app.command("dns")
+def local_dns_cmd(
+    ctx: typer.Context,
+    hostname: str = typer.Argument(..., help="Hostname to lookup"),
+):
+    """Perform DNS lookup."""
+    network_dns(hostname, ctx.obj)
+
+
+@local_app.command("interfaces")
+def local_interfaces_cmd(ctx: typer.Context):
+    """Show network interfaces."""
+    network_interfaces(ctx.obj)
