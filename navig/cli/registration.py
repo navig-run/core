@@ -60,6 +60,7 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "fx": ("navig.commands.flux", "flux_app"),
     # ── AI sub-app extraction ─────────────────────────────────────────────────
     "ai": ("navig.commands.ai", "ai_app"),
+    "brain": ("navig.commands.brain", "brain_app"),  # prompt-file management
     # ── Batch extraction: backup, tunnel, skills ──────────────────────────────
     "backup": ("navig.commands.backup", "backup_app"),
     "tunnel": ("navig.commands.tunnel", "tunnel_app"),
@@ -172,7 +173,7 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "eval": ("navig.commands.eval", "app"),
     "agents": ("navig.commands.agents", "app"),
     "webdash": ("navig.commands.webdash", "app"),
-    "explain": ("navig.commands.explain", "app"),
+    # "explain" removed — all sub-commands were unimplemented stubs (AI surface cleanup)
     "snapshot": ("navig.commands.snapshot", "app"),
     "replay": ("navig.commands.replay", "app"),
     "cloud": ("navig.commands.cloud", "app"),

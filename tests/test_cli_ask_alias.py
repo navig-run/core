@@ -59,3 +59,48 @@ def test_ask_alias_forwards_to_ai_ask(monkeypatch, capsys):
     assert captured["model"] == "demo-model"
     assert captured["options_type"] == "dict"
     assert "deprecated" not in combined
+
+
+def test_chat_command_emits_deprecation_warning(monkeypatch, capsys):
+    """navig chat must print a deprecation warning pointing to navig ask."""
+    import navig.commands.chat as chat_mod
+
+    monkeypatch.setattr(chat_mod, "run_ai_chat", lambda *a, **kw: None)
+
+    _code, out, err = _invoke_cli(["chat"], capsys)
+    assert "deprecated" in (out + err).lower()
+    assert "navig ask" in (out + err)
+
+
+def test_ai_ask_subcommand_emits_deprecation_warning(monkeypatch, capsys):
+    """navig ai ask must print a deprecation warning pointing to navig ask."""
+    import navig.commands.ai as ai_mod
+
+    monkeypatch.setattr(ai_mod, "ask_ai", lambda *a, **kw: None)
+
+    _code, out, err = _invoke_cli(["ai", "ask", "test question"], capsys)
+    assert "deprecated" in (out + err).lower()
+    assert "navig ask" in (out + err)
+
+
+def test_brain_subapp_is_reachable(capsys):
+    """navig brain must be reachable (not 'No such command') after registration."""
+    code, out, err = _invoke_cli(["brain", "prompts", "list"], capsys)
+    combined = out + err
+    # Command should be found — "No such command" indicates missing registration
+    assert "no such command" not in combined.lower()
+    assert "error: no such command 'brain'" not in combined.lower()
+
+
+def test_explain_command_is_removed(capsys):
+    """navig explain must no longer be registered (all sub-commands were stubs)."""
+    import click
+
+    # In standalone_mode=False, unknown commands raise UsageError rather than
+    # printing to stderr and calling sys.exit().
+    try:
+        code, out, err = _invoke_cli(["explain", "command", "test"], capsys)
+        combined = (out + err).lower()
+        assert "no such command" in combined
+    except click.exceptions.UsageError as exc:
+        assert "no such command" in str(exc).lower()

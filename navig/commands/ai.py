@@ -131,7 +131,9 @@ def ai_ask(
         help="Override default AI model",
     ),
 ):
-    """Ask AI about server/configuration (canonical command)."""
+    """[DEPRECATED: Use 'navig ask'] Ask AI about server/configuration."""
+    from navig.deprecation import deprecation_warning as _dw
+    _dw("navig ai ask <question>", "navig ask <question>")
     ask_ai(question, model, ctx.obj)
 
 
@@ -141,14 +143,18 @@ def ai_explain(
     log_file: str = typer.Argument(..., help="Log file path to explain"),
     lines: int = typer.Option(50, "--lines", "-n", help="Number of lines to analyze"),
 ):
-    """Explain logs/errors using AI."""
+    """[DEPRECATED: Use 'navig ask'] Explain logs/errors using AI."""
+    from navig.deprecation import deprecation_warning as _dw
+    _dw("navig ai explain <file>", "navig ask 'explain <file>'")
     question = f"Analyze and explain the last {lines} lines of the log file at {log_file}. Identify any errors, warnings, or issues and suggest solutions."
     ask_ai(question, None, ctx.obj)
 
 
 @ai_app.command("diagnose")
 def ai_diagnose(ctx: typer.Context):
-    """AI-powered issue diagnosis based on system state."""
+    """[DEPRECATED: Use 'navig ask'] AI-powered issue diagnosis based on system state."""
+    from navig.deprecation import deprecation_warning as _dw
+    _dw("navig ai diagnose", "navig ask 'diagnose my server'")
     from navig.commands.assistant import analyze_cmd
 
     analyze_cmd(ctx.obj)
@@ -156,7 +162,9 @@ def ai_diagnose(ctx: typer.Context):
 
 @ai_app.command("suggest")
 def ai_suggest(ctx: typer.Context):
-    """Get AI-powered optimization suggestions."""
+    """[DEPRECATED: Use 'navig ask'] Get AI-powered optimization suggestions."""
+    from navig.deprecation import deprecation_warning as _dw
+    _dw("navig ai suggest", "navig ask 'suggest optimisations for my server'")
     question = "Analyze the current server configuration and suggest optimizations for performance, security, and reliability."
     ask_ai(question, None, ctx.obj)
 

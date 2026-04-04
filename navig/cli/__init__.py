@@ -426,11 +426,12 @@ def update_alias(ctx: typer.Context):
     upgrade_command(ctx=ctx, check=False, force=False)
 
 
-@app.command("chat", hidden=True)
+@app.command("chat")
 def chat_command(
     query: str | None = typer.Argument(None, help="Optional initial query"),
 ):
-    """Start interactive AI chat (alias for running 'navig' with a query)."""
+    """[DEPRECATED: Use 'navig ask'] Start interactive AI chat."""
+    deprecation_warning("navig chat", "navig ask")
     from navig.commands.chat import run_ai_chat
     run_ai_chat(query, single_query=False)
 
