@@ -391,105 +391,19 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
     def _fast_path_key(provider_id: str) -> str:
         """Return an env-var API key for *provider_id* if one is set, else ''."""
         try:
-            from navig.providers.registry import get_provider
+            from navig.providers.source_scan import provider_env_key
 
-            manifest = get_provider(provider_id)
-            if manifest:
-                for var in manifest.env_vars:
-                    val = os.environ.get(var, "").strip()
-                    if val:
-                        return val
+            return provider_env_key(provider_id)
         except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
-        # Fallback: check common vars by ID
-        _COMMON = {
-            "openai": ["OPENAI_API_KEY"],
-            "anthropic": ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
-            "openrouter": ["OPENROUTER_API_KEY"],
-            "groq": ["GROQ_API_KEY"],
-            "google": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-            "nvidia": ["NVIDIA_API_KEY", "NIM_API_KEY"],
-            "xai": ["XAI_API_KEY", "GROK_KEY"],
-            "github_models": ["GITHUB_TOKEN", "GH_TOKEN"],
-            "mistral": ["MISTRAL_API_KEY"],
-        }
-        for var in _COMMON.get(provider_id, []):
-            val = os.environ.get(var, "").strip()
-            if val:
-                return val
-        return ""
-
-    def _config_has_key(provider_id: str) -> bool:
-        key_map: dict[str, tuple[str, ...]] = {
-            "openrouter": ("openrouter_api_key",),
-            "openai": ("openai_api_key",),
-            "anthropic": ("anthropic_api_key",),
-            "groq": ("groq_api_key",),
-            "google": ("google_api_key", "gemini_api_key"),
-            "gemini": ("google_api_key", "gemini_api_key"),
-            "nvidia": ("nvidia_api_key", "nim_api_key"),
-            "xai": ("xai_api_key", "grok_key"),
-            "mistral": ("mistral_api_key",),
-            "github_models": ("github_token", "gh_token"),
-        }
-        try:
-            import yaml  # type: ignore[import]
-
-            cfg_path = navig_dir / "config.yaml"
-            if not cfg_path.exists():
-                return False
-            cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
-            for key in key_map.get(provider_id, ()): 
-                if str(cfg.get(key) or "").strip():
-                    return True
-        except Exception:  # noqa: BLE001
-            return False
-        return False
-
-    def _vault_has_key(provider_id: str) -> bool:
-        try:
-            from navig.vault.core_v2 import get_vault_v2
-
-            vault = get_vault_v2()
-            if vault is None:
-                return False
-
-            labels = [f"{provider_id}/api_key"]
-            try:
-                from navig.vault.resolver import vault_labels_for_env
-
-                try:
-                    from navig.providers.registry import get_provider
-
-                    manifest = get_provider(provider_id)
-                    env_vars = tuple(getattr(manifest, "env_vars", ()) or ())
-                except Exception:  # noqa: BLE001
-                    env_vars = ()
-                for env_name in env_vars:
-                    labels.extend(vault_labels_for_env(env_name))
-            except Exception:  # noqa: BLE001
-                pass
-
-            for label in labels:
-                try:
-                    secret = (vault.get_secret(label) or "").strip()
-                except Exception:
-                    continue
-                if secret:
-                    return True
-        except Exception:  # noqa: BLE001
-            return False
-        return False
+            return ""
 
     def _detected_sources(provider_id: str) -> list[str]:
-        sources: list[str] = []
-        if _fast_path_key(provider_id):
-            sources.append("env")
-        if _vault_has_key(provider_id):
-            sources.append("vault")
-        if _config_has_key(provider_id):
-            sources.append("config")
-        return sources
+        try:
+            from navig.providers.source_scan import detect_provider_sources
+
+            return detect_provider_sources(provider_id, navig_dir=navig_dir)
+        except Exception:  # noqa: BLE001
+            return []
 
     def run() -> StepResult:
         # Environment-variable fast path (works in CI / non-TTY)
@@ -565,10 +479,42 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         requires_key = getattr(chosen, "requires_key", True)
         existing_sources = source_by_provider.get(pid, [])
         configured_base_url = ""
+        key_source_output = "interactive"
+        keep_existing_key = False
+
+        env_detected_key = _fast_path_key(pid)
+        has_env_source = bool(env_detected_key)
+        has_vault_source = "vault" in existing_sources
+
+        if requires_key and has_env_source and not has_vault_source:
+            try:
+                import_env_choice = typer.prompt(
+                    "  Environment key detected. Import to vault now? [Y/n]",
+                    default="y",
+                ).strip().lower()
+            except KeyboardInterrupt:
+                raise
+            except EOFError:
+                import_env_choice = "y"
+            if import_env_choice in ("", "y", "yes"):
+                try:
+                    from navig.vault.core_v2 import get_vault_v2
+
+                    vault = get_vault_v2()
+                    if vault is not None and env_detected_key:
+                        vault.put(
+                            f"{pid}/api_key",
+                            json.dumps({"value": env_detected_key}).encode(),
+                        )
+                        if "vault" not in existing_sources:
+                            existing_sources.append("vault")
+                except Exception:  # noqa: BLE001
+                    pass
 
         if not requires_key:
             # Local provider — no key needed
             api_key = "local"
+            key_source_output = "local"
             if pid == "llamacpp":
                 default_url = _local_default_url(pid) or "http://127.0.0.1:8080"
                 try:
@@ -594,22 +540,17 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
                 return StepResult(status="skipped", output={"reason": "interrupted"})
             if not api_key:
                 if existing_sources:
-                    marker.write_text(pid, encoding="utf-8")
-                    return StepResult(
-                        status="completed",
-                        output={
-                            "provider": pid,
-                            "keySource": "existing:" + "/".join(existing_sources),
-                        },
-                    )
-                return StepResult(status="skipped", output={"reason": "no key entered"})
+                    keep_existing_key = True
+                    key_source_output = "existing:" + "/".join(existing_sources)
+                else:
+                    return StepResult(status="skipped", output={"reason": "no key entered"})
 
         # Persist in vault if available, else fall back to marker file
         try:
             from navig.vault.core_v2 import get_vault_v2
 
             vault = get_vault_v2()
-            if vault is not None:
+            if vault is not None and not keep_existing_key:
                 vault.put(
                     f"{pid}/api_key",
                     json.dumps({"value": api_key}).encode(),
@@ -679,15 +620,42 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             except Exception:  # noqa: BLE001
                 pass  # best-effort; never block onboarding
 
+        verification: dict[str, Any] = {}
+        try:
+            run_verification = typer.confirm("  Test provider connection now?", default=False)
+        except KeyboardInterrupt:
+            raise
+        except EOFError:
+            run_verification = False
+
+        if run_verification:
+            try:
+                from navig.providers.registry import get_provider
+                from navig.providers.verifier import verify_provider
+
+                manifest = get_provider(pid)
+                if manifest is not None:
+                    verified = verify_provider(manifest)
+                    verification = {
+                        "ok": bool(verified.ok),
+                        "issues": list(verified.issues),
+                        "key_detected": bool(verified.key_detected),
+                        "local_probe_ok": verified.local_probe_ok,
+                    }
+            except Exception:  # noqa: BLE001
+                verification = {"ok": False, "issues": ["verification failed"]}
+
         base_url_saved = False
         if configured_base_url:
             base_url_saved = _persist_provider_url(pid, configured_base_url)
 
         marker.write_text(pid, encoding="utf-8")
-        out: dict = {"provider": pid, "keySource": "interactive"}
+        out: dict = {"provider": pid, "keySource": key_source_output}
         if configured_base_url:
             out["base_url"] = configured_base_url
             out["baseUrlSaved"] = "config" if base_url_saved else "none"
+        if verification:
+            out["verification"] = verification
         if fallback_pid:
             out["fallback_provider"] = fallback_pid
         return StepResult(status="completed", output=out)
