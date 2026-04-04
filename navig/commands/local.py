@@ -661,3 +661,37 @@ def local_dns_cmd(
 def local_interfaces_cmd(ctx: typer.Context):
     """Show network interfaces."""
     network_interfaces(ctx.obj)
+
+
+software_app = typer.Typer(
+    help="Local software package management (list, search)",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@software_app.callback()
+def software_callback(ctx: typer.Context):
+    """Software management - run without subcommand to list packages."""
+    if ctx.invoked_subcommand is None:
+        software_list(ctx.obj)
+        raise typer.Exit()
+
+
+@software_app.command("list")
+def software_list_cmd(
+    ctx: typer.Context,
+    limit: int | None = typer.Option(None, "--limit", "-l", help="Limit number of results"),
+):
+    """List installed software packages."""
+    ctx.obj["limit"] = limit
+    software_list(ctx.obj)
+
+
+@software_app.command("search")
+def software_search_cmd(
+    ctx: typer.Context,
+    query: str = typer.Argument(..., help="Search term"),
+):
+    """Search installed packages by name."""
+    software_search(query, ctx.obj)

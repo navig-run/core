@@ -2821,46 +2821,8 @@ def hosts_add_cmd(
     hosts_add(ip, hostname, ctx.obj)
 
 
-# Software/package management
-software_app = typer.Typer(
-    help="Local software package management (list, search)",
-    invoke_without_command=True,
-    no_args_is_help=False,
-)
-app.add_typer(software_app, name="software")
-
-
-@software_app.callback()
-def software_callback(ctx: typer.Context):
-    """Software management - run without subcommand to list packages."""
-    if ctx.invoked_subcommand is None:
-        from navig.commands.local import software_list
-
-        software_list(ctx.obj)
-        raise typer.Exit()
-
-
-@software_app.command("list")
-def software_list_cmd(
-    ctx: typer.Context,
-    limit: int | None = typer.Option(None, "--limit", "-l", help="Limit number of results"),
-):
-    """List installed software packages."""
-    from navig.commands.local import software_list
-
-    ctx.obj["limit"] = limit
-    software_list(ctx.obj)
-
-
-@software_app.command("search")
-def software_search_cmd(
-    ctx: typer.Context,
-    query: str = typer.Argument(..., help="Search term"),
-):
-    """Search installed packages by name."""
-    from navig.commands.local import software_search
-
-    software_search(query, ctx.obj)
+# ── software_app: extracted to navig/commands/local.py ─────────────────────
+# Registration via _EXTERNAL_CMD_MAP in registration.py
 
 
 # ── local_app: extracted to navig/commands/local.py ────────────────────────

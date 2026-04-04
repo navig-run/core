@@ -92,6 +92,7 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "logs": ("navig.commands.logs", "app"),
     "l": ("navig.commands.log", "log_app"),
     "local": ("navig.commands.local", "local_app"),
+    "software": ("navig.commands.local", "software_app"),
     "config": ("navig.commands.config", "config_app"),
     "web": ("navig.commands.webserver", "web_app"),
     "stats": ("navig.commands.stats", "stats_app"),
