@@ -109,7 +109,7 @@ def smart_launch(domain: str, app: "typer.Typer") -> None:
         domain: CLI domain name, e.g. ``"host"``.
         app:    The ``typer.Typer`` instance for that domain.
     """
-    if not sys.stdin.isatty():
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
         print(
             f"[navig] Non-TTY detected. Run: navig {domain} --help",
             file=sys.stderr,
