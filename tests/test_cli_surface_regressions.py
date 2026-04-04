@@ -14,6 +14,9 @@ def _cli_env(tmp_path: Path) -> dict[str, str]:
     env["HOME"] = str(tmp_path)
     env["USERPROFILE"] = str(tmp_path)
     env["NAVIG_SKIP_ONBOARDING"] = "1"
+    # Ensure deterministic launcher behavior in subprocess tests even when the
+    # outer shell exports NAVIG_LAUNCHER=legacy.
+    env["NAVIG_LAUNCHER"] = "fuzzy"
     # Force UTF-8 encoding so Rich's box-drawing characters don't cause a
     # UnicodeDecodeError when the system locale is non-UTF-8 (e.g. cp1251).
     env["PYTHONUTF8"] = "1"
@@ -72,6 +75,28 @@ def test_mesh_help_command_is_available(tmp_path: Path):
     assert result.returncode == 0
     assert "No such command 'mesh'" not in combined
     assert "Mesh topology management" in combined
+
+
+def test_host_launcher_non_tty_exits_cleanly_with_hint(tmp_path: Path):
+    """`navig host` should not hang/crash in non-interactive subprocesses.
+
+    In non-TTY contexts, smart_launch must print the explicit help hint and
+    exit with status 0.
+    """
+    result = subprocess.run(
+        [sys.executable, "-m", "navig", "host"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=_cli_env(tmp_path),
+        stdin=subprocess.DEVNULL,
+    )
+    combined = result.stdout + result.stderr
+
+    assert result.returncode == 0
+    assert "non-tty detected" in combined.lower()
+    assert "navig host --help" in combined.lower()
 
 
 def test_bot_start_uses_configured_gateway_port_when_unspecified(monkeypatch):
