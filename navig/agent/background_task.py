@@ -128,7 +128,6 @@ class BackgroundTaskManager:
         )
 
         # Determine shell
-        use_shell = True
         shell_cmd: str | list[str] = command
         if os.name == "nt":
             # On Windows use cmd.exe (asyncio.create_subprocess_shell default)

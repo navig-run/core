@@ -18,7 +18,7 @@ import yaml
 from navig.core.yaml_io import atomic_write_yaml
 
 if TYPE_CHECKING:
-    from navig.config import ConfigManager
+    pass
 
 logger = logging.getLogger(__name__)
 

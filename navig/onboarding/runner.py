@@ -4,7 +4,6 @@ import os
 import socket
 import sys
 from collections import Counter
-from pathlib import Path
 from typing import Sequence
 
 from navig import console_helper as ch

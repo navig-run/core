@@ -103,9 +103,7 @@ class BaseConnector(ABC):
         old = self._status
         self._status = value
         if old != value:
-            logger.info(
-                "Connector %s status: %s → %s", self.id, old.value, value.value
-            )
+            logger.info("Connector %s status: %s → %s", self.id, old.value, value.value)
 
     # -- Token helper (set by ConnectorAuthManager) ------------------------
 
@@ -176,7 +174,4 @@ class BaseConnector(ABC):
     # -- Convenience -------------------------------------------------------
 
     def __repr__(self) -> str:
-        return (
-            f"<{self.__class__.__name__} id={self.id!r} "
-            f"status={self._status.value!r}>"
-        )
+        return f"<{self.__class__.__name__} id={self.id!r} status={self._status.value!r}>"

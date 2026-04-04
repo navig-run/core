@@ -106,12 +106,6 @@ class NavigKernel:
 
             # Simple simulation of execution
             # In reality, we'd parse the command string, resolve intent, check safety, execute.
-            parts = step.command.split()
-            cmd_name = None
-
-            # Try to resolve command from the string
-            # This is tricky without a full parser, but let's try strict matching
-            # e.g. "navig fs list" -> we look for a command with syntax starting with this
             # For now, just execute blindly (unsafe) or mock it.
 
             print(f"   ✅ (Mock) Executed: {step.command}")

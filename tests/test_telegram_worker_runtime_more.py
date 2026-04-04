@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -54,10 +55,7 @@ def test_load_env(monkeypatch):
 
     def mock_load_dotenv(path):
         loaded.append(path)
-
-    import dotenv
-
-    monkeypatch.setattr(dotenv, "load_dotenv", mock_load_dotenv)
+    monkeypatch.setitem(sys.modules, "dotenv", SimpleNamespace(load_dotenv=mock_load_dotenv))
 
     tw._load_env()
     assert len(loaded) in (0, 1)

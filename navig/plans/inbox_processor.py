@@ -24,15 +24,14 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from navig.plans.inbox_reader import InboxItem, canonical_name, parse_suffix_state
+from navig.plans.inbox_reader import InboxItem, canonical_name
 
 logger = logging.getLogger(__name__)
 

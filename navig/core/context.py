@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 import yaml
 
 if TYPE_CHECKING:
-    from navig.config import ConfigManager
+    pass
 
 
 class ContextConfigProvider(Protocol):

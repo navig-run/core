@@ -612,6 +612,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Show respect to users (beta)",
         handler="_handle_respect",
         category="social",
+        visible=False,
     ),
     SlashCommandEntry(
         "currency",
@@ -651,6 +652,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Chat activity statistics (beta)",
         handler="_handle_stats_global",
         category="utilities",
+        visible=False,
     ),
     SlashCommandEntry(
         "choice",
@@ -665,6 +667,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         handler="_handle_kick",
         category="admin",
         usage="/kick <@user|id>",
+        visible=False,
     ),
     SlashCommandEntry(
         "mute",
@@ -672,6 +675,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         handler="_handle_mute",
         category="admin",
         usage="/mute <@user|id>",
+        visible=False,
     ),
     SlashCommandEntry(
         "unmute",
@@ -679,6 +683,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         handler="_handle_unmute",
         category="admin",
         usage="/unmute <@user|id>",
+        visible=False,
     ),
     SlashCommandEntry(
         "search",
@@ -686,6 +691,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         handler="_handle_search",
         category="admin",
         usage="/search <query>",
+        visible=False,
     ),
 ]
 
@@ -1832,7 +1838,7 @@ class TelegramCommandsMixin:
         best: dict[str, Any] | None = None
         candidates: list[dict[str, Any]] = []
 
-        for entry in _iter_unique_registry(visible_only=True):
+        for entry in _iter_unique_registry():
             command = entry.command
             phrases = {command, command.replace("_", " ")}
             phrases.update(alias_map.get(command, ()))
@@ -1994,7 +2000,7 @@ class TelegramCommandsMixin:
         command: str,
     ) -> str:
         cmd = (command or "").strip().lower()
-        entry = next((e for e in _iter_unique_registry(visible_only=True) if e.command == cmd), None)
+        entry = next((e for e in _iter_unique_registry() if e.command == cmd), None)
         if not cmd or not entry:
             await self.send_message(chat_id, "Command not available.", parse_mode=None)
             return "⚠️ Command unavailable"

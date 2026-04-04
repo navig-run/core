@@ -212,7 +212,6 @@ def migrate(
     console = Console()
 
     # Get configuration directories
-    config_manager = get_config_manager()
     old_dir = paths.config_dir() / "apps"
     new_dir = paths.config_dir() / "hosts"
 

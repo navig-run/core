@@ -41,7 +41,6 @@ PENDING_WAKES: deque[WakeWordDetection] = deque(maxlen=10)
 def _route_helpers():
     """Return (json_ok, json_error_response, require_bearer_auth) lazily."""
     from navig.gateway.routes.common import (  # noqa: PLC0415
-        _get_web,
         json_error_response,
         json_ok,
         require_bearer_auth,

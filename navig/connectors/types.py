@@ -17,7 +17,6 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
@@ -99,8 +98,8 @@ class Resource:
     source: str  # connector_id, e.g. "gmail", "google_calendar"
     title: str
     preview: str  # truncated body / description
-    url: str
-    timestamp: str  # ISO 8601
+    url: str = ""
+    timestamp: str = ""  # ISO 8601
     resource_type: ResourceType = ResourceType.GENERIC
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -127,8 +126,8 @@ class Action:
     event summary for create).
     """
 
-    connector_id: str
     action_type: ActionType
+    connector_id: str | None = None
     resource_id: str | None = None
     params: dict[str, Any] = field(default_factory=dict)
 
@@ -158,9 +157,7 @@ class HealthStatus:
     latency_ms: float
     degraded: bool = False
     message: str = ""
-    checked_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    checked_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
         return {

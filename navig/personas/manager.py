@@ -89,7 +89,6 @@ async def switch_persona(
 
         # ── Step 4: update ConversationalAgent (best-effort) ─────────────────
         try:
-            from navig.agent.conversational import ConversationalAgent  # noqa: PLC0415
 
             # Update the global/singleton agent instance if accessible
             agent_instance = _get_agent_instance()

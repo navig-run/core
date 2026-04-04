@@ -559,7 +559,6 @@ def show_quick_actions(plain: bool = False, json_out: bool = False) -> None:
 import typer  # noqa: E402
 
 from navig import console_helper as ch  # noqa: E402
-from navig.cli._callbacks import show_subcommand_help  # noqa: E402
 
 quick_app = typer.Typer(
     help="Quick action shortcuts for frequent operations",

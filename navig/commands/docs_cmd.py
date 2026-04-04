@@ -37,7 +37,6 @@ def run_docs(
         raise typer.Exit(1)
 
     want_json = bool(json_output or (ctx.obj and ctx.obj.get("json")))
-    want_plain = plain or (ctx.obj and ctx.obj.get("raw"))
 
     if not query:
         md_files = sorted(docs_dir.glob("**/*.md"))

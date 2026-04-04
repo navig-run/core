@@ -56,9 +56,7 @@ class ConnectorRegistry:
         """
         manifest = getattr(connector_cls, "manifest", None)
         if manifest is None:
-            raise ValueError(
-                f"{connector_cls.__name__} is missing a 'manifest' class attribute"
-            )
+            raise ValueError(f"{connector_cls.__name__} is missing a 'manifest' class attribute")
         cid = manifest.id
         if cid in self._classes:
             logger.debug("Connector %r re-registered (overwrite)", cid)
@@ -119,8 +117,7 @@ class ConnectorRegistry:
         return [
             inst
             for inst in self._instances.values()
-            if inst.status
-            in (ConnectorStatus.CONNECTED, ConnectorStatus.DEGRADED)
+            if inst.status in (ConnectorStatus.CONNECTED, ConnectorStatus.DEGRADED)
         ]
 
     # -- Lifecycle ---------------------------------------------------------

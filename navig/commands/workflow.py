@@ -791,7 +791,6 @@ def edit_workflow(name: str):
 # task_app — Typer CLI group (extracted from navig/cli/__init__.py)
 # ============================================================================
 
-from navig.cli._callbacks import show_subcommand_help  # noqa: E402
 
 task_app = typer.Typer(
     help="Task/workflow management (reusable command sequences)",

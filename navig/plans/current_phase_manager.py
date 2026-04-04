@@ -15,7 +15,6 @@ import logging
 import re
 import shutil
 from dataclasses import dataclass
-from datetime import date
 from pathlib import Path
 
 logger = logging.getLogger(__name__)

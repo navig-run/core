@@ -20,18 +20,13 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
 
 from navig.connectors.errors import ConnectorAuthError, ConnectorNotFoundError
 from navig.providers.oauth import (
     OAUTH_PROVIDERS,
     OAuthCredentials,
     OAuthProviderConfig,
-    exchange_code_for_tokens,
-    generate_pkce_pair,
-    generate_state,
     refresh_oauth_tokens,
-    run_oauth_flow_headless,
     run_oauth_flow_interactive,
 )
 from navig.vault import CredentialType, get_vault
@@ -71,9 +66,7 @@ class ConnectorAuthManager:
     @classmethod
     def get_provider_config(cls, connector_id: str) -> OAuthProviderConfig | None:
         """Return the OAuth config for *connector_id*, or ``None``."""
-        return cls._provider_configs.get(connector_id) or OAUTH_PROVIDERS.get(
-            connector_id
-        )
+        return cls._provider_configs.get(connector_id) or OAUTH_PROVIDERS.get(connector_id)
 
     # -- Token lifecycle ---------------------------------------------------
 
@@ -161,9 +154,7 @@ class ConnectorAuthManager:
             raise ConnectorNotFoundError(connector_id)
 
         if not creds.refresh:
-            raise ConnectorAuthError(
-                connector_id, "Token expired and no refresh token available"
-            )
+            raise ConnectorAuthError(connector_id, "Token expired and no refresh token available")
 
         try:
             new_creds = await refresh_oauth_tokens(config, creds)
@@ -171,9 +162,7 @@ class ConnectorAuthManager:
             return new_creds.access
         except Exception as exc:
             logger.error("Token refresh failed for %s: %s", connector_id, exc)
-            raise ConnectorAuthError(
-                connector_id, f"Token refresh failed: {exc}"
-            ) from exc
+            raise ConnectorAuthError(connector_id, f"Token refresh failed: {exc}") from exc
 
     async def revoke(self, connector_id: str) -> None:
         """Remove stored credentials for *connector_id*."""

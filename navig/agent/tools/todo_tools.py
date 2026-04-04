@@ -15,7 +15,7 @@ FA-03 implementation.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from navig.tools.registry import BaseTool, StatusCallback, ToolResult
 

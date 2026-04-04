@@ -28,26 +28,29 @@ class ConnectorAuthError(ConnectorError):
 class ConnectorNotFoundError(ConnectorError):
     """Requested connector is not registered."""
 
-    def __init__(self, connector_id: str) -> None:
-        super().__init__(connector_id, f"Connector '{connector_id}' is not registered")
+    def __init__(self, connector_id: str, message: str | None = None) -> None:
+        super().__init__(
+            connector_id,
+            message or f"Connector '{connector_id}' is not registered",
+        )
 
 
 class ConnectorDegradedError(ConnectorError):
     """Connector's circuit breaker is open — calls are rejected."""
 
-    def __init__(self, connector_id: str) -> None:
+    def __init__(self, connector_id: str, message: str | None = None) -> None:
         super().__init__(
-            connector_id, "Connector is degraded (circuit breaker open)"
+            connector_id,
+            message or "Connector is degraded (circuit breaker open)",
         )
 
 
 class ConnectorAPIError(ConnectorError):
     """Upstream API returned a non-success response."""
 
-    def __init__(
-        self, connector_id: str, status_code: int, detail: str = ""
-    ) -> None:
+    def __init__(self, connector_id: str, status_code: int, detail: str = "") -> None:
         self.status_code = status_code
+        self.detail = detail
         msg = f"API error {status_code}"
         if detail:
             msg += f": {detail}"

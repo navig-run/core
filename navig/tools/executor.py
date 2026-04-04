@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import time
 from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
@@ -33,8 +32,6 @@ class ToolExecutor:
         Main entry point for tool execution. Yields ExecutionEvent objects
         and guarantees a StreamFinal or StreamError as the terminal event.
         """
-        start_time = time.time()
-
         # 1. Dispatch Check
         if request.is_cancelled:
             yield StreamError("Execution cancelled before start", code="cancelled")

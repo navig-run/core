@@ -27,12 +27,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from navig.agent.tool_caps import cap_result, get_cap_for_tool
+from navig.agent.tool_caps import cap_result
 from navig.tools.registry import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
