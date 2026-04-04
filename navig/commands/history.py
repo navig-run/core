@@ -594,3 +594,171 @@ def _undo_host_switch(op: OperationRecord) -> None:
     config = get_config_manager()
     config.set_active_host(previous_host)
     ch.info(f"Switched back to host: {previous_host}")
+
+
+# ============================================================================
+# TYPER SUB-APP — extracted from navig/cli/__init__.py
+# ============================================================================
+
+import typer  # noqa: E402
+
+from navig.cli._callbacks import show_subcommand_help  # noqa: E402
+
+history_app = typer.Typer(
+    help="Command history, replay, and audit trail",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@history_app.callback()
+def history_callback(ctx: typer.Context):
+    """History management - shows recent history if no subcommand."""
+    if ctx.invoked_subcommand is None:
+        show_history(limit=20, opts=ctx.obj)
+        raise typer.Exit()
+
+
+@history_app.command("list")
+def history_list(
+    ctx: typer.Context,
+    limit: int = typer.Option(20, "--limit", "-l", help="Number of entries to show"),
+    host: str | None = typer.Option(None, "--host", "-h", help="Filter by host"),
+    type_filter: str | None = typer.Option(None, "--type", "-t", help="Filter by operation type"),
+    status: str | None = typer.Option(
+        None, "--status", "-s", help="Filter by status (success/failed)"
+    ),
+    search: str | None = typer.Option(None, "--search", "-q", help="Search in command text"),
+    since: str | None = typer.Option(None, "--since", help="Time filter (e.g., 1h, 24h, 7d)"),
+    plain: bool = typer.Option(False, "--plain", help="Plain text output"),
+    json_out: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """
+    List command history with filtering.
+
+    Examples:
+        navig history list
+        navig history list --limit 50
+        navig history list --host production
+        navig history list --status failed --since 24h
+        navig history list --search "docker" --json
+    """
+    ctx.obj["plain"] = plain
+    if json_out:
+        ctx.obj["json"] = True
+    show_history(
+        limit=limit,
+        host=host,
+        operation_type=type_filter,
+        status=status,
+        search=search,
+        since=since,
+        opts=ctx.obj,
+    )
+
+
+@history_app.command("show")
+def history_show_cmd(
+    ctx: typer.Context,
+    op_id: str = typer.Argument(..., help="Operation ID or index (1=last, 2=second-last)"),
+    json_out: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """
+    Show detailed information about an operation.
+
+    Examples:
+        navig history show 1              # Show last operation
+        navig history show op-20260208... # Show by ID
+        navig history show 1 --json       # JSON output
+    """
+    if json_out:
+        ctx.obj["json"] = True
+    show_operation_details(op_id, opts=ctx.obj)
+
+
+@history_app.command("replay")
+def history_replay(
+    ctx: typer.Context,
+    op_id: str = typer.Argument(..., help="Operation ID or index to replay"),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would be done"),
+    modify: str | None = typer.Option(None, "--modify", "-m", help="Modify command before replay"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+):
+    """
+    Replay a previous operation.
+
+    Examples:
+        navig history replay 1                    # Replay last command
+        navig history replay 1 --dry-run          # Preview only
+        navig history replay 1 --modify "--host staging"
+    """
+    ctx.obj["yes"] = yes
+    replay_operation(op_id, dry_run=dry_run, modify=modify, opts=ctx.obj)
+
+
+@history_app.command("undo")
+def history_undo(
+    ctx: typer.Context,
+    op_id: str = typer.Argument(..., help="Operation ID or index to undo"),
+):
+    """
+    Undo a reversible operation.
+
+    Only works for operations that were marked as reversible
+    and have undo data stored.
+
+    Examples:
+        navig history undo 1
+    """
+    undo_operation(op_id, opts=ctx.obj)
+
+
+@history_app.command("export")
+def history_export_cmd(
+    ctx: typer.Context,
+    output: str = typer.Argument(..., help="Output file path"),
+    format: str = typer.Option("json", "--format", "-f", help="Export format (json, csv)"),
+    limit: int = typer.Option(1000, "--limit", "-l", help="Max entries to export"),
+):
+    """
+    Export operation history to file.
+
+    Examples:
+        navig history export audit.json
+        navig history export audit.csv --format csv
+        navig history export all.json --limit 10000
+    """
+    export_history(output, format=format, limit=limit, opts=ctx.obj)
+
+
+@history_app.command("clear")
+def history_clear_cmd(
+    ctx: typer.Context,
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+):
+    """
+    Clear all operation history.
+
+    Examples:
+        navig history clear
+        navig history clear --yes
+    """
+    ctx.obj["yes"] = yes
+    clear_history(opts=ctx.obj)
+
+
+@history_app.command("stats")
+def history_stats_cmd(
+    ctx: typer.Context,
+    json_out: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """
+    Show history statistics.
+
+    Examples:
+        navig history stats
+        navig history stats --json
+    """
+    if json_out:
+        ctx.obj["json"] = True
+    history_stats(opts=ctx.obj)

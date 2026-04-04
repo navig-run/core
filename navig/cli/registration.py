@@ -66,6 +66,12 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "t": ("navig.commands.tunnel", "tunnel_app"),
     "skills": ("navig.commands.skills", "skills_app"),
     "skill": ("navig.commands.skills", "skills_app"),
+    # ── Batch extraction: history, trigger, insights, server-template ─────────
+    "history": ("navig.commands.history", "history_app"),
+    "hist": ("navig.commands.history", "history_app"),
+    "trigger": ("navig.commands.triggers", "trigger_app"),
+    "insights": ("navig.commands.insights", "insights_app"),
+    "server-template": ("navig.commands.server_template", "server_template_app"),
     # ── Phase 2a: gateway extracted from inline block ─────────────────────────
     "gateway": ("navig.commands.gateway", "gateway_app"),
     "cortex": ("navig.commands.cortex", "cortex_app"),
@@ -182,7 +188,7 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
 
 # Hidden command aliases (short forms and deprecated names)
 _HIDDEN_COMMANDS: frozenset[str] = frozenset({
-    "tg", "mx", "fx", "h", "a", "f", "l", "s", "database"
+    "tg", "mx", "fx", "h", "a", "f", "l", "s", "database", "hist"
 })
 
 

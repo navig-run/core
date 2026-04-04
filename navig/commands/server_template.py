@@ -243,3 +243,116 @@ def init_template_cmd(template_name: str, options: dict[str, Any]):
         ch.dim(
             f"Template configuration initialized from template: templates/{template_name}/template.yaml"
         )
+
+
+# ============================================================================
+# TYPER SUB-APP — extracted from navig/cli/__init__.py
+# ============================================================================
+
+import typer  # noqa: E402
+
+server_template_app = typer.Typer(help="Manage per-server template configurations")
+
+
+@server_template_app.command("list")
+def server_template_list_cmd(
+    ctx: typer.Context,
+    server: str | None = typer.Option(
+        None, "--server", "-s", help="Server name (uses active if omitted)"
+    ),
+    enabled_only: bool = typer.Option(False, "--enabled", "-e", help="Show only enabled templates"),
+    plain: bool = typer.Option(
+        False, "--plain", help="Output plain text (one template per line) for scripting"
+    ),
+):
+    """List template configurations for a server."""
+    ctx.obj["server"] = server
+    ctx.obj["enabled_only"] = enabled_only
+    ctx.obj["plain"] = plain
+    list_server_templates_cmd(ctx.obj)
+
+
+@server_template_app.command("show")
+def server_template_show_cmd(
+    ctx: typer.Context,
+    template_name: str = typer.Argument(..., help="Template name to show"),
+    server: str | None = typer.Option(
+        None, "--server", "-s", help="Server name (uses active if omitted)"
+    ),
+):
+    """Show merged configuration for a server template."""
+    ctx.obj["server"] = server
+    show_template_config_cmd(template_name, ctx.obj)
+
+
+@server_template_app.command("enable")
+def server_template_enable_cmd(
+    ctx: typer.Context,
+    template_name: str = typer.Argument(..., help="Template name to enable"),
+    server: str | None = typer.Option(
+        None, "--server", "-s", help="Server name (uses active if omitted)"
+    ),
+):
+    """Enable an template for a specific server."""
+    ctx.obj["server"] = server
+    enable_server_template_cmd(template_name, ctx.obj)
+
+
+@server_template_app.command("disable")
+def server_template_disable_cmd(
+    ctx: typer.Context,
+    template_name: str = typer.Argument(..., help="Template name to disable"),
+    server: str | None = typer.Option(
+        None, "--server", "-s", help="Server name (uses active if omitted)"
+    ),
+):
+    """Disable an template for a specific server."""
+    ctx.obj["server"] = server
+    disable_server_template_cmd(template_name, ctx.obj)
+
+
+@server_template_app.command("set")
+def server_template_set_cmd(
+    ctx: typer.Context,
+    template_name: str = typer.Argument(..., help="Template name"),
+    key_path: str = typer.Argument(..., help="Dot-separated config path (e.g., 'paths.web_root')"),
+    value: str = typer.Argument(..., help="Value to set (JSON-parseable)"),
+    server: str | None = typer.Option(
+        None, "--server", "-s", help="Server name (uses active if omitted)"
+    ),
+):
+    """Set a custom value for a server template configuration."""
+    ctx.obj["server"] = server
+    set_template_value_cmd(template_name, key_path, value, ctx.obj)
+
+
+@server_template_app.command("sync")
+def server_template_sync_cmd(
+    ctx: typer.Context,
+    template_name: str = typer.Argument(..., help="Template name to sync"),
+    server: str | None = typer.Option(
+        None, "--server", "-s", help="Server name (uses active if omitted)"
+    ),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite all custom settings"),
+):
+    """Sync template configuration from template."""
+    ctx.obj["server"] = server
+    ctx.obj["force"] = force
+    sync_template_cmd(template_name, ctx.obj)
+
+
+@server_template_app.command("init")
+def server_template_init_cmd(
+    ctx: typer.Context,
+    template_name: str = typer.Argument(..., help="Template name to initialize"),
+    server: str | None = typer.Option(
+        None, "--server", "-s", help="Server name (uses active if omitted)"
+    ),
+    enable: bool = typer.Option(
+        False, "--enable", "-e", help="Enable template after initialization"
+    ),
+):
+    """Manually initialize an template for a server."""
+    ctx.obj["server"] = server
+    ctx.obj["enable"] = enable
+    init_template_cmd(template_name, ctx.obj)
