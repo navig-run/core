@@ -72,8 +72,7 @@ class PerplexityConnector(BaseConnector):
         if not api_key:
             self._status = ConnectorStatus.ERROR
             raise ValueError(
-                "Perplexity API key not found. "
-                "Set PERPLEXITY_API_KEY environment variable."
+                "Perplexity API key not found. Set PERPLEXITY_API_KEY environment variable."
             )
 
         self._api_key = api_key
@@ -221,7 +220,9 @@ class PerplexityConnector(BaseConnector):
         try:
             import httpx
         except ImportError as exc:
-            raise RuntimeError("httpx is required for PerplexityConnector. pip install httpx") from exc
+            raise RuntimeError(
+                "httpx is required for PerplexityConnector. pip install httpx"
+            ) from exc
 
         url = f"{_API_BASE}{path}"
         headers = {
@@ -239,8 +240,6 @@ class PerplexityConnector(BaseConnector):
         if resp.status_code == 429:
             raise RuntimeError("Perplexity rate limit exceeded. Retry later.")
         if not resp.is_success:
-            raise RuntimeError(
-                f"Perplexity API error {resp.status_code}: {resp.text[:200]}"
-            )
+            raise RuntimeError(f"Perplexity API error {resp.status_code}: {resp.text[:200]}")
 
         return resp.json()

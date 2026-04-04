@@ -481,28 +481,36 @@ def _build_http_app(
     async def handle_post(request: web.Request) -> web.Response:
         """POST /mcp — handle JSON-RPC 2.0 request."""
         if not _check_auth(request):
-            err_body = json.dumps({
-                "jsonrpc": "2.0",
-                "error": {"code": -32000, "message": "Unauthorized"},
-                "id": None,
-            })
+            err_body = json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32000, "message": "Unauthorized"},
+                    "id": None,
+                }
+            )
             return web.Response(
-                status=401, body=err_body,
-                content_type="application/json", headers=_CORS_HEADERS,
+                status=401,
+                body=err_body,
+                content_type="application/json",
+                headers=_CORS_HEADERS,
             )
 
         try:
             body = await request.text()
             message = json.loads(body)
         except Exception as exc:
-            parse_err = json.dumps({
-                "jsonrpc": "2.0",
-                "error": {"code": -32700, "message": f"Parse error: {exc}"},
-                "id": None,
-            })
+            parse_err = json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32700, "message": f"Parse error: {exc}"},
+                    "id": None,
+                }
+            )
             return web.Response(
-                status=400, body=parse_err,
-                content_type="application/json", headers=_CORS_HEADERS,
+                status=400,
+                body=parse_err,
+                content_type="application/json",
+                headers=_CORS_HEADERS,
             )
 
         response_obj = handler.handle_message(message)
@@ -881,7 +889,9 @@ def generate_claude_mcp_config() -> dict[str, Any]:
     }
 
 
-def generate_perplexity_mcp_config(host: str = "127.0.0.1", port: int = 3001, token: str | None = None) -> dict[str, Any]:
+def generate_perplexity_mcp_config(
+    host: str = "127.0.0.1", port: int = 3001, token: str | None = None
+) -> dict[str, Any]:
     """Generate Perplexity AI custom-connector configuration.
 
     Copy the returned ``mcp_server_url`` and paste it into:
@@ -957,10 +967,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="NAVIG MCP Server")
     parser.add_argument("--websocket", action="store_true", help="Run in WebSocket mode")
     parser.add_argument("--http", action="store_true", help="Run in HTTP (Streamable HTTP) mode")
-    parser.add_argument("--port", type=int, default=3001, help="Port for WebSocket/HTTP mode (default 3001)")
-    parser.add_argument("--host", type=str, default="127.0.0.1", help="Bind host (default 127.0.0.1)")
     parser.add_argument(
-        "--token", type=str, default=None, help="Auth token (auto-generated if omitted for websocket)"
+        "--port", type=int, default=3001, help="Port for WebSocket/HTTP mode (default 3001)"
+    )
+    parser.add_argument(
+        "--host", type=str, default="127.0.0.1", help="Bind host (default 127.0.0.1)"
+    )
+    parser.add_argument(
+        "--token",
+        type=str,
+        default=None,
+        help="Auth token (auto-generated if omitted for websocket)",
     )
     args = parser.parse_args()
 

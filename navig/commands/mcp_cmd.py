@@ -1,4 +1,5 @@
 """navig mcp — Model Context Protocol server management."""
+
 from __future__ import annotations
 
 import secrets
@@ -18,17 +19,21 @@ class _Transport(str, Enum):
 @mcp_app.command("serve")
 def mcp_serve(
     transport: _Transport = typer.Option(
-        _Transport.http, "--transport", "-t",
+        _Transport.http,
+        "--transport",
+        "-t",
         help="Transport: http (default, for Perplexity/web clients), websocket, stdio",
     ),
     host: str = typer.Option("127.0.0.1", "--host", help="Bind host"),
     port: int = typer.Option(3001, "--port", "-p", help="Bind port (default 3001)"),
     token: str | None = typer.Option(
-        None, "--token",
+        None,
+        "--token",
         help="Auth token. Omit to run open (HTTP) or auto-generate (WebSocket).",
     ),
     print_config: bool = typer.Option(
-        False, "--print-config",
+        False,
+        "--print-config",
         help="Print connector config for Perplexity / VS Code / Claude and exit.",
     ),
 ):
@@ -55,7 +60,9 @@ def mcp_serve(
 
         ch.console.print("\n[bold]── Perplexity AI custom connector ──[/bold]")
         perplexity_cfg = generate_perplexity_mcp_config(host=host, port=port, token=token)
-        ch.console.print(f"  MCP Server URL: [bold green]{perplexity_cfg['mcp_server_url']}[/bold green]")
+        ch.console.print(
+            f"  MCP Server URL: [bold green]{perplexity_cfg['mcp_server_url']}[/bold green]"
+        )
         if token:
             ch.console.print(f"  Authorization:  Bearer {token}")
 
