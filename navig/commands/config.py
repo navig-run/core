@@ -13,6 +13,7 @@ from navig.cli._callbacks import show_subcommand_help
 from navig import console_helper as ch
 from navig.config import get_config_manager
 from navig.migration import migrate_all_configs
+from navig.platform import paths
 from navig.yaml_utils import load_yaml_with_lines
 
 
@@ -30,7 +31,7 @@ def _default_config_roots(scope: str | None) -> list[tuple[str, Path]]:
     Defaults to project scope when a .navig/ exists in the current directory,
     otherwise defaults to global.
     """
-    global_root = Path.home() / ".navig"
+    global_root = paths.config_dir()
     project_root = Path.cwd() / ".navig"
 
     normalized = (scope or "").strip().lower() if scope else None
@@ -210,8 +211,8 @@ def migrate(
 
     # Get configuration directories
     config_manager = get_config_manager()
-    old_dir = Path.home() / ".navig" / "apps"
-    new_dir = Path.home() / ".navig" / "hosts"
+    old_dir = paths.config_dir() / "apps"
+    new_dir = paths.config_dir() / "hosts"
 
     if not old_dir.exists():
         ch.error(f"Old configuration directory not found: {old_dir}")
@@ -506,7 +507,7 @@ def install_schemas(
         ch.dim("  Or:  --scope project  (installs under .navig in current dir)")
         raise typer.Exit(1)
 
-    target_root = (Path.home() / ".navig") if scope == "global" else (Path.cwd() / ".navig")
+    target_root = paths.config_dir() if scope == "global" else (Path.cwd() / ".navig")
     target_dir = target_root / "schemas"
     target_dir.mkdir(parents=True, exist_ok=True)
 
