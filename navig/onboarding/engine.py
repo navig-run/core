@@ -160,7 +160,13 @@ class OnboardingEngine:
                     else:
                         continue  # skip steps before the jump target
 
-                if self._already_completed(step.id):
+                # Always re-run the explicit jump target — the caller requested it
+                # deliberately, even if the artifact marks it completed.
+                is_jump_target = (
+                    bool(self._config.jump_to_step)
+                    and step.id == self._config.jump_to_step
+                )
+                if not is_jump_target and self._already_completed(step.id):
                     continue
 
                 t0 = time.monotonic()
