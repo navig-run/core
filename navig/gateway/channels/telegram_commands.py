@@ -2943,7 +2943,6 @@ class TelegramCommandsMixin:
                 }
             ],
         ]
-        button_row: list = []
         ready_provider_count = 0
 
         for manifest in providers:
@@ -2986,13 +2985,7 @@ class TelegramCommandsMixin:
                     "callback_data": f"prov_{manifest.id}",
                 }
 
-            button_row.append(btn)
-            if len(button_row) == 2:
-                keyboard_rows.append(list(button_row))
-                button_row = []
-
-        if button_row:
-            keyboard_rows.append(list(button_row))
+            keyboard_rows.append([btn])
 
         if ready_provider_count == 0:
             lines.append("")
