@@ -647,6 +647,17 @@ def vault_set(
         )
         _ch.success(f"Stored credential for [bold]{provider}[/bold] (ID: {cred_id})")
 
+    # Also write to vault v2 when path uses dot/slash notation (e.g. telegram.user_id)
+    # so that resolve_telegram_uid() and other v2-first resolvers find it immediately.
+    if "." in path or "/" in path:
+        try:
+            from navig.vault.core_v2 import get_vault_v2 as _gv2
+            _v2 = _gv2()
+            if _v2 is not None:
+                _v2.put(path, json.dumps({"value": value}).encode())
+        except Exception:
+            pass  # v2 write is additive; v1 store above is the canonical record
+
 
 @vault_app.command("get")
 def vault_get(
@@ -658,6 +669,23 @@ def vault_get(
     vault = _vault_mod.get_vault()
     provider, data_key = _parse_vault_path(path)
     cred = vault.get(provider, profile_id=profile, caller="vault.get")
+
+    # For dot-notation keys also try vault v2 first (e.g. telegram.user_id)
+    if "." in path or (cred is None and "/" in path):
+        try:
+            from navig.vault.core_v2 import get_vault_v2 as _gv2
+            _v2 = _gv2()
+            if _v2 is not None:
+                v2_secret = (_v2.get_secret(path) or "").strip()
+                if v2_secret:
+                    if reveal:
+                        _ch.warning("Revealing secret!")
+                        _rprint(v2_secret)
+                    else:
+                        _rprint(f"[dim]{path}:[/dim] {'*' * min(len(v2_secret), 12)} (use --reveal to show)")
+                    return
+        except Exception:
+            pass
 
     if cred is None:
         _ch.error(f"No credential found for provider '{provider}' in profile '{profile}'.")

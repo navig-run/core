@@ -4,7 +4,7 @@ import os
 from typing import Any
 
 from navig.messaging.provider import IMessagingProvider
-from navig.messaging.secrets import resolve_telegram_bot_token
+from navig.messaging.secrets import resolve_telegram_bot_token, resolve_telegram_uid
 
 _SUPPORTED_PROVIDER_NAMES = frozenset({"telegram", "none"})
 
@@ -38,8 +38,10 @@ def _telegram_config(raw_config: dict[str, Any]) -> dict[str, Any]:
     telegram_cfg = telegram_cfg if isinstance(telegram_cfg, dict) else {}
 
     token = resolve_telegram_bot_token(cfg)
+    owner_uid = resolve_telegram_uid(cfg)
     return {
         "bot_token": token,
+        "owner_uid": owner_uid,
         "allowed_users": telegram_cfg.get("allowed_users", []),
         "allowed_groups": telegram_cfg.get("allowed_groups", []),
         "require_auth": telegram_cfg.get("require_auth", True),

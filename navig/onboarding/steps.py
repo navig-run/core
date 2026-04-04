@@ -1295,6 +1295,37 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
         except Exception:  # noqa: BLE001
             pass
 
+        # 3. Prompt for owner Telegram user ID (stored in vault; skipped if already set)
+        try:
+            from navig.messaging.secrets import resolve_telegram_uid
+
+            if not resolve_telegram_uid():
+                import typer as _typer
+                try:
+                    uid_raw = _typer.prompt(
+                        "  Your Telegram user ID (leave blank to skip — find it via @userinfobot)",
+                        default="",
+                    ).strip()
+                except (EOFError, KeyboardInterrupt):
+                    uid_raw = ""
+                if uid_raw and uid_raw.isdigit():
+                    from navig.vault.core_v2 import get_vault_v2 as _gv2
+                    _v2 = _gv2()
+                    if _v2 is not None:
+                        _v2.put("telegram/user_id", json.dumps({"value": uid_raw}).encode())
+                    # Also persist to .env for env-based fallback
+                    try:
+                        env_path = navig_dir / ".env"
+                        _existing = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
+                        _lines = [l for l in _existing.splitlines() if not l.startswith("NAVIG_TELEGRAM_UID=")]
+                        _lines.append(f"NAVIG_TELEGRAM_UID={uid_raw}")
+                        env_path.write_text("\n".join(_lines) + "\n", encoding="utf-8")
+                    except Exception:  # noqa: BLE001
+                        pass
+                    writes.append("uid")
+        except Exception:  # noqa: BLE001
+            pass  # UID capture is best-effort; do not fail the token step
+
         marker.write_text("1", encoding="utf-8")
         return StepResult(
             status="completed",

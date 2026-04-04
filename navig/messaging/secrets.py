@@ -166,3 +166,201 @@ def resolve_telegram_bot_token(raw_config: dict[str, Any] | None = None) -> str:
         return ""
 
     return ""
+
+
+# ── Telegram user-identity resolution ─────────────────────────────────────────
+
+_TELEGRAM_UID_VAULT_LABELS = (
+    "telegram/user_id",
+    "telegram.user_id",
+    "telegram_user_id",
+)
+
+
+def _resolve_telegram_uid_from_vault_v2() -> str | None:
+    try:
+        from navig.vault.core_v2 import get_vault_v2
+
+        vault = get_vault_v2()
+        for label in _TELEGRAM_UID_VAULT_LABELS:
+            try:
+                value = vault.get_secret(label)
+            except Exception:
+                continue
+            value = (value or "").strip()
+            if value:
+                return value
+    except Exception:
+        pass
+    return None
+
+
+def _resolve_telegram_uid_from_vault_v1() -> str | None:
+    try:
+        from navig.vault import get_vault
+
+        vault = get_vault()
+        for key in ("user_id", "uid"):
+            secret = vault.get_secret("telegram", key, caller="messaging.telegram_uid")
+            if secret:
+                uid = (secret.reveal() or "").strip()
+                if uid:
+                    return uid
+    except Exception:
+        pass
+    return None
+
+
+def _resolve_telegram_uid_from_env_file() -> str | None:
+    """Read NAVIG_TELEGRAM_UID from ~/.navig/.env (may not be in os.environ at CLI startup)."""
+    from pathlib import Path
+
+    env_file = Path.home() / ".navig" / ".env"
+    if not env_file.exists():
+        return None
+    try:
+        text = env_file.read_bytes().lstrip(b"\xef\xbb\xbf").decode("utf-8", errors="replace")
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key == "NAVIG_TELEGRAM_UID" and value:
+                return value
+    except Exception:
+        pass
+    return None
+
+
+def resolve_telegram_uid(raw_config: dict[str, Any] | None = None) -> str | None:
+    """Resolve the owner's Telegram user ID with vault-first policy.
+
+    Resolution order:
+    1) Vault v2 labels (telegram/user_id, telegram.user_id, telegram_user_id)
+    2) Vault v1 provider credential (telegram user_id / uid)
+    3) NAVIG_TELEGRAM_UID environment variable
+    4) ~/.navig/.env file (NAVIG_TELEGRAM_UID)
+    5) telegram.user_id in provided config  (deprecated — emits warning)
+    6) telegram.user_id from global config manager  (deprecated — emits warning)
+
+    Returns ``None`` when no UID is configured so callers can distinguish
+    "missing" from an empty string.
+    """
+    uid = _resolve_telegram_uid_from_vault_v2()
+    if uid:
+        return uid
+
+    uid = _resolve_telegram_uid_from_vault_v1()
+    if uid:
+        return uid
+
+    uid = (os.getenv("NAVIG_TELEGRAM_UID") or "").strip()
+    if uid:
+        return uid
+
+    uid = _resolve_telegram_uid_from_env_file()
+    if uid:
+        return uid
+
+    if raw_config and isinstance(raw_config, dict):
+        telegram_cfg = raw_config.get("telegram", {})
+        if isinstance(telegram_cfg, dict):
+            uid = str(telegram_cfg.get("user_id") or "").strip()
+            if uid:
+                logger.warning(
+                    "telegram.user_id read from config (deprecated). "
+                    "Store the UID in the vault instead: "
+                    "navig vault set telegram.user_id <uid>"
+                )
+                return uid
+
+    try:
+        from navig.config import get_config_manager
+
+        cfg = get_config_manager().global_config or {}
+        telegram_cfg = cfg.get("telegram", {}) if isinstance(cfg, dict) else {}
+        if isinstance(telegram_cfg, dict):
+            uid = str(telegram_cfg.get("user_id") or "").strip()
+            if uid:
+                logger.warning(
+                    "telegram.user_id read from config.yaml (deprecated). "
+                    "Store the UID in the vault instead: "
+                    "navig vault set telegram.user_id <uid>"
+                )
+                return uid
+    except Exception:
+        pass
+
+    return None
+
+
+def ensure_telegram_uid(
+    vault: Any = None,
+    raw_config: dict[str, Any] | None = None,
+) -> str:
+    """Return the owner's Telegram user ID, prompting once on first run.
+
+    In headless / CI mode (no TTY or ``CI`` env var set) a
+    :class:`RuntimeError` is raised when no UID is found — the operator must
+    set ``NAVIG_TELEGRAM_UID`` in the environment.
+
+    Vault write failure is treated as fatal: the caller must not proceed with
+    an unsaved UID.
+    """
+    import sys
+
+    uid = resolve_telegram_uid(raw_config)
+    if uid:
+        return uid
+
+    headless = not sys.stdin.isatty() or bool(os.getenv("CI"))
+    if headless:
+        raise RuntimeError(
+            "Telegram user ID not configured. "
+            "Set via: NAVIG_TELEGRAM_UID env var or "
+            "navig vault set telegram.user_id <uid>"
+        )
+
+    # Interactive first-time setup
+    print("Telegram user ID not found. This is a one-time setup.")
+    print("(Find your ID by messaging @userinfobot on Telegram)")
+    uid = input("Enter your Telegram user ID: ").strip()
+
+    if not uid.isdigit():
+        raise ValueError("Telegram user ID must be a numeric string.")
+
+    # Persist to vault v2 (fatal on failure — do not continue with unsaved UID)
+    try:
+        import json as _json
+        from navig.vault.core_v2 import get_vault_v2
+
+        _vault = vault if vault is not None else get_vault_v2()
+        if _vault is None:
+            raise RuntimeError("Vault not available.")
+        _vault.put("telegram/user_id", _json.dumps({"value": uid}).encode())
+    except Exception as exc:
+        raise RuntimeError(
+            f"Failed to save Telegram user ID to vault: {exc}. "
+            "Fix the vault and try again — the UID has NOT been saved."
+        ) from exc
+
+    # Best-effort: also write to ~/.navig/.env for env-based fallback access
+    try:
+        from pathlib import Path as _Path
+
+        env_file = _Path.home() / ".navig" / ".env"
+        existing = env_file.read_text(encoding="utf-8") if env_file.exists() else ""
+        lines = [ln for ln in existing.splitlines() if not ln.startswith("NAVIG_TELEGRAM_UID=")]
+        lines.append(f"NAVIG_TELEGRAM_UID={uid}")
+        env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        try:
+            env_file.chmod(0o600)
+        except (OSError, PermissionError):
+            pass
+    except Exception:
+        pass  # .env write is best-effort; vault write succeeded above
+
+    print("\u2713 Saved to vault. You will not be asked again.")
+    return uid
