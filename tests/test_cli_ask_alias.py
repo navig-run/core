@@ -46,6 +46,8 @@ def test_ask_alias_forwards_to_ai_ask(monkeypatch, capsys):
         captured["question"] = question
         captured["model"] = model
         captured["options_type"] = type(options).__name__
+        captured["ask_detected_mode"] = options.get("ask_detected_mode")
+        captured["ask_detected_confidence"] = options.get("ask_detected_confidence")
 
     import navig.commands.ai as ai_mod
 
@@ -58,7 +60,53 @@ def test_ask_alias_forwards_to_ai_ask(monkeypatch, capsys):
     assert captured["question"] == "hello from alias"
     assert captured["model"] == "demo-model"
     assert captured["options_type"] == "dict"
+    assert captured.get("ask_detected_mode")
+    assert isinstance(captured.get("ask_detected_confidence"), float)
     assert "deprecated" not in combined
+
+
+def test_ask_plan_mode_does_not_call_ask_ai(monkeypatch, capsys):
+    """navig ask --plan should preview route and not execute ask_ai."""
+    called = {"count": 0}
+
+    def fake_ask_ai(*_a, **_kw):
+        called["count"] += 1
+
+    import navig.commands.ai as ai_mod
+
+    monkeypatch.setattr(ai_mod, "ask_ai", fake_ask_ai)
+
+    code, out, err = _invoke_cli(["ask", "restart nginx on prod", "--plan"], capsys)
+
+    combined = out + err
+    assert code == 0
+    assert called["count"] == 0
+    assert "intent route" in combined.lower()
+    assert "plan preview only" in combined.lower()
+
+
+def test_ask_plan_execute_calls_ask_ai(monkeypatch, capsys):
+    """navig ask --plan --execute should preview route and execute ask_ai."""
+    called = {"count": 0, "mode": None}
+
+    def fake_ask_ai(_question: str, _model: str | None, options: dict):
+        called["count"] += 1
+        called["mode"] = options.get("ask_detected_mode")
+
+    import navig.commands.ai as ai_mod
+
+    monkeypatch.setattr(ai_mod, "ask_ai", fake_ask_ai)
+
+    code, out, err = _invoke_cli(
+        ["ask", "restart nginx on prod", "--plan", "--execute"],
+        capsys,
+    )
+
+    combined = out + err
+    assert code == 0
+    assert called["count"] == 1
+    assert called["mode"]
+    assert "intent route" in combined.lower()
 
 
 def test_chat_command_emits_deprecation_warning(monkeypatch, capsys):

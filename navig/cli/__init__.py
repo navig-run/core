@@ -1090,11 +1090,39 @@ def ask_compat(
         "-m",
         help="Override default AI model",
     ),
+    plan: bool = typer.Option(
+        False,
+        "--plan",
+        help="Preview inferred intent/route before execution (safe mode)",
+    ),
+    execute: bool = typer.Option(
+        False,
+        "--execute",
+        help="With --plan, execute after preview; without --plan, no behavior change",
+    ),
 ):
     """Ask AI about server/configuration."""
     from navig.commands.ai import ask_ai
+    from navig.routing.detect import detect_mode
 
-    ask_ai(question, model, ctx.obj)
+    mode, confidence, reasons = detect_mode(question)
+    opts = dict(ctx.obj or {})
+    opts["ask_detected_mode"] = mode
+    opts["ask_detected_confidence"] = confidence
+    opts["ask_detected_reasons"] = reasons
+
+    if plan:
+        ch.dim(
+            f"Intent route: {mode} (confidence={confidence:.2f}; reasons={', '.join(reasons)})"
+        )
+        if not execute:
+            ch.warning(
+                "Plan preview only — command not executed.",
+                "Re-run with --plan --execute to continue.",
+            )
+            return
+
+    ask_ai(question, model, opts)
 
 
 # Legacy flat command for backward compatibility
