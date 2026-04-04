@@ -557,14 +557,34 @@ main() {
     _parse_args "$@"
 
     if [ "$_HELP" = "1" ]; then show_usage; return; fi
+    case "$_ACTION" in
+        install|uninstall|reinstall|repair) ;;
+        *)
+            print_failure \
+                "invalid action" \
+                "Unsupported action: $_ACTION" \
+                "Use one of: install, uninstall, reinstall, repair" \
+                "bash install.sh --action install"
+            return 1
+            ;;
+    esac
+
     if [ "$_DRY_RUN" = "1" ]; then
-        printf "DRY RUN - no changes will be made\n"
+        printf "Dry run mode - no changes will be made\n"
     fi
     export NAVIG_VERBOSE="$NAV_VERBOSE"
 
     _init_term
     _init_colors
     print_header
+
+    # ── Dry-run preview path (never mutates host) ────────────
+    if [ "$_DRY_RUN" = "1" ]; then
+        print_section "Dry run"
+        row_ok "Action" "$_ACTION"
+        row_ok "Status" "Dry run complete"
+        return
+    fi
 
     # ── Uninstall path ────────────────────────────────────────
     if [ "$_ACTION" = "uninstall" ]; then
