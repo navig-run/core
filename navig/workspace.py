@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from navig import console_helper as ch
 from navig.workspace_ownership import (
     USER_NAVIG_DIR,
     USER_WORKSPACE_DIR,
@@ -160,7 +161,7 @@ class WorkspaceManager:
                 with open(self.config_path, encoding="utf-8") as f:
                     return json.load(f)
             except Exception as e:
-                logger.warning(f"Failed to load config: {e}")
+                logger.warning("Failed to load config: %s", e)
         return None
 
     def is_initialized(self) -> bool:
@@ -198,7 +199,7 @@ class WorkspaceManager:
 
                     content_parts.append(f"## {filename}\n\n{file_content}")
                 except Exception as e:
-                    logger.warning(f"Failed to read {filename}: {e}")
+                    logger.warning("Failed to read %s: %s", filename, e)
 
         return "\n\n---\n\n".join(content_parts)
 
@@ -210,7 +211,7 @@ class WorkspaceManager:
                 try:
                     return file_path.read_text(encoding="utf-8")
                 except Exception as e:
-                    logger.warning(f"Failed to read {filename}: {e}")
+                    logger.warning("Failed to read %s: %s", filename, e)
         return None
 
     def update_file(self, filename: str, content: str) -> bool:
@@ -230,7 +231,7 @@ class WorkspaceManager:
             file_path.write_text(content, encoding="utf-8")
             return True
         except Exception as e:
-            logger.error(f"Failed to update {filename}: {e}")
+            logger.error("Failed to update %s: %s", filename, e)
             return False
 
     def complete_bootstrap(self) -> bool:
@@ -251,7 +252,7 @@ class WorkspaceManager:
                     logger.info("Bootstrap completed - BOOTSTRAP.md removed")
                     return True
                 except Exception as e:
-                    logger.warning(f"Failed to remove BOOTSTRAP.md: {e}")
+                    logger.warning("Failed to remove BOOTSTRAP.md: %s", e)
         return False
 
     def has_bootstrap_pending(self) -> bool:
@@ -439,7 +440,7 @@ class WorkspaceManager:
                         "package_managers",
                         "learning_targets",
                     ):
-                        preferences[key] = [l.strip() for l in raw_value.split(",") if l.strip()]
+                        preferences[key] = [item.strip() for item in raw_value.split(",") if item.strip()]
                     elif key == "risk_tolerance":
                         lower_val = raw_value.lower()
                         if "low" in lower_val:
@@ -589,7 +590,7 @@ class WorkspaceManager:
                 agents_path.write_text(content, encoding="utf-8")
                 return True
         except Exception as e:
-            logger.error(f"Failed to add memory: {e}")
+            logger.error("Failed to add memory: %s", e)
 
         return False
 
@@ -658,7 +659,7 @@ class WorkspaceManager:
         # Apply updates
         if updates:
             updated = profile.update(updates, auto_save=True)
-            logger.info(f"Synced {len(updated)} fields from USER.md to UserProfile")
+            logger.info("Synced %d fields from USER.md to UserProfile", len(updated))
             return len(updated) > 0
 
         return False
@@ -674,19 +675,19 @@ def workspace_status():
     """Print workspace status."""
     wm = WorkspaceManager()
 
-    print(f"Workspace: {wm.workspace_path}")
-    print(f"Initialized: {wm.is_initialized()}")
-    print(f"Bootstrap pending: {wm.has_bootstrap_pending()}")
+    ch.info(f"Workspace: {wm.workspace_path}")
+    ch.info(f"Initialized: {wm.is_initialized()}")
+    ch.info(f"Bootstrap pending: {wm.has_bootstrap_pending()}")
 
     if wm.is_initialized():
         identity = wm.get_agent_identity()
-        print(f"\nAgent: {identity['emoji']} {identity['name']}")
+        ch.info(f"\nAgent: {identity['emoji']} {identity['name']}")
 
-        print("\nBootstrap files:")
+        ch.info("\nBootstrap files:")
         for f in wm.BOOTSTRAP_FILES:
             exists = (wm.workspace_path / f).exists()
-            status = "✓" if exists else "✗"
-            print(f"  {status} {f}")
+            status = "\u2713" if exists else "\u2717"
+            ch.dim(f"  {status} {f}")
 
 
 if __name__ == "__main__":

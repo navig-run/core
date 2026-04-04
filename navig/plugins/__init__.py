@@ -19,7 +19,7 @@ import sys
 from dataclasses import dataclass, field
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple  # noqa: F401
+from typing import Any
 
 from rich.console import Console
 

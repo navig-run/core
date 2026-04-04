@@ -9,9 +9,12 @@ import platform
 import shlex
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
+
+import typer
 
 from navig import console_helper as ch
+from navig.cli import show_subcommand_help
 from navig.config import get_config_manager
 from navig.registry.meta import command_meta
 
@@ -1189,12 +1192,6 @@ def info_host(options: dict[str, Any]) -> None:
         ch.dim(f"Configuration: {host_file}")
 
 
-from typing import Any, Optional
-
-import typer
-
-from navig.cli import show_subcommand_help
-
 # ============================================================================
 # HOST MANAGEMENT COMMANDS
 # ============================================================================
@@ -1343,7 +1340,7 @@ def host_test(
     try:
         test_host(ctx.obj)
     except RuntimeError:
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 @host_app.command("show")

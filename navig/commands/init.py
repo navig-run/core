@@ -1061,7 +1061,7 @@ def _persist_telegram_bootstrap_token(token: str, navig_dir: Path | None = None)
         from navig.config import get_config_manager
 
         cfg = get_config_manager(config_dir=base)
-        telegram_cfg = dict((cfg.global_config.get("telegram") or {}))
+        telegram_cfg = dict(cfg.global_config.get("telegram") or {})
         telegram_cfg["bot_token"] = token
         cfg.update_global_config({"telegram": telegram_cfg})
         wrote = True

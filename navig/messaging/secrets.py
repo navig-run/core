@@ -4,6 +4,8 @@ import logging
 import os
 from typing import Any
 
+from navig import console_helper as ch
+
 logger = logging.getLogger(__name__)
 
 
@@ -324,8 +326,8 @@ def ensure_telegram_uid(
         )
 
     # Interactive first-time setup
-    print("Telegram user ID not found. This is a one-time setup.")
-    print("(Find your ID by messaging @userinfobot on Telegram)")
+    ch.info("Telegram user ID not found. This is a one-time setup.")
+    ch.dim("(Find your ID by messaging @userinfobot on Telegram)")
     uid = input("Enter your Telegram user ID: ").strip()
 
     if not uid.isdigit():
@@ -363,5 +365,5 @@ def ensure_telegram_uid(
     except Exception:
         pass  # .env write is best-effort; vault write succeeded above
 
-    print("\u2713 Saved to vault. You will not be asked again.")
+    ch.success("\u2713 Saved to vault. You will not be asked again.")
     return uid

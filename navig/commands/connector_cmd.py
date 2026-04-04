@@ -13,12 +13,10 @@ Commands:
 
 from __future__ import annotations
 
-import asyncio
-from typing import Optional
-
 import typer
 
 from navig import console_helper as ch
+from navig.commands._async_utils import run_sync as _run
 
 connector_app = typer.Typer(
     name="connector",
@@ -27,25 +25,13 @@ connector_app = typer.Typer(
 )
 
 
-def _run(coro):
-    """Run an async coroutine in a sync CLI context."""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-    if loop and loop.is_running():
-        import concurrent.futures
-
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            return pool.submit(asyncio.run, coro).result()
-    return asyncio.run(coro)
-
 
 # ── list ─────────────────────────────────────────────────────────────────
 
+
 @connector_app.command("list")
 def connector_list(
-    domain: Optional[str] = typer.Option(None, "--domain", "-d", help="Filter by domain"),
+    domain: str | None = typer.Option(None, "--domain", "-d", help="Filter by domain"),
     json_output: bool = typer.Option(False, "--json", help="JSON output"),
 ) -> None:
     """List all registered connectors."""
@@ -61,7 +47,7 @@ def connector_list(
             d = ConnectorDomain(domain)
         except ValueError:
             ch.error(f"Unknown domain: {domain}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         connectors = registry.list_by_domain(d)
     else:
         connectors = registry.list_all()
@@ -69,16 +55,7 @@ def connector_list(
     if json_output:
         import json
 
-        data = []
-        for c in connectors:
-            data.append({
-                "id": c.manifest.id,
-                "display_name": c.manifest.display_name,
-                "domain": c.manifest.domain.value,
-                "status": c.status.value,
-                "icon": c.manifest.icon,
-            })
-        ch.print(json.dumps(data, indent=2))
+        ch.console.print(json.dumps(connectors, indent=2))
         return
 
     if not connectors:
@@ -95,19 +72,20 @@ def connector_list(
     table.add_column("Status")
 
     for c in connectors:
+        status_val = c["status"]
         status_style = {
             "connected": "[green]connected[/green]",
             "disconnected": "[dim]disconnected[/dim]",
             "degraded": "[yellow]degraded[/yellow]",
             "error": "[red]error[/red]",
             "connecting": "[blue]connecting…[/blue]",
-        }.get(c.status.value, c.status.value)
+        }.get(status_val, status_val)
 
         table.add_row(
-            c.manifest.icon,
-            c.manifest.id,
-            c.manifest.display_name,
-            c.manifest.domain.value,
+            c["icon"],
+            c["id"],
+            c["display_name"],
+            c["domain"],
             status_style,
         )
 
@@ -115,6 +93,7 @@ def connector_list(
 
 
 # ── status ───────────────────────────────────────────────────────────────
+
 
 @connector_app.command("status")
 def connector_status(
@@ -145,13 +124,15 @@ def connector_status(
 
         data = []
         for c, h in results:
-            data.append({
-                "id": c.manifest.id,
-                "ok": h.ok,
-                "latency_ms": round(h.latency_ms, 1),
-                "message": h.message,
-            })
-        ch.print(json.dumps(data, indent=2))
+            data.append(
+                {
+                    "id": c.manifest.id,
+                    "ok": h.ok,
+                    "latency_ms": round(h.latency_ms, 1),
+                    "message": h.message,
+                }
+            )
+        ch.console.print(json.dumps(data, indent=2))
         return
 
     from rich.table import Table
@@ -173,6 +154,7 @@ def connector_status(
 
 # ── connect ──────────────────────────────────────────────────────────────
 
+
 @connector_app.command("connect")
 def connector_connect(
     connector_id: str = typer.Argument(help="Connector ID (e.g. gmail, google_calendar)"),
@@ -186,15 +168,12 @@ def connector_connect(
 
     if not registry.has(connector_id):
         ch.error(f"Unknown connector: {connector_id}")
-        available = [c.manifest.id for c in registry.list_all()]
+        available = [c["id"] for c in registry.list_all()]
         if available:
             ch.dim(f"Available: {', '.join(available)}")
         raise typer.Exit(1)
 
     connector = registry.get(connector_id)
-    if not connector:
-        ch.error("Failed to get connector instance.")
-        raise typer.Exit(1)
 
     ch.info(f"Connecting {connector.manifest.icon}  {connector.manifest.display_name}…")
 
@@ -205,7 +184,7 @@ def connector_connect(
         _register_oauth_config(connector_id, auth)
 
         # Run OAuth flow
-        token = auth.authenticate(connector_id, interactive=True)
+        token = _run(auth.authenticate(connector_id, interactive=True))
         if not token:
             ch.error("Authentication failed. No access token received.")
             raise typer.Exit(1)
@@ -220,6 +199,7 @@ def connector_connect(
 
 # ── disconnect ───────────────────────────────────────────────────────────
 
+
 @connector_app.command("disconnect")
 def connector_disconnect(
     connector_id: str = typer.Argument(help="Connector ID"),
@@ -230,10 +210,11 @@ def connector_disconnect(
     _ensure_connectors_loaded()
     registry = get_connector_registry()
 
-    connector = registry.get(connector_id)
-    if not connector:
-        ch.error(f"Unknown or not connected: {connector_id}")
+    if not registry.has(connector_id):
+        ch.error(f"Unknown connector: {connector_id}")
         raise typer.Exit(1)
+
+    connector = registry.get(connector_id)
 
     async def _disconnect():
         await connector.disconnect()
@@ -244,10 +225,11 @@ def connector_disconnect(
 
 # ── search ───────────────────────────────────────────────────────────────
 
+
 @connector_app.command("search")
 def connector_search(
     query: str = typer.Argument(help="Search query"),
-    source: Optional[str] = typer.Option(None, "--source", "-s", help="Restrict to connector ID"),
+    source: str | None = typer.Option(None, "--source", "-s", help="Restrict to connector ID"),
     limit: int = typer.Option(10, "--limit", "-n", help="Max results"),
     json_output: bool = typer.Option(False, "--json", help="JSON output"),
 ) -> None:
@@ -258,13 +240,10 @@ def connector_search(
     registry = get_connector_registry()
 
     if source:
-        connectors = []
-        c = registry.get(source)
-        if c:
-            connectors = [c]
-        else:
-            ch.error(f"Connector not found or not connected: {source}")
+        if not registry.has(source):
+            ch.error(f"Connector not found: {source}")
             raise typer.Exit(1)
+        connectors = [registry.get(source)]
     else:
         connectors = registry.list_connected()
 
@@ -287,7 +266,7 @@ def connector_search(
     if json_output:
         import json
 
-        ch.print(json.dumps([r.to_dict() for r in results], indent=2))
+        ch.console.print(json.dumps([r.to_dict() for r in results], indent=2))
         return
 
     if not results:
@@ -315,6 +294,7 @@ def connector_search(
 
 # ── fetch ────────────────────────────────────────────────────────────────
 
+
 @connector_app.command("fetch")
 def connector_fetch(
     resource: str = typer.Argument(help="connector_id:resource_id (e.g. gmail:18f2a3b4c5)"),
@@ -331,11 +311,12 @@ def connector_fetch(
 
     connector_id, resource_id = resource.split(":", 1)
     registry = get_connector_registry()
-    connector = registry.get(connector_id)
 
-    if not connector:
-        ch.error(f"Connector not found or not connected: {connector_id}")
+    if not registry.has(connector_id):
+        ch.error(f"Connector not found: {connector_id}")
         raise typer.Exit(1)
+
+    connector = registry.get(connector_id)
 
     async def _fetch():
         return await connector.fetch(resource_id)
@@ -345,7 +326,7 @@ def connector_fetch(
     if json_output:
         import json
 
-        ch.print(json.dumps(result.to_dict(), indent=2))
+        ch.console.print(json.dumps(result.to_dict(), indent=2))
         return
 
     ch.console.print(f"\n[bold]{result.title}[/bold]")
@@ -361,9 +342,10 @@ def connector_fetch(
 
 # ── health ───────────────────────────────────────────────────────────────
 
+
 @connector_app.command("health")
 def connector_health(
-    connector_id: Optional[str] = typer.Argument(None, help="Specific connector (omit for all)"),
+    connector_id: str | None = typer.Argument(None, help="Specific connector (omit for all)"),
 ) -> None:
     """Run health checks on connected connectors."""
     # Delegates to the status command with same logic

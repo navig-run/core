@@ -22,6 +22,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from navig import console_helper as ch
 from navig.platform import paths
 
 _BUILTIN_YAML = Path(__file__).parent / "builtin.yaml"
@@ -230,7 +231,7 @@ def verify_pin(pin: str) -> bool:
 def prompt_pin(purpose: str = "switching to a privileged mode") -> bool:
     """Interactively prompt for the PIN. Returns True on success, False on cancel/failure."""
     if not has_pin():
-        print(
+        ch.warning(
             "\n⚠  No PIN set. Run  navig mode pin-set  to protect privileged modes.\n"
             "   Proceeding without PIN for this session.\n"
         )
@@ -238,18 +239,18 @@ def prompt_pin(purpose: str = "switching to a privileged mode") -> bool:
 
     import getpass
 
-    print(f"\n🔐  PIN required for {purpose}.")
+    ch.info(f"\n🔐  PIN required for {purpose}.")
     for attempt in range(3):
         try:
             pin = getpass.getpass("   Enter 4-digit PIN: ")
         except (KeyboardInterrupt, EOFError):
-            print("\nCancelled.")
+            ch.warning("\nCancelled.")
             return False
         if verify_pin(pin):
             return True
         remaining = 2 - attempt
         if remaining > 0:
-            print(f"   ✗ Wrong PIN. {remaining} attempt(s) remaining.")
+            ch.warning(f"   ✗ Wrong PIN. {remaining} attempt(s) remaining.")
         else:
-            print("   ✗ Wrong PIN. Access denied.")
+            ch.warning("   ✗ Wrong PIN. Access denied.")
     return False

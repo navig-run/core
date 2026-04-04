@@ -216,11 +216,6 @@ def debug_log_path() -> Path:
     return log_dir() / "debug.log"
 
 
-def msg_trace_path() -> Path:
-    """Path to the message trace JSONL file used for recent-message context."""
-    return log_dir() / "msg_trace.jsonl"
-
-
 def global_config_path() -> Path:
     """Path to the main global config file (config.yaml).
 

@@ -27,7 +27,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Optional
+from typing import TYPE_CHECKING, Any, Literal
 
 from navig.workspace_ownership import (
     USER_WORKSPACE_DIR,
@@ -38,7 +38,7 @@ from navig.workspace_ownership import (
 if TYPE_CHECKING:
     from rich.console import Console as RichConsole
 
-    ConsoleType = Optional[RichConsole]
+    ConsoleType = RichConsole | None
 else:
     ConsoleType = Any
 

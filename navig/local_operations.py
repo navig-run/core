@@ -268,7 +268,7 @@ class LocalOperations:
         # Check open ports
         ports_result = self.get_open_ports()
         if ports_result.exit_code == 0:
-            port_count = len([l for l in ports_result.stdout.split("\n") if l.strip()])
+            port_count = len([ln for ln in ports_result.stdout.split("\n") if ln.strip()])
             checks.append(
                 SecurityCheck(
                     category="ports",

@@ -441,7 +441,7 @@ def heuristic_classify(content: str, filename: str = "") -> tuple[str, float]:
 
     # Structure hints
     lines = content.split("\n")
-    checkboxes = sum(1 for l in lines if re.match(r"^\s*-\s*\[[ x]\]", l))
+    checkboxes = sum(1 for ln in lines if re.match(r"^\s*-\s*\[[ x]\]", ln))
     if checkboxes >= 3:
         sims["task_roadmap"] = sims.get("task_roadmap", 0.0) + 0.1
     if re.search(r"^#{1,2}\s*(?:problem|solution|scope|requirements)", content, re.I | re.M):

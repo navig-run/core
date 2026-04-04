@@ -718,7 +718,7 @@ def monitor_network(options: dict[str, Any]) -> None:
         except ValueError:
             pass  # malformed value; skip
         if _net_sections.get("IFACE"):
-            metrics["interfaces"] = [l for l in _net_sections["IFACE"] if l.strip()]
+            metrics["interfaces"] = [ln for ln in _net_sections["IFACE"] if ln.strip()]
 
     # Display results
     if options.get("json_output"):

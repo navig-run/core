@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
 import yaml
 
-YamlPathItem = Union[str, int]
+YamlPathItem = str | int
 YamlPath = tuple[YamlPathItem, ...]
 
 

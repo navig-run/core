@@ -140,7 +140,7 @@ class ProcessState:
             try:
                 self.log_fh.close()
             except Exception:
-                pass
+                pass  # best-effort cleanup; file handle may already be closed
             self.log_fh = None
         self.status = Status.STOPPED
         self.started_at = None

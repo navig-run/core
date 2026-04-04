@@ -11,12 +11,12 @@ Settings Resolution:
 
 Usage:
     from navig.core.execution import ExecutionSettings
-    
+
     # Via ConfigManager (facade)
     cfg = ConfigManager()
     mode = cfg.get_execution_mode()
     cfg.set_execution_mode('auto')
-    
+
     # Direct use (with provider)
     settings = ExecutionSettings(provider)
     mode = settings.get_mode()
@@ -58,16 +58,16 @@ class ExecutionConfigProvider(Protocol):
 class ExecutionSettings:
     """
     Execution mode and confirmation level management.
-    
+
     This class manages execution behavior preferences:
     - Execution mode: 'interactive' (prompts) or 'auto' (non-interactive)
     - Confirmation level: 'critical', 'standard', or 'verbose'
-    
+
     Settings are resolved hierarchically:
     1. Project-local config (.navig/config.yaml)
     2. Global config (~/.navig/config.yaml)
     3. Built-in defaults
-    
+
     Args:
         provider: Config provider implementing ExecutionConfigProvider protocol
     """
@@ -78,9 +78,9 @@ class ExecutionSettings:
     def get_mode(self) -> str:
         """
         Get the current execution mode.
-        
+
         Checks project-local config first, then falls back to global config.
-        
+
         Returns:
             'interactive' (default) or 'auto'
         """
@@ -103,10 +103,10 @@ class ExecutionSettings:
     def set_mode(self, mode: str) -> None:
         """
         Set the execution mode.
-        
+
         Args:
             mode: 'interactive' or 'auto'
-        
+
         Raises:
             ValueError: If mode is not valid
         """
@@ -122,9 +122,9 @@ class ExecutionSettings:
     def get_confirmation_level(self) -> str:
         """
         Get the current confirmation level.
-        
+
         Checks project-local config first, then falls back to global config.
-        
+
         Returns:
             'critical', 'standard' (default), or 'verbose'
         """
@@ -147,10 +147,10 @@ class ExecutionSettings:
     def set_confirmation_level(self, level: str) -> None:
         """
         Set the confirmation level.
-        
+
         Args:
             level: 'critical', 'standard', or 'verbose'
-        
+
         Raises:
             ValueError: If level is not valid
         """
@@ -168,7 +168,7 @@ class ExecutionSettings:
     def get_settings(self) -> dict[str, str]:
         """
         Get all execution settings.
-        
+
         Returns:
             Dict with 'mode' and 'confirmation_level' keys
         """

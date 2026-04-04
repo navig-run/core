@@ -22,4 +22,4 @@ def webdash_default(
         run_api_server(host=host, port=port)
     except ImportError:
         console.print("[yellow]Web dashboard not available in this build.[/yellow]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None

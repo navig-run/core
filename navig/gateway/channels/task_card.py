@@ -139,7 +139,7 @@ def build_keyboard(view: TaskView) -> dict[str, Any]:
 def make_task(steps: list[tuple[str, str]], title: str = "🤖 Working on it...") -> TaskView:
     return TaskView(
         title=title,
-        steps=[TaskStep(key=k, label=l) for k, l in steps],
+        steps=[TaskStep(key=k, label=lbl) for k, lbl in steps],
     )
 
 

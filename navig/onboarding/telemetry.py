@@ -35,6 +35,7 @@ import hashlib
 import os
 import platform
 import subprocess
+import sys
 from pathlib import Path
 
 # Public endpoint — can be overridden for self-hosted deployments
@@ -155,7 +156,7 @@ def ping_install_if_first_time() -> None:
         return
 
     # Print consent block before firing the ping
-    print(_CONSENT_LINES, end="")
+    sys.stdout.write(_CONSENT_LINES)
 
     payload = {
         "event": "install",

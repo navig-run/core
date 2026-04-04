@@ -11,7 +11,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional  # noqa: F401
+from typing import Any
 
 import typer
 
@@ -246,7 +246,7 @@ def main(
         if _NO_CACHE:
             reset_config_manager()
     except Exception:
-        pass
+        pass  # best-effort reset; failure does not affect CLI startup
     if _NO_CACHE:
         # Ensure subsequent calls create a fresh ConfigManager.
         _config_manager = None

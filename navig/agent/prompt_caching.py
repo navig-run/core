@@ -343,33 +343,15 @@ class CacheBreakpointPlacer:
             placed = False
 
             # Priority 1 — system prompt
-            if role == "system" and config.cache_system_prompt and bp_used < max_bp:
-                result.append(_inject_cache(msg, cache_block))
-                bp_used += 1
-                placed = True
-
-            # Priority 2 — tool definitions
-            elif (
+            if role == "system" and config.cache_system_prompt and bp_used < max_bp or (
                 config.cache_tool_definitions
                 and bp_used < max_bp
                 and _matches_markers(content_str, _TOOL_DEF_MARKERS)
-            ):
-                result.append(_inject_cache(msg, cache_block))
-                bp_used += 1
-                placed = True
-
-            # Priority 3 — skills / context
-            elif (
+            ) or (
                 config.cache_skills_context
                 and bp_used < max_bp
                 and _matches_markers(content_str, _SKILLS_MARKERS)
-            ):
-                result.append(_inject_cache(msg, cache_block))
-                bp_used += 1
-                placed = True
-
-            # Priority 4 — conversation prefix (first 80%)
-            elif (
+            ) or (
                 config.cache_conversation_prefix
                 and bp_used < max_bp
                 and _is_prefix_boundary(idx, len(messages))

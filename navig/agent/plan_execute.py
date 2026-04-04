@@ -235,7 +235,7 @@ class PlanExecuteAgent:
         if text.startswith("```"):
             lines = text.split("\n")
             # Remove first and last fence lines
-            lines = [l for l in lines if not l.strip().startswith("```")]
+            lines = [ln for ln in lines if not ln.strip().startswith("```")]
             text = "\n".join(lines).strip()
 
         try:

@@ -1052,7 +1052,7 @@ class TelegramCommandsMixin:
 
             active_count = len(get_runtime_store().get_user_reminders(user_id) or [])
         except Exception:
-            pass
+            pass  # best-effort: reminder count is non-critical for /status display
 
         # Current model tier preference
         tier_raw = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
@@ -1172,7 +1172,7 @@ class TelegramCommandsMixin:
             active_count = len(get_runtime_store().get_user_reminders(user_id) or [])
             lines.append(f"Reminders: `{active_count} active`")
         except Exception:
-            pass
+            pass  # best-effort: reminder count is non-critical for /status display
 
         # Bridge status (non-blocking, 2 s timeout)
         try:
@@ -1237,7 +1237,7 @@ class TelegramCommandsMixin:
             active_count = len(get_runtime_store().get_user_reminders(user_id) or [])
             lines.append(f"Reminders: `{active_count} active`")
         except Exception:
-            pass
+            pass  # best-effort: reminder count is non-critical for /status display
 
         status_fix_issues: list[dict[str, str]] = []
 
@@ -1267,7 +1267,7 @@ class TelegramCommandsMixin:
                 if remaining > 0:
                     lines.append(f"• +{remaining} more in `navig init --status`")
         except Exception:
-            pass
+            pass  # best-effort: setup readiness is non-critical for /status display
 
         # Default space + progression
         lines.append("")
@@ -3585,7 +3585,7 @@ class TelegramCommandsMixin:
             active_host = (cfg.get("active_host") or "—") if cfg else "—"
             lines.append(f"Active host: <code>{active_host}</code>")
         except Exception:
-            pass
+            pass  # best-effort: active host is non-critical for /debug output
 
         # Platform
         import platform
@@ -3658,11 +3658,8 @@ class TelegramCommandsMixin:
 
         Covers: LLM bridges - recent messages - session state - daemon warnings - vault.
         """
-        from datetime import datetime as _dt
-        from datetime import timezone as _tz
-
         SEP = "-"
-        now_utc = _dt.now(_tz.utc).strftime("%H:%M UTC")
+        now_utc = datetime.now(timezone.utc).strftime("%H:%M UTC")
         lines: list = [f"- *Recent Trace* - {now_utc}", SEP]
 
         _bridge_online, _bridge_url = await self._probe_bridge_grid()
@@ -4298,10 +4295,7 @@ class TelegramCommandsMixin:
         self, chat_id: int, user_id: int, metadata: MessageMetadata
     ) -> None:
         """Real-data system briefing - no AI, no invented content (/briefing)."""
-        from datetime import datetime as _dt
-        from datetime import timezone as _tz
-
-        now = _dt.now(_tz.utc)
+        now = datetime.now(timezone.utc)
         lines: list = [
             f"- *System Briefing* - {now.strftime('%H:%M UTC, %d %b')}",
             "-" * 22,
@@ -4442,7 +4436,7 @@ class TelegramCommandsMixin:
                 lines.append("-" * 22)
                 lines.extend(space_lines)
         except Exception:
-            pass
+            pass  # best-effort: spaces briefing is non-critical
 
         await self.send_message(chat_id, "\n".join(lines))
 

@@ -223,7 +223,7 @@ class DockerSandbox:
                 env=env,
             )
 
-            logger.debug(f"Sandbox command: {' '.join(docker_cmd)}")
+            logger.debug("Sandbox command: %s", ' '.join(docker_cmd))
 
             # Execute with timeout
             start_time = datetime.now()
@@ -278,7 +278,7 @@ class DockerSandbox:
             try:
                 shutil.rmtree(temp_dir)
             except Exception as e:
-                logger.warning(f"Failed to cleanup temp dir: {e}")
+                logger.warning("Failed to cleanup temp dir: %s", e)
 
             # Cleanup container (in case it's still running)
             await self._cleanup_container(execution_id)
@@ -362,7 +362,7 @@ class DockerSandbox:
             )
             await proc.wait()
         except Exception as e:
-            logger.warning(f"Failed to kill container: {e}")
+            logger.warning("Failed to kill container: %s", e)
 
     async def _cleanup_container(self, execution_id: str):
         """Remove a container if it exists."""

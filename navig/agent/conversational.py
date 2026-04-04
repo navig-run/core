@@ -1102,7 +1102,7 @@ For conversation, respond naturally without JSON.
                 sem = _aio.Semaphore(_MAX_PARALLEL)
 
                 async def _sem_dispatch(tc_item: Any) -> tuple[str, str]:
-                    async with sem:
+                    async with sem:  # noqa: B023 — sem is fixed in this scope; closure is intentional
                         return await _dispatch_single(tc_item)
 
                 par_results = await _aio.gather(

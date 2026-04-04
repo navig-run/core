@@ -200,7 +200,7 @@ class WebhookReceiver:
         # Check if source is configured
         source_cfg = self._sources.get(source)
         if not source_cfg:
-            logger.warning(f"Webhook from unknown source: {source}")
+            logger.warning("Webhook from unknown source: %s", source)
             return web.json_response({"error": "Unknown source"}, status=404)
 
         if not source_cfg.enabled:
@@ -221,7 +221,7 @@ class WebhookReceiver:
             )
 
             if not signature_valid:
-                logger.warning(f"Invalid webhook signature from {source}")
+                logger.warning("Invalid webhook signature from %s", source)
                 return web.json_response({"error": "Invalid signature"}, status=401)
 
         # Extract event type
@@ -229,7 +229,7 @@ class WebhookReceiver:
 
         # Check if event is allowed
         if source_cfg.events and event_type not in source_cfg.events:
-            logger.debug(f"Ignoring event {event_type} from {source} (not in allowed list)")
+            logger.debug("Ignoring event %s from %s (not in allowed list)", event_type, source)
             return web.json_response({"ok": True, "ignored": True})
 
         # Create event
@@ -251,7 +251,7 @@ class WebhookReceiver:
         # Process event
         await self._process_event(event)
 
-        logger.info(f"Webhook received: {source}/{event_type} (id={event.id})")
+        logger.info("Webhook received: %s/%s (id=%s)", source, event_type, event.id)
 
         return web.json_response(
             {
@@ -331,7 +331,7 @@ class WebhookReceiver:
                     break
 
         if not signature:
-            logger.warning(f"No signature header found for {source}")
+            logger.warning("No signature header found for %s", source)
             return False
 
         # Use source-specific verification
@@ -359,7 +359,7 @@ class WebhookReceiver:
                 else:
                     handler(event)
             except Exception as e:
-                logger.error(f"Webhook handler error: {e}")
+                logger.error("Webhook handler error: %s", e)
 
     def add_source(self, config: WebhookSourceConfig):
         """Add a new webhook source configuration."""

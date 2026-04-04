@@ -71,7 +71,7 @@ class CoordinatorRunTool(BaseTool):
         await self._emit(on_status, "planning", "Breaking request into workers")
 
         try:
-            registry = {name: None for name in tool_names}
+            registry = dict.fromkeys(tool_names)
             agent = CoordinatorAgent(tool_registry=registry)
             summary = await agent.orchestrate(request)
 

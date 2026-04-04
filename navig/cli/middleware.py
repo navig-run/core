@@ -24,7 +24,6 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -37,8 +36,8 @@ _log = logging.getLogger(__name__)
 
 def init_operation_recorder(
     ctx: typer.Context,
-    host: Optional[str],
-    app: Optional[str],
+    host: str | None,
+    app: str | None,
     verbose: bool,
 ) -> None:
     """Start an operation record and register an atexit handler to complete it.
@@ -154,8 +153,8 @@ def _register_operation_complete_atexit(ctx: typer.Context) -> None:
 def init_debug_logger(
     ctx: typer.Context,
     debug_log: bool,
-    host: Optional[str],
-    app: Optional[str],
+    host: str | None,
+    app: str | None,
     verbose: bool,
     quiet: bool,
     dry_run: bool,

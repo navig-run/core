@@ -99,7 +99,7 @@ def handle_manage_skills(
 
 def _list_skills() -> str:
     """Return a formatted listing of all skills."""
-    assert _skills_ctx is not None
+    assert _skills_ctx is not None  # noqa: S101
 
     skills = _skills_ctx.all_skills
     if not skills:
@@ -123,7 +123,7 @@ def _list_skills() -> str:
 
 def _activate_skill(skill_name: str) -> str:
     """Force-activate a skill by name."""
-    assert _skills_ctx is not None
+    assert _skills_ctx is not None  # noqa: S101
 
     if not skill_name:
         return "Error: skill_name is required for 'activate' action."
@@ -135,7 +135,7 @@ def _activate_skill(skill_name: str) -> str:
 
 def _deactivate_skill(skill_name: str) -> str:
     """Force-deactivate a skill by name."""
-    assert _skills_ctx is not None
+    assert _skills_ctx is not None  # noqa: S101
 
     if not skill_name:
         return "Error: skill_name is required for 'deactivate' action."

@@ -134,10 +134,10 @@ def send_message(
         )
     except RuntimeError as exc:
         ch.error(str(exc))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except Exception as exc:  # noqa: BLE001
         ch.error(f"Telegram send failed: {exc}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     if resolve_only:
         ch.success(f"Resolved: {target} -> {chat_id}")

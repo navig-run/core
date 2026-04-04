@@ -108,7 +108,7 @@ def list_links(
         links = db.list_all(limit=limit)
 
     if json_output:
-        _rprint(json.dumps([l.to_dict() for l in links], default=str))
+        _rprint(json.dumps([lnk.to_dict() for lnk in links], default=str))
         return
 
     if not links:
@@ -153,7 +153,7 @@ def search_links(
     links = db.search(query, limit=limit)
 
     if json_output:
-        _rprint(json.dumps([l.to_dict() for l in links], default=str))
+        _rprint(json.dumps([lnk.to_dict() for lnk in links], default=str))
         return
 
     if not links:

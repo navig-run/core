@@ -31,7 +31,6 @@ Python::
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional  # noqa: F401
 
 from navig.installer import state as _state
 from navig.installer.contracts import InstallerContext, ModuleState, Result

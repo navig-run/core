@@ -10,11 +10,13 @@ Performance Impact:
 - Expected improvement: 2-10x for consecutive operations
 """
 
+from __future__ import annotations
+
 import threading
 import time
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 # Lazy paramiko import
 _paramiko = None
@@ -135,7 +137,7 @@ class SSHConnectionPool:
     DEFAULT_CONNECT_TIMEOUT = 30
 
     # Singleton instance
-    _instance: Optional["SSHConnectionPool"] = None
+    _instance: SSHConnectionPool | None = None
     _instance_lock = threading.Lock()
 
     def __init__(

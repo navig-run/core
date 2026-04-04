@@ -11,10 +11,9 @@ Usage:
     navig copilot status
 """
 
-import asyncio
-
 import typer
 
+from navig.commands._async_utils import run_sync as _run
 from navig.lazy_loader import lazy_import
 from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 
@@ -28,21 +27,6 @@ copilot_app = typer.Typer(
 
 
 # ── Helpers ─────────────────────────────────────────────────────────
-
-
-def _run(coro):
-    """Run an async function from sync Typer context."""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-    if loop and loop.is_running():
-        import concurrent.futures
-
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            return pool.submit(asyncio.run, coro).result()
-    return asyncio.run(coro)
-
 
 async def _get_bridge_provider():
     """Build a McpBridgeProvider from config."""

@@ -598,7 +598,6 @@ def _undo_host_switch(op: OperationRecord) -> None:
 
 import typer  # noqa: E402
 
-
 history_app = typer.Typer(
     help="Command history, replay, and audit trail",
     invoke_without_command=True,

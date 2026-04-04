@@ -246,7 +246,7 @@ def apply_busy_suppression(
     profile: str | None = "conservative",
 ) -> dict[str, Any]:
     merged = dict(context or {})
-    continuation = dict((merged.get("continuation") or {}))
+    continuation = dict(merged.get("continuation") or {})
     window_seconds = busy_window_seconds(profile, classifier_state)
     if window_seconds <= 0:
         merged["continuation"] = continuation

@@ -252,7 +252,7 @@ class TunnelManager:
                     try:
                         pipe.close()
                     except OSError:
-                        pass
+                        pass  # best-effort cleanup; pipe may already be closed
 
             # Get the PID (for -f backgrounded ssh, we need to find it)
             # The process we started will fork and exit, so we need to find the actual tunnel process

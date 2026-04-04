@@ -23,6 +23,8 @@ def mock_config_manager(monkeypatch):
         "gateway": {"host": "127.0.0.1", "port": 8789},
     }
     monkeypatch.setattr(tw, "get_config_manager", lambda: cm)
+    monkeypatch.setattr(tw, "resolve_telegram_bot_token", lambda _cfg=None: "tg_token")
+    monkeypatch.setattr(tw, "resolve_telegram_uid", lambda _cfg=None: None)
     return cm
 
 

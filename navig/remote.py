@@ -158,7 +158,7 @@ class RemoteOperations:
                     text=True,
                     timeout=_SSH_TIMEOUT,
                 )
-            return subprocess.run(
+            return subprocess.run(  # noqa: S602
                 command,
                 shell=True,
                 capture_output=capture_output,

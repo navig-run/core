@@ -1316,7 +1316,7 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
                     try:
                         env_path = navig_dir / ".env"
                         _existing = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
-                        _lines = [l for l in _existing.splitlines() if not l.startswith("NAVIG_TELEGRAM_UID=")]
+                        _lines = [ln for ln in _existing.splitlines() if not ln.startswith("NAVIG_TELEGRAM_UID=")]
                         _lines.append(f"NAVIG_TELEGRAM_UID={uid_raw}")
                         env_path.write_text("\n".join(_lines) + "\n", encoding="utf-8")
                     except Exception:  # noqa: BLE001

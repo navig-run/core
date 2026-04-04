@@ -298,10 +298,7 @@ class SyncManager:
 
     def _persist_state(self) -> None:
         """Phase 2 stub — write state to SQLite via storage/engine.py."""
-        # Will be implemented in Phase 2 when optional_sqlite_path is provided.
-        # Using storage/engine.py when ready:
-        #   engine = get_engine(self._sqlite_path)
-        #   engine.execute("INSERT OR REPLACE INTO sync_state ...")
+        # TODO: implement via storage/engine.py when optional_sqlite_path is provided.
         pass
 
     # ── State accessor (for GET /mesh/sync/state endpoint) ───────────────────

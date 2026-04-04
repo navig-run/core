@@ -355,13 +355,13 @@ def _execute_local_command(command: str, capture_output: bool = True) -> subproc
     """Execute command on the local machine directly (no SSH)."""
     try:
         if capture_output:
-            return subprocess.run(
+            return subprocess.run(  # noqa: S602
                 command,
                 shell=True,
                 capture_output=True,
                 text=True,
             )
-        return subprocess.run(command, shell=True)
+        return subprocess.run(command, shell=True)  # noqa: S602
     except Exception as _exc:  # noqa: BLE001
         raise RuntimeError(f"Local command failed: {_exc}") from _exc
 

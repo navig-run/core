@@ -88,7 +88,8 @@ except ImportError:
     PerplexitySearchResult = None
     create_perplexity_client = None
     perplexity_search = None
-    is_perplexity_available = lambda: False
+    def is_perplexity_available():
+        return False
     PERPLEXITY_PROVIDER = None
 
 

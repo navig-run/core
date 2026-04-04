@@ -150,16 +150,16 @@ class _StdioTransport:
         future: asyncio.Future[dict[str, Any]] = asyncio.get_event_loop().create_future()
         self._pending[req_id] = future
 
-        assert self._process and self._process.stdin
+        assert self._process and self._process.stdin  # noqa: S101
         line = json.dumps(msg) + "\n"
         self._process.stdin.write(line.encode("utf-8"))
         await self._process.stdin.drain()
 
         try:
             return await asyncio.wait_for(future, timeout=_RPC_TIMEOUT)
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as exc:
             self._pending.pop(req_id, None)
-            raise TimeoutError(f"MCP request {method!r} timed out after {_RPC_TIMEOUT}s")
+            raise TimeoutError(f"MCP request {method!r} timed out after {_RPC_TIMEOUT}s") from exc
 
     async def send_notification(
         self, method: str, params: dict[str, Any] | None = None
@@ -170,14 +170,14 @@ class _StdioTransport:
         msg: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
         if params is not None:
             msg["params"] = params
-        assert self._process and self._process.stdin
+        assert self._process and self._process.stdin  # noqa: S101
         line = json.dumps(msg) + "\n"
         self._process.stdin.write(line.encode("utf-8"))
         await self._process.stdin.drain()
 
     async def _reader_loop(self) -> None:
         """Read JSON-RPC responses from stdout and dispatch to pending futures."""
-        assert self._process and self._process.stdout
+        assert self._process and self._process.stdout  # noqa: S101
         try:
             while True:
                 raw = await self._process.stdout.readline()
@@ -300,7 +300,7 @@ class _HttpTransport:
                     raise RuntimeError(
                         f"MCP error {data['error'].get('code')}: "
                         f"{data['error'].get('message', 'unknown')}"
-                    )
+                    ) from None
                 return data.get("result", {})
 
     async def send_notification(
@@ -310,7 +310,7 @@ class _HttpTransport:
         try:
             await self.send_request(method, params)
         except Exception:
-            pass
+            pass  # best-effort fire-and-forget; notification failure is non-critical
 
 
 # ─────────────────────────────────────────────────────────────

@@ -279,7 +279,7 @@ class ImageGenerator:
                 try:
                     await img.save_to_file(str(filepath))
                 except Exception as e:
-                    logger.warning(f"Failed to save image: {e}")
+                    logger.warning("Failed to save image: %s", e)
 
         return images
 

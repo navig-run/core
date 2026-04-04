@@ -93,7 +93,7 @@ def verify_signature(
             hashlib.sha1,
         ).hexdigest()
     else:
-        logger.error(f"Unknown signature algorithm: {config.algorithm}")
+        logger.error("Unknown signature algorithm: %s", config.algorithm)
         return False
 
     # Constant-time comparison

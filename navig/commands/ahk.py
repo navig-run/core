@@ -995,8 +995,8 @@ def layout_list():
         return
 
     console.print(f"[bold]Saved Layouts ({len(layouts)}):[/bold]")
-    for l in layouts:
-        console.print(f"  - {l}")
+    for layout in layouts:
+        console.print(f"  - {layout}")
 
 
 @library_app.command("list")

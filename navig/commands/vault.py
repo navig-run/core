@@ -384,7 +384,7 @@ def test_credential(
         mode, resolved = _resolve_test_target_mode(vault, target or "", provider, credential_id)
     except ValueError as exc:
         _ch.error(str(exc))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     con = _console()
     con.print(f"Running validation for [cyan]{resolved}[/cyan]...")
@@ -405,7 +405,7 @@ def test_credential(
             con.print(
                 "[yellow]Tip:[/yellow] Use `navig cred list`, delete the broken provider entry, then add it again from your backup .env."
             )
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
         raise
 
     if credential is not None:

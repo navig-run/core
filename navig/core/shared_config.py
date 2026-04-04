@@ -13,10 +13,12 @@ Usage:
     config.save()
 """
 
+from __future__ import annotations
+
 import os
 import threading
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
@@ -32,7 +34,7 @@ class ConfigSingleton:
     - Thread-safe read/write operations
     """
 
-    _instance: Optional["ConfigSingleton"] = None
+    _instance: ConfigSingleton | None = None
     _lock = threading.Lock()
 
     def __new__(cls) -> "ConfigSingleton":

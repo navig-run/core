@@ -754,7 +754,7 @@ def web_search(
                 if value:
                     return value
         except Exception:
-            pass
+            pass  # best-effort: vault unavailable, skip key resolution
         return ""
 
     def _resolve_key(provider_name: str, search_cfg: dict[str, Any]) -> str:

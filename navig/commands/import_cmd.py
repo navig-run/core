@@ -113,7 +113,7 @@ def _run_import(
             results = {source: engine.run_one(source, path=path)}
     except (ValueError, FileNotFoundError) as exc:
         ch.error(str(exc))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     payload = engine.export_json(results)
     if output:

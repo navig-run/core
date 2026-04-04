@@ -133,7 +133,7 @@ class TaskWorker:
         self._stats["started_at"] = datetime.now()
         self._worker_task = asyncio.create_task(self._worker_loop())
 
-        logger.info(f"TaskWorker started (max_concurrent={self.config.max_concurrent})")
+        logger.info("TaskWorker started (max_concurrent=%d)", self.config.max_concurrent)
 
     async def stop(self, wait: bool = True):
         """
@@ -145,7 +145,7 @@ class TaskWorker:
         self._running = False
 
         if wait and self._tasks:
-            logger.info(f"Waiting for {len(self._tasks)} tasks to complete...")
+            logger.info("Waiting for %d tasks to complete...", len(self._tasks))
             try:
                 await asyncio.wait_for(
                     asyncio.gather(*self._tasks.values(), return_exceptions=True),
@@ -184,7 +184,7 @@ class TaskWorker:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Worker loop error: {e}")
+                logger.error("Worker loop error: %s", e)
                 await asyncio.sleep(self.config.poll_interval)
 
     async def _execute_task(self, task: Task):

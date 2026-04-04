@@ -79,7 +79,7 @@ def empty_list_recovery(resource: str, add_cmd: str) -> None:
         from navig.cli.selector import CommandEntry, fzf_or_fallback
     except ImportError:
         ch.warning(f"No {resource}s configured.", f"Run: navig {add_cmd}")
-        raise typer.Exit(0)
+        raise typer.Exit(0) from None
 
     options = [
         CommandEntry(name=f"➕  Add {resource} now", description=f"navig {add_cmd}", domain=""),
@@ -181,7 +181,7 @@ def require_active_host(options: dict, cfg: "ConfigManager") -> str:  # type: ig
             "No active host configured.",
             "Use 'navig host use <name>' to set one.",
         )
-        raise typer.Exit(0)
+        raise typer.Exit(0) from None
 
     entries = [CommandEntry(name=h, description="", domain="") for h in hosts]
     ch.info("No active host. Pick one:")
@@ -262,7 +262,7 @@ def require_active_server(
             "No active server configured.",
             "Use 'navig host use <name>' to set one.",
         )
-        raise typer.Exit(0)
+        raise typer.Exit(0) from None
 
     entries = [CommandEntry(name=s, description="", domain="") for s in servers]
     ch.info("No active server. Pick one:")

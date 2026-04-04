@@ -700,7 +700,7 @@ def agent_logs(
 
         if level:
             level_upper = level.upper()
-            output_lines = [l for l in output_lines if level_upper in l]
+            output_lines = [ln for ln in output_lines if level_upper in ln]
 
         for line in output_lines:
             print(line.rstrip())
