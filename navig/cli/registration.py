@@ -91,6 +91,7 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "log": ("navig.commands.log", "log_app"),
     "logs": ("navig.commands.logs", "app"),
     "l": ("navig.commands.log", "log_app"),
+    "config": ("navig.commands.config", "config_app"),
     "stats": ("navig.commands.stats", "stats_app"),
     "health": ("navig.commands.stack", "stack_app"),
     # Top-level compatibility aliases for common ops nouns
@@ -100,7 +101,7 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "dns": ("navig.cli.__init__", "local_app"),
     "port": ("navig.cli.__init__", "local_app"),
     "proxy": ("navig.commands.tunnel", "tunnel_app"),
-    "env": ("navig.cli.__init__", "config_app"),
+    "env": ("navig.commands.config", "config_app"),
     "secret": ("navig.commands.vault", "vault_app"),
     "job": ("navig.commands.flow", "flow_app"),
     "wiki": ("navig.commands.wiki", "wiki_app"),

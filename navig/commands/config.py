@@ -9,6 +9,7 @@ from rich import print as rprint
 from rich.console import Console
 from rich.table import Table
 
+from navig.cli._callbacks import show_subcommand_help
 from navig import console_helper as ch
 from navig.config import get_config_manager
 from navig.migration import migrate_all_configs
@@ -879,4 +880,357 @@ def edit_config(options: dict = None):
     except Exception as e:
         ch.error(f"Failed to open editor: {e}")
         ch.info(f"You can manually edit: {config_path}")
+        raise typer.Exit(1) from e
+
+
+config_app = typer.Typer(
+    help="Manage NAVIG configuration and settings",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@config_app.callback()
+def config_callback(ctx: typer.Context):
+    """Configuration management - run without subcommand for help."""
+    if ctx.invoked_subcommand is None:
+        show_subcommand_help("config", ctx)
+        raise typer.Exit()
+
+
+@config_app.command("migrate-legacy", hidden=True)
+def config_migrate_legacy(
+    ctx: typer.Context,
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be migrated without making changes"
+    ),
+    no_backup: bool = typer.Option(
+        False, "--no-backup", help="Skip creating backups before migration"
+    ),
+):
+    """Migrate legacy configurations to new format."""
+    migrate(dry_run=dry_run, no_backup=no_backup)
+
+
+def _validation_opts_from_ctx(
+    ctx: typer.Context,
+    *,
+    scope: str | None,
+    strict: bool,
+    json_out: bool,
+) -> dict[str, Any]:
+    opts = dict(ctx.obj or {})
+    if json_out:
+        opts["json"] = True
+    if scope:
+        opts["scope"] = scope
+    if strict:
+        opts["strict"] = True
+    return opts
+
+
+@config_app.command("test")
+def config_test(
+    ctx: typer.Context,
+    host: str | None = typer.Argument(
+        None, help="Host name to validate (validates all if not specified)"
+    ),
+    scope: str = typer.Option(
+        None,
+        "--scope",
+        help="What to validate: project (.navig), global (~/.navig), or both",
+    ),
+    strict: bool = typer.Option(False, "--strict", help="Treat warnings as errors"),
+    json_out: bool = typer.Option(False, "--json", help="Output validation results as JSON"),
+):
+    """Alias for: navig config validate."""
+    validate(host=host, options=_validation_opts_from_ctx(ctx, scope=scope, strict=strict, json_out=json_out))
+
+
+@config_app.command("validate")
+def config_validate(
+    ctx: typer.Context,
+    host: str | None = typer.Argument(
+        None, help="Host name to validate (validates all if not specified)"
+    ),
+    scope: str = typer.Option(
+        None,
+        "--scope",
+        help="What to validate: project (.navig), global (~/.navig), or both",
+    ),
+    strict: bool = typer.Option(False, "--strict", help="Treat warnings as errors"),
+    json_out: bool = typer.Option(False, "--json", help="Output validation results as JSON"),
+):
+    validate(host=host, options=_validation_opts_from_ctx(ctx, scope=scope, strict=strict, json_out=json_out))
+
+
+schema_app = typer.Typer(
+    help="JSON schema tools (VS Code integration)",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+config_app.add_typer(schema_app, name="schema")
+
+
+@schema_app.callback()
+def schema_callback(ctx: typer.Context):
+    if ctx.invoked_subcommand is None:
+        show_subcommand_help("config schema", ctx)
+        raise typer.Exit()
+
+
+@schema_app.command("install")
+def config_schema_install(
+    ctx: typer.Context,
+    scope: str = typer.Option(
+        "global",
+        "--scope",
+        help="Where to install schemas: global (~/.navig) or project (.navig)",
+    ),
+    write_vscode_settings: bool = typer.Option(
+        False,
+        "--write-vscode-settings",
+        help="Write .vscode/settings.json yaml.schemas mappings in the current project",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Output installation result as JSON"),
+):
+    """Install NAVIG YAML JSON Schemas for editor validation/autocomplete."""
+    opts = dict(ctx.obj or {})
+    if json_out:
+        opts["json"] = True
+    install_schemas(scope=scope, write_vscode_settings=write_vscode_settings, options=opts)
+
+
+@config_app.command("show-global", hidden=True)
+def config_show_legacy(
+    ctx: typer.Context,
+    target: str = typer.Argument(..., help="Host name or host:app to display"),
+):
+    """Display host or app configuration."""
+    show(target=target)
+
+
+@config_app.command("settings")
+def config_settings(ctx: typer.Context):
+    """Display current NAVIG settings including execution mode and confirmation level."""
+    show_settings()
+
+
+@config_app.command("set-mode")
+def config_set_mode(
+    ctx: typer.Context,
+    mode: str = typer.Argument(..., help="Execution mode: 'interactive' or 'auto'"),
+):
+    set_mode(mode)
+
+
+@config_app.command("set-confirmation-level")
+def config_set_confirmation_level(
+    ctx: typer.Context,
+    level: str = typer.Argument(
+        ..., help="Confirmation level: 'critical', 'standard', or 'verbose'"
+    ),
+):
+    set_confirmation_level(level)
+
+
+@config_app.command("set")
+def config_set_cmd(
+    ctx: typer.Context,
+    key: str = typer.Argument(..., help="Configuration key (e.g., 'log_level', 'execution.mode')"),
+    value: str = typer.Argument(..., help="Value to set"),
+):
+    """Set a global configuration value."""
+    set_config(key, value)
+
+
+@config_app.command("get-raw", hidden=True)
+def config_get_legacy(
+    ctx: typer.Context,
+    key: str = typer.Argument(..., help="Configuration key to retrieve"),
+):
+    """Get a configuration value."""
+    get_config(key)
+
+
+@config_app.command("edit")
+def config_edit(
+    ctx: typer.Context,
+    target: str | None = typer.Argument(None, help="Host name or host:app to edit"),
+):
+    """Open configuration in default editor."""
+    edit_config({"target": target})
+
+
+@config_app.command("backup")
+def config_backup_cmd(
+    ctx: typer.Context,
+    output: Path | None = typer.Option(
+        None, "--output", "-o", help="Output file path (auto-generated if not provided)"
+    ),
+    format: str = typer.Option(
+        "archive", "--format", "-f", help="Output format: 'archive' (tar.gz) or 'json'"
+    ),
+    include_secrets: bool = typer.Option(
+        False,
+        "--include-secrets",
+        help="Include unredacted secrets (passwords, API keys)",
+    ),
+    encrypt: bool = typer.Option(
+        False, "--encrypt", "-e", help="Encrypt the output with a password"
+    ),
+    password: str | None = typer.Option(
+        None, "--password", "-p", help="Encryption password (prompted if not provided)"
+    ),
+):
+    obj = ctx.obj or {}
+    from navig.commands.config_backup import export_config
+
+    export_config(
+        {
+            "output": output,
+            "format": format,
+            "include_secrets": include_secrets,
+            "encrypt": encrypt,
+            "password": password,
+            "yes": obj.get("yes", False),
+            "confirm": obj.get("confirm", False),
+            "json": obj.get("json", False),
+        }
+    )
+
+
+@config_app.command("migrate")
+def config_migrate(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes without saving"),
+):
+    import yaml
+
+    from navig.core.migrations import migrate_config
+
+    cm = get_config_manager()
+    global_config_file = cm.global_config_dir / "config.yaml"
+
+    if not global_config_file.exists():
+        ch.error("No global configuration found.")
+        raise typer.Exit(1)
+
+    try:
+        with open(global_config_file, encoding="utf-8") as file_handle:
+            raw_config = yaml.safe_load(file_handle) or {}
+
+        migrated, modified = migrate_config(raw_config)
+
+        if not modified:
+            ch.success("Configuration is already up to date.")
+            return
+
+        if dry_run:
+            ch.info("Dry run: Configuration would be updated.")
+            ch.info(f"New version: {migrated.get('version')}")
+        else:
+            with open(global_config_file, "w", encoding="utf-8") as file_handle:
+                yaml.dump(migrated, file_handle, default_flow_style=False, sort_keys=False)
+            ch.success(f"Configuration migrated to version {migrated.get('version')}")
+
+    except Exception as e:
+        ch.error(f"Migration failed: {e}")
+        raise typer.Exit(1) from e
+
+
+@config_app.command("audit")
+def config_audit_cmd(
+    fix: bool = typer.Option(False, "--fix", help="Attempt to fix issues automatically"),
+):
+    from navig.commands.security import config_audit as security_config_audit
+
+    security_config_audit({"fix": fix})
+
+
+@config_app.command("show")
+def config_show_cmd(
+    scope: str = typer.Argument("global", help="Scope: global or host name"),
+):
+    cm = get_config_manager()
+
+    if scope == "global":
+        config = cm._load_global_config()
+        ch.print_json(config)
+    else:
+        try:
+            config = cm.load_host_config(scope)
+            ch.print_json(config)
+        except Exception as e:
+            ch.error(str(e))
+
+
+@config_app.command("get")
+def config_get_cmd(
+    key: str = typer.Argument(..., help="Configuration key (e.g. ai.default_provider)"),
+):
+    cm = get_config_manager()
+    config = cm._load_global_config()
+    keys = key.split(".")
+    value: Any = config
+
+    try:
+        for key_part in keys:
+            if isinstance(value, dict):
+                value = value.get(key_part)
+            else:
+                value = None
+                break
+
+        if value is None:
+            ch.warning(f"Key '{key}' not found or is empty.")
+        elif isinstance(value, (dict, list)):
+            ch.print_json(value)
+        else:
+            ch.console.print(str(value))
+
+    except Exception as e:
+        ch.error(f"Error retrieving key: {e}")
+
+
+@config_app.command("set-raw", hidden=True)
+def config_set_legacy_raw(
+    key: str = typer.Argument(..., help="Configuration key (e.g. ai.model_preference)"),
+    value: str = typer.Argument(..., help="Value to set (JSON/YAML format for complex types)"),
+):
+    import yaml
+
+    try:
+        try:
+            parsed_value = yaml.safe_load(value)
+        except Exception:
+            parsed_value = value
+
+        cm = get_config_manager()
+        global_config_file = cm.global_config_dir / "config.yaml"
+
+        if not global_config_file.exists():
+            ch.error("No global configuration found.")
+            raise typer.Exit(1)
+
+        with open(global_config_file, encoding="utf-8") as file_handle:
+            config = yaml.safe_load(file_handle) or {}
+
+        keys = key.split(".")
+        target = config
+        for key_part in keys[:-1]:
+            if key_part not in target:
+                target[key_part] = {}
+            target = target[key_part]
+            if not isinstance(target, dict):
+                ch.error(f"Cannot set key '{key}' because '{key_part}' is not a dictionary.")
+                raise typer.Exit(1)
+
+        target[keys[-1]] = parsed_value
+
+        with open(global_config_file, "w", encoding="utf-8") as file_handle:
+            yaml.dump(config, file_handle, default_flow_style=False, sort_keys=False)
+
+        ch.success(f"Updated '{key}' to: {parsed_value}")
+    except Exception as e:
+        ch.error(f"Error setting config: {e}")
         raise typer.Exit(1) from e
