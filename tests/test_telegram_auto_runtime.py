@@ -226,6 +226,51 @@ async def test_slash_status_routes_to_status_handler_not_models(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_slash_settings_and_voice_route_to_distinct_handlers(monkeypatch):
+    channel = TelegramChannel(
+        bot_token="123:FAKE",
+        allowed_users=[42],
+        on_message=lambda *args, **kwargs: None,
+    )
+    channel._bot_username = "mybot"
+
+    calls: list[str] = []
+
+    async def _settings_hub(chat_id: int, user_id: int = 0, message_id: int | None = None):
+        calls.append(f"settings:{chat_id}:{user_id}")
+
+    async def _voice_menu(chat_id: int, user_id: int = 0, message_id: int | None = None):
+        calls.append(f"voice:{chat_id}:{user_id}")
+
+    channel._handle_settings_hub = _settings_hub
+    channel._handle_voice_menu = _voice_menu
+
+    monkeypatch.setattr("navig.gateway.channels.telegram.HAS_SESSIONS", False)
+
+    settings_update = {
+        "message": {
+            "message_id": 3,
+            "text": "/settings",
+            "chat": {"id": 42, "type": "private"},
+            "from": {"id": 42, "username": "user42"},
+        }
+    }
+    voice_update = {
+        "message": {
+            "message_id": 4,
+            "text": "/voice",
+            "chat": {"id": 42, "type": "private"},
+            "from": {"id": 42, "username": "user42"},
+        }
+    }
+
+    await channel._process_update(settings_update)
+    await channel._process_update(voice_update)
+
+    assert calls == ["settings:42:42", "voice:42:42"]
+
+
+@pytest.mark.asyncio
 async def test_auto_continuation_executes_second_turn_when_policy_enabled(monkeypatch):
     state_store = _AutoStateStore(
         {

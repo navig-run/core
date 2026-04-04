@@ -225,12 +225,12 @@ def info(message: str, details: str | None = None, no_wrap: bool = False):
     mark = _safe_symbol("ℹ", "i")
     if no_wrap:
         console.print(
-            f"[{Colors.INFO}]{mark}[/{Colors.INFO}] {message}",
+            f"[{Colors.INFO}]{mark}[/{Colors.INFO}]  {message}",
             overflow="ellipsis",
             no_wrap=True,
         )
     else:
-        console.print(f"[{Colors.INFO}]{mark}[/{Colors.INFO}] {message}")
+        console.print(f"[{Colors.INFO}]{mark}[/{Colors.INFO}]  {message}")
     if details:
         console.print(f"  [{Colors.DIM}]{details}[/{Colors.DIM}]")
 

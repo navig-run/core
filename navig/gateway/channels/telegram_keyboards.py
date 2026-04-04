@@ -38,6 +38,10 @@ MAX_BUTTON_TEXT = 28
 MAX_CALLBACK_DATA = 64  # Telegram limit
 
 
+def _mdv2_escape(text: str) -> str:
+    return re.sub(r"([_\*\[\]\(\)~`>#+\-=|{}.!\\])", r"\\\1", str(text))
+
+
 class ContentCategory(str, Enum):
     """Categories used to decide which keyboard profile to use."""
 
@@ -1079,7 +1083,7 @@ class CallbackHandler:
                     await self.channel.send_message(
                         chat_id,
                         f"```\n{table}\n```",
-                        parse_mode="Markdown",
+                        parse_mode="MarkdownV2",
                     )
                 else:
                     await self._answer(cb_id, "Routing not active")
@@ -1633,8 +1637,8 @@ class CallbackHandler:
 
                     await self.channel.send_message(
                         chat_id,
-                        f"📝 *Transcript:*\n{transcript}",
-                        parse_mode="Markdown",
+                        f"📝 *Transcript:*\n{_mdv2_escape(transcript)}",
+                        parse_mode="MarkdownV2",
                     )
                 else:
                     view.set_step("finalize", StepState.FAILED, "No speech found")
@@ -1704,14 +1708,14 @@ class CallbackHandler:
             kind = "Voice recording" if is_speech else "Music file"
             info_text = (
                 f"ℹ️ *File Info*\n"
-                f"Title: {title}\n"
-                f"Artist: {performer}\n"
-                f"Duration: {dur_str}\n"
-                f"Size: {size_str}\n"
-                f"MIME: `{mime_type}`\n"
-                f"Type: {kind}"
+                f"Title: {_mdv2_escape(title)}\n"
+                f"Artist: {_mdv2_escape(performer)}\n"
+                f"Duration: {_mdv2_escape(dur_str)}\n"
+                f"Size: {_mdv2_escape(size_str)}\n"
+                f"MIME: `{_mdv2_escape(mime_type)}`\n"
+                f"Type: {_mdv2_escape(kind)}"
             )
-            await self.channel.send_message(chat_id, info_text, parse_mode="Markdown")
+            await self.channel.send_message(chat_id, info_text, parse_mode="MarkdownV2")
             return
 
         if action == "lang":
@@ -1733,8 +1737,8 @@ class CallbackHandler:
                         )
                         await self.channel.send_message(
                             chat_id,
-                            f"🌐 Detected language: *{lang_reply or 'Unknown'}*",
-                            parse_mode="Markdown",
+                            f"🌐 Detected language: *{_mdv2_escape(lang_reply or 'Unknown')}*",
+                            parse_mode="MarkdownV2",
                         )
                     except Exception:
                         await self.channel.send_message(chat_id, "⚠️ Language detection failed.")

@@ -131,12 +131,20 @@ _STEP_LABELS: dict[str, str] = {
     "config-file": "config",
     "configure-ssh": "ssh key",
     "verify-network": "network",
+    "sigil-genesis": "sigil",
+    "core-navig": "core",
     # Phase 2 — configuration
     "ai-provider": "ai provider",
     "vault-init": "vault",
+    "web-search-provider": "web search",
     "first-host": "first host",
+    "matrix": "matrix",
     "telegram-bot": "telegram",
+    "email": "email",
+    "social-networks": "social",
+    "runtime-secrets": "secrets",
     "skills-activation": "skills",
+    "review": "review",
 }
 
 _LABEL_W = 18  # visual column width for step labels

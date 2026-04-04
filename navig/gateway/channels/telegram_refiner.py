@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -35,6 +36,10 @@ from enum import Enum
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _mdv2_escape(text: str) -> str:
+    return re.sub(r"([_\*\[\]\(\)~`>#+\-=|{}.!\\])", r"\\\1", str(text))
 
 # ─────────────────────────────────────────────────────────────────
 # State machine
@@ -259,7 +264,7 @@ class RefinementEngine:
 
         # Send "thinking" message
         thinking_msg = await self.channel.send_message(
-            chat_id, "♻️ _Generating clarifying questions…_", parse_mode="Markdown"
+            chat_id, "♻️ _Generating clarifying questions…_", parse_mode="MarkdownV2"
         )
         thinking_id = getattr(thinking_msg, "message_id", None)
         if isinstance(thinking_msg, dict):
@@ -344,7 +349,7 @@ class RefinementEngine:
         thinking = await self.channel.send_message(
             session.chat_id,
             "⚙️ _Refining with your context…_",
-            parse_mode="Markdown",
+            parse_mode="MarkdownV2",
         )
 
         qa_block = _build_qa_block(session)
@@ -368,8 +373,8 @@ class RefinementEngine:
         keyboard = build_accept_keyboard(session)
         await self.channel.send_message(
             session.chat_id,
-            f"✨ *Refined Result:*\n\n{refined}",
-            parse_mode="Markdown",
+            f"✨ *Refined Result:*\n\n{_mdv2_escape(refined)}",
+            parse_mode="MarkdownV2",
             reply_markup={"inline_keyboard": keyboard},
         )
 
@@ -381,8 +386,8 @@ class RefinementEngine:
             summary = await self._call_llm(llm, diff_prompt)
             await self.channel.send_message(
                 session.chat_id,
-                f"📋 *Changes made:*\n\n{summary}",
-                parse_mode="Markdown",
+                f"📋 *Changes made:*\n\n{_mdv2_escape(summary)}",
+                parse_mode="MarkdownV2",
             )
         except Exception as exc:
             logger.warning("RefinementEngine: diff summary failed: %s", exc)
@@ -442,11 +447,15 @@ class RefinementEngine:
         total = len(session.questions)
         q_num = session.current_q + 1
         keyboard = build_skip_keyboard(session)
-        text = f"🤔 *Question {q_num}/{total}*\n\n{q}\n\n_Reply with your answer, or tap Skip._"
+        text = (
+            f"🤔 *Question {q_num}/{total}*\n\n"
+            f"{_mdv2_escape(q)}\n\n"
+            "_Reply with your answer, or tap Skip\._"
+        )
         msg = await self.channel.send_message(
             session.chat_id,
             text,
-            parse_mode="Markdown",
+            parse_mode="MarkdownV2",
             reply_markup={"inline_keyboard": keyboard},
         )
         if isinstance(msg, dict):
@@ -457,14 +466,17 @@ class RefinementEngine:
         lines = ["✅ *Your answers:*\n"]
         for i, q in enumerate(session.questions):
             ans = session.answers.get(str(i), "_(skipped)_")
-            lines.append(f"*Q{i + 1}:* {q}\n*A:* {ans}\n")
+            lines.append(
+                f"*Q{i + 1}:* {_mdv2_escape(q)}\n"
+                f"*A:* {_mdv2_escape(ans)}\n"
+            )
         lines.append("_Ready to refine?_")
         text = "\n".join(lines)
         keyboard = build_confirmation_keyboard(session)
         await self.channel.send_message(
             session.chat_id,
             text,
-            parse_mode="Markdown",
+            parse_mode="MarkdownV2",
             reply_markup={"inline_keyboard": keyboard},
         )
 
@@ -554,7 +566,9 @@ async def handle_rfn_callback(
         refined = session.refined_text or session.original_text
         try:
             await channel.send_message(
-                session.chat_id, f"✅ *Accepted:*\n\n{refined}", parse_mode="Markdown"
+                session.chat_id,
+                f"✅ *Accepted:*\n\n{_mdv2_escape(refined)}",
+                parse_mode="MarkdownV2",
             )
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
@@ -576,8 +590,8 @@ async def handle_rfn_callback(
     elif action == "revert":
         await channel.send_message(
             session.chat_id,
-            f"⏪ *Original text:*\n\n{session.original_text}",
-            parse_mode="Markdown",
+            f"⏪ *Original text:*\n\n{_mdv2_escape(session.original_text)}",
+            parse_mode="MarkdownV2",
         )
         cb_store.remove(session_key)
         cb_store.remove(f"rfn_pending:{session.user_id}:{session.chat_id}")

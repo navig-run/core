@@ -940,7 +940,7 @@ class TelegramChannel:
                     )
                     return
                 if cmd == "/settings":
-                    await self._handle_settings_menu(chat_id, user_id, is_group)
+                    await self._handle_settings_hub(chat_id, user_id, message_id=None)
                     return
                 if cmd in ("/routing", "/router"):
                     await self._handle_models_command(chat_id, user_id)

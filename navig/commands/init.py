@@ -863,39 +863,87 @@ def show_init_status(*, render: bool = True) -> dict[str, Any]:
 
     if render:
         ch.header("NAVIG Init Status")
-        if providers_detected:
-            formatted = []
-            for provider in providers_detected:
-                src = "/".join(payload["provider_sources"].get(provider, []))
-                formatted.append(f"{provider} ({src})" if src else provider)
-            ch.info("AI credentials: " + ", ".join(formatted))
-        ch.info(f"AI provider: {payload['provider']}")
-        ch.info(f"Connected hosts: {payload['hosts_count']}")
-        ch.info(f"Vault: {payload['vault']}")
 
+        # ── Configuration ────────────────────────────────────────────────
+        ch.subheader("Configuration")
+
+        # AI provider
+        ai_provider = payload["provider"]
+        if providers_detected:
+            cred_parts = []
+            for prov in providers_detected:
+                src = "/".join(payload["provider_sources"].get(prov, []))
+                cred_parts.append(f"{prov} [dim]({src})[/dim]" if src else prov)
+            cred_hint = "  [dim](" + ", ".join(cred_parts) + ")[/dim]"
+        else:
+            cred_hint = ""
+        if ai_provider and ai_provider != "not configured":
+            ch.success(f"AI provider: {ai_provider}{cred_hint}")
+        else:
+            ch.error(f"AI provider: not configured{cred_hint}")
+
+        # Connected hosts
+        hosts = payload["hosts_count"]
+        if hosts > 0:
+            ch.success(f"Connected hosts: {hosts}")
+        else:
+            ch.warning("Connected hosts: none configured")
+
+        # Vault
+        vault_state = payload["vault"]
+        if vault_state == "initialized":
+            ch.success(f"Vault: {vault_state}")
+        else:
+            ch.warning(f"Vault: {vault_state}")
+
+        # ── Services ─────────────────────────────────────────────────────
+        ch.subheader("Services")
+
+        # Integrations — colorize on/off inline
         integrations = payload["integrations"]
-        labels = []
+        int_parts = []
         for name in ("telegram", "matrix", "email"):
-            state = "on" if integrations[name] else "off"
-            labels.append(f"{name}={state}")
-        ch.info("Integrations: " + ", ".join(labels))
-        ch.info(
-            f"Web search: {payload['web_search']['provider']} "
-            f"({'ready' if payload['web_search']['ready'] else 'needs key'})"
-        )
-        ch.info(
-            f"Readiness: {payload['readiness']['state']} ({payload['readiness']['score']}%)"
-        )
-        if payload["readiness"]["issues"]:
-            ch.info("Readiness issues:")
-            for issue in payload["readiness"]["issues"]:
-                ch.info(f"  - {issue['summary']} -> {issue['command']}")
+            if integrations[name]:
+                int_parts.append(f"{name}=[green]on[/green]")
+            else:
+                int_parts.append(f"{name}=[dim]off[/dim]")
+        ch.info("Integrations: " + ", ".join(int_parts))
+
+        # Web search
+        ws = payload["web_search"]
+        ws_label = f"{ws['provider']} ({'ready' if ws['ready'] else 'needs key'})"
+        if ws["ready"]:
+            ch.success(f"Web search: {ws_label}")
+        else:
+            ch.warning(f"Web search: {ws_label}")
+
+        # ── Readiness ────────────────────────────────────────────────────
+        ch.subheader("Readiness")
+
+        score = payload["readiness"]["score"]
+        state = payload["readiness"]["state"]
+        readiness_label = f"{state} ({score}%)"
+        if score == 100:
+            ch.success(f"Overall: {readiness_label}")
+        elif score >= 50:
+            ch.warning(f"Overall: {readiness_label}")
+        else:
+            ch.error(f"Overall: {readiness_label}")
+
+        for issue in payload["readiness"]["issues"]:
+            ch.warning(f"  {issue['summary']}")
+            ch.dim(f"    → {issue['command']}")
+
+        # ── Next Actions ─────────────────────────────────────────────────
         if payload["next_actions"]:
-            ch.info("Next actions:")
+            ch.subheader("Next Actions")
             for action in payload["next_actions"]:
-                ch.info(f"  - {action}")
-        ch.info(f"Python: {payload['python_version']}")
-        ch.info(f"NAVIG: {payload['navig_version']}")
+                ch.step(action)
+
+        # ── Environment (dim metadata) ───────────────────────────────────
+        ch.dim(
+            f"Python {payload['python_version']}  ·  NAVIG {payload['navig_version']}"
+        )
 
     return payload
 

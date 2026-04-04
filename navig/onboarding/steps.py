@@ -77,7 +77,7 @@ def build_step_registry(
       ai-provider · vault-init · first-host · telegram-bot · skills-activation
     """
     navig_dir = config.navig_dir
-    return [
+    steps = [
         # ── Phase 1: bootstrap ────────────────────────────────────────────
         _step_workspace_init(navig_dir),
         _step_workspace_templates(navig_dir),
@@ -97,8 +97,11 @@ def build_step_registry(
         _step_social_networks(navig_dir),
         _step_runtime_secrets(navig_dir),
         _step_skills_activation(navig_dir),
-        _step_review(navig_dir),
     ]
+    # Build title lookup for the review step summary display.
+    step_titles = {s.id: s.title for s in steps}
+    steps.append(_step_review(navig_dir, step_titles))
+    return steps
 
 
 # ── TTY helper ────────────────────────────────────────────────────────────
@@ -309,6 +312,45 @@ def _step_config_file(
 def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
     """Interactive — choose AI provider and store API key in vault."""
     marker = navig_dir / ".ai_provider_configured"
+
+    def _local_default_url(provider_id: str) -> str:
+        defaults = {
+            "llamacpp": "http://127.0.0.1:8080",
+        }
+        url = defaults.get(provider_id, "")
+        try:
+            from navig.providers.registry import get_provider
+
+            manifest = get_provider(provider_id)
+            probe = str(getattr(manifest, "local_probe", "") or "").strip()
+            if probe and "://" not in probe:
+                return f"http://{probe}"
+            if probe:
+                return probe
+        except Exception:  # noqa: BLE001
+            pass
+        return url
+
+    def _persist_provider_url(provider_id: str, base_url: str) -> bool:
+        if not base_url:
+            return False
+        try:
+            import yaml  # type: ignore[import]
+
+            config_path = navig_dir / "config.yaml"
+            cfg: dict[str, Any] = {}
+            if config_path.exists():
+                cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            cfg.setdefault("llm_router", {}).setdefault("provider_base_urls", {})[
+                provider_id
+            ] = base_url
+            config_path.write_text(
+                yaml.dump(cfg, allow_unicode=True, sort_keys=False),
+                encoding="utf-8",
+            )
+            return True
+        except Exception:  # noqa: BLE001
+            return False
 
     def _load_providers():
         """Load provider list dynamically from the registry at runtime."""
@@ -522,10 +564,24 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         label = chosen.display_name
         requires_key = getattr(chosen, "requires_key", True)
         existing_sources = source_by_provider.get(pid, [])
+        configured_base_url = ""
 
         if not requires_key:
             # Local provider — no key needed
             api_key = "local"
+            if pid == "llamacpp":
+                default_url = _local_default_url(pid) or "http://127.0.0.1:8080"
+                try:
+                    configured_base_url = typer.prompt(
+                        "  llama.cpp URL",
+                        default=default_url,
+                    ).strip()
+                except KeyboardInterrupt:
+                    raise
+                except EOFError:
+                    configured_base_url = default_url
+                if not configured_base_url:
+                    configured_base_url = default_url
         else:
             try:
                 prompt_text = f"  {label} API key"
@@ -623,8 +679,15 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             except Exception:  # noqa: BLE001
                 pass  # best-effort; never block onboarding
 
+        base_url_saved = False
+        if configured_base_url:
+            base_url_saved = _persist_provider_url(pid, configured_base_url)
+
         marker.write_text(pid, encoding="utf-8")
         out: dict = {"provider": pid, "keySource": "interactive"}
+        if configured_base_url:
+            out["base_url"] = configured_base_url
+            out["baseUrlSaved"] = "config" if base_url_saved else "none"
         if fallback_pid:
             out["fallback_provider"] = fallback_pid
         return StepResult(status="completed", output=out)
@@ -1669,9 +1732,25 @@ def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
     )
 
 
-def _step_review(navig_dir: Path) -> OnboardingStep:
+def _step_review(navig_dir: Path, step_titles: dict[str, str] | None = None) -> OnboardingStep:
     """Show onboarding summary and let the user revisit any step."""
     artifact = navig_dir / "onboarding.json"
+    _step_titles: dict[str, str] = dict(step_titles or {})
+
+    # Phase grouping for summary display.
+    _PHASE_GROUPS: list[tuple[str, list[str]]] = [
+        ("Bootstrap", [
+            "workspace-init", "workspace-templates", "config-file",
+            "configure-ssh", "verify-network", "sigil-genesis", "core-navig",
+        ]),
+        ("Configuration", [
+            "ai-provider", "vault-init", "web-search-provider", "first-host",
+        ]),
+        ("Integrations & Optional", [
+            "telegram-bot", "matrix", "email", "social-networks",
+            "runtime-secrets", "skills-activation", "review",
+        ]),
+    ]
 
     def run() -> StepResult:
         tty = _tty_check()
@@ -1680,22 +1759,40 @@ def _step_review(navig_dir: Path) -> OnboardingStep:
 
         import typer
 
+        from navig import console_helper as ch
+
         # Print summary from artifact if available; collect known step IDs.
         known_ids: list[str] = []
         if artifact.exists():
             try:
                 data = json.loads(artifact.read_text(encoding="utf-8"))
                 steps_summary = data.get("steps", [])
-                sys.stdout.write("\n  Onboarding summary:\n")
+                status_by_id: dict[str, str] = {}
                 for s in steps_summary:
-                    status_icon = "✓" if s.get("status") == "completed" else "·"
-                    step_id = s.get("id", "?")
-                    sys.stdout.write(
-                        f"    [{status_icon}] {step_id} — {s.get('status', '?')}\n"
-                    )
-                    if step_id and step_id != "?":
-                        known_ids.append(step_id)
+                    sid = s.get("id", "?")
+                    status_by_id[sid] = s.get("status", "?")
+                    if sid and sid != "?":
+                        known_ids.append(sid)
+
                 sys.stdout.write("\n")
+                ch.subheader("Onboarding Summary")
+
+                for phase_label, phase_ids in _PHASE_GROUPS:
+                    # Only show phases that have at least one step present.
+                    present = [sid for sid in phase_ids if sid in status_by_id]
+                    if not present:
+                        continue
+                    ch.dim(f"  {phase_label}")
+                    for sid in present:
+                        status = status_by_id.get(sid, "?")
+                        title = _step_titles.get(sid, sid)
+                        if status == "completed":
+                            ch.success(f"  {sid:<24} {title}")
+                        elif status == "failed":
+                            ch.error(f"  {sid:<24} {title}")
+                        else:
+                            ch.dim(f"    [·] {sid:<24} {title}")
+                    sys.stdout.write("\n")
                 sys.stdout.flush()
             except Exception:  # noqa: BLE001
                 pass

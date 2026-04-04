@@ -22,6 +22,7 @@ but reply with a disabled notice.
 from __future__ import annotations
 
 import json
+import re
 from typing import TYPE_CHECKING
 
 from navig.debug_logger import get_debug_logger
@@ -30,6 +31,10 @@ if TYPE_CHECKING:
     pass  # avoids circular; TelegramChannel is in the same package
 
 logger = get_debug_logger()
+
+
+def _mdv2_escape(text: str) -> str:
+    return re.sub(r"([_\*\[\]\(\)~`>#+\-=|{}.!\\])", r"\\\1", str(text))
 
 
 # Local gateway base URL for mesh routes — resolved from navig config at call time
@@ -69,7 +74,7 @@ class TelegramMeshMixin:
                 await self.send_message(
                     chat_id,
                     "_no mesh peers discovered yet_",
-                    parse_mode="Markdown",
+                    parse_mode="MarkdownV2",
                 )
                 return
 
@@ -80,9 +85,12 @@ class TelegramMeshMixin:
                 host = p.get("hostname", p.get("node_id", "?"))
                 is_self = " *(you)*" if p.get("is_self") else ""
                 capabilities = ", ".join(p.get("capabilities", []) or []) or "—"
-                lines.append(f"{role_symbol} `{host}`{is_self} — load {load:.0%} — {capabilities}")
+                lines.append(
+                    f"{role_symbol} `{_mdv2_escape(host)}`{is_self} — "
+                    f"load {_mdv2_escape(f'{load:.0%}')} — {_mdv2_escape(capabilities)}"
+                )
 
-            await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+            await self.send_message(chat_id, "\n".join(lines), parse_mode="MarkdownV2")
 
         except Exception as exc:
             logger.error("[mesh] /nodes handler error: %s", exc)
@@ -103,8 +111,11 @@ class TelegramMeshMixin:
                 return
 
             is_me = " *(this node)*" if my_role == "leader" else ""
-            msg = f"*current leader:* `{leader}`{is_me}\n*epoch:* {epoch}"
-            await self.send_message(chat_id, msg, parse_mode="Markdown")
+            msg = (
+                f"*current leader:* `{_mdv2_escape(leader)}`{is_me}\n"
+                f"*epoch:* {_mdv2_escape(str(epoch))}"
+            )
+            await self.send_message(chat_id, msg, parse_mode="MarkdownV2")
 
         except Exception as exc:
             logger.error("[mesh] /leader handler error: %s", exc)
@@ -131,8 +142,8 @@ class TelegramMeshMixin:
                 await self.send_message(
                     chat_id,
                     f"{icon} mesh *{'enabled' if enabled else 'disabled'}* — "
-                    f"role: `{role}` — peers: {peers}",
-                    parse_mode="Markdown",
+                    f"role: `{_mdv2_escape(role)}` — peers: {_mdv2_escape(str(peers))}",
+                    parse_mode="MarkdownV2",
                 )
                 return
 
@@ -143,14 +154,14 @@ class TelegramMeshMixin:
                 await self.send_message(
                     chat_id,
                     f"mesh *{'enabled' if enabled else 'disabled'}* — {status}",
-                    parse_mode="Markdown",
+                    parse_mode="MarkdownV2",
                 )
                 return
 
             await self.send_message(
                 chat_id,
                 "_usage: /mesh [on|off|status]_",
-                parse_mode="Markdown",
+                parse_mode="MarkdownV2",
             )
 
         except Exception as exc:
@@ -182,15 +193,16 @@ class TelegramMeshMixin:
             if accepted:
                 await self.send_message(
                     chat_id,
-                    f"✅ handoff requested → `{target_out}`\n_new leader will activate within 15s_",
-                    parse_mode="Markdown",
+                    f"✅ handoff requested → `{_mdv2_escape(target_out)}`\n"
+                    "_new leader will activate within 15s_",
+                    parse_mode="MarkdownV2",
                 )
             else:
                 reason = resp.get("reason", "unknown")
                 await self.send_message(
                     chat_id,
-                    f"❌ handoff rejected: {reason}",
-                    parse_mode="Markdown",
+                    f"❌ handoff rejected: {_mdv2_escape(reason)}",
+                    parse_mode="MarkdownV2",
                 )
 
         except Exception as exc:

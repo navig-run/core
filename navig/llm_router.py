@@ -161,6 +161,8 @@ PROVIDER_ENV_KEYS: dict[str, list[str]] = {
     "together": ["TOGETHER_API_KEY"],
     "github_models": ["GITHUB_TOKEN"],  # free via GitHub PAT
     "ollama": [],  # local, no key needed
+    "llamacpp": [],  # local, no key needed
+    "airllm": [],  # local, no key needed
     "mcp_bridge": [],  # VS Code Copilot via MCP WebSocket (no key, uses tunnel)
 }
 
@@ -180,6 +182,7 @@ PROVIDER_BASE_URLS: dict[str, str] = {
     "together": "https://api.together.xyz/v1",
     "github_models": "https://models.inference.ai.azure.com",
     "ollama": "http://127.0.0.1:11434/v1",
+    "llamacpp": "http://127.0.0.1:8080/v1",
     "mcp_bridge": f"ws://127.0.0.1:{BRIDGE_DEFAULT_PORT}",
 }
 
@@ -559,7 +562,7 @@ def _resolve_api_key(provider: str) -> str | None:
 
 def _has_api_key(provider: str) -> bool:
     """Check if an API key is available for a provider."""
-    if provider == "ollama":
+    if provider in {"ollama", "llamacpp", "airllm", "mcp_bridge"}:
         return True  # no key needed
     return _resolve_api_key(provider) is not None
 

@@ -88,6 +88,11 @@ def _format_bridge_status(online: bool, url: str) -> str:
     return f"⚡ *Bridge:* offline (`{url}`)"
 
 
+def _escape_markdown_v2(text: str) -> str:
+    """Escape text for Telegram MarkdownV2 parse mode."""
+    return re.sub(r"([_\*\[\]\(\)~`>#+\-=|{}.!\\])", r"\\\1", str(text))
+
+
 # -- Slash-command registry ----------------------------------------------------
 # Single source of truth for every Telegram slash command.
 # Drives: CLI dispatch - bot registration (setMyCommands) - /help text.
@@ -387,7 +392,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     SlashCommandEntry(
         "settings",
         "Main config hub - audio, providers, focus, model",
-        handler="_handle_settings_menu",
+        handler="_handle_settings_hub",
         category="model",
     ),
     SlashCommandEntry(
@@ -878,9 +883,9 @@ class TelegramCommandsMixin:
                 ],
             ]
             if target_message_id:
-                await self.edit_message(chat_id, target_message_id, text, parse_mode="Markdown", keyboard=keyboard)
+                await self.edit_message(chat_id, target_message_id, text, parse_mode="MarkdownV2", keyboard=keyboard)
                 return
-            sent = await self.send_message(chat_id, text, parse_mode="Markdown", keyboard=keyboard)
+            sent = await self.send_message(chat_id, text, parse_mode="MarkdownV2", keyboard=keyboard)
             if sent and isinstance(sent, dict):
                 state["message_id"] = sent.get("message_id")
             return
@@ -979,45 +984,85 @@ class TelegramCommandsMixin:
 
     @staticmethod
     def _generate_help_text(deck_enabled: bool = False) -> str:
-        """Generate grouped /help output from deduplicated registry entries."""
-        cat_labels: dict[str, str] = {
-            "core": "\U0001f9ed *core*",
-            "monitoring": "\U0001f4ca *monitoring*",
-            "docker": "\U0001f433 *docker*",
-            "database": "\U0001f5c4 *database*",
-            "tools": "\U0001f527 *tools*",
-            "utilities": "\u2728 *utilities*",
-            "model": "\U0001f9e0 *model control*",
-            "voice": "\U0001f50a *voice & AI*",
-            "diagnostics": "\U0001f6e0 *diagnostics*",
-            "ai": "\U0001f916 *AI features*",
-            "media": "\U0001f3a5 *media*",
-            "social": "\U0001f465 *social*",
-            "admin": "\U0001f510 *admin*",
+        """Generate deterministic MarkdownV2 /help output."""
+        hidden_help_commands = {
+            "kick",
+            "mute",
+            "unmute",
+            "search",
+            "respect",
+            "stats_global",
         }
 
-        seen_categories: set[str] = set()
-        lines = [
-            "\U0001f4cb *NAVIG command reference*",
-            "",
-            "*Quick start*",
-            "`/status` · `/models` · `/providers` · `/help`",
-            "You can also type naturally (example: `show status` or `restart daemon`).",
-            "",
+        sections: list[tuple[str, list[tuple[str, str]]]] = [
+            (
+                "🚀 Core",
+                [
+                    ("/start", "Wake up greeting"),
+                    ("/help", "Full command reference"),
+                    ("/status", "System and setup readiness"),
+                    ("/ping", "Quick heartbeat status"),
+                    ("/briefing", "System briefing snapshot"),
+                ],
+            ),
+            (
+                "🧠 AI and Models",
+                [
+                    ("/settings", "Main configuration hub"),
+                    ("/voice", "Voice and TTS settings"),
+                    ("/models", "Model and routing snapshot"),
+                    ("/providers", "Provider hub and model picker"),
+                    ("/mode", "Set focus mode"),
+                    ("/big", "Use big model next"),
+                    ("/small", "Use small model next"),
+                    ("/coder", "Use coder model next"),
+                    ("/auto", "Reset to automatic model selection"),
+                ],
+            ),
+            (
+                "🗂️ Spaces and Planning",
+                [
+                    ("/spaces", "List and switch spaces"),
+                    ("/space", "Activate one space"),
+                    ("/intake", "Run guided planning intake"),
+                    ("/continue", "Enable autonomous continuation"),
+                    ("/plan", "Plans workflow shortcuts"),
+                ],
+            ),
+            (
+                "🛠️ Operations",
+                [
+                    ("/docker", "Docker status and actions"),
+                    ("/tables", "Database tables"),
+                    ("/df", "Disk usage"),
+                    ("/top", "Live process snapshot"),
+                    ("/logs", "Recent logs"),
+                    ("/weather", "Weather report"),
+                    ("/restart", "Restart NAVIG services"),
+                ],
+            ),
         ]
-        for entry in _iter_unique_registry(visible_only=True):
-            if entry.category not in seen_categories:
-                seen_categories.add(entry.category)
-                lines.append("\n" + cat_labels.get(entry.category, f"*{entry.category}*"))
-            if entry.usage:
-                lines.append(f"`{entry.usage}` \u2014 {entry.description}")
-            else:
-                lines.append(f"/{entry.command} \u2014 {entry.description}")
 
         if deck_enabled:
-            lines.append("/deck \u2014 Open the command deck")
-        lines.append("\n\u2014 or just talk to me naturally.")
-        return "\n".join(lines)
+            sections[-1][1].append(("/deck", "Open command deck"))
+
+        lines: list[str] = [
+            "📋 *NAVIG Command Center*",
+            "",
+            "Use a command below or type naturally\.",
+            "",
+        ]
+
+        for heading, commands in sections:
+            lines.append(f"*{heading}*")
+            for cmd, desc in commands:
+                if cmd.removeprefix("/") in hidden_help_commands:
+                    continue
+                lines.append(f"• {_escape_markdown_v2(cmd)} — {_escape_markdown_v2(desc)}")
+            lines.append("")
+
+        lines.append("💬 Natural language also works: show status, restart daemon, check docker\.")
+        return "\n".join(lines).rstrip()
 
     # -- Core slash handlers ---------------------------------------------------
 
@@ -1102,7 +1147,7 @@ class TelegramCommandsMixin:
     async def _handle_help(self, chat_id: int) -> None:
         """Command reference (/helpme) — sent directly without navigation."""
         text = self._generate_help_text(deck_enabled=bool(self._get_deck_url()))
-        await self.send_message(chat_id, text, parse_mode="Markdown")
+        await self.send_message(chat_id, text, parse_mode="MarkdownV2")
 
     async def _handle_ping(self, chat_id: int, user_id: int = 0) -> None:
         """Live heartbeat card — version, host, space, tier, reminders, bridge (/ping)."""

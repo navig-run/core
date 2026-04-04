@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -57,6 +58,10 @@ _SPEECH_INDICATORS = (
 
 # MIME types that are exclusively used for Telegram voice notes / speech
 _VOICE_MIMES = {"audio/ogg", "audio/opus", "audio/x-opus"}
+
+
+def _mdv2_escape(text: str) -> str:
+    return re.sub(r"([_\*\[\]\(\)~`>#+\-=|{}.!\\])", r"\\\1", str(text))
 
 
 def _classify_audio(audio: dict) -> dict:
@@ -270,12 +275,12 @@ class TelegramVoiceMixin:
         if stt_provider is None:
             await self.send_message(
                 chat_id,
-                "🎙️ *Voice transcription not configured.*\n\n"
+                "🎙️ *Voice transcription not configured\\.*\n\n"
                 "Add any of the following to `~/.navig/.env` and restart:\n"
                 "• `DEEPGRAM_KEY=<key>` — blazing fast, recommended\n"
                 "• `OPENAI_API_KEY=<key>` — Whisper API fallback\n"
                 "• `pip install openai-whisper` — offline, no key needed",
-                parse_mode="Markdown",
+                parse_mode="MarkdownV2",
             )
             return None, ""
 
@@ -392,8 +397,8 @@ class TelegramVoiceMixin:
                 ]
                 await self.send_message(
                     chat_id,
-                    f"🎙️ *Heard:* _{transcript}_",
-                    parse_mode="Markdown",
+                    f"🎙️ *Heard:*\n_{_mdv2_escape(transcript)}_",
+                    parse_mode="MarkdownV2",
                     keyboard=heard_kb,
                 )
             detected_lang = (result.language or "") if hasattr(result, "language") else ""
@@ -783,7 +788,10 @@ class TelegramVoiceMixin:
             header = f"🎵 *{title}*"
 
         card = header
-        card += f"\n⏱ {dur_str}  \u00b7  💾 {size_str}  \u00b7  `{mime_type}`"
+        card += (
+            f"\n⏱ {_mdv2_escape(dur_str)}  \u00b7  💾 {_mdv2_escape(size_str)}  \u00b7  "
+            f"`{_mdv2_escape(mime_type)}`"
+        )
 
         # First row: Transcribe + Identify
         row1 = [
@@ -810,7 +818,7 @@ class TelegramVoiceMixin:
         await self.send_message(
             chat_id,
             card,
-            parse_mode="Markdown",
+            parse_mode="MarkdownV2",
             keyboard=keyboard,
             reply_to_message_id=message_id,
         )

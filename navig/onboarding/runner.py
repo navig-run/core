@@ -141,44 +141,58 @@ def run_engine_onboarding(
 
 
 def _print_verification_dashboard(state: EngineState, step_tiers: dict[str, str]) -> None:
+    from navig import console_helper as ch
+
     status_counts = Counter(rec.status for rec in state.steps)
     tier_counts = Counter(step_tiers.get(rec.id, "essential") for rec in state.steps)
     total = max(len(state.steps), 1)
     completed = status_counts.get("completed", 0)
+    skipped = status_counts.get("skipped", 0)
+    failed = status_counts.get("failed", 0)
     finished_pct = int((completed / total) * 100)
 
-    sys.stdout.write("  Verification summary\n")
-    sys.stdout.write("  ───────────────────\n")
-    sys.stdout.write(
-        "  Steps: "
-        f"✔ completed={status_counts.get('completed', 0)}  "
-        f"• skipped={status_counts.get('skipped', 0)}  "
-        f"✖ failed={status_counts.get('failed', 0)}\n"
-    )
-    sys.stdout.write(f"  Completion: {finished_pct}%\n")
-    if state.interrupted_at:
-        sys.stdout.write(f"  State: interrupted at {state.interrupted_at}\n")
+    ch.subheader("Verification Summary")
+
+    # Step counts with contextual icons
+    parts: list[str] = []
+    if completed:
+        parts.append(f"[green]✓ {completed} completed[/green]")
+    if skipped:
+        parts.append(f"[dim]· {skipped} skipped[/dim]")
+    if failed:
+        parts.append(f"[red]✗ {failed} failed[/red]")
+    ch.info(f"Steps: {' '.join(parts)}")
+
+    # Completion percentage with contextual color
+    if finished_pct == 100:
+        ch.success(f"Completion: {finished_pct}%")
+    elif finished_pct >= 50:
+        ch.warning(f"Completion: {finished_pct}%")
     else:
-        sys.stdout.write("  State: finished ✔\n")
+        ch.error(f"Completion: {finished_pct}%")
 
-    sys.stdout.write(
-        "  Tiers: "
-        f"essential={tier_counts.get('essential', 0)}  "
+    # State
+    if state.interrupted_at:
+        ch.warning(f"State: interrupted at {state.interrupted_at}")
+    else:
+        ch.success("State: finished")
+
+    # Tier breakdown
+    ch.dim(
+        f"  Tiers: essential={tier_counts.get('essential', 0)}  "
         f"recommended={tier_counts.get('recommended', 0)}  "
-        f"optional={tier_counts.get('optional', 0)}\n"
+        f"optional={tier_counts.get('optional', 0)}"
     )
 
+    # Recommended next action
     deferred = _deferred_integration_commands(state, step_tiers)
-    if not state.interrupted_at and (status_counts.get("skipped", 0) > 0 or status_counts.get("failed", 0) > 0):
-        sys.stdout.write(
-            "  Recommended next: navig init --reconfigure  "
-            "(finish skipped/failed setup steps)\n"
-        )
+    if not state.interrupted_at and (skipped > 0 or failed > 0):
+        ch.step("Recommended: navig init --reconfigure  (finish skipped/failed steps)")
     if deferred:
+        ch.dim("  Deferred integrations:")
         col_width = max(len(cmd) for cmd, _ in deferred)
-        sys.stdout.write("  Deferred integrations:\n")
         for cmd, description in deferred:
-            sys.stdout.write(f"    - {cmd:<{col_width}}  {description}\n")
+            ch.dim(f"    → {cmd:<{col_width}}  {description}")
     sys.stdout.write("\n")
 
 
@@ -191,6 +205,8 @@ def _deferred_integration_commands(
         "email": ("navig email setup", "SMTP notifications for workflows and alerts"),
         "social-networks": ("navig social setup", "social network integrations (Twitter/X, etc.)"),
         "telegram-bot": ("navig telegram setup", "receive alerts and run commands via Telegram bot"),
+        "runtime-secrets": ("navig init --reconfigure", "import API keys into vault"),
+        "skills-activation": ("navig init --reconfigure", "activate skill packs"),
     }
     status_by_id = {rec.id: rec.status for rec in state.steps}
 

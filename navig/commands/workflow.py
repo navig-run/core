@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import typer
 import yaml
 from rich.table import Table
 
@@ -784,3 +785,135 @@ def edit_workflow(name: str):
     except Exception as e:
         ch.error(f"Failed to open editor: {e}")
         ch.info(f"Manually edit: {path}")
+
+
+# ============================================================================
+# task_app — Typer CLI group (extracted from navig/cli/__init__.py)
+# ============================================================================
+
+from navig.cli._callbacks import show_subcommand_help  # noqa: E402
+
+task_app = typer.Typer(
+    help="Task/workflow management (reusable command sequences)",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@task_app.callback()
+def task_callback(ctx: typer.Context):
+    """Task management - run without subcommand to list tasks."""
+    if ctx.invoked_subcommand is None:
+        list_workflows()
+
+
+@task_app.command("list")
+def task_list():
+    """List all available tasks/workflows."""
+    list_workflows()
+
+
+@task_app.command("show")
+def task_show(name: str = typer.Argument(..., help="Task name")):
+    """Display task definition and steps."""
+    show_workflow(name)
+
+
+@task_app.command("run")
+def task_run(
+    name: str = typer.Argument(..., help="Task name"),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview without executing"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmations"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Detailed output"),
+    var: list[str] | None = typer.Option(None, "--var", "-V", help="Variable (name=value)"),
+):
+    """Execute a task/workflow."""
+    run_workflow(name, dry_run=dry_run, yes=yes, verbose=verbose, var=var or [])
+
+
+@task_app.command("test")
+def task_test(name: str = typer.Argument(..., help="Task name")):
+    """Validate task syntax and structure."""
+    validate_workflow(name)
+
+
+@task_app.command("add")
+def task_add(
+    name: str = typer.Argument(..., help="New task name"),
+    global_scope: bool = typer.Option(False, "--global", "-g", help="Create globally"),
+):
+    """Create a new task from template."""
+    create_workflow(name, global_scope=global_scope)
+
+
+@task_app.command("remove")
+def task_remove(
+    name: str = typer.Argument(..., help="Task name"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
+):
+    """Delete a task."""
+    delete_workflow(name, force=force)
+
+
+@task_app.command("edit")
+def task_edit(name: str = typer.Argument(..., help="Task name")):
+    """Open task in default editor."""
+    edit_workflow(name)
+
+
+@task_app.command("complete")
+def task_complete(
+    task_title: str = typer.Argument(..., help="Human-readable task title"),
+    task_slug: str = typer.Argument(..., help="kebab-case unique slug"),
+    summary: str = typer.Argument(..., help="One-sentence completion summary"),
+    phase_name: str = typer.Argument(..., help="Phase name (e.g. phase-1)"),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Validate; skip all writes"),
+    now_date: str | None = typer.Option(None, "--date", "-d", help="Override date YYYY-MM-DD"),
+) -> None:
+    """Record a completed task — runs complete-task.sh (Unix) or complete-task.ps1 (Windows)."""
+    # Locate complete-task script by walking up from cwd
+    cwd = Path.cwd()
+    project_root: Path | None = None
+    for parent in [cwd, *cwd.parents]:
+        if (parent / ".navig").is_dir():
+            project_root = parent
+            break
+
+    if project_root is None:
+        typer.secho(
+            "ERROR: could not find .navig/ directory within cwd ancestry",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+
+    scripts_dir = project_root / ".navig" / "scripts"
+    is_windows = sys.platform == "win32"
+    script = scripts_dir / ("complete-task.ps1" if is_windows else "complete-task.sh")
+
+    if not script.exists():
+        typer.secho(f"ERROR: script not found at {script}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    env = os.environ.copy()
+    if dry_run:
+        env["NAVIG_DRY_RUN"] = "1"
+    if now_date:
+        env["NAVIG_NOW"] = now_date
+
+    if is_windows:
+        cmd = [
+            "powershell",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script),
+            task_title,
+            task_slug,
+            summary,
+            phase_name,
+        ]
+    else:
+        cmd = ["bash", str(script), task_title, task_slug, summary, phase_name]
+
+    result = subprocess.run(cmd, env=env, cwd=str(cwd))
+    raise typer.Exit(result.returncode)
