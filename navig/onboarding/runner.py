@@ -79,10 +79,15 @@ def run_engine_onboarding(
 
     def _progress(step: object) -> None:
         started["n"] += 1
-        pct = int((started["n"] / max(step_total, 1)) * 100)
         title = getattr(step, "title", str(step))
-        tier = getattr(step, "tier", "essential")
-        sys.stdout.write(f"  [{started['n']}/{step_total} {pct:>3}%] · {title} ({tier})...\n")
+        if jump_to_step:
+            # In targeted-jump mode the total-step fraction is misleading
+            # (only the target step plus its tail run). Use ordinal only.
+            sys.stdout.write(f"  [step {started['n']}] · {title}...\n")
+        else:
+            pct = int((started["n"] / max(step_total, 1)) * 100)
+            tier = getattr(step, "tier", "essential")
+            sys.stdout.write(f"  [{started['n']}/{step_total} {pct:>3}%] · {title} ({tier})...\n")
         sys.stdout.flush()
 
     engine = OnboardingEngine(cfg, steps, on_step_start=_progress)
