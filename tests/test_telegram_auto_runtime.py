@@ -226,6 +226,33 @@ async def test_slash_status_routes_to_status_handler_not_models(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_slash_ping_routes_to_ping_handler(monkeypatch):
+    """Regression: /ping must invoke _handle_ping, not raise AttributeError."""
+    channel = TelegramChannel(
+        bot_token="123:FAKE",
+        allowed_users=[42],
+        on_message=lambda *args, **kwargs: None,
+    )
+    channel._bot_username = "mybot"
+    channel._handle_ping = AsyncMock()
+
+    monkeypatch.setattr("navig.gateway.channels.telegram.HAS_SESSIONS", False)
+
+    update = {
+        "message": {
+            "message_id": 5,
+            "text": "/ping",
+            "chat": {"id": 42, "type": "private"},
+            "from": {"id": 42, "username": "user42"},
+        }
+    }
+
+    await channel._process_update(update)
+
+    channel._handle_ping.assert_awaited_once_with(42, 42)
+
+
+@pytest.mark.asyncio
 async def test_slash_settings_and_voice_route_to_distinct_handlers(monkeypatch):
     channel = TelegramChannel(
         bot_token="123:FAKE",

@@ -1,4 +1,14 @@
+import inspect
+
 from navig.gateway.channels.telegram import TelegramChannel
+
+
+def test_telegram_channel_has_handle_ping_delegate():
+    """TelegramChannel must define _handle_ping so /ping fast-path doesn't crash."""
+    assert hasattr(TelegramChannel, "_handle_ping"), (
+        "TelegramChannel is missing _handle_ping; /ping will raise AttributeError"
+    )
+    assert inspect.iscoroutinefunction(TelegramChannel._handle_ping)
 
 
 def test_telegram_channel_exposes_generate_help_delegate():

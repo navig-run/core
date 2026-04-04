@@ -2203,6 +2203,16 @@ class TelegramChannel:
             message_id=message_id,
         )
 
+    async def _handle_ping(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+    ) -> None:
+        """Delegate to canonical heartbeat handler (/ping)."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_ping(self, chat_id, user_id=user_id)
+
     async def _handle_spaces(
         self,
         chat_id: int,
