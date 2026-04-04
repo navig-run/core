@@ -272,12 +272,13 @@ class ConfigManager:
 
                     ch.warning(f"App config directory not accessible: {self.app_config_dir}")
 
-        # When an explicit config_dir was supplied (e.g. in tests), also include
-        # base_dir so that legacy files written there can be discovered even when
-        # base_dir differs from global_config_dir.
-        if self._explicit_config_dir is not None and self.base_dir != self.global_config_dir:
+        # When an explicit config_dir was supplied (e.g. in tests), search base_dir
+        # instead of global_config_dir.  This keeps test environments fully isolated
+        # from the real ~/.navig and ensures legacy files in the temp dir are found.
+        if self._explicit_config_dir is not None:
             if self._is_directory_accessible(self.base_dir):
                 directories.append(self.base_dir)
+            return directories
 
         # Always add global config as fallback (should always be accessible)
         if self._is_directory_accessible(self.global_config_dir):

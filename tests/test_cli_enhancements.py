@@ -123,6 +123,14 @@ class TestAppAutoDetection:
         hosts = multi_host_setup.find_hosts_with_app("MyApp")
         assert hosts == []  # Should not match 'myapp'
 
+    def test_find_hosts_with_app_ignores_malformed_app_file(self, multi_host_setup):
+        """Malformed individual app files must not block legacy host-app detection."""
+        bad_file = multi_host_setup.apps_dir / "myapp.yaml"
+        bad_file.write_text("name: wrong-name\nhost: myhost\n", encoding="utf-8")
+
+        hosts = multi_host_setup.find_hosts_with_app("myapp")
+        assert hosts == ["myhost"]
+
 
 class TestListCommandEnhancements:
     """Test enhanced list commands with --all and --format flags."""

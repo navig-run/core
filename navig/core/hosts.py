@@ -283,11 +283,13 @@ class HostManager:
         """
         self.invalidate_cache(host_name)
 
-        # Determine save location
+        # Determine save location: use the manager's own hosts_dir (base_dir/hosts)
+        # which correctly tracks the explicit config_dir in tests or app_config_dir
+        # in app context, falling back to global_config_dir in normal use.
         if self._config.app_config_dir:
             host_file = self._config.app_config_dir / "hosts" / f"{host_name}.yaml"
         else:
-            host_file = self._config.global_config_dir / "hosts" / f"{host_name}.yaml"
+            host_file = self._config.hosts_dir / f"{host_name}.yaml"
 
         # Add timestamp to metadata
         if "metadata" not in config:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -105,12 +106,24 @@ class EmbeddingProvider(ABC):
             Similarity score between -1 and 1
 
         Raises:
-            ImportError: If numpy is not installed
+            ValueError: If vectors have different lengths
         """
+        if len(vec1) != len(vec2):
+            raise ValueError("Vectors must have the same length")
+
+        if not vec1:
+            return 0.0
+
         if not HAS_NUMPY:
-            raise ImportError(
-                "numpy is required for vector similarity. Install it with: pip install numpy"
-            )
+            dot = sum(a * b for a, b in zip(vec1, vec2, strict=False))
+            norm_a = math.sqrt(sum(a * a for a in vec1))
+            norm_b = math.sqrt(sum(b * b for b in vec2))
+
+            if norm_a == 0.0 or norm_b == 0.0:
+                return 0.0
+
+            return float(dot / (norm_a * norm_b))
+
         a = np.array(vec1)
         b = np.array(vec2)
 

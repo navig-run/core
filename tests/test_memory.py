@@ -729,6 +729,25 @@ class TestEmbeddingProviders:
         similarity = provider.similarity(vec1, vec3)
         assert abs(similarity) < 0.001
 
+    def test_similarity_calculation_without_numpy(self, monkeypatch):
+        """Similarity falls back to pure-Python math when numpy is unavailable."""
+        import navig.memory.embeddings as emb
+
+        provider = emb.LocalEmbeddingProvider()
+
+        monkeypatch.setattr(emb, "HAS_NUMPY", False)
+        monkeypatch.setattr(emb, "np", None)
+
+        vec1 = [1.0, 0.0, 0.0]
+        vec2 = [1.0, 0.0, 0.0]
+        vec3 = [0.0, 1.0, 0.0]
+
+        similarity = provider.similarity(vec1, vec2)
+        assert abs(similarity - 1.0) < 0.001
+
+        similarity = provider.similarity(vec1, vec3)
+        assert abs(similarity) < 0.001
+
 
 # ============================================================================
 # INTEGRATION TESTS

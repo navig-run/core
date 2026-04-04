@@ -81,7 +81,13 @@ class AppManager:
         # 1. Check individual files (new format)
         config_dirs = self._config._get_config_directories()
         for config_dir in config_dirs:
-            app_config = self.load_from_file(app_name, config_dir)
+            try:
+                app_config = self.load_from_file(app_name, config_dir)
+            except (ValueError, OSError):
+                # Ignore malformed/unreadable app files here and keep checking
+                # other sources (including legacy embedded apps in host YAML).
+                continue
+
             if app_config and app_config.get("host") == host_name:
                 return True
 
