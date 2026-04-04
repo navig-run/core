@@ -32,9 +32,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from navig.tools.registry import BaseTool, ToolResult
-
 from navig.agent.tool_caps import cap_result, get_cap_for_tool
+from navig.tools.registry import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
 

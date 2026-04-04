@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections import Counter
 import os
 import socket
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Sequence
 

@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 from typing import Any
 
-
 _FALLBACK_ENV_VARS: dict[str, tuple[str, ...]] = {
     "openrouter": ("OPENROUTER_API_KEY",),
     "openai": ("OPENAI_API_KEY",),
@@ -67,7 +66,7 @@ def provider_env_vars(provider_id: str) -> tuple[str, ...]:
     except Exception:  # noqa: BLE001
         pass
 
-    for fallback in _FALLBACK_ENV_VARS.get(provider_id, ()): 
+    for fallback in _FALLBACK_ENV_VARS.get(provider_id, ()):
         if fallback not in env_vars:
             env_vars.append(fallback)
     return tuple(env_vars)
@@ -83,7 +82,7 @@ def provider_env_key(provider_id: str) -> str:
 
 def provider_has_config_key(provider_id: str, *, navig_dir: Path, cfg: dict[str, Any] | None = None) -> bool:
     data = cfg if cfg is not None else _load_config(navig_dir)
-    for key in _FALLBACK_CFG_KEYS.get(provider_id, ()): 
+    for key in _FALLBACK_CFG_KEYS.get(provider_id, ()):
         if str(data.get(key) or "").strip():
             return True
     return False

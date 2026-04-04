@@ -16,12 +16,12 @@ Modules:
 """
 
 from navig.plans.context import PlanContext
-from navig.plans.inbox_reader import InboxItem, InboxReader
+from navig.plans.corpus_scanner import CorpusScanner
 from navig.plans.current_phase_manager import CurrentPhaseManager, PhaseState
 from navig.plans.inbox_processor import InboxProcessor, ReconciliationResult
-from navig.plans.review_queue import ReviewItem, ReviewQueue
+from navig.plans.inbox_reader import InboxItem, InboxReader
 from navig.plans.milestone_progress import MilestoneProgressEngine, MilestoneState
-from navig.plans.corpus_scanner import CorpusScanner
+from navig.plans.review_queue import ReviewItem, ReviewQueue
 from navig.plans.scaffold import scaffold_plans_structure
 
 __all__ = [

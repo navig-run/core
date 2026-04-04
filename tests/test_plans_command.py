@@ -9,9 +9,14 @@ from navig.commands.plans import plans_app
 runner = CliRunner()
 
 
+def _set_global_config_dir(monkeypatch, tmp_path) -> Path:
+    config_dir = tmp_path / ".navig-global"
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(config_dir))
+    return config_dir
+
+
 def test_plans_status_no_spaces(tmp_path, monkeypatch):
-    home = tmp_path / "home"
-    monkeypatch.setattr(Path, "home", lambda: home)
+    _set_global_config_dir(monkeypatch, tmp_path)
 
     result = runner.invoke(plans_app, ["status", "--path", str(tmp_path / "repo")])
     assert result.exit_code == 0
@@ -19,10 +24,9 @@ def test_plans_status_no_spaces(tmp_path, monkeypatch):
 
 
 def test_plans_status_renders_rows(tmp_path, monkeypatch):
-    home = tmp_path / "home"
-    monkeypatch.setattr(Path, "home", lambda: home)
+    config_dir = _set_global_config_dir(monkeypatch, tmp_path)
 
-    global_space = home / ".navig" / "spaces" / "finance"
+    global_space = config_dir / "spaces" / "finance"
     global_space.mkdir(parents=True, exist_ok=True)
     (global_space / "VISION.md").write_text("---\ngoal: Save emergency fund\n---\n")
     (global_space / "CURRENT_PHASE.md").write_text("---\ncompletion_pct: 35\n---\n")
@@ -159,10 +163,9 @@ def test_plans_update_writes_frontmatter_completion(tmp_path, monkeypatch):
 
 
 def test_plans_next_selects_lowest_progress_with_pending_task(tmp_path, monkeypatch):
-    home = tmp_path / "home"
-    monkeypatch.setattr(Path, "home", lambda: home)
+    config_dir = _set_global_config_dir(monkeypatch, tmp_path)
 
-    low = home / ".navig" / "spaces" / "health"
+    low = config_dir / "spaces" / "health"
     low.mkdir(parents=True, exist_ok=True)
     (low / "VISION.md").write_text("---\ngoal: Restore energy\n---\n", encoding="utf-8")
     (low / "CURRENT_PHASE.md").write_text(
@@ -170,7 +173,7 @@ def test_plans_next_selects_lowest_progress_with_pending_task(tmp_path, monkeypa
         encoding="utf-8",
     )
 
-    high = home / ".navig" / "spaces" / "finance"
+    high = config_dir / "spaces" / "finance"
     high.mkdir(parents=True, exist_ok=True)
     (high / "VISION.md").write_text("---\ngoal: Save monthly\n---\n", encoding="utf-8")
     (high / "CURRENT_PHASE.md").write_text(
@@ -185,10 +188,9 @@ def test_plans_next_selects_lowest_progress_with_pending_task(tmp_path, monkeypa
 
 
 def test_plans_briefing_includes_action_focus(tmp_path, monkeypatch):
-    home = tmp_path / "home"
-    monkeypatch.setattr(Path, "home", lambda: home)
+    config_dir = _set_global_config_dir(monkeypatch, tmp_path)
 
-    health = home / ".navig" / "spaces" / "health"
+    health = config_dir / "spaces" / "health"
     health.mkdir(parents=True, exist_ok=True)
     (health / "VISION.md").write_text("---\ngoal: Restore energy\n---\n", encoding="utf-8")
     (health / "CURRENT_PHASE.md").write_text(
@@ -209,8 +211,7 @@ def test_plans_briefing_includes_action_focus(tmp_path, monkeypatch):
 
 
 def test_plans_summary_no_spaces(tmp_path, monkeypatch):
-    home = tmp_path / "home"
-    monkeypatch.setattr(Path, "home", lambda: home)
+    _set_global_config_dir(monkeypatch, tmp_path)
 
     result = runner.invoke(plans_app, ["summary", "--path", str(tmp_path / "repo")])
     assert result.exit_code == 0
@@ -218,10 +219,9 @@ def test_plans_summary_no_spaces(tmp_path, monkeypatch):
 
 
 def test_plans_summary_single_space(tmp_path, monkeypatch):
-    home = tmp_path / "home"
-    monkeypatch.setattr(Path, "home", lambda: home)
+    config_dir = _set_global_config_dir(monkeypatch, tmp_path)
 
-    space = home / ".navig" / "spaces" / "devops"
+    space = config_dir / "spaces" / "devops"
     space.mkdir(parents=True, exist_ok=True)
     (space / "CURRENT_PHASE.md").write_text(
         "---\ntitle: CI Pipeline\nphase: 1\nstatus: active\ncompletion_pct: 60\n---\n\n# CI Pipeline\n",
@@ -234,17 +234,16 @@ def test_plans_summary_single_space(tmp_path, monkeypatch):
 
 
 def test_plans_summary_missing_phase_shows_dash_row(tmp_path, monkeypatch):
-    home = tmp_path / "home"
-    monkeypatch.setattr(Path, "home", lambda: home)
+    config_dir = _set_global_config_dir(monkeypatch, tmp_path)
 
-    good = home / ".navig" / "spaces" / "finance"
+    good = config_dir / "spaces" / "finance"
     good.mkdir(parents=True, exist_ok=True)
     (good / "CURRENT_PHASE.md").write_text(
         "---\nstatus: active\ncompletion_pct: 30\nlast_updated: 2025-07-01\n---\n\n# Budget",
         encoding="utf-8",
     )
 
-    missing = home / ".navig" / "spaces" / "empty"
+    missing = config_dir / "spaces" / "empty"
     missing.mkdir(parents=True, exist_ok=True)
 
     result = runner.invoke(plans_app, ["summary", "--path", str(tmp_path / "repo")])
@@ -255,11 +254,10 @@ def test_plans_summary_missing_phase_shows_dash_row(tmp_path, monkeypatch):
 
 
 def test_plans_summary_all_spaces_table(tmp_path, monkeypatch):
-    home = tmp_path / "home"
-    monkeypatch.setattr(Path, "home", lambda: home)
+    config_dir = _set_global_config_dir(monkeypatch, tmp_path)
 
     for sname in ("alpha", "beta"):
-        space = home / ".navig" / "spaces" / sname
+        space = config_dir / "spaces" / sname
         space.mkdir(parents=True, exist_ok=True)
         (space / "CURRENT_PHASE.md").write_text(
             f"---\nstatus: active\ncompletion_pct: 50\nlast_updated: 2025-07-0{1 if sname == 'alpha' else 2}\n---\n\n# {sname.title()} Phase\n",

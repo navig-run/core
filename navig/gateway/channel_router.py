@@ -8,8 +8,8 @@ Handles:
 - NAVIG CLI integration
 """
 
-from datetime import datetime
 import re
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from navig.debug_logger import get_debug_logger

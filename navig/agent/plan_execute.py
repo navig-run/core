@@ -408,7 +408,7 @@ class PlanExecuteAgent:
 def format_plan_report(plan: ExecutionPlan) -> str:
     """Format a human-readable report from a completed execution plan."""
     lines: list[str] = [
-        f"## Execution Report",
+        "## Execution Report",
         f"**Task:** {plan.task}",
         f"**Started:** {plan.created_at}",
         f"**Total time:** {plan.total_elapsed_ms / 1000:.1f}s",

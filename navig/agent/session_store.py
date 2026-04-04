@@ -37,6 +37,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import secrets
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -139,15 +141,29 @@ class SessionMetadata:
 # ─────────────────────────────────────────────────────────────
 
 
+_SESSION_ID_LOCK = threading.Lock()
+_SESSION_ID_LAST_TS = ""
+_SESSION_ID_COUNTER = 0
+
+
 def _generate_session_id() -> str:
     """Generate a human-readable, sortable, unique session ID.
 
     Format: ``YYYYMMDD_HHMMSS_<4-hex>``
     Example: ``20250124_143022_a7f3``
     """
-    import secrets
+    global _SESSION_ID_LAST_TS, _SESSION_ID_COUNTER
+
     ts = time.strftime("%Y%m%d_%H%M%S", time.localtime())
-    suffix = secrets.token_hex(2)  # 4 hex chars
+
+    with _SESSION_ID_LOCK:
+        if ts != _SESSION_ID_LAST_TS:
+            _SESSION_ID_LAST_TS = ts
+            _SESSION_ID_COUNTER = secrets.randbelow(0x10000)
+        else:
+            _SESSION_ID_COUNTER = (_SESSION_ID_COUNTER + 1) & 0xFFFF
+        suffix = f"{_SESSION_ID_COUNTER:04x}"
+
     return f"{ts}_{suffix}"
 
 

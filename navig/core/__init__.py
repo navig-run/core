@@ -22,14 +22,14 @@ Core Utilities (Agent-inspired):
 - hooks: Event-driven hook system for extensibility
 """
 
+from navig.core.apps import AppManager
+from navig.core.context import ContextManager
+from navig.core.execution import ExecutionSettings
+from navig.core.hosts import HostManager
 from navig.core.shared_config import Config
 
 # Extracted config managers (for direct imports)
 from navig.core.yaml_io import atomic_write_yaml, log_shadow_anomaly
-from navig.core.hosts import HostManager
-from navig.core.apps import AppManager
-from navig.core.context import ContextManager
-from navig.core.execution import ExecutionSettings
 
 
 # Lazy imports for optional modules

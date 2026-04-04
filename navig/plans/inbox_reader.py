@@ -23,7 +23,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-
 # ── Public types ──────────────────────────────────────────────
 
 SuffixState = Literal["active", "done", "archive", "review"]

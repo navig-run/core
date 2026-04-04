@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-import sys
 import os
+import sys
+
 
 def main():
     print("Hello from Navig Script!")

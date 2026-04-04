@@ -20,9 +20,9 @@ def run_help(
     from rich.console import Console
     from rich.table import Table
 
+    from navig.cli._callbacks import show_subcommand_help
     from navig.cli.help_dictionaries import HELP_REGISTRY
     from navig.cli.registry import get_schema as _get_schema
-    from navig.cli._callbacks import show_subcommand_help
 
     # --schema: emit the canonical command registry and exit
     if schema_out:

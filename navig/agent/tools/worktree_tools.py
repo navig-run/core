@@ -32,7 +32,7 @@ def _get_manager():
     """
     import os
 
-    from navig.agent.worktree import get_manager, reset_manager, _manager
+    from navig.agent.worktree import _manager, get_manager, reset_manager
 
     if _manager is None:
         # Try current working directory as repo root

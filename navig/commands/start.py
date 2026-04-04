@@ -4,7 +4,6 @@ import typer
 
 from navig.commands.space import space_switch
 
-
 app = typer.Typer(
     name="start",
     help="Start work in a space and show immediate next actions.",

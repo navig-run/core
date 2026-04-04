@@ -26,9 +26,8 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from navig.platform import paths
-
 from navig.identity.models import SocialLink, UserProfile
+from navig.platform import paths
 
 logger = logging.getLogger(__name__)
 

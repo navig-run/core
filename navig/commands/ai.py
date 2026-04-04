@@ -12,6 +12,7 @@ import subprocess
 from typing import Any
 
 import typer
+
 from navig import console_helper as ch
 from navig.cli._callbacks import show_subcommand_help
 
@@ -188,7 +189,7 @@ def ai_callback(ctx: typer.Context):
             _dispatch_hybrid(ctx, best.subcommand, text)
         else:
             top2 = top_two_intents(text)
-            ch.warning(f"Ambiguous input — top interpretations:")
+            ch.warning("Ambiguous input — top interpretations:")
             for i, r in enumerate(top2, 1):
                 ch.dim(f"  {i}. navig ai {r.subcommand}  (confidence {r.confidence:.0%})")
             ch.dim("Run one of the above directly, or navig ai ask \"<question>\" to ask freely.")

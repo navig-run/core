@@ -286,9 +286,9 @@ def _resolve_host_discovery(
 
     Returns *None* (after emitting an error) when the host cannot be found.
     """
+    from navig.cli.recovery import require_active_host
     from navig.config import get_config_manager
     from navig.discovery import ServerDiscovery
-    from navig.cli.recovery import require_active_host
 
     config_manager = get_config_manager()
     host_name = require_active_host(options, config_manager)

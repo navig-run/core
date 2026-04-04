@@ -7,21 +7,26 @@ from navig.spaces.next_action import (
 )
 
 
+def _set_global_config_dir(monkeypatch, tmp_path) -> Path:
+    config_dir = tmp_path / ".navig-global"
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(config_dir))
+    return config_dir
+
+
 def test_first_pending_task_extracts_checkbox_text():
     text = "- [x] done\n- [ ] Ship milestone\n"
     assert first_pending_task(text) == "Ship milestone"
 
 
 def test_select_best_next_action_prefers_lowest_progress(tmp_path, monkeypatch):
-    home = tmp_path / "home"
-    monkeypatch.setattr(Path, "home", lambda: home)
+    config_dir = _set_global_config_dir(monkeypatch, tmp_path)
 
-    low = home / ".navig" / "spaces" / "project"
+    low = config_dir / "spaces" / "project"
     low.mkdir(parents=True, exist_ok=True)
     (low / "VISION.md").write_text("---\ngoal: Launch v2\n---\n", encoding="utf-8")
     (low / "CURRENT_PHASE.md").write_text("---\ncompletion_pct: 10\n---\n\n- [ ] Draft release checklist\n", encoding="utf-8")
 
-    high = home / ".navig" / "spaces" / "health"
+    high = config_dir / "spaces" / "health"
     high.mkdir(parents=True, exist_ok=True)
     (high / "VISION.md").write_text("---\ngoal: Strong body\n---\n", encoding="utf-8")
     (high / "CURRENT_PHASE.md").write_text("---\ncompletion_pct: 70\n---\n\n- [ ] Gym session\n", encoding="utf-8")
@@ -33,10 +38,9 @@ def test_select_best_next_action_prefers_lowest_progress(tmp_path, monkeypatch):
 
 
 def test_build_continuation_prompt_includes_space_goal_task(tmp_path, monkeypatch):
-    home = tmp_path / "home"
-    monkeypatch.setattr(Path, "home", lambda: home)
+    config_dir = _set_global_config_dir(monkeypatch, tmp_path)
 
-    space = home / ".navig" / "spaces" / "finance"
+    space = config_dir / "spaces" / "finance"
     space.mkdir(parents=True, exist_ok=True)
     (space / "VISION.md").write_text("---\ngoal: Build emergency fund\n---\n", encoding="utf-8")
     (space / "CURRENT_PHASE.md").write_text("---\ncompletion_pct: 33\n---\n\n- [ ] Move 10% salary to savings\n", encoding="utf-8")

@@ -92,6 +92,7 @@ def test_build_step_registry_includes_new_integration_steps(tmp_path: Path) -> N
 
     assert step_ids == [
         "workspace-init",
+        "terminal-setup",
         "workspace-templates",
         "config-file",
         "configure-ssh",

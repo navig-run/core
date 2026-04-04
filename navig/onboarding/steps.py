@@ -28,7 +28,6 @@ from typing import Any
 from .engine import EngineConfig, OnboardingStep, StepResult
 from .genesis import GenesisData
 
-
 _WEB_SEARCH_PROVIDER_CATALOG: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "perplexity",

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import sqlite3
 import re
+import sqlite3
 from pathlib import Path
 from typing import Any
-
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS contacts (

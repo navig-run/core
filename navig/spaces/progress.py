@@ -7,7 +7,6 @@ from pathlib import Path
 
 from navig.spaces.resolver import discover_space_paths
 
-
 _FRONTMATTER_RE = re.compile(r"^---\n([\s\S]*?)\n---\n?", re.MULTILINE)
 _CHECKBOX_RE = re.compile(r"^\s*-\s*\[([ xX])\]", re.MULTILINE)
 

@@ -61,20 +61,20 @@ def render_switch_confirmation(config: PersonaConfig) -> str:
     switch feels immediate and sensory.
     """
     confirmations = {
-        "default": f"✅ Back to default mode. How can I help?",
-        "assistant": f"✅ Assistant persona active. Ready to help — what shall we tackle?",
-        "tyler": f"✅ Tyler is in. What do you need?",
+        "default": "✅ Back to default mode. How can I help?",
+        "assistant": "✅ Assistant persona active. Ready to help — what shall we tackle?",
+        "tyler": "✅ Tyler is in. What do you need?",
         "storyteller": (
-            f"✅ The stage is set. The storyteller awakens — speak your tale, "
-            f"and let's see where it leads."
+            "✅ The stage is set. The storyteller awakens — speak your tale, "
+            "and let's see where it leads."
         ),
         "philosopher": (
-            f"✅ A welcome return to the examined life. "
-            f"What question sits with you today?"
+            "✅ A welcome return to the examined life. "
+            "What question sits with you today?"
         ),
         "teacher": (
-            f"✅ Lesson mode engaged. "
-            f"What would you like to understand more deeply?"
+            "✅ Lesson mode engaged. "
+            "What would you like to understand more deeply?"
         ),
     }
     # Custom / user-installed personas get a generic styled line

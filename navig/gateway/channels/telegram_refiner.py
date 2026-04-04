@@ -450,7 +450,7 @@ class RefinementEngine:
         text = (
             f"🤔 *Question {q_num}/{total}*\n\n"
             f"{_mdv2_escape(q)}\n\n"
-            "_Reply with your answer, or tap Skip\._"
+            r"_Reply with your answer, or tap Skip\._"
         )
         msg = await self.channel.send_message(
             session.chat_id,

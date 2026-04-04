@@ -11,7 +11,6 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-
 # ── Directory tree ────────────────────────────────────────────
 
 _DIRS: list[str] = [

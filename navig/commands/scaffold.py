@@ -7,8 +7,8 @@ from pathlib import Path
 
 import typer
 
-from navig.cli._callbacks import show_subcommand_help
 from navig import console_helper as ch
+from navig.cli._callbacks import show_subcommand_help
 from navig.config import get_config_manager
 from navig.core.scaffolder import Scaffolder
 from navig.remote import RemoteOperations

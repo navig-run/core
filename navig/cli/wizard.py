@@ -285,7 +285,7 @@ class SetupWizard:
             vault_path = vault_labels[0] if vault_labels else env_var.lower().replace("_", "/")
             vlt = get_vault_v2()
             vlt.put(vault_path, value.encode())
-            print(f"  ✅ Saved to vault (encrypted)")
+            print("  ✅ Saved to vault (encrypted)")
             return
         except Exception:
             pass  # Fall through to .env fallback

@@ -6,8 +6,8 @@ Supports adding, listing, editing, deleting, testing, and cloning credentials.
 """
 
 import json
-import sys
 import re
+import sys
 
 import typer
 

@@ -334,6 +334,7 @@ def ensure_telegram_uid(
     # Persist to vault v2 (fatal on failure — do not continue with unsaved UID)
     try:
         import json as _json
+
         from navig.vault.core_v2 import get_vault_v2
 
         _vault = vault if vault is not None else get_vault_v2()

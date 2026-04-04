@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-
 # ---------------------------------------------------------------------------
 # Canonical persona names — shipped with the package
 # ---------------------------------------------------------------------------

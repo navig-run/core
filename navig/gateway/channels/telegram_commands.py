@@ -1000,83 +1000,39 @@ class TelegramCommandsMixin:
     @staticmethod
     def _generate_help_text(deck_enabled: bool = False) -> str:
         """Generate deterministic MarkdownV2 /help output."""
-        hidden_help_commands = {
-            "kick",
-            "mute",
-            "unmute",
-            "search",
-            "respect",
-            "stats_global",
+        category_titles = {
+            "core": "🚀 Core",
+            "ai": f"{_ni('brain')} AI and Models",
+            "spaces": "🗂️ Spaces and Planning",
+            "plans": "🗂️ Spaces and Planning",
+            "tools": "🛠️ Operations",
+            "ops": "🛠️ Operations",
+            "system": "🛠️ Operations",
         }
 
-        sections: list[tuple[str, list[tuple[str, str]]]] = [
-            (
-                "🚀 Core",
-                [
-                    ("/start", "Wake up greeting"),
-                    ("/help", "Full command reference"),
-                    ("/status", "System and setup readiness"),
-                    ("/ping", "Quick heartbeat status"),
-                    ("/briefing", "System briefing snapshot"),
-                ],
-            ),
-            (
-                f"{_ni('brain')} AI and Models",
-                [
-                    ("/settings", "Main configuration hub"),
-                    ("/voice", "Voice and TTS settings"),
-                    ("/models", "Model and routing snapshot"),
-                    ("/providers", "Provider hub and model picker"),
-                    ("/mode", "Set focus mode"),
-                    ("/big", "Use big model next"),
-                    ("/small", "Use small model next"),
-                    ("/coder", "Use coder model next"),
-                    ("/auto", "Reset to automatic model selection"),
-                ],
-            ),
-            (
-                "🗂️ Spaces and Planning",
-                [
-                    ("/spaces", "List and switch spaces"),
-                    ("/space", "Activate one space"),
-                    ("/intake", "Run guided planning intake"),
-                    ("/continue", "Enable autonomous continuation"),
-                    ("/plan", "Plans workflow shortcuts"),
-                ],
-            ),
-            (
-                "🛠️ Operations",
-                [
-                    ("/docker", "Docker status and actions"),
-                    ("/tables", "Database tables"),
-                    ("/df", "Disk usage"),
-                    ("/top", "Live process snapshot"),
-                    ("/logs", "Recent logs"),
-                    ("/weather", "Weather report"),
-                    ("/restart", "Restart NAVIG services"),
-                ],
-            ),
-        ]
-
-        if deck_enabled:
-            sections[-1][1].append(("/deck", "Open command deck"))
+        grouped: dict[str, list[SlashCommandEntry]] = {}
+        for entry in _iter_unique_registry(visible_only=True):
+            if entry.command == "deck" and not deck_enabled:
+                continue
+            grouped.setdefault(entry.category, []).append(entry)
 
         lines: list[str] = [
             "📋 *NAVIG Command Center*",
             "",
-            "Use a command below or type naturally\.",
+            r"Use a command below or type naturally\.",
             "",
         ]
 
-        for heading, commands in sections:
+        for category, commands in grouped.items():
+            heading = category_titles.get(category, f"📌 {category.replace('_', ' ').title()}")
             lines.append(f"*{heading}*")
-            for cmd, desc in commands:
-                if cmd.removeprefix("/") in hidden_help_commands:
-                    continue
-                lines.append(f"• {_escape_markdown_v2(cmd)} — {_escape_markdown_v2(desc)}")
+            for entry in commands:
+                cmd = f"/{entry.command}"
+                desc = (entry.description or "").strip() or "No description"
+                lines.append(f"• {cmd} — {_escape_markdown_v2(desc)}")
             lines.append("")
 
-        lines.append("💬 Natural language also works: show status, restart daemon, check docker\.")
+        lines.append(r"💬 Natural language also works: show status, restart daemon, check docker\.")
         return "\n".join(lines).rstrip()
 
     # -- Core slash handlers ---------------------------------------------------
@@ -3086,6 +3042,20 @@ class TelegramCommandsMixin:
                 ready = False
 
             if not ready:
+                # Show 🔑 stub for cloud providers that have no vault key stored at all —
+                # this invites the user to configure their API key.
+                # When a key exists but isn't validated, hide the provider instead
+                # (the user already knows about it; showing it would be confusing).
+                if (
+                    getattr(manifest, "tier", "") == "cloud"
+                    and getattr(manifest, "requires_key", False)
+                    and not vault_has_key
+                ):
+                    stub_btn = {
+                        "text": f"{manifest.emoji} {manifest.display_name} 🔑",
+                        "callback_data": f"prov_cfg_{manifest.id}",
+                    }
+                    keyboard_rows.append([stub_btn])
                 continue
 
             ready_provider_count += 1
@@ -3106,7 +3076,7 @@ class TelegramCommandsMixin:
 
         if ready_provider_count == 0:
             lines.append("")
-            lines.append("ℹ️ No configured providers found.")
+            lines.append("ℹ️ No vault-backed cloud providers are ready.")
 
         noai_prefix = "✅ " if user_pref == "noai" else ""
         keyboard_rows.append(

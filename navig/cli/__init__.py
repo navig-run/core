@@ -131,7 +131,6 @@ from navig.cli._callbacks import (  # noqa: E402
 )
 from navig.cli.help_dictionaries import HELP_REGISTRY  # noqa: E402
 
-
 # Initialize CLI app
 app = typer.Typer(
     name="navig",
@@ -1252,7 +1251,7 @@ from navig.cli.registration import (
 # Re-export for backward compatibility (tests, tooling import from cli.__init__)
 __all_registration__ = [
     "_EXTERNAL_CMD_MAP",
-    "_HIDDEN_COMMANDS", 
+    "_HIDDEN_COMMANDS",
     "_register_external_commands",
     "get_external_commands",
     "is_external_command",

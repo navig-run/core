@@ -108,8 +108,8 @@ def run_remote_command(
     For complex commands with heredocs, JSON, or special characters,
     use --b64 flag to encode as Base64 and bypass all shell escaping issues.
     """
-    from navig.config import get_config_manager
     from navig.cli.recovery import require_active_host
+    from navig.config import get_config_manager
     from navig.remote import RemoteOperations
 
     config_manager = get_config_manager()
@@ -588,8 +588,8 @@ def _try_decode_b64(text: str) -> str | None:
 
 def install_remote_package(package: str, options: dict[str, Any]):
     """Auto-detect package manager and install."""
-    from navig.config import get_config_manager
     from navig.cli.recovery import require_active_host
+    from navig.config import get_config_manager
     from navig.remote import RemoteOperations
 
     config_manager = get_config_manager()

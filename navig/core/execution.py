@@ -44,12 +44,12 @@ VALID_CONFIRMATION_LEVELS = ["critical", "standard", "verbose"]
 
 class ExecutionConfigProvider(Protocol):
     """Protocol for execution settings config provider (duck-typed dependency injection)."""
-    
+
     @property
     def global_config(self) -> dict[str, Any]:
         """Global NAVIG configuration dictionary."""
         ...
-    
+
     def _save_global_config(self, config: dict[str, Any]) -> None:
         """Save global configuration to disk."""
         ...
@@ -71,10 +71,10 @@ class ExecutionSettings:
     Args:
         provider: Config provider implementing ExecutionConfigProvider protocol
     """
-    
+
     def __init__(self, provider: ExecutionConfigProvider):
         self._provider = provider
-    
+
     def get_mode(self) -> str:
         """
         Get the current execution mode.
@@ -95,11 +95,11 @@ class ExecutionSettings:
                         return execution["mode"]
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
-        
+
         # Fall back to global config
         execution = self._provider.global_config.get("execution", {})
         return execution.get("mode", "interactive")
-    
+
     def set_mode(self, mode: str) -> None:
         """
         Set the execution mode.
@@ -112,13 +112,13 @@ class ExecutionSettings:
         """
         if mode not in VALID_MODES:
             raise ValueError(f"Invalid mode '{mode}'. Must be one of: {', '.join(VALID_MODES)}")
-        
+
         config = self._provider.global_config
         if "execution" not in config:
             config["execution"] = {}
         config["execution"]["mode"] = mode
         self._provider._save_global_config(config)
-    
+
     def get_confirmation_level(self) -> str:
         """
         Get the current confirmation level.
@@ -139,11 +139,11 @@ class ExecutionSettings:
                         return execution["confirmation_level"]
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
-        
+
         # Fall back to global config
         execution = self._provider.global_config.get("execution", {})
         return execution.get("confirmation_level", "standard")
-    
+
     def set_confirmation_level(self, level: str) -> None:
         """
         Set the confirmation level.
@@ -158,13 +158,13 @@ class ExecutionSettings:
             raise ValueError(
                 f"Invalid level '{level}'. Must be one of: {', '.join(VALID_CONFIRMATION_LEVELS)}"
             )
-        
+
         config = self._provider.global_config
         if "execution" not in config:
             config["execution"] = {}
         config["execution"]["confirmation_level"] = level
         self._provider._save_global_config(config)
-    
+
     def get_settings(self) -> dict[str, str]:
         """
         Get all execution settings.

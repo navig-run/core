@@ -15,8 +15,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from navig.cli._callbacks import show_subcommand_help
 from navig import console_helper as ch
+from navig.cli._callbacks import show_subcommand_help
 from navig.config import get_config_manager
 from navig.remote import RemoteOperations
 

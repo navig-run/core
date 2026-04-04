@@ -207,7 +207,7 @@ def run_llm(
     # --- Effort resolution ---
     thinking_params: dict[str, Any] = {}
     try:
-        from navig.agent.effort import resolve_effort, get_thinking_params, auto_detect_effort
+        from navig.agent.effort import auto_detect_effort, get_thinking_params, resolve_effort
 
         if effort is not None:
             eff_level = resolve_effort(effort)

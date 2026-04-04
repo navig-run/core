@@ -4,9 +4,9 @@ App Initialization Commands
 Initialize app-specific .navig/ directory for hierarchical configuration.
 """
 
-import shutil
 import json
 import os
+import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -16,7 +16,6 @@ import yaml
 
 from navig import console_helper as ch
 from navig.platform.paths import onboarding_json_path
-
 
 _CHAT_ONBOARDING_CANONICAL_STEPS: tuple[tuple[str, str, str], ...] = (
     ("ai-provider", "Choose AI provider", "Open Providers and choose your AI brain"),
@@ -1283,6 +1282,7 @@ def run_init_command(
 
     if state is None and not reconfigure and not provider:
         import json as _json
+
         from rich.console import Console as _C
 
         payload = show_init_status(render=not want_json)

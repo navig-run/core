@@ -587,9 +587,9 @@ class CronService:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            
+
             stdout_bytes, stderr_bytes = await process.communicate()
-            
+
             output = stdout_bytes.decode()
             if stderr_bytes:
                 output += f"\n{stderr_bytes.decode()}"

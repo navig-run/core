@@ -9,9 +9,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from navig.platform import paths
-
 from navig import console_helper as ch
+from navig.platform import paths
 
 
 class ErrorLog:

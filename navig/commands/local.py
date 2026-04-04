@@ -11,8 +11,8 @@ Provides:
 
 import typer
 
-from navig.cli._callbacks import show_subcommand_help
 from navig import console_helper as ch
+from navig.cli._callbacks import show_subcommand_help
 
 # Lazy imports for heavy modules
 _local_ops = None

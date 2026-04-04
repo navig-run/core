@@ -17,7 +17,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 _TERMINAL_JSON_NAME = "terminal.json"
 
 
