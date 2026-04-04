@@ -360,8 +360,8 @@ navig skills tree                  # Show skills by category
 navig skills show <name>           # Show skill details and commands
 navig skills run <skill>:<cmd>     # Run a skill command
 navig skills run <skill> [args]    # Run skill entrypoint (py/js)
-navig ai ask "question"            # Ask AI
-navig ai analyze                   # Analyze host
+navig ask "question"               # Ask AI (canonical)
+navig ai ask "question"            # Deprecated alias to navig ask
 navig wiki show <topic>            # Show wiki page
 navig wiki list                    # List wiki pages
 ```
@@ -4579,7 +4579,7 @@ See `.navig/plans/CHANNEL_ARCHITECTURE.md` for the full design:
 | Channel  | Status    | Description |
 |----------|-----------|-------------|
 | Telegram | Active    | Primary channel (raw Bot API via httpx) |
-| CLI      | Active    | `navig ai ask` for one-shot queries |
+| CLI      | Active    | `navig ask` for one-shot queries (`navig ai ask` is deprecated) |
 | Web UI   | Planned   | FastAPI + WebSocket streaming |
 | Discord  | Planned   | discord.py adapter |
 | Email    | Planned   | IMAP polling + SMTP |
@@ -5852,7 +5852,7 @@ git (added to `.gitignore` automatically on first scan).
 
 ### 24.8 Automatic AI Context Injection
 
-Every AI turn — whether through `navig ai ask`, the Gateway REST API, Telegram, or any
+Every AI turn — whether through `navig ask` (or deprecated `navig ai ask`), the Gateway REST API, Telegram, or any
 other channel — automatically injects the following memory sources into the system prompt:
 
 | Source | What is injected | CLI to manage |

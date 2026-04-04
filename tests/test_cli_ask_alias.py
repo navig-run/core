@@ -83,6 +83,43 @@ def test_ai_ask_subcommand_emits_deprecation_warning(monkeypatch, capsys):
     assert "navig ask" in (out + err)
 
 
+def test_ai_explain_subcommand_emits_deprecation_warning(monkeypatch, capsys):
+    """navig ai explain must print a deprecation warning and still delegate."""
+    import navig.commands.ai as ai_mod
+
+    monkeypatch.setattr(ai_mod, "ask_ai", lambda *a, **kw: None)
+
+    _code, out, err = _invoke_cli(["ai", "explain", "/var/log/syslog"], capsys)
+    assert "deprecated" in (out + err).lower()
+    assert "navig ask" in (out + err)
+
+
+def test_ai_suggest_subcommand_emits_deprecation_warning(monkeypatch, capsys):
+    """navig ai suggest must print a deprecation warning and still delegate."""
+    import navig.commands.ai as ai_mod
+
+    monkeypatch.setattr(ai_mod, "ask_ai", lambda *a, **kw: None)
+
+    _code, out, err = _invoke_cli(["ai", "suggest"], capsys)
+    assert "deprecated" in (out + err).lower()
+    assert "navig ask" in (out + err)
+
+
+def test_ai_diagnose_subcommand_emits_deprecation_warning(monkeypatch, capsys):
+    """navig ai diagnose must print a deprecation warning and still delegate."""
+    import types
+    import sys
+
+    from navig.commands import ai as ai_mod
+
+    assistant_stub = types.SimpleNamespace(analyze_cmd=lambda *_a, **_kw: None)
+    monkeypatch.setitem(sys.modules, "navig.commands.assistant", assistant_stub)
+
+    _code, out, err = _invoke_cli(["ai", "diagnose"], capsys)
+    assert "deprecated" in (out + err).lower()
+    assert "navig ask" in (out + err)
+
+
 def test_brain_subapp_is_reachable(capsys):
     """navig brain must be reachable (not 'No such command') after registration."""
     code, out, err = _invoke_cli(["brain", "prompts", "list"], capsys)

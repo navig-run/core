@@ -967,9 +967,9 @@ AI = CommandHelp(
     description="AI assistant for server management and troubleshooting.",
     epilog="""
 Examples:
-  navig ai ask "How do I restart nginx?"
-  navig ai explain "iptables -L"
-  navig ai diagnose                Diagnose server issues
+    navig ask "How do I restart nginx?"
+    navig ask "explain iptables -L"
+    navig ask "diagnose server issues"
 """,
 )
 
