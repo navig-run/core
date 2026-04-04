@@ -1269,6 +1269,9 @@ class CallbackHandler:
         }
         if cb_data in picker_map:
             prov_id = picker_map[cb_data]
+            # Answer the callback immediately so Telegram removes the loading
+            # spinner regardless of how long the picker takes to render.
+            await self._answer(cb_id, "")
             try:
                 await self.channel._show_provider_model_picker(
                     chat_id,
@@ -1277,7 +1280,6 @@ class CallbackHandler:
                     selected_tier="s",
                     message_id=message_id,
                 )
-                await self._answer(cb_id, "")
             except TypeError as exc:
                 err = str(exc)
                 signature_mismatch = (
@@ -1287,7 +1289,6 @@ class CallbackHandler:
                 )
                 if signature_mismatch:
                     await self.channel._show_provider_model_picker(chat_id, prov_id=prov_id)
-                    await self._answer(cb_id, "")
                 else:
                     logger.warning(
                         "Provider picker failed for %s: %s",
@@ -1296,14 +1297,8 @@ class CallbackHandler:
                     )
                     try:
                         await self.channel._show_provider_model_picker(chat_id, prov_id)
-                        await self._answer(cb_id, "")
-                        return
                     except Exception:
-                        await self._answer(
-                            cb_id,
-                            f"⚠️ Couldn't open {prov_id} picker",
-                            show_alert=True,
-                        )
+                        # Callback already answered; fall back to providers hub silently.
                         try:
                             await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
                         except TypeError:
@@ -1316,14 +1311,8 @@ class CallbackHandler:
                 )
                 try:
                     await self.channel._show_provider_model_picker(chat_id, prov_id)
-                    await self._answer(cb_id, "")
-                    return
                 except Exception:
-                    await self._answer(
-                        cb_id,
-                        f"⚠️ Couldn't open {prov_id} picker",
-                        show_alert=True,
-                    )
+                    # Callback already answered; fall back to providers hub silently.
                     try:
                         await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
                     except TypeError:
