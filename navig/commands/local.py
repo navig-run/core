@@ -695,3 +695,44 @@ def software_search_cmd(
 ):
     """Search installed packages by name."""
     software_search(query, ctx.obj)
+
+
+# ============================================================================
+# hosts_app — Typer CLI group (extracted from navig/cli/__init__.py)
+# ============================================================================
+
+hosts_app = typer.Typer(
+    help="System hosts file management (view, edit, add entries)",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@hosts_app.callback()
+def hosts_callback(ctx: typer.Context):
+    """Hosts file operations - run without subcommand for help."""
+    if ctx.invoked_subcommand is None:
+        show_subcommand_help("hosts", ctx)
+        raise typer.Exit()
+
+
+@hosts_app.command("view")
+def hosts_view_cmd(ctx: typer.Context):
+    """View the system hosts file with syntax highlighting."""
+    hosts_view(ctx.obj)
+
+
+@hosts_app.command("edit")
+def hosts_edit_cmd(ctx: typer.Context):
+    """Open hosts file in editor (requires admin)."""
+    hosts_edit(ctx.obj)
+
+
+@hosts_app.command("add")
+def hosts_add_cmd(
+    ctx: typer.Context,
+    ip: str = typer.Argument(..., help="IP address"),
+    hostname: str = typer.Argument(..., help="Hostname to add"),
+):
+    """Add an entry to the hosts file (requires admin)."""
+    hosts_add(ip, hostname, ctx.obj)

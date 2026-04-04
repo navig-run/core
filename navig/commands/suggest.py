@@ -550,3 +550,110 @@ def show_quick_actions(plain: bool = False, json_out: bool = False) -> None:
     console.print(table)
     console.print()
     console.print("[dim]Run with: navig quick <name>[/dim]")
+
+
+# ============================================================================
+# quick_app — Typer CLI group (extracted from navig/cli/__init__.py)
+# ============================================================================
+
+import typer  # noqa: E402
+
+from navig import console_helper as ch  # noqa: E402
+from navig.cli._callbacks import show_subcommand_help  # noqa: E402
+
+quick_app = typer.Typer(
+    help="Quick action shortcuts for frequent operations",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+
+
+@quick_app.callback()
+def quick_callback(ctx: typer.Context):
+    """Quick actions - shortcuts for frequent operations."""
+    if ctx.invoked_subcommand is None:
+        show_quick_actions()
+        raise typer.Exit()
+
+
+@quick_app.command("list")
+def quick_list(
+    ctx: typer.Context,
+    plain: bool = typer.Option(False, "--plain", help="Plain text output"),
+    json_out: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """List all quick actions."""
+    show_quick_actions(plain=plain, json_out=json_out)
+
+
+@quick_app.command("run")
+def quick_run(
+    ctx: typer.Context,
+    name: str = typer.Argument(..., help="Quick action name to run"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show command without executing"),
+):
+    """
+    Run a quick action by name.
+
+    Examples:
+        navig quick run deploy
+        navig quick run backup --dry-run
+        navig q run status
+    """
+    run_quick_action(name, dry_run=dry_run)
+
+
+@quick_app.command("add")
+def quick_add(
+    ctx: typer.Context,
+    name: str = typer.Argument(..., help="Short name for the action"),
+    command: str = typer.Argument(..., help="Full navig command to run"),
+    description: str = typer.Option("", "--desc", "-d", help="Optional description"),
+):
+    """
+    Add a quick action shortcut.
+
+    Examples:
+        navig quick add deploy "run 'cd /var/www && git pull'"
+        navig quick add backup "db dump --output /tmp/backup.sql"
+        navig quick add status "dashboard --no-live"
+
+    Then run with: navig quick run deploy
+    """
+    # Ensure command starts with navig
+    if not command.startswith("navig "):
+        command = f"navig {command}"
+
+    add_quick_action(name, command, description)
+
+
+@quick_app.command("remove")
+def quick_remove(
+    ctx: typer.Context,
+    name: str = typer.Argument(..., help="Quick action name to remove"),
+):
+    """Remove a quick action."""
+    import yaml
+
+    from navig.config import get_config_manager
+
+    config_manager = get_config_manager()
+    quick_file = Path(config_manager.global_config_dir) / "quick_actions.yaml"
+
+    if not quick_file.exists():
+        ch.error(f"Quick action '{name}' not found.")
+        return
+
+    with open(quick_file, encoding="utf-8") as f:
+        actions = yaml.safe_load(f) or {}
+
+    if name not in actions:
+        ch.error(f"Quick action '{name}' not found.")
+        return
+
+    del actions[name]
+
+    with open(quick_file, "w", encoding="utf-8") as f:
+        yaml.safe_dump(actions, f, default_flow_style=False)
+
+    ch.success(f"Removed quick action: {name}")

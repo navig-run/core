@@ -78,6 +78,12 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "heartbeat": ("navig.commands.gateway", "heartbeat_app"),
     "approve": ("navig.commands.gateway", "approve_app"),
     "queue": ("navig.commands.gateway", "queue_app"),
+    # ── Phase 2b: task, install, quick, hosts ─────────────────────────────────
+    "task": ("navig.commands.workflow", "task_app"),
+    "install": ("navig.commands.install", "install_app"),
+    "quick": ("navig.commands.suggest", "quick_app"),
+    "q": ("navig.commands.suggest", "quick_app"),
+    "hosts": ("navig.commands.local", "hosts_app"),
     "cortex": ("navig.commands.cortex", "cortex_app"),
     "desktop": ("navig.commands.desktop", "desktop_app"),
     "net": ("navig.commands.net", "net_app"),
