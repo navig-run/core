@@ -45,6 +45,11 @@ def _make_phase(space_dir: Path, **fm_fields: str) -> Path:
     return _write(space_dir / "CURRENT_PHASE.md", "\n".join(lines))
 
 
+def _set_test_home(monkeypatch: pytest.MonkeyPatch, home: Path) -> None:
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(home / ".navig"))
+
+
 # ─────────────────────────────────────────────────────────────
 # Unit tests — helper functions
 # ─────────────────────────────────────────────────────────────
@@ -92,7 +97,7 @@ class TestPlanContextGather:
     def test_gather_returns_all_keys(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Snapshot dict must always have the canonical keys."""
         home = tmp_path / "home"
-        monkeypatch.setattr(Path, "home", lambda: home)
+        _set_test_home(monkeypatch, home)
 
         space = _make_space(tmp_path)
         _make_phase(space, title="Setup CI", phase="1", status="active", completion_pct="40")
@@ -105,7 +110,7 @@ class TestPlanContextGather:
 
     def test_gather_reads_current_phase(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         home = tmp_path / "home"
-        monkeypatch.setattr(Path, "home", lambda: home)
+        _set_test_home(monkeypatch, home)
 
         space = _make_space(tmp_path)
         _make_phase(
@@ -127,7 +132,7 @@ class TestPlanContextGather:
 
     def test_gather_reads_dev_plan(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         home = tmp_path / "home"
-        monkeypatch.setattr(Path, "home", lambda: home)
+        _set_test_home(monkeypatch, home)
         _make_space(tmp_path)
 
         repo = tmp_path / "repo"
@@ -146,7 +151,7 @@ class TestPlanContextGather:
 
     def test_gather_counts_inbox(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         home = tmp_path / "home"
-        monkeypatch.setattr(Path, "home", lambda: home)
+        _set_test_home(monkeypatch, home)
         _make_space(tmp_path)
 
         repo = tmp_path / "repo"
@@ -163,7 +168,7 @@ class TestPlanContextGather:
     def test_gather_no_space_returns_errors(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When space resolution fails, gather returns gracefully with errors."""
         home = tmp_path / "home"
-        monkeypatch.setattr(Path, "home", lambda: home)
+        _set_test_home(monkeypatch, home)
 
         ctx = PlanContext(cwd=tmp_path / "nonexistent")
         snapshot = ctx.gather("nonexistent_space")
@@ -173,7 +178,7 @@ class TestPlanContextGather:
 
     def test_gather_finds_docs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         home = tmp_path / "home"
-        monkeypatch.setattr(Path, "home", lambda: home)
+        _set_test_home(monkeypatch, home)
         _make_space(tmp_path)
 
         repo = tmp_path / "repo"
@@ -190,7 +195,7 @@ class TestPlanContextGather:
     def test_gather_mcp_resources_empty_by_default(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """MCP resources should return empty list when no pool is available."""
         home = tmp_path / "home"
-        monkeypatch.setattr(Path, "home", lambda: home)
+        _set_test_home(monkeypatch, home)
         _make_space(tmp_path)
 
         ctx = PlanContext(cwd=tmp_path / "repo")
@@ -200,7 +205,7 @@ class TestPlanContextGather:
     def test_mcp_not_called_when_disabled(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When mcp_enabled=False, gather must not invoke MCP resource lookup."""
         home = tmp_path / "home"
-        monkeypatch.setattr(Path, "home", lambda: home)
+        _set_test_home(monkeypatch, home)
         _make_space(tmp_path)
 
         called = {"value": False}
@@ -223,7 +228,7 @@ class TestPlanContextGather:
     ) -> None:
         """When MCP is enabled and provider times out/fails, context returns []."""
         home = tmp_path / "home"
-        monkeypatch.setattr(Path, "home", lambda: home)
+        _set_test_home(monkeypatch, home)
         _make_space(tmp_path)
 
         class _FakePool:
@@ -347,7 +352,7 @@ class TestPlanContextEdgeCases:
     def test_current_phase_fallback_to_plans_dir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When CURRENT_PHASE.md is not in space root, falls back to .navig/plans/phases/."""
         home = tmp_path / "home"
-        monkeypatch.setattr(Path, "home", lambda: home)
+        _set_test_home(monkeypatch, home)
 
         space = _make_space(tmp_path)  # No CURRENT_PHASE.md in space dir
 
@@ -366,7 +371,7 @@ class TestPlanContextEdgeCases:
 
     def test_no_dev_plan_returns_none(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         home = tmp_path / "home"
-        monkeypatch.setattr(Path, "home", lambda: home)
+        _set_test_home(monkeypatch, home)
         _make_space(tmp_path)
 
         ctx = PlanContext(cwd=tmp_path / "repo")
@@ -376,7 +381,7 @@ class TestPlanContextEdgeCases:
     def test_completion_pct_non_numeric(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Non-numeric completion_pct should default to 0.0."""
         home = tmp_path / "home"
-        monkeypatch.setattr(Path, "home", lambda: home)
+        _set_test_home(monkeypatch, home)
 
         space = _make_space(tmp_path)
         _make_phase(space, title="Bad PCT", completion_pct="not_a_number")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from navig.platform import paths
 from navig.spaces.contracts import SpaceConfig, normalize_space_name
 
 
@@ -29,7 +30,7 @@ def resolve_space(name: str, cwd: Path | None = None) -> SpaceConfig:
                 scope="project",
             )
 
-    global_space = Path.home() / ".navig" / "spaces" / canonical
+    global_space = paths.config_dir() / "spaces" / canonical
     return SpaceConfig(
         requested_name=name,
         canonical_name=canonical,
@@ -42,7 +43,7 @@ def discover_space_paths(cwd: Path | None = None) -> dict[str, SpaceConfig]:
     current_dir = (cwd or Path.cwd()).resolve()
     discovered: dict[str, SpaceConfig] = {}
 
-    global_spaces = Path.home() / ".navig" / "spaces"
+    global_spaces = paths.config_dir() / "spaces"
     if global_spaces.exists():
         for entry in sorted(global_spaces.iterdir()):
             if entry.is_dir():

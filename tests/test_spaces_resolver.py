@@ -16,7 +16,7 @@ def test_normalize_space_name_aliases_and_default():
 
 def test_resolve_space_prefers_project_over_global(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(home / ".navig"))
 
     global_space = home / ".navig" / "spaces" / "health"
     global_space.mkdir(parents=True, exist_ok=True)
@@ -32,7 +32,7 @@ def test_resolve_space_prefers_project_over_global(tmp_path, monkeypatch):
 
 def test_resolve_space_falls_back_to_global(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(home / ".navig"))
 
     global_space = home / ".navig" / "spaces" / "finance"
     global_space.mkdir(parents=True, exist_ok=True)
@@ -47,7 +47,7 @@ def test_resolve_space_falls_back_to_global(tmp_path, monkeypatch):
 
 def test_discover_space_paths_overrides_global_with_project(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(home / ".navig"))
 
     (home / ".navig" / "spaces" / "health").mkdir(parents=True, exist_ok=True)
     (home / ".navig" / "spaces" / "career").mkdir(parents=True, exist_ok=True)
