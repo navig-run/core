@@ -16,6 +16,8 @@ from typing import Any, ClassVar
 
 import requests
 
+from navig.platform import paths
+
 from navig import console_helper as ch
 from navig.ai_context import get_ai_context_manager
 
@@ -42,11 +44,9 @@ class AIAssistant:
         """Return a cached ConversationStore singleton (opens DB once per process)."""
         if AIAssistant._conv_store is None:
             try:
-                from pathlib import Path
-
                 from navig.memory.conversation import ConversationStore
 
-                AIAssistant._conv_store = ConversationStore(Path.home() / ".navig" / "memory.db")
+                AIAssistant._conv_store = ConversationStore(paths.data_dir() / "memory.db")
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
         return AIAssistant._conv_store

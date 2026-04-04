@@ -14,7 +14,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-NAVIG_HOME = Path.home() / ".navig"
+from navig.platform import paths
+
+NAVIG_HOME = paths.config_dir()
 DAEMON_CONFIG = NAVIG_HOME / "daemon" / "config.json"
 
 

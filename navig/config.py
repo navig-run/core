@@ -18,6 +18,8 @@ from typing import Any
 
 import yaml
 
+from navig.platform import paths
+
 from navig.core.yaml_io import atomic_write_yaml as _atomic_write_yaml
 from navig.core.yaml_io import log_shadow_anomaly
 from navig.core.hosts import HostManager
@@ -63,8 +65,8 @@ class ConfigManager:
         """
         self.verbose = verbose
 
-        # Global config directory (always ~/.navig)
-        self.global_config_dir = Path.home() / ".navig"
+        # Global config directory (always controlled by NAVIG_CONFIG_DIR or ~/.navig)
+        self.global_config_dir = paths.config_dir()
 
         # Explicit config dir tracking
         self._explicit_config_dir = config_dir

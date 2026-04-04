@@ -21,7 +21,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-NAVIG_HOME = Path.home() / ".navig"
+from navig.platform import paths
+
+NAVIG_HOME = paths.config_dir()
 LOG_DIR = NAVIG_HOME / "logs"
 DAEMON_DIR = NAVIG_HOME / "daemon"
 SERVICE_NAME = "NavigDaemon"

@@ -30,10 +30,12 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
+from navig.platform import paths
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-NAVIG_HOME = Path.home() / ".navig"
+NAVIG_HOME = paths.config_dir()
 DAEMON_DIR = NAVIG_HOME / "daemon"
 PID_FILE = DAEMON_DIR / "supervisor.pid"
 STATE_FILE = DAEMON_DIR / "state.json"
@@ -41,12 +43,7 @@ STATE_FILE = DAEMON_DIR / "state.json"
 
 def _resolve_log_dir() -> Path:
     """Resolve log directory using navig.platform.paths (respects OS conventions)."""
-    try:
-        from navig.platform import paths as _paths
-
-        return _paths.log_dir()
-    except Exception:
-        return NAVIG_HOME / "logs"
+    return paths.log_dir()
 
 
 LOG_DIR = _resolve_log_dir()

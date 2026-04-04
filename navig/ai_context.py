@@ -9,6 +9,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from navig.platform import paths
+
 from navig import console_helper as ch
 
 
@@ -72,7 +74,7 @@ class AIContextManager:
             config_dir: Configuration directory (default: ~/.navig/)
         """
         if config_dir is None:
-            config_dir = Path.home() / ".navig"
+            config_dir = paths.config_dir()
 
         self.config_dir = Path(config_dir)
         self.config_dir.mkdir(parents=True, exist_ok=True)

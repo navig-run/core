@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from navig.platform import paths
+
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -40,7 +42,7 @@ def _parse_iso(dt_str: str) -> datetime | None:
 
 
 def global_cache_dir() -> Path:
-    return Path.home() / ".navig" / "cache"
+    return paths.cache_dir()
 
 
 @dataclass(frozen=True)
