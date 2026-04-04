@@ -355,6 +355,7 @@ def prune_sessions(
 def telegram_status():
     """Show Telegram bot status."""
     from navig.config import get_config_manager
+    from navig.messaging.secrets import resolve_telegram_bot_token
 
     cm = get_config_manager()
     config = cm._load_global_config()
@@ -364,8 +365,12 @@ def telegram_status():
     ch.info("Telegram Bot Status")
     ch.console.print()
 
-    if tg_config.get("bot_token"):
-        ch.console.print("  [green]✓[/green] Bot token configured")
+    # Use the full resolution chain: vault → env → ~/.navig/.env → config.yaml
+    token = resolve_telegram_bot_token(config)
+    if token:
+        # Show a masked hint so the user can verify it's the right token
+        hint = token[:6] + "..." + token[-4:] if len(token) > 12 else "***"
+        ch.console.print(f"  [green]✓[/green] Bot token configured ({hint})")
     else:
         ch.console.print("  [red]✗[/red] Bot token missing")
         ch.dim("    Configure with: navig init")
