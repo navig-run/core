@@ -11,6 +11,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from navig.platform import paths
+
 logger = logging.getLogger("navig.settings")
 
 # ── Default navig.* settings ──────────────────────────────────
@@ -46,12 +48,7 @@ _SECRET_RE = re.compile(r"\$\{BLACKBOX:([^}]+)\}")
 
 
 def _global_settings_dir() -> Path:
-    try:
-        from navig.platform.paths import navig_config_dir
-
-        return navig_config_dir()
-    except Exception:
-        return Path.home() / ".navig"
+    return paths.config_dir()
 
 
 def _layers_dir() -> Path:
