@@ -126,8 +126,9 @@ async def test_provider_callback_nvidia_nim_alias_opens_nvidia_picker():
 
 
 @pytest.mark.asyncio
-async def test_provider_callback_retries_simple_picker_call_on_generic_error():
-    class _RetryChannel(_FakeChannel):
+async def test_provider_callback_falls_back_to_providers_on_picker_error():
+    """When picker fails, the callback falls back to the providers hub screen."""
+    class _FailChannel(_FakeChannel):
         def __init__(self):
             super().__init__()
             self.calls = 0
@@ -141,11 +142,9 @@ async def test_provider_callback_retries_simple_picker_call_on_generic_error():
             message_id=None,
         ):
             self.calls += 1
-            if self.calls == 1:
-                raise RuntimeError("transient failure")
-            self.picker_calls.append((chat_id, prov_id, page, selected_tier, message_id))
+            raise RuntimeError("transient failure")
 
-    channel = _RetryChannel()
+    channel = _FailChannel()
     handler = CallbackHandler(channel)
 
     await handler._handle_provider_callback(
@@ -156,8 +155,9 @@ async def test_provider_callback_retries_simple_picker_call_on_generic_error():
         user_id=312,
     )
 
-    assert channel.calls == 2
-    assert channel.picker_calls == [(112, "nvidia", 0, "s", None)]
+    assert channel.calls == 1
+    # Fallback to providers hub
+    assert channel.provider_renders == [(112, 312, 212)]
 
 
 @pytest.mark.asyncio
@@ -220,7 +220,13 @@ async def test_provider_activate_uses_curated_defaults_and_persists(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_provider_model_assignment_marks_onboarding_step(monkeypatch):
-    channel = _FakeChannel()
+    class _SafePickerChannel(_FakeChannel):
+        async def _show_provider_model_picker(
+            self, chat_id, prov_id, page=0, selected_tier="s", message_id=None,
+        ):
+            self.picker_calls.append((chat_id, prov_id, page, selected_tier, message_id))
+
+    channel = _SafePickerChannel()
     handler = CallbackHandler(channel)
 
     class _Manifest:
@@ -275,7 +281,13 @@ async def test_provider_model_assignment_marks_onboarding_step(monkeypatch):
 @pytest.mark.asyncio
 async def test_provider_model_assignment_updates_llm_without_hybrid_router(monkeypatch):
     """pms_ assignment must update LLM Mode Router even when hybrid router is not active."""
-    channel = _FakeChannel()
+    class _SafePickerChannel(_FakeChannel):
+        async def _show_provider_model_picker(
+            self, chat_id, prov_id, page=0, selected_tier="s", message_id=None,
+        ):
+            self.picker_calls.append((chat_id, prov_id, page, selected_tier, message_id))
+
+    channel = _SafePickerChannel()
     handler = CallbackHandler(channel)
 
     class _Manifest:
