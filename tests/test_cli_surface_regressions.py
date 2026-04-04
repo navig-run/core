@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -77,14 +79,15 @@ def test_mesh_help_command_is_available(tmp_path: Path):
     assert "Mesh topology management" in combined
 
 
-def test_host_launcher_non_tty_exits_cleanly_with_hint(tmp_path: Path):
-    """`navig host` should not hang/crash in non-interactive subprocesses.
+@pytest.mark.parametrize("domain", ["host", "db", "file"])
+def test_domain_launcher_non_tty_exits_cleanly_with_hint(tmp_path: Path, domain: str):
+    """Domain launchers should not hang/crash in non-interactive subprocesses.
 
     In non-TTY contexts, smart_launch must print the explicit help hint and
-    exit with status 0.
+    exit with status 0 for each supported launcher domain.
     """
     result = subprocess.run(
-        [sys.executable, "-m", "navig", "host"],
+        [sys.executable, "-m", "navig", domain],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -96,7 +99,7 @@ def test_host_launcher_non_tty_exits_cleanly_with_hint(tmp_path: Path):
 
     assert result.returncode == 0
     assert "non-tty detected" in combined.lower()
-    assert "navig host --help" in combined.lower()
+    assert f"navig {domain} --help" in combined.lower()
 
 
 def test_bot_start_uses_configured_gateway_port_when_unspecified(monkeypatch):
