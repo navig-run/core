@@ -89,7 +89,7 @@ class MatrixAdminClient:
         if server == "synapse":
             try:
                 async with httpx.AsyncClient(timeout=5.0) as client:
-                    resp = await client.get(
+                    await client.get(
                         f"{self.homeserver_url}/_synapse/admin/v1/registration_tokens",
                         headers=self._auth_headers(),
                     )

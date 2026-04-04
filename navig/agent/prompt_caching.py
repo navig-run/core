@@ -194,7 +194,6 @@ def _apply_system_and_3(
         else:
             result.append(copy.deepcopy(msg))
 
-    tagged_count = sum(1 for m in result if "cache_control" in str(m))
     logger.debug(
         "apply_anthropic_cache_control: %d/%d messages tagged (strategy=%s, ttl=%s)",
         user_tagged + (1 if any(m.get("role") == "system" for m in messages) else 0),

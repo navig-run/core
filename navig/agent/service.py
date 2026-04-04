@@ -423,8 +423,6 @@ WantedBy=default.target
         self, service_name: str, python_exe: str, start_now: bool
     ) -> tuple[bool, str]:
         """Install Windows service using nssm."""
-        navig_cmd = f'"{python_exe}" -m navig agent start --foreground'
-
         try:
             # Install service
             subprocess.run(

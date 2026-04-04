@@ -423,7 +423,6 @@ Last updated: Never
 
     def append_to_file(self, filename: str, content: str) -> None:
         """Append content to a workspace file."""
-        file_path = self.base_path / filename
         existing = self.read_file(filename)
         self.write_file(filename, existing + "\n" + content)
 

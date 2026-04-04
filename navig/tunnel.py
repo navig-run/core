@@ -202,7 +202,6 @@ class TunnelManager:
                 local_port = self._find_available_port(port_range[0], port_range[1])
 
         # Build SSH tunnel command
-        remote_host = server_config["database"].get("remote_port", "3306")
         remote_port = server_config["database"].get("remote_port", 3306)
 
         ssh_args = [

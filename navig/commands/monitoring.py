@@ -845,8 +845,6 @@ def generate_report(options: dict[str, Any]) -> None:
 
         # Collect resource metrics
         progress.update(task, description="Collecting resources...")
-        temp_options = {**options, "json_output": False}
-
         # CPU
         cpu_cmd = "top -bn1 | grep 'Cpu(s)' | awk '{print $2}' | cut -d'%' -f1"
         cpu_result = remote.execute_command(cpu_cmd, server_config)

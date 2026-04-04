@@ -268,8 +268,7 @@ class Plugin(ABC):
             for hook_id in self._hooks:
                 # Parse hook ID and unregister
                 if ":" in hook_id:
-                    event_key = hook_id.split(":")[0]
-                    # Note: Full unregister would need handler reference
+                    pass  # Note: Full unregister would need handler reference
             self._hooks.clear()
         except ImportError:
             pass  # optional dependency not installed; feature disabled

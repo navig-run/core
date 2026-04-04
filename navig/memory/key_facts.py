@@ -481,7 +481,6 @@ class KeyFactStore:
 
     def purge_deleted(self, older_than_days: int = 30) -> int:
         """Hard-delete facts that were soft-deleted more than N days ago."""
-        cutoff = datetime.now(timezone.utc)
         # Approximation: check updated_at
         with self._write_lock:
             conn = self._conn()

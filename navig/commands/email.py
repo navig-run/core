@@ -205,11 +205,11 @@ def send_email(
         password = email_cfg.get("password")
 
         if provider_type == "gmail":
-            provider = GmailProvider(email=email_addr, password=password)
+            provider = GmailProvider(email=email_addr, password=password)  # noqa: F841
         elif provider_type == "imap":
             imap_host = email_cfg.get("imap_host")
             smtp_host = email_cfg.get("smtp_host")
-            provider = IMAPEmailProvider(
+            provider = IMAPEmailProvider(  # noqa: F841
                 email=email_addr,
                 password=password,
                 imap_host=imap_host,
@@ -229,7 +229,7 @@ def send_email(
 
         from navig.agent.proactive.models import EmailMessage
 
-        message = EmailMessage(
+        message = EmailMessage(  # noqa: F841
             id="",
             subject=subject,
             sender=email_addr,

@@ -799,10 +799,9 @@ def add_plugin_commands(app) -> None:
         """Uninstall a user-installed plugin."""
         import shutil
 
-        from navig.core import Config
+        from navig.core import Config  # noqa: F401
         from navig.plugins import get_plugin_manager
 
-        config = Config()
         manager = get_plugin_manager()
 
         info = manager.get_plugin_info(name)

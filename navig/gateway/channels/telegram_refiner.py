@@ -346,7 +346,7 @@ class RefinementEngine:
         store = self._get_store()
         store.put(session.session_key, {"session": session.serialise()}, ttl=self._SESSION_TTL)
 
-        thinking = await self.channel.send_message(
+        await self.channel.send_message(
             session.chat_id,
             "⚙️ _Refining with your context…_",
             parse_mode="MarkdownV2",

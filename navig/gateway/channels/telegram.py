@@ -1565,7 +1565,6 @@ class TelegramChannel:
         is_group: bool,
     ) -> None:
         """ACT mode — cinematic status pipeline with live tool execution."""
-        import time
 
         # Send the initial sentinel message
         sentinel = await self.send_message(
@@ -1582,7 +1581,6 @@ class TelegramChannel:
             return
 
         renderer = StatusRenderer(self, chat_id, sentinel_id)
-        t0 = time.monotonic()
 
         tool_results = []
         tool_names_run: list[str] = []
@@ -1694,7 +1692,6 @@ class TelegramChannel:
 
         # ── Step 3: finalize ──
         model_name = self._resolve_model_name(metadata)
-        elapsed = time.monotonic() - t0
 
         # Build structured conclusion
         conclusion: dict = {}

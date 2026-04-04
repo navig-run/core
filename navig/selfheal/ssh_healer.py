@@ -101,7 +101,7 @@ class SSHHealer:
             # Write scanned keys to a temp file first so we can inspect
             # before appending — avoids corrupting known_hosts on error.
             with tempfile.NamedTemporaryFile(mode="w", suffix=".keyscan", delete=False) as tmp:
-                tmp_path = tmp.name
+                tmp_path = tmp.name  # noqa: F841 — reserved for future inspection before appending
 
             proc = await asyncio.create_subprocess_exec(
                 "ssh-keyscan",

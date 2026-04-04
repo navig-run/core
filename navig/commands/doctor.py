@@ -414,7 +414,7 @@ def doctor(
         _has_rich = True
     except ImportError:
         _has_rich = False
-        console = None  # type: ignore[assignment]
+        console = None  # type: ignore[assignment]  # noqa: F841
 
     sections: list[tuple[str, list[tuple[str, bool, str]]]] = [
         ("Config", check_config()),

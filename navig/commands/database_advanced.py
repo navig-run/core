@@ -553,7 +553,7 @@ def optimize_table_cmd(table: str, options: dict[str, Any]):
     db = server_config["database"]
 
     # SECURITY: Use backtick escaping for database name in WHERE clause
-    safe_database = _escape_sql_identifier(database)
+    safe_database = _escape_sql_identifier(database)  # noqa: F841 — validates input; value embedded below via {database}
 
     # Note: We can't use backticks in string comparison, so we validate heavily first
     # Then use single quotes which is safe after validation

@@ -171,7 +171,7 @@ def scan_cmd(
     if not dry_run:
         with _console.status("Forking navig-run/core…"):
             try:
-                fork_url = fork_repo(token, username)
+                fork_repo(token, username)
                 fork_clone_url = f"https://github.com/{username}/navig.git"
                 repo_path = clone_or_update(fork_clone_url)
                 sync_fork(repo_path)

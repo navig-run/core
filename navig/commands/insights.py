@@ -625,7 +625,6 @@ class InsightsEngine:
 
     def generate_report(self, time_range: TimeRange = TimeRange.WEEK) -> AnalyticsReport:
         """Generate a complete analytics report."""
-        ops = self._load_history(time_range)
 
         usage_stats = self.get_usage_stats(time_range)
         host_scores = self.get_host_scores(time_range)

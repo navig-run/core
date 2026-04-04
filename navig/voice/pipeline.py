@@ -153,7 +153,6 @@ class VoicePipeline:
         # ── Build STT callables ───────────────────────────────────────
         from navig.voice.streaming_stt import (
             StreamingProvider,
-            StreamingSTT,
             StreamingSTTConfig,
         )
         from navig.voice.wake_word import WakeWordConfig, WakeWordEngine
@@ -166,7 +165,6 @@ class VoicePipeline:
             fallback=_fallback,
             language=self.config.language,
         )
-        stt = StreamingSTT(config=stt_config)
 
         async def _stt_fn(session) -> str | None:
             """Transcribe buffered session audio."""

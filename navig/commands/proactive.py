@@ -132,7 +132,7 @@ def proactive_setup(
             ch.info("CalDAV Setup")
             url = typer.prompt("CalDAV URL")
             username = typer.prompt("Username")
-            password = typer.prompt("Password", hide_input=True)
+            typer.prompt("Password", hide_input=True)
             proactive["calendar"]["url"] = url
             proactive["calendar"]["username"] = username
             proactive["calendar"]["password"] = "${CALDAV_PASSWORD}"

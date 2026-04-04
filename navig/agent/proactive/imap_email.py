@@ -156,7 +156,7 @@ class IMAPEmailProvider(EmailProvider):
                             break
 
                 # Append to drafts
-                result = imap.append(drafts_folder, "\\Draft", None, msg.as_bytes())
+                imap.append(drafts_folder, "\\Draft", None, msg.as_bytes())
 
                 return f"draft-{datetime.now().timestamp()}"
 

@@ -573,10 +573,6 @@ def _undo_config_change(op: OperationRecord) -> None:
     if not config_key or config_file is None:
         raise ValueError("Missing config key or file in undo data")
 
-    from navig.config import get_config_manager
-
-    config = get_config_manager()
-
     # Restore the previous value
     # This is a simplified implementation
     ch.info(f"Would restore {config_key} to {previous_value}")

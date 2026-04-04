@@ -511,7 +511,7 @@ def ai_providers(
                         max_tokens=5,
                     )
                     try:
-                        response = await client.complete(request)
+                        await client.complete(request)
                         return True, None
                     except Exception as e:
                         return False, str(e)

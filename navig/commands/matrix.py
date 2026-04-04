@@ -537,7 +537,7 @@ def room_join(
             console.print("[red]✗[/] Not connected")
             raise typer.Exit(1)
         try:
-            resp = await bot._client.join(room_id)
+            await bot._client.join(room_id)
             console.print(f"[green]✓[/] Joined {room_id}")
         except Exception as e:
             console.print(f"[red]✗[/] Failed to join: {e}")

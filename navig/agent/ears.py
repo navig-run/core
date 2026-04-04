@@ -141,9 +141,6 @@ class MCPListener(InputListener):
         if not self.config.get("enabled", True):
             return
 
-        port = self.config.get("port", 8765)
-        host = self.config.get("host", "127.0.0.1")
-
         try:
             # Integration with existing MCP server
             self._running = True

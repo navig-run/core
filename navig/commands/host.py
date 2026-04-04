@@ -1067,8 +1067,6 @@ def test_host(options: dict[str, Any]) -> None:
 
 def info_host(options: dict[str, Any]) -> None:
     """Show detailed host information (IP, port, user, apps count, etc.)."""
-    from rich.console import Console
-
     host_name = options.get("host_name")
     json_output = options.get("json", False)
 
@@ -1135,8 +1133,6 @@ def info_host(options: dict[str, Any]) -> None:
             )
         )
     else:
-        console = Console()
-
         ch.header(f"Host Information: {host_name}")
         ch.newline()
 

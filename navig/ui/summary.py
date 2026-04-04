@@ -41,10 +41,9 @@ def render_summary(
     try:
         # confidence badge
         bar_len = max(1, result.confidence // 10)
-        fill = ("█" if not SAFE_MODE else "#") * bar_len
-        empty = ("░" if not SAFE_MODE else ".") * (10 - bar_len)
+        fill = ("\u2588" if not SAFE_MODE else "#") * bar_len
+        empty = ("\u2591" if not SAFE_MODE else ".") * (10 - bar_len)
 
-        ico_ai = icon("ai")
         console.print(f"\n[bold]{title}[/bold]")
         console.print(
             f"  [dim]confidence[/dim]  "

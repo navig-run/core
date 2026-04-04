@@ -471,7 +471,6 @@ def add_url_cmd(
         req = urllib.request.Request(url, headers={"User-Agent": "NAVIG/1.0"})
         with urllib.request.urlopen(req, timeout=15) as resp:
             raw = resp.read(204800)  # cap at 200 KB
-            content_type = resp.headers.get("content-type", "")
             content = raw.decode("utf-8", errors="replace")
     except Exception as exc:
         typer.secho(f"Fetch failed: {exc}", fg=typer.colors.RED)

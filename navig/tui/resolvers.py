@@ -228,7 +228,6 @@ def resolve_gateway() -> StatusBadge:
     """Check gateway channel health (reads channel manifest + blackbox errors)."""
     try:
         # Try to get active channels from gateway config
-        channels_dir = Path("navig/gateway/channels")
         # Also check navig.json channels section
         nj = _load_navig_json()
         channels = {}

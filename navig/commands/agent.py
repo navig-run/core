@@ -866,7 +866,6 @@ def _service_linux(action: str):
     service_file = Path(f"/etc/systemd/system/{service_name}.service")
 
     python_path = sys.executable
-    navig_path = Path(sys.argv[0]).resolve()
 
     if action == "install":
         content = f"""[Unit]
@@ -1348,7 +1347,7 @@ def agent_learn(
     try:
         import json
         from collections import defaultdict
-        from datetime import datetime, timedelta
+        from datetime import datetime
         from pathlib import Path
 
         log_dir = Path.home() / ".navig" / "logs"
@@ -1373,7 +1372,6 @@ def agent_learn(
         }
 
         # Read and analyze logs
-        cutoff = datetime.now() - timedelta(days=days)
         error_counts = defaultdict(int)
         error_examples = defaultdict(list)
 
@@ -1389,8 +1387,7 @@ def agent_learn(
                     try:
                         # Try to extract timestamp from log line
                         if "[" in line and "]" in line:
-                            timestamp_str = line.split("[")[1].split("]")[0]
-                            # Skip if too old (simple heuristic)
+                            pass  # timestamp present; skip if too old (simple heuristic not yet impl.)
 
                         # Check against patterns
                         for pattern_name, pattern in patterns.items():

@@ -1007,7 +1007,6 @@ def is_url_investigation_request(message: str) -> tuple[bool, str | None]:
             return True, urls[0]
 
         # If the message is mostly just a URL, treat as URL request
-        url_len = len(urls[0])
         other_text = message.replace(urls[0], "").strip()
         if len(other_text) < 20:  # Very little other text
             return True, urls[0]

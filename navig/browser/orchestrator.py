@@ -96,10 +96,8 @@ class CortexOrchestrator:
         # ── 3. Assemble messages ──────────────────────────────────────────────
         if use_vision:
             messages = self._build_vision_messages(state_ctx, a11y_text, screenshot_b64)
-            system_prompt = CORTEX_VISION_PROMPT
         else:
             messages = self._build_a11y_messages(state_ctx, a11y_text)
-            system_prompt = CORTEX_A11Y_PROMPT
 
         # ── 4. Call LLM ───────────────────────────────────────────────────────
         logger.info("[Cortex] Requesting action for goal: '%s'", self.goal)

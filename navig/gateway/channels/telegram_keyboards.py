@@ -1050,7 +1050,6 @@ class CallbackHandler:
                     self.channel._user_model_prefs.pop(user_id, None)
 
             # Get model name for confirmation
-            model_name = ""
             try:
                 from navig.agent.ai_client import get_ai_client
 
@@ -1058,7 +1057,7 @@ class CallbackHandler:
                 router = client.model_router
                 if router and tier:
                     slot = router.cfg.slot_for_tier(tier)
-                    model_name = f" — {slot.model} ({slot.provider})"
+                    _ = f" — {slot.model} ({slot.provider})"  # available for future use
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 

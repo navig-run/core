@@ -834,18 +834,6 @@ def ahk_automate(
     windows = adapter.get_all_windows()
     screen_size = adapter.get_screen_size()
 
-    context = {
-        "windows": [
-            {
-                "title": w.title,
-                "class": getattr(w, "class_name", ""),
-                "pid": getattr(w, "pid", 0),
-            }
-            for w in windows[:10]
-        ],
-        "screen_size": screen_size,
-    }
-
     # Try to use AI to generate script
     try:
         from navig.adapters.automation.ahk_ai import AHKAIGenerator, GenerationContext

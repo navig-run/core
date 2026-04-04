@@ -357,7 +357,6 @@ def render_qr_terminal(genesis: GenesisData) -> str:
             }
             # White on dark for the QR cells
             fg_on = "\x1b[97m"  # bright white
-            fg_off = "\x1b[90m"  # dark grey
             for row_idx in range(0, len(matrix), 2):
                 row_top = matrix[row_idx]
                 row_bot = (
