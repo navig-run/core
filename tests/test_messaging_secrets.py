@@ -67,8 +67,15 @@ def test_resolve_telegram_token_from_config_yaml_emits_deprecation_warning(
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
 
     raw_config = {"telegram": {"bot_token": "plaintext-token"}}
-    with caplog.at_level(logging.WARNING, logger="navig.messaging.secrets"):
+    # Use root-level capture + direct handler attachment to bypass propagation quirks
+    import logging as _std_logging
+    _secrets_logger = _std_logging.getLogger("navig.messaging.secrets")
+    _secrets_logger.addHandler(caplog.handler)
+    _secrets_logger.setLevel(logging.WARNING)
+    try:
         token = mod.resolve_telegram_bot_token(raw_config)
+    finally:
+        _secrets_logger.removeHandler(caplog.handler)
 
     assert token == "plaintext-token"
     assert any("deprecated" in rec.message.lower() for rec in caplog.records)
