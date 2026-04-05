@@ -174,7 +174,7 @@ ALL_PROVIDERS: list[ProviderManifest] = [
             "grok-2",
             "grok-2-vision-1212",
         ],
-        emoji="⚡",
+        emoji="🌩",
     ),
     # ── Cloud: GitHub Models ──────────────────────────────────────────────────
     ProviderManifest(
@@ -213,7 +213,6 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         enabled=False,  # Key in PROVIDER_ENV_VARS but no ProviderConfig yet — opt-in
     ),
     # ── Cloud: GitHub Copilot ─────────────────────────────────────────────────
-
     ProviderManifest(
         id="github_copilot",
         display_name="GitHub Copilot",

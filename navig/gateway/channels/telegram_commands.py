@@ -38,14 +38,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from navig.platform.paths import global_config_path, msg_trace_path
-from navig.ui.icons import icon as _ni
 from navig.gateway.channels.types import MessageMetadata
 from navig.gateway.channels.utils.decorators import (
     error_handled,
     rate_limited,
     typing_context,
 )
+from navig.platform.paths import global_config_path, msg_trace_path
+from navig.ui.icons import icon as _ni
 
 logger = logging.getLogger(__name__)
 
@@ -2852,10 +2852,7 @@ class TelegramCommandsMixin:
                     "callback_data": f"mdl_tier_{prov_id}_c",
                 }
             ],
-            [
-                {"text": "🎛️ Change provider", "callback_data": "mdl_chgprov"},
-                {"text": "← Providers", "callback_data": "prov_back"},
-            ],
+            [{"text": "🎛️ Change provider", "callback_data": "mdl_chgprov"}],
             [{"text": "✖ Close", "callback_data": "mdl_close"}],
         ]
 
@@ -2912,6 +2909,10 @@ class TelegramCommandsMixin:
                 models = await self._resolve_provider_models(prov_id, manifest=manifest)
             except Exception:  # noqa: BLE001
                 pass
+
+        # Safety net: fall back to static registry list if resolution failed
+        if not models and manifest and getattr(manifest, "models", None):
+            models = list(manifest.models)
 
         if not models:
             lines = [
@@ -3540,6 +3541,43 @@ class TelegramCommandsMixin:
                     return raw
             return fallback or models[0]
 
+        if prov_id == "openai":
+            big = _pick(("gpt-4o",), models[0])
+            # prefer mini for small, but not the big gpt-4o itself
+            small = _pick(("gpt-4o-mini", "gpt-3.5"), big)
+            coder = big
+            return {"small": small, "big": big, "coder_big": coder}
+
+        if prov_id == "anthropic":
+            big = _pick(("sonnet",), models[0])
+            small = _pick(("haiku",), models[-1])
+            coder = big
+            return {"small": small, "big": big, "coder_big": coder}
+
+        if prov_id == "google":
+            big = _pick(("pro",), models[0])
+            small = _pick(("flash",), models[-1])
+            coder = small  # flash is faster for code
+            return {"small": small, "big": big, "coder_big": coder}
+
+        if prov_id == "groq":
+            big = _pick(("70b",), models[0])
+            small = _pick(("mixtral", "8x7b", "8b", "7b"), models[-1])
+            coder = big
+            return {"small": small, "big": big, "coder_big": coder}
+
+        if prov_id == "nvidia":
+            big = _pick(("70b",), models[0])
+            small = _pick(("8b",), models[-1])
+            coder = _pick(("deepseek",), big)
+            return {"small": small, "big": big, "coder_big": coder}
+
+        if prov_id == "github_models":
+            big = _pick(("405b", "llama"), models[0])
+            small = _pick(("mini", "phi"), models[-1])
+            coder = _pick(("gpt-4o",), big)
+            return {"small": small, "big": big, "coder_big": coder}
+
         if prov_id == "xai":
             big = _pick(("grok-3", "grok-2"), models[0])
             small = _pick(("mini",), models[-1])
@@ -3598,8 +3636,8 @@ class TelegramCommandsMixin:
 
     # ── Tier → LLM-mode mapping ─────────────────────────────────────────
     _TIER_TO_MODES: dict[str, list[str]] = {
-        "small": ["small_talk", "summarize"],
-        "big": ["big_tasks", "research"],
+        "small": ["small_talk"],
+        "big": ["big_tasks"],
         "coder_big": ["coding"],
     }
 

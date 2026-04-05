@@ -258,7 +258,7 @@ if PYDANTIC_OK:
             default_factory=lambda: LLMModeConfig(
                 description="Complex reasoning, planning, multi-step tasks",
                 provider="openai",
-                model="gpt-4o-mini",
+                model="gpt-4o",
                 fallback_model="qwen2.5:7b-instruct",
                 fallback_provider="ollama",
                 temperature=0.5,
@@ -586,9 +586,9 @@ class LLMModeRouter:
     def __init__(self, config: dict[str, Any] | None = None):
         self._raw_config = config or {}
         # ai.default_provider — user-level provider override applied after mode routing
-        self._default_provider: str = (
-            (self._raw_config.get("ai") or {}).get("default_provider") or ""
-        )
+        self._default_provider: str = (self._raw_config.get("ai") or {}).get(
+            "default_provider"
+        ) or ""
         self._router_config: LLMRouterConfig | None = None
         self._load_config()
 
