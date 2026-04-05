@@ -7,6 +7,7 @@ verifying that handle_message logs exceptions via the logger.
 
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 import sys
@@ -91,12 +92,19 @@ _web_stub.Request = MagicMock
 _aio_stub = MagicMock(name="aiohttp")
 _aio_stub.web = _web_stub
 
-# Force-install stubs so `from aiohttp import web` inside _build_http_app
-# picks up our lightweight classes.
-sys.modules["aiohttp"] = _aio_stub
-sys.modules["aiohttp.web"] = _web_stub
 
-from navig.mcp_server import MCPProtocolHandler, _build_http_app  # noqa: E402
+@pytest.fixture(autouse=True)
+def _isolate_aiohttp_stub(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure aiohttp stubs are scoped to this module's tests only."""
+    monkeypatch.setitem(sys.modules, "aiohttp", _aio_stub)
+    monkeypatch.setitem(sys.modules, "aiohttp.web", _web_stub)
+
+
+def _mcp_exports() -> tuple[Any, Any]:
+    """Fetch MCP server exports after aiohttp stubs are injected."""
+    module = importlib.import_module("navig.mcp_server")
+    return module.MCPProtocolHandler, module._build_http_app
+
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -123,6 +131,7 @@ def _make_request(*, text_body="", auth_header=None):
 
 
 def _build_app(token=None):
+    _, _build_http_app = _mcp_exports()
     h = _make_handler()
     app = _build_http_app(h, token=token)
     return app, h
@@ -177,6 +186,7 @@ async def test_post_mcp_exactly_1mib_is_accepted():
 
 def test_handle_message_logs_exception_to_debug():
     """When a handler raises, handle_message should log the exception at DEBUG level."""
+    MCPProtocolHandler, _ = _mcp_exports()
     with patch("navig.mcp.tools.register_all_tools", side_effect=lambda h: None):
         handler = MCPProtocolHandler()
 
@@ -198,6 +208,7 @@ def test_handle_message_logs_exception_to_debug():
 
 def test_handle_message_notification_no_id_logs_and_returns_none():
     """Notification (no id) that raises should log but return None."""
+    MCPProtocolHandler, _ = _mcp_exports()
     with patch("navig.mcp.tools.register_all_tools", side_effect=lambda h: None):
         handler = MCPProtocolHandler()
 
@@ -213,6 +224,7 @@ def test_handle_message_notification_no_id_logs_and_returns_none():
 
 def test_handle_message_unknown_method_no_log():
     """Unknown method should return -32601 but NOT trigger exception log."""
+    MCPProtocolHandler, _ = _mcp_exports()
     with patch("navig.mcp.tools.register_all_tools", side_effect=lambda h: None):
         handler = MCPProtocolHandler()
 
@@ -227,6 +239,7 @@ def test_handle_message_unknown_method_no_log():
 
 def test_handle_message_notification_success_returns_none():
     """Notification handler that succeeds should return None (no response)."""
+    MCPProtocolHandler, _ = _mcp_exports()
     with patch("navig.mcp.tools.register_all_tools", side_effect=lambda h: None):
         handler = MCPProtocolHandler()
 
