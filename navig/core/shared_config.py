@@ -37,7 +37,7 @@ class ConfigSingleton:
     _instance: ConfigSingleton | None = None
     _lock = threading.Lock()
 
-    def __new__(cls) -> "ConfigSingleton":
+    def __new__(cls) -> ConfigSingleton:
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:

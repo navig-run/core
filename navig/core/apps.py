@@ -133,7 +133,7 @@ class AppManager:
                 apps.update(host_config["apps"].keys())
         except FileNotFoundError:
             pass  # best-effort: file not found; skip
-        return sorted(list(apps))
+        return sorted(apps)
 
     def find_hosts_with_app(self, app_name: str) -> list[str]:
         """

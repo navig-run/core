@@ -785,7 +785,7 @@ class MemoryStorage:
 
         # Vector candidates
         vec_hits = vec.search(query_embedding, limit=limit * 3)
-        vec_map: dict[str, float] = {cid: dist for cid, dist in vec_hits}
+        vec_map: dict[str, float] = dict(vec_hits)
 
         # Normalise BM25 scores (0..1)
         max_bm25 = max((s for _, s in fts_results), default=1.0) or 1.0

@@ -17,7 +17,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
-from typing import Sequence
+from collections.abc import Sequence
 
 # Track which one-time hints have already been shown this process lifetime.
 _hints_shown: set[str] = set()

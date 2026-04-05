@@ -83,7 +83,7 @@ class ClarifySession:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ClarifySession:
-        allowed = {f for f in cls.__dataclass_fields__}
+        allowed = set(cls.__dataclass_fields__)
         return cls(**{k: v for k, v in data.items() if k in allowed})
 
     def serialise(self) -> str:

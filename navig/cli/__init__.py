@@ -11,11 +11,9 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any
-
 import typer
 
-from navig import __version__
+from navig import __version__ as __version__
 from navig.deprecation import deprecation_warning
 from navig.lazy_loader import lazy_import
 
@@ -121,15 +119,15 @@ def _get_ai_assistant():
 # Callback implementations live in navig/cli/_callbacks.py — single source of truth.
 # Re-exported here so ``from navig.cli import show_subcommand_help`` keeps working.
 from navig.cli._callbacks import (  # noqa: E402
-    _get_hacker_quotes,
+    _get_hacker_quotes as _get_hacker_quotes,
     _schema_callback,
     help_callback,
-    make_subcommand_callback,
+    make_subcommand_callback as make_subcommand_callback,
     show_compact_help,
-    show_subcommand_help,
+    show_subcommand_help as show_subcommand_help,
     version_callback,
 )
-from navig.cli.help_dictionaries import HELP_REGISTRY  # noqa: E402
+from navig.cli.help_dictionaries import HELP_REGISTRY as HELP_REGISTRY  # noqa: E402
 
 # Initialize CLI app
 app = typer.Typer(
@@ -1241,11 +1239,11 @@ def quick_start(
 # ============================================================================
 
 from navig.cli.registration import (
-    _EXTERNAL_CMD_MAP,
-    _HIDDEN_COMMANDS,
+    _EXTERNAL_CMD_MAP as _EXTERNAL_CMD_MAP,
+    _HIDDEN_COMMANDS as _HIDDEN_COMMANDS,
     _register_external_commands,
-    get_external_commands,
-    is_external_command,
+    get_external_commands as get_external_commands,
+    is_external_command as is_external_command,
 )
 
 # Re-export for backward compatibility (tests, tooling import from cli.__init__)

@@ -231,7 +231,7 @@ class DashboardScreen(Screen):  # type: ignore[type-arg]
 
     def _resolve_single(self, section_key: str) -> None:
         """Re-resolve a single section (called after SettingsSaved)."""
-        resolver_map = {k: fn for k, fn in SECTIONS}
+        resolver_map = dict(SECTIONS)
         resolver = resolver_map.get(section_key)
         if not resolver:
             return

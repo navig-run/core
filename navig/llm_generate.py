@@ -125,9 +125,9 @@ def run_llm(
     caller_info: dict[str, Any] | None = None,
     session_id: str | None = None,
     enable_tools: bool = False,
-    cost_tracker: "CostTracker | None" = None,
+    cost_tracker: CostTracker | None = None,
     turn: int = 1,
-    effort: "str | None" = None,
+    effort: str | None = None,
 ) -> LLMResult:
     """
     Typed LLM orchestrator — routes through all 4 stages and returns LLMResult.
@@ -265,12 +265,12 @@ def run_llm(
 
 def _call_and_wrap(
     messages: list[dict[str, str]],
-    selection: "ModelSelection",
+    selection: ModelSelection,
     timeout: float,
-    cost_tracker: "CostTracker | None" = None,
+    cost_tracker: CostTracker | None = None,
     turn: int = 1,
     thinking_params: dict[str, Any] | None = None,
-) -> "LLMResult":
+) -> LLMResult:
     """Dispatch a single LLM call and wrap the response in LLMResult.
 
     Optionally records a :class:`~navig.agent.usage_tracker.UsageEvent`

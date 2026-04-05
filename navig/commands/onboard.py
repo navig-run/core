@@ -2980,8 +2980,7 @@ def _auto_install_textual() -> bool:
         try:
             result = subprocess.run(
                 [uv_bin, "pip", "install", "--python", sys.executable, pkg, "-q"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 timeout=60,
             )
             if result.returncode == 0:
@@ -3009,8 +3008,7 @@ def _auto_install_textual() -> bool:
                 "-q",
                 "--disable-pip-version-check",
             ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             timeout=90,
         )
         if result.returncode != 0:

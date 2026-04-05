@@ -190,7 +190,7 @@ class HostManager:
 
                     ch.warning(f"Cannot access config directory {config_dir}: {e}")
 
-        result = sorted(list(hosts))
+        result = sorted(hosts)
         self._hosts_list_cache = (result.copy(), signature)
         return result
 

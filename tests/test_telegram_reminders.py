@@ -1150,5 +1150,5 @@ async def test_providers_screen_shows_noai_selection_state(monkeypatch):
     text = bot.messages[-1][1]
     keyboard = bot.messages[-1][3].get("keyboard") or []
     labels = [btn.get("text", "") for row in keyboard for btn in row]
-    assert "Next message mode" in text
+    assert "Next message:" in text
     assert any(text.startswith("✅ 🚫 No AI") for text in labels)

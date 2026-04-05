@@ -175,7 +175,7 @@ class SSHConnectionPool:
         }
 
     @classmethod
-    def get_instance(cls) -> "SSHConnectionPool":
+    def get_instance(cls) -> SSHConnectionPool:
         """Get the singleton pool instance."""
         if cls._instance is None:
             with cls._instance_lock:

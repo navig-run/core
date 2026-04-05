@@ -217,8 +217,8 @@ class InsightsEngine:
             }
 
         success_count = sum(1 for op in ops if op.get("status") == "success")
-        commands = set(op.get("command", "").split()[0] for op in ops if op.get("command"))
-        hosts = set(op.get("host", "") for op in ops if op.get("host"))
+        commands = {op.get("command", "").split()[0] for op in ops if op.get("command")}
+        hosts = {op.get("host", "") for op in ops if op.get("host")}
 
         return {
             "total": len(ops),
@@ -530,7 +530,7 @@ class InsightsEngine:
 
         for error_type, ops_list in error_types.items():
             if len(ops_list) >= 3:
-                hosts_affected = set(op.get("host", "") for op in ops_list if op.get("host"))
+                hosts_affected = {op.get("host", "") for op in ops_list if op.get("host")}
 
                 recommendations = []
                 if error_type == "Connection":
@@ -579,7 +579,7 @@ class InsightsEngine:
             return recommendations
 
         # Check for hosts without recent health checks
-        hosts = set(op.get("host", "") for op in ops if op.get("host"))
+        hosts = {op.get("host", "") for op in ops if op.get("host")}
         for host in hosts:
             host_ops = [op for op in ops if op.get("host") == host]
             has_health_check = any(

@@ -29,7 +29,7 @@ from navig.cli.selector import CommandEntry, fzf_or_fallback
 # ---------------------------------------------------------------------------
 
 
-def get_domain_commands(domain: str, app: "typer.Typer") -> list[CommandEntry]:
+def get_domain_commands(domain: str, app: typer.Typer) -> list[CommandEntry]:
     """Introspect *app* and return a sorted flat list of :class:`CommandEntry` objects.
 
     Includes both leaf commands (``@app.command(...)``) and registered
@@ -91,7 +91,7 @@ def get_domain_commands(domain: str, app: "typer.Typer") -> list[CommandEntry]:
 # ---------------------------------------------------------------------------
 
 
-def smart_launch(domain: str, app: "typer.Typer") -> None:
+def smart_launch(domain: str, app: typer.Typer) -> None:
     """Open a fuzzy launcher scoped to *domain*'s subcommands.
 
     Behaviour:

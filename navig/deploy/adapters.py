@@ -141,7 +141,7 @@ def build_adapter(
         known = ", ".join(sorted(_ADAPTERS))
         raise ValueError(f"Unknown restart adapter '{adapter_name}'. Valid options: {known}")
 
-    kwargs = dict(server_config=server_config, remote_ops=remote_ops, dry_run=dry_run)
+    kwargs = {"server_config": server_config, "remote_ops": remote_ops, "dry_run": dry_run}
 
     if adapter_name in ("systemd", "pm2"):
         if not restart_cfg.service:

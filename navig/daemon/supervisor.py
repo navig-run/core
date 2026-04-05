@@ -126,12 +126,12 @@ class ChildProcess:
             child_log = LOG_DIR / f"{self.name}.log"
             self._log_fh = open(child_log, "a", encoding="utf-8", errors="replace")
 
-            kwargs: dict[str, Any] = dict(
-                env=env,
-                cwd=str(self.cwd) if self.cwd else None,
-                stdout=self._log_fh,
-                stderr=self._log_fh,
-            )
+            kwargs: dict[str, Any] = {
+                "env": env,
+                "cwd": str(self.cwd) if self.cwd else None,
+                "stdout": self._log_fh,
+                "stderr": self._log_fh,
+            }
             if sys.platform == "win32":
                 kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
             self.process = subprocess.Popen(self.command, **kwargs)

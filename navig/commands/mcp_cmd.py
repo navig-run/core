@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import secrets
 from enum import Enum
 
 import typer

@@ -288,7 +288,7 @@ class IterationBudget:
         """Return True if no iterations remain."""
         return self.remaining() == 0
 
-    def child(self, max_iterations: int | None = None) -> "IterationBudget":
+    def child(self, max_iterations: int | None = None) -> IterationBudget:
         """Create a child budget that shares the same counter.
 
         The child is capped at *max_iterations* (default: ``min(remaining * 0.5, 30)``).

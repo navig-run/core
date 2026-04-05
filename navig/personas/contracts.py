@@ -48,7 +48,7 @@ class PersonaConfig:
             self.display_name = self.name.capitalize()
 
     @classmethod
-    def from_dict(cls, name: str, data: dict) -> "PersonaConfig":
+    def from_dict(cls, name: str, data: dict) -> PersonaConfig:
         """Construct from a parsed YAML dict.  Raises ValueError on invalid tone."""
         return cls(
             name=name,

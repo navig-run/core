@@ -179,7 +179,7 @@ class _BM25:
 
     def __init__(self, corpus: dict[str, list[str]]) -> None:
         self.labels: list[str] = list(corpus.keys())
-        self.docs: list[list[str]] = [v for v in corpus.values()]
+        self.docs: list[list[str]] = list(corpus.values())
 
         # Build IDF and freq maps
         N = len(self.docs)

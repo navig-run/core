@@ -762,7 +762,7 @@ def show_init_status(*, render: bool = True) -> dict[str, Any]:
         "provider": active_provider,
         "providers_detected": providers_detected,
         "provider_sources": {
-            provider: sorted(list(sources))
+            provider: sorted(sources)
             for provider, sources in sorted(detected_provider_sources.items())
         },
         "hosts_count": hosts_count,

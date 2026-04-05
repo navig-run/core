@@ -1120,7 +1120,7 @@ For conversation, respond naturally without JSON.
                 collected_results.append(await _dispatch_single(tc))
 
             # Append all results to messages in original tool_call order
-            id_to_result = {tc_id: res for tc_id, res in collected_results}
+            id_to_result = dict(collected_results)
             for tc in pending_calls:
                 working_messages.append(
                     Message(

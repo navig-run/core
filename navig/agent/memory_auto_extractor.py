@@ -18,7 +18,8 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 logger = logging.getLogger("navig.agent.memory_auto_extractor")
 

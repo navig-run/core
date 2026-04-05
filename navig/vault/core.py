@@ -119,7 +119,7 @@ class CredentialsVault:
             Sorted list of profile IDs
         """
         infos = self._storage.list_all()
-        return sorted(set(c.profile_id for c in infos))
+        return sorted({c.profile_id for c in infos})
 
     def _load_active_profile(self) -> str:
         """Load active profile from file."""

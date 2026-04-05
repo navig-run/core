@@ -218,7 +218,7 @@ _HIDDEN_COMMANDS: frozenset[str] = frozenset({
 def _register_external_commands(
     *,
     register_all: bool = False,
-    target_app: "typer.Typer | None" = None,
+    target_app: typer.Typer | None = None,
 ) -> None:
     """Register external command sub-apps.
 

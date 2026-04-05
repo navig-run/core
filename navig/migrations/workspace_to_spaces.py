@@ -3,7 +3,7 @@ from __future__ import annotations
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 
 import yaml
 
@@ -86,7 +86,7 @@ def _move_workspace_payload(old_root: Path, spaces_root: Path) -> tuple[int, Pat
         return None
 
     legacy_target = spaces_root / "default" / "legacy-workspace"
-    entries = [p for p in old_root.iterdir()]
+    entries = list(old_root.iterdir())
     moved = 0
 
     if entries:

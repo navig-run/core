@@ -168,14 +168,14 @@ def is_eligible(skill: Skill, ctx: SkillEligibilityContext) -> bool:
 
     # 4. Required tags (all must be present)
     if ctx.required_tags:
-        skill_tags = set(t.lower() for t in (skill.tags or []))
+        skill_tags = {t.lower() for t in (skill.tags or [])}
         for required in ctx.required_tags:
             if required.lower() not in skill_tags:
                 return False
 
     # 5. Excluded tags (none may be present)
     if ctx.excluded_tags:
-        skill_tags = set(t.lower() for t in (skill.tags or []))
+        skill_tags = {t.lower() for t in (skill.tags or [])}
         for excluded in ctx.excluded_tags:
             if excluded.lower() in skill_tags:
                 return False

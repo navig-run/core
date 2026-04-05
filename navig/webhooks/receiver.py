@@ -238,7 +238,7 @@ class WebhookReceiver:
             source=source,
             event_type=event_type,
             payload=payload,
-            headers={k: v for k, v in request.headers.items()},
+            headers=dict(request.headers.items()),
             received_at=datetime.now(),
             signature_valid=signature_valid,
         )

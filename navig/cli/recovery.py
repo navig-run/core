@@ -100,7 +100,7 @@ def empty_list_recovery(resource: str, add_cmd: str) -> None:
     raise typer.Exit(0)
 
 
-def _bootstrap_local_host(cfg: "ConfigManager") -> str | None:
+def _bootstrap_local_host(cfg: ConfigManager) -> str | None:
     """Best-effort local-first bootstrap when no host is configured."""
     local_candidates = ["localhost", "local", "local-dev"]
     if hasattr(cfg, "list_hosts"):
@@ -135,7 +135,7 @@ def _bootstrap_local_host(cfg: "ConfigManager") -> str | None:
 # ── require_active_host ──────────────────────────────────────────────────────
 
 
-def require_active_host(options: dict, cfg: "ConfigManager") -> str:  # type: ignore[return]
+def require_active_host(options: dict, cfg: ConfigManager) -> str:  # type: ignore[return]
     """Return the active host name, or prompt the user to pick/add one.
 
     Callers should treat the return value as always valid — this function either
@@ -202,7 +202,7 @@ def require_active_host(options: dict, cfg: "ConfigManager") -> str:  # type: ig
 
 def require_active_server(
     options: dict,
-    cfg: "ConfigManager",
+    cfg: ConfigManager,
     *,
     allow_local_bootstrap: bool = True,
 ) -> str:  # type: ignore[return]

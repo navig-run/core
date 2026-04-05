@@ -259,7 +259,7 @@ async def _execute_action(
     Returns (ok: bool, error_message: str | None).
     """
     # Build ordered candidate list: primary + fallbacks
-    candidates = [selector_obj] + [f for f in (fallbacks or [])]
+    candidates = [selector_obj] + list((fallbacks or []))
 
     last_err = None
     for candidate in candidates:
