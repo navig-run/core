@@ -22,6 +22,10 @@ if sys.platform == "win32":
 else:
     import fcntl
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class TunnelManager:
     """

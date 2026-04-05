@@ -368,7 +368,7 @@ class MemoryIndexer:
         current_start_line = 1
         overlap_buffer = []
 
-        for block_start, block_end, block_text in blocks:
+        for _block_start, _block_end, block_text in blocks:
             block_tokens = self._estimate_tokens(block_text)
 
             # If adding this block would exceed max, flush current chunk

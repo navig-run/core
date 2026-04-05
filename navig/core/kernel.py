@@ -129,7 +129,7 @@ class NavigKernel:
 
         # print(f"DEBUG: Resolving '{query}'")
 
-        for name, cmd in self.commands.items():
+        for _name, cmd in self.commands.items():
             score = 0
 
             # 1. Exact syntax prefix match (High confidence)

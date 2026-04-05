@@ -3,6 +3,11 @@
 import json
 import uuid
 from collections.abc import Callable
+
+try:
+    from aiohttp import web as _aiohttp_web
+except ImportError:  # aiohttp is optional
+    _aiohttp_web = None  # type: ignore[assignment]
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -179,12 +184,12 @@ class WebhookReceiver:
             ) from _exc
 
         return [
-            web.post(f"{self.path_prefix}/{{source}}", self.handle_webhook),
-            web.get(f"{self.path_prefix}/status", self.handle_status),
-            web.get(f"{self.path_prefix}/history", self.handle_history),
+            web.post(f"{self.path_prefix}/{{source}}", self.handle_webhook),  # noqa: F821
+            web.get(f"{self.path_prefix}/status", self.handle_status),  # noqa: F821
+            web.get(f"{self.path_prefix}/history", self.handle_history),  # noqa: F821
         ]
 
-    async def handle_webhook(self, request) -> "web.Response":
+    async def handle_webhook(self, request) -> Any:
         """
         Handle incoming webhook request.
 
@@ -261,7 +266,7 @@ class WebhookReceiver:
             }
         )
 
-    async def handle_status(self, request) -> "web.Response":
+    async def handle_status(self, request) -> Any:
         """
         Get webhook receiver status.
 
@@ -289,7 +294,7 @@ class WebhookReceiver:
             }
         )
 
-    async def handle_history(self, request) -> "web.Response":
+    async def handle_history(self, request) -> Any:
         """
         Get recent webhook events.
 

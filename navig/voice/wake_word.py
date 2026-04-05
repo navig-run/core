@@ -227,7 +227,7 @@ class WakeWordEngine:
         # Use an asyncio.Queue to bridge the sounddevice callback thread → event loop
         audio_queue: asyncio.Queue = asyncio.Queue(maxsize=64)
 
-        def _audio_callback(indata: np.ndarray, frames: int, t: Any, status: Any) -> None:
+        def _audio_callback(indata: Any, frames: int, t: Any, status: Any) -> None:
             if status:
                 logger.debug("Mic stream status: %s", status)
             # Copy to avoid data race (sounddevice reuses buffer)

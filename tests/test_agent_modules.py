@@ -8,10 +8,9 @@ Covers: toolsets, usage_tracker, plan_execute, prompt_caching, profiles,
 from __future__ import annotations
 
 import json
-import os
 import threading
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -35,7 +34,20 @@ class TestToolsets:
     """Tests for navig.agent.toolsets module."""
 
     def test_toolsets_dict_has_expected_keys(self):
-        expected = {"core", "search", "research", "code", "devops", "memory", "wiki", "delegation", "full", "git", "remote"}
+        expected = {
+            "core",
+            "search",
+            "research",
+            "code",
+            "devops",
+            "memory",
+            "wiki",
+            "delegation",
+            "full",
+            "git",
+            "remote",
+            "lsp",
+        }
         assert expected == set(TOOLSETS.keys())
 
     def test_core_toolset_is_list(self):
@@ -121,27 +133,39 @@ class TestUsageEvent:
     """Tests for UsageEvent dataclass."""
 
     def test_total_tokens(self):
-        ev = UsageEvent(turn=1, model="gpt-4o", provider="openai",
-                        prompt_tokens=1000, completion_tokens=200)
+        ev = UsageEvent(
+            turn=1, model="gpt-4o", provider="openai", prompt_tokens=1000, completion_tokens=200
+        )
         assert ev.total_tokens == 1200
 
     def test_cost_usd_known_model(self):
-        ev = UsageEvent(turn=1, model="gpt-4o", provider="openai",
-                        prompt_tokens=1_000_000, completion_tokens=0)
+        ev = UsageEvent(
+            turn=1, model="gpt-4o", provider="openai", prompt_tokens=1_000_000, completion_tokens=0
+        )
         cost = ev.cost_usd()
         assert cost > 0.0
 
     def test_cost_usd_with_cache_tokens(self):
-        ev = UsageEvent(turn=1, model="gpt-4o", provider="openai",
-                        prompt_tokens=500, completion_tokens=100,
-                        cache_read_tokens=200, cache_write_tokens=50)
+        ev = UsageEvent(
+            turn=1,
+            model="gpt-4o",
+            provider="openai",
+            prompt_tokens=500,
+            completion_tokens=100,
+            cache_read_tokens=200,
+            cache_write_tokens=50,
+        )
         cost = ev.cost_usd()
         assert cost >= 0.0
 
     def test_cost_usd_unknown_model_zero(self):
-        ev = UsageEvent(turn=1, model="totally-unknown-model-xyz",
-                        provider="unknown", prompt_tokens=100,
-                        completion_tokens=100)
+        ev = UsageEvent(
+            turn=1,
+            model="totally-unknown-model-xyz",
+            provider="unknown",
+            prompt_tokens=100,
+            completion_tokens=100,
+        )
         assert ev.cost_usd() == 0.0
 
 
@@ -173,8 +197,9 @@ class TestSessionCost:
         assert "0 tok" in s
 
     def test_summary_str_with_events(self):
-        ev = UsageEvent(turn=1, model="gpt-4o", provider="openai",
-                        prompt_tokens=500, completion_tokens=100)
+        ev = UsageEvent(
+            turn=1, model="gpt-4o", provider="openai", prompt_tokens=500, completion_tokens=100
+        )
         sc = SessionCost(total_usd=0.005, total_tokens=600, events=[ev])
         s = sc.summary_str()
         assert "1 turn" in s
@@ -186,8 +211,9 @@ class TestSessionCost:
         assert "No LLM calls" in sc.detailed_str()
 
     def test_detailed_str_with_events(self):
-        ev = UsageEvent(turn=1, model="gpt-4o", provider="openai",
-                        prompt_tokens=500, completion_tokens=100)
+        ev = UsageEvent(
+            turn=1, model="gpt-4o", provider="openai", prompt_tokens=500, completion_tokens=100
+        )
         sc = SessionCost(total_usd=0.005, total_tokens=600, events=[ev])
         detail = sc.detailed_str()
         assert "Turn 1" in detail
@@ -206,8 +232,9 @@ class TestCostTracker:
 
     def test_record_and_session_cost(self):
         ct = CostTracker()
-        ev = UsageEvent(turn=1, model="gpt-4o", provider="openai",
-                        prompt_tokens=1000, completion_tokens=500)
+        ev = UsageEvent(
+            turn=1, model="gpt-4o", provider="openai", prompt_tokens=1000, completion_tokens=500
+        )
         ct.record(ev)
         sc = ct.session_cost()
         assert len(sc.events) == 1
@@ -216,16 +243,26 @@ class TestCostTracker:
     def test_multiple_records(self):
         ct = CostTracker()
         for i in range(5):
-            ct.record(UsageEvent(turn=i + 1, model="gpt-4o", provider="openai",
-                                 prompt_tokens=100, completion_tokens=50))
+            ct.record(
+                UsageEvent(
+                    turn=i + 1,
+                    model="gpt-4o",
+                    provider="openai",
+                    prompt_tokens=100,
+                    completion_tokens=50,
+                )
+            )
         assert len(ct) == 5
         sc = ct.session_cost()
         assert sc.total_tokens == 750
 
     def test_reset(self):
         ct = CostTracker()
-        ct.record(UsageEvent(turn=1, model="gpt-4o", provider="openai",
-                             prompt_tokens=100, completion_tokens=50))
+        ct.record(
+            UsageEvent(
+                turn=1, model="gpt-4o", provider="openai", prompt_tokens=100, completion_tokens=50
+            )
+        )
         assert len(ct) == 1
         ct.reset()
         assert len(ct) == 0
@@ -237,11 +274,15 @@ class TestCostTracker:
         def worker(start_turn: int):
             try:
                 for i in range(100):
-                    ct.record(UsageEvent(
-                        turn=start_turn + i, model="gpt-4o",
-                        provider="openai",
-                        prompt_tokens=10, completion_tokens=5,
-                    ))
+                    ct.record(
+                        UsageEvent(
+                            turn=start_turn + i,
+                            model="gpt-4o",
+                            provider="openai",
+                            prompt_tokens=10,
+                            completion_tokens=5,
+                        )
+                    )
             except Exception as e:
                 errors.append(e)
 
@@ -391,12 +432,14 @@ class TestParsePlanJson:
 
     def test_valid_json(self):
         agent = self._make_agent()
-        raw = json.dumps({
-            "steps": [
-                {"tool": "read_file", "args": {"path": "/tmp"}, "reason": "Check"},
-                {"tool": "bash_exec", "args": {"cmd": "ls"}, "reason": "List"},
-            ]
-        })
+        raw = json.dumps(
+            {
+                "steps": [
+                    {"tool": "read_file", "args": {"path": "/tmp"}, "reason": "Check"},
+                    {"tool": "bash_exec", "args": {"cmd": "ls"}, "reason": "List"},
+                ]
+            }
+        )
         steps = agent._parse_plan_json(raw)
         assert len(steps) == 2
         assert steps[0].tool == "read_file"
@@ -433,8 +476,9 @@ class TestFormatPlanReport:
     def test_report_contains_task(self):
         plan = ExecutionPlan(task="restart server", total_elapsed_ms=5000)
         plan.steps = [
-            PlanStep(tool="bash_exec", status="success", reason="Restart",
-                     elapsed_ms=3000, output="ok"),
+            PlanStep(
+                tool="bash_exec", status="success", reason="Restart", elapsed_ms=3000, output="ok"
+            ),
         ]
         report = format_plan_report(plan)
         assert "restart server" in report
@@ -444,8 +488,13 @@ class TestFormatPlanReport:
     def test_report_with_failures(self):
         plan = ExecutionPlan(task="deploy", total_elapsed_ms=2000)
         plan.steps = [
-            PlanStep(tool="a", status="failed", error="conn refused",
-                     elapsed_ms=1000, reason="Try deploy"),
+            PlanStep(
+                tool="a",
+                status="failed",
+                error="conn refused",
+                elapsed_ms=1000,
+                reason="Try deploy",
+            ),
         ]
         report = format_plan_report(plan)
         assert "❌" in report
@@ -467,7 +516,6 @@ class TestFormatPlanReport:
 # ═════════════════════════════════════════════════════════════
 
 from navig.agent.prompt_caching import (
-    _CACHEABLE_MODELS,
     apply_anthropic_cache_control,
     supports_caching,
 )
@@ -549,8 +597,6 @@ class TestPromptCaching:
 
 from navig.agent.profiles import (
     Profile,
-    get_profile,
-    list_profiles,
     resolve_profile_name,
 )
 
@@ -644,8 +690,10 @@ class TestApproval:
         assert needs_approval("bash_exec", policy=ApprovalPolicy.YOLO) is False
 
     def test_needs_approval_confirm_all(self):
-        assert needs_approval("read_file", safety_level="safe",
-                              policy=ApprovalPolicy.CONFIRM_ALL) is True
+        assert (
+            needs_approval("read_file", safety_level="safe", policy=ApprovalPolicy.CONFIRM_ALL)
+            is True
+        )
 
     def test_needs_approval_env_bypass(self, monkeypatch):
         monkeypatch.setenv("NAVIG_ALLOW_ALL_COMMANDS", "1")
@@ -704,44 +752,55 @@ class TestModuleImports:
 
     def test_import_toolsets(self):
         from navig.agent import toolsets
+
         assert hasattr(toolsets, "TOOLSETS")
 
     def test_import_usage_tracker(self):
         from navig.agent import usage_tracker
+
         assert hasattr(usage_tracker, "CostTracker")
 
     def test_import_plan_execute(self):
         from navig.agent import plan_execute
+
         assert hasattr(plan_execute, "PlanExecuteAgent")
 
     def test_import_prompt_caching(self):
         from navig.agent import prompt_caching
+
         assert hasattr(prompt_caching, "apply_anthropic_cache_control")
 
     def test_import_profiles(self):
         from navig.agent import profiles
+
         assert hasattr(profiles, "Profile")
 
     def test_import_context_compressor(self):
         from navig.agent import context_compressor
+
         assert hasattr(context_compressor, "ContextCompressor")
 
     def test_import_mcp_client(self):
         from navig.agent import mcp_client
+
         assert hasattr(mcp_client, "MCPClient")
 
     def test_import_delegate(self):
         from navig.agent import delegate
+
         assert hasattr(delegate, "DelegateTool")
 
     def test_import_agent_tool_registry(self):
         from navig.agent import agent_tool_registry
+
         assert hasattr(agent_tool_registry, "AgentToolRegistry")
 
     def test_import_tools_init(self):
         from navig.agent import tools
+
         assert hasattr(tools, "register_all_tools")
 
     def test_import_approval(self):
         from navig.tools import approval
+
         assert hasattr(approval, "ApprovalGate")

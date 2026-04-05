@@ -712,7 +712,7 @@ def format_category_help(category_id: str) -> str:
     text += f"{info['description']}\n\n"
     text += "**Commands:**\n\n"
 
-    for cmd_id, cmd in cat["commands"].items():
+    for _cmd_id, cmd in cat["commands"].items():
         text += f"• `{cmd.name}` - {cmd.short_desc}\n"
 
     return text
@@ -725,7 +725,7 @@ def format_main_help() -> str:
     text += "**📚 Command Categories:**\n"
 
     grouped = get_commands_by_category()
-    for cat_id, cat in grouped.items():
+    for _cat_id, cat in grouped.items():
         info = cat["info"]
         cmd_count = len(cat["commands"])
         text += f"{info['emoji']} **{info['name']}** ({cmd_count} commands)\n"

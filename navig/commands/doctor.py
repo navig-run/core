@@ -442,7 +442,7 @@ def doctor(
             continue
 
         printed_lines.append(f"\n  [{section_name}]")
-        for icon, ok, line in results:
+        for _icon, ok, line in results:
             if not ok:
                 all_ok = False
             printed_lines.append(line)
