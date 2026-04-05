@@ -12,6 +12,7 @@ from navig.connectors.types import (
     ActionResult,
     ActionType,
     ConnectorDomain,
+    ConnectorStatus,
     HealthStatus,
     Resource,
 )
@@ -135,3 +136,47 @@ class TestConnectorRegistry:
         r1 = get_connector_registry()
         r2 = get_connector_registry()
         assert r1 is r2
+
+    def test_all_classes_returns_registered_classes(self):
+        registry = get_connector_registry()
+        registry.register(_StubConnector)
+        registry.register(_AnotherStub)
+        classes = registry.all_classes()
+        assert isinstance(classes, dict)
+        assert "stub" in classes
+        assert "another" in classes
+        assert classes["stub"] is _StubConnector
+        assert classes["another"] is _AnotherStub
+
+    def test_all_classes_returns_copy(self):
+        """Mutating the returned dict must not affect internal state."""
+        registry = get_connector_registry()
+        registry.register(_StubConnector)
+        classes = registry.all_classes()
+        classes["injected"] = _AnotherStub  # mutate the copy
+        assert not registry.has("injected")
+
+    def test_list_connected_includes_connected_status(self):
+        registry = get_connector_registry()
+        registry.register(_StubConnector)
+        conn = registry.get("stub")
+        conn._status = ConnectorStatus.CONNECTED
+        connected = registry.list_connected()
+        assert len(connected) == 1
+        assert connected[0] is conn
+
+    def test_list_connected_includes_degraded_status(self):
+        registry = get_connector_registry()
+        registry.register(_StubConnector)
+        conn = registry.get("stub")
+        conn._status = ConnectorStatus.DEGRADED
+        connected = registry.list_connected()
+        assert len(connected) == 1
+        assert connected[0] is conn
+
+    def test_list_connected_excludes_disconnected(self):
+        registry = get_connector_registry()
+        registry.register(_StubConnector)
+        conn = registry.get("stub")
+        conn._status = ConnectorStatus.DISCONNECTED
+        assert registry.list_connected() == []

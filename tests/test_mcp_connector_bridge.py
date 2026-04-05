@@ -537,7 +537,10 @@ def test_pool_timeout_cancels_future() -> None:
     mock_future.result.side_effect = concurrent.futures.TimeoutError("timed out")
     mock_future.cancel.return_value = False  # already running — cannot cancel
 
-    with patch("navig.mcp.tools.connectors._POOL") as mock_pool:
+    with (
+        patch("navig.mcp.tools.connectors.handle_connector_call", new_callable=AsyncMock),
+        patch("navig.mcp.tools.connectors._POOL") as mock_pool,
+    ):
         mock_pool.submit.return_value = mock_future
         handler = _make_sync_connector_handler("connector.slow.search")
         with pytest.raises(concurrent.futures.TimeoutError):

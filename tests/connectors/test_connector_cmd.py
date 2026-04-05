@@ -68,6 +68,7 @@ class _FakeCalendar(BaseConnector):
         description="Fake Calendar for tests",
         domain=ConnectorDomain.CALENDAR,
         icon="📅",
+        requires_oauth=False,
     )
 
     async def search(self, query: str) -> list[Resource]:
@@ -224,3 +225,73 @@ class TestConnectorStatus:
         result = runner.invoke(connector_app, ["status"])
         assert result.exit_code == 0
         assert "healthy" in result.output.lower() or "gmail" in result.output.lower()
+
+    def test_status_json_output(self):
+        registry = get_connector_registry()
+        gmail = registry.get("gmail")
+        gmail._status = ConnectorStatus.CONNECTED
+
+        result = runner.invoke(connector_app, ["status", "--json"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert isinstance(data, list)
+        assert len(data) == 1
+        row = data[0]
+        assert row["id"] == "gmail"
+        assert "ok" in row
+        assert "latency_ms" in row
+
+
+class TestConnectorConnect:
+    def test_connect_unknown_connector_exits_1(self):
+        result = runner.invoke(connector_app, ["connect", "bogus-connector"])
+        assert result.exit_code == 1
+        assert "Unknown connector" in result.output
+
+    def test_connect_no_oauth_calls_connect(self):
+        """google_calendar has requires_oauth=False; connect() sets status CONNECTED."""
+        result = runner.invoke(connector_app, ["connect", "google_calendar"])
+        assert result.exit_code == 0
+        assert "connected" in result.output.lower()
+
+        registry = get_connector_registry()
+        cal = registry.get("google_calendar")
+        assert cal._status == ConnectorStatus.CONNECTED
+
+    def test_connect_oauth_authenticates(self):
+        """gmail has requires_oauth=True; auth manager should be invoked."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        mock_auth_instance = MagicMock()
+        mock_auth_instance.authenticate = AsyncMock(return_value="fake-access-token")
+
+        with (
+            patch("navig.commands.connector_cmd._register_oauth_config") as mock_register,
+            patch(
+                "navig.connectors.auth_manager.ConnectorAuthManager",
+                return_value=mock_auth_instance,
+            ),
+        ):
+            result = runner.invoke(connector_app, ["connect", "gmail"])
+
+        assert result.exit_code == 0
+        assert "connected" in result.output.lower()
+        mock_register.assert_called_once()
+        mock_auth_instance.authenticate.assert_awaited_once()
+
+
+class TestConnectorHealth:
+    def test_health_no_connected(self):
+        """health delegates to connector_status; no connected connectors → info message."""
+        result = runner.invoke(connector_app, ["health"])
+        assert result.exit_code == 0
+        assert "No connectors connected" in result.output
+
+    def test_health_with_connected(self):
+        registry = get_connector_registry()
+        gmail = registry.get("gmail")
+        gmail._status = ConnectorStatus.CONNECTED
+
+        result = runner.invoke(connector_app, ["health"])
+        assert result.exit_code == 0
+        assert "gmail" in result.output.lower() or "healthy" in result.output.lower()
