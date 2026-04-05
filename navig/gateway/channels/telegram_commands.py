@@ -2827,8 +2827,9 @@ class TelegramCommandsMixin:
                 for tier, modes in TelegramCommandsMixin._TIER_TO_MODES.items():
                     mc = lr.modes.get_mode(modes[0])
                     if mc and getattr(mc, "model", None):
-                        model = mc.model
-                        current[tier] = model.split("/")[-1].split(":")[-1]
+                        if getattr(mc, "provider", "") == prov_id:
+                            model = mc.model
+                            current[tier] = model.split("/")[-1].split(":")[-1]
         except Exception:  # noqa: BLE001
             logger.debug("Failed to read LLM mode router for tier summary", exc_info=True)
 
@@ -2949,7 +2950,7 @@ class TelegramCommandsMixin:
                 modes = TelegramCommandsMixin._TIER_TO_MODES.get(tier, [])
                 if modes:
                     mc = lr.modes.get_mode(modes[0])
-                    if mc:
+                    if mc and getattr(mc, "provider", "") == prov_id:
                         current_model = getattr(mc, "model", "") or ""
         except Exception:  # noqa: BLE001
             logger.debug("Failed to read LLM mode router for model list", exc_info=True)
@@ -3321,14 +3322,17 @@ class TelegramCommandsMixin:
 
         text_payload = "\n".join(lines)
         if message_id:
-            await self.edit_message(
-                chat_id,
-                message_id,
-                text_payload,
-                parse_mode="Markdown",
-                keyboard=keyboard_rows,
-            )
-            return
+            try:
+                await self.edit_message(
+                    chat_id,
+                    message_id,
+                    text_payload,
+                    parse_mode="Markdown",
+                    keyboard=keyboard_rows,
+                )
+                return
+            except Exception:  # noqa: BLE001
+                pass  # fall through to fresh send
 
         await self.send_message(
             chat_id, text_payload, parse_mode="Markdown", keyboard=keyboard_rows
@@ -3801,7 +3805,7 @@ class TelegramCommandsMixin:
                         "callback_data": f"prov_page_{prov_id}_{selected_tier}_{page - 1}",
                     }
                 )
-            page_nav.append({"text": f"📄 {page + 1}/{total_pages}", "callback_data": "prov_back"})
+            page_nav.append({"text": f"📄 {page + 1}/{total_pages}", "callback_data": "prov_noop"})
             if page < total_pages - 1:
                 page_nav.append(
                     {

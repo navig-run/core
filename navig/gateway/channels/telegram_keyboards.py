@@ -98,6 +98,12 @@ _GREETING_SIGNALS = re.compile(
     re.IGNORECASE,
 )
 _SHORT_ACK_MAX = 120  # responses shorter than this are likely acks/greetings
+# Tier code → (tier name, display label) — shared by pms_ and mdl_sel_ handlers
+_TIER_CODE_MAP: dict[str, tuple[str, str]] = {
+    "s": ("small", "⚡ Small"),
+    "b": ("big", "🧠 Big"),
+    "c": ("coder_big", "💻 Code"),
+}
 
 
 def classify_response(text: str) -> ContentCategory:
@@ -740,7 +746,6 @@ class CallbackHandler:
             if cb_data.startswith("nl_"):
                 handler = getattr(self.channel, "_handle_nl_callback", None)
                 if handler:
-                    self._answered_callback_ids.add(cb_id)
                     await handler(cb_id, cb_data, chat_id, user_id)
                 else:
                     await self._answer(cb_id, "⚠️ Action unavailable")
@@ -750,7 +755,6 @@ class CallbackHandler:
             if cb_data.startswith("stfix:"):
                 handler = getattr(self.channel, "_handle_status_fix_callback", None)
                 if handler:
-                    self._answered_callback_ids.add(cb_id)
                     await handler(cb_id, cb_data, chat_id, user_id)
                 else:
                     await self._answer(cb_id, "⚠️ Setup fix unavailable")
@@ -1069,18 +1073,6 @@ class CallbackHandler:
                 else:
                     self.channel._user_model_prefs.pop(user_id, None)
 
-            # Get model name for confirmation
-            try:
-                from navig.agent.ai_client import get_ai_client
-
-                client = get_ai_client()
-                router = client.model_router
-                if router and tier:
-                    slot = router.cfg.slot_for_tier(tier)
-                    _ = f" — {slot.model} ({slot.provider})"  # available for future use
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
-
             await self._answer(cb_id, f"✅ Switched to {label}")
 
             # Update the original message with refreshed keyboard
@@ -1305,6 +1297,10 @@ class CallbackHandler:
             )
             return
 
+        if cb_data == "prov_noop":
+            await self._answer(cb_id, "")
+            return
+
         if cb_data == "prov_back":
             await self._answer(cb_id, "")
             await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
@@ -1344,7 +1340,8 @@ class CallbackHandler:
                     cb_id, chat_id, message_id, prov_id_a, manifest
                 )
             except Exception as exc:
-                await self._answer(cb_id, f"⚠️ Activation failed: {exc}", show_alert=True)
+                logger.warning("Provider activation failed (prov_activate_): %s", exc)
+                await self._answer(cb_id, "⚠️ Activation failed — please try again", show_alert=True)
             return
 
         # Deepgram: STT only, no LLM routing
@@ -1406,7 +1403,8 @@ class CallbackHandler:
                 cb_id, chat_id, message_id, prov_id, manifest
             )
         except Exception as exc:
-            await self._answer(cb_id, f"⚠️ Activation failed: {exc}", show_alert=True)
+            logger.warning("Provider activation failed (prov_*): %s", exc)
+            await self._answer(cb_id, "⚠️ Activation failed — please try again", show_alert=True)
 
     async def _handle_provider_model_callback(
         self,
@@ -1420,7 +1418,6 @@ class CallbackHandler:
 
         Supported callback formats:
         - `pmv_{prov_id}_{tier_code}_{page}`: switch viewed tier
-        - `pmp_{prov_id}_{page}_{tier_code}`: paginate while keeping tier
         - `pms_{prov_id}_{model_idx}_{tier_code}_{page}`: assign selected model to tier
         """
         if cb_data.startswith("pmv_"):
@@ -1430,27 +1427,6 @@ class CallbackHandler:
                 await self._answer(cb_id, "⚠️ Bad tier switch callback")
                 return
             prov_id, tier_code, page_str = parts
-            try:
-                page = int(page_str)
-            except ValueError:
-                page = 0
-            await self._answer(cb_id, "")
-            await self.channel._show_provider_model_picker(
-                chat_id,
-                prov_id,
-                page=page,
-                selected_tier=tier_code,
-                message_id=message_id,
-            )
-            return
-
-        if cb_data.startswith("pmp_"):
-            rest = cb_data[4:]
-            parts = rest.rsplit("_", 2)
-            if len(parts) != 3:
-                await self._answer(cb_id, "⚠️ Bad page callback")
-                return
-            prov_id, page_str, tier_code = parts
             try:
                 page = int(page_str)
             except ValueError:
@@ -1476,15 +1452,10 @@ class CallbackHandler:
             return
         prov_id, model_idx_str, tier_code, page_str = parts
 
-        tier_map: dict = {
-            "s": ("small", "⚡ Small"),
-            "b": ("big", "🧠 Big"),
-            "c": ("coder_big", "💻 Code"),
-        }
-        if tier_code not in tier_map:
+        if tier_code not in _TIER_CODE_MAP:
             await self._answer(cb_id, "⚠️ Unknown tier code")
             return
-        tier, tier_label = tier_map[tier_code]
+        tier, tier_label = _TIER_CODE_MAP[tier_code]
 
         try:
             model_idx = int(model_idx_str)
@@ -1530,8 +1501,8 @@ class CallbackHandler:
         try:
             if hasattr(self.channel, "_update_llm_mode_router"):
                 self.channel._update_llm_mode_router(prov_id, {tier: model})
-        except Exception:
-            logger.debug("LLM mode router update failed for pms_ assignment")
+        except Exception:  # noqa: BLE001
+            logger.warning("LLM mode router update failed for pms_ assignment; model not saved")
 
         await self._answer(cb_id, f"✅ {tier_label} → {model[:40]}")
         try:
@@ -1602,7 +1573,8 @@ class CallbackHandler:
                     cb_id, chat_id, message_id, prov_id, manifest
                 )
             except Exception as exc:
-                await self._answer(cb_id, f"⚠️ Activation failed: {exc}", show_alert=True)
+                logger.warning("Provider activation failed (mdl_prov_): %s", exc)
+                await self._answer(cb_id, "⚠️ Activation failed — please try again", show_alert=True)
             return
 
         # ── Show model list for tier: mdl_tier_{prov_id}_{tier_code} ────────
@@ -1633,15 +1605,10 @@ class CallbackHandler:
                 return
             prov_id, idx_str, tier_code, page_str = parts
 
-            tier_map: dict[str, tuple[str, str]] = {
-                "s": ("small", "⚡ Small"),
-                "b": ("big", "🧠 Big"),
-                "c": ("coder_big", "💻 Code"),
-            }
-            if tier_code not in tier_map:
+            if tier_code not in _TIER_CODE_MAP:
                 await self._answer(cb_id, "⚠️ Unknown tier")
                 return
-            tier, tier_label = tier_map[tier_code]
+            tier, tier_label = _TIER_CODE_MAP[tier_code]
 
             try:
                 model_idx = int(idx_str)
@@ -1689,8 +1656,8 @@ class CallbackHandler:
             try:
                 if hasattr(self.channel, "_update_llm_mode_router"):
                     self.channel._update_llm_mode_router(prov_id, {tier: model})
-            except Exception:
-                logger.debug("LLM mode router update failed for mdl_sel_")
+            except Exception:  # noqa: BLE001
+                logger.warning("LLM mode router update failed for mdl_sel_; model not saved")
 
             short_model = model.split("/")[-1].split(":")[-1]
             await self._answer(cb_id, f"✅ {tier_label} → {short_model[:40]}")
@@ -1980,7 +1947,8 @@ class CallbackHandler:
                             f"🌐 Detected language: *{_mdv2_escape(lang_reply or 'Unknown')}*",
                             parse_mode="MarkdownV2",
                         )
-                    except Exception:
+                    except Exception as _lde:  # noqa: BLE001
+                        logger.debug("audmsg:lang inner error: %s", _lde)
                         await self.channel.send_message(chat_id, "⚠️ Language detection failed.")
                 else:
                     await self.channel.send_message(
@@ -2030,7 +1998,8 @@ class CallbackHandler:
             sm = get_session_manager()
             session = sm.get_or_create_session(chat_id, user_id, is_group)
         except Exception as exc:
-            await self._answer(cb_id, f"⚠️ Session error: {exc}")
+            logger.warning("Settings session error: %s", exc)
+            await self._answer(cb_id, "⚠️ Session error — please try again")
             return
 
         # Close / dismiss
