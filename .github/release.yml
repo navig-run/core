@@ -1,0 +1,48 @@
+# .github/release.yml
+# Configures GitHub's auto-generated release notes.
+# Docs: https://docs.github.com/en/repositories/releasing-projects-on-github/automatically-generated-release-notes
+
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+      - dependencies
+    authors:
+      - dependabot
+
+  categories:
+    - title: "✨ New Features"
+      labels:
+        - enhancement
+        - feature
+      # Also catch conventional-commit feat: prefixes via title patterns
+    
+    - title: "🐛 Bug Fixes"
+      labels:
+        - bug
+        - fix
+    
+    - title: "⚡ Performance"
+      labels:
+        - performance
+        - perf
+    
+    - title: "🔒 Security"
+      labels:
+        - security
+    
+    - title: "🔧 Internal / Refactor"
+      labels:
+        - refactor
+        - chore
+        - internal
+        - tests
+    
+    - title: "📚 Documentation"
+      labels:
+        - documentation
+        - docs
+    
+    - title: "🤖 Other Changes"
+      labels:
+        - "*"

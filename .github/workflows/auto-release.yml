@@ -1,0 +1,84 @@
+name: Auto-Release from Tag
+
+# Triggers automatically when a versioned tag (v*) is pushed.
+# Creates a GitHub Release with auto-generated release notes so that
+# the publish.yml PyPI workflow fires immediately.
+#
+# Usage (future releases):
+#   git tag -a v2.6.0 -m "Release v2.6.0"
+#   git push origin v2.6.0
+#   → This workflow creates the Release and triggers PyPI publish.
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"   # rc / alpha / beta pre-releases
+
+permissions:
+  contents: write   # required to create the Release
+
+jobs:
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history for release-notes generation
+
+      - name: Derive version metadata
+        id: meta
+        run: |
+          TAG="${GITHUB_REF_NAME}"                  # e.g. v2.5.0
+          VERSION="${TAG#v}"                         # e.g. 2.5.0
+          echo "tag=${TAG}"       >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          # Detect pre-release: any tag containing a hyphen after the semver part
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-(.+)$ ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract CHANGELOG section for this version
+        id: notes
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          # Pull the block between [VERSION] and the next ## heading
+          NOTES=$(awk "/^## \[${VERSION}\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)
+          if [ -z "$NOTES" ]; then
+            echo "No CHANGELOG entry found for ${VERSION} — falling back to auto-generated notes."
+            echo "has_changelog=false" >> "$GITHUB_OUTPUT"
+          else
+            # Write to a temp file to handle multi-line content safely
+            printf "%s" "$NOTES" > /tmp/release_notes.md
+            echo "has_changelog=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create Release (with CHANGELOG body)
+        if: steps.notes.outputs.has_changelog == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: "${{ steps.meta.outputs.tag }}"
+          body_path: /tmp/release_notes.md
+          prerelease: ${{ steps.meta.outputs.prerelease }}
+          make_latest: ${{ steps.meta.outputs.prerelease == 'false' }}
+          generate_release_notes: false
+
+      - name: Create Release (auto-generated notes fallback)
+        if: steps.notes.outputs.has_changelog == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: "${{ steps.meta.outputs.tag }}"
+          prerelease: ${{ steps.meta.outputs.prerelease }}
+          make_latest: ${{ steps.meta.outputs.prerelease == 'false' }}
+          generate_release_notes: true
