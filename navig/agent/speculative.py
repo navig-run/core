@@ -610,3 +610,66 @@ def reset_speculative_executor() -> None:
     """Reset the singleton (for testing)."""
     global _speculative_executor
     _speculative_executor = None
+
+
+def get_speculative_runtime_snapshot() -> dict[str, Any]:
+    """Return current speculative config + live runtime telemetry.
+
+    This is a side-effect-free status helper for CLI/MCP surfaces.
+    It does not create a speculative executor when none exists.
+    """
+    try:
+        from navig.config import get_config_manager
+
+        mgr = get_config_manager()
+        agent_cfg = mgr.global_config.get("agent", {})
+    except Exception:
+        agent_cfg = {}
+
+    spec_cfg = agent_cfg.get("speculative", {})
+    enabled = bool(spec_cfg.get("enabled", True))
+
+    effective = {
+        "max_history": _env_int("NAVIG_SPEC_MAX_HISTORY", PredictionEngine.MAX_HISTORY, min_value=5, max_value=500),
+        "min_confidence": _env_float(
+            "NAVIG_SPEC_MIN_CONFIDENCE", PredictionEngine.MIN_CONFIDENCE, min_value=0.0, max_value=1.0
+        ),
+        "max_predictions": _env_int(
+            "NAVIG_SPEC_MAX_PREDICTIONS", PredictionEngine.MAX_PREDICTIONS, min_value=1, max_value=10
+        ),
+        "min_hit_rate": _env_float(
+            "NAVIG_SPEC_MIN_HIT_RATE",
+            float(spec_cfg.get("min_hit_rate", SpeculativeExecutor.DEFAULT_MIN_HIT_RATE)),
+            min_value=0.0,
+            max_value=1.0,
+        ),
+        "timeout_sec": _env_float(
+            "NAVIG_SPEC_TIMEOUT_SEC", SpeculativeExecutor.SPECULATION_TIMEOUT, min_value=0.1, max_value=60.0
+        ),
+        "cache_max_entries": _env_int(
+            "NAVIG_SPEC_CACHE_MAX_ENTRIES",
+            int(spec_cfg.get("cache_max_entries", 50)),
+            min_value=5,
+            max_value=1000,
+        ),
+        "cache_ttl_sec": _env_float(
+            "NAVIG_SPEC_CACHE_TTL_SEC",
+            float(spec_cfg.get("cache_ttl", SpeculativeCache.DEFAULT_TTL)),
+            min_value=1.0,
+            max_value=3600.0,
+        ),
+    }
+
+    live = None
+    if _speculative_executor is not None:
+        try:
+            live = _speculative_executor.stats
+        except Exception:
+            live = None
+
+    return {
+        "enabled": enabled,
+        "has_live_executor": _speculative_executor is not None,
+        "effective": effective,
+        "live": live,
+    }

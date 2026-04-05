@@ -1176,14 +1176,15 @@ For conversation, respond naturally without JSON.
 
             spec = get_speculative_executor()
             if spec is not None:
-                spec.cancel_speculations()
+                await spec.cancel_speculations()
                 stats = spec.stats
-                if stats["cache_hits"] > 0:
+                cache_stats = stats.get("cache") or {}
+                if cache_stats.get("hits", 0) > 0:
                     logger.info(
                         "speculative cache stats: hits=%d misses=%d hit_rate=%.1f%%",
-                        stats["cache_hits"],
-                        stats["cache_misses"],
-                        stats["cache_hit_rate"] * 100,
+                        cache_stats.get("hits", 0),
+                        cache_stats.get("misses", 0),
+                        float(cache_stats.get("hit_rate", 0.0)) * 100,
                     )
                 reset_speculative_executor()
         except Exception as exc:

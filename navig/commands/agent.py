@@ -536,8 +536,10 @@ def agent_status(
 
     try:
         from navig.agent import AgentConfig
+        from navig.agent.speculative import get_speculative_runtime_snapshot
 
         config = AgentConfig.load(config_path)
+        speculative = get_speculative_runtime_snapshot()
 
         if plain:
             status = {
@@ -547,6 +549,7 @@ def agent_status(
                 "enabled": config.enabled,
                 "mode": config.mode,
                 "personality": config.personality.profile,
+                "speculative": speculative,
             }
             print(json.dumps(status))
         else:
@@ -559,6 +562,18 @@ def agent_status(
             ch.console.print(f"  Enabled: {'Yes' if config.enabled else 'No'}")
             ch.console.print(f"  Mode: {config.mode}")
             ch.console.print(f"  Personality: {config.personality.profile}")
+            spec_live = speculative.get("live") or {}
+            cache_stats = spec_live.get("cache") or {}
+            ch.console.print(
+                "  Speculative: "
+                f"{'On' if speculative.get('enabled') else 'Off'}"
+                + (
+                    f" | hit_rate={cache_stats.get('hit_rate', 0.0):.1%}"
+                    f" entries={cache_stats.get('entries', 0)}"
+                    if speculative.get("has_live_executor")
+                    else " | live=not-initialized"
+                )
+            )
             ch.console.print(f"  Config: {config_path}")
 
     except Exception as e:

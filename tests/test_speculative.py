@@ -20,6 +20,7 @@ from navig.agent.speculative import (
     SpeculativeExecutor,
     ToolCallRecord,
     get_speculative_executor,
+    get_speculative_runtime_snapshot,
     reset_speculative_executor,
 )
 
@@ -585,6 +586,44 @@ class TestGetSpeculativeExecutor:
             exec_ = get_speculative_executor(dispatch)
             assert exec_.cache._max_entries == 25
             assert exec_._min_hit_rate == 0.3
+
+
+class TestSpeculativeRuntimeSnapshot:
+    def setup_method(self):
+        reset_speculative_executor()
+
+    def teardown_method(self):
+        reset_speculative_executor()
+
+    def test_snapshot_without_live_executor(self):
+        snap = get_speculative_runtime_snapshot()
+        assert "enabled" in snap
+        assert snap["has_live_executor"] is False
+        assert "effective" in snap
+        assert snap["live"] is None
+
+    def test_snapshot_with_live_executor(self):
+        with patch("navig.config.get_config_manager") as mock_cm:
+            mock_cm.return_value.global_config = {"agent": {"speculative": {"enabled": True}}}
+            dispatch = MagicMock(return_value="ok")
+            exec_ = get_speculative_executor(dispatch)
+            assert exec_ is not None
+
+        snap = get_speculative_runtime_snapshot()
+        assert snap["has_live_executor"] is True
+        assert isinstance(snap["live"], dict)
+        assert "cache" in snap["live"]
+
+    def test_snapshot_env_override_effective_values(self, monkeypatch):
+        monkeypatch.setenv("NAVIG_SPEC_CACHE_TTL_SEC", "123")
+        monkeypatch.setenv("NAVIG_SPEC_MAX_HISTORY", "44")
+        monkeypatch.setenv("NAVIG_SPEC_TIMEOUT_SEC", "4.5")
+
+        snap = get_speculative_runtime_snapshot()
+        eff = snap["effective"]
+        assert eff["cache_ttl_sec"] == pytest.approx(123.0)
+        assert eff["max_history"] == 44
+        assert eff["timeout_sec"] == pytest.approx(4.5)
 
 
 # ─────────────────────────────────────────────────────────────

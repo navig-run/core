@@ -5892,6 +5892,9 @@ navig agent start
 
 # Check status
 navig agent status
+
+# JSON output now includes speculative runtime telemetry
+navig agent status --plain
 ```
 
 ### 25.2 Architecture
@@ -5935,6 +5938,8 @@ navig agent service install     # Install as systemd/launchd
 navig agent service status
 navig agent service uninstall
 ```
+
+`navig agent status --plain` includes a `speculative` object with effective tuning values and live cache metrics (when a live speculative executor is initialized).
 
 ### 25.4 Configuration
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from navig.mcp_server import MCPProtocolHandler
 
@@ -174,3 +175,35 @@ def test_agent_resource_aliases_read(monkeypatch):
     assert remediation["count"] == 0
     assert learning["total_errors"] == 0
     assert service["platform"] == "linux"
+
+
+def test_agent_status_tool_includes_speculative(monkeypatch, tmp_path: Path):
+    """Agent status control-plane payload should include speculative telemetry."""
+
+    class _Cfg:
+        mode = "supervised"
+        workspace = tmp_path / "ws"
+
+        class personality:
+            profile = "friendly"
+
+    (tmp_path / ".navig" / "agent").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".navig" / "agent" / "config.yaml").write_text("agent: {}", encoding="utf-8")
+
+    monkeypatch.setattr("navig.mcp.tools.agent.Path.home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr("navig.agent.config.AgentConfig.load", lambda _path: _Cfg())
+    monkeypatch.setattr(
+        "navig.agent.speculative.get_speculative_runtime_snapshot",
+        lambda: {
+            "enabled": True,
+            "has_live_executor": False,
+            "effective": {"min_hit_rate": 0.2},
+            "live": None,
+        },
+    )
+
+    handler = MCPProtocolHandler()
+    status = handler._execute_tool("navig_agent_status_get", {})
+
+    assert "speculative" in status
+    assert status["speculative"]["enabled"] is True

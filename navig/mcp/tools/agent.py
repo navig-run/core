@@ -235,6 +235,18 @@ def _tool_agent_status_get(server: Any, args: dict[str, Any]) -> dict[str, Any]:
             mode = "unknown"
             personality = "unknown"
 
+    try:
+        from navig.agent.speculative import get_speculative_runtime_snapshot
+
+        speculative = get_speculative_runtime_snapshot()
+    except Exception:
+        speculative = {
+            "enabled": False,
+            "has_live_executor": False,
+            "effective": {},
+            "live": None,
+        }
+
     return {
         "installed": installed,
         "running": running,
@@ -243,6 +255,7 @@ def _tool_agent_status_get(server: Any, args: dict[str, Any]) -> dict[str, Any]:
         "mode": mode,
         "personality": personality,
         "workspace": workspace,
+        "speculative": speculative,
         "timestamp": datetime.now().isoformat(),
     }
 
