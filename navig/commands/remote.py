@@ -351,7 +351,9 @@ def _execute_with_progress(remote_ops, command: str, host_config: dict[str, Any]
         progress_thread.join(timeout=1)
 
 
-def _execute_local_command(command: str, capture_output: bool = True) -> subprocess.CompletedProcess:
+def _execute_local_command(
+    command: str, capture_output: bool = True
+) -> subprocess.CompletedProcess:
     """Execute command on the local machine directly (no SSH)."""
     try:
         if capture_output:
@@ -601,7 +603,7 @@ def install_remote_package(package: str, options: dict[str, Any]):
     ch.info(f"📦 Installing package: {package}")
 
     # Detect package manager based on OS metadata or by checking commands
-    os_type = server_config.get("metadata", {}).get("os", "").lower()
+    os_type = host_config.get("metadata", {}).get("os", "").lower()
 
     # Try to detect package manager
     package_managers = [

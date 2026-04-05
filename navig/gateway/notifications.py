@@ -212,9 +212,7 @@ class TelegramNotifier(ChannelNotifier):
         proactive_cfg = cm.global_config.get("proactive", {}) if cm.global_config else {}
 
         heartbeat_interval = int(proactive_cfg.get("heartbeat_interval_sec", 30 * 60))
-        engagement_interval = int(
-            proactive_cfg.get("engagement_tick_interval_sec", 15 * 60)
-        )
+        engagement_interval = int(proactive_cfg.get("engagement_tick_interval_sec", 15 * 60))
         scheduler_loop_interval = int(proactive_cfg.get("scheduler_loop_interval_sec", 30))
 
         store = get_runtime_store()
@@ -695,7 +693,7 @@ class NotificationManager:
 
     async def stop_all(self):
         """Stop all notification channels."""
-        for name, channel in self._channels.items():
+        for _name, channel in self._channels.items():
             try:
                 await channel.stop()
             except Exception:  # noqa: BLE001

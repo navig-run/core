@@ -24,6 +24,7 @@ from navig import console_helper as ch
 if TYPE_CHECKING:
     from navig.memory.project_indexer import ProjectIndexer
 
+
 @dataclass
 class WikiDocument:
     """Represents a wiki document for indexing."""
@@ -60,6 +61,7 @@ class WikiDocument:
             start = end - overlap
 
         return chunks
+
 
 class TextTokenizer:
     """Simple text tokenizer for search."""
@@ -152,6 +154,7 @@ class TextTokenizer:
         words = re.findall(r"\b[a-z0-9]+\b", text.lower())
         # Filter stop words and short words
         return [w for w in words if w not in TextTokenizer.STOP_WORDS and len(w) > 2]
+
 
 class BM25Index:
     """BM25 index for text search.
@@ -252,7 +255,7 @@ class BM25Index:
         seen_paths = set()
         results = []
 
-        for score, idx, doc, chunk_idx in scores:
+        for score, _idx, doc, chunk_idx in scores:
             if doc.path in seen_paths:
                 continue
             seen_paths.add(doc.path)
@@ -277,6 +280,7 @@ class BM25Index:
                 break
 
         return results
+
 
 class WikiRAG:
     """RAG system for wiki knowledge base.
@@ -554,6 +558,7 @@ class WikiRAG:
             "unique_terms": len(self.index.doc_freqs),
             "avg_doc_length": (round(self.index.avg_doc_len, 2) if self.index.avg_doc_len else 0),
         }
+
 
 def get_wiki_rag(
     wiki_path: Path,

@@ -71,6 +71,22 @@ _PROMOTED_FLAG: Path = paths.config_dir() / ".ipc_promoted"
 _shadow_match_count: int = 0
 _shadow_lock = threading.Lock()
 
+# Log file for shadow IPC anomalies
+_SHADOW_LOG: Path = paths.config_dir() / "shadow_ipc_anomalies.log"
+
+
+def log_shadow_anomaly(source: str, event_type: str, data: dict[str, Any]) -> None:
+    """Log a shadow IPC result mismatch to the debug logger and anomaly file."""
+    msg = f"shadow_anomaly source={source!r} event={event_type!r} data={data}"
+    logger.debug(msg)
+    try:
+        with _SHADOW_LOG.open("a", encoding="utf-8") as _f:
+            import json as _json
+
+            _f.write(_json.dumps({"source": source, "event": event_type, "data": data}) + "\n")
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
+
 
 def _pipe_address() -> str:
     """Return the platform-appropriate pipe / socket address."""

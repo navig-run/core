@@ -382,7 +382,7 @@ class ChannelRegistry:
 
     def _check_channel_availability(self) -> None:
         """Check which channels are available based on dependencies."""
-        for channel_id, meta in self._channels.items():
+        for _channel_id, meta in self._channels.items():
             if meta.module_path:
                 try:
                     # Try to import the module

@@ -389,7 +389,7 @@ class PluginRegistry:
             spec.loader.exec_module(module)
 
             # Find Plugin subclass
-            for name, obj in inspect.getmembers(module, inspect.isclass):
+            for _name, obj in inspect.getmembers(module, inspect.isclass):
                 if issubclass(obj, Plugin) and obj is not Plugin:
                     if hasattr(obj, "metadata"):
                         info = PluginInfo(
@@ -427,7 +427,7 @@ class PluginRegistry:
             spec.loader.exec_module(module)
 
             # Find Plugin subclass
-            for name, obj in inspect.getmembers(module, inspect.isclass):
+            for _name, obj in inspect.getmembers(module, inspect.isclass):
                 if issubclass(obj, Plugin) and obj is not Plugin:
                     if hasattr(obj, "metadata"):
                         info = PluginInfo(
@@ -484,7 +484,7 @@ class PluginRegistry:
                 raise ValueError(f"Module not loaded: {info.module_name}")
 
             plugin_cls = None
-            for obj_name, obj in inspect.getmembers(module, inspect.isclass):
+            for _obj_name, obj in inspect.getmembers(module, inspect.isclass):
                 if issubclass(obj, Plugin) and obj is not Plugin:
                     if hasattr(obj, "metadata") and obj.metadata.name == name:
                         plugin_cls = obj
