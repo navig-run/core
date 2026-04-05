@@ -63,7 +63,7 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
         "git_status",
         "git_diff",
         "git_log",
-        "git_stash",
+        "git_stash_list",
         "remote_file_read",
         "lsp_diagnostics",
         "lsp_definition",
@@ -286,6 +286,17 @@ class SpeculativeCache:
             oldest_key = min(self._cache, key=lambda k: self._cache[k].created_at)
             del self._cache[oldest_key]
 
+    def contains(self, tool: str, args: dict[str, Any]) -> bool:
+        """Check if an unexpired entry exists (does NOT affect hit/miss counters)."""
+        key = self._key(tool, args)
+        entry = self._cache.get(key)
+        if entry is None:
+            return False
+        if entry.expired:
+            del self._cache[key]
+            return False
+        return True
+
     def invalidate(self, tool: str, args: dict[str, Any]) -> bool:
         """Remove a specific entry.  Returns True if it existed."""
         key = self._key(tool, args)
@@ -410,14 +421,9 @@ class SpeculativeExecutor:
             return
 
         for pred in predictions:
-            # Skip if already cached.
-            if self.cache.get(pred.tool, pred.args) is not None:
-                # undo the miss counter bump from get()
-                self.cache._misses = max(0, self.cache._misses - 1)
+            # Skip if already cached (uses contains() to avoid counter side-effects).
+            if self.cache.contains(pred.tool, pred.args):
                 continue
-
-            # undo the miss counter bump from the probe above
-            self.cache._misses = max(0, self.cache._misses - 1)
 
             task = loop.create_task(
                 self._speculative_run(pred),

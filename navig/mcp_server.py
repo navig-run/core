@@ -18,6 +18,7 @@ VS Code Integration:
 
 import asyncio
 import json
+import logging
 import secrets
 import sys
 from collections.abc import Callable
@@ -27,6 +28,8 @@ from typing import Any
 
 from navig import console_helper as ch
 from navig.config import ConfigManager
+
+logger = logging.getLogger(__name__)
 
 
 class MCPProtocolHandler:
@@ -345,6 +348,7 @@ class MCPProtocolHandler:
                 return {"jsonrpc": "2.0", "id": msg_id, "result": result}
             return None
         except Exception as e:
+            logger.debug("MCP handler error method=%s: %s", method, e, exc_info=True)
             if msg_id is not None:
                 return {
                     "jsonrpc": "2.0",
@@ -497,6 +501,20 @@ def _build_http_app(
 
         try:
             body = await request.text()
+            if len(body) > 1_048_576:  # 1 MiB guard
+                size_err = json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "error": {"code": -32600, "message": "Request body too large"},
+                        "id": None,
+                    }
+                )
+                return web.Response(
+                    status=413,
+                    body=size_err,
+                    content_type="application/json",
+                    headers=_CORS_HEADERS,
+                )
             message = json.loads(body)
         except Exception as exc:
             parse_err = json.dumps(
