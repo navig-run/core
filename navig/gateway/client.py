@@ -1,53 +1,21 @@
-"""Shared client helpers for calling the local NAVIG gateway."""
+"""Backwards-compat shim — import from ``navig.gateway_client`` instead.
 
-from __future__ import annotations
+Importing this module triggers ``navig/gateway/__init__.py`` which has a
+circular import chain that deadlocks under Python 3.14.  CLI code should
+import directly from ``navig.gateway_client`` (outside the package) to
+avoid that deadlock.
+"""
 
+from navig.gateway_client import (  # noqa: F401
+    gateway_base_url,
+    gateway_cli_defaults,
+    gateway_request,
+    gateway_request_headers,
+)
 
-def gateway_cli_defaults() -> tuple[int, str]:
-    """Return gateway port/host from config with stable CLI fallbacks."""
-    try:
-        from navig.config import get_config_manager
-
-        raw = get_config_manager()._load_global_config()
-    except Exception:
-        raw = {}
-
-    gw = raw.get("gateway") or {}
-    port = int(gw.get("port") or 8789)
-    host = str(gw.get("host") or "127.0.0.1")
-    return port, host
-
-
-def gateway_base_url() -> str:
-    """Return the localhost gateway base URL."""
-    port, _host = gateway_cli_defaults()
-    return f"http://localhost:{port}"
-
-
-def gateway_request_headers() -> dict[str, str]:
-    """Return auth headers for gateway admin requests when configured."""
-    try:
-        from navig.config import get_config_manager
-
-        raw = get_config_manager()._load_global_config()
-    except Exception:
-        raw = {}
-
-    gw = raw.get("gateway") or {}
-    auth = gw.get("auth") or {}
-    token = auth.get("token") or gw.get("auth_token") or gw.get("token")
-
-    headers = {"X-Actor": "navig-cli"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    return headers
-
-
-def gateway_request(method: str, path: str, **kwargs):
-    """Send an authenticated request to the local gateway."""
-    import requests
-
-    headers = dict(gateway_request_headers())
-    extra_headers = kwargs.pop("headers", None) or {}
-    headers.update(extra_headers)
-    return requests.request(method, f"{gateway_base_url()}{path}", headers=headers, **kwargs)
+__all__ = [
+    "gateway_base_url",
+    "gateway_cli_defaults",
+    "gateway_request",
+    "gateway_request_headers",
+]

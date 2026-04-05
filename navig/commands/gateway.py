@@ -21,28 +21,28 @@ except ImportError:
 
 def _gw_base_url() -> str:
     """Return the local gateway base URL from config (gateway.port / gateway.host)."""
-    from navig.gateway.client import gateway_base_url
+    from navig.gateway_client import gateway_base_url
 
     return gateway_base_url()
 
 
 def _gateway_request_headers() -> dict[str, str]:
     """Return auth headers for gateway admin requests when configured."""
-    from navig.gateway.client import gateway_request_headers
+    from navig.gateway_client import gateway_request_headers
 
     return gateway_request_headers()
 
 
 def _gw_request(method: str, path: str, **kwargs):
     """Send an authenticated request to the local gateway."""
-    from navig.gateway.client import gateway_request
+    from navig.gateway_client import gateway_request
 
     return gateway_request(method, path, **kwargs)
 
 
 def _load_gateway_cli_defaults() -> tuple[int, str]:
     """Return gateway port/host from config with stable CLI fallbacks."""
-    from navig.gateway.client import gateway_cli_defaults
+    from navig.gateway_client import gateway_cli_defaults
 
     return gateway_cli_defaults()
 

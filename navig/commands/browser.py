@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from navig.gateway.client import gateway_base_url, gateway_request_headers
+from navig.gateway_client import gateway_base_url, gateway_request_headers
 from navig.lazy_loader import lazy_import
 
 ch = lazy_import("navig.console_helper")

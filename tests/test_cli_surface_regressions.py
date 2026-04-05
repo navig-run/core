@@ -26,7 +26,7 @@ def _cli_env(tmp_path: Path) -> dict[str, str]:
     return env
 
 
-def _run_cli(args: list[str], *, tmp_path: Path) -> subprocess.CompletedProcess[str]:
+def _run_cli(args: list[str], *, tmp_path: Path, timeout: int = 30) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "navig", *args],
         cwd=ROOT,
@@ -34,6 +34,8 @@ def _run_cli(args: list[str], *, tmp_path: Path) -> subprocess.CompletedProcess[
         text=True,
         encoding="utf-8",
         env=_cli_env(tmp_path),
+        stdin=subprocess.DEVNULL,
+        timeout=timeout,
     )
 
 
@@ -152,10 +154,12 @@ def test_task_non_tty_lists_workflows_without_launcher_hint(tmp_path: Path):
 
 def test_bot_start_uses_configured_gateway_port_when_unspecified(monkeypatch):
     import navig.commands.gateway as gw_mod
+    import navig.messaging.secrets as _secrets_mod
 
     recorded: dict[str, list[str]] = {}
 
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "token")
+    # Bypass vault check (SQLite lock can hang indefinitely in test environments)
+    monkeypatch.setattr(_secrets_mod, "resolve_telegram_bot_token", lambda *a, **kw: "fake-token")
     monkeypatch.setattr(gw_mod, "_load_gateway_cli_defaults", lambda: (8789, "127.0.0.1"))
     monkeypatch.setattr(
         subprocess,
@@ -172,10 +176,12 @@ def test_bot_start_uses_configured_gateway_port_when_unspecified(monkeypatch):
 def test_quick_start_uses_configured_gateway_port_when_unspecified(monkeypatch):
     import navig.cli as cli
     import navig.commands.gateway as gw_mod
+    import navig.messaging.secrets as _secrets_mod
 
     recorded: dict[str, list[str]] = {}
 
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "token")
+    # Bypass vault check (SQLite lock can hang indefinitely in test environments)
+    monkeypatch.setattr(_secrets_mod, "resolve_telegram_bot_token", lambda *a, **kw: "fake-token")
     monkeypatch.setattr(gw_mod, "_load_gateway_cli_defaults", lambda: (8789, "127.0.0.1"))
     monkeypatch.setattr(
         subprocess,
