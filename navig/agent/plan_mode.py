@@ -192,6 +192,11 @@ class PlanInterceptor:
             "navig_file_show",
             "navig_file_list",
             "navig_web_vhosts",
+            # Git read-only
+            "git_status",
+            "git_diff",
+            "git_log",
+            "git_stash",
             # Plan management
             "plan_add_step",
             "plan_show",
@@ -283,7 +288,9 @@ class PlanInterceptor:
             raise RuntimeError("Can only add steps while in 'planning' state.")
         self._session.steps.append(step)
         idx = len(self._session.steps) - 1
-        logger.debug("Plan %s: added step %d — %s", self._session.plan_id, idx, step.description[:60])
+        logger.debug(
+            "Plan %s: added step %d — %s", self._session.plan_id, idx, step.description[:60]
+        )
         return idx
 
     def record_context(self, description: str) -> None:

@@ -447,6 +447,129 @@ def _call_provider_rich(
     return content, 0, 0, {}
 
 
+def _call_provider_rich_stream(
+    provider: str,
+    model: str,
+    messages: list[dict],
+    temperature: float,
+    max_tokens: int,
+    timeout: float,
+    base_url: str | None = None,
+    thinking_params: dict[str, Any] | None = None,
+):
+    """Yield :class:`StreamChunk` objects from a streaming provider call.
+
+    This is the streaming counterpart of :func:`_call_provider_rich`.
+    Falls back to a single-chunk non-streaming call if the provider
+    system is unavailable.
+    """
+    from navig.providers import (
+        CompletionRequest,
+        Message,
+        create_client,
+        get_builtin_provider,
+    )
+    from navig.providers.auth import AuthProfileManager
+    from navig.providers.clients import StreamChunk
+
+    provider_cfg = get_builtin_provider(provider)
+    if provider_cfg is None:
+        from navig.llm_router import PROVIDER_BASE_URLS
+        from navig.providers.types import ModelApi, ProviderConfig
+
+        url = base_url or PROVIDER_BASE_URLS.get(provider, "https://openrouter.ai/api/v1")
+        provider_cfg = ProviderConfig(
+            name=provider,
+            base_url=url,
+            api=ModelApi.OPENAI_COMPLETIONS,
+        )
+    elif base_url:
+        provider_cfg.base_url = base_url
+
+    auth_manager = AuthProfileManager()
+    api_key, _ = auth_manager.resolve_auth(provider)
+
+    msgs = [Message(role=m["role"], content=m["content"]) for m in messages]
+    request = CompletionRequest(
+        messages=msgs,
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        stream=True,
+        extra_body=thinking_params if thinking_params else None,
+    )
+    client = create_client(provider_cfg, api_key=api_key, timeout=timeout)
+
+    async def _stream():
+        chunks = []
+        async for chunk in client.complete_stream(request):
+            chunks.append(chunk)
+        return chunks
+
+    try:
+        return _safe_run_async(_stream)
+    except Exception as exc:
+        logger.debug("_call_provider_rich_stream failed: %s — yielding single chunk fallback", exc)
+        content, _, _, _ = _call_provider_rich(
+            provider=provider,
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=timeout,
+            base_url=base_url,
+            thinking_params=thinking_params,
+        )
+        return [StreamChunk(delta=content, finish_reason="stop", provider=provider, model=model)]
+
+
+def llm_generate_stream(
+    messages: list[dict[str, str]],
+    mode: str | None = None,
+    user_input: str | None = None,
+    prefer_uncensored: bool | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    model_override: str | None = None,
+    provider_override: str | None = None,
+    timeout: float = 120.0,
+):
+    """Streaming variant of :func:`llm_generate`.
+
+    Yields :class:`~navig.providers.clients.StreamChunk` objects as they
+    arrive from the LLM provider.
+
+    Usage::
+
+        from navig.llm_generate import llm_generate_stream
+
+        for chunk in llm_generate_stream(messages=[...], mode="chat"):
+            if chunk.delta:
+                print(chunk.delta, end="", flush=True)
+    """
+    if model_override:
+        provider, model = _parse_model_spec(model_override, provider_override)
+    else:
+        from navig.llm_router import resolve_llm
+
+        resolved = resolve_llm(
+            mode=mode,
+            user_input=user_input,
+            prefer_uncensored=prefer_uncensored,
+        )
+        provider = resolved.provider
+        model = resolved.model
+
+    return _call_provider_rich_stream(
+        provider=provider,
+        model=model,
+        messages=messages,
+        temperature=temperature or 0.7,
+        max_tokens=max_tokens or 4096,
+        timeout=timeout,
+    )
+
+
 def _call_with_fallback(
     messages: list[dict[str, str]],
     selection: ModelSelection,

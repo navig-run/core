@@ -24,6 +24,7 @@ except ImportError:
 
 from .types import BUILTIN_PROVIDERS, ModelApi, ModelDefinition, ProviderConfig
 
+
 @dataclass
 class Message:
     """A chat message."""
@@ -33,6 +34,7 @@ class Message:
     name: str | None = None
     tool_call_id: str | None = None
     tool_calls: list[dict] | None = None
+
 
 @dataclass
 class ToolDefinition:
@@ -61,6 +63,7 @@ class ToolDefinition:
             "input_schema": self.parameters,
         }
 
+
 @dataclass
 class CompletionRequest:
     """Request for chat completion."""
@@ -75,6 +78,7 @@ class CompletionRequest:
     stop: list[str] | None = None
     extra_body: dict | None = None  # Provider-specific params (thinking budgets, etc.)
 
+
 @dataclass
 class ToolCall:
     """A tool call in a completion response."""
@@ -82,6 +86,7 @@ class ToolCall:
     id: str
     name: str
     arguments: str  # JSON string
+
 
 @dataclass
 class CompletionResponse:
@@ -98,6 +103,7 @@ class CompletionResponse:
     def has_tool_calls(self) -> bool:
         return bool(self.tool_calls)
 
+
 @dataclass
 class ProviderError(Exception):
     """Error from a provider."""
@@ -110,6 +116,25 @@ class ProviderError(Exception):
 
     def __str__(self):
         return f"[{self.provider}] {self.message} (status={self.status_code})"
+
+
+@dataclass
+class StreamChunk:
+    """A single chunk from a streaming completion response.
+
+    When the stream starts, the first chunk often contains just the
+    ``model`` and ``provider`` fields.  Subsequent chunks carry ``delta``
+    (text token) or ``tool_call_delta`` fragments.  The final chunk sets
+    ``finish_reason``.
+    """
+
+    delta: str | None = None
+    tool_call_delta: ToolCall | None = None
+    finish_reason: str | None = None
+    usage: dict[str, int] | None = None
+    model: str | None = None
+    provider: str | None = None
+
 
 class BaseProviderClient(ABC):
     """Abstract base class for provider clients."""
@@ -168,14 +193,21 @@ class BaseProviderClient(ABC):
         """Execute a chat completion request."""
         pass
 
-    async def complete_stream(
-        self, request: CompletionRequest
-    ) -> AsyncIterator[CompletionResponse]:
-        """Execute a streaming chat completion request."""
-        # Default implementation: fall back to non-streaming
+    async def complete_stream(self, request: CompletionRequest) -> AsyncIterator[StreamChunk]:
+        """Execute a streaming chat completion request.
+
+        Default: falls back to non-streaming and yields a single chunk.
+        Override in subclasses for true SSE streaming.
+        """
         request.stream = False
         result = await self.complete(request)
-        yield result
+        yield StreamChunk(
+            delta=result.content,
+            finish_reason=result.finish_reason,
+            usage=result.usage,
+            model=result.model,
+            provider=result.provider,
+        )
 
     def get_available_models(self) -> list[ModelDefinition]:
         """Get list of available models for this provider."""
@@ -218,6 +250,7 @@ class BaseProviderClient(ABC):
             provider=self.name,
             retryable=retryable,
         )
+
 
 class OpenAIClient(BaseProviderClient):
     """Client for OpenAI and OpenAI-compatible APIs."""
@@ -283,6 +316,81 @@ class OpenAIClient(BaseProviderClient):
                 provider=self.name,
                 retryable=True,
             ) from e
+
+    async def complete_stream(self, request: CompletionRequest) -> AsyncIterator[StreamChunk]:
+        """Stream chat completions via OpenAI-compatible SSE."""
+        client = await self._get_client()
+
+        body: dict[str, Any] = {
+            "model": request.model,
+            "messages": [{"role": m.role, "content": m.content} for m in request.messages],
+            "temperature": request.temperature,
+            "max_tokens": request.max_tokens,
+            "stream": True,
+        }
+
+        if request.tools:
+            body["tools"] = [t.to_openai_format() for t in request.tools]
+            if request.tool_choice:
+                body["tool_choice"] = request.tool_choice
+
+        if request.stop:
+            body["stop"] = request.stop
+
+        try:
+            async with client.stream(
+                "POST",
+                f"{self.base_url}/chat/completions",
+                json=body,
+            ) as response:
+                if response.status_code != 200:
+                    error_body = await response.aread()
+                    raise self._parse_error(response.status_code, error_body.decode())
+
+                async for line in response.aiter_lines():
+                    line = line.strip()
+                    if not line or not line.startswith("data: "):
+                        continue
+                    payload = line[6:]  # strip "data: "
+                    if payload == "[DONE]":
+                        break
+                    try:
+                        chunk_data = json.loads(payload)
+                    except json.JSONDecodeError:
+                        continue
+
+                    choice = (chunk_data.get("choices") or [{}])[0]
+                    delta = choice.get("delta", {})
+
+                    # Text delta
+                    text = delta.get("content")
+
+                    # Tool call delta
+                    tc_delta = None
+                    if delta.get("tool_calls"):
+                        tc = delta["tool_calls"][0]
+                        tc_delta = ToolCall(
+                            id=tc.get("id", ""),
+                            name=tc.get("function", {}).get("name", ""),
+                            arguments=tc.get("function", {}).get("arguments", ""),
+                        )
+
+                    yield StreamChunk(
+                        delta=text,
+                        tool_call_delta=tc_delta,
+                        finish_reason=choice.get("finish_reason"),
+                        usage=chunk_data.get("usage"),
+                        model=chunk_data.get("model"),
+                        provider=self.name,
+                    )
+
+        except httpx.HTTPError as e:
+            raise ProviderError(
+                message=str(e),
+                provider=self.name,
+                retryable=True,
+            ) from e
+
 
 class AnthropicClient(BaseProviderClient):
     """Client for Anthropic Claude API."""
@@ -386,12 +494,122 @@ class AnthropicClient(BaseProviderClient):
                 retryable=True,
             ) from e
 
+    async def complete_stream(self, request: CompletionRequest) -> AsyncIterator[StreamChunk]:
+        """Stream chat completions via Anthropic SSE."""
+        client = await self._get_client()
+
+        system_content = None
+        messages = []
+        for m in request.messages:
+            if m.role == "system":
+                system_content = m.content
+            else:
+                messages.append({"role": m.role, "content": m.content})
+
+        body: dict[str, Any] = {
+            "model": request.model,
+            "messages": messages,
+            "max_tokens": request.max_tokens,
+            "stream": True,
+        }
+
+        if system_content:
+            body["system"] = system_content
+
+        if request.tools:
+            body["tools"] = [t.to_anthropic_format() for t in request.tools]
+            if request.tool_choice:
+                if request.tool_choice == "auto":
+                    body["tool_choice"] = {"type": "auto"}
+                elif request.tool_choice == "none":
+                    body["tool_choice"] = {"type": "none"}
+                else:
+                    body["tool_choice"] = {"type": "tool", "name": request.tool_choice}
+
+        if request.stop:
+            body["stop_sequences"] = request.stop
+
+        try:
+            async with client.stream(
+                "POST",
+                f"{self.base_url}/v1/messages",
+                json=body,
+            ) as response:
+                if response.status_code != 200:
+                    error_body = await response.aread()
+                    raise self._parse_error(response.status_code, error_body.decode())
+
+                current_tool_id = ""
+                current_tool_name = ""
+
+                async for line in response.aiter_lines():
+                    line = line.strip()
+                    if not line or not line.startswith("data: "):
+                        continue
+                    payload = line[6:]
+                    try:
+                        event = json.loads(payload)
+                    except json.JSONDecodeError:
+                        continue
+
+                    event_type = event.get("type", "")
+
+                    if event_type == "content_block_start":
+                        block = event.get("content_block", {})
+                        if block.get("type") == "tool_use":
+                            current_tool_id = block.get("id", "")
+                            current_tool_name = block.get("name", "")
+
+                    elif event_type == "content_block_delta":
+                        delta = event.get("delta", {})
+                        delta_type = delta.get("type", "")
+
+                        if delta_type == "text_delta":
+                            yield StreamChunk(
+                                delta=delta.get("text"),
+                                provider=self.name,
+                            )
+                        elif delta_type == "input_json_delta":
+                            yield StreamChunk(
+                                tool_call_delta=ToolCall(
+                                    id=current_tool_id,
+                                    name=current_tool_name,
+                                    arguments=delta.get("partial_json", ""),
+                                ),
+                                provider=self.name,
+                            )
+
+                    elif event_type == "message_delta":
+                        yield StreamChunk(
+                            finish_reason=event.get("delta", {}).get("stop_reason"),
+                            usage={
+                                "completion_tokens": event.get("usage", {}).get("output_tokens", 0),
+                            },
+                            provider=self.name,
+                        )
+
+                    elif event_type == "message_start":
+                        msg = event.get("message", {})
+                        yield StreamChunk(
+                            model=msg.get("model"),
+                            provider=self.name,
+                        )
+
+        except httpx.HTTPError as e:
+            raise ProviderError(
+                message=str(e),
+                provider=self.name,
+                retryable=True,
+            ) from e
+
+
 # Client factory mapping
 CLIENT_CLASSES: dict[ModelApi, type] = {
     ModelApi.OPENAI_COMPLETIONS: OpenAIClient,
     ModelApi.OPENAI_RESPONSES: OpenAIClient,
     ModelApi.ANTHROPIC_MESSAGES: AnthropicClient,
 }
+
 
 def create_client(
     config: ProviderConfig,
@@ -428,6 +646,7 @@ def create_client(
 
     client_class = CLIENT_CLASSES.get(config.api, OpenAIClient)
     return client_class(config, api_key=api_key, timeout=timeout)
+
 
 def get_builtin_provider(name: str) -> ProviderConfig | None:
     """Get a built-in provider configuration by name."""

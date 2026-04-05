@@ -186,6 +186,30 @@ def register_coordinator_tools() -> None:
         logger.debug("Coordinator tools not available (skip): %s", exc)
 
 
+def register_git_tools() -> None:
+    """Register git_status, git_diff, git_log, git_commit, git_stash tools."""
+    try:
+        from navig.agent.agent_tool_registry import _AGENT_REGISTRY
+        from navig.agent.tools.git_tools import (
+            GitCommitTool,
+            GitDiffTool,
+            GitLogTool,
+            GitStashTool,
+            GitStatusTool,
+        )
+
+        _AGENT_REGISTRY.register(GitStatusTool(), toolset="git")
+        _AGENT_REGISTRY.register(GitDiffTool(), toolset="git")
+        _AGENT_REGISTRY.register(GitLogTool(), toolset="git")
+        _AGENT_REGISTRY.register(GitCommitTool(), toolset="git")
+        _AGENT_REGISTRY.register(GitStashTool(), toolset="git")
+        logger.debug(
+            "Agent git tools registered: git_status, git_diff, git_log, git_commit, git_stash"
+        )
+    except ImportError as exc:
+        logger.debug("Git tools not available (skip): %s", exc)
+
+
 def register_all_tools() -> None:
     """Register all available built-in agent tools.
 
@@ -203,6 +227,7 @@ def register_all_tools() -> None:
         ("background_task", register_background_task_tools),
         ("worktree", register_worktree_tools),
         ("coordinator", register_coordinator_tools),
+        ("git", register_git_tools),
     ]:
         try:
             fn()

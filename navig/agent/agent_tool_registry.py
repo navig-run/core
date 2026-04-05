@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from navig.agent.tool_caps import cap_result
+from navig.agent.tool_permissions import ToolPermissionContext
 from navig.tools.registry import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -136,9 +137,7 @@ class AgentToolRegistry:
         """Look up a tool entry by name.  Returns ``None`` if not found."""
         return self._entries.get(name)
 
-    def available_names(
-        self, toolsets: list[str] | None = None
-    ) -> list[str]:
+    def available_names(self, toolsets: list[str] | None = None) -> list[str]:
         """Return sorted list of available (check_fn-passing) tool names.
 
         Args:
@@ -159,6 +158,7 @@ class AgentToolRegistry:
         self,
         toolsets: list[str] | None = None,
         tool_names: list[str] | None = None,
+        permissions: ToolPermissionContext | None = None,
     ) -> list[dict[str, Any]]:
         """Return OpenAI ``tools=[]`` list for the given toolsets/names.
 
@@ -167,6 +167,8 @@ class AgentToolRegistry:
                         ``None`` means include all toolsets.
             tool_names: If given, include only tools with these names.
                         Takes precedence over *toolsets* when both are set.
+            permissions: If given, tools blocked by :meth:`ToolPermissionContext.blocks`
+                        are silently excluded from the returned schemas.
 
         Returns:
             List of ``{"type": "function", "function": {...}}`` dicts suitable
@@ -183,6 +185,9 @@ class AgentToolRegistry:
             # Availability gate
             if not _is_available(entry):
                 continue
+            # Permission gate
+            if permissions is not None and permissions.blocks(name):
+                continue
             schemas.append({"type": "function", "function": entry.schema})
         return schemas
 
@@ -193,6 +198,7 @@ class AgentToolRegistry:
         name: str,
         args: dict[str, Any],
         vault_injector: Callable[[list[str]], dict[str, str]] | None = None,
+        permissions: ToolPermissionContext | None = None,
     ) -> str:
         """Execute a tool by name and return its output as a string.
 
@@ -202,6 +208,9 @@ class AgentToolRegistry:
             vault_injector: Optional callable that resolves vault keys to
                             credential values.  Signature:
                             ``vault_injector(keys) -> {key: value}``.
+            permissions:    If given, the tool is checked against the
+                            permission context before execution.  Raises
+                            :class:`ToolPermissionDenied` if blocked.
 
         Returns:
             String output (``ToolResult.output`` on success, or error message).
@@ -210,10 +219,16 @@ class AgentToolRegistry:
         Raises:
             KeyError: If *name* is not registered.
             RuntimeError: If *check_fn* returns ``False`` (tool unavailable).
+            ToolPermissionDenied: If *permissions* blocks this tool.
         """
         entry = self._entries.get(name)
         if entry is None:
             raise KeyError(f"Tool {name!r} not registered in AgentToolRegistry")
+
+        if permissions is not None and permissions.blocks(name):
+            from navig.agent.tool_permissions import ToolPermissionDenied
+
+            raise ToolPermissionDenied(name)
 
         if not _is_available(entry):
             raise RuntimeError(f"Tool {name!r} is currently unavailable (check_fn returned False)")
@@ -271,6 +286,7 @@ def _is_available(entry: AgentToolEntry) -> bool:
 
 def _run_tool_sync(tool: BaseTool, args: dict[str, Any]) -> ToolResult:
     """Run an async BaseTool synchronously, creating an event loop if needed."""
+
     async def _run() -> ToolResult:
         return await tool.run(args, on_status=None)
 

@@ -19,9 +19,7 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────
 
 #: Core read/write/execute tools available in every agentic session.
-NAVIG_CORE_TOOLS: frozenset[str] = frozenset(
-    {"bash_exec", "read_file", "write_file", "list_files"}
-)
+NAVIG_CORE_TOOLS: frozenset[str] = frozenset({"bash_exec", "read_file", "write_file", "list_files"})
 
 #: Complete toolset registry. ``None`` means "all registered tools".
 TOOLSETS: dict[str, list[str] | None] = {
@@ -30,10 +28,22 @@ TOOLSETS: dict[str, list[str] | None] = {
     # Web retrieval only
     "search": ["search", "web_fetch"],
     # Core + search combined (good for research tasks)
-    "research": ["bash_exec", "read_file", "write_file", "list_files", "search", "web_fetch",
-                 "wiki_search", "wiki_read", "kb_lookup", "memory_read"],
+    "research": [
+        "bash_exec",
+        "read_file",
+        "write_file",
+        "list_files",
+        "search",
+        "web_fetch",
+        "wiki_search",
+        "wiki_read",
+        "kb_lookup",
+        "memory_read",
+    ],
     # Software development tasks
     "code": ["bash_exec", "read_file", "write_file", "list_files", "search", "web_fetch"],
+    # Git operations (status, diff, log, commit, stash)
+    "git": ["git_status", "git_diff", "git_log", "git_commit", "git_stash"],
     # Structured DevOps command surface (requires owner_only clearance)
     "devops": [
         "bash_exec",
@@ -58,6 +68,10 @@ TOOLSETS: dict[str, list[str] | None] = {
         "navig_web_reload",
         "navig_app_list",
         "navig_app_show",
+        "git_status",
+        "git_diff",
+        "git_log",
+        "git_stash",
     ],
     # Knowledge base + wiki access
     "memory": ["memory_read", "memory_write", "memory_delete", "kb_lookup", "fts_search"],
@@ -93,6 +107,10 @@ PARALLEL_SAFE_TOOLS: frozenset[str] = frozenset(
         "navig_app_list",
         "navig_app_show",
         "fts_search",
+        "git_status",
+        "git_diff",
+        "git_log",
+        "git_stash",
     }
 )
 
@@ -112,6 +130,7 @@ NEVER_PARALLEL_TOOLS: frozenset[str] = frozenset(
         "navig_docker_restart",
         "navig_web_reload",
         "delegate_task",
+        "git_commit",
     }
 )
 
@@ -132,9 +151,7 @@ def validate_toolset(name: str) -> None:
     """
     if name not in TOOLSETS:
         known = ", ".join(sorted(TOOLSETS))
-        raise ValueError(
-            f"Unknown toolset {name!r}. Valid options: {known}"
-        )
+        raise ValueError(f"Unknown toolset {name!r}. Valid options: {known}")
 
 
 def resolve_toolset_names(name: str) -> list[str] | None:
