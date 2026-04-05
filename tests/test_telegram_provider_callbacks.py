@@ -365,6 +365,95 @@ async def test_provider_model_assignment_updates_llm_without_hybrid_router(monke
 
 
 @pytest.mark.asyncio
+async def test_provider_model_assignment_save_failure_shows_warning(monkeypatch):
+    """pms_ should warn the user when LLM router persistence fails."""
+
+    class _FailingSaveChannel(_FakeChannel):
+        async def _show_provider_model_picker(
+            self,
+            chat_id,
+            prov_id,
+            page=0,
+            selected_tier="s",
+            message_id=None,
+        ):
+            self.picker_calls.append((chat_id, prov_id, page, selected_tier, message_id))
+
+        def _update_llm_mode_router(self, provider_id, tier_models):
+            raise RuntimeError("save failed")
+
+    channel = _FailingSaveChannel()
+    handler = CallbackHandler(channel)
+
+    class _Manifest:
+        id = "xai"
+        emoji = "⚡"
+        display_name = "xAI / Grok"
+
+    class _Router:
+        is_active = False
+        cfg = None
+
+    class _Client:
+        model_router = _Router()
+
+    monkeypatch.setattr("navig.providers.registry.get_provider", lambda _prov_id: _Manifest())
+    monkeypatch.setattr("navig.agent.ai_client.get_ai_client", lambda: _Client())
+
+    await handler._handle_provider_model_callback(
+        cb_id="cb-save-fail",
+        cb_data="pms_xai_0_s_0",
+        chat_id=131,
+        message_id=231,
+        user_id=331,
+    )
+
+    answer_calls = [
+        payload for method, payload in channel.api_calls if method == "answerCallbackQuery"
+    ]
+    assert answer_calls
+    assert "could not be saved" in answer_calls[-1].get("text", "")
+    assert answer_calls[-1].get("show_alert") is True
+
+
+@pytest.mark.asyncio
+async def test_provider_model_assignment_rejects_negative_index(monkeypatch):
+    """pms_ must reject negative model indices instead of indexing from list end."""
+    channel = _FakeChannel()
+    handler = CallbackHandler(channel)
+
+    class _Manifest:
+        id = "xai"
+        emoji = "⚡"
+        display_name = "xAI / Grok"
+
+    class _Router:
+        is_active = False
+        cfg = None
+
+    class _Client:
+        model_router = _Router()
+
+    monkeypatch.setattr("navig.providers.registry.get_provider", lambda _prov_id: _Manifest())
+    monkeypatch.setattr("navig.agent.ai_client.get_ai_client", lambda: _Client())
+
+    await handler._handle_provider_model_callback(
+        cb_id="cb-neg",
+        cb_data="pms_xai_-1_s_0",
+        chat_id=140,
+        message_id=240,
+        user_id=340,
+    )
+
+    # Must not save any tier assignment from negative index callback.
+    assert channel.llm_mode_calls == []
+
+    answers = [payload for method, payload in channel.api_calls if method == "answerCallbackQuery"]
+    assert answers
+    assert "out of range" in answers[-1].get("text", "")
+
+
+@pytest.mark.asyncio
 async def test_provider_callback_answered_before_activation(monkeypatch):
     """answerCallbackQuery must be sent before _show_models_tier_summary is called."""
     events: list[str] = []

@@ -1478,7 +1478,7 @@ class CallbackHandler:
         if hasattr(self.channel, "_resolve_provider_models"):
             models = await self.channel._resolve_provider_models(prov_id, manifest=manifest)
 
-        if model_idx >= len(models):
+        if model_idx < 0 or model_idx >= len(models):
             await self._answer(cb_id, "⚠️ Model index out of range")
             return
         model = models[model_idx]
@@ -1498,13 +1498,17 @@ class CallbackHandler:
             logger.debug("Hybrid router update skipped for pms_ assignment")
 
         # --- Always update primary LLM Mode Router ---
+        mode_router_saved = True
         try:
             if hasattr(self.channel, "_update_llm_mode_router"):
                 self.channel._update_llm_mode_router(prov_id, {tier: model})
         except Exception:  # noqa: BLE001
+            mode_router_saved = False
             logger.warning("LLM mode router update failed for pms_ assignment; model not saved")
-
-        await self._answer(cb_id, f"✅ {tier_label} → {model[:40]}")
+        if mode_router_saved:
+            await self._answer(cb_id, f"✅ {tier_label} → {model[:40]}")
+        else:
+            await self._answer(cb_id, "⚠️ Model selection could not be saved", show_alert=True)
         try:
             from navig.commands.init import mark_chat_onboarding_step_completed
 
@@ -1633,7 +1637,7 @@ class CallbackHandler:
                     prov_id, manifest=manifest
                 )
 
-            if model_idx >= len(models_list):
+            if model_idx < 0 or model_idx >= len(models_list):
                 await self._answer(cb_id, "⚠️ Model index out of range")
                 return
             model = models_list[model_idx]
@@ -1653,14 +1657,19 @@ class CallbackHandler:
                 logger.debug("Hybrid router update skipped for mdl_sel_")
 
             # Always update LLM Mode Router
+            mode_router_saved = True
             try:
                 if hasattr(self.channel, "_update_llm_mode_router"):
                     self.channel._update_llm_mode_router(prov_id, {tier: model})
             except Exception:  # noqa: BLE001
+                mode_router_saved = False
                 logger.warning("LLM mode router update failed for mdl_sel_; model not saved")
 
             short_model = model.split("/")[-1].split(":")[-1]
-            await self._answer(cb_id, f"✅ {tier_label} → {short_model[:40]}")
+            if mode_router_saved:
+                await self._answer(cb_id, f"✅ {tier_label} → {short_model[:40]}")
+            else:
+                await self._answer(cb_id, "⚠️ Model selection could not be saved", show_alert=True)
 
             try:
                 from navig.commands.init import mark_chat_onboarding_step_completed

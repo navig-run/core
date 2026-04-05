@@ -506,6 +506,61 @@ async def test_mdl_sel_assigns_model_and_refreshes(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_mdl_sel_save_failure_shows_warning_and_refreshes(monkeypatch):
+    """mdl_sel should warn when mode-router save fails, but still refresh list."""
+
+    class _FailingSaveCallbackChannel(_FakeCallbackChannel):
+        def _update_llm_mode_router(self, provider_id, tier_models):
+            raise RuntimeError("save failed")
+
+    ch = _FailingSaveCallbackChannel()
+    handler = CallbackHandler(ch)
+
+    monkeypatch.setattr("navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid))
+
+    await handler._handle_models_callback(
+        cb_id="cb-fail",
+        cb_data="mdl_sel_openai_1_s_0",
+        chat_id=100,
+        message_id=200,
+        user_id=300,
+    )
+
+    answers = [payload for method, payload in ch.api_calls if method == "answerCallbackQuery"]
+    assert answers
+    assert "could not be saved" in answers[-1].get("text", "")
+    assert answers[-1].get("show_alert") is True
+
+    # Still refresh to let user retry quickly.
+    assert ch.model_lists == [(100, "openai", "s", 0, 200)]
+
+
+@pytest.mark.asyncio
+async def test_mdl_sel_rejects_negative_index(monkeypatch):
+    """mdl_sel must reject negative model indices (no Python reverse indexing)."""
+    ch = _FakeCallbackChannel()
+    handler = CallbackHandler(ch)
+
+    monkeypatch.setattr("navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid))
+
+    await handler._handle_models_callback(
+        cb_id="cb-neg",
+        cb_data="mdl_sel_openai_-1_s_0",
+        chat_id=100,
+        message_id=200,
+        user_id=300,
+    )
+
+    # No save attempts and no refresh when index is invalid.
+    assert ch.llm_mode_calls == []
+    assert ch.model_lists == []
+
+    answers = [payload for method, payload in ch.api_calls if method == "answerCallbackQuery"]
+    assert answers
+    assert "out of range" in answers[-1].get("text", "")
+
+
+@pytest.mark.asyncio
 async def test_mdl_unknown_callback_warns():
     """Unknown mdl_* callback answers with warning."""
     ch = _FakeCallbackChannel()
