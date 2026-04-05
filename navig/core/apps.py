@@ -132,8 +132,7 @@ class AppManager:
             if "apps" in host_config:
                 apps.update(host_config["apps"].keys())
         except FileNotFoundError:
-            pass
-
+            pass  # best-effort: file not found; skip
         return sorted(list(apps))
 
     def find_hosts_with_app(self, app_name: str) -> list[str]:
@@ -289,8 +288,7 @@ class AppManager:
                     ch.dim(f"✓ Deleted app '{app_name}' from host '{host_name}' (legacy format)")
                 return True
         except FileNotFoundError:
-            pass
-
+            pass  # best-effort: file not found; skip
         return False
 
     # ================================================================

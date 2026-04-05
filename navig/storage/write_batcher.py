@@ -150,7 +150,7 @@ class WriteBatcher:
                 try:
                     conn.execute("ROLLBACK")
                 except sqlite3.OperationalError:
-                    pass
+                    pass  # best-effort: DB lock or unavailable; skip
                 raise
             finally:
                 conn.isolation_level = old_iso

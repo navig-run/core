@@ -252,7 +252,7 @@ class FilteringEngine:
             try:
                 tmp_path.unlink(missing_ok=True)
             except OSError:
-                pass
+                pass  # best-effort: skip on IO error
             result.error = str(exc)
             logger.error("[FilteringEngine] Write error %s: %s", path, exc)
 

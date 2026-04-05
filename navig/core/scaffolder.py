@@ -157,7 +157,7 @@ class Scaffolder:
                 try:
                     path.chmod(int(mode, 8))
                 except (OSError, PermissionError):
-                    pass
+                    pass  # best-effort: skip on access/IO error
             except Exception:
                 # On Windows this often fails or is ignored, so we warn but don't stop
                 pass
@@ -193,6 +193,6 @@ class Scaffolder:
                 try:
                     path.chmod(int(mode, 8))
                 except (OSError, PermissionError):
-                    pass
+                    pass  # best-effort: skip on access/IO error
         except Exception as e:
             raise OSError(f"Failed to create file {path}: {e}") from e

@@ -91,7 +91,7 @@ class CryptoEngine:
                 try:
                     salt_path.chmod(0o600)
                 except (OSError, PermissionError):
-                    pass
+                    pass  # best-effort: skip on access/IO error
             except OSError:
                 pass  # Windows — no-op
         return self._salt

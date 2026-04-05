@@ -361,7 +361,7 @@ def ensure_telegram_uid(
         try:
             env_file.chmod(0o600)
         except (OSError, PermissionError):
-            pass
+            pass  # best-effort: skip on access/IO error
     except Exception:
         pass  # .env write is best-effort; vault write succeeded above
 

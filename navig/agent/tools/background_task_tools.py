@@ -232,8 +232,7 @@ class BackgroundTaskOutputTool(BaseTool):
             try:
                 tail = int(raw_tail)
             except (TypeError, ValueError):
-                pass
-
+                pass  # best-effort: skip on bad/unexpected data
         try:
             manager = _get_manager()
         except Exception as exc:  # noqa: BLE001

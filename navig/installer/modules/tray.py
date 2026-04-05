@@ -131,7 +131,7 @@ def rollback(action: Action, result: Result, ctx: InstallerContext) -> None:
         try:
             winreg.DeleteValue(key, "NavigTray")  # type: ignore[attr-defined]
         except FileNotFoundError:
-            pass
+            pass  # best-effort: file not found; skip
         winreg.CloseKey(key)  # type: ignore[attr-defined]
     except Exception:  # noqa: BLE001
         pass

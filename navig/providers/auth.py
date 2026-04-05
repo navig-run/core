@@ -191,7 +191,7 @@ class AuthProfileManager:
             try:
                 os.chmod(self.store_path, 0o600)
             except (OSError, PermissionError):
-                pass
+                pass  # best-effort: skip on access/IO error
         except OSError:
             pass  # Windows doesn't support chmod the same way
 

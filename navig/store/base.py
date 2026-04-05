@@ -103,7 +103,7 @@ class BaseStore:
                 try:
                     conn.execute(f"PRAGMA {pragma}={value}")
                 except sqlite3.OperationalError:
-                    pass
+                    pass  # best-effort: DB lock or unavailable; skip
         return conn
 
     # ── Schema management ─────────────────────────────────────

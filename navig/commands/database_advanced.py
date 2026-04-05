@@ -116,8 +116,7 @@ def _create_mysql_config_file(db_user: str, db_password: str) -> str:
         try:
             os.chmod(temp_path, 0o600)
         except (OSError, PermissionError):
-            pass
-
+            pass  # best-effort: skip on access/IO error
         # Write MySQL config format
         config_content = f"""[client]
 user={db_user}

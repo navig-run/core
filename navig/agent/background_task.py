@@ -289,8 +289,7 @@ class BackgroundTaskManager:
                     try:
                         proc.terminate()
                     except (ProcessLookupError, OSError):
-                        pass
-
+                        pass  # best-effort: process gone or IO error; skip
         # Wait for all monitors to finish (they close file handles)
         pending = [
             fut for fut in self._monitor_futures.values()

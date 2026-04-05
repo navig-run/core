@@ -111,7 +111,7 @@ def apply(action: Action, ctx: InstallerContext) -> Result:
             try:
                 env_path.chmod(0o600)
             except (OSError, PermissionError):
-                pass
+                pass  # best-effort: skip on access/IO error
         writes.append(".env")
     except Exception:  # noqa: BLE001
         pass

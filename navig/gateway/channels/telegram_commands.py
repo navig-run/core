@@ -2669,7 +2669,10 @@ class TelegramCommandsMixin:
         message_id: int | None = None,
         text: str = "",
     ) -> None:
-        """Show active model config with interactive switcher keyboard (/models).
+        """Interactive model configuration (/models).
+
+        Auto-detects active provider → shows tier summary.
+        If no provider is configured, shows a provider picker first.
 
         /models big|small|coder|auto  — quick-switch tier then confirm.
         """
@@ -2682,122 +2685,287 @@ class TelegramCommandsMixin:
         if tier_arg in ("big", "small", "coder", "auto"):
             await self._handle_tier_command(chat_id, user_id, f"/{tier_arg}")
             return
+
+        # Detect active provider
+        active_prov = ""
         try:
-            from navig.agent.ai_client import get_ai_client
+            from navig.llm_router import get_llm_router
 
-            client = get_ai_client()
-            router = client.model_router
+            lr = get_llm_router()
+            if lr:
+                m = lr.modes.get("big_tasks")
+                if m and getattr(m, "provider", None):
+                    active_prov = m.provider
+        except Exception:  # noqa: BLE001
+            pass  # best-effort
 
-            lines = ["- *Model Routing*\n"]
-
-            bridge_ok, bridge_disp = await self._probe_bridge_grid()
-            lines.append(_format_bridge_status(bridge_ok, bridge_disp))
-
-            best = (
-                client._detect_best_provider()
-                if hasattr(client, "_detect_best_provider")
-                else "unknown"
+        if active_prov:
+            # Provider is active → show tier summary
+            await self._show_models_tier_summary(
+                chat_id, active_prov, message_id=message_id,
             )
-            lines.append(f"- best: `{best}`")
+        else:
+            # No provider → show mini provider picker
+            await self._show_models_provider_picker(
+                chat_id, message_id=message_id,
+            )
 
+    async def _show_models_provider_picker(
+        self,
+        chat_id: int,
+        message_id: int | None = None,
+    ) -> None:
+        """Show a compact provider picker when /models has no active provider."""
+        lines = [
+            "📝 *Configure Models*",
+            "",
+            "No provider is active yet.",
+            "Choose a provider to start:",
+        ]
+
+        keyboard_rows: list = []
+        try:
+            from navig.providers.registry import list_enabled_providers
+            from navig.providers.verifier import verify_provider
+
+            for manifest in list_enabled_providers():
+                if manifest.id == "mcp_bridge":
+                    continue
+                try:
+                    result = verify_provider(manifest)
+                    key_detected = bool(getattr(result, "key_detected", False))
+                    if manifest.tier == "local" and manifest.local_probe:
+                        ready = bool(result.local_probe_ok)
+                    elif manifest.requires_key:
+                        vault_ok, vault_validated = self._provider_vault_validation_status(manifest)
+                        ready = key_detected or bool(vault_validated)
+                    else:
+                        ready = True
+                except Exception:
+                    ready = False
+                if not ready:
+                    continue
+                keyboard_rows.append([{
+                    "text": f"{manifest.emoji} {manifest.display_name}",
+                    "callback_data": f"mdl_prov_{manifest.id}",
+                }])
+        except Exception:  # noqa: BLE001
+            lines.append("")
+            lines.append("⚠️ Could not load providers.")
+
+        if not keyboard_rows:
+            lines.append("")
+            lines.append("ℹ️ No providers are ready. Use /provider to configure one.")
+
+        keyboard_rows.append([{"text": "🎛️ Providers", "callback_data": "mdl_chgprov"}])
+        keyboard_rows.append([{"text": "✖ Close", "callback_data": "mdl_close"}])
+
+        text_payload = "\n".join(lines)
+        if message_id:
             try:
-                from navig.llm_router import get_llm_router
-
-                llm_router = get_llm_router()
-                if llm_router:
-                    lines.append("\n- *LLM Mode Router* - primary:")
-                    mode_icons = {
-                        "small_talk": "-",
-                        "big_tasks": "-",
-                        "coding": "-",
-                        "summarize": "-",
-                        "research": "-",
-                    }
-                    for mode_name in (
-                        "small_talk",
-                        "big_tasks",
-                        "coding",
-                        "summarize",
-                        "research",
-                    ):
-                        mc = llm_router.modes.get_mode(mode_name)
-                        if mc:
-                            icon = mode_icons.get(mode_name, "-")
-                            display_name = mode_name.replace("_", " ")
-                            lines.append(
-                                f"  {icon} {display_name}: `{mc.provider}:{mc.model}`"
-                            )
-                            if mc.fallback_provider:
-                                lines.append(
-                                    f"  - `{mc.fallback_provider}:{mc.fallback_model}`"
-                                )
-                else:
-                    lines.append("\n_LLM Mode Router: not active_")
-            except Exception:
-                lines.append("\n_LLM Mode Router: unavailable_")
-
-            if router and router.is_active:
-                cfg = router.cfg
-                lines.append(f"\n- *Hybrid Router* - fallback, mode=`{cfg.mode}`:")
-                if hasattr(self, "_get_user_tier_pref"):
-                    user_pref = self._get_user_tier_pref(chat_id, user_id)
-                else:
-                    user_pref = self._user_model_prefs.get(user_id, "")
-                pref_label = {
-                    "small": "- Small",
-                    "big": "- Big",
-                    "coder_big": "- Coder",
-                }.get(user_pref, "- Auto")
-                lines.append(f"  - preset: *{pref_label}*")
-                for label, slot in [
-                    ("- small", cfg.small),
-                    ("- big", cfg.big),
-                    ("- coder", cfg.coder_big),
-                ]:
-                    lines.append(
-                        f"  {label}: `{slot.provider or '-'}:{slot.model or '-'}`"
-                    )
-            else:
-                lines.append("\n_Hybrid Router: disabled_")
-
-            try:
-                from navig.agent.llm_providers import GitHubModelsProvider
-
-                lines.append("\n- *GitHub Models chains:*")
-                for chain_name, models in GitHubModelsProvider.FALLBACK_CHAINS.items():
-                    model_list = " - ".join(m.split(":")[-1] for m in models)
-                    lines.append(f"  - {chain_name.replace('_', ' ')}: {model_list}")
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
-
-            # Read-only status view — tier switching is done via /providers
-            keyboard = [
-                [
-                    {"text": "📊 Full table", "callback_data": "ms_info"},
-                    {"text": "🔌 Providers →", "callback_data": "ms_providers"},
-                ],
-            ]
-            if message_id:
-                keyboard.append(
-                    [
-                        {"text": "🔙 Back", "callback_data": "nav:back"},
-                        {"text": "🏠 Home", "callback_data": "nav:home"},
-                    ]
-                )
-            text_payload = "\n".join(lines)
-            if message_id:
                 await self.edit_message(
-                    chat_id,
-                    message_id,
-                    text_payload,
-                    parse_mode="Markdown",
-                    keyboard=keyboard,
+                    chat_id, message_id, text_payload,
+                    parse_mode="Markdown", keyboard=keyboard_rows,
                 )
                 return
-            await self.send_message(chat_id, text_payload, keyboard=keyboard)
+            except Exception:  # noqa: BLE001
+                pass
+        await self.send_message(chat_id, text_payload,
+                                parse_mode="Markdown", keyboard=keyboard_rows)
 
-        except Exception as e:
-            await self.send_message(chat_id, f"- Could not read routing info: {e}")
+    async def _show_models_tier_summary(
+        self,
+        chat_id: int,
+        prov_id: str,
+        message_id: int | None = None,
+    ) -> None:
+        """Show per-tier model assignments — tap a tier to change its model."""
+        emoji, name = "", prov_id
+        try:
+            from navig.providers.registry import get_provider as _gp
+
+            manifest = _gp(prov_id)
+            if manifest:
+                emoji = manifest.emoji
+                name = manifest.display_name
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Get current assignments from LLM Mode Router
+        current: dict[str, str] = {"small": "—", "big": "—", "coder_big": "—"}
+        try:
+            from navig.llm_router import get_llm_router
+
+            lr = get_llm_router()
+            if lr:
+                for tier, modes in self._TIER_TO_MODES.items():
+                    mc = lr.modes.get_mode(modes[0])
+                    if mc and getattr(mc, "model", None):
+                        model = mc.model
+                        current[tier] = model.split("/")[-1].split(":")[-1]
+        except Exception:  # noqa: BLE001
+            pass
+
+        lines = [
+            f"📝 *Models — {emoji} {name}*",
+            "",
+            f"⚡ Small: `{current['small']}`",
+            f"🧠 Big: `{current['big']}`",
+            f"💻 Code: `{current['coder_big']}`",
+            "",
+            "Tap a tier to change its model:",
+        ]
+
+        keyboard = [
+            [{"text": f"⚡ Small — {current['small']}", "callback_data": f"mdl_tier_{prov_id}_s"}],
+            [{"text": f"🧠 Big — {current['big']}", "callback_data": f"mdl_tier_{prov_id}_b"}],
+            [{"text": f"💻 Code — {current['coder_big']}", "callback_data": f"mdl_tier_{prov_id}_c"}],
+            [
+                {"text": "🎛️ Change provider", "callback_data": "mdl_chgprov"},
+                {"text": "← Providers", "callback_data": "prov_back"},
+            ],
+            [{"text": "✖ Close", "callback_data": "mdl_close"}],
+        ]
+
+        text_payload = "\n".join(lines)
+        if message_id:
+            try:
+                await self.edit_message(
+                    chat_id, message_id, text_payload,
+                    parse_mode="Markdown", keyboard=keyboard,
+                )
+                return
+            except Exception:  # noqa: BLE001
+                pass
+        await self.send_message(chat_id, text_payload,
+                                parse_mode="Markdown", keyboard=keyboard)
+
+    async def _show_models_model_list(
+        self,
+        chat_id: int,
+        prov_id: str,
+        tier_code: str,
+        page: int = 0,
+        message_id: int | None = None,
+    ) -> None:
+        """Show paginated model list for a tier with ✅ on currently assigned model."""
+        PAGE_SIZE = 8
+
+        tier_map: dict[str, tuple[str, str]] = {
+            "s": ("small", "⚡ Small"),
+            "b": ("big", "🧠 Big"),
+            "c": ("coder_big", "💻 Code"),
+        }
+        if tier_code not in tier_map:
+            return
+        tier, tier_label = tier_map[tier_code]
+
+        emoji, name = "", prov_id
+        try:
+            from navig.providers.registry import get_provider as _gp
+
+            manifest = _gp(prov_id)
+            if manifest:
+                emoji = manifest.emoji
+                name = manifest.display_name
+        except Exception:  # noqa: BLE001
+            manifest = None
+
+        # Resolve models
+        models: list = []
+        if hasattr(self, "_resolve_provider_models"):
+            try:
+                models = await self._resolve_provider_models(prov_id, manifest=manifest)
+            except Exception:  # noqa: BLE001
+                pass
+
+        if not models:
+            lines = [
+                f"📝 *{tier_label} — {emoji} {name}*",
+                "",
+                "⚠️ No models available for this provider.",
+            ]
+            keyboard = [
+                [{"text": "← Back", "callback_data": f"mdl_back_tiers_{prov_id}"}],
+                [{"text": "✖ Close", "callback_data": "mdl_close"}],
+            ]
+            text_payload = "\n".join(lines)
+            if message_id:
+                try:
+                    await self.edit_message(
+                        chat_id, message_id, text_payload,
+                        parse_mode="Markdown", keyboard=keyboard,
+                    )
+                    return
+                except Exception:  # noqa: BLE001
+                    pass
+            await self.send_message(chat_id, text_payload,
+                                    parse_mode="Markdown", keyboard=keyboard)
+            return
+
+        # Detect current model for this tier
+        current_model = ""
+        try:
+            from navig.llm_router import get_llm_router
+
+            lr = get_llm_router()
+            if lr:
+                modes = self._TIER_TO_MODES.get(tier, [])
+                if modes:
+                    mc = lr.modes.get_mode(modes[0])
+                    if mc:
+                        current_model = getattr(mc, "model", "") or ""
+        except Exception:  # noqa: BLE001
+            pass
+
+        total_pages = (len(models) + PAGE_SIZE - 1) // PAGE_SIZE
+        page = max(0, min(page, total_pages - 1))
+        start = page * PAGE_SIZE
+        page_models = models[start : start + PAGE_SIZE]
+
+        lines = [
+            f"📝 *{tier_label} — {emoji} {name}*",
+            "",
+            f"Page {page + 1}/{total_pages} · {len(models)} models",
+            "",
+            "Tap a model to assign it:",
+        ]
+
+        keyboard: list = []
+        for i, model in enumerate(page_models):
+            idx = start + i
+            short = model.split("/")[-1].split(":")[-1]
+            is_current = model == current_model
+            prefix = "✅ " if is_current else ""
+            keyboard.append([{
+                "text": f"{prefix}{short}",
+                "callback_data": f"mdl_sel_{prov_id}_{idx}_{tier_code}_{page}",
+            }])
+
+        # Pagination buttons
+        nav_row: list = []
+        if page > 0:
+            nav_row.append({"text": "◀ Prev", "callback_data": f"mdl_page_{prov_id}_{tier_code}_{page - 1}"})
+        if page < total_pages - 1:
+            nav_row.append({"text": "Next ▶", "callback_data": f"mdl_page_{prov_id}_{tier_code}_{page + 1}"})
+        if nav_row:
+            keyboard.append(nav_row)
+
+        keyboard.append([{"text": "← Back to tiers", "callback_data": f"mdl_back_tiers_{prov_id}"}])
+        keyboard.append([{"text": "✖ Close", "callback_data": "mdl_close"}])
+
+        text_payload = "\n".join(lines)
+        if message_id:
+            try:
+                await self.edit_message(
+                    chat_id, message_id, text_payload,
+                    parse_mode="Markdown", keyboard=keyboard,
+                )
+                return
+            except Exception:  # noqa: BLE001
+                pass
+        await self.send_message(chat_id, text_payload,
+                                parse_mode="Markdown", keyboard=keyboard)
 
     async def _handle_ai_command(
         self,

@@ -104,8 +104,7 @@ def get_active_space() -> str:
             if name:
                 return name
         except OSError:
-            pass
-
+            pass  # best-effort: skip on IO error
     try:
         cfg = get_config_manager().global_config or {}
         if isinstance(cfg, dict):
@@ -210,9 +209,7 @@ def _maybe_show_default_hint() -> None:
             hint_file.parent.mkdir(parents=True, exist_ok=True)
             hint_file.write_text("shown", encoding="utf-8")
         except OSError:
-            pass
-
-
+            pass  # best-effort: skip on IO error
 def _validate_slug(name: str) -> str:
     value = (name or "").strip().lower()
     if _SLUG_RE.match(value):

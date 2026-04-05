@@ -644,8 +644,7 @@ class ContextBuilder:
                     try:
                         total -= len(json.dumps(removed, default=str))
                     except (TypeError, ValueError):
-                        pass
-
+                        pass  # best-effort: skip on bad/unexpected data
         return ctx
 
     @staticmethod

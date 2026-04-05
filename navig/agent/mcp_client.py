@@ -208,7 +208,7 @@ class _StdioTransport:
                     # Server-initiated notification
                     self._handle_notification(data)
         except asyncio.CancelledError:
-            pass
+            pass  # expected during task cancellation
         except Exception as exc:
             logger.debug("MCP reader loop error: %s", exc)
 
@@ -730,8 +730,7 @@ class MCPClientPool:
             try:
                 _AGENT_REGISTRY.deregister(spec.name)
             except KeyError:
-                pass
-
+                pass  # best-effort: key absent; skip
     # ── Resource listing (PlanContext integration) ──
 
     async def list_resources(self, timeout: float = 2.0) -> list[dict[str, str]]:

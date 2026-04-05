@@ -1289,7 +1289,7 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
             try:
                 env_path.chmod(0o600)
             except (OSError, PermissionError):
-                pass
+                pass  # best-effort: skip on access/IO error
             writes.append(".env")
         except Exception:  # noqa: BLE001
             pass

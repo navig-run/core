@@ -107,18 +107,26 @@ def _make_resource(cid: str = "testconn") -> Resource:
 
 
 def test_list_tools_empty_registry() -> None:
+    """Empty registry → only the two meta-tools (connector.list, connector.health)."""
     reg = _fresh_registry()
     tools = list_connector_tools(registry=reg)
-    assert tools == []
+    names = {t["name"] for t in tools}
+    assert names == {"connector.list", "connector.health"}
 
 
 def test_list_tools_search_only() -> None:
-    """A search-only connector produces exactly one tool."""
+    """A search-only connector produces exactly one connector tool (+ 2 meta-tools)."""
     Cls = _make_connector_class("alpha", can_search=True, can_fetch=False, can_act=False)
     reg = _fresh_registry(Cls)
     tools = list_connector_tools(registry=reg)
-    assert len(tools) == 1
-    t = tools[0]
+    names = {t["name"] for t in tools}
+    assert "connector.alpha.search" in names
+    assert "connector.list" in names
+    assert "connector.health" in names
+    # Only one per-connector tool (search only)
+    connector_tools = [t for t in tools if t["name"].startswith("connector.alpha")]
+    assert len(connector_tools) == 1
+    t = connector_tools[0]
     assert t["name"] == "connector.alpha.search"
     assert "alpha" in t["description"].lower() or "TestConn" in t["description"]
     schema = t["inputSchema"]
@@ -128,7 +136,7 @@ def test_list_tools_search_only() -> None:
 
 
 def test_list_tools_all_capabilities() -> None:
-    """A full-capability connector produces three tools."""
+    """A full-capability connector produces three connector tools (+ 2 meta-tools)."""
     Cls = _make_connector_class("full", can_search=True, can_fetch=True, can_act=True)
     reg = _fresh_registry(Cls)
     tools = list_connector_tools(registry=reg)
@@ -136,21 +144,26 @@ def test_list_tools_all_capabilities() -> None:
     assert "connector.full.search" in names
     assert "connector.full.fetch" in names
     assert "connector.full.act" in names
-    assert len(names) == 3
+    assert "connector.list" in names
+    assert "connector.health" in names
+    # Exactly 3 per-connector + 2 meta
+    assert len(names) == 5
 
 
 def test_list_tools_multiple_connectors() -> None:
-    """Two connectors with different caps → correct total tool count."""
+    """Two connectors with different caps → correct total (2 meta + 1 + 3 connector tools)."""
     C1 = _make_connector_class("c1", can_search=True, can_fetch=False, can_act=False)
     C2 = _make_connector_class("c2", can_search=True, can_fetch=True, can_act=True)
     reg = _fresh_registry(C1, C2)
     tools = list_connector_tools(registry=reg)
-    assert len(tools) == 4  # 1 + 3
+    assert len(tools) == 6  # 2 meta + 1 (c1) + 3 (c2)
     names = {t["name"] for t in tools}
     assert "connector.c1.search" in names
     assert "connector.c2.search" in names
     assert "connector.c2.fetch" in names
     assert "connector.c2.act" in names
+    assert "connector.list" in names
+    assert "connector.health" in names
 
 
 def test_bad_manifest_connector_is_skipped() -> None:

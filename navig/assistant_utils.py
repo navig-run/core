@@ -62,8 +62,7 @@ def ensure_navig_directory() -> Path:
             try:
                 os.chmod(navig_dir, 0o755)
             except (OSError, PermissionError):
-                pass
-
+                pass  # best-effort: skip on access/IO error
         # Create subdirectories
         subdirs = ["ai_context", "baselines"]
         for subdir in subdirs:
@@ -74,8 +73,7 @@ def ensure_navig_directory() -> Path:
                 try:
                     os.chmod(subdir_path, 0o755)
                 except (OSError, PermissionError):
-                    pass
-
+                    pass  # best-effort: skip on access/IO error
         # Initialize JSON files if they don't exist
         _initialize_json_files(navig_dir)
 
@@ -121,8 +119,7 @@ def _initialize_json_files(navig_dir: Path):
                     try:
                         os.chmod(file_path, 0o644)
                     except (OSError, PermissionError):
-                        pass
-
+                        pass  # best-effort: skip on access/IO error
             except Exception as e:
                 ch.dim(f"Could not initialize {filename}: {e}")
 

@@ -704,6 +704,11 @@ class CallbackHandler:
                 await self._handle_provider_callback(cb_id, cb_data, chat_id, message_id, user_id)
                 return
 
+            # ── Models flow callbacks (mdl_*) — no store needed ──
+            if cb_data.startswith("mdl_"):
+                await self._handle_models_callback(cb_id, cb_data, chat_id, message_id, user_id)
+                return
+
             # ── AI tier picker callbacks (aitier_* / ai_close) — no store needed ──
             if cb_data.startswith("aitier_") or cb_data == "ai_close":
                 await self._handle_ai_tier_callback(cb_id, cb_data, chat_id, message_id, user_id)
@@ -1571,6 +1576,239 @@ class CallbackHandler:
             selected_tier=tier_code,
             message_id=message_id,
         )
+
+    async def _handle_models_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        """Handle /models interactive flow callbacks (mdl_* namespace).
+
+        Callback formats:
+        - mdl_close                         : delete message
+        - mdl_chgprov                       : navigate to /providers
+        - mdl_prov_{prov_id}                : activate provider + show tier summary
+        - mdl_tier_{prov_id}_{tier_code}    : show model list for tier
+        - mdl_sel_{prov_id}_{idx}_{tc}_{pg} : assign model to tier
+        - mdl_page_{prov_id}_{tc}_{page}    : paginate model list
+        - mdl_back_tiers_{prov_id}          : back to tier summary
+        """
+        if cb_data == "mdl_close":
+            await self._answer(cb_id, "✖ Closed")
+            try:
+                await self.channel._api_call(
+                    "deleteMessage",
+                    {"chat_id": chat_id, "message_id": message_id},
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            return
+
+        if cb_data == "mdl_chgprov":
+            await self._answer(cb_id, "")
+            try:
+                await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
+            except TypeError:
+                await self.channel._handle_providers(chat_id)
+            return
+
+        # ── Activate provider from models picker: mdl_prov_{prov_id} ────────
+        if cb_data.startswith("mdl_prov_"):
+            prov_id = cb_data[len("mdl_prov_"):]
+            try:
+                from navig.providers.registry import get_provider
+
+                manifest = get_provider(prov_id)
+            except Exception:
+                manifest = None
+
+            if not manifest:
+                await self._answer(cb_id, f"⚠️ Unknown provider: {prov_id}")
+                return
+
+            # Activate with curated defaults
+            try:
+                models: list = []
+                if hasattr(self.channel, "_resolve_provider_models"):
+                    models = await self.channel._resolve_provider_models(prov_id, manifest=manifest)
+
+                if not models and getattr(manifest, "tier", "") == "local":
+                    if prov_id == "llamacpp":
+                        models = ["llama.cpp/default", "llama3.2"]
+                    elif prov_id == "ollama":
+                        models = ["qwen2.5:7b", "phi3.5"]
+
+                if not models:
+                    await self._answer(cb_id, f"⚠️ No models for {manifest.display_name}", show_alert=True)
+                    return
+
+                defaults = self.channel._select_curated_tier_defaults(prov_id, models)
+
+                # Update hybrid router if active
+                try:
+                    from navig.agent.ai_client import get_ai_client
+
+                    router = get_ai_client().model_router
+                    if router and router.is_active:
+                        for tier in ("small", "big", "coder_big"):
+                            slot = router.cfg.slot_for_tier(tier)
+                            slot.provider = prov_id
+                            slot.model = defaults[tier]
+                        if hasattr(self.channel, "_persist_hybrid_router_assignments"):
+                            self.channel._persist_hybrid_router_assignments(router.cfg)
+                except Exception:  # noqa: BLE001
+                    logger.debug("Hybrid router update skipped in mdl_prov_")
+
+                # Always update LLM Mode Router
+                if hasattr(self.channel, "_update_llm_mode_router"):
+                    self.channel._update_llm_mode_router(prov_id, defaults)
+
+                await self._answer(cb_id, f"✅ {manifest.emoji} {manifest.display_name} activated")
+
+                try:
+                    from navig.commands.init import mark_chat_onboarding_step_completed
+
+                    mark_chat_onboarding_step_completed("ai-provider")
+                except (ImportError, AttributeError, TypeError, ValueError):
+                    pass
+
+                # Show tier summary inline
+                await self.channel._show_models_tier_summary(
+                    chat_id, prov_id, message_id=message_id,
+                )
+            except Exception as exc:
+                await self._answer(cb_id, f"⚠️ Activation failed: {exc}", show_alert=True)
+            return
+
+        # ── Show model list for tier: mdl_tier_{prov_id}_{tier_code} ────────
+        if cb_data.startswith("mdl_tier_"):
+            rest = cb_data[len("mdl_tier_"):]
+            # tier_code is always a single char at the end
+            if len(rest) < 2 or rest[-2] != "_":
+                await self._answer(cb_id, "⚠️ Bad tier callback")
+                return
+            prov_id = rest[:-2]
+            tier_code = rest[-1]
+            await self._answer(cb_id, "")
+            await self.channel._show_models_model_list(
+                chat_id, prov_id, tier_code, page=0, message_id=message_id,
+            )
+            return
+
+        # ── Select model: mdl_sel_{prov_id}_{idx}_{tier_code}_{page} ────────
+        if cb_data.startswith("mdl_sel_"):
+            rest = cb_data[len("mdl_sel_"):]
+            parts = rest.rsplit("_", 3)
+            if len(parts) != 4:
+                await self._answer(cb_id, "⚠️ Bad selection callback")
+                return
+            prov_id, idx_str, tier_code, page_str = parts
+
+            tier_map: dict[str, tuple[str, str]] = {
+                "s": ("small", "⚡ Small"),
+                "b": ("big", "🧠 Big"),
+                "c": ("coder_big", "💻 Code"),
+            }
+            if tier_code not in tier_map:
+                await self._answer(cb_id, "⚠️ Unknown tier")
+                return
+            tier, tier_label = tier_map[tier_code]
+
+            try:
+                model_idx = int(idx_str)
+            except ValueError:
+                await self._answer(cb_id, "⚠️ Bad model index")
+                return
+            try:
+                page = int(page_str)
+            except ValueError:
+                page = 0
+
+            # Resolve models
+            models_list: list = []
+            try:
+                from navig.providers.registry import get_provider
+
+                manifest = get_provider(prov_id)
+            except Exception:
+                manifest = None
+            if hasattr(self.channel, "_resolve_provider_models"):
+                models_list = await self.channel._resolve_provider_models(prov_id, manifest=manifest)
+
+            if model_idx >= len(models_list):
+                await self._answer(cb_id, "⚠️ Model index out of range")
+                return
+            model = models_list[model_idx]
+
+            # Update hybrid router (optional)
+            try:
+                from navig.agent.ai_client import get_ai_client
+
+                router = get_ai_client().model_router
+                if router and router.is_active:
+                    slot = router.cfg.slot_for_tier(tier)
+                    slot.provider = prov_id
+                    slot.model = model
+                    if hasattr(self.channel, "_persist_hybrid_router_assignments"):
+                        self.channel._persist_hybrid_router_assignments(router.cfg)
+            except Exception:
+                logger.debug("Hybrid router update skipped for mdl_sel_")
+
+            # Always update LLM Mode Router
+            try:
+                if hasattr(self.channel, "_update_llm_mode_router"):
+                    self.channel._update_llm_mode_router(prov_id, {tier: model})
+            except Exception:
+                logger.debug("LLM mode router update failed for mdl_sel_")
+
+            short_model = model.split("/")[-1].split(":")[-1]
+            await self._answer(cb_id, f"✅ {tier_label} → {short_model[:40]}")
+
+            try:
+                from navig.commands.init import mark_chat_onboarding_step_completed
+
+                mark_chat_onboarding_step_completed("ai-provider")
+            except (ImportError, AttributeError, TypeError, ValueError):
+                pass
+
+            # Refresh model list showing new ✅
+            await self.channel._show_models_model_list(
+                chat_id, prov_id, tier_code, page=page, message_id=message_id,
+            )
+            return
+
+        # ── Paginate: mdl_page_{prov_id}_{tier_code}_{page} ────────────────
+        if cb_data.startswith("mdl_page_"):
+            rest = cb_data[len("mdl_page_"):]
+            parts = rest.rsplit("_", 2)
+            if len(parts) != 3:
+                await self._answer(cb_id, "⚠️ Bad page callback")
+                return
+            prov_id, tier_code, page_str = parts
+            try:
+                page = int(page_str)
+            except ValueError:
+                page = 0
+            await self._answer(cb_id, "")
+            await self.channel._show_models_model_list(
+                chat_id, prov_id, tier_code, page=page, message_id=message_id,
+            )
+            return
+
+        # ── Back to tier summary: mdl_back_tiers_{prov_id} ─────────────────
+        if cb_data.startswith("mdl_back_tiers_"):
+            prov_id = cb_data[len("mdl_back_tiers_"):]
+            await self._answer(cb_id, "")
+            await self.channel._show_models_tier_summary(
+                chat_id, prov_id, message_id=message_id,
+            )
+            return
+
+        # Fallback
+        await self._answer(cb_id, "⚠️ Unknown models action")
 
     async def _handle_debug_callback(
         self,

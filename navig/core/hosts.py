@@ -130,17 +130,16 @@ class HostManager:
                     try:
                         max_mtime = max(max_mtime, d.stat().st_mtime)
                     except (OSError, PermissionError):
-                        pass
+                        pass  # best-effort: skip on access/IO error
                     try:
                         for yaml_file in d.glob("*.yaml"):
                             file_count += 1
                             try:
                                 max_mtime = max(max_mtime, yaml_file.stat().st_mtime)
                             except (OSError, PermissionError):
-                                pass
+                                pass  # best-effort: skip on access/IO error
                     except (OSError, PermissionError):
-                        pass
-
+                        pass  # best-effort: skip on access/IO error
         signature = (max_mtime, file_count)
 
         # Return cached result if still valid

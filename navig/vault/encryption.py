@@ -116,7 +116,7 @@ class VaultEncryption:
             try:
                 os.chmod(salt_path, 0o600)
             except (OSError, PermissionError):
-                pass
+                pass  # best-effort: skip on access/IO error
         except OSError:
             pass  # best-effort cleanup
 

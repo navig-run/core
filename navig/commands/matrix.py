@@ -108,7 +108,7 @@ def _run_async(coro):
                     # Timeout allows main thread to yield and hook SIGINT
                     return future.result(timeout=0.1)
                 except concurrent.futures.TimeoutError:
-                    pass
+                    pass  # best-effort: operation timed out; skip
             return future.result()
     return asyncio.run(coro)
 

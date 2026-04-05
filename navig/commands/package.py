@@ -463,9 +463,7 @@ def _scoped_sys_path(path: Path):
             try:
                 sys.path.remove(path_str)
             except ValueError:
-                pass
-
-
+                pass  # best-effort: skip on invalid value
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 

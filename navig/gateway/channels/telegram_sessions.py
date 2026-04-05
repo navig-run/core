@@ -199,7 +199,7 @@ class SessionManager:
                 try:
                     tmp_file.unlink()
                 except OSError:
-                    pass
+                    pass  # best-effort: skip on IO error
             logger.error("Failed to save session: %s", e)
 
     def get_or_create_session(

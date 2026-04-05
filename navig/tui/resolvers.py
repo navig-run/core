@@ -155,7 +155,7 @@ def resolve_daemon() -> StatusBadge:
             os.kill(pid, 0)
             return StatusBadge("Daemon", "ok", f"pid {pid}")
     except (ValueError, OSError, ProcessLookupError, PermissionError):
-        pass
+        pass  # best-effort: skip on process/IO error
     return StatusBadge(
         "Daemon",
         "missing",

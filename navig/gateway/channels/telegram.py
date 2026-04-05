@@ -873,8 +873,7 @@ class TelegramChannel:
                     ):
                         return
                 except AttributeError:
-                    pass
-
+                    pass  # best-effort: attribute absent; skip
                 try:
                     if await self._handle_intake_reply(
                         chat_id=chat_id,
@@ -883,8 +882,7 @@ class TelegramChannel:
                     ):
                         return
                 except AttributeError:
-                    pass
-
+                    pass  # best-effort: attribute absent; skip
                 if not text.strip().startswith("/"):
                     try:
                         if await self._handle_natural_language_request(
@@ -897,8 +895,7 @@ class TelegramChannel:
                         ):
                             return
                     except AttributeError:
-                        pass
-
+                        pass  # best-effort: attribute absent; skip
                 # ── Slash command routing ──
                 cmd = text.strip().lower()
                 if cmd in ("/models", "/model"):
@@ -1391,8 +1388,7 @@ class TelegramChannel:
                 try:
                     await typing_task
                 except asyncio.CancelledError:
-                    pass
-
+                    pass  # expected during task cancellation
             if not next_response:
                 return
 

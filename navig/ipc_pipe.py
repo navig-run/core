@@ -265,7 +265,7 @@ class IPCPipeServer:
             try:
                 os.chmod(self.address, 0o600)
             except (OSError, PermissionError):
-                pass
+                pass  # best-effort: skip on access/IO error
             server.listen(self.backlog)
             server.settimeout(1.0)  # poll for stop_event every second
             logger.info("IPC unix socket listening on %s", self.address)

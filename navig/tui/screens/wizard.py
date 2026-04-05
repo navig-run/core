@@ -111,9 +111,7 @@ class Step1IdentityWidget(_WizardStepBase):
         try:
             self.app.query_one(SummaryPanel).refresh_from(self._cfg)
         except NoMatches:
-            pass
-
-
+            pass  # best-effort: widget not found in layout; skip
 # ---------------------------------------------------------------------------
 # Step 2 — Provider
 # ---------------------------------------------------------------------------
@@ -163,15 +161,12 @@ class Step2ProviderWidget(_WizardStepBase):
         try:
             self.app.query_one(SummaryPanel).refresh_from(self._cfg)
         except NoMatches:
-            pass
-
+            pass  # best-effort: widget not found in layout; skip
     def _notify_parent(self) -> None:
         try:
             self.app.query_one(SummaryPanel).refresh_from(self._cfg)
         except NoMatches:
-            pass
-
-
+            pass  # best-effort: widget not found in layout; skip
 # ---------------------------------------------------------------------------
 # Step 3 — Runtime
 # ---------------------------------------------------------------------------
@@ -209,8 +204,7 @@ class Step3RuntimeWidget(_WizardStepBase):
         try:
             self.app.query_one(SummaryPanel).refresh_from(self._cfg)
         except NoMatches:
-            pass
-
+            pass  # best-effort: widget not found in layout; skip
     @on(Input.Changed, "#inp-runtime-host")
     def _host_changed(self, event: Input.Changed) -> None:
         self._cfg.local_runtime_host = event.value
@@ -252,9 +246,7 @@ class Step4PacksWidget(_WizardStepBase):
         try:
             self.app.query_one(SummaryPanel).refresh_from(self._cfg)
         except NoMatches:
-            pass
-
-
+            pass  # best-effort: widget not found in layout; skip
 # ---------------------------------------------------------------------------
 # Step 5 — Shell & hooks
 # ---------------------------------------------------------------------------
@@ -320,9 +312,7 @@ class Step5ShellWidget(_WizardStepBase):
         try:
             self.app.query_one(SummaryPanel).refresh_from(self._cfg)
         except NoMatches:
-            pass
-
-
+            pass  # best-effort: widget not found in layout; skip
 # ---------------------------------------------------------------------------
 # Step 6 — Optional integrations (Full tier)
 # ---------------------------------------------------------------------------
@@ -388,9 +378,7 @@ class Step6IntegrationsWidget(_WizardStepBase):
         try:
             self.app.query_one(SummaryPanel).refresh_from(self._cfg)
         except NoMatches:
-            pass
-
-
+            pass  # best-effort: widget not found in layout; skip
 # ---------------------------------------------------------------------------
 # WizardScreen — 5-step controller
 # ---------------------------------------------------------------------------

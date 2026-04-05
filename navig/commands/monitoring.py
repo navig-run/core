@@ -137,8 +137,7 @@ def _monitor_resources_local_windows(app_name: str, options: dict) -> None:
             if _du.percent > 80:
                 alerts.append(f"High disk usage: {_du.percent:.1f}%")
         except OSError:
-            pass
-
+            pass  # best-effort: skip on IO error
         try:
             _up_sec = int(datetime.now().timestamp() - psutil.boot_time())
             _h, _r = divmod(_up_sec, 3600)

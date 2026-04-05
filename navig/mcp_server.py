@@ -475,7 +475,7 @@ def _build_http_app(
                 await asyncio.sleep(25)
                 await response.write(b": keepalive\n\n")
         except (ConnectionResetError, asyncio.CancelledError):
-            pass
+            pass  # expected on client disconnect or shutdown
         return response
 
     async def handle_post(request: web.Request) -> web.Response:
@@ -584,7 +584,7 @@ def _run_http_server(
         try:
             await asyncio.Future()  # run forever
         except (KeyboardInterrupt, asyncio.CancelledError):
-            pass
+            pass  # expected on shutdown signal
         finally:
             await runner.cleanup()
 

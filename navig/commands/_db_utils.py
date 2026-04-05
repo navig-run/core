@@ -33,7 +33,7 @@ def create_mysql_config_file(user: str, password: str) -> str:
         try:
             os.chmod(config_path, 0o600)
         except (OSError, PermissionError):
-            pass
+            pass  # best-effort: skip on access/IO error
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write("[client]\n")
             f.write(f"user={user}\n")

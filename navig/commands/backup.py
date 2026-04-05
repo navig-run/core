@@ -108,7 +108,7 @@ def _create_mysql_config_file(user: str, password: str) -> str:
         try:
             os.chmod(config_path, 0o600)
         except (OSError, PermissionError):
-            pass
+            pass  # best-effort: skip on access/IO error
         return config_path
     except Exception:
         try:

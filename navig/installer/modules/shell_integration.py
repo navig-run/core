@@ -92,9 +92,7 @@ def rollback(action: Action, result: Result, ctx: InstallerContext) -> None:
         content = rc.read_text(encoding="utf-8", errors="replace")
         rc.write_text(content.replace(snippet, ""), encoding="utf-8")
     except OSError:
-        pass
-
-
+        pass  # best-effort: skip on IO error
 # ─────────────────────── helpers ──────────────────────────────────────────────
 
 

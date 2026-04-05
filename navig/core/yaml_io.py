@@ -101,7 +101,7 @@ def atomic_write_yaml(data: Any, filepath: Path, allow_unicode: bool = False) ->
         try:
             tmp_path.unlink(missing_ok=True)
         except OSError:
-            pass
+            pass  # best-effort: skip on IO error
         raise
 
 

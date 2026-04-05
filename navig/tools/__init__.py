@@ -154,43 +154,37 @@ def get_pipeline_registry():
 
             reg.register(SiteCheckTool())
         except ImportError:
-            pass
-
+            pass  # optional dependency not installed; skip
         try:
             from .browser_fetch import BrowserFetchTool
 
             reg.register(BrowserFetchTool())
         except ImportError:
-            pass
-
+            pass  # optional dependency not installed; skip
         try:
             from .search import SearchTool
 
             reg.register(SearchTool())
         except ImportError:
-            pass
-
+            pass  # optional dependency not installed; skip
         try:
             from .web_fetch import WebFetchTool
 
             reg.register(WebFetchTool())
         except ImportError:
-            pass
-
+            pass  # optional dependency not installed; skip
         try:
             from .code_exec_sandbox import CodeExecSandboxTool
 
             reg.register(CodeExecSandboxTool())
         except ImportError:
-            pass
-
+            pass  # optional dependency not installed; skip
         try:
             from .skill_runner import SkillRunTool
 
             reg.register(SkillRunTool())
         except ImportError:
-            pass
-
+            pass  # optional dependency not installed; skip
         _pipeline_registry = reg
     return _pipeline_registry
 
