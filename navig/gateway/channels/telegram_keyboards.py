@@ -866,8 +866,8 @@ class CallbackHandler:
                         typing_task.cancel()
                         try:
                             await typing_task
-                        except asyncio.CancelledError:
-                            pass  # task cancelled; expected during shutdown
+                        except asyncio.CancelledError as exc:
+                            logger.debug("Exception suppressed (typing task cancelled): %s", exc)
                 except Exception:
                     raise
                 return
@@ -1197,7 +1197,12 @@ class CallbackHandler:
         """
         models: list = []
         if hasattr(self.channel, "_resolve_provider_models"):
-            models = await self.channel._resolve_provider_models(prov_id, manifest=manifest)
+            try:
+                models = await self.channel._resolve_provider_models(prov_id, manifest=manifest)
+            except Exception:
+                logger.warning("Provider model resolution failed for pms_%s", prov_id)
+                await self._answer(cb_id, "⚠️ Could not load models for this provider", show_alert=True)
+                return
 
         if not models and manifest and getattr(manifest, "tier", "") == "local":
             if prov_id == "llamacpp":
@@ -1476,7 +1481,12 @@ class CallbackHandler:
             manifest = None
 
         if hasattr(self.channel, "_resolve_provider_models"):
-            models = await self.channel._resolve_provider_models(prov_id, manifest=manifest)
+            try:
+                models = await self.channel._resolve_provider_models(prov_id, manifest=manifest)
+            except Exception:
+                logger.warning("Provider model resolution failed for pms_%s", prov_id)
+                await self._answer(cb_id, "⚠️ Could not load models for this provider", show_alert=True)
+                return
 
         if model_idx < 0 or model_idx >= len(models):
             await self._answer(cb_id, "⚠️ Model index out of range")
@@ -1590,6 +1600,9 @@ class CallbackHandler:
                 return
             prov_id = rest[:-2]
             tier_code = rest[-1]
+            if tier_code not in _TIER_CODE_MAP:
+                await self._answer(cb_id, "⚠️ Unknown tier")
+                return
             await self._answer(cb_id, "")
             await self.channel._show_models_model_list(
                 chat_id,
@@ -1633,9 +1646,14 @@ class CallbackHandler:
             except Exception:
                 manifest = None
             if hasattr(self.channel, "_resolve_provider_models"):
-                models_list = await self.channel._resolve_provider_models(
-                    prov_id, manifest=manifest
-                )
+                try:
+                    models_list = await self.channel._resolve_provider_models(
+                        prov_id, manifest=manifest
+                    )
+                except Exception:
+                    logger.warning("Provider model resolution failed for mdl_sel_%s", prov_id)
+                    await self._answer(cb_id, "⚠️ Could not load models for this provider", show_alert=True)
+                    return
 
             if model_idx < 0 or model_idx >= len(models_list):
                 await self._answer(cb_id, "⚠️ Model index out of range")
@@ -1675,8 +1693,8 @@ class CallbackHandler:
                 from navig.commands.init import mark_chat_onboarding_step_completed
 
                 mark_chat_onboarding_step_completed("ai-provider")
-            except (ImportError, AttributeError, TypeError, ValueError):
-                pass
+            except (ImportError, AttributeError, TypeError, ValueError) as exc:
+                logger.debug("Exception suppressed in chat onboarding step: %s", exc)
 
             # Refresh model list showing new ✅
             await self.channel._show_models_model_list(
@@ -1696,6 +1714,9 @@ class CallbackHandler:
                 await self._answer(cb_id, "⚠️ Bad page callback")
                 return
             prov_id, tier_code, page_str = parts
+            if tier_code not in _TIER_CODE_MAP:
+                await self._answer(cb_id, "⚠️ Unknown tier")
+                return
             try:
                 page = int(page_str)
             except ValueError:

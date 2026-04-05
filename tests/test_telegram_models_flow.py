@@ -452,6 +452,23 @@ async def test_mdl_tier_opens_model_list():
 
 
 @pytest.mark.asyncio
+async def test_mdl_tier_rejects_unknown_tier_code():
+    """mdl_tier with unsupported tier code should warn and not render list."""
+    ch = _FakeCallbackChannel()
+    handler = CallbackHandler(ch)
+
+    await handler._handle_models_callback(
+        cb_id="cb-1", cb_data="mdl_tier_openai_x",
+        chat_id=100, message_id=200, user_id=300,
+    )
+
+    assert ch.model_lists == []
+    answers = [payload for method, payload in ch.api_calls if method == "answerCallbackQuery"]
+    assert answers
+    assert "Unknown tier" in answers[-1].get("text", "")
+
+
+@pytest.mark.asyncio
 async def test_mdl_back_tiers_returns_to_summary():
     """mdl_back_tiers_{id} navigates back to tier summary."""
     ch = _FakeCallbackChannel()
@@ -477,6 +494,23 @@ async def test_mdl_page_navigates(monkeypatch):
     )
 
     assert ch.model_lists == [(100, "openai", "b", 2, 200)]
+
+
+@pytest.mark.asyncio
+async def test_mdl_page_rejects_unknown_tier_code():
+    """mdl_page with unsupported tier code should warn and not render list."""
+    ch = _FakeCallbackChannel()
+    handler = CallbackHandler(ch)
+
+    await handler._handle_models_callback(
+        cb_id="cb-1", cb_data="mdl_page_openai_x_2",
+        chat_id=100, message_id=200, user_id=300,
+    )
+
+    assert ch.model_lists == []
+    answers = [payload for method, payload in ch.api_calls if method == "answerCallbackQuery"]
+    assert answers
+    assert "Unknown tier" in answers[-1].get("text", "")
 
 
 @pytest.mark.asyncio
@@ -558,6 +592,36 @@ async def test_mdl_sel_rejects_negative_index(monkeypatch):
     answers = [payload for method, payload in ch.api_calls if method == "answerCallbackQuery"]
     assert answers
     assert "out of range" in answers[-1].get("text", "")
+
+
+@pytest.mark.asyncio
+async def test_mdl_sel_resolution_failure_shows_warning(monkeypatch):
+    """mdl_sel should warn directly when model list resolution fails."""
+
+    class _FailingResolveCallbackChannel(_FakeCallbackChannel):
+        async def _resolve_provider_models(self, prov_id, manifest=None):
+            raise RuntimeError("resolver down")
+
+    ch = _FailingResolveCallbackChannel()
+    handler = CallbackHandler(ch)
+
+    monkeypatch.setattr("navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid))
+
+    await handler._handle_models_callback(
+        cb_id="cb-resolve-fail",
+        cb_data="mdl_sel_openai_0_s_0",
+        chat_id=100,
+        message_id=200,
+        user_id=300,
+    )
+
+    answers = [payload for method, payload in ch.api_calls if method == "answerCallbackQuery"]
+    assert answers
+    assert "Could not load models" in answers[-1].get("text", "")
+    assert answers[-1].get("show_alert") is True
+
+    # Must not proceed to refresh list after a hard resolver failure.
+    assert ch.model_lists == []
 
 
 @pytest.mark.asyncio

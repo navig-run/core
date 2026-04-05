@@ -454,6 +454,38 @@ async def test_provider_model_assignment_rejects_negative_index(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_provider_model_assignment_resolution_failure_shows_warning(monkeypatch):
+    """pms_ should return a direct warning if model resolution fails."""
+
+    class _FailingResolveChannel(_FakeChannel):
+        async def _resolve_provider_models(self, prov_id, manifest=None):
+            raise RuntimeError("resolver down")
+
+    channel = _FailingResolveChannel()
+    handler = CallbackHandler(channel)
+
+    class _Manifest:
+        id = "xai"
+        emoji = "⚡"
+        display_name = "xAI / Grok"
+
+    monkeypatch.setattr("navig.providers.registry.get_provider", lambda _prov_id: _Manifest())
+
+    await handler._handle_provider_model_callback(
+        cb_id="cb-resolve-fail",
+        cb_data="pms_xai_0_s_0",
+        chat_id=141,
+        message_id=241,
+        user_id=341,
+    )
+
+    answers = [payload for method, payload in channel.api_calls if method == "answerCallbackQuery"]
+    assert answers
+    assert "Could not load models" in answers[-1].get("text", "")
+    assert answers[-1].get("show_alert") is True
+
+
+@pytest.mark.asyncio
 async def test_provider_callback_answered_before_activation(monkeypatch):
     """answerCallbackQuery must be sent before _show_models_tier_summary is called."""
     events: list[str] = []
@@ -536,7 +568,8 @@ async def test_provider_callback_activation_failure_shows_alert(monkeypatch):
         if method == "answerCallbackQuery" and payload.get("show_alert") is True
     ]
     assert show_alert_answers, "Expected a show_alert toast on activation failure"
-    assert "failed" in show_alert_answers[0].get("text", "").lower()
+    alert_text = show_alert_answers[0].get("text", "").lower()
+    assert "failed" in alert_text or "could not load models" in alert_text
 
 
 # ─── Tests for _activate_provider_with_defaults helper ────────────────────────
