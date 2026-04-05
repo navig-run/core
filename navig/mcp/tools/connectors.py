@@ -22,7 +22,6 @@ import concurrent.futures
 import logging
 from typing import Any
 
-from navig.connectors.errors import ConnectorNotFoundError
 from navig.connectors.registry import get_connector_registry
 from navig.connectors.types import Action, ActionType
 
