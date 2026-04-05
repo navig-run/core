@@ -706,6 +706,14 @@ class CallbackHandler:
                     await handler(chat_id=chat_id)
                 return
 
+            # ── Help Encyclopedia navigation (help:*) ──
+            if cb_data.startswith("help:"):
+                await self._answer(cb_id, "")
+                handler = getattr(self.channel, "_handle_help_callback", None)
+                if handler:
+                    await handler(cb_data, chat_id, message_id)
+                return
+
             if cb_data.startswith("nav:"):
                 await self._handle_navigation_callback(cb_id, cb_data, chat_id, message_id, user_id)
                 return
