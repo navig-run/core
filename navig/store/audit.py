@@ -17,7 +17,7 @@ import json
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.store.base import BaseStore, _utcnow
 
@@ -25,13 +25,11 @@ logger = logging.getLogger(__name__)
 
 # ── Default path ──────────────────────────────────────────────
 
-_DEFAULT_PATH: Optional[Path] = None
-
+_DEFAULT_PATH: Path | None = None
 
 def _audit_db_path() -> Path:
     """Default audit.db location."""
     return Path.home() / ".navig" / "audit.db"
-
 
 class AuditStore(BaseStore):
     """
@@ -48,7 +46,7 @@ class AuditStore(BaseStore):
     SCHEMA_VERSION = 1
     PRAGMAS = {"cache_size": -4000}  # 4 MB — append-heavy, rarely read
 
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Path | None = None):
         super().__init__(db_path or _audit_db_path())
 
     # ── Schema ────────────────────────────────────────────────
@@ -118,13 +116,13 @@ class AuditStore(BaseStore):
         self,
         action: str,
         actor: str = "navig",
-        target: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None,
-        channel: Optional[str] = None,
-        host: Optional[str] = None,
-        session_id: Optional[str] = None,
+        target: str | None = None,
+        details: dict[str, Any] | None = None,
+        channel: str | None = None,
+        host: str | None = None,
+        session_id: str | None = None,
         status: str = "success",
-        duration_ms: Optional[int] = None,
+        duration_ms: int | None = None,
     ) -> int:
         """
         Record a single audit event. Returns the row id.
@@ -175,7 +173,7 @@ class AuditStore(BaseStore):
 
         return cursor.lastrowid  # type: ignore[return-value]
 
-    def log_events_batch(self, events: List[Dict[str, Any]]) -> int:
+    def log_events_batch(self, events: list[dict[str, Any]]) -> int:
         """
         Batch-insert multiple events in a single transaction.
 
@@ -211,13 +209,13 @@ class AuditStore(BaseStore):
 
     def query_events(
         self,
-        action: Optional[str] = None,
-        actor: Optional[str] = None,
-        host: Optional[str] = None,
-        status: Optional[str] = None,
+        action: str | None = None,
+        actor: str | None = None,
+        host: str | None = None,
+        status: str | None = None,
         after_id: int = 0,
         limit: int = 50,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Query events with optional filters and keyset pagination.
         """
@@ -257,7 +255,7 @@ class AuditStore(BaseStore):
         self,
         hours: int = 24,
         limit: int = 100,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get recent failures (uses partial index)."""
         rows = self._read_all(
             """
@@ -274,8 +272,8 @@ class AuditStore(BaseStore):
 
     def count_events(
         self,
-        action: Optional[str] = None,
-        hours: Optional[int] = None,
+        action: str | None = None,
+        hours: int | None = None,
     ) -> int:
         """Count events with optional filters."""
         clauses: list = []
@@ -292,7 +290,7 @@ class AuditStore(BaseStore):
         row = self._read_one(f"SELECT COUNT(*) FROM audit_events{where}", tuple(params))
         return row[0] if row else 0
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Summary statistics for the audit store."""
         conn = self._get_conn()
 
@@ -335,13 +333,11 @@ class AuditStore(BaseStore):
         )
         return cursor.rowcount
 
-
 # ── Module-level singleton ────────────────────────────────────
 
-_store: Optional[AuditStore] = None
+_store: AuditStore | None = None
 
-
-def get_audit_store(db_path: Optional[Path] = None) -> AuditStore:
+def get_audit_store(db_path: Path | None = None) -> AuditStore:
     """Get or create the global AuditStore instance."""
     global _store
     if _store is None:

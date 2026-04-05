@@ -16,7 +16,7 @@ def eval_run(expression: str = typer.Argument(..., help="Python expression to ev
 
             ctx["cfg"] = ConfigManager()
         except Exception:
-            pass
+            pass  # best-effort: config manager unavailable; eval context will be empty
         result = eval(expression, {"__builtins__": {}}, ctx)  # noqa: S307
         console.print(result)
     except Exception as exc:

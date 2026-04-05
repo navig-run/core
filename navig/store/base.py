@@ -24,14 +24,14 @@ import platform
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # ── Default PRAGMAs (kept for backward-compat imports) ────────
 # New code should rely on navig.storage.pragma_profiles instead.
 
-BASE_PRAGMAS: Dict[str, Any] = {
+BASE_PRAGMAS: dict[str, Any] = {
     "journal_mode": "WAL",
     "synchronous": "NORMAL",
     "foreign_keys": "ON",
@@ -41,18 +41,15 @@ BASE_PRAGMAS: Dict[str, Any] = {
     "mmap_size": 0,  # disabled by default
 }
 
-
 def _utcnow() -> str:
     """ISO-8601 UTC timestamp."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-
 
 def _get_engine():
     """Lazy import to avoid circular dependency at module level."""
     from navig.storage import get_engine
 
     return get_engine()
-
 
 class BaseStore:
     """
@@ -76,7 +73,7 @@ class BaseStore:
     """
 
     SCHEMA_VERSION: int = 1
-    PRAGMAS: Dict[str, Any] = {}  # Extra overrides applied after profile
+    PRAGMAS: dict[str, Any] = {}  # Extra overrides applied after profile
 
     def __init__(self, db_path: Path, *, engine=None):
         self.db_path = Path(db_path)
@@ -161,7 +158,7 @@ class BaseStore:
     def _write(
         self,
         sql: str,
-        params: Optional[tuple] = None,
+        params: tuple | None = None,
     ) -> sqlite3.Cursor:
         """Execute a single write statement under BEGIN IMMEDIATE."""
         with self._lock:
@@ -185,7 +182,7 @@ class BaseStore:
     def _write_many(
         self,
         sql: str,
-        seq_of_params: List[tuple],
+        seq_of_params: list[tuple],
     ) -> int:
         """Execute many writes in one BEGIN IMMEDIATE transaction."""
         if not seq_of_params:
@@ -219,22 +216,22 @@ class BaseStore:
     def _read_one(
         self,
         sql: str,
-        params: Optional[tuple] = None,
-    ) -> Optional[sqlite3.Row]:
+        params: tuple | None = None,
+    ) -> sqlite3.Row | None:
         """Execute a read and return a single row or None."""
         return self._get_conn().execute(sql, params or ()).fetchone()
 
     def _read_all(
         self,
         sql: str,
-        params: Optional[tuple] = None,
-    ) -> List[sqlite3.Row]:
+        params: tuple | None = None,
+    ) -> list[sqlite3.Row]:
         """Execute a read and return all rows."""
         return self._get_conn().execute(sql, params or ()).fetchall()
 
     # ── Maintenance ───────────────────────────────────────────
 
-    def maintenance(self) -> Dict[str, Any]:
+    def maintenance(self) -> dict[str, Any]:
         """Run periodic maintenance via Engine."""
         return self._engine.maintenance(self.db_path)
 

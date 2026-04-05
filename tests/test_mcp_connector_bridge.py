@@ -338,6 +338,123 @@ def test_register_creates_tools_attr_if_missing() -> None:
         register(server)  # must not raise
 
 
+def test_register_populates_tool_handlers() -> None:
+    """register() must populate server._tool_handlers so tools are actually callable."""
+    Cls = _make_connector_class("h1", can_search=True, can_fetch=True, can_act=True)
+    reg = _fresh_registry(Cls)
+    server = MagicMock()
+    server.tools = {}
+    server._tool_handlers = {}
+
+    with patch("navig.mcp.tools.connectors.get_connector_registry", return_value=reg):
+        register(server)
+
+    # Per-connector handlers present
+    assert "connector.h1.search" in server._tool_handlers
+    assert "connector.h1.fetch" in server._tool_handlers
+    assert "connector.h1.act" in server._tool_handlers
+    # Meta-tool handlers present
+    assert "connector.list" in server._tool_handlers
+    assert "connector.health" in server._tool_handlers
+    # All handlers are callable
+    for name, fn in server._tool_handlers.items():
+        if name.startswith("connector."):
+            assert callable(fn), f"Handler for {name!r} is not callable"
+
+
+def test_register_meta_tools_in_server_tools() -> None:
+    """connector.list and connector.health appear in server.tools regardless of connectors."""
+    reg = _fresh_registry()  # empty — no connectors
+    server = MagicMock()
+    server.tools = {}
+    server._tool_handlers = {}
+
+    with patch("navig.mcp.tools.connectors.get_connector_registry", return_value=reg):
+        register(server)
+
+    assert "connector.list" in server.tools
+    assert "connector.health" in server.tools
+    assert "connector.list" in server._tool_handlers
+    assert "connector.health" in server._tool_handlers
+
+
+def test_tool_connector_list_returns_all() -> None:
+    """_tool_connector_list returns all connector summaries with capability flags."""
+    from navig.mcp.tools.connectors import _tool_connector_list
+
+    C1 = _make_connector_class("l1", can_search=True, can_fetch=False, can_act=False)
+    C2 = _make_connector_class("l2", can_search=True, can_fetch=True, can_act=True)
+    reg = _fresh_registry(C1, C2)
+
+    with patch("navig.mcp.tools.connectors.get_connector_registry", return_value=reg):
+        result = _tool_connector_list(None, {})
+
+    assert "connectors" in result
+    ids = {c["id"] for c in result["connectors"]}
+    assert {"l1", "l2"} == ids
+
+    l1_row = next(c for c in result["connectors"] if c["id"] == "l1")
+    assert l1_row["can_search"] is True
+    assert l1_row["can_fetch"] is False
+
+    l2_row = next(c for c in result["connectors"] if c["id"] == "l2")
+    assert l2_row["can_act"] is True
+
+
+@pytest.mark.asyncio
+async def test_tool_connector_health_returns_health_dict() -> None:
+    """_tool_connector_health instantiates the connector and calls health_check()."""
+    from navig.connectors.types import HealthStatus
+    from navig.mcp.tools.connectors import _tool_connector_health
+
+    Cls = _make_connector_class("hc1")
+    reg = _fresh_registry(Cls)
+    inst = reg.get("hc1")
+    inst.health_check = AsyncMock(return_value=HealthStatus(ok=True, latency_ms=12.5))  # type: ignore[method-assign]
+
+    with patch("navig.mcp.tools.connectors.get_connector_registry", return_value=reg):
+        result = _tool_connector_health(None, {"connector_id": "hc1"})
+
+    assert result.get("ok") is True
+    assert "latency_ms" in result
+
+
+def test_tool_connector_health_missing_id() -> None:
+    """Missing connector_id → error dict."""
+    from navig.mcp.tools.connectors import _tool_connector_health
+
+    result = _tool_connector_health(None, {})
+    assert result.get("isError") is True
+    assert "connector_id" in result["error"]
+
+
+def test_tool_connector_health_unknown_connector() -> None:
+    """Unknown connector id → error dict (not an unhandled exception)."""
+    from navig.mcp.tools.connectors import _tool_connector_health
+
+    reg = _fresh_registry()  # empty
+    with patch("navig.mcp.tools.connectors.get_connector_registry", return_value=reg):
+        result = _tool_connector_health(None, {"connector_id": "ghost"})
+
+    assert result.get("isError") is True
+
+
+def test_sync_handler_dispatches_via_thread_pool() -> None:
+    """_make_sync_connector_handler returns a callable that runs handle_connector_call."""
+    from navig.mcp.tools.connectors import _make_sync_connector_handler
+
+    expected = {"results": []}
+    with patch(
+        "navig.mcp.tools.connectors.handle_connector_call",
+        new=AsyncMock(return_value=expected),
+    ) as mock_hcc:
+        handler = _make_sync_connector_handler("connector.mock.search")
+        result = handler(None, {"query": "test"})
+
+    mock_hcc.assert_called_once_with("connector.mock.search", {"query": "test"})
+    assert result == expected
+
+
 def test_register_all_tools_preserves_existing_bundles() -> None:
     """register_all_tools adds connector tools without clobbering memory/wiki."""
     from navig.mcp.tools import register_all_tools

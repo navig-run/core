@@ -2911,9 +2911,10 @@ class TelegramCommandsMixin:
         message_id: int | None = None,
         text: str = "",
     ) -> None:
-        """AI Provider Hub - bridge status, active provider, and available providers.
+        """AI Provider Hub — one-tap activation with inline edit-in-place.
 
-        /providers <name>  — show focused card for that provider.
+        Tap a provider to immediately activate it with curated model defaults.
+        The ✅ indicator shows the currently active provider.
         """
         # Quick-focus: /providers openai  --  /provider anthropic  etc.
         provider_arg = ""
@@ -2959,19 +2960,29 @@ class TelegramCommandsMixin:
         else:
             user_pref = getattr(self, "_user_model_prefs", {}).get(user_id, "")
 
-        lines = ["🎛️ *AI Providers*", ""]
+        # ── Header ──────────────────────────────────────────────────────
+        lines: list[str] = ["🎛️ *AI Providers*", ""]
+
+        # Active provider line
+        active_name = ""
+        if active_prov and active_prov != "bridge_copilot":
+            try:
+                from navig.providers.registry import get_provider as _gp
+
+                _am = _gp(active_prov)
+                active_name = f"{_am.emoji} {_am.display_name}" if _am else active_prov
+            except Exception:  # noqa: BLE001
+                active_name = active_prov
+            lines.append(f"✅ Current: *{active_name}*")
+        elif active_prov == "bridge_copilot":
+            lines.append(f"✅ Current: *{_ni('bolt')} Bridge*")
+
+        # Bridge status (single line)
         bridge_active = active_prov == "bridge_copilot"
         if bridge_online or bridge_active:
             lines.append(_format_bridge_status(bridge_online, bridge_url))
-            if bridge_online:
-                lines.append("- Bridge is active; other providers remain available as fallback.")
-        lines.append(
-            "- Hybrid routing = separate `Small` / `Big` / `Code` slots, each with its own provider:model."
-        )
-        lines.append(
-            "- To enable tier assignments from Telegram, set `routing.enabled: true` in config and restart daemon."
-        )
 
+        # Compact model routing summary
         try:
             from navig.llm_router import get_llm_router
 
@@ -2981,41 +2992,27 @@ class TelegramCommandsMixin:
                 big = llm_router.modes.get_mode("big_tasks")
                 code = llm_router.modes.get_mode("coding")
 
-                def _slot(mode_obj):
+                def _short(mode_obj):
                     if not mode_obj:
                         return "—"
                     model = getattr(mode_obj, "model", "") or ""
-                    provider = getattr(mode_obj, "provider", "") or ""
-                    label = model.split("/")[-1] if model else "-"
-                    primary = f"{provider}:{label}" if provider else label
-                    fb_prov = getattr(mode_obj, "fallback_provider", "") or ""
-                    fb_model = getattr(mode_obj, "fallback_model", "") or ""
-                    if fb_prov and fb_prov != provider and fb_model:
-                        fb_label = fb_model.split("/")[-1]
-                        return f"{primary} ↩ {fb_prov}:{fb_label}"
-                    return primary
+                    return model.split("/")[-1] if model else "—"
 
                 lines.append("")
-                lines.append("*Base model routing:*")
-                lines.append(f"{_ni('bolt')} Small: `{_slot(small)}`")
-                lines.append(f"{_ni('brain')} Big: `{_slot(big)}`")
-                lines.append(f"{_ni('computer')} Code: `{_slot(code)}`")
+                lines.append(
+                    f"⚡`{_short(small)}` · 🧠`{_short(big)}` · 💻`{_short(code)}`"
+                )
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
         if user_pref == "noai":
             lines.append("")
-            lines.append("🧾 *Next message mode:* `raw / no AI` _(one-shot)_")
-            lines.append("➡️ *Effective next message routing:* `raw / no AI`")
-        elif user_pref in {"small", "big", "coder_big"}:
-            label = {
-                "small": "small",
-                "big": "big",
-                "coder_big": "code",
-            }.get(user_pref, user_pref)
-            lines.append("")
-            lines.append(f"🎚️ *Selected preference:* `{label}`")
+            lines.append("🚫 *Next message:* `raw / no AI` _(one-shot)_")
 
+        lines.append("")
+        lines.append("Tap a provider to activate it:")
+
+        # ── Provider buttons ────────────────────────────────────────────
         keyboard_rows: list = []
         bridge_button = None
         if bridge_online or bridge_active:
@@ -3050,8 +3047,6 @@ class TelegramCommandsMixin:
             if not ready:
                 # Show 🔑 stub for cloud providers that have no vault key stored at all —
                 # this invites the user to configure their API key.
-                # When a key exists but isn't validated, hide the provider instead
-                # (the user already knows about it; showing it would be confusing).
                 if (
                     getattr(manifest, "tier", "") == "cloud"
                     and getattr(manifest, "requires_key", False)
@@ -3086,7 +3081,7 @@ class TelegramCommandsMixin:
 
         noai_prefix = "✅ " if user_pref == "noai" else ""
         keyboard_rows.append(
-            [{"text": f"{noai_prefix}🚫 No AI  — raw mode", "callback_data": "prov_noai"}]
+            [{"text": f"{noai_prefix}🚫 No AI — raw mode", "callback_data": "prov_noai"}]
         )
         if message_id:
             keyboard_rows.append(
@@ -3109,6 +3104,59 @@ class TelegramCommandsMixin:
             return
 
         await self.send_message(chat_id, text_payload, keyboard=keyboard_rows)
+
+    async def _show_provider_activation_confirmation(
+        self,
+        chat_id: int,
+        prov_id: str,
+        defaults: dict[str, str],
+        message_id: int | None = None,
+    ) -> None:
+        """Show inline confirmation after one-tap provider activation."""
+        emoji, name = "", prov_id
+        try:
+            from navig.providers.registry import get_provider as _gp
+
+            manifest = _gp(prov_id)
+            if manifest:
+                emoji = manifest.emoji
+                name = manifest.display_name
+        except Exception:  # noqa: BLE001
+            pass  # best-effort
+
+        def _short(m: str) -> str:
+            return m.split("/")[-1].split(":")[-1] if m else "—"
+
+        lines = [
+            f"✅ *{emoji} {name} activated!*",
+            "",
+            f"⚡ Small: `{_short(defaults.get('small', ''))}`",
+            f"🧠 Big: `{_short(defaults.get('big', ''))}`",
+            f"💻 Code: `{_short(defaults.get('coder_big', ''))}`",
+            "",
+            "_Saved to config. Use /models to customise per tier._",
+        ]
+
+        keyboard = [
+            [
+                {"text": "📝 Customize models", "callback_data": f"prov_customize_{prov_id}"},
+                {"text": "← Providers", "callback_data": "prov_back"},
+            ],
+            [{"text": "✖ Close", "callback_data": "prov_close"}],
+        ]
+
+        text_payload = "\n".join(lines)
+        if message_id:
+            try:
+                await self.edit_message(
+                    chat_id, message_id, text_payload,
+                    parse_mode="Markdown", keyboard=keyboard,
+                )
+                return
+            except Exception:  # noqa: BLE001
+                pass  # fall through to send_message
+        await self.send_message(chat_id, text_payload,
+                                parse_mode="Markdown", keyboard=keyboard)
 
     @staticmethod
     def _provider_vault_validation_status(manifest) -> tuple[bool, bool]:

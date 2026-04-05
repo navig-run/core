@@ -17,6 +17,8 @@ tools, zero duplication.
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import logging
 from typing import Any
 
@@ -25,6 +27,12 @@ from navig.connectors.registry import get_connector_registry
 from navig.connectors.types import Action, ActionType
 
 logger = logging.getLogger("navig.mcp.tools.connectors")
+
+# Thread pool for bridging async connector calls into the synchronous
+# tool-dispatch chain used by MCPProtocolHandler._execute_tool().
+# asyncio.run() creates a fresh event loop in the worker thread so there
+# is no conflict with any event loop that may be running in the main thread.
+_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="mcp_conn")
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +92,23 @@ def _act_input_schema() -> dict[str, Any]:
     }
 
 
+def _list_connectors_input_schema() -> dict[str, Any]:
+    return {"type": "object", "properties": {}, "required": []}
+
+
+def _health_input_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "connector_id": {
+                "type": "string",
+                "description": "ID of the connector to probe (e.g. 'gmail', 'perplexity')",
+            }
+        },
+        "required": ["connector_id"],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Tool enumeration
 # ---------------------------------------------------------------------------
@@ -104,7 +129,23 @@ def list_connector_tools(registry=None) -> list[dict[str, Any]]:
         List of MCP tool-schema dicts ready to be pushed into ``server.tools``.
     """
     reg = registry or get_connector_registry()
-    tools: list[dict[str, Any]] = []
+    tools: list[dict[str, Any]] = [
+        {
+            "name": "connector.list",
+            "description": (
+                "List all registered connectors with their id, display name, domain, "
+                "status, and capability flags (can_search / can_fetch / can_act)."
+            ),
+            "inputSchema": _list_connectors_input_schema(),
+        },
+        {
+            "name": "connector.health",
+            "description": (
+                "Probe the health of a specific connector and return latency + ok status."
+            ),
+            "inputSchema": _health_input_schema(),
+        },
+    ]
 
     for cid, cls in reg.all_classes().items():
         try:
@@ -226,6 +267,65 @@ async def handle_connector_call(
 
 
 # ---------------------------------------------------------------------------
+# Sync tool handlers (bridge async → thread pool, matching memory.py pattern)
+# ---------------------------------------------------------------------------
+
+
+def _make_sync_connector_handler(tool_name: str) -> Any:
+    """Return a sync ``_tool_handlers`` callable for *tool_name*.
+
+    ``asyncio.run()`` creates a fresh event loop inside the pool thread, which
+    is safe regardless of whether the caller is inside an already-running loop.
+    The 30-second timeout prevents hung connectors from blocking the MCP server.
+    """
+
+    def _handler(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
+        future = _POOL.submit(asyncio.run, handle_connector_call(tool_name, args))
+        return future.result(timeout=30)
+
+    _handler.__name__ = f"_connector_{tool_name.replace('.', '_')}"
+    return _handler
+
+
+def _tool_connector_list(server: Any, args: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+    """Return summary rows for every registered connector."""
+    reg = get_connector_registry()
+    rows = reg.list_all()
+    # Enrich with capability flags from the class manifest
+    classes = reg.all_classes()
+    for row in rows:
+        cls = classes.get(row["id"])
+        if cls is not None:
+            try:
+                m = cls.manifest
+                row["can_search"] = m.can_search
+                row["can_fetch"] = m.can_fetch
+                row["can_act"] = m.can_act
+            except Exception:  # noqa: BLE001
+                pass
+    return {"connectors": rows}
+
+
+def _tool_connector_health(server: Any, args: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
+    """Probe a connector's health and return the ``HealthStatus`` dict."""
+    connector_id = (args.get("connector_id") or "").strip()
+    if not connector_id:
+        return {"error": "connector_id is required", "isError": True}
+    reg = get_connector_registry()
+    try:
+        connector = reg.get(connector_id)
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc), "isError": True}
+    try:
+        future = _POOL.submit(asyncio.run, connector.health_check())
+        health = future.result(timeout=15)
+        return health.to_dict()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("connector.health(%s) failed: %s", connector_id, exc)
+        return {"error": str(exc), "isError": True}
+
+
+# ---------------------------------------------------------------------------
 # Registration hook (matches the pattern used by memory.py / runtime.py)
 # ---------------------------------------------------------------------------
 
@@ -239,8 +339,12 @@ def register(server: Any) -> None:
     """
     if not hasattr(server, "tools"):
         server.tools = {}
+    if not hasattr(server, "_tool_handlers"):
+        server._tool_handlers = {}
 
     tool_list = list_connector_tools()
+
+    # Schema dict — used by tools/list to advertise the tool surface
     server.tools.update(
         {
             t["name"]: {
@@ -251,6 +355,19 @@ def register(server: Any) -> None:
             for t in tool_list
         }
     )
+
+    # Dispatch table — used by MCPProtocolHandler._execute_tool() to call tools.
+    # Meta-tools have dedicated sync handlers; per-connector operations go
+    # through the async bridge (_make_sync_connector_handler).
+    handlers: dict[str, Any] = {
+        "connector.list": _tool_connector_list,
+        "connector.health": _tool_connector_health,
+    }
+    for t in tool_list:
+        name = t["name"]
+        if name not in handlers:  # skip meta-tools already added above
+            handlers[name] = _make_sync_connector_handler(name)
+    server._tool_handlers.update(handlers)
 
     if tool_list:
         logger.debug(

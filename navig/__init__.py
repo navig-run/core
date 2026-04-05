@@ -40,8 +40,13 @@ def _resolve_version() -> str:
     3. A safe semver fallback so CLI version output never goes blank.
     """
 
-    project_file = Path(__file__).resolve().parents[1] / "pyproject.toml"
-    if project_file.exists():
+    project_candidates = [
+        Path.cwd() / "pyproject.toml",
+        Path(__file__).resolve().parents[1] / "pyproject.toml",
+    ]
+    for project_file in project_candidates:
+        if not project_file.exists():
+            continue
         try:
             try:
                 import tomllib

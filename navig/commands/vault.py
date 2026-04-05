@@ -685,7 +685,7 @@ def vault_get(
                         _rprint(f"[dim]{path}:[/dim] {'*' * min(len(v2_secret), 12)} (use --reveal to show)")
                     return
         except Exception:
-            pass
+            pass  # best-effort: vault v2 unavailable; fall back to v1 credential
 
     if cred is None:
         _ch.error(f"No credential found for provider '{provider}' in profile '{profile}'.")

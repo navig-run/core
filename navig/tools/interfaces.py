@@ -4,19 +4,17 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Union
+from typing import Any
 
 # =============================================================================
 # Stream Events
 # =============================================================================
-
 
 class EventPhase(str, Enum):
     STATUS = "status"
     CHUNK = "chunk"
     FINAL = "final"
     ERROR = "error"
-
 
 @dataclass(frozen=True)
 class StreamStatus:
@@ -28,7 +26,6 @@ class StreamStatus:
     def phase(self) -> EventPhase:
         return EventPhase.STATUS
 
-
 @dataclass(frozen=True)
 class StreamChunk:
     chunk: str
@@ -37,7 +34,6 @@ class StreamChunk:
     def phase(self) -> EventPhase:
         return EventPhase.CHUNK
 
-
 @dataclass(frozen=True)
 class StreamFinal:
     output: Any
@@ -45,7 +41,6 @@ class StreamFinal:
     @property
     def phase(self) -> EventPhase:
         return EventPhase.FINAL
-
 
 @dataclass(frozen=True)
 class StreamError:
@@ -56,15 +51,12 @@ class StreamError:
     def phase(self) -> EventPhase:
         return EventPhase.ERROR
 
-
-ExecutionEvent = Union[StreamStatus, StreamChunk, StreamFinal, StreamError]
+ExecutionEvent = StreamStatus | StreamChunk | StreamFinal | StreamError
 EventCallback = Callable[[ExecutionEvent], None]
-
 
 # =============================================================================
 # Execution Context & Requests
 # =============================================================================
-
 
 @dataclass
 class ExecutionContext:
@@ -75,7 +67,6 @@ class ExecutionContext:
     cwd: str = ""
     env: dict[str, str] = field(default_factory=dict)
     owner_only: bool = False
-
 
 @dataclass
 class ExecutionRequest:
@@ -93,18 +84,15 @@ class ExecutionRequest:
     def is_cancelled(self) -> bool:
         return self.cancellation_token.is_set() if self.cancellation_token else False
 
-
 # =============================================================================
 # Execution Result
 # =============================================================================
-
 
 class EndState(str, Enum):
     SUCCESS = "success"
     ERROR = "error"
     TIMEOUT = "timeout"
     CANCELLED = "cancelled"
-
 
 @dataclass
 class ExecutionResult:
@@ -115,11 +103,9 @@ class ExecutionResult:
     error: str | None = None
     elapsed_ms: float = 0.0
 
-
 # =============================================================================
 # Tool & Skill Specifications
 # =============================================================================
-
 
 @dataclass
 class ToolSpec:
@@ -147,7 +133,6 @@ class ToolSpec:
     def validate_args(self, args: dict[str, Any]) -> bool:
         # Simplistic validation stub until JSON Schema engine is ready
         return True
-
 
 @dataclass
 class SkillSpec:

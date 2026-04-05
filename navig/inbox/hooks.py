@@ -23,14 +23,12 @@ from typing import Any
 
 logger = logging.getLogger("navig.inbox.hooks")
 
-
 class HookAbort(Exception):
     """Raised by a hook to abort routing for the current inbox item."""
 
     def __init__(self, reason: str = "aborted by hook") -> None:
         super().__init__(reason)
         self.reason = reason
-
 
 @dataclass
 class HookEvent:
@@ -54,9 +52,7 @@ class HookEvent:
 
     fired_at: float = field(default_factory=time.time)
 
-
 HookFn = Callable[[HookEvent], HookEvent | None]
-
 
 class HookSystem:
     """
@@ -67,7 +63,7 @@ class HookSystem:
         hooks = HookSystem()
 
         @hooks.register("before_classify")
-        def my_hook(event: HookEvent) -> Optional[HookEvent]:
+        def my_hook(event: HookEvent) -> HookEvent | None:
             if "PRIVATE" in event.content:
                 raise HookAbort("private file — not routing")
             return event
@@ -182,11 +178,9 @@ class HookSystem:
                 logger.warning("Could not load hook %s.%s: %s", module_name, fn_name, exc)
         return loaded
 
-
 # ── Global default hook system ────────────────────────────────
 
 _default_hooks = HookSystem()
-
 
 def get_hooks() -> HookSystem:
     """Return the module-level default HookSystem."""

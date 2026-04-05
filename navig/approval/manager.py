@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from navig.debug_logger import get_debug_logger
 
@@ -17,7 +17,6 @@ if TYPE_CHECKING:
     from navig.gateway.server import NavigGateway
 
 logger = get_debug_logger()
-
 
 @dataclass
 class ApprovalRequest:
@@ -48,7 +47,6 @@ class ApprovalRequest:
             "status": self.status.value,
         }
 
-
 class ApprovalManager:
     """
     Manages approval flows for dangerous operations.
@@ -59,9 +57,9 @@ class ApprovalManager:
 
     def __init__(
         self,
-        gateway: Optional["NavigGateway"] = None,
+        gateway: "NavigGateway" | None = None,
         policy: ApprovalPolicy | None = None,
-        audit_log: Optional["AuditLog"] = None,
+        audit_log: "AuditLog" | None = None,
     ):
         self.gateway = gateway
         self.policy = policy or ApprovalPolicy()

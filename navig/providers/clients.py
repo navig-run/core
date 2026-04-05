@@ -24,7 +24,6 @@ except ImportError:
 
 from .types import BUILTIN_PROVIDERS, ModelApi, ModelDefinition, ProviderConfig
 
-
 @dataclass
 class Message:
     """A chat message."""
@@ -34,7 +33,6 @@ class Message:
     name: str | None = None
     tool_call_id: str | None = None
     tool_calls: list[dict] | None = None
-
 
 @dataclass
 class ToolDefinition:
@@ -63,7 +61,6 @@ class ToolDefinition:
             "input_schema": self.parameters,
         }
 
-
 @dataclass
 class CompletionRequest:
     """Request for chat completion."""
@@ -78,7 +75,6 @@ class CompletionRequest:
     stop: list[str] | None = None
     extra_body: dict | None = None  # Provider-specific params (thinking budgets, etc.)
 
-
 @dataclass
 class ToolCall:
     """A tool call in a completion response."""
@@ -86,7 +82,6 @@ class ToolCall:
     id: str
     name: str
     arguments: str  # JSON string
-
 
 @dataclass
 class CompletionResponse:
@@ -103,7 +98,6 @@ class CompletionResponse:
     def has_tool_calls(self) -> bool:
         return bool(self.tool_calls)
 
-
 @dataclass
 class ProviderError(Exception):
     """Error from a provider."""
@@ -117,7 +111,6 @@ class ProviderError(Exception):
     def __str__(self):
         return f"[{self.provider}] {self.message} (status={self.status_code})"
 
-
 class BaseProviderClient(ABC):
     """Abstract base class for provider clients."""
 
@@ -130,7 +123,7 @@ class BaseProviderClient(ABC):
         self.config = config
         self.api_key = api_key
         self.timeout = timeout
-        self._client = None  # Optional[httpx.AsyncClient]
+        self._client = None  # httpx.AsyncClient | None
 
     @property
     def name(self) -> str:
@@ -226,7 +219,6 @@ class BaseProviderClient(ABC):
             retryable=retryable,
         )
 
-
 class OpenAIClient(BaseProviderClient):
     """Client for OpenAI and OpenAI-compatible APIs."""
 
@@ -291,7 +283,6 @@ class OpenAIClient(BaseProviderClient):
                 provider=self.name,
                 retryable=True,
             ) from e
-
 
 class AnthropicClient(BaseProviderClient):
     """Client for Anthropic Claude API."""
@@ -395,14 +386,12 @@ class AnthropicClient(BaseProviderClient):
                 retryable=True,
             ) from e
 
-
 # Client factory mapping
 CLIENT_CLASSES: dict[ModelApi, type] = {
     ModelApi.OPENAI_COMPLETIONS: OpenAIClient,
     ModelApi.OPENAI_RESPONSES: OpenAIClient,
     ModelApi.ANTHROPIC_MESSAGES: AnthropicClient,
 }
-
 
 def create_client(
     config: ProviderConfig,
@@ -439,7 +428,6 @@ def create_client(
 
     client_class = CLIENT_CLASSES.get(config.api, OpenAIClient)
     return client_class(config, api_key=api_key, timeout=timeout)
-
 
 def get_builtin_provider(name: str) -> ProviderConfig | None:
     """Get a built-in provider configuration by name."""

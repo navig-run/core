@@ -17,13 +17,12 @@ import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from navig import console_helper as ch
 
 if TYPE_CHECKING:
     from navig.memory.project_indexer import ProjectIndexer
-
 
 @dataclass
 class WikiDocument:
@@ -61,7 +60,6 @@ class WikiDocument:
             start = end - overlap
 
         return chunks
-
 
 class TextTokenizer:
     """Simple text tokenizer for search."""
@@ -154,7 +152,6 @@ class TextTokenizer:
         words = re.findall(r"\b[a-z0-9]+\b", text.lower())
         # Filter stop words and short words
         return [w for w in words if w not in TextTokenizer.STOP_WORDS and len(w) > 2]
-
 
 class BM25Index:
     """BM25 index for text search.
@@ -281,7 +278,6 @@ class BM25Index:
 
         return results
 
-
 class WikiRAG:
     """RAG system for wiki knowledge base.
 
@@ -299,7 +295,7 @@ class WikiRAG:
     def __init__(
         self,
         wiki_path: Path,
-        project_indexer: Optional["ProjectIndexer"] = None,
+        project_indexer: "ProjectIndexer" | None = None,
     ):
         """Initialize Wiki RAG.
 
@@ -558,7 +554,6 @@ class WikiRAG:
             "unique_terms": len(self.index.doc_freqs),
             "avg_doc_length": (round(self.index.avg_doc_len, 2) if self.index.avg_doc_len else 0),
         }
-
 
 def get_wiki_rag(
     wiki_path: Path,

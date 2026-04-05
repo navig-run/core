@@ -122,7 +122,7 @@ async def route_to_best_peer(
     if target_node_id:
         peer = next((r for r in registry.get_peers() if r.node_id == target_node_id), None)
         if peer is None:
-            logger.warning("[mesh.router] Target node %s not in registry", target_node_id!r)
+            logger.warning("[mesh.router] Target node %r not in registry", target_node_id)
             return None
     else:
         peer = registry.get_best_peer(capability)

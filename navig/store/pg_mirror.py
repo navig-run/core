@@ -23,19 +23,16 @@ import logging
 import os
 import threading
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
-
 
 class SyncTarget(Protocol):
     """Interface for a sync target that receives mirrored writes."""
 
-    def emit(self, table: str, op: str, data: Dict[str, Any]) -> None: ...
-
+    def emit(self, table: str, op: str, data: dict[str, Any]) -> None: ...
 
 # ── PgMirror ──────────────────────────────────────────────────
-
 
 class PgMirror:
     """
@@ -55,13 +52,13 @@ class PgMirror:
 
     def __init__(
         self,
-        pg_url: Optional[str] = None,
+        pg_url: str | None = None,
         *,
         batch_size: int = 50,
     ):
         self.pg_url = pg_url or os.environ.get("NAVIG_PG_URL", "")
         self._batch_size = batch_size
-        self._buffer: List[Dict[str, Any]] = []
+        self._buffer: list[dict[str, Any]] = []
         self._lock = threading.Lock()
         self._conn = None
 
@@ -73,7 +70,7 @@ class PgMirror:
 
     # ── Emit ──────────────────────────────────────────────────
 
-    def emit(self, table: str, op: str, data: Dict[str, Any]) -> None:
+    def emit(self, table: str, op: str, data: dict[str, Any]) -> None:
         """
         Queue a write operation for PG mirroring.
 
@@ -173,7 +170,7 @@ class PgMirror:
 
     # ── SQL execution ─────────────────────────────────────────
 
-    def _execute_mirror(self, cursor, entry: Dict[str, Any]) -> None:
+    def _execute_mirror(self, cursor, entry: dict[str, Any]) -> None:
         """Execute a single mirrored write on PG."""
         table = entry["table"]
         op = entry["op"]
@@ -220,11 +217,9 @@ class PgMirror:
         buf = len(self._buffer)
         return f"<PgMirror status={status} buffered={buf}>"
 
-
 # ── Module-level singleton ────────────────────────────────────
 
-_mirror: Optional[PgMirror] = None
-
+_mirror: PgMirror | None = None
 
 def get_pg_mirror() -> PgMirror:
     """Get or create the global PG mirror instance."""

@@ -31,7 +31,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Union
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -110,10 +110,7 @@ class ExecutionEvent:
 
 
 # Type alias for a hook handler
-HookHandler = Union[
-    Callable[[ExecutionEvent], None],
-    Callable[[ExecutionEvent], Awaitable[None]],
-]
+HookHandler = Callable[[ExecutionEvent], None] | Callable[[ExecutionEvent], Awaitable[None]]
 
 
 class ExecutionHooks:

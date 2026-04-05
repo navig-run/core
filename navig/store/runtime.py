@@ -26,20 +26,17 @@ import logging
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from navig.store.base import BaseStore, _utcnow
 
 logger = logging.getLogger(__name__)
 
-
 def _runtime_db_path() -> Path:
     return Path.home() / ".navig" / "runtime.db"
 
-
 def _utc_now_dt() -> datetime:
     return datetime.now(timezone.utc)
-
 
 class RuntimeStore(BaseStore):
     """
@@ -55,9 +52,9 @@ class RuntimeStore(BaseStore):
     SCHEMA_VERSION = 2
     PRAGMAS = {"cache_size": -8000}  # 8 MB
 
-    def __init__(self, db_path: Optional[Path] = None):
+    def __init__(self, db_path: Path | None = None):
         super().__init__(db_path or _runtime_db_path())
-        self._mem_cache: Dict[str, Dict[str, Any]] = {}
+        self._mem_cache: dict[str, dict[str, Any]] = {}
         # Auto-migrate legacy databases
         self._auto_migrate_legacy()
 
@@ -248,7 +245,7 @@ class RuntimeStore(BaseStore):
             except Exception as exc:
                 logger.warning("Legacy daily_log.db migration failed: %s", exc)
 
-    def _copy_tables_from(self, source_db: Path, tables: List[str]) -> None:
+    def _copy_tables_from(self, source_db: Path, tables: list[str]) -> None:
         """Copy rows from *source_db* into this store's matching tables."""
         src = sqlite3.connect(str(source_db))
         src.row_factory = sqlite3.Row
@@ -302,7 +299,7 @@ class RuntimeStore(BaseStore):
         chat_id: int = 0,
         duration_ms: int = 0,
         success: bool = True,
-        error_message: Optional[str] = None,
+        error_message: str | None = None,
     ) -> None:
         """Log a command execution and update aggregate stats."""
         now = _utcnow()
@@ -338,7 +335,7 @@ class RuntimeStore(BaseStore):
                     (command, now, duration_ms, 0 if success else 1),
                 )
 
-    def get_stats_summary(self) -> Dict[str, Any]:
+    def get_stats_summary(self) -> dict[str, Any]:
         """Aggregate command statistics."""
         conn = self._get_conn()
         today_start = (
@@ -375,7 +372,7 @@ class RuntimeStore(BaseStore):
             "active_reminders": active_reminders,
         }
 
-    def get_command_stats(self) -> List[Dict[str, Any]]:
+    def get_command_stats(self) -> list[dict[str, Any]]:
         """Per-command statistics."""
         rows = self._read_all(
             "SELECT command, count, last_used, total_duration_ms, error_count "
@@ -400,11 +397,11 @@ class RuntimeStore(BaseStore):
         self,
         role: str,
         content: str,
-        channel: Optional[str] = None,
-        server: Optional[str] = None,
-        command: Optional[str] = None,
-        session_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        channel: str | None = None,
+        server: str | None = None,
+        command: str | None = None,
+        session_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> int:
         """Add a daily-log interaction entry."""
         now = _utc_now_dt()
@@ -430,7 +427,7 @@ class RuntimeStore(BaseStore):
 
     def get_recent_interactions(
         self, hours: int = 24, limit: int = 50
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Recent interaction entries."""
         cutoff = (_utc_now_dt() - timedelta(hours=hours)).isoformat()
         rows = self._read_all(
@@ -444,7 +441,7 @@ class RuntimeStore(BaseStore):
         )
         return [dict(r) for r in rows]
 
-    def get_interactions_for_date(self, date: str) -> List[Dict[str, Any]]:
+    def get_interactions_for_date(self, date: str) -> list[dict[str, Any]]:
         """Entries for a specific date (YYYY-MM-DD)."""
         rows = self._read_all(
             "SELECT * FROM interactions WHERE date = ? ORDER BY timestamp ASC",
@@ -457,7 +454,7 @@ class RuntimeStore(BaseStore):
         date: str,
         summary: str,
         entry_count: int = 0,
-        topics: Optional[str] = None,
+        topics: str | None = None,
     ) -> None:
         """Save or replace a daily summary."""
         self._write(
@@ -487,7 +484,7 @@ class RuntimeStore(BaseStore):
         )
         return cursor.lastrowid  # type: ignore[return-value]
 
-    def get_due_reminders(self) -> List[Dict[str, Any]]:
+    def get_due_reminders(self) -> list[dict[str, Any]]:
         """Reminders whose time has come."""
         rows = self._read_all(
             "SELECT * FROM reminders WHERE completed = 0 AND remind_at <= ? ORDER BY remind_at",
@@ -495,7 +492,7 @@ class RuntimeStore(BaseStore):
         )
         return [dict(r) for r in rows]
 
-    def get_user_reminders(self, user_id: int) -> List[Dict[str, Any]]:
+    def get_user_reminders(self, user_id: int) -> list[dict[str, Any]]:
         """Active reminders for a user."""
         rows = self._read_all(
             """
@@ -540,12 +537,12 @@ class RuntimeStore(BaseStore):
 
     # ── AI State ──────────────────────────────────────────────
 
-    def get_ai_state(self, user_id: int) -> Optional[Dict[str, Any]]:
+    def get_ai_state(self, user_id: int) -> dict[str, Any] | None:
         row = self._read_one("SELECT * FROM ai_state WHERE user_id = ?", (user_id,))
         if not row:
             return None
         keys = row.keys()
-        state: Dict[str, Any] = {
+        state: dict[str, Any] = {
             "user_id": row["user_id"],
             "chat_id": row["chat_id"],
             "mode": row["mode"],
@@ -578,8 +575,8 @@ class RuntimeStore(BaseStore):
         user_id: int,
         chat_id: int,
         mode: str,
-        persona: Optional[str] = None,
-        context: Optional[Dict] = None,
+        persona: str | None = None,
+        context: dict | None = None,
     ) -> None:
         now = _utcnow()
         self._write(
@@ -616,7 +613,7 @@ class RuntimeStore(BaseStore):
 
     # ── Cache ─────────────────────────────────────────────────
 
-    def cache_get(self, key: str) -> Optional[Any]:
+    def cache_get(self, key: str) -> Any | None:
         """Get cached value if not expired. Checks in-memory first."""
         if key in self._mem_cache:
             cached = self._mem_cache[key]
@@ -675,7 +672,7 @@ class RuntimeStore(BaseStore):
         )
         return cursor.lastrowid  # type: ignore[return-value]
 
-    def get_user_notes(self, user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
+    def get_user_notes(self, user_id: int, limit: int = 10) -> list[dict[str, Any]]:
         rows = self._read_all(
             "SELECT id, text, created_at FROM notes WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
             (user_id, limit),
@@ -691,7 +688,7 @@ class RuntimeStore(BaseStore):
 
     # ── Retention / Maintenance ───────────────────────────────
 
-    def get_task_last_run(self, task_name: str) -> Optional[str]:
+    def get_task_last_run(self, task_name: str) -> str | None:
         """Return the last-run date string (YYYY-MM-DD) for a scheduled task, or None."""
         return self.cache_get(f"sched:{task_name}:last_run")  # type: ignore[return-value]
 
@@ -701,7 +698,7 @@ class RuntimeStore(BaseStore):
 
     def prune(
         self, command_log_days: int = 30, interaction_days: int = 30
-    ) -> Dict[str, int]:
+    ) -> dict[str, int]:
         """Purge old data. Returns counts deleted."""
         deleted = {}
         deleted["command_log"] = self._write(
@@ -720,10 +717,10 @@ class RuntimeStore(BaseStore):
         ).rowcount
         return deleted
 
-    def get_full_stats(self) -> Dict[str, Any]:
+    def get_full_stats(self) -> dict[str, Any]:
         """Overall runtime store statistics."""
         conn = self._get_conn()
-        stats: Dict[str, Any] = {}
+        stats: dict[str, Any] = {}
 
         for table in [
             "command_stats",
@@ -744,13 +741,11 @@ class RuntimeStore(BaseStore):
 
         return stats
 
-
 # ── Module-level singleton ────────────────────────────────────
 
-_store: Optional[RuntimeStore] = None
+_store: RuntimeStore | None = None
 
-
-def get_runtime_store(db_path: Optional[Path] = None) -> RuntimeStore:
+def get_runtime_store(db_path: Path | None = None) -> RuntimeStore:
     """Get or create the global RuntimeStore instance."""
     global _store
     if _store is None:

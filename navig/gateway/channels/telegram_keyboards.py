@@ -1328,13 +1328,38 @@ class CallbackHandler:
             )
             return
 
-        # ── Dynamic provider picker: any prov_{id} opens the model picker ───
-        # Legacy aliases for providers whose registry id differs from callback
+        # ── Customize provider: prov_customize_{prov_id} → open /models ─────
+        if cb_data.startswith("prov_customize_"):
+            cust_prov_id = cb_data[len("prov_customize_"):]
+            await self._answer(cb_id, "")
+            try:
+                await self.channel._show_models_tier_summary(
+                    chat_id, cust_prov_id, message_id=message_id,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Customize models failed for %s: %s", cust_prov_id, exc)
+                try:
+                    await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
+                except TypeError:
+                    await self.channel._handle_providers(chat_id)
+            return
+
+        # ── Config stub: prov_cfg_{prov_id} → guidance for API key ──────────
+        if cb_data.startswith("prov_cfg_"):
+            cfg_prov_id = cb_data[len("prov_cfg_"):]
+            await self._answer(
+                cb_id,
+                f"🔑 Configure {cfg_prov_id} API key via `navig init` or vault settings.",
+                show_alert=True,
+            )
+            return
+
+        # ── Dynamic provider: prov_{id} → immediate activation ──────────────
         _PROV_ALIASES: dict[str, str] = {
             "github": "github_models",
             "nvidia_nim": "nvidia",
         }
-        prov_id = cb_data[len("prov_"):]  # strip "prov_" prefix
+        prov_id = cb_data[len("prov_"):]
         prov_id = _PROV_ALIASES.get(prov_id, prov_id)
 
         try:
@@ -1344,25 +1369,68 @@ class CallbackHandler:
         except Exception:  # noqa: BLE001
             manifest = None
 
-        if manifest:
-            await self._answer(cb_id, "")
-            try:
-                await self.channel._show_provider_model_picker(
-                    chat_id,
-                    prov_id,
-                    page=0,
-                    selected_tier="s",
-                    message_id=message_id,
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Provider picker failed for %s: %s", prov_id, exc)
-                try:
-                    await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
-                except TypeError:
-                    await self.channel._handle_providers(chat_id)
+        if not manifest:
+            await self._answer(cb_id, f"Provider info unavailable for '{prov_id}'")
             return
 
-        await self._answer(cb_id, f"Provider info unavailable for '{prov_id}'")
+        # Resolve models and activate with curated defaults
+        try:
+            models: list = []
+            if hasattr(self.channel, "_resolve_provider_models"):
+                models = await self.channel._resolve_provider_models(prov_id, manifest=manifest)
+
+            if not models:
+                if getattr(manifest, "tier", "") == "local":
+                    if prov_id == "llamacpp":
+                        models = ["llama.cpp/default", "llama3.2"]
+                    elif prov_id == "ollama":
+                        models = ["qwen2.5:7b", "phi3.5"]
+
+            if not models:
+                prov_label = manifest.display_name if manifest else prov_id
+                await self._answer(
+                    cb_id,
+                    f"⚠️ No models found for {prov_label}",
+                    show_alert=True,
+                )
+                return
+
+            defaults = self.channel._select_curated_tier_defaults(prov_id, models)
+
+            # Update hybrid router if active
+            try:
+                from navig.agent.ai_client import get_ai_client
+
+                router = get_ai_client().model_router
+                if router and router.is_active:
+                    for tier in ("small", "big", "coder_big"):
+                        slot = router.cfg.slot_for_tier(tier)
+                        slot.provider = prov_id
+                        slot.model = defaults[tier]
+                    if hasattr(self.channel, "_persist_hybrid_router_assignments"):
+                        self.channel._persist_hybrid_router_assignments(router.cfg)
+            except Exception:  # noqa: BLE001
+                logger.debug("Hybrid router update skipped (not active or unavailable)")
+
+            # Always update LLM Mode Router (primary routing layer)
+            if hasattr(self.channel, "_update_llm_mode_router"):
+                self.channel._update_llm_mode_router(prov_id, defaults)
+
+            await self._answer(cb_id, f"✅ {manifest.emoji} {manifest.display_name} activated")
+
+            try:
+                from navig.commands.init import mark_chat_onboarding_step_completed
+
+                mark_chat_onboarding_step_completed("ai-provider")
+            except (ImportError, AttributeError, TypeError, ValueError):
+                logger.debug("Unable to mark ai-provider step after provider activation")
+
+            # Show inline confirmation with model assignments
+            await self.channel._show_provider_activation_confirmation(
+                chat_id, prov_id, defaults, message_id=message_id,
+            )
+        except Exception as exc:
+            await self._answer(cb_id, f"⚠️ Activation failed: {exc}", show_alert=True)
 
     async def _handle_provider_model_callback(
         self,

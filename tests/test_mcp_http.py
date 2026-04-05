@@ -127,6 +127,30 @@ sys.modules.setdefault("aiohttp.web", _web_stub)
 # Now safe to import from navig.mcp_server (aiohttp is lazy-imported there)
 from navig.mcp_server import _build_http_app, generate_perplexity_mcp_config  # noqa: E402
 
+
+class _PayloadWriter:
+    """Minimal async payload writer used by real aiohttp response.prepare()."""
+
+    output_size = 0
+
+    def enable_chunking(self) -> None:
+        return None
+
+    def enable_compression(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    async def write_headers(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    async def write(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    async def write_eof(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    async def drain(self) -> None:
+        return None
+
 # ---------------------------------------------------------------------------
 # Test helpers
 # ---------------------------------------------------------------------------
@@ -154,6 +178,9 @@ def _make_request(
     if auth_header is not None:
         req.headers["Authorization"] = auth_header
     req.text = AsyncMock(return_value=text_body)
+    req._prepare_hook = AsyncMock(return_value=None)
+    req._payload_writer = _PayloadWriter()
+    req.keep_alive = True
     req.method = "GET"
     req.path = "/mcp"
     try:
@@ -329,9 +356,13 @@ async def test_post_response_has_cors_header() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_mcp_returns_event_stream() -> None:
+async def test_get_mcp_returns_event_stream(monkeypatch: pytest.MonkeyPatch) -> None:
     """GET /mcp must produce a StreamResponse with Content-Type: text/event-stream
     and write the MCP 'endpoint' event before entering the keepalive loop."""
+    from aiohttp import web as aio_web
+
+    monkeypatch.setattr(aio_web, "StreamResponse", _StreamResponse, raising=False)
+
     app, _ = _build_app()
     get_handler = _route_handler(app, "GET", "/mcp")
     req = _make_request()

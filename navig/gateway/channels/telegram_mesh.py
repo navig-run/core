@@ -32,10 +32,8 @@ if TYPE_CHECKING:
 
 logger = get_debug_logger()
 
-
 def _mdv2_escape(text: str) -> str:
     return re.sub(r"([_\*\[\]\(\)~`>#+\-=|{}.!\\])", r"\\\1", str(text))
-
 
 # Local gateway base URL for mesh routes — resolved from navig config at call time
 # so it tracks config changes without requiring a restart.
@@ -49,9 +47,7 @@ def _gateway_base() -> str:
     except Exception:
         return "http://127.0.0.1:8789"
 
-
 _GATEWAY_BASE = _gateway_base()
-
 
 class TelegramMeshMixin:
     """
@@ -61,7 +57,7 @@ class TelegramMeshMixin:
       - self._session: aiohttp.ClientSession
       - self.send_message(chat_id, text, parse_mode="Markdown")
       - self._features: dict (from TelegramFeaturesMixin)
-      - self._has_feature(name): bool -> Optional[dict]
+      - self._has_feature(name): bool -> dict | None
     """
 
     # ── /nodes ────────────────────────────────────────────────────────────────

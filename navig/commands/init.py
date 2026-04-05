@@ -161,7 +161,7 @@ def init_app(options: dict[str, Any]) -> None:
                         stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH,
                     )
                 except (OSError, PermissionError):
-                    pass
+                    pass  # best-effort chmod; non-fatal on restricted filesystems
             except Exception as e:
                 if not quiet:
                     ch.warning(f"Could not set permissions: {e}")
@@ -692,7 +692,7 @@ def show_init_status(*, render: bool = True) -> dict[str, Any]:
                 if value:
                     return value
         except Exception:
-            pass
+            pass  # best-effort: vault unavailable; fall back to empty string
         return ""
 
     web_key = ""
@@ -1039,7 +1039,7 @@ def _persist_telegram_bootstrap_token(token: str, navig_dir: Path | None = None)
             vault.put("telegram_bot_token", json.dumps({"value": token}).encode())
             wrote = True
     except Exception:
-        pass
+        pass  # best-effort: vault unavailable; try next storage path
 
     try:
         env_path = base / ".env"
@@ -1055,7 +1055,7 @@ def _persist_telegram_bootstrap_token(token: str, navig_dir: Path | None = None)
         env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         wrote = True
     except Exception:
-        pass
+        pass  # best-effort: .env file unwritable; try next storage path
 
     try:
         from navig.config import get_config_manager
@@ -1066,13 +1066,13 @@ def _persist_telegram_bootstrap_token(token: str, navig_dir: Path | None = None)
         cfg.update_global_config({"telegram": telegram_cfg})
         wrote = True
     except Exception:
-        pass
+        pass  # best-effort: config manager unavailable; try next storage path
 
     try:
         (base / ".telegram_configured").write_text("1", encoding="utf-8")
         wrote = True
     except Exception:
-        pass
+        pass  # best-effort: flag file unwritable; token still set in environment
 
     os.environ["NAVIG_TELEGRAM_BOT_TOKEN"] = token
     os.environ["TELEGRAM_BOT_TOKEN"] = token
@@ -1089,7 +1089,7 @@ def _auto_start_chat_runtime() -> bool:
         cfg["gateway"] = True
         config_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     except Exception:
-        pass
+        pass  # best-effort: daemon config unavailable; still attempt service_start
 
     try:
         from navig.commands.service import service_start
