@@ -77,6 +77,13 @@ TOOLSETS: dict[str, list[str] | None] = {
     "memory": ["memory_read", "memory_write", "memory_delete", "kb_lookup", "fts_search"],
     # Wiki-specific toolset
     "wiki": ["wiki_search", "wiki_read", "wiki_write"],
+    # Remote agent executor (multi-host, file read, host switch)
+    "remote": [
+        "remote_execute",
+        "remote_file_read",
+        "remote_host_switch",
+        "remote_multi_host",
+    ],
     # Sub-agent delegation (requires MVP2 delegate.py)
     "delegation": ["delegate_task"],
     # All registered tools (use sparingly — large schema)
@@ -111,6 +118,10 @@ PARALLEL_SAFE_TOOLS: frozenset[str] = frozenset(
         "git_diff",
         "git_log",
         "git_stash",
+        # Remote executor (read-only / stateless)
+        "remote_execute",
+        "remote_file_read",
+        "remote_host_switch",
     }
 )
 
@@ -131,6 +142,7 @@ NEVER_PARALLEL_TOOLS: frozenset[str] = frozenset(
         "navig_web_reload",
         "delegate_task",
         "git_commit",
+        "remote_multi_host",
     }
 )
 

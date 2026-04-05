@@ -1,7 +1,6 @@
 """
 routing_strategy.py — Request complexity classifier + routing tier selector.
 
-Ported from .lab/ClawRouter/src/router/rules.ts + strategy.ts (TypeScript → Python).
 Handles ~70–80% of routing decisions in <1ms with zero external calls.
 
 Usage::
@@ -26,7 +25,7 @@ from loguru import logger
 RequestTier = Literal["SIMPLE", "MEDIUM", "COMPLEX", "REASONING", "AGENTIC"]
 RoutingProfile = Literal["auto", "eco", "premium", "agentic"]
 
-# ─── Keyword Lists (ported from ClawRouter config defaults) ────────────────────
+# ─── Keyword Lists ─────────────────────────────────────────────────────────────
 
 _CODE_KEYWORDS: list[str] = [
     "code",
@@ -216,7 +215,7 @@ _MULTI_STEP_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\d\.\s"),
 ]
 
-# ─── Dimension Weights (matching ClawRouter defaults) ──────────────────────────
+# ─── Dimension Weights ───────────────────────────────────────────────────────────
 
 _DIMENSION_WEIGHTS: dict[str, float] = {
     "tokenCount": 0.20,
@@ -361,8 +360,8 @@ def classify_request(
         :class:`ClassificationResult` with tier, score, confidence, and signals.
     """
     # Extract user prompt (last user message) and system prompt separately.
-    # ClawRouter scores agentic/keyword dimensions against USER text only
-    # to avoid system-prompt boilerplate contaminating results (see issue #50).
+    # Score agentic/keyword dimensions against USER text only
+    # to avoid system-prompt boilerplate contaminating results.
     system_parts: list[str] = []
     user_parts: list[str] = []
     for msg in messages:

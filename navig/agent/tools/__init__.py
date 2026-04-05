@@ -210,6 +210,18 @@ def register_git_tools() -> None:
         logger.debug("Git tools not available (skip): %s", exc)
 
 
+def register_remote_executor_tools() -> None:
+    """Register remote_execute, remote_file_read, remote_host_switch, remote_multi_host."""
+    try:
+        from navig.agent.tools.remote_tools import (
+            register_remote_executor_tools as _do_register,
+        )
+
+        _do_register()
+    except ImportError as exc:
+        logger.debug("Remote executor tools not available (skip): %s", exc)
+
+
 def register_all_tools() -> None:
     """Register all available built-in agent tools.
 
@@ -228,6 +240,7 @@ def register_all_tools() -> None:
         ("worktree", register_worktree_tools),
         ("coordinator", register_coordinator_tools),
         ("git", register_git_tools),
+        ("remote_executor", register_remote_executor_tools),
     ]:
         try:
             fn()

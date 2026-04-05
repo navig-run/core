@@ -989,7 +989,6 @@ class BlockrunProvider(OpenAIProvider):
 
     The proxy runs locally and presents an OpenAI-compatible API.
     No per-model API keys are required; the BLOCKRUN_WALLET_KEY funds the wallet.
-    Derived from .lab/ClawRouter — see that directory for the full proxy implementation.
     """
 
     name = "blockrun"

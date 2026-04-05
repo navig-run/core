@@ -68,7 +68,7 @@ def _load_navig_json() -> dict[str, Any] | None:
 
 
 # ---------------------------------------------------------------------------
-# Existing resolvers (ported from onboard.py, signature unchanged)
+# Resolvers
 # ---------------------------------------------------------------------------
 
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 
-# ── Patterns (ported from llm_router.py + model_router.py) ─────────
+# ── Detection Patterns ─────────────────────────────────────────────
 
 # <\w+>[^<]*</\w+> replaces the former <\w+>.*</\w+> to eliminate polynomial
 # backtracking on adversarial HTML-like input (CWE-400 / ReDoS).

@@ -22,7 +22,7 @@ Usage (from ``ConversationalAgent``)::
     interceptor.approve()                   # move to EXECUTING
     # now interceptor.should_block("write_file") → False
 
-FA-01 implementation per `.navig/plans/claude/06_implementation_plans/fa1_plan_mode.md`.
+FA-01 implementation 
 """
 
 from __future__ import annotations
@@ -197,6 +197,9 @@ class PlanInterceptor:
             "git_diff",
             "git_log",
             "git_stash",
+            # Remote read-only
+            "remote_file_read",
+            "remote_host_switch",
             # Plan management
             "plan_add_step",
             "plan_show",

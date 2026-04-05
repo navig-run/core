@@ -213,7 +213,7 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         enabled=False,  # Key in PROVIDER_ENV_VARS but no ProviderConfig yet — opt-in
     ),
     # ── Cloud: GitHub Copilot ─────────────────────────────────────────────────
-    # Derived from .lab/navig-run/src/providers/github-copilot-*
+
     ProviderManifest(
         id="github_copilot",
         display_name="GitHub Copilot",
@@ -224,10 +224,9 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         auth_mode="oauth",
         models=["gpt-4o", "claude-3.5-sonnet"],
         emoji="🐙",
-        enabled=False,  # Lab-derived — opt-in until full adapter is wired
+        enabled=False,  # Opt-in until full adapter is wired
     ),
-    # ── Cloud: Kilocode ───────────────────────────────────────────────────────
-    # Derived from .lab/navig-run/src/providers/kilocode-shared.ts
+    # ── Cloud: Kilocode ─────────────────────────────────────────────────
     ProviderManifest(
         id="kilocode",
         display_name="Kilocode",
@@ -237,10 +236,9 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         vault_keys=["kilocode/api-key"],
         models=[],
         emoji="🔧",
-        enabled=False,  # Lab-derived — opt-in
+        enabled=False,  # Opt-in
     ),
-    # ── Cloud: Qwen (Alibaba) ─────────────────────────────────────────────────
-    # Derived from .lab/navig-run/src/providers/qwen-portal-oauth.ts
+    # ── Cloud: Qwen (Alibaba) ───────────────────────────────────────────
     ProviderManifest(
         id="qwen",
         display_name="Qwen (Alibaba)",
@@ -251,10 +249,9 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         auth_mode="oauth",
         models=["qwen2.5-72b-instruct", "qwen2.5-coder-32b-instruct"],
         emoji="🟠",
-        enabled=False,  # Lab-derived — opt-in
+        enabled=False,  # Opt-in
     ),
-    # ── Proxy: BlockRun (x402 micropayments) ──────────────────────────────────
-    # Derived from .lab/ClawRouter — blockrun AI proxy via Solana/USDC x402
+    # ── Proxy: BlockRun (x402 micropayments) ──────────────────────────────
     ProviderManifest(
         id="blockrun",
         display_name="BlockRun",
