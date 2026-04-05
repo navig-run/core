@@ -93,14 +93,10 @@ async def test_models_with_active_provider_shows_tier_summary(monkeypatch):
     class _Router:
         class modes:
             @staticmethod
-            def get(name):
-                if name == "big_tasks":
-                    return SimpleNamespace(provider="openai")
-                return None
-
-            @staticmethod
             def get_mode(name):
-                return SimpleNamespace(model="openai/gpt-4o", provider="openai")
+                if name == "big_tasks":
+                    return SimpleNamespace(model="openai/gpt-4o", provider="openai")
+                return None
 
     monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
     monkeypatch.setattr("navig.providers.registry.get_provider",
@@ -124,7 +120,7 @@ async def test_models_no_provider_shows_provider_picker(monkeypatch):
     class _Router:
         class modes:
             @staticmethod
-            def get(name):
+            def get_mode(name):
                 return None
 
     monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())

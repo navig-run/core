@@ -2243,6 +2243,7 @@ class TelegramChannel:
         chat_id: int,
         user_id: int = 0,
         message_id: int | None = None,
+        text: str = "",
     ) -> None:
         """Delegate to the canonical provider hub implementation in TelegramCommandsMixin."""
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
@@ -2252,6 +2253,7 @@ class TelegramChannel:
             chat_id=chat_id,
             user_id=user_id,
             message_id=message_id,
+            text=text,
         )
 
     async def _show_provider_model_picker(

@@ -2706,7 +2706,7 @@ class TelegramCommandsMixin:
 
             lr = get_llm_router()
             if lr:
-                m = lr.modes.get("big_tasks")
+                m = lr.modes.get_mode("big_tasks")
                 if m and getattr(m, "provider", None):
                     active_prov = m.provider
         except Exception:  # noqa: BLE001
@@ -3142,7 +3142,7 @@ class TelegramCommandsMixin:
 
                 lr = get_llm_router()
                 if lr:
-                    m = lr.modes.get("big_tasks")
+                    m = lr.modes.get_mode("big_tasks")
                     if m and getattr(m, "provider", None):
                         active_prov = m.provider
             except Exception:  # noqa: BLE001

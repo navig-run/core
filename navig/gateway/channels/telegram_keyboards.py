@@ -1229,8 +1229,15 @@ class CallbackHandler:
 
         if cb_data == "prov_bridge":
             online, url = await self.channel._probe_bridge_grid()
-            status = f"online at {url}" if online else f"offline ({url})"
-            await self._answer(cb_id, f"⚡ Bridge Grid: {status}", show_alert=True)
+            if online:
+                await self._answer(cb_id, "⚡ Bridge activated")
+                await self.channel._show_models_tier_summary(
+                    chat_id, "bridge_copilot", message_id=message_id
+                )
+            else:
+                await self._answer(
+                    cb_id, f"⚡ Bridge is offline ({url}).", show_alert=True
+                )
             return
 
         if cb_data == "prov_bridge_offline":
