@@ -120,6 +120,38 @@ class TestGmailConnector:
         assert results[0].source == "gmail"
 
     @pytest.mark.skipif(not _has_httpx(), reason="httpx not installed")
+    def test_search_honours_limit(self, connector):
+        """search(limit=N) must request and return at most N results."""
+        list_response = {"messages": [{"id": f"m{i}"} for i in range(10)]}
+        detail_response = {
+            "id": "m0",
+            "snippet": "snippet",
+            "payload": {
+                "headers": [
+                    {"name": "Subject", "value": "Limit Test"},
+                    {"name": "From", "value": "x@y.com"},
+                    {"name": "Date", "value": "Mon, 15 Jan 2024 10:00:00 +0000"},
+                ],
+            },
+            "labelIds": ["INBOX"],
+        }
+        requested_max_results = []
+
+        async def mock_get(path, params=None):
+            if params and "maxResults" in params:
+                requested_max_results.append(params["maxResults"])
+                # Return as many IDs as requested (simulates a real API response)
+                return {"messages": [{"id": f"m{i}"} for i in range(params["maxResults"])]}
+            return detail_response
+
+        connector._api_get = mock_get
+        results = asyncio.run(connector.search("limit-test", limit=3))
+        # maxResults was passed with the right value
+        assert requested_max_results and requested_max_results[0] == 3
+        # Result set is capped at the requested limit
+        assert len(results) <= 3
+
+    @pytest.mark.skipif(not _has_httpx(), reason="httpx not installed")
     def test_health_check(self, connector):
         """Test health check with mocked response."""
         profile_resp = {"emailAddress": "user@gmail.com"}

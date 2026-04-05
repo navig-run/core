@@ -13,6 +13,7 @@ Pattern follows:
 
 from __future__ import annotations
 
+import functools
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -28,6 +29,36 @@ from navig.connectors.types import (
 )
 
 logger = logging.getLogger("navig.connectors")
+
+
+# ---------------------------------------------------------------------------
+# Circuit-breaker transparent wrapper
+# ---------------------------------------------------------------------------
+
+_CB_METHODS = frozenset(("search", "fetch", "act"))
+
+
+def _wrap_with_circuit_breaker(method):
+    """Return an async wrapper that gates *method* through the connector's CircuitBreaker."""
+
+    @functools.wraps(method)
+    async def _cb_wrapper(self, *args, **kwargs):
+        cb = self._circuit_breaker
+        if not cb.allow_request():
+            from navig.connectors.errors import ConnectorDegradedError
+
+            raise ConnectorDegradedError(
+                self.id, f"Circuit breaker for '{self.id}' is open — retry later"
+            )
+        try:
+            result = await method(self, *args, **kwargs)
+            cb.record_success()
+            return result
+        except Exception:
+            cb.record_failure()
+            raise
+
+    return _cb_wrapper
 
 
 # ---------------------------------------------------------------------------
@@ -75,14 +106,29 @@ class BaseConnector(ABC):
     The connector engine handles OAuth token management via
     ``ConnectorAuthManager`` — connectors receive an access token
     through ``_get_access_token()`` rather than managing auth themselves.
+
+    Circuit-breaker protection is applied automatically to every
+    ``search``, ``fetch``, and ``act`` implementation defined on a
+    concrete subclass. After 3 consecutive failures the breaker opens
+    for 30 s; ``ConnectorDegradedError`` is raised on blocked calls.
     """
 
     manifest: ConnectorManifest  # must be set by subclass
 
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        for name in _CB_METHODS:
+            fn = cls.__dict__.get(name)
+            if fn is not None and callable(fn) and not getattr(fn, "__isabstractmethod__", False):
+                setattr(cls, name, _wrap_with_circuit_breaker(fn))
+
     def __init__(self) -> None:
+        from navig.connectors.circuit_breaker import CircuitBreaker
+
         self._status: ConnectorStatus = ConnectorStatus.DISCONNECTED
         self._access_token: str | None = None
         self._metadata: dict[str, Any] = {}
+        self._circuit_breaker: "CircuitBreaker" = CircuitBreaker(self.manifest.id)
 
     # -- Properties --------------------------------------------------------
 
@@ -157,10 +203,13 @@ class BaseConnector(ABC):
         """
         Called after token injection to perform connector-specific setup.
 
-        Default implementation simply marks status as CONNECTED.
+        Default implementation marks status as CONNECTED and resets the
+        circuit breaker so a freshly (re-)connected connector starts clean.
+
         Override if the connector needs to fetch user profile, validate
         scopes, or cache metadata.
         """
+        self._circuit_breaker.reset()
         self.status = ConnectorStatus.CONNECTED
 
     async def disconnect(self) -> None:

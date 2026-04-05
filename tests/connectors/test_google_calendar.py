@@ -120,6 +120,30 @@ class TestGoogleCalendarConnector:
         assert results[0].source == "google_calendar"
         assert results[0].title == "Meeting"
 
+    def test_search_honours_limit(self, connector):
+        """search(limit=N) must request and return at most N results."""
+        all_events = [
+            {
+                "id": f"e{i}",
+                "summary": f"Event {i}",
+                "start": {"dateTime": "2024-01-15T10:00:00Z"},
+                "end": {"dateTime": "2024-01-15T11:00:00Z"},
+            }
+            for i in range(10)
+        ]
+        requested_max_results = []
+
+        async def mock_get(path, params=None):
+            if params and "maxResults" in params:
+                requested_max_results.append(params["maxResults"])
+                return {"items": all_events[: params["maxResults"]]}
+            return {"items": all_events}
+
+        connector._api_get = mock_get
+        results = asyncio.run(connector.search("event", limit=2))
+        assert requested_max_results and requested_max_results[0] == 2
+        assert len(results) <= 2
+
     def test_health_check(self, connector):
         async def mock_get(path, params=None):
             return {"items": []}

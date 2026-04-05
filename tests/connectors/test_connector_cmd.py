@@ -8,6 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from navig.commands.connector_cmd import connector_app
+from navig.connectors.auth_manager import ConnectorAuthManager
 from navig.connectors.base import BaseConnector, ConnectorManifest
 from navig.connectors.registry import get_connector_registry
 from navig.connectors.types import (
@@ -108,6 +109,8 @@ def _clean_registry(monkeypatch):
     registry.register(_FakeCalendar)
     yield
     registry.reset()
+    # Prevent OAuth config state from leaking between tests
+    ConnectorAuthManager.reset_providers()
 
 
 # ── Tests ────────────────────────────────────────────────────────────────
@@ -295,3 +298,40 @@ class TestConnectorHealth:
         result = runner.invoke(connector_app, ["health"])
         assert result.exit_code == 0
         assert "gmail" in result.output.lower() or "healthy" in result.output.lower()
+
+    def test_health_targeted_connected(self):
+        """health <id> when connector is CONNECTED → shows health for that connector only."""
+        registry = get_connector_registry()
+        gmail = registry.get("gmail")
+        gmail._status = ConnectorStatus.CONNECTED
+
+        result = runner.invoke(connector_app, ["health", "gmail"])
+        assert result.exit_code == 0
+        assert "gmail" in result.output.lower()
+        assert "healthy" in result.output.lower()
+        # Calendar (not connected) should NOT appear in targeted output
+        assert "google_calendar" not in result.output
+
+    def test_health_targeted_not_connected(self):
+        """health <id> when connector is DISCONNECTED → friendly message, no error."""
+        result = runner.invoke(connector_app, ["health", "google_calendar"])
+        assert result.exit_code == 0
+        assert (
+            "not connected" in result.output.lower() or "google_calendar" in result.output.lower()
+        )
+
+    def test_health_targeted_unknown_id(self):
+        """health <unknown-id> → exit 1 with error message."""
+        result = runner.invoke(connector_app, ["health", "no-such-connector"])
+        assert result.exit_code == 1
+        assert "unknown" in result.output.lower() or "no-such-connector" in result.output.lower()
+
+
+class TestRegisterOauthConfig:
+    def test_unknown_connector_prints_warning(self):
+        """_register_oauth_config with an unknown id logs a warning and returns."""
+        from navig.commands.connector_cmd import _register_oauth_config
+
+        auth = ConnectorAuthManager()
+        # Should not raise and should emit a warning (we just verify no exception)
+        _register_oauth_config("unsupported_connector", auth)

@@ -136,13 +136,12 @@ class CircuitBreaker:
         self._emit_event(old, new_state)
 
     def _emit_event(self, old: CircuitState, new: CircuitState) -> None:
-        """Emit a ``connector.circuit.*`` event on the EventBridge."""
-        try:
-            # Late import — EventBridge is optional at this layer
-            from navig.event_bridge import EventBridge  # noqa: F811
+        """Placeholder: emit a state-change event when an EventBridge instance is available.
 
-            # EventBridge is a singleton-ish object attached to the gateway;
-            # if no bridge is running we simply skip.
-            _ = EventBridge  # verification only — actual push requires instance
-        except Exception:  # noqa: BLE001
-            pass  # event bridge not available; non-critical
+        The circuit breaker operates synchronously and does not hold a reference
+        to the gateway event bus.  Connectors or the gateway layer may hook into
+        state changes by sub-classing or by observing connector status changes.
+        """
+        # No-op at this layer.  State changes are logged via logger.info in
+        # _transition(); higher-level observers should monitor connector status.
+        pass

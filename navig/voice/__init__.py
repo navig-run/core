@@ -100,3 +100,11 @@ __all__ = [
     "play_notification_sync",
     "list_sounds",
 ]
+
+# Expose the wake_word submodule as an attribute of this package so that
+# patch("navig.voice.wake_word.WakeWordEngine.start") works in tests and
+# so callers can do ``from navig.voice import wake_word``.
+try:
+    from navig.voice import wake_word  # noqa: E402  (submodule exposure)
+except ImportError:  # numpy or other optional dep unavailable
+    pass

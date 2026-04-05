@@ -108,17 +108,21 @@ class GmailConnector(BaseConnector):
 
     # -- BaseConnector interface -------------------------------------------
 
-    async def search(self, query: str) -> list[Resource]:
+    async def search(self, query: str, limit: int = 5) -> list[Resource]:
         """
         Search Gmail messages matching *query*.
 
         Uses the same query syntax as the Gmail search box:
         https://support.google.com/mail/answer/7190
+
+        Args:
+            query: Gmail search expression (subject:, from:, etc.)
+            limit: Maximum number of messages to return (default 5).
         """
         # 1. Get message IDs
         data = await self._api_get(
             "/users/me/messages",
-            params={"q": query, "maxResults": 20},
+            params={"q": query, "maxResults": limit},
         )
         message_ids = [m["id"] for m in data.get("messages", [])]
         if not message_ids:
@@ -126,7 +130,7 @@ class GmailConnector(BaseConnector):
 
         # 2. Batch-fetch metadata for each message
         resources: list[Resource] = []
-        for mid in message_ids[:20]:  # cap to avoid timeout
+        for mid in message_ids[:limit]:  # cap to match requested limit
             try:
                 msg = await self._api_get(
                     f"/users/me/messages/{mid}",

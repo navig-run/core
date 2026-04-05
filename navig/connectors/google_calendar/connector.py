@@ -123,11 +123,15 @@ class GoogleCalendarConnector(BaseConnector):
 
     # -- BaseConnector interface -------------------------------------------
 
-    async def search(self, query: str) -> list[Resource]:
+    async def search(self, query: str, limit: int = 5) -> list[Resource]:
         """
         Search calendar events.
 
         *query* is free-text; results from the next 30 days by default.
+
+        Args:
+            query: Free-text search string for event title / description.
+            limit: Maximum number of events to return (default 5).
         """
         now = datetime.now(timezone.utc)
         time_min = now.isoformat()
@@ -139,12 +143,12 @@ class GoogleCalendarConnector(BaseConnector):
                 "q": query,
                 "timeMin": time_min,
                 "timeMax": time_max,
-                "maxResults": 25,
+                "maxResults": limit,
                 "singleEvents": "true",
                 "orderBy": "startTime",
             },
         )
-        events = data.get("items", [])
+        events = data.get("items", [])[:limit]
         return [calendar_event_to_resource(e) for e in events]
 
     async def fetch(self, resource_id: str) -> Resource:

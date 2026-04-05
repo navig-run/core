@@ -25,7 +25,6 @@ connector_app = typer.Typer(
 )
 
 
-
 # ── list ─────────────────────────────────────────────────────────────────
 
 
@@ -348,8 +347,37 @@ def connector_health(
     connector_id: str | None = typer.Argument(None, help="Specific connector (omit for all)"),
 ) -> None:
     """Run health checks on connected connectors."""
-    # Delegates to the status command with same logic
-    connector_status(json_output=False)
+    if connector_id is not None:
+        # Targeted single-connector health check
+        from navig.connectors.registry import get_connector_registry
+        from navig.connectors.types import ConnectorStatus
+
+        _ensure_connectors_loaded()
+        registry = get_connector_registry()
+        try:
+            connector = registry.get(connector_id)
+        except Exception:
+            ch.error(f"Unknown connector: {connector_id!r}")
+            raise typer.Exit(1) from None
+
+        if connector.status not in (ConnectorStatus.CONNECTED, ConnectorStatus.DEGRADED):
+            ch.dim(
+                f"Connector '{connector_id}' is not connected. "
+                f"Use `navig connector connect {connector_id}`."
+            )
+            return
+
+        async def _check_one():
+            return await connector.health_check()
+
+        health = _run(_check_one())
+        ok_str = "[green]✓ healthy[/green]" if health.ok else "[red]✗ unhealthy[/red]"
+        latency_str = f"{health.latency_ms:.0f}ms"
+        msg = f" — {health.message}" if health.message else ""
+        ch.console.print(f"{connector.manifest.icon} {connector_id}: {ok_str} ({latency_str}){msg}")
+    else:
+        # All connected connectors
+        connector_status(json_output=False)
 
 
 # ── Connector auto-registration ──────────────────────────────────────────
@@ -430,3 +458,9 @@ def _register_oauth_config(connector_id: str, auth) -> None:
             raise typer.Exit(1)
         config = build_calendar_oauth_config(client_id, client_secret)
         auth.register_provider(connector_id, config)
+
+    else:
+        ch.warning(
+            f"No OAuth configuration is available for connector {connector_id!r}.\n"
+            "This connector may not support the OAuth flow through `navig connector connect`."
+        )

@@ -68,6 +68,15 @@ class ConnectorAuthManager:
         """Return the OAuth config for *connector_id*, or ``None``."""
         return cls._provider_configs.get(connector_id) or OAUTH_PROVIDERS.get(connector_id)
 
+    @classmethod
+    def reset_providers(cls) -> None:
+        """Clear all registered provider configs.
+
+        Useful in tests to prevent state leakage between test cases that call
+        ``register_provider()`` — call this in your fixture teardown.
+        """
+        cls._provider_configs.clear()
+
     # -- Token lifecycle ---------------------------------------------------
 
     async def authenticate(
