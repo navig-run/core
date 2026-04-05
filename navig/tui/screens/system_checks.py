@@ -138,7 +138,7 @@ class SystemChecksScreen(Screen):  # type: ignore[type-arg]
             btn: Button = self.query_one("#btn-continue", Button)
             btn.disabled = self._critical_failed
         except WorkerCancelled:
-            pass
+            pass  # expected when system-checks screen is dismissed before completion
         except Exception as exc:  # noqa: BLE001
             self.notify(f"Check runner error: {exc}", severity="warning")
             btn = self.query_one("#btn-continue", Button)

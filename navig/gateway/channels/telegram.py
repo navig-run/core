@@ -480,7 +480,7 @@ class TelegramChannel:
                 proactive_cfg.get("reminder_poll_interval_sec", poll_interval_sec)
             )
         except Exception:
-            pass
+            pass  # best-effort: config unavailable; use default reminder poll interval
 
         while self._running:
             try:
@@ -2461,10 +2461,9 @@ class TelegramChannel:
                                 dg = "(vault)"
                                 break
                         except Exception:
-                            pass
+                            pass  # best-effort: vault item unreadable; skip
             except Exception:
-                pass
-        lines.append(rf"DEEPGRAM\_KEY: `{'✓ set' if dg else '✗ missing'}`")
+                pass  # best-effort: vault unavailable; key shown as missing(rf"DEEPGRAM\_KEY: `{'✓ set' if dg else '✗ missing'}`")
         await self.send_message(chat_id, "\n".join(lines))
 
     async def _handle_trace(self, chat_id: int, user_id: int) -> None:

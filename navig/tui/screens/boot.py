@@ -94,9 +94,7 @@ class BootScreen(Screen):  # type: ignore[type-arg]
             self.app.push_screen(WelcomeScreen())
 
         except WorkerCancelled:
-            pass
-        except Exception as exc:  # noqa: BLE001
-            self.notify(f"Boot sequence error: {exc}", severity="warning")
+            pass  # expected when boot screen is dismissed before completion
             from navig.tui.screens.welcome import WelcomeScreen
 
             self.app.push_screen(WelcomeScreen())

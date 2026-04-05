@@ -404,9 +404,7 @@ class FinalScreen(Screen):  # type: ignore[type-arg]
             )
 
         except WorkerCancelled:
-            pass
-        except Exception as exc:  # noqa: BLE001
-            self.notify(f"Registration error: {exc}", severity="error")
+            pass  # expected when review screen is dismissed before completion
             retry_btn.display = True
 
     @on(Button.Pressed, "#btn-exit")

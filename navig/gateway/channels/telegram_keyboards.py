@@ -974,6 +974,22 @@ class CallbackHandler:
                 await start_handler(chat_id=chat_id, username="", user_id=user_id)
             return
 
+        if action == "providers":
+            await self._answer(cb_id, "")
+            try:
+                await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
+            except TypeError:
+                await self.channel._handle_providers(chat_id)
+            return
+
+        if action == "models":
+            await self._answer(cb_id, "")
+            try:
+                await self.channel._handle_models_command(chat_id, user_id, message_id=message_id)
+            except TypeError:
+                await self.channel._handle_models_command(chat_id)
+            return
+
         await self._answer(cb_id, "⚠️ Unknown navigation")
 
     async def _answer(self, callback_id: str, text: str, show_alert: bool = False) -> None:

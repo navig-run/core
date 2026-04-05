@@ -278,8 +278,7 @@ class IPCPipeServer:
                         daemon=True,
                     ).start()
                 except TimeoutError:
-                    pass
-                except Exception:  # noqa: BLE001
+                    pass  # best-effort: accept timeout; loop and retry
                     pass  # best-effort; failure is non-critical
 
     def _handle_unix(self, conn) -> None:

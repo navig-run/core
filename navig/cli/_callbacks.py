@@ -78,8 +78,7 @@ def show_compact_help():
         except typer.Exit:
             raise
         except Exception:
-            pass
-    from navig import __version__ as _version
+            pass  # best-effort: rich --help rendering failed; fall through to plain version as _version
 
     typer.echo(f"NAVIG v{_version}")
     typer.echo("  navig <command> [options]")

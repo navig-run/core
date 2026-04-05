@@ -155,7 +155,7 @@ def _read_active_profile_name() -> str:
             if name:
                 return name
         except Exception:
-            pass
+            pass  # best-effort: profile name file unreadable; use default
     return _DEFAULT_PROFILE
 
 

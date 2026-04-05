@@ -511,7 +511,7 @@ Respond with JSON:
                             reasoning = data.get("reasoning", reasoning)
                             confidence = float(data.get("confidence", confidence))
                     except (json.JSONDecodeError, ValueError):
-                        pass
+                        pass  # best-effort: skip on malformed LLM JSON response
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 

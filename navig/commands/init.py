@@ -1001,7 +1001,7 @@ def write_chat_onboarding_handoff_state(
         }
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     except Exception:
-        pass
+        pass  # best-effort: handoff state file unwritable; non-critical
 
 
 def consume_chat_onboarding_handoff_state(

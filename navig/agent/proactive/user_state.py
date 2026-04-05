@@ -460,7 +460,7 @@ class UserStateTracker:
                 if sc_ts:
                     self.stats.last_seen = sc_ts
             except Exception:
-                pass
+                pass  # best-effort: sidecar state unreadable; use defaults
 
     def _save_state(self):
         """Persist state to disk."""

@@ -2974,72 +2974,44 @@ class TelegramCommandsMixin:
         text: str = "",
         message_id: int | None = None,
     ) -> None:
-        """/ai — Unified AI provider + model picker with inline keyboard.
+        """/ai — Compact tier switcher.
 
-        Shows current provider, active model, tier, context size, and cost tier
-        for each slot.  Inline keyboard lets the user switch tier (small/big/coder)
-        in one tap without typing model names.
+        Shows current tier and lets the user switch (Small/Big/Coder/Auto)
+        in one tap.  Provider/model details are in /providers and /models.
         """
-        _TIER_ICONS = {
-            "small":    ("⚡", "Small"),
-            "big":      ("🧠", "Big"),
-            "coder_big":("💻", "Coder"),
-        }
-        _COST_TIERS: dict[str, str] = {
-            "ollama": "🖥️ local",  "local": "🖥️ local",
-            "openai": "💰 paid",   "anthropic": "💰 paid",
-            "groq":   "🆓 free",   "openrouter": "💰 paid",
-            "deepseek": "💰 paid", "mistral": "💰 paid",
-            "google":   "💰 paid", "github_models": "🆓 free",
-            "xai":      "💰 paid", "perplexity": "💰 paid",
-        }
-
         current_tier = ""
         if hasattr(self, "_get_user_tier_pref"):
             current_tier = self._get_user_tier_pref(chat_id, user_id)
         else:
             current_tier = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
 
-        # Resolve current slot info from LLMModeRouter
-        slot_lines: dict[str, str] = {}
+        # Quick model summary from LLM Mode Router
+        model_summary = ""
         try:
             from navig.llm_router import get_llm_router
+
             lr = get_llm_router()
             if lr:
-                mode_map = {"small": "small_talk", "big": "big_tasks", "coder_big": "coding"}
-                for slot, mode in mode_map.items():
-                    cfg = lr.get_config(mode)
-                    prov = cfg.provider or ""
-                    mdl  = (cfg.model or "").split("/")[-1]  # short name
-                    ctx  = str(cfg.max_tokens)
-                    cost = _COST_TIERS.get(prov.lower(), "")
-                    slot_lines[slot] = f"`{prov}:{mdl}`  {cost}  {ctx}t"
+                big = lr.modes.get_mode("big_tasks")
+                if big and getattr(big, "model", None):
+                    short = (big.model or "").split("/")[-1].split(":")[-1]
+                    prov = getattr(big, "provider", "") or ""
+                    model_summary = f"\nActive: `{prov}:{short}`"
         except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
+            pass
 
         tier_label = {"": "auto", "small": "small", "big": "big",
                       "coder_big": "coder", "noai": "no AI"}.get(current_tier, current_tier)
 
         lines = [
-            "🤖 *AI Configuration*",
+            "🤖 *AI Tier*",
             "",
-            f"Active tier: `{tier_label}`",
+            f"Current: `{tier_label}`{model_summary}",
             "",
-            "*Available slots:*",
-        ]
-        for slot in ("small", "big", "coder_big"):
-            icon, name = _TIER_ICONS[slot]
-            is_active = current_tier == slot
-            check = " ✓" if is_active else ""
-            info = slot_lines.get(slot, "")
-            lines.append(f"{icon} {name}{check}: {info}")
-
-        lines += [
-            "",
-            "Tap to switch tier for this session:",
+            "Tap to switch:",
         ]
 
-        # Build tier-picker keyboard (max 2 buttons per row)
+        # Build tier-picker keyboard (2 buttons per row)
         tier_rows: list = []
         tier_order = [("small", "⚡ Small"), ("big", "🧠 Big"),
                        ("coder_big", "💻 Coder"), ("", "🔄 Auto")]
@@ -3056,9 +3028,11 @@ class TelegramCommandsMixin:
         if row:
             tier_rows.append(row)
 
-        # Navigation buttons
         tier_rows.append([
-            {"text": "🎛️ All providers", "callback_data": "nav:providers"},
+            {"text": "🎛️ Providers",     "callback_data": "nav:providers"},
+            {"text": "📝 Models",         "callback_data": "nav:models"},
+        ])
+        tier_rows.append([
             {"text": "✖ Close",          "callback_data": "ai_close"},
         ])
 

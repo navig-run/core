@@ -800,8 +800,8 @@ async def test_providers_header_is_clean_and_shows_current_models(monkeypatch):
     assert marked == []
     text = bot.messages[-1][1]
     assert "VS Code" not in text
-    assert "Base model routing" in text
-    assert "💻 Code:" in text
+    assert "AI Providers" in text
+    assert "Tap a provider" in text
 
 
 @pytest.mark.asyncio

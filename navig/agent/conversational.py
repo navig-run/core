@@ -1012,9 +1012,7 @@ For conversation, respond naturally without JSON.
                     )
                 )
             except Exception:
-                pass
-
-            if not response.has_tool_calls:
+                pass  # best-effort: skip on failed usage metric recording
                 # Model produced a final answer
                 final_response = response.content or ""
                 working_messages.append(Message(role="assistant", content=final_response))

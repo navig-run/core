@@ -12,6 +12,8 @@ class _FakeChannel:
         self.picker_calls = []
         self.persist_calls = 0
         self.llm_mode_calls = []
+        self.activation_confirms = []
+        self.tier_summary_calls = []
 
     async def _api_call(self, method, data):
         self.api_calls.append((method, data))
@@ -20,6 +22,12 @@ class _FakeChannel:
     async def send_message(self, chat_id, text, parse_mode=None, **kwargs):
         self.api_calls.append(
             ("sendMessage", {"chat_id": chat_id, "text": text, "parse_mode": parse_mode, **kwargs})
+        )
+        return {"ok": True}
+
+    async def edit_message(self, chat_id, message_id, text, parse_mode=None, keyboard=None, **kwargs):
+        self.api_calls.append(
+            ("editMessage", {"chat_id": chat_id, "message_id": message_id, "text": text})
         )
         return {"ok": True}
 
@@ -39,6 +47,23 @@ class _FakeChannel:
     ):
         self.picker_calls.append((chat_id, prov_id, page, selected_tier, message_id))
         raise RuntimeError("picker backend unavailable")
+
+    async def _show_provider_activation_confirmation(
+        self,
+        chat_id,
+        prov_id,
+        defaults,
+        message_id=None,
+    ):
+        self.activation_confirms.append((chat_id, prov_id, defaults, message_id))
+
+    async def _show_models_tier_summary(
+        self,
+        chat_id,
+        prov_id,
+        message_id=None,
+    ):
+        self.tier_summary_calls.append((chat_id, prov_id, message_id))
 
     async def _resolve_provider_models(self, prov_id, manifest=None):
         return ["grok-3", "grok-3-mini", "grok-2"]
@@ -82,37 +107,47 @@ async def test_provider_callback_noai_arms_mode_without_alert_popup():
 
 
 @pytest.mark.asyncio
-async def test_provider_callback_picker_failure_recovers_to_provider_screen():
+async def test_provider_callback_activates_on_tap(monkeypatch):
+    """Tapping prov_{id} immediately activates with curated defaults."""
     channel = _FakeChannel()
     handler = CallbackHandler(channel)
 
+    class _Manifest:
+        id = "openai"
+        emoji = "🟢"
+        display_name = "OpenAI"
+
+    monkeypatch.setattr("navig.providers.registry.get_provider", lambda _prov_id: _Manifest())
+
     await handler._handle_provider_callback(
         cb_id="cb-2",
-        cb_data="prov_airllm",
+        cb_data="prov_openai",
         chat_id=101,
         message_id=201,
         user_id=301,
     )
 
-    assert channel.picker_calls
-    assert channel.provider_renders == [(101, 301, 201)]
+    # Should have activated (LLM mode router updated)
+    assert len(channel.llm_mode_calls) == 1
+    assert channel.llm_mode_calls[0][0] == "openai"
+    # Should show activation confirmation inline
+    assert len(channel.activation_confirms) == 1
+    assert channel.activation_confirms[0][1] == "openai"
+    assert channel.activation_confirms[0][3] == 201  # message_id
 
 
 @pytest.mark.asyncio
-async def test_provider_callback_nvidia_nim_alias_opens_nvidia_picker():
-    class _AliasChannel(_FakeChannel):
-        async def _show_provider_model_picker(
-            self,
-            chat_id,
-            prov_id,
-            page=0,
-            selected_tier="s",
-            message_id=None,
-        ):
-            self.picker_calls.append((chat_id, prov_id, page, selected_tier, message_id))
-
-    channel = _AliasChannel()
+async def test_provider_callback_nvidia_nim_alias_activates(monkeypatch):
+    """prov_nvidia_nim alias resolves to nvidia and activates."""
+    channel = _FakeChannel()
     handler = CallbackHandler(channel)
+
+    class _Manifest:
+        id = "nvidia"
+        emoji = "🟩"
+        display_name = "NVIDIA"
+
+    monkeypatch.setattr("navig.providers.registry.get_provider", lambda _prov_id: _Manifest())
 
     await handler._handle_provider_callback(
         cb_id="cb-2a",
@@ -122,42 +157,33 @@ async def test_provider_callback_nvidia_nim_alias_opens_nvidia_picker():
         user_id=311,
     )
 
-    assert channel.picker_calls == [(111, "nvidia", 0, "s", 211)]
+    assert len(channel.llm_mode_calls) == 1
+    assert channel.llm_mode_calls[0][0] == "nvidia"
+    assert len(channel.activation_confirms) == 1
+    assert channel.activation_confirms[0][1] == "nvidia"
 
 
 @pytest.mark.asyncio
-async def test_provider_callback_falls_back_to_providers_on_picker_error():
-    """When picker fails, the callback falls back to the providers hub screen."""
-    class _FailChannel(_FakeChannel):
-        def __init__(self):
-            super().__init__()
-            self.calls = 0
-
-        async def _show_provider_model_picker(
-            self,
-            chat_id,
-            prov_id,
-            page=0,
-            selected_tier="s",
-            message_id=None,
-        ):
-            self.calls += 1
-            raise RuntimeError("transient failure")
-
-    channel = _FailChannel()
+async def test_provider_unknown_shows_unavailable(monkeypatch):
+    """Unknown provider ID returns an info answer without crash."""
+    channel = _FakeChannel()
     handler = CallbackHandler(channel)
+
+    monkeypatch.setattr("navig.providers.registry.get_provider", lambda _prov_id: None)
 
     await handler._handle_provider_callback(
         cb_id="cb-2b",
-        cb_data="prov_nvidia",
+        cb_data="prov_fakeprov",
         chat_id=112,
         message_id=212,
         user_id=312,
     )
 
-    assert channel.calls == 1
-    # Fallback to providers hub
-    assert channel.provider_renders == [(112, 312, 212)]
+    answer_calls = [
+        payload for method, payload in channel.api_calls if method == "answerCallbackQuery"
+    ]
+    assert answer_calls
+    assert "unavailable" in answer_calls[0].get("text", "").lower()
 
 
 @pytest.mark.asyncio
@@ -326,8 +352,8 @@ async def test_provider_model_assignment_updates_llm_without_hybrid_router(monke
 
 
 @pytest.mark.asyncio
-async def test_provider_callback_answered_before_picker_renders():
-    """answerCallbackQuery must be sent before _show_provider_model_picker is called."""
+async def test_provider_callback_answered_before_activation(monkeypatch):
+    """answerCallbackQuery must be sent before _show_provider_activation_confirmation is called."""
     events: list[str] = []
 
     class _OrderTrackChannel(_FakeChannel):
@@ -339,16 +365,22 @@ async def test_provider_callback_answered_before_picker_renders():
             events.append("send_message")
             return {"ok": True}
 
-        async def _show_provider_model_picker(
+        async def _show_provider_activation_confirmation(
             self,
             chat_id,
             prov_id,
-            page=0,
-            selected_tier="s",
+            defaults,
             message_id=None,
         ):
-            events.append("picker")
-            self.picker_calls.append((chat_id, prov_id, page, selected_tier, message_id))
+            events.append("activation_confirm")
+            self.activation_confirms.append((chat_id, prov_id, defaults, message_id))
+
+    class _Manifest:
+        id = "nvidia"
+        emoji = "🟩"
+        display_name = "NVIDIA"
+
+    monkeypatch.setattr("navig.providers.registry.get_provider", lambda _prov_id: _Manifest())
 
     channel = _OrderTrackChannel()
     handler = CallbackHandler(channel)
@@ -362,19 +394,30 @@ async def test_provider_callback_answered_before_picker_renders():
     )
 
     assert "api:answerCallbackQuery" in events
-    assert "picker" in events
+    assert "activation_confirm" in events
     answer_idx = events.index("api:answerCallbackQuery")
-    picker_idx = events.index("picker")
-    assert answer_idx < picker_idx, (
-        f"answerCallbackQuery (pos {answer_idx}) must fire before picker (pos {picker_idx}); "
+    confirm_idx = events.index("activation_confirm")
+    assert answer_idx < confirm_idx, (
+        f"answerCallbackQuery (pos {answer_idx}) must fire before activation_confirm (pos {confirm_idx}); "
         f"events={events}"
     )
 
 
 @pytest.mark.asyncio
-async def test_provider_callback_double_failure_no_show_alert_toast():
-    """When picker fails twice the callback must NOT emit a show_alert error toast."""
-    channel = _FakeChannel()  # always raises in _show_provider_model_picker
+async def test_provider_callback_activation_failure_shows_alert(monkeypatch):
+    """When activation fails, a show_alert error toast should appear."""
+    class _FailActivateChannel(_FakeChannel):
+        async def _resolve_provider_models(self, prov_id, manifest=None):
+            raise RuntimeError("network unreachable")
+
+    class _Manifest:
+        id = "openai"
+        emoji = "🟢"
+        display_name = "OpenAI"
+
+    monkeypatch.setattr("navig.providers.registry.get_provider", lambda _prov_id: _Manifest())
+
+    channel = _FailActivateChannel()
     handler = CallbackHandler(channel)
 
     await handler._handle_provider_callback(
@@ -390,8 +433,5 @@ async def test_provider_callback_double_failure_no_show_alert_toast():
         for method, payload in channel.api_calls
         if method == "answerCallbackQuery" and payload.get("show_alert") is True
     ]
-    assert show_alert_answers == [], (
-        f"Expected no show_alert toast on double failure, got: {show_alert_answers}"
-    )
-    # Fallback to providers hub should have been triggered
-    assert channel.provider_renders, "Expected providers hub fallback after double failure"
+    assert show_alert_answers, "Expected a show_alert toast on activation failure"
+    assert "failed" in show_alert_answers[0].get("text", "").lower()

@@ -199,17 +199,14 @@ def _write_scaffold_files(pkg_dir: Path, pkg_type: str) -> None:
                         for name, handler in COMMANDS.items():
                             CommandRegistry.register(name, handler, pack_id=ctx.pack_id)
                     except Exception:
-                        pass
-
-
-                def on_unload(ctx) -> None:
+                        pass  # best-effort: CommandRegistry unavailable at pack load time
                     from commands import COMMANDS
                     try:
                         from navig.commands._registry import CommandRegistry
                         for name in COMMANDS:
                             CommandRegistry.deregister(name, pack_id=ctx.pack_id)
                     except Exception:
-                        pass
+                        pass  # best-effort: CommandRegistry unavailable at pack unload time
                 """
             ),
             encoding="utf-8",
