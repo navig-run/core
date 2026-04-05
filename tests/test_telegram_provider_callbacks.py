@@ -25,7 +25,9 @@ class _FakeChannel:
         )
         return {"ok": True}
 
-    async def edit_message(self, chat_id, message_id, text, parse_mode=None, keyboard=None, **kwargs):
+    async def edit_message(
+        self, chat_id, message_id, text, parse_mode=None, keyboard=None, **kwargs
+    ):
         self.api_calls.append(
             ("editMessage", {"chat_id": chat_id, "message_id": message_id, "text": text})
         )
@@ -130,10 +132,10 @@ async def test_provider_callback_activates_on_tap(monkeypatch):
     # Should have activated (LLM mode router updated)
     assert len(channel.llm_mode_calls) == 1
     assert channel.llm_mode_calls[0][0] == "openai"
-    # Should show activation confirmation inline
-    assert len(channel.activation_confirms) == 1
-    assert channel.activation_confirms[0][1] == "openai"
-    assert channel.activation_confirms[0][3] == 201  # message_id
+    # Should navigate directly to tier summary (not the intermediate confirmation screen)
+    assert len(channel.tier_summary_calls) == 1
+    assert channel.tier_summary_calls[0][1] == "openai"
+    assert channel.tier_summary_calls[0][2] == 201  # message_id
 
 
 @pytest.mark.asyncio
@@ -159,8 +161,8 @@ async def test_provider_callback_nvidia_nim_alias_activates(monkeypatch):
 
     assert len(channel.llm_mode_calls) == 1
     assert channel.llm_mode_calls[0][0] == "nvidia"
-    assert len(channel.activation_confirms) == 1
-    assert channel.activation_confirms[0][1] == "nvidia"
+    assert len(channel.tier_summary_calls) == 1
+    assert channel.tier_summary_calls[0][1] == "nvidia"
 
 
 @pytest.mark.asyncio
@@ -248,7 +250,12 @@ async def test_provider_activate_uses_curated_defaults_and_persists(monkeypatch)
 async def test_provider_model_assignment_marks_onboarding_step(monkeypatch):
     class _SafePickerChannel(_FakeChannel):
         async def _show_provider_model_picker(
-            self, chat_id, prov_id, page=0, selected_tier="s", message_id=None,
+            self,
+            chat_id,
+            prov_id,
+            page=0,
+            selected_tier="s",
+            message_id=None,
         ):
             self.picker_calls.append((chat_id, prov_id, page, selected_tier, message_id))
 
@@ -307,9 +314,15 @@ async def test_provider_model_assignment_marks_onboarding_step(monkeypatch):
 @pytest.mark.asyncio
 async def test_provider_model_assignment_updates_llm_without_hybrid_router(monkeypatch):
     """pms_ assignment must update LLM Mode Router even when hybrid router is not active."""
+
     class _SafePickerChannel(_FakeChannel):
         async def _show_provider_model_picker(
-            self, chat_id, prov_id, page=0, selected_tier="s", message_id=None,
+            self,
+            chat_id,
+            prov_id,
+            page=0,
+            selected_tier="s",
+            message_id=None,
         ):
             self.picker_calls.append((chat_id, prov_id, page, selected_tier, message_id))
 
@@ -353,7 +366,7 @@ async def test_provider_model_assignment_updates_llm_without_hybrid_router(monke
 
 @pytest.mark.asyncio
 async def test_provider_callback_answered_before_activation(monkeypatch):
-    """answerCallbackQuery must be sent before _show_provider_activation_confirmation is called."""
+    """answerCallbackQuery must be sent before _show_models_tier_summary is called."""
     events: list[str] = []
 
     class _OrderTrackChannel(_FakeChannel):
@@ -365,15 +378,14 @@ async def test_provider_callback_answered_before_activation(monkeypatch):
             events.append("send_message")
             return {"ok": True}
 
-        async def _show_provider_activation_confirmation(
+        async def _show_models_tier_summary(
             self,
             chat_id,
             prov_id,
-            defaults,
             message_id=None,
         ):
-            events.append("activation_confirm")
-            self.activation_confirms.append((chat_id, prov_id, defaults, message_id))
+            events.append("tier_summary")
+            self.tier_summary_calls.append((chat_id, prov_id, message_id))
 
     class _Manifest:
         id = "nvidia"
@@ -394,11 +406,11 @@ async def test_provider_callback_answered_before_activation(monkeypatch):
     )
 
     assert "api:answerCallbackQuery" in events
-    assert "activation_confirm" in events
+    assert "tier_summary" in events
     answer_idx = events.index("api:answerCallbackQuery")
-    confirm_idx = events.index("activation_confirm")
+    confirm_idx = events.index("tier_summary")
     assert answer_idx < confirm_idx, (
-        f"answerCallbackQuery (pos {answer_idx}) must fire before activation_confirm (pos {confirm_idx}); "
+        f"answerCallbackQuery (pos {answer_idx}) must fire before tier_summary (pos {confirm_idx}); "
         f"events={events}"
     )
 
@@ -406,6 +418,7 @@ async def test_provider_callback_answered_before_activation(monkeypatch):
 @pytest.mark.asyncio
 async def test_provider_callback_activation_failure_shows_alert(monkeypatch):
     """When activation fails, a show_alert error toast should appear."""
+
     class _FailActivateChannel(_FakeChannel):
         async def _resolve_provider_models(self, prov_id, manifest=None):
             raise RuntimeError("network unreachable")

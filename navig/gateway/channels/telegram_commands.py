@@ -106,9 +106,7 @@ class SlashCommandEntry:
 
     command: str  # without leading "/"
     description: str  # shown in Telegram command list and /help
-    cli_template: str | None = (
-        None  # navig CLI template; ``{args}`` is replaced with user input
-    )
+    cli_template: str | None = None  # navig CLI template; ``{args}`` is replaced with user input
     handler: str | None = None  # method name on TelegramCommandsMixin to call directly
     visible: bool = True  # include in /help and setMyCommands
     category: str = "general"  # section heading for /help
@@ -117,9 +115,7 @@ class SlashCommandEntry:
 
 _SLASH_REGISTRY: list[SlashCommandEntry] = [
     # --- Core ----------------------------------------------------------------
-    SlashCommandEntry(
-        "start", "Wake up greeting", handler="_handle_start", category="core"
-    ),
+    SlashCommandEntry("start", "Wake up greeting", handler="_handle_start", category="core"),
     SlashCommandEntry(
         "help",
         "Full command reference",
@@ -168,9 +164,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="core",
         visible=False,
     ),
-    SlashCommandEntry(
-        "briefing", "Today's summary", handler="_handle_briefing", category="core"
-    ),
+    SlashCommandEntry("briefing", "Today's summary", handler="_handle_briefing", category="core"),
     SlashCommandEntry(
         "deck",
         "Open the command deck",
@@ -178,9 +172,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="core",
         visible=False,
     ),
-    SlashCommandEntry(
-        "ping", "Quick alive check", handler="_handle_ping", category="core"
-    ),
+    SlashCommandEntry("ping", "Quick alive check", handler="_handle_ping", category="core"),
     SlashCommandEntry(
         "skill",
         "Run a NAVIG skill",
@@ -195,12 +187,8 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         cli_template="host monitor show --disk",
         category="monitoring",
     ),
-    SlashCommandEntry(
-        "memory", "RAM status", cli_template='run "free -h"', category="monitoring"
-    ),
-    SlashCommandEntry(
-        "cpu", "Load / CPU info", cli_template='run "uptime"', category="monitoring"
-    ),
+    SlashCommandEntry("memory", "RAM status", cli_template='run "free -h"', category="monitoring"),
+    SlashCommandEntry("cpu", "Load / CPU info", cli_template='run "uptime"', category="monitoring"),
     SlashCommandEntry(
         "uptime", "Server uptime", cli_template='run "uptime -p"', category="monitoring"
     ),
@@ -260,9 +248,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         usage="/restart [daemon|<container-name>]",
     ),
     # --- Database ------------------------------------------------------------
-    SlashCommandEntry(
-        "db", "List databases", cli_template="db list", category="database"
-    ),
+    SlashCommandEntry("db", "List databases", cli_template="db list", category="database"),
     SlashCommandEntry(
         "tables",
         "Tables in a database (+ db name)",
@@ -271,9 +257,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         usage="/tables <database-name>",
     ),
     # --- Tools ---------------------------------------------------------------
-    SlashCommandEntry(
-        "hosts", "Configured servers", cli_template="host list", category="tools"
-    ),
+    SlashCommandEntry("hosts", "Configured servers", cli_template="host list", category="tools"),
     SlashCommandEntry(
         "use",
         "Switch active host (+ name)",
@@ -282,17 +266,21 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         usage="/use <hostname>",
     ),
     SlashCommandEntry(
-        "run", "Execute remote command", cli_template='run "{args}"', category="tools",
+        "run",
+        "Execute remote command",
+        cli_template='run "{args}"',
+        category="tools",
         usage="/run <shell command>",
     ),
-    SlashCommandEntry(
-        "backup", "Backup status", cli_template="backup show", category="tools"
-    ),
+    SlashCommandEntry("backup", "Backup status", cli_template="backup show", category="tools"),
     SlashCommandEntry(
         "plans", "Plans and spaces progress", cli_template="plans status", category="tools"
     ),
     SlashCommandEntry(
-        "plan", "Add a plan goal (+ text)", cli_template="plans add {args}", category="tools",
+        "plan",
+        "Add a plan goal (+ text)",
+        cli_template="plans add {args}",
+        category="tools",
         usage="/plan <goal text>",
     ),
     SlashCommandEntry(
@@ -351,9 +339,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         cli_template='run "curl -s ifconfig.me"',
         category="utilities",
     ),
-    SlashCommandEntry(
-        "time", "Server time", cli_template='run "date"', category="utilities"
-    ),
+    SlashCommandEntry("time", "Server time", cli_template='run "date"', category="utilities"),
     SlashCommandEntry(
         "weather",
         "Weather report (optional city)",
@@ -433,17 +419,23 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         usage="/mode [work|deep-focus|coder|auto|list]",
     ),
     SlashCommandEntry(
-        "big", "Force big model for next message", category="model",
+        "big",
+        "Force big model for next message",
+        category="model",
         handler="_handle_tier_override",
         usage="/big  (then send your message)",
     ),
     SlashCommandEntry(
-        "small", "Force small model for next message", category="model",
+        "small",
+        "Force small model for next message",
+        category="model",
         handler="_handle_tier_override",
         usage="/small  (then send your message)",
     ),
     SlashCommandEntry(
-        "coder", "Force coder model for next message", category="model",
+        "coder",
+        "Force coder model for next message",
+        category="model",
         handler="_handle_tier_override",
         usage="/coder  (then send your message)",
     ),
@@ -521,9 +513,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         usage="/autoheal [on|off|status|hive on|hive off]",
     ),
     # --- Digital Ghost / Laravel Port ---
-    SlashCommandEntry(
-        "about", "Learn about the bot", handler="_handle_about", category="core"
-    ),
+    SlashCommandEntry("about", "Learn about the bot", handler="_handle_about", category="core"),
     SlashCommandEntry(
         "auto_start",
         "Enable AI auto-replies",
@@ -863,7 +853,9 @@ class TelegramCommandsMixin:
             state["screen_stack"] = [self._NAV_ROOT_SCREEN]
         return state
 
-    def _reset_navigation_state(self, chat_id: int, message_id: int | None = None) -> dict[str, Any]:
+    def _reset_navigation_state(
+        self, chat_id: int, message_id: int | None = None
+    ) -> dict[str, Any]:
         store = self._get_navigation_store()
         state = {
             "chat_id": str(chat_id),
@@ -904,15 +896,21 @@ class TelegramCommandsMixin:
                 ],
             ]
             if target_message_id:
-                await self.edit_message(chat_id, target_message_id, text, parse_mode="MarkdownV2", keyboard=keyboard)
+                await self.edit_message(
+                    chat_id, target_message_id, text, parse_mode="MarkdownV2", keyboard=keyboard
+                )
                 return
-            sent = await self.send_message(chat_id, text, parse_mode="MarkdownV2", keyboard=keyboard)
+            sent = await self.send_message(
+                chat_id, text, parse_mode="MarkdownV2", keyboard=keyboard
+            )
             if sent and isinstance(sent, dict):
                 state["message_id"] = sent.get("message_id")
             return
 
         if screen_name == "status":
-            await self._handle_status(chat_id=chat_id, user_id=user_id, message_id=target_message_id)
+            await self._handle_status(
+                chat_id=chat_id, user_id=user_id, message_id=target_message_id
+            )
             return
 
         if screen_name == "spaces":
@@ -920,26 +918,36 @@ class TelegramCommandsMixin:
             return
 
         if screen_name == "settings":
-            await self._handle_settings_hub(chat_id=chat_id, user_id=user_id, message_id=target_message_id)
+            await self._handle_settings_hub(
+                chat_id=chat_id, user_id=user_id, message_id=target_message_id
+            )
             return
 
         if screen_name == "models":
-            await self._handle_models_command(chat_id=chat_id, user_id=user_id, message_id=target_message_id)
+            await self._handle_models_command(
+                chat_id=chat_id, user_id=user_id, message_id=target_message_id
+            )
             return
 
         if screen_name == "providers":
-            await self._handle_providers(chat_id=chat_id, user_id=user_id, message_id=target_message_id)
+            await self._handle_providers(
+                chat_id=chat_id, user_id=user_id, message_id=target_message_id
+            )
             return
 
         if screen_name == "intake":
-            await self._handle_intake(chat_id=chat_id, user_id=user_id, text="/intake", message_id=target_message_id)
+            await self._handle_intake(
+                chat_id=chat_id, user_id=user_id, text="/intake", message_id=target_message_id
+            )
             return
 
         # Fallback recovery screen
         text = f"{_ni('warn')} Something went wrong while opening that screen."
         keyboard = [[{"text": "🏠 Home", "callback_data": "nav:home"}]]
         if target_message_id:
-            await self.edit_message(chat_id, target_message_id, text, parse_mode=None, keyboard=keyboard)
+            await self.edit_message(
+                chat_id, target_message_id, text, parse_mode=None, keyboard=keyboard
+            )
             return
         sent = await self.send_message(chat_id, text, parse_mode=None, keyboard=keyboard)
         if sent and isinstance(sent, dict):
@@ -1176,9 +1184,7 @@ class TelegramCommandsMixin:
 
         # Bridge status (non-blocking, 2 s timeout)
         try:
-            bridge_ok, bridge_url = await _asyncio.wait_for(
-                self._probe_bridge_grid(), timeout=2.0
-            )
+            bridge_ok, bridge_url = await _asyncio.wait_for(self._probe_bridge_grid(), timeout=2.0)
             bridge_status = f"🟢 {bridge_url}" if bridge_ok else "🔴 offline"
         except Exception:
             bridge_status = "❔ unknown"
@@ -1290,9 +1296,7 @@ class TelegramCommandsMixin:
                 title = summary or "Run setup fix"
                 if len(title) > 36:
                     title = title[:33] + "..."
-                keyboard.append(
-                    [{"text": f"🛠 {title}", "callback_data": f"stfix:{code}"}]
-                )
+                keyboard.append([{"text": f"🛠 {title}", "callback_data": f"stfix:{code}"}])
             keyboard.append(
                 [
                     {"text": "🔙 Back", "callback_data": "nav:back"},
@@ -1317,9 +1321,7 @@ class TelegramCommandsMixin:
             title = summary or "Run setup fix"
             if len(title) > 36:
                 title = title[:33] + "..."
-            fix_buttons.append(
-                [{"text": f"🛠 {title}", "callback_data": f"stfix:{code}"}]
-            )
+            fix_buttons.append([{"text": f"🛠 {title}", "callback_data": f"stfix:{code}"}])
         if fix_buttons:
             keyboard = fix_buttons
         await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown", keyboard=keyboard)
@@ -1507,9 +1509,11 @@ class TelegramCommandsMixin:
                 encoding="utf-8",
             )
 
-    async def _handle_spaces(self, chat_id: int, user_id: int = 0, text: str = "", message_id: int | None = None) -> None:
+    async def _handle_spaces(
+        self, chat_id: int, user_id: int = 0, text: str = "", message_id: int | None = None
+    ) -> None:
         # Quick-switch: "/spaces devops" delegates directly to /space
-        arg = text[len("/spaces"):].strip() if text.lower().startswith("/spaces") else ""
+        arg = text[len("/spaces") :].strip() if text.lower().startswith("/spaces") else ""
         if arg:
             await self._handle_space(chat_id=chat_id, user_id=user_id, text=f"/space {arg}")
             return
@@ -1672,7 +1676,9 @@ class TelegramCommandsMixin:
         selected_space = get_active_space()
         if arg:
             if not validate_space_name(arg):
-                await self.send_message(chat_id, "Unknown space for intake. Use `/spaces` first.", parse_mode="Markdown")
+                await self.send_message(
+                    chat_id, "Unknown space for intake. Use `/spaces` first.", parse_mode="Markdown"
+                )
                 return
             selected_space = normalize_space_name(arg)
 
@@ -1697,9 +1703,13 @@ class TelegramCommandsMixin:
             ],
         ]
         if message_id:
-            await self.edit_message(chat_id, message_id, text_payload, parse_mode="Markdown", keyboard=keyboard)
+            await self.edit_message(
+                chat_id, message_id, text_payload, parse_mode="Markdown", keyboard=keyboard
+            )
             return
-        sent = await self.send_message(chat_id, text_payload, parse_mode="Markdown", keyboard=keyboard)
+        sent = await self.send_message(
+            chat_id, text_payload, parse_mode="Markdown", keyboard=keyboard
+        )
         if sent and isinstance(sent, dict):
             self._get_navigation_state(chat_id)["message_id"] = sent.get("message_id")
 
@@ -1832,7 +1842,9 @@ class TelegramCommandsMixin:
         if not lowered or lowered.startswith("/"):
             return None
 
-        has_trigger = any(re.search(rf"\b{re.escape(w)}\b", lowered) for w in self._NL_COMMAND_TRIGGERS)
+        has_trigger = any(
+            re.search(rf"\b{re.escape(w)}\b", lowered) for w in self._NL_COMMAND_TRIGGERS
+        )
         alias_map = self._nl_phrase_aliases()
 
         best: dict[str, Any] | None = None
@@ -1875,10 +1887,9 @@ class TelegramCommandsMixin:
         if len(ranked) > 1:
             first = ranked[0]
             second = ranked[1]
-            if (
-                int(first.get("score", 0)) == int(second.get("score", 0))
-                and str(first.get("command") or "") != str(second.get("command") or "")
-            ):
+            if int(first.get("score", 0)) == int(second.get("score", 0)) and str(
+                first.get("command") or ""
+            ) != str(second.get("command") or ""):
                 return {
                     "ambiguous": True,
                     "candidates": [first, second, *ranked[2:4]],
@@ -2059,7 +2070,9 @@ class TelegramCommandsMixin:
                     parse_mode=None,
                 )
                 return
-            if hasattr(self, "_is_group_admin") and not await self._is_group_admin(chat_id, user_id):
+            if hasattr(self, "_is_group_admin") and not await self._is_group_admin(
+                chat_id, user_id
+            ):
                 await self.send_message(
                     chat_id,
                     "You need group admin rights for this command.",
@@ -2157,7 +2170,9 @@ class TelegramCommandsMixin:
         resolved = self._resolve_nl_command_intent(text)
         if not resolved:
             lowered = (text or "").strip().lower()
-            has_trigger = any(re.search(rf"\b{re.escape(w)}\b", lowered) for w in self._NL_COMMAND_TRIGGERS)
+            has_trigger = any(
+                re.search(rf"\b{re.escape(w)}\b", lowered) for w in self._NL_COMMAND_TRIGGERS
+            )
             if has_trigger:
                 suggestions = self._suggest_nl_commands(text, limit=3)
                 if suggestions:
@@ -2281,7 +2296,9 @@ class TelegramCommandsMixin:
         if lowered in {"cancel", "stop", "no", "abort"}:
             context["nl_pending"] = {"active": False}
             self._runtime_state_with_context(user_id, chat_id, context)
-            await self.send_message(chat_id, "🛑 Natural-language action cancelled.", parse_mode=None)
+            await self.send_message(
+                chat_id, "🛑 Natural-language action cancelled.", parse_mode=None
+            )
             return True
 
         if lowered in {"yes", "ok", "go", "proceed", "run"}:
@@ -2427,14 +2444,14 @@ class TelegramCommandsMixin:
             lines.append(f"{_ni('debug')} Debug mode: on")
 
         lines.append("")
-        lines.append(
-            "`/settings` to configure · `/voice` for audio · `/status` for routing"
-        )
+        lines.append("`/settings` to configure · `/voice` for audio · `/status` for routing")
         await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
 
     async def _handle_mode(self, chat_id: int, text: str = "", user_id: int = 0) -> None:
         """Set focus/behavior mode. Uses MOOD_REGISTRY with fuzzy matching."""
-        mode_arg = text[len("/mode"):].strip() if text.lower().startswith("/mode") else text.strip()
+        mode_arg = (
+            text[len("/mode") :].strip() if text.lower().startswith("/mode") else text.strip()
+        )
         from navig.agent.soul import MOOD_REGISTRY, get_mood_profile
 
         _uid = user_id or chat_id
@@ -2451,9 +2468,7 @@ class TelegramCommandsMixin:
                     pass  # best-effort; failure is non-critical
             for mid, mp in MOOD_REGISTRY.items():
                 active_marker = " <b>- active</b>" if mid == current else ""
-                lines.append(
-                    f"{mp.emoji} <code>{mid}</code>{active_marker}\n<i>{mp.character}</i>"
-                )
+                lines.append(f"{mp.emoji} <code>{mid}</code>{active_marker}\n<i>{mp.character}</i>")
             lines.append(
                 "\n<code>/mode &lt;name&gt;</code> to switch  -  "
                 "<code>/mode auto</code> to let NAVIG decide"
@@ -2474,9 +2489,7 @@ class TelegramCommandsMixin:
                 get_user_state_tracker().set_preference("chat_mode", "auto")
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
-            await self.send_message(
-                chat_id, "- auto. reading the room.", parse_mode=None
-            )
+            await self.send_message(chat_id, "- auto. reading the room.", parse_mode=None)
             return
 
         try:
@@ -2680,7 +2693,7 @@ class TelegramCommandsMixin:
         tier_arg = ""
         for prefix in ("/models", "/model", "/routing", "/router"):
             if text.lower().startswith(prefix):
-                tier_arg = text[len(prefix):].strip().lower()
+                tier_arg = text[len(prefix) :].strip().lower()
                 break
         if tier_arg in ("big", "small", "coder", "auto"):
             await self._handle_tier_command(chat_id, user_id, f"/{tier_arg}")
@@ -2702,12 +2715,15 @@ class TelegramCommandsMixin:
         if active_prov:
             # Provider is active → show tier summary
             await self._show_models_tier_summary(
-                chat_id, active_prov, message_id=message_id,
+                chat_id,
+                active_prov,
+                message_id=message_id,
             )
         else:
             # No provider → show mini provider picker
             await self._show_models_provider_picker(
-                chat_id, message_id=message_id,
+                chat_id,
+                message_id=message_id,
             )
 
     async def _show_models_provider_picker(
@@ -2745,10 +2761,14 @@ class TelegramCommandsMixin:
                     ready = False
                 if not ready:
                     continue
-                keyboard_rows.append([{
-                    "text": f"{manifest.emoji} {manifest.display_name}",
-                    "callback_data": f"mdl_prov_{manifest.id}",
-                }])
+                keyboard_rows.append(
+                    [
+                        {
+                            "text": f"{manifest.emoji} {manifest.display_name}",
+                            "callback_data": f"mdl_prov_{manifest.id}",
+                        }
+                    ]
+                )
         except Exception:  # noqa: BLE001
             lines.append("")
             lines.append("⚠️ Could not load providers.")
@@ -2764,14 +2784,18 @@ class TelegramCommandsMixin:
         if message_id:
             try:
                 await self.edit_message(
-                    chat_id, message_id, text_payload,
-                    parse_mode="Markdown", keyboard=keyboard_rows,
+                    chat_id,
+                    message_id,
+                    text_payload,
+                    parse_mode="Markdown",
+                    keyboard=keyboard_rows,
                 )
                 return
             except Exception:  # noqa: BLE001
                 pass
-        await self.send_message(chat_id, text_payload,
-                                parse_mode="Markdown", keyboard=keyboard_rows)
+        await self.send_message(
+            chat_id, text_payload, parse_mode="Markdown", keyboard=keyboard_rows
+        )
 
     async def _show_models_tier_summary(
         self,
@@ -2819,7 +2843,12 @@ class TelegramCommandsMixin:
         keyboard = [
             [{"text": f"⚡ Small — {current['small']}", "callback_data": f"mdl_tier_{prov_id}_s"}],
             [{"text": f"🧠 Big — {current['big']}", "callback_data": f"mdl_tier_{prov_id}_b"}],
-            [{"text": f"💻 Code — {current['coder_big']}", "callback_data": f"mdl_tier_{prov_id}_c"}],
+            [
+                {
+                    "text": f"💻 Code — {current['coder_big']}",
+                    "callback_data": f"mdl_tier_{prov_id}_c",
+                }
+            ],
             [
                 {"text": "🎛️ Change provider", "callback_data": "mdl_chgprov"},
                 {"text": "← Providers", "callback_data": "prov_back"},
@@ -2831,14 +2860,16 @@ class TelegramCommandsMixin:
         if message_id:
             try:
                 await self.edit_message(
-                    chat_id, message_id, text_payload,
-                    parse_mode="Markdown", keyboard=keyboard,
+                    chat_id,
+                    message_id,
+                    text_payload,
+                    parse_mode="Markdown",
+                    keyboard=keyboard,
                 )
                 return
             except Exception:  # noqa: BLE001
                 pass
-        await self.send_message(chat_id, text_payload,
-                                parse_mode="Markdown", keyboard=keyboard)
+        await self.send_message(chat_id, text_payload, parse_mode="Markdown", keyboard=keyboard)
 
     async def _show_models_model_list(
         self,
@@ -2893,14 +2924,16 @@ class TelegramCommandsMixin:
             if message_id:
                 try:
                     await self.edit_message(
-                        chat_id, message_id, text_payload,
-                        parse_mode="Markdown", keyboard=keyboard,
+                        chat_id,
+                        message_id,
+                        text_payload,
+                        parse_mode="Markdown",
+                        keyboard=keyboard,
                     )
                     return
                 except Exception:  # noqa: BLE001
                     pass
-            await self.send_message(chat_id, text_payload,
-                                    parse_mode="Markdown", keyboard=keyboard)
+            await self.send_message(chat_id, text_payload, parse_mode="Markdown", keyboard=keyboard)
             return
 
         # Detect current model for this tier
@@ -2937,17 +2970,25 @@ class TelegramCommandsMixin:
             short = model.split("/")[-1].split(":")[-1]
             is_current = model == current_model
             prefix = "✅ " if is_current else ""
-            keyboard.append([{
-                "text": f"{prefix}{short}",
-                "callback_data": f"mdl_sel_{prov_id}_{idx}_{tier_code}_{page}",
-            }])
+            keyboard.append(
+                [
+                    {
+                        "text": f"{prefix}{short}",
+                        "callback_data": f"mdl_sel_{prov_id}_{idx}_{tier_code}_{page}",
+                    }
+                ]
+            )
 
         # Pagination buttons
         nav_row: list = []
         if page > 0:
-            nav_row.append({"text": "◀ Prev", "callback_data": f"mdl_page_{prov_id}_{tier_code}_{page - 1}"})
+            nav_row.append(
+                {"text": "◀ Prev", "callback_data": f"mdl_page_{prov_id}_{tier_code}_{page - 1}"}
+            )
         if page < total_pages - 1:
-            nav_row.append({"text": "Next ▶", "callback_data": f"mdl_page_{prov_id}_{tier_code}_{page + 1}"})
+            nav_row.append(
+                {"text": "Next ▶", "callback_data": f"mdl_page_{prov_id}_{tier_code}_{page + 1}"}
+            )
         if nav_row:
             keyboard.append(nav_row)
 
@@ -2958,14 +2999,16 @@ class TelegramCommandsMixin:
         if message_id:
             try:
                 await self.edit_message(
-                    chat_id, message_id, text_payload,
-                    parse_mode="Markdown", keyboard=keyboard,
+                    chat_id,
+                    message_id,
+                    text_payload,
+                    parse_mode="Markdown",
+                    keyboard=keyboard,
                 )
                 return
             except Exception:  # noqa: BLE001
                 pass
-        await self.send_message(chat_id, text_payload,
-                                parse_mode="Markdown", keyboard=keyboard)
+        await self.send_message(chat_id, text_payload, parse_mode="Markdown", keyboard=keyboard)
 
     async def _handle_ai_command(
         self,
@@ -3000,8 +3043,13 @@ class TelegramCommandsMixin:
         except Exception:  # noqa: BLE001
             pass
 
-        tier_label = {"": "auto", "small": "small", "big": "big",
-                      "coder_big": "coder", "noai": "no AI"}.get(current_tier, current_tier)
+        tier_label = {
+            "": "auto",
+            "small": "small",
+            "big": "big",
+            "coder_big": "coder",
+            "noai": "no AI",
+        }.get(current_tier, current_tier)
 
         lines = [
             "🤖 *AI Tier*",
@@ -3013,38 +3061,50 @@ class TelegramCommandsMixin:
 
         # Build tier-picker keyboard (2 buttons per row)
         tier_rows: list = []
-        tier_order = [("small", "⚡ Small"), ("big", "🧠 Big"),
-                       ("coder_big", "💻 Coder"), ("", "🔄 Auto")]
+        tier_order = [
+            ("small", "⚡ Small"),
+            ("big", "🧠 Big"),
+            ("coder_big", "💻 Coder"),
+            ("", "🔄 Auto"),
+        ]
         row: list = []
         for tier_key, btn_label in tier_order:
             check = " ✓" if current_tier == tier_key else ""
-            row.append({
-                "text": f"{btn_label}{check}",
-                "callback_data": f"aitier_{tier_key or 'auto'}",
-            })
+            row.append(
+                {
+                    "text": f"{btn_label}{check}",
+                    "callback_data": f"aitier_{tier_key or 'auto'}",
+                }
+            )
             if len(row) == 2:
                 tier_rows.append(row)
                 row = []
         if row:
             tier_rows.append(row)
 
-        tier_rows.append([
-            {"text": "🎛️ Providers",     "callback_data": "nav:providers"},
-            {"text": "📝 Models",         "callback_data": "nav:models"},
-        ])
-        tier_rows.append([
-            {"text": "✖ Close",          "callback_data": "ai_close"},
-        ])
+        tier_rows.append(
+            [
+                {"text": "🎛️ Providers", "callback_data": "nav:providers"},
+                {"text": "📝 Models", "callback_data": "nav:models"},
+            ]
+        )
+        tier_rows.append(
+            [
+                {"text": "✖ Close", "callback_data": "ai_close"},
+            ]
+        )
 
         payload = "\n".join(lines)
         if message_id:
             await self.edit_message(
-                chat_id, message_id, payload,
-                parse_mode="Markdown", keyboard=tier_rows,
+                chat_id,
+                message_id,
+                payload,
+                parse_mode="Markdown",
+                keyboard=tier_rows,
             )
         else:
-            await self.send_message(chat_id, payload,
-                                    parse_mode="Markdown", keyboard=tier_rows)
+            await self.send_message(chat_id, payload, parse_mode="Markdown", keyboard=tier_rows)
 
     async def _handle_providers(
         self,
@@ -3062,7 +3122,7 @@ class TelegramCommandsMixin:
         provider_arg = ""
         for prefix in ("/providers", "/provider"):
             if text.lower().startswith(prefix):
-                provider_arg = text[len(prefix):].strip().lower()
+                provider_arg = text[len(prefix) :].strip().lower()
                 break
         if provider_arg:
             await self.send_message(
@@ -3141,9 +3201,7 @@ class TelegramCommandsMixin:
                     return model.split("/")[-1] if model else "—"
 
                 lines.append("")
-                lines.append(
-                    f"⚡`{_short(small)}` · 🧠`{_short(big)}` · 💻`{_short(code)}`"
-                )
+                lines.append(f"⚡`{_short(small)}` · 🧠`{_short(big)}` · 💻`{_short(code)}`")
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
@@ -3156,10 +3214,22 @@ class TelegramCommandsMixin:
 
         # ── Provider buttons ────────────────────────────────────────────
         keyboard_rows: list = []
-        bridge_button = None
-        if bridge_online or bridge_active:
-            bridge_suffix = " ✅" if bridge_active else ""
-            bridge_button = [{"text": f"{_ni('bolt')} Bridge{bridge_suffix}", "callback_data": "prov_bridge"}]
+        # Bridge is always shown regardless of probe result so users can see it
+        # exists even when VS Code is closed.  Suffix reflects actual state.
+        if bridge_active:
+            bridge_suffix = " ✅"
+        elif bridge_online:
+            bridge_suffix = ""
+        else:
+            bridge_suffix = " ⏸ offline"
+        bridge_button = [
+            {
+                "text": f"{_ni('bolt')} Bridge{bridge_suffix}",
+                "callback_data": "prov_bridge"
+                if (bridge_online or bridge_active)
+                else "prov_bridge_offline",
+            }
+        ]
         bridge_inserted = False
         ready_provider_count = 0
 
@@ -3187,18 +3257,28 @@ class TelegramCommandsMixin:
                 ready = False
 
             if not ready:
-                # Show 🔑 stub for cloud providers that have no vault key stored at all —
-                # this invites the user to configure their API key.
                 if (
                     getattr(manifest, "tier", "") == "cloud"
                     and getattr(manifest, "requires_key", False)
                     and not vault_has_key
                 ):
+                    # 🔒 = locked / needs API key setup (🔑 looks like "has a key")
                     stub_btn = {
-                        "text": f"{manifest.emoji} {manifest.display_name} 🔑",
+                        "text": f"{manifest.emoji} {manifest.display_name} 🔒",
                         "callback_data": f"prov_cfg_{manifest.id}",
                     }
                     keyboard_rows.append([stub_btn])
+                elif getattr(manifest, "tier", "") == "local":
+                    # Show offline local providers so users know they exist.
+                    stub_btn = {
+                        "text": f"{manifest.emoji} {manifest.display_name} ⏸ offline",
+                        "callback_data": f"prov_cfg_{manifest.id}",
+                    }
+                    keyboard_rows.append([stub_btn])
+                    # Place Bridge after Ollama even when Ollama is offline
+                    if manifest.id == "ollama" and not bridge_inserted:
+                        keyboard_rows.append(bridge_button)
+                        bridge_inserted = True
                 continue
 
             ready_provider_count += 1
@@ -3210,11 +3290,13 @@ class TelegramCommandsMixin:
             }
             keyboard_rows.append([btn])
 
-            if manifest.id == "ollama" and bridge_button and not bridge_inserted:
+            # Place Bridge right after Ollama (online path)
+            if manifest.id == "ollama" and not bridge_inserted:
                 keyboard_rows.append(bridge_button)
                 bridge_inserted = True
 
-        if bridge_button and not bridge_inserted:
+        # Fallback: Bridge wasn't placed after Ollama (Ollama absent from registry)
+        if not bridge_inserted:
             keyboard_rows.append(bridge_button)
 
         if ready_provider_count == 0:
@@ -3291,14 +3373,16 @@ class TelegramCommandsMixin:
         if message_id:
             try:
                 await self.edit_message(
-                    chat_id, message_id, text_payload,
-                    parse_mode="Markdown", keyboard=keyboard,
+                    chat_id,
+                    message_id,
+                    text_payload,
+                    parse_mode="Markdown",
+                    keyboard=keyboard,
                 )
                 return
             except Exception:  # noqa: BLE001
                 pass  # fall through to send_message
-        await self.send_message(chat_id, text_payload,
-                                parse_mode="Markdown", keyboard=keyboard)
+        await self.send_message(chat_id, text_payload, parse_mode="Markdown", keyboard=keyboard)
 
     @staticmethod
     def _provider_vault_validation_status(manifest) -> tuple[bool, bool]:
@@ -3335,7 +3419,10 @@ class TelegramCommandsMixin:
                     has_vault_key = True
                     try:
                         metadata = getattr(item, "metadata", {}) if item else {}
-                        if isinstance(metadata, dict) and metadata.get("validation_success") is True:
+                        if (
+                            isinstance(metadata, dict)
+                            and metadata.get("validation_success") is True
+                        ):
                             validated = True
                     except Exception as exc:  # noqa: BLE001
                         logger.debug("Vault v2 metadata check failed for %s: %s", label, exc)
@@ -3507,9 +3594,7 @@ class TelegramCommandsMixin:
         "coder_big": ["coding"],
     }
 
-    def _update_llm_mode_router(
-        self, provider_id: str, tier_models: dict[str, str]
-    ) -> None:
+    def _update_llm_mode_router(self, provider_id: str, tier_models: dict[str, str]) -> None:
         """Update the LLM Mode Router for the given tiers and persist to config.
 
         Parameters
@@ -3591,7 +3676,11 @@ class TelegramCommandsMixin:
                         _key_missing = True
                         env_hint = " / ".join(manifest.env_vars[:2]) if manifest.env_vars else ""
                         vault_hint = manifest.vault_keys[0] if manifest.vault_keys else ""
-                        parts = [p for p in [env_hint, f"vault '{vault_hint}'" if vault_hint else ""] if p]
+                        parts = [
+                            p
+                            for p in [env_hint, f"vault '{vault_hint}'" if vault_hint else ""]
+                            if p
+                        ]
                         _key_hint = " or ".join(parts) if parts else "provider config"
             except Exception:  # noqa: BLE001
                 pass  # best-effort; display continues without banner
@@ -3645,14 +3734,16 @@ class TelegramCommandsMixin:
         if _key_missing:
             lines.append(f"⚠️ <i>API key not configured — set {_key_hint}</i>")
             lines.append("")
-        lines.extend([
-            _tier_line("small"),
-            _tier_line("big"),
-            _tier_line("coder_big"),
-            "",
-            viewing_line,
-            "Tap a model below to assign it.",
-        ])
+        lines.extend(
+            [
+                _tier_line("small"),
+                _tier_line("big"),
+                _tier_line("coder_big"),
+                "",
+                viewing_line,
+                "Tap a model below to assign it.",
+            ]
+        )
         for offset, m in enumerate(page_models):
             idx = start + offset
             short_m = m.split("/")[-1].split(":")[-1]
@@ -3893,9 +3984,7 @@ class TelegramCommandsMixin:
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
-        lines.append(
-            f"- *Memory* - {len(session_messages)} msgs - {all_sessions_count} session(s)"
-        )
+        lines.append(f"- *Memory* - {len(session_messages)} msgs - {all_sessions_count} session(s)")
         lines.append(SEP)
 
         lines.append("- *Recent*")
@@ -3916,9 +4005,7 @@ class TelegramCommandsMixin:
                 if ts_raw:
                     try:
                         if isinstance(ts_raw, (int, float)):
-                            ts_prefix = (
-                                _dt.utcfromtimestamp(ts_raw).strftime("%H:%M") + " "
-                            )
+                            ts_prefix = _dt.utcfromtimestamp(ts_raw).strftime("%H:%M") + " "
                         else:
                             ts_prefix = str(ts_raw)[:5] + " "
                     except Exception:  # noqa: BLE001
@@ -3955,9 +4042,7 @@ class TelegramCommandsMixin:
                 _sk = f"agent:default:telegram:default:dm:{user_id}"
                 _s = sm.sessions.get(_sk)
                 if _s is not None:
-                    voice_label = (
-                        "on" if _s.metadata.get("voice_enabled", False) else "off"
-                    )
+                    voice_label = "on" if _s.metadata.get("voice_enabled", False) else "off"
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -3994,9 +4079,7 @@ class TelegramCommandsMixin:
                     "failed",
                     "critical",
                 )
-                daemon_issues = [
-                    ln.strip() for ln in _tail if any(kw in ln.lower() for kw in _kw)
-                ]
+                daemon_issues = [ln.strip() for ln in _tail if any(kw in ln.lower() for kw in _kw)]
                 break
             except OSError:
                 pass  # best-effort cleanup
@@ -4070,9 +4153,7 @@ class TelegramCommandsMixin:
                         messages.append(
                             {
                                 "role": entry.get("role") or entry.get("type", "?"),
-                                "content": entry.get("content")
-                                or entry.get("text")
-                                or "",
+                                "content": entry.get("content") or entry.get("text") or "",
                             }
                         )
                     except Exception:  # noqa: BLE001
@@ -4187,9 +4268,7 @@ class TelegramCommandsMixin:
                     start_new_session=True,
                 )
         else:
-            await self._handle_cli_command(
-                chat_id, user_id, metadata, f"docker restart {arg}"
-            )
+            await self._handle_cli_command(chat_id, user_id, metadata, f"docker restart {arg}")
 
     # -- Audio / settings menus ------------------------------------------------
 
@@ -4359,7 +4438,7 @@ class TelegramCommandsMixin:
         metadata: Any = None,
     ) -> None:
         """/think <topic> — reason via LLM, output in paginated cards."""
-        topic = text[len("/think"):].strip() if text.lower().startswith("/think") else text.strip()
+        topic = text[len("/think") :].strip() if text.lower().startswith("/think") else text.strip()
         if not topic:
             await self.send_message(
                 chat_id,
@@ -4392,9 +4471,7 @@ class TelegramCommandsMixin:
         from navig.gateway.channels.telegram_navigator import CardNavigator
 
         nav = CardNavigator(self)
-        await nav.create(
-            chat_id=chat_id, user_id=user_id, topic=topic, llm_text=llm_text
-        )
+        await nav.create(chat_id=chat_id, user_id=user_id, topic=topic, llm_text=llm_text)
 
     async def _handle_refine_cmd(
         self,
@@ -4404,7 +4481,9 @@ class TelegramCommandsMixin:
         metadata: Any = None,
     ) -> None:
         """/refine [text] — start the AI clarification + refinement loop."""
-        topic = text[len("/refine"):].strip() if text.lower().startswith("/refine") else text.strip()
+        topic = (
+            text[len("/refine") :].strip() if text.lower().startswith("/refine") else text.strip()
+        )
         if not topic:
             await self.send_message(
                 chat_id,
@@ -4431,9 +4510,12 @@ class TelegramCommandsMixin:
         metadata: Any = None,
     ) -> None:
         """/weather [city] — show current weather via wttr.in."""
-        city = text[len("/weather"):].strip() if text.lower().startswith("/weather") else text.strip()
+        city = (
+            text[len("/weather") :].strip() if text.lower().startswith("/weather") else text.strip()
+        )
         if city:
             import re as _re
+
             safe_city = _re.sub(r"[^A-Za-z0-9\s\-]", "", city).strip().replace(" ", "+")
             url = f"wttr.in/{safe_city}?format=4"
         else:
@@ -4454,7 +4536,7 @@ class TelegramCommandsMixin:
         metadata: Any = None,
     ) -> None:
         """/docker [ps|logs <name>|restart <name>|all|<name>] — smart container dispatch."""
-        arg = text[len("/docker"):].strip() if text.lower().startswith("/docker") else text.strip()
+        arg = text[len("/docker") :].strip() if text.lower().startswith("/docker") else text.strip()
 
         if not arg or arg.lower() in ("ps", "all", "list"):
             cli_cmd = "docker ps"
@@ -4481,9 +4563,7 @@ class TelegramCommandsMixin:
     @rate_limited
     @error_handled
     @typing_context
-    async def _handle_briefing(
-        self, chat_id: int, user_id: int, metadata: MessageMetadata
-    ) -> None:
+    async def _handle_briefing(self, chat_id: int, user_id: int, metadata: MessageMetadata) -> None:
         """Real-data system briefing - no AI, no invented content (/briefing)."""
         now = datetime.now(timezone.utc)
         lines: list = [
@@ -4535,9 +4615,7 @@ class TelegramCommandsMixin:
             _s.close()
         except Exception:
             bridge_ok = False
-        lines.append(
-            f"- *LLM Bridge:* {'online (bridge_copilot)' if bridge_ok else 'offline'}"
-        )
+        lines.append(f"- *LLM Bridge:* {'online (bridge_copilot)' if bridge_ok else 'offline'}")
 
         try:
             from navig.vault import get_vault_v2
@@ -4587,9 +4665,7 @@ class TelegramCommandsMixin:
             if len(dfl) >= 2:
                 parts = dfl[1].split()
                 if len(parts) >= 3:
-                    lines.append(
-                        f"- *Disk:* {parts[0]} used, {parts[1]} free ({parts[2]})"
-                    )
+                    lines.append(f"- *Disk:* {parts[0]} used, {parts[1]} free ({parts[2]})")
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
@@ -4709,28 +4785,18 @@ class TelegramCommandsMixin:
             if result.success:
                 output_text = ""
                 if isinstance(result.output, dict):
-                    output_text = (
-                        result.output.get("output") or result.output.get("info") or ""
-                    )
+                    output_text = result.output.get("output") or result.output.get("info") or ""
                 else:
                     output_text = str(result.output or "")
 
                 header = f"- **{skill_name}**" + (f" - `{command}`" if command else "")
-                msg = (
-                    f"{header}\n\n{output_text[:3800]}"
-                    if output_text
-                    else f"{header}\n- Done."
-                )
+                msg = f"{header}\n\n{output_text[:3800]}" if output_text else f"{header}\n- Done."
                 await self.send_message(chat_id, msg)
             else:
-                await self.send_message(
-                    chat_id, f"- Skill error:\n{result.error}", parse_mode=None
-                )
+                await self.send_message(chat_id, f"- Skill error:\n{result.error}", parse_mode=None)
 
         except Exception as exc:
-            await self.send_message(
-                chat_id, f"- /skill crashed: {exc}", parse_mode=None
-            )
+            await self.send_message(chat_id, f"- /skill crashed: {exc}", parse_mode=None)
 
     async def _skill_list(self, chat_id: int) -> None:
         """Send a paginated list of all available skills."""
@@ -4739,9 +4805,7 @@ class TelegramCommandsMixin:
 
             skills = load_all_skills()
         except Exception as exc:
-            await self.send_message(
-                chat_id, f"- Could not load skills: {exc}", parse_mode=None
-            )
+            await self.send_message(chat_id, f"- Could not load skills: {exc}", parse_mode=None)
             return
 
         if not skills:
@@ -4760,14 +4824,10 @@ class TelegramCommandsMixin:
         for cat, cat_skills in sorted(by_cat.items()):
             lines.append(f"\n**{cat.title()}**")
             for s in cat_skills:
-                safety_icon = {"safe": "-", "elevated": "-", "destructive": "-"}.get(
-                    s.safety, "-"
-                )
+                safety_icon = {"safe": "-", "elevated": "-", "destructive": "-"}.get(s.safety, "-")
                 lines.append(f"  {safety_icon} `{s.id}` - {s.name}")
 
-        lines.append(
-            "\n\nUsage: `/skill <id>` for info - `/skill <id> <command>` to run"
-        )
+        lines.append("\n\nUsage: `/skill <id>` for info - `/skill <id> <command>` to run")
         await self.send_message(chat_id, "\n".join(lines))
 
     # -- CLI command dispatch --------------------------------------------------
@@ -4890,9 +4950,7 @@ class TelegramCommandsMixin:
                         _log.getLogger(__name__).exception(
                             "autoheal: _heal_failure raised unexpectedly"
                         )
-                        await self.send_message(
-                            chat_id, response[:3950], parse_mode=None
-                        )
+                        await self.send_message(chat_id, response[:3950], parse_mode=None)
                     return
                 # -- Normal path ---------------------------------------------
                 if len(response) > 4000:
@@ -4912,9 +4970,7 @@ class TelegramCommandsMixin:
                         message=prompt,
                         metadata=metadata,
                     )
-                    if nl_response and not nl_response.startswith(
-                        "Command exited with code"
-                    ):
+                    if nl_response and not nl_response.startswith("Command exited with code"):
                         response = nl_response
                 except Exception as _nl_err:
                     import logging as _log
@@ -4987,9 +5043,7 @@ class TelegramCommandsMixin:
                     if url:
                         return url
                 except Exception as e:
-                    logger.debug(
-                        "Could not read deck_url from config %s: %s", cfg_path, e
-                    )
+                    logger.debug("Could not read deck_url from config %s: %s", cfg_path, e)
         return None
 
     # ── Digital Ghost / Laravel Port Features ───────────────────────────────
@@ -5069,7 +5123,9 @@ class TelegramCommandsMixin:
             role = state.get("persona") or "assistant"
             context = state.get("context") or {}
             policy = policy_from_context(context)
-            continuation_meta = (context.get("continuation") or {}) if isinstance(context, dict) else {}
+            continuation_meta = (
+                (context.get("continuation") or {}) if isinstance(context, dict) else {}
+            )
             cls_state = continuation_meta.get("last_classifier_state")
             cls_reason = continuation_meta.get("last_classifier_reason")
             busy_until = continuation_meta.get("busy_until")
@@ -5090,7 +5146,9 @@ class TelegramCommandsMixin:
                     cont += f" ({busy_reason})"
             if last_skip_reason:
                 cont += f", last_skip={last_skip_reason}"
-            await self.send_message(chat_id, f"✅ AI is currently *ACTIVE* in `{role}` mode.\nContinuation: `{cont}`")
+            await self.send_message(
+                chat_id, f"✅ AI is currently *ACTIVE* in `{role}` mode.\nContinuation: `{cont}`"
+            )
             return
 
         await self.send_message(chat_id, "🛑 AI auto-reply is currently *INACTIVE*.")
@@ -5227,7 +5285,7 @@ class TelegramCommandsMixin:
 
     async def _handle_persona(self, chat_id: int, user_id: int, text: str = "") -> None:
         """Route /persona subcommands: list, info, reset, or switch."""
-        arg = text[len("/persona"):].strip()
+        arg = text[len("/persona") :].strip()
         if not arg or arg == "list":
             await self._handle_personas(chat_id=chat_id, user_id=user_id)
             return
@@ -5256,6 +5314,7 @@ class TelegramCommandsMixin:
             # Graceful fallback using builtin list
             try:
                 from navig.personas.contracts import BUILTIN_PERSONAS
+
                 roles = "\n".join(f"• `{p}`" for p in BUILTIN_PERSONAS)
             except Exception:
                 roles = "• `default`\n• `assistant`\n• `tyler`\n• `storyteller`\n• `philosopher`\n• `teacher`"
@@ -5264,9 +5323,7 @@ class TelegramCommandsMixin:
                 f"🎭 *Available AI Personas:*\n\n{roles}\n\nUse `/persona <name>` to switch.",
             )
 
-    async def _handle_persona_switch(
-        self, chat_id: int, user_id: int, name: str
-    ) -> None:
+    async def _handle_persona_switch(self, chat_id: int, user_id: int, name: str) -> None:
         """Switch the active AI persona."""
         await self.send_typing(chat_id)
         try:
@@ -5303,9 +5360,7 @@ class TelegramCommandsMixin:
             await self.send_message(chat_id, msg)
         except Exception as e:
             logger.error("_handle_persona_info error: %s", e)
-            await self.send_message(
-                chat_id, "❌ Could not load persona info.", parse_mode=None
-            )
+            await self.send_message(chat_id, "❌ Could not load persona info.", parse_mode=None)
 
     async def _handle_persona_reset(self, chat_id: int, user_id: int) -> None:
         """Reset persona to the built-in default."""
@@ -5330,9 +5385,7 @@ class TelegramCommandsMixin:
             )
             await self.send_message(chat_id, response.text)
         except Exception as e:
-            await self.send_message(
-                chat_id, f"❌ Failed to explain: {e}", parse_mode=None
-            )
+            await self.send_message(chat_id, f"❌ Failed to explain: {e}", parse_mode=None)
 
     async def _handle_music(self, chat_id: int) -> None:
         await self.send_message(
@@ -5368,9 +5421,7 @@ class TelegramCommandsMixin:
         )
 
     async def _handle_respect(self, chat_id: int) -> None:
-        await self.send_message(
-            chat_id, "✊ Respect system ledger is syncing...", parse_mode=None
-        )
+        await self.send_message(chat_id, "✊ Respect system ledger is syncing...", parse_mode=None)
 
     async def _handle_currency(self, chat_id: int, text: str) -> None:
         await self.send_message(
@@ -5414,9 +5465,7 @@ class TelegramCommandsMixin:
                 remind_at = now + timedelta(days=qty)
             return remind_at, msg, None
 
-        abs_match = re.match(
-            r"^at\s+(\d{1,2}):(\d{2})\s+(.+)$", arg, flags=re.IGNORECASE
-        )
+        abs_match = re.match(r"^at\s+(\d{1,2}):(\d{2})\s+(.+)$", arg, flags=re.IGNORECASE)
         if abs_match:
             hour = int(abs_match.group(1))
             minute = int(abs_match.group(2))
@@ -5486,11 +5535,15 @@ class TelegramCommandsMixin:
     async def _handle_cancelreminder(self, chat_id: int, user_id: int, text: str) -> None:
         arg = text[len("/cancelreminder") :].strip()
         if not arg:
-            await self.send_message(chat_id, "Usage: `/cancelreminder <id>` or `/cancelreminder all`",
-                parse_mode="Markdown")
+            await self.send_message(
+                chat_id,
+                "Usage: `/cancelreminder <id>` or `/cancelreminder all`",
+                parse_mode="Markdown",
+            )
             return
 
         from navig.store.runtime import get_runtime_store
+
         store = get_runtime_store()
 
         if arg.lower() == "all":
@@ -5502,13 +5555,19 @@ class TelegramCommandsMixin:
                 rid = r.get("id") if isinstance(r, dict) else getattr(r, "id", None)
                 if rid is not None:
                     store.cancel_reminder(rid, user_id)
-            await self.send_message(chat_id, f"✅ Cancelled {len(reminders)} reminder{'s' if len(reminders) != 1 else ''}.",
-                parse_mode=None)
+            await self.send_message(
+                chat_id,
+                f"✅ Cancelled {len(reminders)} reminder{'s' if len(reminders) != 1 else ''}.",
+                parse_mode=None,
+            )
             return
 
         if not arg.isdigit():
-            await self.send_message(chat_id, "Usage: `/cancelreminder <id>` or `/cancelreminder all`",
-                parse_mode="Markdown")
+            await self.send_message(
+                chat_id,
+                "Usage: `/cancelreminder <id>` or `/cancelreminder all`",
+                parse_mode="Markdown",
+            )
             return
 
         reminder_id = int(arg)
@@ -5523,9 +5582,7 @@ class TelegramCommandsMixin:
             )
 
     async def _handle_stats_global(self, chat_id: int) -> None:
-        await self.send_message(
-            chat_id, "📊 Global chat statistics are gathering data..."
-        )
+        await self.send_message(chat_id, "📊 Global chat statistics are gathering data...")
 
     async def _handle_choice(self, chat_id: int, text: str) -> None:
         args = text[len("/choice") :].strip()
@@ -5540,7 +5597,9 @@ class TelegramCommandsMixin:
 
         # Normalise separators: | and , become ' or '
         normalised = re.sub(r"\s*[|,]\s*", " or ", args)
-        choices = [c.strip() for c in re.split(r"\bor\b", normalised, flags=re.IGNORECASE) if c.strip()]
+        choices = [
+            c.strip() for c in re.split(r"\bor\b", normalised, flags=re.IGNORECASE) if c.strip()
+        ]
         if len(choices) < 2:
             await self.send_message(
                 chat_id,
@@ -5576,6 +5635,4 @@ class TelegramCommandsMixin:
 
     async def _handle_search(self, chat_id: int, text: str) -> None:
         query = text[len("/search") :].strip()
-        await self.send_message(
-            chat_id, f"🔍 User search proxy offline for query: `{query}`"
-        )
+        await self.send_message(chat_id, f"🔍 User search proxy offline for query: `{query}`")

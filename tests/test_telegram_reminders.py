@@ -1,7 +1,8 @@
 import asyncio
 import json
-import pytest
 from pathlib import Path
+
+import pytest
 
 
 def _get_mixin():
@@ -26,7 +27,9 @@ def _make_dummy_bot():
             self.api_calls.append((method, data))
             return {"ok": True}
 
-        async def edit_message(self, chat_id, message_id, text, parse_mode="Markdown", keyboard=None):
+        async def edit_message(
+            self, chat_id, message_id, text, parse_mode="Markdown", keyboard=None
+        ):
             self.edits.append((chat_id, message_id, text, parse_mode, keyboard))
             return {"ok": True}
 
@@ -103,9 +106,7 @@ class _FakeConfigManager:
 @pytest.mark.asyncio
 async def test_parse_remindme_relative_format():
     bot = _make_dummy_bot()
-    remind_at, msg, err = bot._parse_remindme_request(
-        "/remindme in 10 minutes check logs"
-    )
+    remind_at, msg, err = bot._parse_remindme_request("/remindme in 10 minutes check logs")
 
     assert err is None
     assert remind_at is not None
@@ -439,11 +440,15 @@ async def test_intake_flow_writes_space_docs(monkeypatch, tmp_path):
 
     handled = await bot._handle_intake_reply(123, 456, "Improve sleep and recovery")
     assert handled is True
-    handled = await bot._handle_intake_reply(123, 456, "Have a repeatable bedtime routine by tomorrow")
+    handled = await bot._handle_intake_reply(
+        123, 456, "Have a repeatable bedtime routine by tomorrow"
+    )
     assert handled is True
     handled = await bot._handle_intake_reply(123, 456, "Late-night screen time")
     assert handled is True
-    handled = await bot._handle_intake_reply(123, 456, "I assume I can sleep well without planning evenings")
+    handled = await bot._handle_intake_reply(
+        123, 456, "I assume I can sleep well without planning evenings"
+    )
     assert handled is True
 
     health_dir = Path(fake_cfg.global_config_dir) / "spaces" / "health"
@@ -683,7 +688,7 @@ async def test_nl_callback_pick_risky_requires_confirmation(monkeypatch, tmp_pat
     assert any("Risky action detected" in m[1] for m in bot.messages)
     assert any("Confirmation required" in call[1].get("text", "") for call in bot.api_calls)
     state = fake_store.get_ai_state(456) or {}
-    pending = ((state.get("context") or {}).get("nl_pending") or {})
+    pending = (state.get("context") or {}).get("nl_pending") or {}
     assert pending.get("active") is True
     assert pending.get("command") == "restart"
 
@@ -938,12 +943,16 @@ async def test_provider_model_picker_is_tier_first_and_edit_in_place(monkeypatch
     assert first_row[0]["callback_data"].startswith("pmv_nvidia_s")
     assert first_row[1]["callback_data"].startswith("pmv_nvidia_b")
     assert first_row[2]["callback_data"].startswith("pmv_nvidia_c")
-    model_rows = [row for row in edit[4][1:] if row and row[0]["callback_data"].startswith("pms_nvidia_")]
+    model_rows = [
+        row for row in edit[4][1:] if row and row[0]["callback_data"].startswith("pms_nvidia_")
+    ]
     assert model_rows, "Expected one-button model rows"
 
 
 @pytest.mark.asyncio
-async def test_providers_unconfigured_cloud_shows_provider_row_with_icon_only_key_action(monkeypatch):
+async def test_providers_unconfigured_cloud_shows_provider_row_with_icon_only_key_action(
+    monkeypatch,
+):
     bot = _make_dummy_bot()
 
     class _Manifest:
@@ -985,10 +994,12 @@ async def test_providers_unconfigured_cloud_shows_provider_row_with_icon_only_ke
     # Unconfigured cloud providers produce a single-button stub row that
     # combines the provider name and the 🔑 configure-action in one button.
     rows = [row for row in keyboard if len(row) == 1]
-    openai_row = next((row for row in rows if any("OpenAI" in btn.get("text", "") for btn in row)), None)
+    openai_row = next(
+        (row for row in rows if any("OpenAI" in btn.get("text", "") for btn in row)), None
+    )
     assert openai_row is not None
     assert "OpenAI" in openai_row[0]["text"]
-    assert "🔑" in openai_row[0]["text"]
+    assert "🔒" in openai_row[0]["text"]
 
 
 @pytest.mark.asyncio

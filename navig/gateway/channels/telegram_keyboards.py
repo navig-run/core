@@ -696,7 +696,9 @@ class CallbackHandler:
 
             # ── Provider model picker callbacks (pm_*) — no store needed ──
             if cb_data.startswith("pm_"):
-                await self._handle_provider_model_callback(cb_id, cb_data, chat_id, message_id, user_id)
+                await self._handle_provider_model_callback(
+                    cb_id, cb_data, chat_id, message_id, user_id
+                )
                 return
 
             # ── Provider hub callbacks (prov_*) — no store needed ──
@@ -763,7 +765,12 @@ class CallbackHandler:
                         self.channel, cb_id, cb_data, chat_id, message_id, user_id
                     )
                 except Exception as _amc_err:
-                    logger.warning("Audio menu callback error: chat_id=%s callback=%s err=%s", chat_id, cb_data, _amc_err)
+                    logger.warning(
+                        "Audio menu callback error: chat_id=%s callback=%s err=%s",
+                        chat_id,
+                        cb_data,
+                        _amc_err,
+                    )
                     await self._answer(cb_id, "\u26a0\ufe0f Audio menu error")
                 return
 
@@ -819,13 +826,9 @@ class CallbackHandler:
             if action == "copy_code":
                 code_blocks = _CODE_BLOCK.findall(entry.ai_response)
                 if code_blocks:
-                    code_text = "\n\n".join(
-                        block.strip("`").strip() for block in code_blocks
-                    )
+                    code_text = "\n\n".join(block.strip("`").strip() for block in code_blocks)
                     await self._answer(cb_id, "📋 Code extracted")
-                    await self.channel.send_message(
-                        chat_id, f"```\n{code_text[:3900]}\n```"
-                    )
+                    await self.channel.send_message(chat_id, f"```\n{code_text[:3900]}\n```")
                 else:
                     await self._answer(cb_id, "No code blocks found")
                 return
@@ -850,9 +853,7 @@ class CallbackHandler:
                                 user_message=entry.user_message,
                                 message_id=message_id,
                             )
-                            await self.channel.send_message(
-                                chat_id, response, keyboard=keyboard
-                            )
+                            await self.channel.send_message(chat_id, response, keyboard=keyboard)
                         else:
                             await self.channel.send_message(
                                 chat_id, "❌ Couldn't generate a response."
@@ -884,7 +885,9 @@ class CallbackHandler:
 
             await self._answer(cb_id, "⚠️ Unknown action")
         except Exception as exc:
-            logger.exception("Callback handling failed: chat_id=%s callback=%s err=%s", chat_id, cb_data, exc)
+            logger.exception(
+                "Callback handling failed: chat_id=%s callback=%s err=%s", chat_id, cb_data, exc
+            )
             await self._show_callback_error_screen(chat_id, message_id, cb_data)
             await self._answer(cb_id, "❌ Failed — try again")
         finally:
@@ -898,7 +901,9 @@ class CallbackHandler:
             )
             self._answered_callback_ids.discard(cb_id)
 
-    async def _show_callback_error_screen(self, chat_id: int, message_id: int, cb_data: str) -> None:
+    async def _show_callback_error_screen(
+        self, chat_id: int, message_id: int, cb_data: str
+    ) -> None:
         if not message_id:
             await self.channel.send_message(
                 chat_id,
@@ -1159,7 +1164,7 @@ class CallbackHandler:
             return
 
         # aitier_{key} — key is "auto", "small", "big", or "coder_big"
-        tier_raw = cb_data[len("aitier_"):]
+        tier_raw = cb_data[len("aitier_") :]
         tier_key = "" if tier_raw == "auto" else tier_raw
 
         if hasattr(self.channel, "_set_user_tier_pref"):
@@ -1228,6 +1233,14 @@ class CallbackHandler:
             await self._answer(cb_id, f"⚡ Bridge Grid: {status}", show_alert=True)
             return
 
+        if cb_data == "prov_bridge_offline":
+            await self._answer(
+                cb_id,
+                "⚡ Bridge is offline.",
+                show_alert=True,
+            )
+            return
+
         if cb_data == "prov_back":
             await self._answer(cb_id, "")
             try:
@@ -1238,7 +1251,7 @@ class CallbackHandler:
 
         # ── Pagination: prov_page_{prov_id}_{page} ──────────────────────────
         if cb_data.startswith("prov_page_"):
-            rest = cb_data[len("prov_page_"):]
+            rest = cb_data[len("prov_page_") :]
             # prov_id may contain underscores; page number is always the last segment
             parts = rest.rsplit("_", 1)
             if len(parts) == 2:
@@ -1258,9 +1271,7 @@ class CallbackHandler:
                     )
                 except TypeError:
                     try:
-                        await self.channel._show_provider_model_picker(
-                            chat_id, prov_id_p, page_num
-                        )
+                        await self.channel._show_provider_model_picker(chat_id, prov_id_p, page_num)
                     except TypeError:
                         await self.channel._show_provider_model_picker(chat_id, prov_id_p)
             else:
@@ -1269,7 +1280,7 @@ class CallbackHandler:
 
         # ── Activate provider: prov_activate_{prov_id} ──────────────────────
         if cb_data.startswith("prov_activate_"):
-            prov_id_a = cb_data[len("prov_activate_"):]
+            prov_id_a = cb_data[len("prov_activate_") :]
             try:
                 from navig.providers.registry import get_provider
 
@@ -1277,7 +1288,9 @@ class CallbackHandler:
 
                 models = []
                 if hasattr(self.channel, "_resolve_provider_models"):
-                    models = await self.channel._resolve_provider_models(prov_id_a, manifest=manifest)
+                    models = await self.channel._resolve_provider_models(
+                        prov_id_a, manifest=manifest
+                    )
 
                 if not models:
                     if manifest and getattr(manifest, "tier", "") == "local":
@@ -1319,8 +1332,7 @@ class CallbackHandler:
                 prov_label = manifest.display_name if manifest else prov_id_a
                 await self._answer(
                     cb_id,
-                    f"✅ {manifest.emoji if manifest else ''} {prov_label} activated for all tiers",
-                    show_alert=True,
+                    f"✅ {manifest.emoji if manifest else ''} {prov_label} activated",
                 )
                 try:
                     from navig.commands.init import mark_chat_onboarding_step_completed
@@ -1328,13 +1340,11 @@ class CallbackHandler:
                     mark_chat_onboarding_step_completed("ai-provider")
                 except (ImportError, AttributeError, TypeError, ValueError):
                     logger.debug("Unable to mark ai-provider step after provider activation")
-                await self.channel.send_message(
+                # Navigate directly to models tier summary for fine-tuning
+                await self.channel._show_models_tier_summary(
                     chat_id,
-                    f"✅ <b>{prov_label}</b> is now active.\n"
-                    f"Big: <code>{defaults['big']}</code> · Small: <code>{defaults['small']}</code> · "
-                    f"Code: <code>{defaults['coder_big']}</code>\n"
-                    f"<i>Saved to global config. Use /models to verify or adjust tiers.</i>",
-                    parse_mode="HTML",
+                    prov_id_a,
+                    message_id=message_id,
                 )
             except Exception as exc:
                 await self._answer(cb_id, f"⚠️ Activation failed: {exc}", show_alert=True)
@@ -1351,11 +1361,13 @@ class CallbackHandler:
 
         # ── Customize provider: prov_customize_{prov_id} → open /models ─────
         if cb_data.startswith("prov_customize_"):
-            cust_prov_id = cb_data[len("prov_customize_"):]
+            cust_prov_id = cb_data[len("prov_customize_") :]
             await self._answer(cb_id, "")
             try:
                 await self.channel._show_models_tier_summary(
-                    chat_id, cust_prov_id, message_id=message_id,
+                    chat_id,
+                    cust_prov_id,
+                    message_id=message_id,
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Customize models failed for %s: %s", cust_prov_id, exc)
@@ -1367,7 +1379,7 @@ class CallbackHandler:
 
         # ── Config stub: prov_cfg_{prov_id} → guidance for API key ──────────
         if cb_data.startswith("prov_cfg_"):
-            cfg_prov_id = cb_data[len("prov_cfg_"):]
+            cfg_prov_id = cb_data[len("prov_cfg_") :]
             await self._answer(
                 cb_id,
                 f"🔑 Configure {cfg_prov_id} API key via `navig init` or vault settings.",
@@ -1380,7 +1392,7 @@ class CallbackHandler:
             "github": "github_models",
             "nvidia_nim": "nvidia",
         }
-        prov_id = cb_data[len("prov_"):]
+        prov_id = cb_data[len("prov_") :]
         prov_id = _PROV_ALIASES.get(prov_id, prov_id)
 
         try:
@@ -1446,9 +1458,11 @@ class CallbackHandler:
             except (ImportError, AttributeError, TypeError, ValueError):
                 logger.debug("Unable to mark ai-provider step after provider activation")
 
-            # Show inline confirmation with model assignments
-            await self.channel._show_provider_activation_confirmation(
-                chat_id, prov_id, defaults, message_id=message_id,
+            # Navigate directly to tier summary so user can review and adjust models
+            await self.channel._show_models_tier_summary(
+                chat_id,
+                prov_id,
+                message_id=message_id,
             )
         except Exception as exc:
             await self._answer(cb_id, f"⚠️ Activation failed: {exc}", show_alert=True)
@@ -1633,7 +1647,7 @@ class CallbackHandler:
 
         # ── Activate provider from models picker: mdl_prov_{prov_id} ────────
         if cb_data.startswith("mdl_prov_"):
-            prov_id = cb_data[len("mdl_prov_"):]
+            prov_id = cb_data[len("mdl_prov_") :]
             try:
                 from navig.providers.registry import get_provider
 
@@ -1658,7 +1672,9 @@ class CallbackHandler:
                         models = ["qwen2.5:7b", "phi3.5"]
 
                 if not models:
-                    await self._answer(cb_id, f"⚠️ No models for {manifest.display_name}", show_alert=True)
+                    await self._answer(
+                        cb_id, f"⚠️ No models for {manifest.display_name}", show_alert=True
+                    )
                     return
 
                 defaults = self.channel._select_curated_tier_defaults(prov_id, models)
@@ -1693,7 +1709,9 @@ class CallbackHandler:
 
                 # Show tier summary inline
                 await self.channel._show_models_tier_summary(
-                    chat_id, prov_id, message_id=message_id,
+                    chat_id,
+                    prov_id,
+                    message_id=message_id,
                 )
             except Exception as exc:
                 await self._answer(cb_id, f"⚠️ Activation failed: {exc}", show_alert=True)
@@ -1701,7 +1719,7 @@ class CallbackHandler:
 
         # ── Show model list for tier: mdl_tier_{prov_id}_{tier_code} ────────
         if cb_data.startswith("mdl_tier_"):
-            rest = cb_data[len("mdl_tier_"):]
+            rest = cb_data[len("mdl_tier_") :]
             # tier_code is always a single char at the end
             if len(rest) < 2 or rest[-2] != "_":
                 await self._answer(cb_id, "⚠️ Bad tier callback")
@@ -1710,13 +1728,17 @@ class CallbackHandler:
             tier_code = rest[-1]
             await self._answer(cb_id, "")
             await self.channel._show_models_model_list(
-                chat_id, prov_id, tier_code, page=0, message_id=message_id,
+                chat_id,
+                prov_id,
+                tier_code,
+                page=0,
+                message_id=message_id,
             )
             return
 
         # ── Select model: mdl_sel_{prov_id}_{idx}_{tier_code}_{page} ────────
         if cb_data.startswith("mdl_sel_"):
-            rest = cb_data[len("mdl_sel_"):]
+            rest = cb_data[len("mdl_sel_") :]
             parts = rest.rsplit("_", 3)
             if len(parts) != 4:
                 await self._answer(cb_id, "⚠️ Bad selection callback")
@@ -1752,7 +1774,9 @@ class CallbackHandler:
             except Exception:
                 manifest = None
             if hasattr(self.channel, "_resolve_provider_models"):
-                models_list = await self.channel._resolve_provider_models(prov_id, manifest=manifest)
+                models_list = await self.channel._resolve_provider_models(
+                    prov_id, manifest=manifest
+                )
 
             if model_idx >= len(models_list):
                 await self._answer(cb_id, "⚠️ Model index out of range")
@@ -1792,13 +1816,17 @@ class CallbackHandler:
 
             # Refresh model list showing new ✅
             await self.channel._show_models_model_list(
-                chat_id, prov_id, tier_code, page=page, message_id=message_id,
+                chat_id,
+                prov_id,
+                tier_code,
+                page=page,
+                message_id=message_id,
             )
             return
 
         # ── Paginate: mdl_page_{prov_id}_{tier_code}_{page} ────────────────
         if cb_data.startswith("mdl_page_"):
-            rest = cb_data[len("mdl_page_"):]
+            rest = cb_data[len("mdl_page_") :]
             parts = rest.rsplit("_", 2)
             if len(parts) != 3:
                 await self._answer(cb_id, "⚠️ Bad page callback")
@@ -1810,16 +1838,22 @@ class CallbackHandler:
                 page = 0
             await self._answer(cb_id, "")
             await self.channel._show_models_model_list(
-                chat_id, prov_id, tier_code, page=page, message_id=message_id,
+                chat_id,
+                prov_id,
+                tier_code,
+                page=page,
+                message_id=message_id,
             )
             return
 
         # ── Back to tier summary: mdl_back_tiers_{prov_id} ─────────────────
         if cb_data.startswith("mdl_back_tiers_"):
-            prov_id = cb_data[len("mdl_back_tiers_"):]
+            prov_id = cb_data[len("mdl_back_tiers_") :]
             await self._answer(cb_id, "")
             await self.channel._show_models_tier_summary(
-                chat_id, prov_id, message_id=message_id,
+                chat_id,
+                prov_id,
+                message_id=message_id,
             )
             return
 

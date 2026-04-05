@@ -225,9 +225,7 @@ class TelegramChannel:
                 user_id,
                 "model_tier_pref",
                 normalized or None,
-                is_group=self._is_group_chat_id(chat_id)
-                if is_group is None
-                else is_group,
+                is_group=self._is_group_chat_id(chat_id) if is_group is None else is_group,
             )
         except Exception as e:
             logger.debug("Could not persist model tier preference: %s", e)
@@ -254,9 +252,7 @@ class TelegramChannel:
                 user_id,
                 "model_tier_pref",
                 default="",
-                is_group=self._is_group_chat_id(chat_id)
-                if is_group is None
-                else is_group,
+                is_group=self._is_group_chat_id(chat_id) if is_group is None else is_group,
             )
             if persisted in {"small", "big", "coder_big"}:
                 self._user_model_prefs[user_id] = persisted
@@ -296,9 +292,7 @@ class TelegramChannel:
 
         # total=60 must exceed the getUpdates long-poll timeout (30s) to avoid
         # spurious TimeoutError on every polling cycle.
-        self._session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=60, connect=10)
-        )
+        self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60, connect=10))
 
         # Get bot info — validate token before marking as running
         try:
@@ -328,17 +322,13 @@ class TelegramChannel:
         # Auth status
         if self.require_auth:
             if self.allowed_users:
-                logger.info(
-                    "Auth ENFORCED: %d allowed users", len(self.allowed_users)
-                )
+                logger.info("Auth ENFORCED: %d allowed users", len(self.allowed_users))
             else:
                 logger.warning(
                     "Auth ENFORCED but allowed_users is EMPTY — all DMs will be blocked!"
                 )
         else:
-            logger.warning(
-                "Auth DISABLED (require_auth=false) — bot is open to everyone"
-            )
+            logger.warning("Auth DISABLED (require_auth=false) — bot is open to everyone")
 
         # Register slash commands with Telegram
         await self._register_commands()
@@ -433,7 +423,7 @@ class TelegramChannel:
                 if result.get("ok"):
                     return result.get("result")
                 else:
-                    logger.error("Telegram API error: %s", result.get('description'))
+                    logger.error("Telegram API error: %s", result.get("description"))
                     return None
         except asyncio.TimeoutError:
             logger.error("Telegram API call timed out: %s", method)
@@ -468,7 +458,7 @@ class TelegramChannel:
 
     async def _poll_due_reminders(self):
         """Deliver due reminders from RuntimeStore in the background."""
-        _MAX_RETRIES = 3       # BUG-1: give up after this many failed send attempts
+        _MAX_RETRIES = 3  # BUG-1: give up after this many failed send attempts
         _RETRY_DELAY_SEC = 60  # push remind_at forward on each retry
         poll_interval_sec = 15
         try:
@@ -522,12 +512,9 @@ class TelegramChannel:
                                     msg[:60],
                                 )
                             else:
-                                store.increment_reminder_retry(
-                                    reminder_id, _RETRY_DELAY_SEC
-                                )
+                                store.increment_reminder_retry(reminder_id, _RETRY_DELAY_SEC)
                                 logger.debug(
-                                    "Reminder id=%s send failed (retry %d/%d), "
-                                    "rescheduled +%ds",
+                                    "Reminder id=%s send failed (retry %d/%d), rescheduled +%ds",
                                     reminder_id,
                                     retry_count + 1,
                                     _MAX_RETRIES,
@@ -560,9 +547,7 @@ class TelegramChannel:
             self._use_webhook = False
             self._poll_task = asyncio.create_task(self._poll_updates())
 
-    async def handle_webhook_update(
-        self, update: dict, secret_header: str = ""
-    ) -> bool:
+    async def handle_webhook_update(self, update: dict, secret_header: str = "") -> bool:
         """
         Process a webhook update pushed by Telegram.
 
@@ -598,9 +583,7 @@ class TelegramChannel:
             cb_user_id = cb_user.get("id")
             cb_chat = (callback_query.get("message") or {}).get("chat", {})
             cb_is_group = cb_chat.get("type") in ("group", "supergroup")
-            if not self._is_user_authorized(
-                cb_user_id, cb_chat.get("id", 0), cb_is_group
-            ):
+            if not self._is_user_authorized(cb_user_id, cb_chat.get("id", 0), cb_is_group):
                 logger.warning("Unauthorized callback: user_id=%s", cb_user_id)
                 return
             try:
@@ -853,9 +836,7 @@ class TelegramChannel:
                 # Apply persistent user preference if no per-message override.
                 # "noai" is one-shot: consume and clear it after first use.
                 if not tier_override:
-                    pref_tier = self._get_user_tier_pref(
-                        chat_id, user_id, is_group=is_group
-                    )
+                    pref_tier = self._get_user_tier_pref(chat_id, user_id, is_group=is_group)
                     if pref_tier == "noai" and is_slash_command:
                         pref_tier = ""
                     tier_override = pref_tier
@@ -898,8 +879,8 @@ class TelegramChannel:
                         pass  # best-effort: attribute absent; skip
                 # ── Slash command routing ──
                 cmd = text.strip().lower()
-                if cmd in ("/models", "/model"):
-                    await self._handle_models_command(chat_id, user_id)
+                if cmd in ("/models", "/model") or cmd.startswith(("/models ", "/model ")):
+                    await self._handle_models_command(chat_id, user_id, text=text)
                     return
                 if cmd == "/status":
                     await self._handle_status(chat_id, user_id)
@@ -939,8 +920,8 @@ class TelegramChannel:
                 if cmd == "/settings":
                     await self._handle_settings_hub(chat_id, user_id, message_id=None)
                     return
-                if cmd in ("/routing", "/router"):
-                    await self._handle_models_command(chat_id, user_id)
+                if cmd in ("/routing", "/router") or cmd.startswith(("/routing ", "/router ")):
+                    await self._handle_models_command(chat_id, user_id, text=text)
                     return
                 if cmd in ("/providers", "/provider"):
                     await self._handle_providers(chat_id, user_id)
@@ -1040,9 +1021,7 @@ class TelegramChannel:
                 # ── Server / infra commands → navig CLI ──
                 cli_result = self._match_cli_command(text.strip())
                 if cli_result:
-                    await self._handle_cli_command(
-                        chat_id, user_id, metadata, cli_result
-                    )
+                    await self._handle_cli_command(chat_id, user_id, metadata, cli_result)
                     return
 
                 # ── One-shot raw/no-AI route ──
@@ -1050,9 +1029,7 @@ class TelegramChannel:
                     stripped_text = clean_text.strip()
                     noai_cmd = self._match_cli_command(stripped_text)
                     if noai_cmd:
-                        await self._handle_cli_command(
-                            chat_id, user_id, metadata, noai_cmd
-                        )
+                        await self._handle_cli_command(chat_id, user_id, metadata, noai_cmd)
                         return
 
                     if stripped_text.lower().startswith("navig "):
@@ -1431,9 +1408,7 @@ class TelegramChannel:
         is_group: bool,
     ) -> None:
         """REASON mode — send placeholder, fill with numbered CoT + bold conclusion."""
-        placeholder = await self.send_message(
-            chat_id, "🧠 Reasoning...", parse_mode=None
-        )
+        placeholder = await self.send_message(chat_id, "🧠 Reasoning...", parse_mode=None)
         placeholder_id = (placeholder or {}).get("message_id")
 
         typing_task = asyncio.create_task(self._keep_typing(chat_id))
@@ -1455,16 +1430,12 @@ class TelegramChannel:
             return
 
         # Only append model footer in debug/trace mode — keep normal replies clean
-        model_name = (
-            self._resolve_model_name(metadata) if self._is_debug_mode(user_id) else ""
-        )
+        model_name = self._resolve_model_name(metadata) if self._is_debug_mode(user_id) else ""
         footer = f"\n\n`· {model_name}`" if model_name else ""
         final_text = f"{response}{footer}"
         final_text = self._strip_internal_tags(final_text)
 
-        self._record_assistant_msg(
-            session, session_manager, chat_id, user_id, response, is_group
-        )
+        self._record_assistant_msg(session, session_manager, chat_id, user_id, response, is_group)
 
         keyboard = None
         if self._kb_builder:
@@ -1479,15 +1450,11 @@ class TelegramChannel:
 
         if placeholder_id:
             try:
-                await self.edit_message(
-                    chat_id, placeholder_id, final_text, keyboard=keyboard
-                )
+                await self.edit_message(chat_id, placeholder_id, final_text, keyboard=keyboard)
                 return
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
-        await self._send_response(
-            chat_id, final_text, text, user_id=user_id, is_group=is_group
-        )
+        await self._send_response(chat_id, final_text, text, user_id=user_id, is_group=is_group)
 
     async def _handle_code(
         self,
@@ -1529,16 +1496,12 @@ class TelegramChannel:
 
         if self._is_debug_mode(user_id):
             model_name = self._resolve_model_name(metadata)
-            suffix = (
-                f"\n\n✅ Done · Model: {model_name}" if model_name else "\n\n✅ Done"
-            )
+            suffix = f"\n\n✅ Done · Model: {model_name}" if model_name else "\n\n✅ Done"
         else:
             suffix = "\n\n✅ Done"
         final_text = f"{response}{suffix}"
 
-        self._record_assistant_msg(
-            session, session_manager, chat_id, user_id, response, is_group
-        )
+        self._record_assistant_msg(session, session_manager, chat_id, user_id, response, is_group)
 
         if intro_id:
             try:
@@ -1546,9 +1509,7 @@ class TelegramChannel:
                 return
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
-        await self._send_response(
-            chat_id, final_text, text, user_id=user_id, is_group=is_group
-        )
+        await self._send_response(chat_id, final_text, text, user_id=user_id, is_group=is_group)
 
     async def _handle_act(
         self,
@@ -1614,9 +1575,9 @@ class TelegramChannel:
                 elif tool_name == "code_exec_sandbox":
                     import re as _re
 
-                    code_m = _re.search(
-                        r"`{3}[\w]*\n([\s\S]+?)\n`{3}", text
-                    ) or _re.search(r"`([^`]+)`", text)
+                    code_m = _re.search(r"`{3}[\w]*\n([\s\S]+?)\n`{3}", text) or _re.search(
+                        r"`([^`]+)`", text
+                    )
                     if code_m:
                         args["code"] = code_m.group(1)
                         args["language"] = "python"
@@ -1628,9 +1589,7 @@ class TelegramChannel:
                 progress_val = 2 + round((idx + 1) / total * 6)
 
                 async def _status(step, detail="", progress=0, _tn=tool_name):
-                    await renderer.update(
-                        step, detail=detail, progress=progress, icon="⚙️"
-                    )
+                    await renderer.update(step, detail=detail, progress=progress, icon="⚙️")
 
                 result = await registry.run_tool(tool_name, args, on_status=_status)
                 tool_names_run.append(tool_name)
@@ -1776,9 +1735,7 @@ class TelegramChannel:
 
         file_id = voice_data.get("file_id") if voice_data else None
         if not file_id:
-            await self.send_message(
-                chat_id, "🎙️ Couldn't read the voice message.", parse_mode=None
-            )
+            await self.send_message(chat_id, "🎙️ Couldn't read the voice message.", parse_mode=None)
             return None, ""
 
         # ── Resolve which STT provider to use based on available keys ────────
@@ -1841,9 +1798,7 @@ class TelegramChannel:
         try:
             # Signal immediately that we're processing audio — closest Bot API
             # equivalent to a read receipt for voice messages.
-            await self._api_call(
-                "sendChatAction", {"chat_id": chat_id, "action": "record_voice"}
-            )
+            await self._api_call("sendChatAction", {"chat_id": chat_id, "action": "record_voice"})
             _recording_task = asyncio.create_task(self._keep_recording(chat_id))
 
             # Ask Telegram for the file path
@@ -1894,29 +1849,18 @@ class TelegramChannel:
             if not result.success or not result.text:
                 # Map internal error strings to clean, user-friendly messages
                 raw_err = result.error or ""
-                if (
-                    "whisper not installed" in raw_err
-                    or "No module named 'whisper'" in raw_err
-                ):
+                if "whisper not installed" in raw_err or "No module named 'whisper'" in raw_err:
                     user_msg = (
                         "🎙️ Transcription failed: local Whisper is not installed.\n"
                         "Run `pip install openai-whisper` on the server, or add a "
                         "`DEEPGRAM_KEY` / `OPENAI_API_KEY` to `~/.navig/.env`."
                     )
-                elif (
-                    "API key" in raw_err
-                    or "not set" in raw_err
-                    or "not configured" in raw_err
-                ):
+                elif "API key" in raw_err or "not set" in raw_err or "not configured" in raw_err:
                     user_msg = "🎙️ Transcription failed: no STT API key configured — type your message instead."
                 elif "timeout" in raw_err.lower():
-                    user_msg = (
-                        "🎙️ Transcription timed out — try a shorter clip or type it out."
-                    )
+                    user_msg = "🎙️ Transcription timed out — try a shorter clip or type it out."
                 elif "too large" in raw_err:
-                    user_msg = (
-                        f"🎙️ Audio file too large — {raw_err.split(':', 1)[-1].strip()}"
-                    )
+                    user_msg = f"🎙️ Audio file too large — {raw_err.split(':', 1)[-1].strip()}"
                 else:
                     user_msg = "🎙️ Couldn't transcribe audio — try again or type it out."
                 await self.send_message(chat_id, user_msg, parse_mode=None)
@@ -1930,8 +1874,7 @@ class TelegramChannel:
             _user_from_voice = getattr(voice_data, "from_user_id", None)
             # We don't have user_id here directly — determine from chat_id
             _debug_active = any(
-                uid in getattr(self, "_debug_users", set())
-                for uid in self.allowed_users
+                uid in getattr(self, "_debug_users", set()) for uid in self.allowed_users
             )
             if _debug_active:
                 heard_kb = [
@@ -1947,9 +1890,7 @@ class TelegramChannel:
                 parse_mode="Markdown",
                 keyboard=heard_kb,
             )
-            detected_lang = (
-                (result.language or "") if hasattr(result, "language") else ""
-            )
+            detected_lang = (result.language or "") if hasattr(result, "language") else ""
             return transcript, detected_lang
 
         except Exception as e:
@@ -2010,11 +1951,7 @@ class TelegramChannel:
                 return
 
             audio_data: bytes | None = tts_result.audio_data
-            if (
-                audio_data is None
-                and tts_result.audio_path
-                and tts_result.audio_path.exists()
-            ):
+            if audio_data is None and tts_result.audio_path and tts_result.audio_path.exists():
                 audio_data = tts_result.audio_path.read_bytes()
 
             if not audio_data:
@@ -2027,11 +1964,7 @@ class TelegramChannel:
             logger.warning("Voice reply failed (non-fatal): %s", e)
         finally:
             try:
-                if (
-                    tts_result
-                    and tts_result.audio_path
-                    and tts_result.audio_path.exists()
-                ):
+                if tts_result and tts_result.audio_path and tts_result.audio_path.exists():
                     tts_result.audio_path.unlink(missing_ok=True)
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
@@ -2074,9 +2007,7 @@ class TelegramChannel:
             try:
                 from navig.agent.proactive.user_state import get_user_state_tracker
 
-                verbosity = get_user_state_tracker().get_preference(
-                    "verbosity", "normal"
-                )
+                verbosity = get_user_state_tracker().get_preference("verbosity", "normal")
             except Exception:
                 verbosity = "normal"
             fmt = enforce_response_limits(response, verbosity=verbosity)
@@ -2094,11 +2025,7 @@ class TelegramChannel:
             except Exception as kb_err:
                 logger.debug("Keyboard build failed: %s", kb_err)
         if extra_krow:
-            if (
-                keyboard
-                and isinstance(keyboard, dict)
-                and "inline_keyboard" in keyboard
-            ):
+            if keyboard and isinstance(keyboard, dict) and "inline_keyboard" in keyboard:
                 keyboard["inline_keyboard"].append(extra_krow)
             else:
                 keyboard = {"inline_keyboard": [extra_krow]}
@@ -2106,16 +2033,12 @@ class TelegramChannel:
         if parts and len(parts) > 1:
             for i, part in enumerate(parts):
                 is_last = i == len(parts) - 1
-                await self.send_message(
-                    chat_id, part, keyboard=keyboard if is_last else None
-                )
+                await self.send_message(chat_id, part, keyboard=keyboard if is_last else None)
         elif len(response) > 4000:
             chunks = [response[i : i + 4000] for i in range(0, len(response), 4000)]
             for i, chunk in enumerate(chunks):
                 is_last = i == len(chunks) - 1
-                await self.send_message(
-                    chat_id, chunk, keyboard=keyboard if is_last else None
-                )
+                await self.send_message(chat_id, chunk, keyboard=keyboard if is_last else None)
         else:
             await self.send_message(chat_id, response, keyboard=keyboard)
 
@@ -2169,6 +2092,7 @@ class TelegramChannel:
         chat_id: int,
         user_id: int = 0,
         message_id: int | None = None,
+        text: str = "",
     ):
         """Delegate to the canonical model routing screen implementation."""
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
@@ -2178,6 +2102,7 @@ class TelegramChannel:
             chat_id,
             user_id=user_id,
             message_id=message_id,
+            text=text,
         )
 
     async def _handle_status(
@@ -2349,6 +2274,74 @@ class TelegramChannel:
             message_id=message_id,
         )
 
+    async def _show_provider_activation_confirmation(
+        self,
+        chat_id: int,
+        prov_id: str,
+        defaults: dict[str, str],
+        message_id: int | None = None,
+    ) -> None:
+        """Delegate to provider activation confirmation screen."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._show_provider_activation_confirmation(
+            self,
+            chat_id,
+            prov_id,
+            defaults,
+            message_id=message_id,
+        )
+
+    async def _show_models_provider_picker(
+        self,
+        chat_id: int,
+        message_id: int | None = None,
+    ) -> None:
+        """Delegate to models provider picker screen."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._show_models_provider_picker(
+            self,
+            chat_id,
+            message_id=message_id,
+        )
+
+    async def _show_models_tier_summary(
+        self,
+        chat_id: int,
+        prov_id: str,
+        message_id: int | None = None,
+    ) -> None:
+        """Delegate to models tier summary screen."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._show_models_tier_summary(
+            self,
+            chat_id,
+            prov_id,
+            message_id=message_id,
+        )
+
+    async def _show_models_model_list(
+        self,
+        chat_id: int,
+        prov_id: str,
+        tier_code: str,
+        page: int = 0,
+        message_id: int | None = None,
+    ) -> None:
+        """Delegate to paginated model list screen."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._show_models_model_list(
+            self,
+            chat_id,
+            prov_id,
+            tier_code,
+            page=page,
+            message_id=message_id,
+        )
+
     async def _handle_audio_menu(
         self,
         chat_id: int,
@@ -2451,6 +2444,7 @@ class TelegramChannel:
             # Also check vault for deepgram key
             try:
                 from navig.vault import get_vault_v2
+
                 _v2 = get_vault_v2()
                 if _v2 is not None:
                     _store = _v2.store()
@@ -2572,12 +2566,8 @@ class TelegramChannel:
                             try:
                                 entry = _json.loads(raw)
                                 role = entry.get("role") or entry.get("type", "?")
-                                content = (
-                                    entry.get("content") or entry.get("text") or ""
-                                )
-                                session_messages.append(
-                                    {"role": role, "content": content}
-                                )
+                                content = entry.get("content") or entry.get("text") or ""
+                                session_messages.append({"role": role, "content": content})
                             except Exception:  # noqa: BLE001
                                 pass  # best-effort; failure is non-critical
                 except Exception:  # noqa: BLE001
@@ -2610,9 +2600,7 @@ class TelegramChannel:
                 if ts_raw:
                     try:
                         if isinstance(ts_raw, (int, float)):
-                            ts_prefix = (
-                                _dt.utcfromtimestamp(ts_raw).strftime("%H:%M") + " "
-                            )
+                            ts_prefix = _dt.utcfromtimestamp(ts_raw).strftime("%H:%M") + " "
                         else:
                             ts_prefix = str(ts_raw)[:5] + " "
                     except Exception:  # noqa: BLE001
@@ -2648,18 +2636,14 @@ class TelegramChannel:
                 _sk = f"agent:default:telegram:default:dm:{user_id}"
                 _s = sm.sessions.get(_sk)
                 if _s is not None:
-                    voice_label = (
-                        "on" if _s.metadata.get("voice_enabled", False) else "off"
-                    )
+                    voice_label = "on" if _s.metadata.get("voice_enabled", False) else "off"
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
         lines.append(
             f"⚙️  *Session* — tier: `{tier_label}` · host: `{active_host}` · voice: `{voice_label}`"
         )
-        lines.append(
-            f"🛡  Voice pipeline: {'🟢 active' if HAS_VOICE else '⚫ inactive'}"
-        )
+        lines.append(f"🛡  Voice pipeline: {'🟢 active' if HAS_VOICE else '⚫ inactive'}")
         lines.append(SEP)
 
         # ── Daemon log warnings ────────────────────────────────────────────────
@@ -2684,9 +2668,7 @@ class TelegramChannel:
                     "failed",
                     "critical",
                 )
-                daemon_issues = [
-                    ln.strip() for ln in _tail if any(kw in ln.lower() for kw in _kw)
-                ]
+                daemon_issues = [ln.strip() for ln in _tail if any(kw in ln.lower() for kw in _kw)]
                 break
             except OSError:
                 pass  # best-effort cleanup
@@ -2775,9 +2757,7 @@ class TelegramChannel:
 
         if target in DAEMON_ALIASES:
             # Self-restart: schedule via subprocess with delay so reply goes out first
-            await self.send_message(
-                chat_id, "🔄 Restarting navig-daemon in 3s…", parse_mode=None
-            )
+            await self.send_message(chat_id, "🔄 Restarting navig-daemon in 3s…", parse_mode=None)
             sudo_pass = _os.environ.get("SUDO_PASS", "")
             if sudo_pass:
                 bash_cmd = f"sleep 3 && echo '{sudo_pass}' | sudo -S systemctl restart navig-daemon"
@@ -2791,9 +2771,7 @@ class TelegramChannel:
             )
         else:
             # Docker container restart — route through CLI
-            await self._handle_cli_command(
-                chat_id, user_id, metadata, f"docker restart {arg}"
-            )
+            await self._handle_cli_command(chat_id, user_id, metadata, f"docker restart {arg}")
 
     async def _handle_settings_menu(
         self, chat_id: int, user_id: int, is_group: bool = False
@@ -2971,9 +2949,7 @@ class TelegramChannel:
                 else:
                     await self.send_message(chat_id, "…no output.", parse_mode=None)
             else:
-                await self.send_message(
-                    chat_id, "…gateway not connected.", parse_mode=None
-                )
+                await self.send_message(chat_id, "…gateway not connected.", parse_mode=None)
         finally:
             typing_task.cancel()
             try:
@@ -3067,9 +3043,7 @@ class TelegramChannel:
 
             # ── Server uptime ──
             try:
-                up = _sp.run(
-                    ["uptime", "-p"], capture_output=True, text=True, timeout=2
-                )
+                up = _sp.run(["uptime", "-p"], capture_output=True, text=True, timeout=2)
                 lines.append(f"⏱ *Server:* {up.stdout.strip()}")
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
@@ -3086,9 +3060,7 @@ class TelegramChannel:
                 if len(dfl) >= 2:
                     parts = dfl[1].split()
                     if len(parts) >= 3:
-                        lines.append(
-                            f"💾 *Disk:* {parts[0]} used, {parts[1]} free ({parts[2]})"
-                        )
+                        lines.append(f"💾 *Disk:* {parts[0]} used, {parts[1]} free ({parts[2]})")
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -3104,12 +3076,8 @@ class TelegramChannel:
                             try:
                                 e = _json.loads(raw)
                                 role = e.get("role") or e.get("type", "")
-                                content = str(e.get("content") or e.get("text") or "")[
-                                    :60
-                                ]
-                                if role in ("user", "human") and content.startswith(
-                                    "/"
-                                ):
+                                content = str(e.get("content") or e.get("text") or "")[:60]
+                                if role in ("user", "human") and content.startswith("/"):
                                     recent.append(f"  • `{content}`")
                             except Exception:  # noqa: BLE001
                                 pass  # best-effort; failure is non-critical
@@ -3217,18 +3185,12 @@ class TelegramChannel:
             if result.success:
                 output_text = ""
                 if isinstance(result.output, dict):
-                    output_text = (
-                        result.output.get("output") or result.output.get("info") or ""
-                    )
+                    output_text = result.output.get("output") or result.output.get("info") or ""
                 else:
                     output_text = str(result.output or "")
 
                 header = f"🧩 **{skill_name}**" + (f" › `{command}`" if command else "")
-                msg = (
-                    f"{header}\n\n{output_text[:3800]}"
-                    if output_text
-                    else f"{header}\n✅ Done."
-                )
+                msg = f"{header}\n\n{output_text[:3800]}" if output_text else f"{header}\n✅ Done."
                 await self.send_message(chat_id, msg)
             else:
                 await self.send_message(
@@ -3236,9 +3198,7 @@ class TelegramChannel:
                 )
 
         except Exception as exc:  # noqa: BLE001
-            await self.send_message(
-                chat_id, f"❌ /skill crashed: {exc}", parse_mode=None
-            )
+            await self.send_message(chat_id, f"❌ /skill crashed: {exc}", parse_mode=None)
 
     async def _skill_list(self, chat_id: int) -> None:
         """Send a paginated list of all available skills."""
@@ -3247,9 +3207,7 @@ class TelegramChannel:
 
             skills = load_all_skills()
         except Exception as exc:
-            await self.send_message(
-                chat_id, f"❌ Could not load skills: {exc}", parse_mode=None
-            )
+            await self.send_message(chat_id, f"❌ Could not load skills: {exc}", parse_mode=None)
             return
 
         if not skills:
@@ -3274,9 +3232,7 @@ class TelegramChannel:
                 )
                 lines.append(f"  {safety_icon} `{s.id}` — {s.name}")
 
-        lines.append(
-            "\n\nUsage: `/skill <id>` for info · `/skill <id> <command>` to run"
-        )
+        lines.append("\n\nUsage: `/skill <id>` for info · `/skill <id> <command>` to run")
 
         await self.send_message(chat_id, "\n".join(lines))
 
@@ -3288,9 +3244,7 @@ class TelegramChannel:
 
     async def _is_group_admin(self, chat_id: int, user_id: int) -> bool:
         """Check if user has admin rights in the current group chat."""
-        member = await self._api_call(
-            "getChatMember", {"chat_id": chat_id, "user_id": user_id}
-        )
+        member = await self._api_call("getChatMember", {"chat_id": chat_id, "user_id": user_id})
         if not isinstance(member, dict):
             return False
         return member.get("status") in {"administrator", "creator"}
