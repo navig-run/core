@@ -1432,6 +1432,9 @@ class CallbackHandler:
                 await self._answer(cb_id, "⚠️ Bad tier switch callback")
                 return
             prov_id, tier_code, page_str = parts
+            if tier_code not in _TIER_CODE_MAP:
+                await self._answer(cb_id, "⚠️ Unknown tier code")
+                return
             try:
                 page = int(page_str)
             except ValueError:

@@ -486,6 +486,46 @@ async def test_provider_model_assignment_resolution_failure_shows_warning(monkey
 
 
 @pytest.mark.asyncio
+async def test_provider_model_view_rejects_unknown_tier_code():
+    """pmv_ should reject unsupported tier code and avoid picker rendering."""
+    channel = _FakeChannel()
+    handler = CallbackHandler(channel)
+
+    await handler._handle_provider_model_callback(
+        cb_id="cb-pmv-bad-tier",
+        cb_data="pmv_xai_x_0",
+        chat_id=150,
+        message_id=250,
+        user_id=350,
+    )
+
+    assert channel.picker_calls == []
+    answers = [payload for method, payload in channel.api_calls if method == "answerCallbackQuery"]
+    assert answers
+    assert "Unknown tier code" in answers[-1].get("text", "")
+
+
+@pytest.mark.asyncio
+async def test_provider_model_view_bad_callback_shows_warning():
+    """pmv_ with malformed payload should warn and avoid picker rendering."""
+    channel = _FakeChannel()
+    handler = CallbackHandler(channel)
+
+    await handler._handle_provider_model_callback(
+        cb_id="cb-pmv-bad-shape",
+        cb_data="pmv_xai_only",
+        chat_id=151,
+        message_id=251,
+        user_id=351,
+    )
+
+    assert channel.picker_calls == []
+    answers = [payload for method, payload in channel.api_calls if method == "answerCallbackQuery"]
+    assert answers
+    assert "Bad tier switch callback" in answers[-1].get("text", "")
+
+
+@pytest.mark.asyncio
 async def test_provider_callback_answered_before_activation(monkeypatch):
     """answerCallbackQuery must be sent before _show_models_tier_summary is called."""
     events: list[str] = []
