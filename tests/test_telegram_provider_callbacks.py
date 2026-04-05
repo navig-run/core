@@ -448,3 +448,161 @@ async def test_provider_callback_activation_failure_shows_alert(monkeypatch):
     ]
     assert show_alert_answers, "Expected a show_alert toast on activation failure"
     assert "failed" in show_alert_answers[0].get("text", "").lower()
+
+
+# ─── Tests for _activate_provider_with_defaults helper ────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_activate_helper_no_models_shows_alert(monkeypatch):
+    """_activate_provider_with_defaults returns False and shows alert when no models."""
+    from types import SimpleNamespace
+
+    channel = _FakeChannel()
+    channel._resolve_cache = []  # type: ignore[attr-defined]
+
+    async def _empty_models(prov_id, manifest=None):
+        return []
+
+    channel._resolve_provider_models = _empty_models  # type: ignore[method-assign]
+    handler = CallbackHandler(channel)
+
+    manifest = SimpleNamespace(
+        id="fakeprov",
+        display_name="Fake Provider",
+        emoji="🔲",
+        tier="cloud",
+    )
+
+    result = await handler._activate_provider_with_defaults("cb-x", 100, 200, "fakeprov", manifest)
+
+    assert result is False
+    alert_answers = [
+        p
+        for m, p in channel.api_calls
+        if m == "answerCallbackQuery" and p.get("show_alert") is True
+    ]
+    assert alert_answers, "Should show alert when no models"
+    assert "No models found" in alert_answers[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_activate_helper_local_llamacpp_fallback(monkeypatch):
+    """_activate_provider_with_defaults uses hardcoded fallback for llamacpp with no models."""
+    from types import SimpleNamespace
+
+    channel = _FakeChannel()
+
+    async def _no_models(prov_id, manifest=None):
+        return []
+
+    channel._resolve_provider_models = _no_models  # type: ignore[method-assign]
+    handler = CallbackHandler(channel)
+
+    manifest = SimpleNamespace(
+        id="llamacpp",
+        display_name="llama.cpp",
+        emoji="🦙",
+        tier="local",
+    )
+
+    result = await handler._activate_provider_with_defaults("cb-ll", 100, 200, "llamacpp", manifest)
+
+    # Should succeed with fallback models
+    assert result is True
+    assert len(channel.llm_mode_calls) == 1
+    defaults = channel.llm_mode_calls[0][1]
+    # At least one known llamacpp model should be assigned
+    all_vals = list(defaults.values())
+    assert any("llama" in m for m in all_vals)
+
+
+@pytest.mark.asyncio
+async def test_prov_bridge_online_navigates_to_tier_summary():
+    """prov_bridge tap when bridge is online navigates to tier summary."""
+    tier_calls: list = []
+
+    class _BridgeChannel(_FakeChannel):
+        async def _probe_bridge_grid(self):
+            return True, "http://localhost:1234"
+
+        async def _show_models_tier_summary(self, chat_id, prov_id, message_id=None):
+            tier_calls.append((chat_id, prov_id, message_id))
+
+    channel = _BridgeChannel()
+    handler = CallbackHandler(channel)
+
+    await handler._handle_provider_callback(
+        cb_id="cb-bridge",
+        cb_data="prov_bridge",
+        chat_id=300,
+        message_id=400,
+        user_id=500,
+    )
+
+    assert tier_calls == [(300, "bridge_copilot", 400)]
+    answer_calls = [p for m, p in channel.api_calls if m == "answerCallbackQuery"]
+    assert answer_calls
+    assert "active" in answer_calls[0].get("text", "").lower()
+
+
+@pytest.mark.asyncio
+async def test_prov_bridge_offline_shows_alert():
+    """prov_bridge tap when bridge is offline shows an alert (no navigation)."""
+
+    class _OfflineBridgeChannel(_FakeChannel):
+        async def _probe_bridge_grid(self):
+            return False, "http://localhost:1234"
+
+    channel = _OfflineBridgeChannel()
+    handler = CallbackHandler(channel)
+
+    await handler._handle_provider_callback(
+        cb_id="cb-bridge-offline",
+        cb_data="prov_bridge",
+        chat_id=301,
+        message_id=401,
+        user_id=501,
+    )
+
+    alert_answers = [
+        p
+        for m, p in channel.api_calls
+        if m == "answerCallbackQuery" and p.get("show_alert") is True
+    ]
+    assert alert_answers, "Expected show_alert popup when bridge offline"
+    assert "offline" in alert_answers[0].get("text", "").lower()
+
+
+@pytest.mark.asyncio
+async def test_ms_info_error_shows_friendly_message(monkeypatch):
+    """ms_info callback shows user-friendly message (not raw exception text) on error."""
+
+    class _ModelChannel(_FakeChannel):
+        async def _handle_models_command(self, chat_id, user_id, message_id=None):
+            pass
+
+    channel = _ModelChannel()
+    handler = CallbackHandler(channel)
+
+    # get_ai_client raises to simulate routing info unavailable
+    monkeypatch.setattr(
+        "navig.agent.ai_client.get_ai_client",
+        lambda: (_ for _ in ()).throw(RuntimeError("client not configured")),
+    )
+
+    await handler._handle_model_switch(
+        cb_id="cb-ms-info",
+        cb_data="ms_info",
+        chat_id=400,
+        message_id=500,
+        user_id=600,
+    )
+
+    answer_calls = [p for m, p in channel.api_calls if m == "answerCallbackQuery"]
+    assert answer_calls
+    answer_text = answer_calls[0].get("text", "")
+    # Should NOT expose raw exception text
+    assert "client not configured" not in answer_text
+    # Should show a friendly fallback
+    assert "unavailable" in answer_text.lower() or "⚠️" in answer_text

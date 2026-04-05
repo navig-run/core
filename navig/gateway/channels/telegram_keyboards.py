@@ -1090,8 +1090,8 @@ class CallbackHandler:
                     user_id,
                     message_id=message_id,
                 )
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+            except Exception as _mre:  # noqa: BLE001
+                logger.debug("Model tier keyboard refresh failed: %s", _mre)
             return
 
         if cb_data == "ms_info":
@@ -1111,8 +1111,9 @@ class CallbackHandler:
                     )
                 else:
                     await self._answer(cb_id, "Routing not active")
-            except Exception as e:
-                await self._answer(cb_id, f"Error: {e}")
+            except Exception as exc:
+                logger.warning("ms_info routing table failed: %s", exc)
+                await self._answer(cb_id, "\u26a0\ufe0f Routing info unavailable")
             return
 
         if cb_data in ("ms_providers", "open_providers"):
@@ -1188,6 +1189,73 @@ class CallbackHandler:
         }
         label = tier_labels.get(tier_key, tier_key)
         await self._answer(cb_id, f"{label} tier selected")
+
+    async def _activate_provider_with_defaults(
+        self,
+        cb_id: str,
+        chat_id: int,
+        message_id: int,
+        prov_id: str,
+        manifest: Any,
+    ) -> bool:
+        """Resolve models, assign curated tier defaults, update routers, navigate to tier summary.
+
+        Shared by prov_activate_, prov_{id}, and mdl_prov_ callback handlers.
+        Returns True on success; on error answers cb_id and returns False.
+        """
+        models: list = []
+        if hasattr(self.channel, "_resolve_provider_models"):
+            models = await self.channel._resolve_provider_models(prov_id, manifest=manifest)
+
+        if not models and manifest and getattr(manifest, "tier", "") == "local":
+            if prov_id == "llamacpp":
+                models = ["llama.cpp/default", "llama3.2"]
+            elif prov_id == "ollama":
+                models = ["qwen2.5:7b", "phi3.5"]
+
+        if not models:
+            prov_label = manifest.display_name if manifest else prov_id
+            await self._answer(cb_id, f"⚠️ No models found for {prov_label}", show_alert=True)
+            return False
+
+        defaults = self.channel._select_curated_tier_defaults(prov_id, models)
+
+        # Update hybrid router (optional layer, best-effort)
+        try:
+            from navig.agent.ai_client import get_ai_client
+
+            router = get_ai_client().model_router
+            if router and router.is_active:
+                for tier in ("small", "big", "coder_big"):
+                    slot = router.cfg.slot_for_tier(tier)
+                    slot.provider = prov_id
+                    slot.model = defaults[tier]
+                if hasattr(self.channel, "_persist_hybrid_router_assignments"):
+                    self.channel._persist_hybrid_router_assignments(router.cfg)
+        except Exception:  # noqa: BLE001
+            logger.debug("Hybrid router update skipped for provider=%s", prov_id)
+
+        # Always update LLM Mode Router (primary routing layer)
+        if hasattr(self.channel, "_update_llm_mode_router"):
+            self.channel._update_llm_mode_router(prov_id, defaults)
+
+        prov_emoji = manifest.emoji if manifest else ""
+        prov_name = manifest.display_name if manifest else prov_id
+        await self._answer(cb_id, f"\u2705 {prov_emoji} {prov_name} activated")
+
+        try:
+            from navig.commands.init import mark_chat_onboarding_step_completed
+
+            mark_chat_onboarding_step_completed("ai-provider")
+        except (ImportError, AttributeError, TypeError, ValueError):
+            logger.debug("Unable to mark ai-provider onboarding step for %s", prov_id)
+
+        await self.channel._show_models_tier_summary(
+            chat_id,
+            prov_id,
+            message_id=message_id,
+        )
+        return True
 
     async def _handle_provider_callback(
         self,
@@ -1272,66 +1340,8 @@ class CallbackHandler:
                 from navig.providers.registry import get_provider
 
                 manifest = get_provider(prov_id_a)
-
-                models = []
-                if hasattr(self.channel, "_resolve_provider_models"):
-                    models = await self.channel._resolve_provider_models(
-                        prov_id_a, manifest=manifest
-                    )
-
-                if not models:
-                    if manifest and getattr(manifest, "tier", "") == "local":
-                        if prov_id_a == "llamacpp":
-                            models = ["llama.cpp/default", "llama3.2"]
-                        elif prov_id_a == "ollama":
-                            models = ["qwen2.5:7b", "phi3.5"]
-
-                if not models:
-                    prov_label = manifest.display_name if manifest else prov_id_a
-                    await self._answer(
-                        cb_id,
-                        f"⚠️ No models configured for {prov_label}",
-                        show_alert=True,
-                    )
-                    return
-
-                defaults = self.channel._select_curated_tier_defaults(prov_id_a, models)
-
-                # Update hybrid router if active (optional layer)
-                try:
-                    from navig.agent.ai_client import get_ai_client
-
-                    router = get_ai_client().model_router
-                    if router and router.is_active:
-                        for tier in ("small", "big", "coder_big"):
-                            slot = router.cfg.slot_for_tier(tier)
-                            slot.provider = prov_id_a
-                            slot.model = defaults[tier]
-                        if hasattr(self.channel, "_persist_hybrid_router_assignments"):
-                            self.channel._persist_hybrid_router_assignments(router.cfg)
-                except Exception:  # noqa: BLE001
-                    logger.debug("Hybrid router update skipped (not active or unavailable)")
-
-                # Always update LLM Mode Router (primary routing layer)
-                if hasattr(self.channel, "_update_llm_mode_router"):
-                    self.channel._update_llm_mode_router(prov_id_a, defaults)
-
-                prov_label = manifest.display_name if manifest else prov_id_a
-                await self._answer(
-                    cb_id,
-                    f"✅ {manifest.emoji if manifest else ''} {prov_label} activated",
-                )
-                try:
-                    from navig.commands.init import mark_chat_onboarding_step_completed
-
-                    mark_chat_onboarding_step_completed("ai-provider")
-                except (ImportError, AttributeError, TypeError, ValueError):
-                    logger.debug("Unable to mark ai-provider step after provider activation")
-                # Navigate directly to models tier summary for fine-tuning
-                await self.channel._show_models_tier_summary(
-                    chat_id,
-                    prov_id_a,
-                    message_id=message_id,
+                await self._activate_provider_with_defaults(
+                    cb_id, chat_id, message_id, prov_id_a, manifest
                 )
             except Exception as exc:
                 await self._answer(cb_id, f"⚠️ Activation failed: {exc}", show_alert=True)
@@ -1390,63 +1400,10 @@ class CallbackHandler:
             await self._answer(cb_id, f"Provider info unavailable for '{prov_id}'")
             return
 
-        # Resolve models and activate with curated defaults
+        # Activate with curated defaults via shared helper
         try:
-            models: list = []
-            if hasattr(self.channel, "_resolve_provider_models"):
-                models = await self.channel._resolve_provider_models(prov_id, manifest=manifest)
-
-            if not models:
-                if getattr(manifest, "tier", "") == "local":
-                    if prov_id == "llamacpp":
-                        models = ["llama.cpp/default", "llama3.2"]
-                    elif prov_id == "ollama":
-                        models = ["qwen2.5:7b", "phi3.5"]
-
-            if not models:
-                prov_label = manifest.display_name if manifest else prov_id
-                await self._answer(
-                    cb_id,
-                    f"⚠️ No models found for {prov_label}",
-                    show_alert=True,
-                )
-                return
-
-            defaults = self.channel._select_curated_tier_defaults(prov_id, models)
-
-            # Update hybrid router if active
-            try:
-                from navig.agent.ai_client import get_ai_client
-
-                router = get_ai_client().model_router
-                if router and router.is_active:
-                    for tier in ("small", "big", "coder_big"):
-                        slot = router.cfg.slot_for_tier(tier)
-                        slot.provider = prov_id
-                        slot.model = defaults[tier]
-                    if hasattr(self.channel, "_persist_hybrid_router_assignments"):
-                        self.channel._persist_hybrid_router_assignments(router.cfg)
-            except Exception:  # noqa: BLE001
-                logger.debug("Hybrid router update skipped (not active or unavailable)")
-
-            # Always update LLM Mode Router (primary routing layer)
-            if hasattr(self.channel, "_update_llm_mode_router"):
-                self.channel._update_llm_mode_router(prov_id, defaults)
-
-            await self._answer(cb_id, f"✅ {manifest.emoji} {manifest.display_name} activated")
-
-            try:
-                from navig.commands.init import mark_chat_onboarding_step_completed
-
-                mark_chat_onboarding_step_completed("ai-provider")
-            except (ImportError, AttributeError, TypeError, ValueError):
-                logger.debug("Unable to mark ai-provider step after provider activation")
-
-            # Navigate directly to tier summary so user can review and adjust models
-            await self.channel._show_models_tier_summary(
-                chat_id,
-                prov_id,
-                message_id=message_id,
+            await self._activate_provider_with_defaults(
+                cb_id, chat_id, message_id, prov_id, manifest
             )
         except Exception as exc:
             await self._answer(cb_id, f"⚠️ Activation failed: {exc}", show_alert=True)
@@ -1633,66 +1590,16 @@ class CallbackHandler:
                 from navig.providers.registry import get_provider
 
                 manifest = get_provider(prov_id)
-            except Exception:
+            except Exception:  # noqa: BLE001
                 manifest = None
 
             if not manifest:
                 await self._answer(cb_id, f"⚠️ Unknown provider: {prov_id}")
                 return
 
-            # Activate with curated defaults
             try:
-                models: list = []
-                if hasattr(self.channel, "_resolve_provider_models"):
-                    models = await self.channel._resolve_provider_models(prov_id, manifest=manifest)
-
-                if not models and getattr(manifest, "tier", "") == "local":
-                    if prov_id == "llamacpp":
-                        models = ["llama.cpp/default", "llama3.2"]
-                    elif prov_id == "ollama":
-                        models = ["qwen2.5:7b", "phi3.5"]
-
-                if not models:
-                    await self._answer(
-                        cb_id, f"⚠️ No models for {manifest.display_name}", show_alert=True
-                    )
-                    return
-
-                defaults = self.channel._select_curated_tier_defaults(prov_id, models)
-
-                # Update hybrid router if active
-                try:
-                    from navig.agent.ai_client import get_ai_client
-
-                    router = get_ai_client().model_router
-                    if router and router.is_active:
-                        for tier in ("small", "big", "coder_big"):
-                            slot = router.cfg.slot_for_tier(tier)
-                            slot.provider = prov_id
-                            slot.model = defaults[tier]
-                        if hasattr(self.channel, "_persist_hybrid_router_assignments"):
-                            self.channel._persist_hybrid_router_assignments(router.cfg)
-                except Exception:  # noqa: BLE001
-                    logger.debug("Hybrid router update skipped in mdl_prov_")
-
-                # Always update LLM Mode Router
-                if hasattr(self.channel, "_update_llm_mode_router"):
-                    self.channel._update_llm_mode_router(prov_id, defaults)
-
-                await self._answer(cb_id, f"✅ {manifest.emoji} {manifest.display_name} activated")
-
-                try:
-                    from navig.commands.init import mark_chat_onboarding_step_completed
-
-                    mark_chat_onboarding_step_completed("ai-provider")
-                except (ImportError, AttributeError, TypeError, ValueError):
-                    pass
-
-                # Show tier summary inline
-                await self.channel._show_models_tier_summary(
-                    chat_id,
-                    prov_id,
-                    message_id=message_id,
+                await self._activate_provider_with_defaults(
+                    cb_id, chat_id, message_id, prov_id, manifest
                 )
             except Exception as exc:
                 await self._answer(cb_id, f"⚠️ Activation failed: {exc}", show_alert=True)
