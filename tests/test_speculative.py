@@ -181,6 +181,27 @@ class TestPredictionEngine:
         eng = PredictionEngine()
         assert eng._predict_args("never_called") is None
 
+    def test_env_overrides_prediction_knobs(self, monkeypatch):
+        monkeypatch.setenv("NAVIG_SPEC_MAX_HISTORY", "40")
+        monkeypatch.setenv("NAVIG_SPEC_MIN_CONFIDENCE", "0.7")
+        monkeypatch.setenv("NAVIG_SPEC_MAX_PREDICTIONS", "4")
+
+        eng = PredictionEngine()
+        assert eng.MAX_HISTORY == 40
+        assert eng.MIN_CONFIDENCE == pytest.approx(0.7)
+        assert eng.MAX_PREDICTIONS == 4
+        assert eng._history.maxlen == 40
+
+    def test_invalid_env_prediction_knobs_fall_back_to_defaults(self, monkeypatch):
+        monkeypatch.setenv("NAVIG_SPEC_MAX_HISTORY", "abc")
+        monkeypatch.setenv("NAVIG_SPEC_MIN_CONFIDENCE", "1.5")
+        monkeypatch.setenv("NAVIG_SPEC_MAX_PREDICTIONS", "0")
+
+        eng = PredictionEngine()
+        assert eng.MAX_HISTORY == 20
+        assert eng.MIN_CONFIDENCE == pytest.approx(0.3)
+        assert eng.MAX_PREDICTIONS == 2
+
 
 # ─────────────────────────────────────────────────────────────
 # CachedResult
@@ -354,6 +375,21 @@ class TestSpeculativeExecutor:
         assert exec_.enabled
         exec2 = SpeculativeExecutor(lambda t, a: "", config={"enabled": False})
         assert not exec2.enabled
+
+    def test_env_overrides_executor_and_cache_tuning(self, monkeypatch):
+        monkeypatch.setenv("NAVIG_SPEC_MIN_HIT_RATE", "0.55")
+        monkeypatch.setenv("NAVIG_SPEC_TIMEOUT_SEC", "3.5")
+        monkeypatch.setenv("NAVIG_SPEC_CACHE_MAX_ENTRIES", "77")
+        monkeypatch.setenv("NAVIG_SPEC_CACHE_TTL_SEC", "222")
+
+        exec_ = SpeculativeExecutor(
+            lambda t, a: "ok",
+            config={"min_hit_rate": 0.9, "cache_max_entries": 11, "cache_ttl": 20},
+        )
+        assert exec_._min_hit_rate == pytest.approx(0.55)
+        assert exec_.SPECULATION_TIMEOUT == pytest.approx(3.5)
+        assert exec_.cache._max_entries == 77
+        assert exec_.cache.DEFAULT_TTL == pytest.approx(222.0)
 
 
 # ─────────────────────────────────────────────────────────────

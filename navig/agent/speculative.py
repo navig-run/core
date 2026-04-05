@@ -19,12 +19,57 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import time
 from collections import Counter, defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _env_int(name: str, default: int, *, min_value: int, max_value: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.debug("Invalid integer env %s=%r; using default %s", name, raw, default)
+        return default
+    if value < min_value or value > max_value:
+        logger.debug(
+            "Out-of-range integer env %s=%r (expected %s..%s); using default %s",
+            name,
+            raw,
+            min_value,
+            max_value,
+            default,
+        )
+        return default
+    return value
+
+
+def _env_float(name: str, default: float, *, min_value: float, max_value: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.debug("Invalid float env %s=%r; using default %.3f", name, raw, default)
+        return default
+    if value < min_value or value > max_value:
+        logger.debug(
+            "Out-of-range float env %s=%r (expected %.3f..%.3f); using default %.3f",
+            name,
+            raw,
+            min_value,
+            max_value,
+            default,
+        )
+        return default
+    return value
 
 # ─────────────────────────────────────────────────────────────
 # Tool classification — speculation whitelist
@@ -120,6 +165,24 @@ class PredictionEngine:
     MAX_PREDICTIONS: int = 2
 
     def __init__(self) -> None:
+        self.MAX_HISTORY = _env_int(
+            "NAVIG_SPEC_MAX_HISTORY",
+            self.MAX_HISTORY,
+            min_value=5,
+            max_value=500,
+        )
+        self.MIN_CONFIDENCE = _env_float(
+            "NAVIG_SPEC_MIN_CONFIDENCE",
+            self.MIN_CONFIDENCE,
+            min_value=0.0,
+            max_value=1.0,
+        )
+        self.MAX_PREDICTIONS = _env_int(
+            "NAVIG_SPEC_MAX_PREDICTIONS",
+            self.MAX_PREDICTIONS,
+            min_value=1,
+            max_value=10,
+        )
         self._history: deque[ToolCallRecord] = deque(maxlen=self.MAX_HISTORY)
         self._bigrams: Counter[tuple[str, str]] = Counter()
         self._arg_patterns: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -230,7 +293,18 @@ class SpeculativeCache:
 
     def __init__(self, max_entries: int = 50) -> None:
         self._cache: dict[str, CachedResult] = {}
-        self._max_entries = max_entries
+        self._max_entries = _env_int(
+            "NAVIG_SPEC_CACHE_MAX_ENTRIES",
+            max_entries,
+            min_value=5,
+            max_value=1000,
+        )
+        self.DEFAULT_TTL = _env_float(
+            "NAVIG_SPEC_CACHE_TTL_SEC",
+            self.DEFAULT_TTL,
+            min_value=1.0,
+            max_value=3600.0,
+        )
         self._hits: int = 0
         self._misses: int = 0
 
@@ -360,14 +434,29 @@ class SpeculativeExecutor:
         cfg = config or {}
         self._dispatch_fn = dispatch_fn
         self._enabled: bool = cfg.get("enabled", True)
-        self._min_hit_rate: float = cfg.get("min_hit_rate", self.DEFAULT_MIN_HIT_RATE)
+        self._min_hit_rate: float = _env_float(
+            "NAVIG_SPEC_MIN_HIT_RATE",
+            cfg.get("min_hit_rate", self.DEFAULT_MIN_HIT_RATE),
+            min_value=0.0,
+            max_value=1.0,
+        )
+        self.SPECULATION_TIMEOUT = _env_float(
+            "NAVIG_SPEC_TIMEOUT_SEC",
+            self.SPECULATION_TIMEOUT,
+            min_value=0.1,
+            max_value=60.0,
+        )
 
         self.prediction = PredictionEngine()
         self.cache = SpeculativeCache(
             max_entries=cfg.get("cache_max_entries", 50),
         )
-        if "cache_ttl" in cfg:
-            self.cache.DEFAULT_TTL = float(cfg["cache_ttl"])
+        self.cache.DEFAULT_TTL = _env_float(
+            "NAVIG_SPEC_CACHE_TTL_SEC",
+            float(cfg.get("cache_ttl", self.cache.DEFAULT_TTL)),
+            min_value=1.0,
+            max_value=3600.0,
+        )
 
         self._speculation_tasks: list[asyncio.Task[None]] = []
 
