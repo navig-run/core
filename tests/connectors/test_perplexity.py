@@ -19,7 +19,6 @@ from navig.connectors.types import (
     ResourceType,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -230,3 +229,55 @@ async def test_disconnect_clears_state(connector, monkeypatch):
     await connector.disconnect()
     assert connector.status == ConnectorStatus.DISCONNECTED
     assert connector._api_key is None
+
+
+# ---------------------------------------------------------------------------
+# _post() error hierarchy
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_post_401_raises_connector_auth_error(connector, monkeypatch):
+    """HTTP 401 from Perplexity API should raise ConnectorAuthError, not ValueError."""
+    from navig.connectors.errors import ConnectorAuthError
+
+    monkeypatch.setenv("PERPLEXITY_API_KEY", "sk-bad-key")
+    await connector.connect()
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 401
+    mock_resp.is_success = False
+    mock_resp.text = "Unauthorized"
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client_cls.return_value.__aenter__.return_value = mock_client
+        mock_client.post.return_value = mock_resp
+
+        with pytest.raises(ConnectorAuthError):
+            await connector._post("/chat/completions", {"model": "sonar", "messages": []})
+
+    # Status set to ERROR after 401
+    assert connector.status == ConnectorStatus.ERROR
+
+
+@pytest.mark.asyncio
+async def test_post_429_raises_connector_rate_limit_error(connector, monkeypatch):
+    """HTTP 429 from Perplexity API should raise ConnectorRateLimitError, not RuntimeError."""
+    from navig.connectors.errors import ConnectorRateLimitError
+
+    monkeypatch.setenv("PERPLEXITY_API_KEY", "sk-test-key")
+    await connector.connect()
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 429
+    mock_resp.is_success = False
+    mock_resp.text = "Too Many Requests"
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client_cls.return_value.__aenter__.return_value = mock_client
+        mock_client.post.return_value = mock_resp
+
+        with pytest.raises(ConnectorRateLimitError):
+            await connector._post("/chat/completions", {"model": "sonar", "messages": []})

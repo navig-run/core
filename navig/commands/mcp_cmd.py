@@ -122,7 +122,7 @@ def mcp_start(
         raise typer.Exit(1) from exc
 
 
-@mcp_app.command("status")
+@mcp_app.command("status", hidden=True)
 def mcp_status():
     """Show MCP server status."""
     from navig import console_helper as ch

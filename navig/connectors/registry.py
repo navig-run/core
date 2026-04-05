@@ -78,9 +78,13 @@ class ConnectorRegistry:
             raise ConnectorNotFoundError(connector_id)
 
         if connector_id not in self._instances:
-            cls = self._classes[connector_id]
-            self._instances[connector_id] = cls()
-            logger.debug("Instantiated connector: %s", connector_id)
+            # Double-checked locking: thread-safe lazy instantiation.
+            # The outer check avoids acquiring the lock on every hot-path call.
+            with self._lock:
+                if connector_id not in self._instances:
+                    cls = self._classes[connector_id]
+                    self._instances[connector_id] = cls()
+                    logger.debug("Instantiated connector: %s", connector_id)
 
         return self._instances[connector_id]
 
@@ -104,6 +108,9 @@ class ConnectorRegistry:
                     "domain": m.domain.value,
                     "icon": m.icon,
                     "status": status,
+                    "can_search": m.can_search,
+                    "can_fetch": m.can_fetch,
+                    "can_act": m.can_act,
                 }
             )
         return out
@@ -131,7 +138,13 @@ class ConnectorRegistry:
     # -- Lifecycle ---------------------------------------------------------
 
     def reset(self) -> None:
-        """Clear all registrations (for testing)."""
+        """Clear all registrations.
+
+        Intended for **test isolation only** — this does *not* clear the
+        singleton pointer ``_instance``.  Subsequent ``ConnectorRegistry()``
+        calls return the same object (now with empty registrations).
+        Do **not** use this for live reconfiguration.
+        """
         self._classes.clear()
         self._instances.clear()
 

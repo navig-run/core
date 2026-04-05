@@ -167,17 +167,28 @@ def test_list_tools_multiple_connectors() -> None:
 
 
 def test_bad_manifest_connector_is_skipped() -> None:
-    """A connector whose manifest property raises is warned + skipped; others load fine."""
+    """A connector whose manifest.display_name raises is warned + skipped; others load fine."""
 
-    class _BadConn(BaseConnector):
-        @property  # type: ignore[override]
-        def manifest(self):  # type: ignore[override]
+    class _BrokenManifest:
+        """Manifest whose display_name property raises — simulates broken connector metadata."""
+
+        id = "bad"
+        description = ""
+        can_search = True
+        can_fetch = True
+        can_act = True
+
+        @property
+        def display_name(self) -> str:
             raise RuntimeError("manifest exploded")
 
-        async def search(self, query, **kw):
+    class _BadConn(BaseConnector):
+        manifest = _BrokenManifest()  # type: ignore[assignment]
+
+        async def search(self, query, limit=5, **kw):
             return []
 
-        async def fetch(self, rid, **kw):
+        async def fetch(self, rid):
             return None
 
         async def act(self, action):
@@ -489,3 +500,65 @@ def test_register_all_tools_preserves_existing_bundles() -> None:
     assert any("memory" in n or "wiki" in n or "navig" in n for n in tool_names), (
         f"Expected memory/wiki/runtime tools in server.tools; got: {sorted(tool_names)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# New regression tests — regression coverage for bugs found and fixed
+# ---------------------------------------------------------------------------
+
+
+def test_registry_list_all_includes_capability_flags() -> None:
+    """ConnectorRegistry.list_all() now includes can_search/can_fetch/can_act."""
+    from navig.connectors.registry import ConnectorRegistry
+
+    C1 = _make_connector_class("cap1", can_search=True, can_fetch=False, can_act=False)
+    C2 = _make_connector_class("cap2", can_search=True, can_fetch=True, can_act=True)
+    reg = _fresh_registry(C1, C2)
+
+    rows = reg.list_all()
+    by_id = {r["id"]: r for r in rows}
+
+    assert by_id["cap1"]["can_search"] is True
+    assert by_id["cap1"]["can_fetch"] is False
+    assert by_id["cap1"]["can_act"] is False
+
+    assert by_id["cap2"]["can_search"] is True
+    assert by_id["cap2"]["can_fetch"] is True
+    assert by_id["cap2"]["can_act"] is True
+
+
+def test_pool_timeout_cancels_future() -> None:
+    """On timeout, the future.cancel() is called (best-effort) and TimeoutError re-raised."""
+    import concurrent.futures
+
+    from navig.mcp.tools.connectors import _make_sync_connector_handler
+
+    mock_future = MagicMock()
+    mock_future.result.side_effect = concurrent.futures.TimeoutError("timed out")
+    mock_future.cancel.return_value = False  # already running — cannot cancel
+
+    with patch("navig.mcp.tools.connectors._POOL") as mock_pool:
+        mock_pool.submit.return_value = mock_future
+        handler = _make_sync_connector_handler("connector.slow.search")
+        with pytest.raises(concurrent.futures.TimeoutError):
+            handler(None, {"query": "test"})
+
+    mock_future.cancel.assert_called_once()
+
+
+def test_tool_connector_list_uses_list_all_directly() -> None:
+    """_tool_connector_list now delegates to list_all() which includes cap flags."""
+    from navig.mcp.tools.connectors import _tool_connector_list
+
+    C = _make_connector_class("direct", can_search=True, can_fetch=False, can_act=True)
+    reg = _fresh_registry(C)
+
+    with patch("navig.mcp.tools.connectors.get_connector_registry", return_value=reg):
+        result = _tool_connector_list(None, {})
+
+    rows = result["connectors"]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["can_search"] is True
+    assert row["can_fetch"] is False
+    assert row["can_act"] is True

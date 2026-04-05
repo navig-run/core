@@ -399,7 +399,7 @@ def start_mcp_server(
     if mode == "stdio":
         handler.run_stdio()
     elif mode == "websocket":
-        _run_websocket_server(handler, port, token)
+        _run_websocket_server(handler, port, token, host=host)
     elif mode == "http":
         _run_http_server(handler, host=host, port=port, token=token)
     else:
@@ -594,7 +594,9 @@ def _run_http_server(
         ch.info("MCP HTTP server stopped.")
 
 
-def _run_websocket_server(handler: MCPProtocolHandler, port: int, token: str | None = None):
+def _run_websocket_server(
+    handler: MCPProtocolHandler, port: int, token: str | None = None, host: str = "0.0.0.0"
+):
     """Start a WebSocket MCP server with optional token auth.
 
     The server speaks JSON-RPC 2.0 over WebSocket frames.
@@ -829,7 +831,7 @@ def _run_websocket_server(handler: MCPProtocolHandler, port: int, token: str | N
     async def _serve():
         import contextlib
 
-        ch.success(f"NAVIG MCP WebSocket server listening on ws://localhost:{port}")
+        ch.success(f"NAVIG MCP WebSocket server listening on ws://{host}:{port}")
         ch.info(f"Session token: {session_token}")
         ch.dim("Clients must authenticate with the token before sending requests.")
         ch.dim("Press Ctrl+C to stop.")
@@ -837,7 +839,7 @@ def _run_websocket_server(handler: MCPProtocolHandler, port: int, token: str | N
         notifier_task = asyncio.create_task(_notification_loop())
         async with websockets.asyncio.server.serve(
             _handle_client,
-            "0.0.0.0",
+            host,
             port,
             ping_interval=30,
             ping_timeout=10,
@@ -855,38 +857,29 @@ def _run_websocket_server(handler: MCPProtocolHandler, port: int, token: str | N
         ch.info("MCP WebSocket server stopped.")
 
 
-def generate_vscode_mcp_config() -> dict[str, Any]:
-    """Generate VS Code MCP configuration for Copilot integration."""
+def _stdio_mcp_config() -> dict[str, Any]:
+    """Shared stdio MCP configuration (used by VS Code and Claude Desktop)."""
     import sys
-
-    python_path = sys.executable
 
     return {
         "mcpServers": {
             "navig": {
-                "command": python_path,
+                "command": sys.executable,
                 "args": ["-m", "navig.mcp_server"],
                 "env": {},
             }
         }
     }
+
+
+def generate_vscode_mcp_config() -> dict[str, Any]:
+    """Generate VS Code MCP configuration for Copilot integration."""
+    return _stdio_mcp_config()
 
 
 def generate_claude_mcp_config() -> dict[str, Any]:
     """Generate Claude Desktop MCP configuration."""
-    import sys
-
-    python_path = sys.executable
-
-    return {
-        "mcpServers": {
-            "navig": {
-                "command": python_path,
-                "args": ["-m", "navig.mcp_server"],
-                "env": {},
-            }
-        }
-    }
+    return _stdio_mcp_config()
 
 
 def generate_perplexity_mcp_config(

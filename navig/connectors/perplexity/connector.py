@@ -18,6 +18,7 @@ import time
 from typing import Any
 
 from navig.connectors.base import BaseConnector, ConnectorManifest
+from navig.connectors.errors import ConnectorAuthError, ConnectorRateLimitError
 from navig.connectors.types import (
     Action,
     ActionResult,
@@ -236,9 +237,9 @@ class PerplexityConnector(BaseConnector):
 
         if resp.status_code == 401:
             self._status = ConnectorStatus.ERROR
-            raise ValueError("Perplexity API key is invalid or expired.")
+            raise ConnectorAuthError(self.id, "Perplexity API key is invalid or expired.")
         if resp.status_code == 429:
-            raise RuntimeError("Perplexity rate limit exceeded. Retry later.")
+            raise ConnectorRateLimitError(self.id)
         if not resp.is_success:
             raise RuntimeError(f"Perplexity API error {resp.status_code}: {resp.text[:200]}")
 

@@ -128,17 +128,18 @@ class BaseConnector(ABC):
     # -- Abstract interface ------------------------------------------------
 
     @abstractmethod
-    async def search(self, query: str) -> list[Resource]:
+    async def search(self, query: str, limit: int = 5) -> list[Resource]:
         """
         Search this connector for resources matching *query*.
 
         Returns a list of ``Resource`` instances normalised to the
-        universal schema.
+        universal schema.  Implementations should respect *limit* to
+        cap the number of results returned.
         """
 
     @abstractmethod
-    async def fetch(self, resource_id: str) -> Resource:
-        """Fetch a single resource by its native ID."""
+    async def fetch(self, resource_id: str) -> Resource | None:
+        """Fetch a single resource by its native ID.  Returns ``None`` if not found."""
 
     @abstractmethod
     async def act(self, action: Action) -> ActionResult:

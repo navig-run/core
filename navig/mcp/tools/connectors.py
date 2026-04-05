@@ -18,6 +18,7 @@ tools, zero duplication.
 from __future__ import annotations
 
 import asyncio
+import atexit
 import concurrent.futures
 import logging
 from typing import Any
@@ -32,6 +33,8 @@ logger = logging.getLogger("navig.mcp.tools.connectors")
 # asyncio.run() creates a fresh event loop in the worker thread so there
 # is no conflict with any event loop that may be running in the main thread.
 _POOL = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="mcp_conn")
+# Ensure the pool is shut down cleanly on interpreter exit.
+atexit.register(_POOL.shutdown, wait=False)
 
 
 # ---------------------------------------------------------------------------
@@ -280,29 +283,27 @@ def _make_sync_connector_handler(tool_name: str) -> Any:
 
     def _handler(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
         future = _POOL.submit(asyncio.run, handle_connector_call(tool_name, args))
-        return future.result(timeout=30)
+        try:
+            return future.result(timeout=30)
+        except concurrent.futures.TimeoutError:
+            # Best-effort: prevents queued-but-not-yet-started work from
+            # running.  Cannot interrupt a thread that is already executing;
+            # the worker will run to completion (or hang) independently.
+            future.cancel()
+            logger.warning("Connector tool %r timed out after 30s", tool_name)
+            raise
 
     _handler.__name__ = f"_connector_{tool_name.replace('.', '_')}"
     return _handler
 
 
 def _tool_connector_list(server: Any, args: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
-    """Return summary rows for every registered connector."""
-    reg = get_connector_registry()
-    rows = reg.list_all()
-    # Enrich with capability flags from the class manifest
-    classes = reg.all_classes()
-    for row in rows:
-        cls = classes.get(row["id"])
-        if cls is not None:
-            try:
-                m = cls.manifest
-                row["can_search"] = m.can_search
-                row["can_fetch"] = m.can_fetch
-                row["can_act"] = m.can_act
-            except Exception:  # noqa: BLE001
-                pass
-    return {"connectors": rows}
+    """Return summary rows for every registered connector.
+
+    Capability flags (``can_search`` / ``can_fetch`` / ``can_act``) are
+    included directly via ``ConnectorRegistry.list_all()``.
+    """
+    return {"connectors": get_connector_registry().list_all()}
 
 
 def _tool_connector_health(server: Any, args: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG001
@@ -315,10 +316,14 @@ def _tool_connector_health(server: Any, args: dict[str, Any]) -> dict[str, Any]:
         connector = reg.get(connector_id)
     except Exception as exc:  # noqa: BLE001
         return {"error": str(exc), "isError": True}
+    future = _POOL.submit(asyncio.run, connector.health_check())
     try:
-        future = _POOL.submit(asyncio.run, connector.health_check())
         health = future.result(timeout=15)
         return health.to_dict()
+    except concurrent.futures.TimeoutError:
+        future.cancel()
+        logger.warning("connector.health(%s) timed out after 15s", connector_id)
+        return {"error": f"Health check for '{connector_id}' timed out", "isError": True}
     except Exception as exc:  # noqa: BLE001
         logger.warning("connector.health(%s) failed: %s", connector_id, exc)
         return {"error": str(exc), "isError": True}

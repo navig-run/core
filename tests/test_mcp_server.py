@@ -149,6 +149,15 @@ def test_start_mcp_server():
         start_mcp_server("unknown")
 
 
+def test_start_mcp_server_websocket_forwards_host():
+    """start_mcp_server passes 'host' to _run_websocket_server (security: no silent 0.0.0.0)."""
+    with patch("navig.mcp_server._run_websocket_server") as mock_ws:
+        start_mcp_server("websocket", port=3005, token="tok", host="127.0.0.1")
+        _, _, kwargs = mock_ws.call_args[0], mock_ws.call_args[0], mock_ws.call_args[1]
+        # host= must be forwarded as a keyword argument
+        assert kwargs.get("host") == "127.0.0.1"
+
+
 # ---------------------------------------------------------------------------
 # Test Memory Handlers
 # ---------------------------------------------------------------------------
