@@ -193,13 +193,17 @@ class CallbackStore:
     """
     Bounded in-memory store: callback_data key → full context.
     Telegram limits callback_data to 64 bytes, so we store context here.
+
+    TTL: entries expire after ttl_seconds (default 24h).
     """
 
-    def __init__(self, max_entries: int = 500):
+    def __init__(self, max_entries: int = 500, ttl_seconds: int = 86400):
         self._store: dict[str, CallbackEntry] = {}
         self._max = max_entries
+        self._ttl = ttl_seconds
 
     def put(self, key: str, entry: CallbackEntry) -> None:
+        self._expire_old()
         if len(self._store) >= self._max:
             items = sorted(self._store.items(), key=lambda kv: kv[1].created_at)
             to_remove = len(items) // 5 or 1
@@ -208,10 +212,24 @@ class CallbackStore:
         self._store[key] = entry
 
     def get(self, key: str) -> CallbackEntry | None:
-        return self._store.get(key)
+        entry = self._store.get(key)
+        if entry is None:
+            return None
+        # Check TTL
+        if time.time() - entry.created_at > self._ttl:
+            del self._store[key]
+            return None
+        return entry
 
     def remove(self, key: str) -> None:
         self._store.pop(key, None)
+
+    def _expire_old(self) -> None:
+        """Remove entries older than TTL."""
+        now = time.time()
+        expired = [k for k, v in self._store.items() if now - v.created_at > self._ttl]
+        for k in expired:
+            del self._store[k]
 
 
 _callback_store = CallbackStore()
@@ -555,7 +573,8 @@ def _settings_hub_text(session: Any) -> str:
         focus = getattr(session, "focus_mode", "balance")
         mp = MOOD_REGISTRY.get(focus)
         focus_label = f"{mp.emoji} {focus}" if mp else focus
-    except Exception:
+    except Exception as exc:
+        logger.debug("MOOD_REGISTRY lookup failed: %s", exc)
         focus_label = getattr(session, "focus_mode", "balance")
 
     tts_p = getattr(session, "tts_provider", "auto")

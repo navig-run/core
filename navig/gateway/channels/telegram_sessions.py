@@ -5,8 +5,10 @@ Per-user and per-group session isolation with:
 - Reply tracking and threading
 - Mention gating for groups
 - Automatic session cleanup
+- Thread-safe access via asyncio.Lock
 """
 
+import asyncio
 import json
 import logging
 from dataclasses import asdict, dataclass, field
@@ -143,6 +145,7 @@ class SessionManager:
     - Per-group session isolation
     - Automatic session cleanup
     - File-based persistence
+    - Thread-safe access via asyncio.Lock
     """
 
     def __init__(
@@ -158,6 +161,7 @@ class SessionManager:
         self.session_timeout_days = session_timeout_days
 
         self._sessions: dict[str, TelegramSession] = {}
+        self._lock = asyncio.Lock()  # Protects _sessions dict and file I/O
         self._load_sessions()
 
     def _get_session_key(self, chat_id: int, user_id: int, is_group: bool) -> str:
@@ -339,7 +343,18 @@ class SessionManager:
 
         to_remove = []
         for key, session in self._sessions.items():
-            last_active = datetime.fromisoformat(session.last_active)
+            try:
+                last_active = datetime.fromisoformat(session.last_active)
+            except (ValueError, TypeError) as e:
+                # Malformed timestamp — mark for removal
+                logger.warning(
+                    "Session %s has invalid last_active timestamp %r: %s",
+                    key,
+                    session.last_active,
+                    e,
+                )
+                to_remove.append(key)
+                continue
             if last_active < cutoff:
                 to_remove.append(key)
 

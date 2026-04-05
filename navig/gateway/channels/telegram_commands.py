@@ -2245,7 +2245,6 @@ class TelegramCommandsMixin:
             metadata=metadata,
         )
         return True
-        return False
 
     async def _run_nl_intent(
         self,

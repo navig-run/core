@@ -410,15 +410,46 @@ class TelegramChannel:
         if self._session:
             await self._session.close()
 
-    async def _api_call(self, method: str, data: dict | None = None) -> dict | None:
-        """Make an API call to Telegram."""
+    async def _api_call(
+        self, method: str, data: dict | None = None, *, _retry_count: int = 0
+    ) -> dict | None:
+        """Make an API call to Telegram with rate limit handling."""
         if not self._session:
             return None
 
         url = f"{self.base_url}/{method}"
+        _MAX_RETRIES = 3
 
         try:
             async with self._session.post(url, json=data or {}) as resp:
+                # Handle rate limiting (HTTP 429)
+                if resp.status == 429:
+                    if _retry_count >= _MAX_RETRIES:
+                        logger.error(
+                            "Telegram API rate limited after %d retries: %s",
+                            _MAX_RETRIES,
+                            method,
+                        )
+                        return None
+                    # Get retry_after from response or use exponential backoff
+                    retry_after = 1
+                    try:
+                        err_body = await resp.json()
+                        retry_after = int(
+                            err_body.get("parameters", {}).get("retry_after", 1)
+                        )
+                    except Exception:
+                        retry_after = 2 ** _retry_count  # exponential backoff
+                    logger.warning(
+                        "Telegram API rate limited on %s — retry %d/%d in %ds",
+                        method,
+                        _retry_count + 1,
+                        _MAX_RETRIES,
+                        retry_after,
+                    )
+                    await asyncio.sleep(retry_after)
+                    return await self._api_call(method, data, _retry_count=_retry_count + 1)
+
                 result = await resp.json()
                 if result.get("ok"):
                     return result.get("result")
@@ -545,7 +576,11 @@ class TelegramChannel:
         else:
             logger.error("Failed to set Telegram webhook — falling back to polling")
             self._use_webhook = False
-            self._poll_task = asyncio.create_task(self._poll_updates())
+            # Guard against duplicate poll tasks
+            if self._poll_task is None or self._poll_task.done():
+                self._poll_task = asyncio.create_task(self._poll_updates())
+            else:
+                logger.warning("Poll task already running — skipping duplicate")
 
     async def handle_webhook_update(self, update: dict, secret_header: str = "") -> bool:
         """
@@ -1108,28 +1143,45 @@ class TelegramChannel:
                     parse_mode=None,
                 )
 
-    async def _keep_typing(self, chat_id: int, interval: float = 4.0):
-        """Re-send 'typing' indicator every ``interval`` seconds until cancelled."""
+    async def _keep_typing(self, chat_id: int, interval: float = 4.0, max_duration: float = 120.0):
+        """Re-send 'typing' indicator every ``interval`` seconds until cancelled or timeout.
+
+        Args:
+            chat_id: Telegram chat ID.
+            interval: Seconds between typing indicator refreshes.
+            max_duration: Maximum seconds to keep typing (safety limit).
+        """
         try:
-            while True:
+            elapsed = 0.0
+            while elapsed < max_duration:
                 await self.send_typing(chat_id)
                 await asyncio.sleep(interval)
+                elapsed += interval
+            logger.debug("Typing indicator timed out after %.0fs for chat %s", max_duration, chat_id)
         except asyncio.CancelledError:
             pass  # task cancelled; expected during shutdown
 
-    async def _keep_recording(self, chat_id: int, interval: float = 4.0):
-        """Re-send 'record_voice' chat action every ``interval`` seconds until cancelled.
+    async def _keep_recording(self, chat_id: int, interval: float = 4.0, max_duration: float = 120.0):
+        """Re-send 'record_voice' chat action every ``interval`` seconds until cancelled or timeout.
 
         Used during voice-message download + transcription so the user sees a
         microphone / audio-processing indicator instead of silence or a typing
         bubble.  Cancel the returned task once transcription finishes.
+
+        Args:
+            chat_id: Telegram chat ID.
+            interval: Seconds between indicator refreshes.
+            max_duration: Maximum seconds to keep recording indicator (safety limit).
         """
         try:
-            while True:
+            elapsed = 0.0
+            while elapsed < max_duration:
                 await self._api_call(
                     "sendChatAction", {"chat_id": chat_id, "action": "record_voice"}
                 )
                 await asyncio.sleep(interval)
+                elapsed += interval
+            logger.debug("Recording indicator timed out after %.0fs for chat %s", max_duration, chat_id)
         except asyncio.CancelledError:
             pass  # task cancelled; expected during shutdown
 
