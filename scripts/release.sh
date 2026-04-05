@@ -74,6 +74,45 @@ echo "✅ Tag $TAG created locally"
 
 git push origin "$TAG"
 echo "✅ Tag $TAG pushed to origin"
+
+# ── Create GitHub Release with notes from .local/CHANGELOG.md ─────────────────
+LOCAL_CHANGELOG=".local/CHANGELOG.md"
+NOTES_FILE="/tmp/release_notes_${TAG}.md"
+
+if [[ -f "$LOCAL_CHANGELOG" ]]; then
+  # Extract the [VERSION] block (everything between ## [VERSION] and the next ## heading)
+  NOTES=$(awk "/^## \[${VERSION}\]/{found=1; next} found && /^## \[/{exit} found{print}" "$LOCAL_CHANGELOG")
+  if [[ -n "$NOTES" ]]; then
+    printf "%s\n" "$NOTES" > "$NOTES_FILE"
+    echo "📝 Extracted release notes from $LOCAL_CHANGELOG"
+    HAVE_NOTES=true
+  else
+    echo "⚠️  No [${VERSION}] section found in $LOCAL_CHANGELOG — using auto-generated notes."
+    HAVE_NOTES=false
+  fi
+else
+  echo "⚠️  $LOCAL_CHANGELOG not found — using auto-generated notes."
+  HAVE_NOTES=false
+fi
+
+if command -v gh &>/dev/null; then
+  if [[ "$HAVE_NOTES" == "true" ]]; then
+    gh release create "$TAG" \
+      --title "$TAG" \
+      --notes-file "$NOTES_FILE" \
+      2>/dev/null && echo "✅ GitHub Release $TAG created with curated notes." \
+      || echo "⚠️  Release may already exist or gh failed. Check https://github.com/navig-run/core/releases"
+  else
+    gh release create "$TAG" \
+      --title "$TAG" \
+      --generate-notes \
+      2>/dev/null && echo "✅ GitHub Release $TAG created with auto-generated notes." \
+      || echo "⚠️  Release may already exist or gh failed. Check https://github.com/navig-run/core/releases"
+  fi
+else
+  echo "ℹ️  gh CLI not found — release will be created by GitHub Actions (auto-generated notes)."
+fi
+
 echo ""
 echo "──────────────────────────────────────────"
 echo "  Build verification"
@@ -95,15 +134,13 @@ python -m twine check dist/*
 echo ""
 echo "✅ Build artifacts validated."
 echo ""
-echo "PyPI publication is now automated by GitHub Actions."
-echo "Publish a GitHub Release for tag $TAG (non-draft, non-prerelease) to trigger:"
-echo "  .github/workflows/publish.yml"
+echo "PyPI publish triggered automatically by GitHub Actions when Release is published."
+echo "  Workflow: .github/workflows/publish.yml"
 echo ""
 echo "Manual fallback (emergency only): python -m twine upload dist/*"
 
 echo ""
 echo "Next steps:"
-echo "  1. Publish GitHub Release from $TAG in the repository UI"
-echo "  2. Confirm PyPI workflow success and package availability"
-echo "  3. Update CHANGELOG.md — move [Unreleased] entries under [$VERSION]"
-echo "  4. Merge main back into develop: git checkout develop && git merge main"
+echo "  1. Confirm PyPI workflow success: https://github.com/navig-run/core/actions"
+echo "  2. Add [Unreleased] entries to .local/CHANGELOG.md for next release"
+echo "  3. Merge main back into develop: git checkout develop && git merge main"

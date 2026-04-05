@@ -92,7 +92,7 @@ Closes #N
 - [ ] Tests added or updated
 - [ ] Lint: `ruff check navig tests` passes
 - [ ] Format: `ruff format --check navig tests` passes
-- [ ] `CHANGELOG.md` updated under `[Unreleased]`
+- [ ] `.local/CHANGELOG.md` updated under `[Unreleased]` (internal dev log — gitignored)
 - [ ] `docs/user/HANDBOOK.md` updated (if CLI behavior changed)
 - [ ] PR addresses exactly one issue (`Closes #N`)
 - [ ] No hardcoded credentials or paths

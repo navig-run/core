@@ -47,34 +47,24 @@ jobs:
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Extract CHANGELOG section for this version
-        id: notes
+      # .local/CHANGELOG.md is gitignored — curated notes are applied by
+      # scripts/release.sh via 'gh release create' before this workflow runs.
+      # This workflow only creates the release when it doesn't already exist
+      # (e.g. a tag pushed directly without running release.sh).
+      - name: Check if release already exists
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION="${{ steps.meta.outputs.version }}"
-          # Pull the block between [VERSION] and the next ## heading
-          NOTES=$(awk "/^## \[${VERSION}\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)
-          if [ -z "$NOTES" ]; then
-            echo "No CHANGELOG entry found for ${VERSION} — falling back to auto-generated notes."
-            echo "has_changelog=false" >> "$GITHUB_OUTPUT"
+          if gh release view "${{ steps.meta.outputs.tag }}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release ${{ steps.meta.outputs.tag }} already exists — skipping creation."
           else
-            # Write to a temp file to handle multi-line content safely
-            printf "%s" "$NOTES" > /tmp/release_notes.md
-            echo "has_changelog=true" >> "$GITHUB_OUTPUT"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Create Release (with CHANGELOG body)
-        if: steps.notes.outputs.has_changelog == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.meta.outputs.tag }}
-          name: "${{ steps.meta.outputs.tag }}"
-          body_path: /tmp/release_notes.md
-          prerelease: ${{ steps.meta.outputs.prerelease }}
-          make_latest: ${{ steps.meta.outputs.prerelease == 'false' }}
-          generate_release_notes: false
-
       - name: Create Release (auto-generated notes fallback)
-        if: steps.notes.outputs.has_changelog == 'false'
+        if: steps.check.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}

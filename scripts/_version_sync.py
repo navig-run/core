@@ -35,7 +35,7 @@ DOWNLOAD_URL_TEMPLATE = (
     "https://github.com/navig-run/core/releases/download/"
     "v{version}/navig-{version}.tar.gz"
 )
-CHANGELOG_URL = "https://github.com/navig-run/core/blob/main/CHANGELOG.md"
+CHANGELOG_URL = "https://github.com/navig-run/core/releases"
 
 _VERSION_RE = re.compile(r'(?m)^version\s*=\s*"(?P<v>\d+\.\d+\.\d+)"\s*$')
 
