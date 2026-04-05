@@ -316,7 +316,7 @@ class DailyLog:
         # Build summary
         lines = ["## Recent Activity"]
 
-        for session_id, session_entries in sessions.items():
+        for _session_id, session_entries in sessions.items():
             if session_entries:
                 first = session_entries[0]
                 timestamp = first.get("timestamp", "")[:16]  # YYYY-MM-DDTHH:MM

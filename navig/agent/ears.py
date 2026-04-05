@@ -450,7 +450,7 @@ class Ears(Component):
             self._listeners[key] = email_listener
 
         # Start all listeners
-        for name, listener in self._listeners.items():
+        for _name, listener in self._listeners.items():
             try:
                 await listener.start()
             except Exception:  # noqa: BLE001

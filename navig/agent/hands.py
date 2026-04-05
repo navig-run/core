@@ -159,7 +159,7 @@ class Hands(Component):
 
     async def _on_stop(self) -> None:
         """Stop all running commands."""
-        for cmd_id, process in list(self._running_commands.items()):
+        for _cmd_id, process in list(self._running_commands.items()):
             try:
                 process.terminate()
                 await asyncio.wait_for(process.wait(), timeout=5.0)

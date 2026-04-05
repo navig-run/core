@@ -9,6 +9,8 @@ from typing import Any, TypedDict
 
 import json_repair  # ships py.typed — fully typed, no ignore needed
 
+from navig.agent.action_registry import get_action_registry as _get_registry
+
 logger = logging.getLogger(__name__)
 
 # ── Typed plan schema ─────────────────────────────────────────────────────────
@@ -33,8 +35,6 @@ class ValidatedPlan(TypedDict):
 # Derived from ActionRegistry — single source of truth.
 # Planner/validator use these for fast membership tests; they are intentionally
 # kept as frozensets so existing callers see no API change.
-
-from navig.agent.action_registry import get_action_registry as _get_registry
 
 KNOWN_ACTIONS: frozenset[str] = _get_registry().known_ids()
 ACTIONS_REQUIRING_PARAMS: frozenset[str] = _get_registry().requires_params_ids()

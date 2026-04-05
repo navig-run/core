@@ -12,10 +12,13 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from navig.agent.conv.localization import LocalizationStore
 from navig.agent.conv.status_event import StatusEvent
+
+if TYPE_CHECKING:
+    from navig.tools.schemas import MultiStepAction
 
 logger = logging.getLogger(__name__)
 

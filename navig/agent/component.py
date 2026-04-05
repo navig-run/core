@@ -18,7 +18,7 @@ from enum import Enum, auto
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from navig.agent.nervous_system import NervousSystem
+    from navig.agent.nervous_system import EventPriority, EventType, NervousSystem
 
 
 class ComponentState(Enum):
