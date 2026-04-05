@@ -75,8 +75,8 @@ echo "✅ Tag $TAG created locally"
 git push origin "$TAG"
 echo "✅ Tag $TAG pushed to origin"
 
-# ── Create GitHub Release with notes from .local/CHANGELOG.md ─────────────────
-LOCAL_CHANGELOG=".local/CHANGELOG.md"
+# ── Create GitHub Release with notes from CHANGELOG.md ─────────────────
+LOCAL_CHANGELOG="CHANGELOG.md"
 NOTES_FILE="/tmp/release_notes_${TAG}.md"
 
 if [[ -f "$LOCAL_CHANGELOG" ]]; then
@@ -142,5 +142,5 @@ echo "Manual fallback (emergency only): python -m twine upload dist/*"
 echo ""
 echo "Next steps:"
 echo "  1. Confirm PyPI workflow success: https://github.com/navig-run/core/actions"
-echo "  2. Add [Unreleased] entries to .local/CHANGELOG.md for next release"
+echo "  2. Add [Unreleased] entries to CHANGELOG.md for next release"
 echo "  3. Merge main back into develop: git checkout develop && git merge main"

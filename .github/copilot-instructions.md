@@ -63,7 +63,7 @@
 
 - If a CLI command's behaviour or flags change, update `docs/user/HANDBOOK.md`.
 - If a new command group is added, add it to `docs/user/commands.md` and `docs/INDEX.md`.
-- `.local/CHANGELOG.md` must have an entry in `[Unreleased]` for every PR that changes user-facing behaviour. This file is gitignored (internal dev log); the public record is the GitHub Releases page.
+- `CHANGELOG.md` must have an entry in `[Unreleased]` for every PR that changes user-facing behaviour. This file is gitignored (internal dev log); the public record is the GitHub Releases page.
 
 ---
 
@@ -95,7 +95,7 @@
 
 ## Pull Request Checklist (Copilot should flag if missing)
 
-- [ ] `.local/CHANGELOG.md` updated under `[Unreleased]` (gitignored internal log)
+- [ ] `CHANGELOG.md` updated under `[Unreleased]` (gitignored internal log)
 - [ ] Tests added or updated for changed behaviour
 - [ ] No new hidden deprecated wrappers added
 - [ ] No hardcoded credentials or paths

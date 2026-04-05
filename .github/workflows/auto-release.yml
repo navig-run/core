@@ -47,7 +47,7 @@ jobs:
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # .local/CHANGELOG.md is gitignored — curated notes are applied by
+      # CHANGELOG.md is gitignored — curated notes are applied by
       # scripts/release.sh via 'gh release create' before this workflow runs.
       # This workflow only creates the release when it doesn't already exist
       # (e.g. a tag pushed directly without running release.sh).

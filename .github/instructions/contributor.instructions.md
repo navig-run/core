@@ -7,7 +7,7 @@ applyTo: '**'
 ## Core Rules
 - Reuse existing code over writing new utilities. Do not duplicate logic.
 - Maintain repo hygiene: do not invent new ad-hoc structures. Use standard directories.
-- Before related changes, check `.local/CHANGELOG.md` first to understand what was done recently (internal dev log, gitignored).
+- Before related changes, check `CHANGELOG.md` first to understand what was done recently (internal dev log, gitignored).
 - Keep the repo root clean.
 - Use `.dev/` for AI working artifacts (scripts, outputs, logs, scratch).
 - Use `.dev/` for backups/moved artifacts and compatibility temp files.

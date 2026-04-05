@@ -5,7 +5,7 @@ applyTo: '**'
 # NAVIG Operating Rules (Concise)
 
 ## Priority Rules
-- Check `.local/CHANGELOG.md` first before implementing related work (internal dev log, gitignored).
+- Check `CHANGELOG.md` first before implementing related work (internal dev log, gitignored).
 - Keep changes minimal, targeted, and verified.
 - Use `.dev/` for AI scripts/logs/outputs/scratch.
 - Use `.dev/` for backups/moved files and compatibility temp artifacts.

@@ -80,7 +80,7 @@ git checkout develop && git pull
 # 2. Open a release branch for stabilisation
 git checkout -b release/2.5.0
 
-# 3. Bump version, update .local/CHANGELOG.md (move [Unreleased] to [X.Y.Z])
+# 3. Bump version, update CHANGELOG.md (move [Unreleased] to [X.Y.Z])
 # 4. PR release/2.5.0 to main
 # 5. After merge, tag via the release script (from main):
 bash scripts/release.sh 2.5.0
@@ -112,7 +112,7 @@ Configure in **Settings → Branches** for both `main` and `develop`:
 
 ## CHANGELOG Maintenance
 
-- File: `.local/CHANGELOG.md` — internal dev log, **gitignored, never committed**
+- File: `CHANGELOG.md` — internal dev log, **gitignored, never committed**
 - Follows Keep a Changelog format (same structure as before)
 - During development: add entries under `## [Unreleased]`
 - On release: rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`, add new empty `[Unreleased]` block
@@ -160,7 +160,7 @@ git fetch && git rebase origin/develop
 # 5. Release (when develop is stable)
 git checkout develop && git pull
 git checkout -b release/2.5.0
-# bump version, update .local/CHANGELOG.md, PR to main
+# bump version, update CHANGELOG.md, PR to main
 bash scripts/release.sh 2.5.0
 ```
 
