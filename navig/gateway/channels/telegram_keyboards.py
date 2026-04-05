@@ -1358,10 +1358,7 @@ class CallbackHandler:
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Customize models failed for %s: %s", cust_prov_id, exc)
-                try:
-                    await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
-                except TypeError:
-                    await self.channel._handle_providers(chat_id)
+                await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
             return
 
         # ── Config stub: prov_cfg_{prov_id} → guidance for API key ──────────
@@ -1626,10 +1623,7 @@ class CallbackHandler:
 
         if cb_data == "mdl_chgprov":
             await self._answer(cb_id, "")
-            try:
-                await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
-            except TypeError:
-                await self.channel._handle_providers(chat_id)
+            await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
             return
 
         # ── Activate provider from models picker: mdl_prov_{prov_id} ────────
