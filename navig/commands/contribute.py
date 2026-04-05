@@ -15,7 +15,10 @@ Users must explicitly approve every submission — no silent auto-PRs.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from navig.selfheal import ContributeConfig
 
 import typer
 from rich.console import Console

@@ -21,9 +21,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from navig.tools.interfaces import SkillSpec
 
 # ---------------------------------------------------------------------------
 # Security

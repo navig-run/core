@@ -5,7 +5,7 @@ import os
 import re
 import subprocess
 import tempfile
-from typing import Any
+from typing import Any, Dict
 
 from rich.table import Table
 
@@ -334,7 +334,10 @@ def optimize_table_cmd(table: str, options: dict[str, Any]):
             try:
                 os.unlink(config_file)
             except OSError:
-                pass  # Cleanup - file deletion may faildef repair_table_cmd(table: str, options: Dict[str, Any]):
+                pass  # Cleanup - file deletion may fail
+
+
+def repair_table_cmd(table: str, options: Dict[str, Any]):
     """Repair database table.
 
     SECURITY:
@@ -426,7 +429,10 @@ def optimize_table_cmd(table: str, options: dict[str, Any]):
             try:
                 os.unlink(config_file)
             except OSError:
-                pass  # Cleanup - file deletion may faildef list_users_cmd(options: Dict[str, Any]):
+                pass  # Cleanup - file deletion may fail
+
+
+def list_users_cmd(options: Dict[str, Any]):
     """List database users.
 
     SECURITY: No SQL injection risk - query has no user input.
@@ -513,7 +519,10 @@ def optimize_table_cmd(table: str, options: dict[str, Any]):
             try:
                 os.unlink(config_file)
             except OSError:
-                pass  # Cleanup - file deletion may faildef list_tables_cmd(database: str, options: Dict[str, Any]):
+                pass  # Cleanup - file deletion may fail
+
+
+def list_tables_cmd(database: str, options: Dict[str, Any]):
     """List tables in a database.
 
     SECURITY:

@@ -18,7 +18,10 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from navig.memory.vector import VectorIndex
 
 
 def _debug_log(message: str) -> None:

@@ -14,7 +14,10 @@ import logging
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from navig.agent.config import AgentConfig
 
 import yaml
 
@@ -546,6 +549,7 @@ Context provided with each query:
         def _bg_validate(cfg_snapshot: dict) -> None:
             try:
                 from navig.core.config_schema import validate_global_config
+
                 result = validate_global_config(cfg_snapshot, strict=False)
                 if result is None:
                     logger.debug(

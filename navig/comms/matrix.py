@@ -12,7 +12,10 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from navig.comms.matrix_store import MatrixStore
 
 logger = logging.getLogger(__name__)
 

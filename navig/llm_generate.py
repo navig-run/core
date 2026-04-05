@@ -22,7 +22,11 @@ import asyncio
 import logging
 import os
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from navig.agent.usage_tracker import CostTracker
+    from navig.llm_routing_types import LLMResult, ModelSelection
 
 logger = logging.getLogger("navig.llm_generate")
 

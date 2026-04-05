@@ -14,6 +14,11 @@ Layers (lowest → highest priority):
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from navig.settings.resolver import SettingsResolver
+
 # ── Group labels ─────────────────────────────────────────────────────────────
 
 _GROUPS = {
