@@ -769,6 +769,122 @@ def _iter_unique_registry(*, visible_only: bool = False) -> list[SlashCommandEnt
     return unique
 
 
+# ---------------------------------------------------------------------------
+# Help Encyclopedia — interactive category-based navigation
+# ---------------------------------------------------------------------------
+
+@dataclass
+class _HelpSubcategory:
+    """A subcategory inside a help category (for categories with many commands)."""
+
+    key: str
+    label: str
+    emoji: str
+    commands: list[str]  # command names (without /)
+
+
+@dataclass
+class _HelpCategory:
+    """Top-level help category shown as a button on the home screen."""
+
+    key: str
+    label: str
+    emoji: str
+    # Either direct commands OR subcategories — never both.
+    commands: list[str] | None = None  # command names from _SLASH_REGISTRY
+    subcategories: list[_HelpSubcategory] | None = None
+
+
+_HELP_CATEGORIES: list[_HelpCategory] = [
+    _HelpCategory(
+        key="getting_started",
+        label="Getting Started",
+        emoji="🚀",
+        commands=["start", "help", "status", "ping", "about", "version", "skill"],
+    ),
+    _HelpCategory(
+        key="ai_models",
+        label="AI & Models",
+        emoji="🤖",
+        subcategories=[
+            _HelpSubcategory("models", "Models & Providers", "🧠", ["ai", "models", "settings", "providers", "mode", "big", "small", "coder", "auto"]),
+            _HelpSubcategory("personas", "Personas & Style", "🎭", ["persona", "personas", "explain_ai"]),
+            _HelpSubcategory("continuation", "Continuation & Auto", "⚡", ["auto_start", "auto_stop", "auto_status", "continue", "pause", "skip", "auto_roles"]),
+        ],
+    ),
+    _HelpCategory(
+        key="monitoring",
+        label="Monitoring",
+        emoji="📊",
+        commands=["disk", "memory", "cpu", "uptime", "services", "ports"],
+    ),
+    _HelpCategory(
+        key="docker",
+        label="Docker",
+        emoji="🐳",
+        commands=["docker", "logs", "restart", "exec"],
+    ),
+    _HelpCategory(
+        key="database",
+        label="Database",
+        emoji="🗄",
+        commands=["db", "tables", "query"],
+    ),
+    _HelpCategory(
+        key="operations",
+        label="Operations",
+        emoji="🛠",
+        commands=["hosts", "test", "use", "apps", "app", "files", "cat", "run", "backup"],
+    ),
+    _HelpCategory(
+        key="planning",
+        label="Planning & Spaces",
+        emoji="🗂",
+        commands=["plans", "plan", "space", "spaces", "intake", "briefing"],
+    ),
+    _HelpCategory(
+        key="utilities",
+        label="Utilities",
+        emoji="🔧",
+        subcategories=[
+            _HelpSubcategory("network", "Network & DNS", "🌐", ["ip", "dns", "ssl", "whois"]),
+            _HelpSubcategory("text", "Text & Reasoning", "📝", ["format", "think", "refine"]),
+            _HelpSubcategory("reminders", "Reminders", "⏰", ["remindme", "myreminders", "cancelreminder"]),
+            _HelpSubcategory("info", "Info & Convert", "📌", ["time", "weather", "currency", "crypto_list", "choice"]),
+        ],
+    ),
+    _HelpCategory(
+        key="voice",
+        label="Voice & Audio",
+        emoji="🎙",
+        commands=["voice", "voicereply", "voiceon", "voiceoff"],
+    ),
+    _HelpCategory(
+        key="diagnostics",
+        label="Diagnostics",
+        emoji="🔍",
+        commands=["user", "debug", "trace", "autoheal"],
+    ),
+    _HelpCategory(
+        key="social",
+        label="Social & Media",
+        emoji="👥",
+        commands=["profile", "quote", "music", "imagegen"],
+    ),
+]
+
+# Quick lookup: command name → SlashCommandEntry
+_HELP_CMD_INDEX: dict[str, SlashCommandEntry] = {}
+
+
+def _ensure_help_cmd_index() -> dict[str, SlashCommandEntry]:
+    """Lazily populate the command lookup index."""
+    if not _HELP_CMD_INDEX:
+        for entry in _iter_unique_registry(visible_only=False):
+            _HELP_CMD_INDEX.setdefault(entry.command.lower(), entry)
+    return _HELP_CMD_INDEX
+
+
 class TelegramCommandsMixin:
     _NL_SWITCH_VERBS: tuple[str, ...] = (
         "switch",
@@ -956,20 +1072,19 @@ class TelegramCommandsMixin:
             return
 
         if screen_name == "help":
-            text = self._generate_help_text(deck_enabled=bool(self._get_deck_url()))
-            keyboard = [
-                [
-                    {"text": "🔙 Back", "callback_data": "nav:back"},
-                    {"text": "🏠 Home", "callback_data": "nav:home"},
-                ],
-            ]
+            text, keyboard = self._build_help_home()
+            # Append nav footer for renderScreen context
+            keyboard.append([
+                {"text": "🔙 Back", "callback_data": "nav:back"},
+                {"text": "🏠 Home", "callback_data": "nav:home"},
+            ])
             if target_message_id:
                 await self.edit_message(
-                    chat_id, target_message_id, text, parse_mode="MarkdownV2", keyboard=keyboard
+                    chat_id, target_message_id, text, parse_mode="Markdown", keyboard=keyboard
                 )
                 return
             sent = await self.send_message(
-                chat_id, text, parse_mode="MarkdownV2", keyboard=keyboard
+                chat_id, text, parse_mode="Markdown", keyboard=keyboard
             )
             if sent and isinstance(sent, dict):
                 state["message_id"] = sent.get("message_id")
@@ -1197,10 +1312,250 @@ class TelegramCommandsMixin:
         )
         await self.send_message(chat_id, onboarding_text, parse_mode="Markdown")
 
-    async def _handle_help(self, chat_id: int) -> None:
-        """Command reference (/helpme) — sent directly without navigation."""
-        text = self._generate_help_text(deck_enabled=bool(self._get_deck_url()))
-        await self.send_message(chat_id, text, parse_mode="MarkdownV2")
+    # -- Help Encyclopedia (interactive, in-place editing) -------------------
+
+    @staticmethod
+    def _build_help_home() -> tuple[str, list[list[dict[str, str]]]]:
+        """Build the Help Encyclopedia home screen (text + keyboard).
+
+        Returns (text, keyboard) for send_message / edit_message.
+        """
+        lines = [
+            "📋  *NAVIG Command Center*",
+            "",
+            "Tap a category to explore commands.",
+            "Type naturally any time — no commands needed.",
+        ]
+        text = "\n".join(lines)
+
+        # 2 buttons per row
+        rows: list[list[dict[str, str]]] = []
+        row: list[dict[str, str]] = []
+        for cat in _HELP_CATEGORIES:
+            row.append({
+                "text": f"{cat.emoji} {cat.label}",
+                "callback_data": f"help:c:{cat.key}",
+            })
+            if len(row) == 2:
+                rows.append(row)
+                row = []
+        if row:
+            rows.append(row)
+        # Close button
+        rows.append([{"text": "✕ Close", "callback_data": "help:close"}])
+        return text, rows
+
+    @staticmethod
+    def _build_help_category(cat_key: str) -> tuple[str, list[list[dict[str, str]]]] | None:
+        """Build a category detail or subcategory-chooser screen.
+
+        Returns ``None`` when *cat_key* is not found.
+        """
+        cat = next((c for c in _HELP_CATEGORIES if c.key == cat_key), None)
+        if cat is None:
+            return None
+
+        idx = _ensure_help_cmd_index()
+
+        # -- Category with subcategories → show sub-buttons ----------------
+        if cat.subcategories:
+            lines = [
+                f"{cat.emoji}  *{cat.label}*",
+                "",
+                "Choose a section:",
+            ]
+            rows: list[list[dict[str, str]]] = []
+            for sub in cat.subcategories:
+                rows.append([{
+                    "text": f"{sub.emoji} {sub.label}",
+                    "callback_data": f"help:s:{cat_key}:{sub.key}",
+                }])
+            rows.append([
+                {"text": "◀ Categories", "callback_data": "help:home"},
+                {"text": "✕ Close", "callback_data": "help:close"},
+            ])
+            return "\n".join(lines), rows
+
+        # -- Category with direct commands ---------------------------------
+        cmds = cat.commands or []
+        lines = [
+            f"{cat.emoji}  *{cat.label}*",
+            "",
+        ]
+        for cmd_name in cmds:
+            entry = idx.get(cmd_name)
+            if entry:
+                desc = entry.description or "No description"
+                lines.append(f"• /{cmd_name} — {desc}")
+            else:
+                lines.append(f"• /{cmd_name}")
+        text = "\n".join(lines)
+
+        rows = []
+        # Command detail buttons — 2 per row
+        row: list[dict[str, str]] = []
+        for cmd_name in cmds:
+            if idx.get(cmd_name):
+                row.append({
+                    "text": f"/{cmd_name}",
+                    "callback_data": f"help:d:{cmd_name}:{cat_key}",
+                })
+                if len(row) == 2:
+                    rows.append(row)
+                    row = []
+        if row:
+            rows.append(row)
+        rows.append([
+            {"text": "◀ Categories", "callback_data": "help:home"},
+            {"text": "✕ Close", "callback_data": "help:close"},
+        ])
+        return text, rows
+
+    @staticmethod
+    def _build_help_subcategory(
+        cat_key: str, sub_key: str
+    ) -> tuple[str, list[list[dict[str, str]]]] | None:
+        """Build a subcategory command-list screen."""
+        cat = next((c for c in _HELP_CATEGORIES if c.key == cat_key), None)
+        if cat is None or not cat.subcategories:
+            return None
+        sub = next((s for s in cat.subcategories if s.key == sub_key), None)
+        if sub is None:
+            return None
+
+        idx = _ensure_help_cmd_index()
+        lines = [
+            f"{sub.emoji}  *{sub.label}*",
+            f"_{cat.emoji} {cat.label}_",
+            "",
+        ]
+        for cmd_name in sub.commands:
+            entry = idx.get(cmd_name)
+            if entry:
+                desc = entry.description or "No description"
+                lines.append(f"• /{cmd_name} — {desc}")
+            else:
+                lines.append(f"• /{cmd_name}")
+        text = "\n".join(lines)
+
+        rows: list[list[dict[str, str]]] = []
+        row: list[dict[str, str]] = []
+        for cmd_name in sub.commands:
+            if idx.get(cmd_name):
+                row.append({
+                    "text": f"/{cmd_name}",
+                    "callback_data": f"help:d:{cmd_name}:{cat_key}:{sub_key}",
+                })
+                if len(row) == 2:
+                    rows.append(row)
+                    row = []
+        if row:
+            rows.append(row)
+        rows.append([
+            {"text": f"◀ {cat.emoji} {cat.label}", "callback_data": f"help:c:{cat_key}"},
+            {"text": "✕ Close", "callback_data": "help:close"},
+        ])
+        return text, rows
+
+    @staticmethod
+    def _build_help_command_detail(
+        cmd_name: str,
+        back_cat: str,
+        back_sub: str | None = None,
+    ) -> tuple[str, list[list[dict[str, str]]]] | None:
+        """Build a single-command detail screen."""
+        idx = _ensure_help_cmd_index()
+        entry = idx.get(cmd_name)
+        if entry is None:
+            return None
+
+        desc = entry.description or "No description"
+        lines = [
+            f"*/{entry.command}*",
+            "",
+            f"📄 {desc}",
+        ]
+        if entry.usage:
+            lines.append(f"\n💡 *Usage:*  `{entry.usage}`")
+        if entry.cli_template:
+            lines.append(f"🔗 *CLI:*  `{entry.cli_template}`")
+        lines.append(f"\n📁 *Category:*  {entry.category}")
+
+        text = "\n".join(lines)
+
+        # Back button
+        if back_sub:
+            back_data = f"help:s:{back_cat}:{back_sub}"
+        else:
+            back_data = f"help:c:{back_cat}"
+        keyboard = [
+            [
+                {"text": "◀ Back", "callback_data": back_data},
+                {"text": "🏠 Categories", "callback_data": "help:home"},
+                {"text": "✕ Close", "callback_data": "help:close"},
+            ],
+        ]
+        return text, keyboard
+
+    async def _handle_help_callback(
+        self, cb_data: str, chat_id: int, message_id: int
+    ) -> None:
+        """Route a ``help:*`` callback to the correct builder and edit in-place."""
+        parts = cb_data.split(":")
+
+        # help:close → delete the message
+        if len(parts) >= 2 and parts[1] == "close":
+            try:
+                await self._api_call(
+                    "deleteMessage",
+                    {"chat_id": chat_id, "message_id": message_id},
+                )
+            except Exception:
+                logger.debug("help: deleteMessage failed for %s/%s", chat_id, message_id)
+            return
+
+        result: tuple[str, list] | None = None
+
+        if len(parts) >= 2 and parts[1] == "home":
+            result = self._build_help_home()
+
+        elif len(parts) >= 3 and parts[1] == "c":
+            result = self._build_help_category(parts[2])
+
+        elif len(parts) >= 4 and parts[1] == "s":
+            result = self._build_help_subcategory(parts[2], parts[3])
+
+        elif len(parts) >= 4 and parts[1] == "d":
+            cmd_name = parts[2]
+            back_cat = parts[3]
+            back_sub = parts[4] if len(parts) >= 5 else None
+            result = self._build_help_command_detail(cmd_name, back_cat, back_sub)
+
+        if result is None:
+            # Fallback — return to home
+            result = self._build_help_home()
+
+        text, keyboard = result
+        await self.edit_message(
+            chat_id, message_id, text, parse_mode="Markdown", keyboard=keyboard
+        )
+
+    async def _handle_help(self, chat_id: int, message_id: int | None = None) -> None:
+        """Interactive help encyclopedia (/help, /helpme).
+
+        Sends the category home screen. Subsequent navigation happens
+        via ``help:*`` callbacks that edit the message in-place.
+        Falls back to the static text wall when *message_id* is provided
+        from ``renderScreen`` navigation context.
+        """
+        text, keyboard = self._build_help_home()
+        sent = await self.send_message(
+            chat_id, text, parse_mode="Markdown", keyboard=keyboard
+        )
+        # Track the message so future nav: callbacks can edit it
+        if sent and isinstance(sent, dict):
+            state = self._get_navigation_state(chat_id)
+            state["message_id"] = sent.get("message_id")
 
     async def _handle_ping(self, chat_id: int, user_id: int = 0) -> None:
         """Live heartbeat card — version, host, space, tier, reminders, bridge (/ping)."""
