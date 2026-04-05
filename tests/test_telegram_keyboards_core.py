@@ -217,6 +217,25 @@ class TestCallbackStore:
         store = CallbackStore()
         store.remove("nope")  # Should not raise
 
+    def test_ttl_expiry(self):
+        """Entries older than TTL are removed on get()."""
+        store = CallbackStore(max_entries=10, ttl_seconds=10)
+        # Create an entry with a timestamp from 20 seconds ago (expired)
+        old_entry = CallbackEntry(
+            action="old", user_message="", ai_response="", category="",
+            created_at=time.time() - 20,
+        )
+        store._store["old_key"] = old_entry  # Bypass put() to avoid expire_old
+        assert store.get("old_key") is None  # Should be expired
+
+        # Fresh entry should be retrievable
+        fresh_entry = CallbackEntry(
+            action="fresh", user_message="", ai_response="", category="",
+            created_at=time.time(),
+        )
+        store.put("fresh_key", fresh_entry)
+        assert store.get("fresh_key") is fresh_entry
+
     def test_eviction_when_full(self):
         store = CallbackStore(max_entries=5)
         for i in range(5):
@@ -242,21 +261,22 @@ class TestCallbackStore:
 
     def test_eviction_removes_oldest(self):
         store = CallbackStore(max_entries=3)
+        now = time.time()
         for i in range(3):
             entry = CallbackEntry(
                 action=f"a{i}",
                 user_message="",
                 ai_response="",
                 category="",
-                created_at=1000.0 + i,
+                created_at=now + i,  # Use current timestamps so TTL doesn't expire them
             )
             store.put(f"k{i}", entry)
 
-        # Add a 4th — should evict the oldest (k0 with created_at=1000.0)
+        # Add a 4th — should evict the oldest (k0)
         store.put(
             "k3",
             CallbackEntry(
-                action="a3", user_message="", ai_response="", category="", created_at=1010.0
+                action="a3", user_message="", ai_response="", category="", created_at=now + 10
             ),
         )
         assert store.get("k0") is None  # Oldest evicted
