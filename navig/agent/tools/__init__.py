@@ -222,6 +222,16 @@ def register_remote_executor_tools() -> None:
         logger.debug("Remote executor tools not available (skip): %s", exc)
 
 
+def register_lsp_tools() -> None:
+    """Register lsp_diagnostics, lsp_definition, lsp_references, lsp_symbols."""
+    try:
+        from navig.agent.tools.lsp_tools import register_lsp_tools as _do_register
+
+        _do_register()
+    except ImportError as exc:
+        logger.debug("LSP tools not available (skip): %s", exc)
+
+
 def register_all_tools() -> None:
     """Register all available built-in agent tools.
 
@@ -241,6 +251,7 @@ def register_all_tools() -> None:
         ("coordinator", register_coordinator_tools),
         ("git", register_git_tools),
         ("remote_executor", register_remote_executor_tools),
+        ("lsp", register_lsp_tools),
     ]:
         try:
             fn()

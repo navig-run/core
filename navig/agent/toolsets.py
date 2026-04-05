@@ -84,6 +84,8 @@ TOOLSETS: dict[str, list[str] | None] = {
         "remote_host_switch",
         "remote_multi_host",
     ],
+    # LSP integration (diagnostics, navigation, symbols)
+    "lsp": ["lsp_diagnostics", "lsp_definition", "lsp_references", "lsp_symbols"],
     # Sub-agent delegation (requires MVP2 delegate.py)
     "delegation": ["delegate_task"],
     # All registered tools (use sparingly — large schema)
@@ -133,6 +135,11 @@ PARALLEL_SAFE_TOOLS: frozenset[str] = frozenset(
         # Worktree / coordinator reads
         "worktree_list",
         "coordinator_status",
+        # LSP read-only queries
+        "lsp_diagnostics",
+        "lsp_definition",
+        "lsp_references",
+        "lsp_symbols",
     }
 )
 

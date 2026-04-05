@@ -192,6 +192,7 @@ class PlanInterceptor:
             "navig_docker_ps",
             "navig_docker_logs",
             "navig_file_show",
+            "navig_file_list",
             "navig_file_get",
             "navig_web_vhosts",
             # Git read-only
@@ -202,6 +203,11 @@ class PlanInterceptor:
             # Remote read-only
             "remote_file_read",
             "remote_host_switch",
+            # LSP read-only queries
+            "lsp_diagnostics",
+            "lsp_definition",
+            "lsp_references",
+            "lsp_symbols",
             # Plan / task observability (read-only)
             "plan_add_step",
             "plan_show",
