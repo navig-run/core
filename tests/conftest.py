@@ -364,6 +364,11 @@ def _reset_navig_singletons():
     except Exception:  # noqa: BLE001 — never block test collection
         pass
     try:
+        import navig.vault as _v
+        _v._vault = None
+    except Exception:  # noqa: BLE001
+        pass
+    try:
         import navig.platform.paths as _paths
 
         _paths._DETECTED_OS = None
@@ -374,6 +379,11 @@ def _reset_navig_singletons():
         from navig.config import reset_config_manager
 
         reset_config_manager()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import navig.vault as _v
+        _v._vault = None
     except Exception:  # noqa: BLE001
         pass
     try:

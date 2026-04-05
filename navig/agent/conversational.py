@@ -725,16 +725,7 @@ For conversation, respond naturally without JSON.
         self.conversation_history.append({"role": "user", "content": message})
 
         # Keep history manageable
-        if len(self.conversation_history) > 20:
-            idx = len(self.conversation_history) - 20
-            while (
-                idx < len(self.conversation_history)
-                and self.conversation_history[idx].get("role") != "user"
-            ):
-                idx += 1
-            if idx >= len(self.conversation_history):
-                idx = len(self.conversation_history) - 20
-            self.conversation_history = self.conversation_history[idx:]
+        self.conversation_history = self._truncate_history(self.conversation_history, max_messages=20)
 
         # Get AI response
         response = await self._get_ai_response(message)
@@ -937,6 +928,7 @@ For conversation, respond naturally without JSON.
 
         final_response: str = ""
         turn: int = 0
+        past_tool_calls_this_turn: list[list[tuple[str, str]]] = []
 
         # ── Context compressor (F-11) ──
         _compressor = None
@@ -1034,13 +1026,13 @@ For conversation, respond naturally without JSON.
                 break
 
             current_calls = [(tc.name, tc.arguments) for tc in response.tool_calls]
-            if getattr(self, "_last_tool_calls_turn", None) == current_calls:
-                logger.warning("Duplicate tool calls detected. Breaking to prevent infinite loop.")
-                final_response = (
-                    response.content or "[Agent halted to prevent duplicate tool call loop]"
-                )
+            
+            # Detect duplicate tool calls to prevent infinite loops (A->B->A->B etc.)
+            if current_calls in past_tool_calls_this_turn:
+                logger.warning("Duplicate tool calls detected in recent history. Breaking to prevent infinite loop.")
+                final_response = response.content or "[Agent halted to prevent duplicate tool call loop]"
                 break
-            self._last_tool_calls_turn = current_calls
+            past_tool_calls_this_turn.append(current_calls)
 
             # ── Append assistant message with tool_calls ──
             assistant_tool_calls_raw = [
@@ -1186,8 +1178,8 @@ For conversation, respond naturally without JSON.
                         stats["cache_hit_rate"] * 100,
                     )
                 reset_speculative_executor()
-        except Exception:
-            pass  # best-effort cleanup
+        except Exception as exc:
+            logger.debug("Exception suppressed during speculative cache integration reset: %s", exc)
 
         # Log cost summary
         cost = _tracker.session_cost()
@@ -1249,6 +1241,23 @@ For conversation, respond naturally without JSON.
         import re as _re
 
         return _re.sub(r"[\u4E00-\u9FFF\u3400-\u4DBF\u3000-\u303F]+", "", text).strip()
+
+    def _truncate_history(self, history: list[dict[str, Any]], max_messages: int = 20) -> list[dict[str, Any]]:
+        """Safely truncate conversation history preserving tool-call pairs."""
+        if len(history) <= max_messages:
+            return history
+            
+        # Find a safe 'user' message to start from
+        idx = len(history) - max_messages
+        while idx < len(history):
+            if history[idx].get("role") == "user":
+                # Ensure we don't start in the middle of a tool call sequence
+                if idx == 0 or history[idx - 1].get("role") != "assistant" or not history[idx - 1].get("tool_calls"):
+                    return history[idx:]
+            idx += 1
+            
+        # Fallback if no safe user message found
+        return history[len(history) - max_messages:]
 
     async def _get_ai_response(self, message: str) -> str:
         """Query AI for response via the unified router (all entrypoints)."""
@@ -1800,16 +1809,16 @@ For conversation, respond naturally without JSON.
         if json_match:
             try:
                 return json.loads(json_match.group(1))
-            except json.JSONDecodeError:
-                pass  # malformed JSON; skip line
+            except json.JSONDecodeError as exc:
+                logger.debug("Exception suppressed (malformed JSON regex match): %s", exc)
 
         # Try parsing entire response as JSON
         try:
             data = json.loads(response)
             if "plan" in data:
                 return data
-        except json.JSONDecodeError:
-            pass  # malformed JSON; skip line
+        except json.JSONDecodeError as exc:
+            logger.debug("Exception suppressed (malformed JSON during full parse attempt): %s", exc)
 
         return None
 
