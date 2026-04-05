@@ -417,6 +417,53 @@ async def test_provider_model_assignment_save_failure_shows_warning(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_provider_model_assignment_refresh_failure_does_not_override_success(monkeypatch):
+    """pms_ keeps success callback even if picker refresh crashes afterward."""
+
+    class _RefreshFailChannel(_FakeChannel):
+        async def _show_provider_model_picker(
+            self,
+            chat_id,
+            prov_id,
+            page=0,
+            selected_tier="s",
+            message_id=None,
+        ):
+            raise RuntimeError("refresh failed")
+
+    channel = _RefreshFailChannel()
+    handler = CallbackHandler(channel)
+
+    class _Manifest:
+        id = "xai"
+        emoji = "⚡"
+        display_name = "xAI / Grok"
+
+    class _Router:
+        is_active = False
+        cfg = None
+
+    class _Client:
+        model_router = _Router()
+
+    monkeypatch.setattr("navig.providers.registry.get_provider", lambda _prov_id: _Manifest())
+    monkeypatch.setattr("navig.agent.ai_client.get_ai_client", lambda: _Client())
+
+    await handler._handle_provider_model_callback(
+        cb_id="cb-refresh-fail",
+        cb_data="pms_xai_0_s_0",
+        chat_id=132,
+        message_id=232,
+        user_id=332,
+    )
+
+    answers = [payload for method, payload in channel.api_calls if method == "answerCallbackQuery"]
+    assert answers
+    assert "✅" in answers[-1].get("text", "")
+    assert answers[-1].get("show_alert") is False
+
+
+@pytest.mark.asyncio
 async def test_provider_model_assignment_rejects_negative_index(monkeypatch):
     """pms_ must reject negative model indices instead of indexing from list end."""
     channel = _FakeChannel()
@@ -646,6 +693,37 @@ async def test_activate_helper_no_models_shows_alert(monkeypatch):
     ]
     assert alert_answers, "Should show alert when no models"
     assert "No models found" in alert_answers[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_activate_helper_resolution_failure_returns_false_and_alert(monkeypatch):
+    """_activate_provider_with_defaults must return False on resolver errors."""
+    from types import SimpleNamespace
+
+    class _ResolverFailChannel(_FakeChannel):
+        async def _resolve_provider_models(self, prov_id, manifest=None):
+            raise RuntimeError("resolver down")
+
+    channel = _ResolverFailChannel()
+    handler = CallbackHandler(channel)
+
+    manifest = SimpleNamespace(
+        id="fakeprov",
+        display_name="Fake Provider",
+        emoji="🔲",
+        tier="cloud",
+    )
+
+    result = await handler._activate_provider_with_defaults("cb-rf", 100, 200, "fakeprov", manifest)
+
+    assert result is False
+    alert_answers = [
+        p
+        for m, p in channel.api_calls
+        if m == "answerCallbackQuery" and p.get("show_alert") is True
+    ]
+    assert alert_answers
+    assert "Could not load models" in alert_answers[-1].get("text", "")
 
 
 @pytest.mark.asyncio

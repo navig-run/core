@@ -23,7 +23,6 @@ import pytest
 from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 from navig.gateway.channels.telegram_keyboards import CallbackHandler
 
-
 # ─── Fake channel with recording ───────────────────────────────────────────
 
 
@@ -75,9 +74,16 @@ class _FakeModelsChannel(TelegramCommandsMixin):
 
 def _make_fake_manifest(prov_id="openai", name="OpenAI", emoji="🤖", tier="cloud"):
     return SimpleNamespace(
-        id=prov_id, display_name=name, emoji=emoji, tier=tier,
-        requires_key=True, local_probe=None, env_vars=[], vault_keys=[],
-        models=[], enabled=True,
+        id=prov_id,
+        display_name=name,
+        emoji=emoji,
+        tier=tier,
+        requires_key=True,
+        local_probe=None,
+        env_vars=[],
+        vault_keys=[],
+        models=[],
+        enabled=True,
     )
 
 
@@ -99,8 +105,9 @@ async def test_models_with_active_provider_shows_tier_summary(monkeypatch):
                 return None
 
     monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
-    monkeypatch.setattr("navig.providers.registry.get_provider",
-                        lambda pid: _make_fake_manifest(pid))
+    monkeypatch.setattr(
+        "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
 
     await ch._handle_models_command(chat_id=100, user_id=200, text="/models")
 
@@ -168,8 +175,9 @@ async def test_tier_summary_shows_three_tiers(monkeypatch):
                 return SimpleNamespace(model="openai/gpt-4o-mini", provider="openai")
 
     monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
-    monkeypatch.setattr("navig.providers.registry.get_provider",
-                        lambda pid: _make_fake_manifest(pid))
+    monkeypatch.setattr(
+        "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
 
     await ch._show_models_tier_summary(chat_id=100, prov_id="openai")
 
@@ -194,8 +202,9 @@ async def test_tier_summary_uses_edit_when_message_id(monkeypatch):
                 return None
 
     monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
-    monkeypatch.setattr("navig.providers.registry.get_provider",
-                        lambda pid: _make_fake_manifest(pid))
+    monkeypatch.setattr(
+        "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
 
     await ch._show_models_tier_summary(chat_id=100, prov_id="openai", message_id=500)
 
@@ -220,11 +229,15 @@ async def test_model_list_shows_checkmark_on_current(monkeypatch):
                 return SimpleNamespace(model="openai/gpt-4o-mini", provider="openai")
 
     monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
-    monkeypatch.setattr("navig.providers.registry.get_provider",
-                        lambda pid: _make_fake_manifest(pid))
+    monkeypatch.setattr(
+        "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
 
     await ch._show_models_model_list(
-        chat_id=100, prov_id="openai", tier_code="s", page=0,
+        chat_id=100,
+        prov_id="openai",
+        tier_code="s",
+        page=0,
     )
 
     assert ch.messages
@@ -249,12 +262,16 @@ async def test_model_list_pagination_buttons(monkeypatch):
                 return None
 
     monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
-    monkeypatch.setattr("navig.providers.registry.get_provider",
-                        lambda pid: _make_fake_manifest(pid))
+    monkeypatch.setattr(
+        "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
 
     # Page 0 of 20 models (PAGE_SIZE=8 → 3 pages)
     await ch._show_models_model_list(
-        chat_id=100, prov_id="openai", tier_code="b", page=0,
+        chat_id=100,
+        prov_id="openai",
+        tier_code="b",
+        page=0,
     )
 
     kb = ch.messages[0][3]
@@ -279,11 +296,15 @@ async def test_model_list_page_1_has_prev(monkeypatch):
                 return None
 
     monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
-    monkeypatch.setattr("navig.providers.registry.get_provider",
-                        lambda pid: _make_fake_manifest(pid))
+    monkeypatch.setattr(
+        "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
 
     await ch._show_models_model_list(
-        chat_id=100, prov_id="openai", tier_code="b", page=1,
+        chat_id=100,
+        prov_id="openai",
+        tier_code="b",
+        page=1,
     )
 
     kb = ch.messages[0][3]
@@ -297,8 +318,9 @@ async def test_model_list_no_models_shows_warning(monkeypatch):
     ch = _FakeModelsChannel()
     ch._resolve_cache = []
 
-    monkeypatch.setattr("navig.providers.registry.get_provider",
-                        lambda pid: _make_fake_manifest(pid))
+    monkeypatch.setattr(
+        "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
 
     # Override resolver to return empty
     async def _empty(*a, **kw):
@@ -307,12 +329,41 @@ async def test_model_list_no_models_shows_warning(monkeypatch):
     ch._resolve_provider_models = _empty
 
     await ch._show_models_model_list(
-        chat_id=100, prov_id="openai", tier_code="s", page=0,
+        chat_id=100,
+        prov_id="openai",
+        tier_code="s",
+        page=0,
     )
 
     assert ch.messages
     text = ch.messages[0][1]
     assert "No models" in text or "no models" in text.lower()
+
+
+@pytest.mark.asyncio
+async def test_model_list_resolution_failure_shows_distinct_warning(monkeypatch):
+    """Resolver exceptions should show a distinct load-failure warning."""
+    ch = _FakeModelsChannel()
+
+    monkeypatch.setattr(
+        "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
+
+    async def _boom(*a, **kw):
+        raise RuntimeError("resolver down")
+
+    ch._resolve_provider_models = _boom
+
+    await ch._show_models_model_list(
+        chat_id=100,
+        prov_id="openai",
+        tier_code="s",
+        page=0,
+    )
+
+    assert ch.messages
+    text = ch.messages[0][1]
+    assert "Could not load models" in text
 
 
 # ─── Callback handler: mdl_* ──────────────────────────────────────────────
@@ -371,8 +422,11 @@ async def test_mdl_close_deletes_message():
     handler = CallbackHandler(ch)
 
     await handler._handle_models_callback(
-        cb_id="cb-1", cb_data="mdl_close",
-        chat_id=100, message_id=200, user_id=300,
+        cb_id="cb-1",
+        cb_data="mdl_close",
+        chat_id=100,
+        message_id=200,
+        user_id=300,
     )
 
     # Should call answerCallbackQuery then deleteMessage
@@ -388,8 +442,11 @@ async def test_mdl_chgprov_navigates_to_providers():
     handler = CallbackHandler(ch)
 
     await handler._handle_models_callback(
-        cb_id="cb-1", cb_data="mdl_chgprov",
-        chat_id=100, message_id=200, user_id=300,
+        cb_id="cb-1",
+        cb_data="mdl_chgprov",
+        chat_id=100,
+        message_id=200,
+        user_id=300,
     )
 
     assert ch.provider_renders == [(100, 300, 200)]
@@ -401,12 +458,16 @@ async def test_mdl_prov_activates_and_shows_tiers(monkeypatch):
     ch = _FakeCallbackChannel()
     handler = CallbackHandler(ch)
 
-    monkeypatch.setattr("navig.providers.registry.get_provider",
-                        lambda pid: _make_fake_manifest(pid))
+    monkeypatch.setattr(
+        "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
 
     await handler._handle_models_callback(
-        cb_id="cb-1", cb_data="mdl_prov_openai",
-        chat_id=100, message_id=200, user_id=300,
+        cb_id="cb-1",
+        cb_data="mdl_prov_openai",
+        chat_id=100,
+        message_id=200,
+        user_id=300,
     )
 
     # LLM mode router should be updated
@@ -426,8 +487,11 @@ async def test_mdl_prov_unknown_answers_warning(monkeypatch):
     monkeypatch.setattr("navig.providers.registry.get_provider", lambda pid: None)
 
     await handler._handle_models_callback(
-        cb_id="cb-1", cb_data="mdl_prov_nonexist",
-        chat_id=100, message_id=200, user_id=300,
+        cb_id="cb-1",
+        cb_data="mdl_prov_nonexist",
+        chat_id=100,
+        message_id=200,
+        user_id=300,
     )
 
     # Should answer with warning, not show tier summary
@@ -444,8 +508,11 @@ async def test_mdl_tier_opens_model_list():
     handler = CallbackHandler(ch)
 
     await handler._handle_models_callback(
-        cb_id="cb-1", cb_data="mdl_tier_openai_s",
-        chat_id=100, message_id=200, user_id=300,
+        cb_id="cb-1",
+        cb_data="mdl_tier_openai_s",
+        chat_id=100,
+        message_id=200,
+        user_id=300,
     )
 
     assert ch.model_lists == [(100, "openai", "s", 0, 200)]
@@ -458,8 +525,11 @@ async def test_mdl_tier_rejects_unknown_tier_code():
     handler = CallbackHandler(ch)
 
     await handler._handle_models_callback(
-        cb_id="cb-1", cb_data="mdl_tier_openai_x",
-        chat_id=100, message_id=200, user_id=300,
+        cb_id="cb-1",
+        cb_data="mdl_tier_openai_x",
+        chat_id=100,
+        message_id=200,
+        user_id=300,
     )
 
     assert ch.model_lists == []
@@ -475,8 +545,11 @@ async def test_mdl_back_tiers_returns_to_summary():
     handler = CallbackHandler(ch)
 
     await handler._handle_models_callback(
-        cb_id="cb-1", cb_data="mdl_back_tiers_openai",
-        chat_id=100, message_id=200, user_id=300,
+        cb_id="cb-1",
+        cb_data="mdl_back_tiers_openai",
+        chat_id=100,
+        message_id=200,
+        user_id=300,
     )
 
     assert ch.tier_summaries == [(100, "openai", 200)]
@@ -489,8 +562,11 @@ async def test_mdl_page_navigates(monkeypatch):
     handler = CallbackHandler(ch)
 
     await handler._handle_models_callback(
-        cb_id="cb-1", cb_data="mdl_page_openai_b_2",
-        chat_id=100, message_id=200, user_id=300,
+        cb_id="cb-1",
+        cb_data="mdl_page_openai_b_2",
+        chat_id=100,
+        message_id=200,
+        user_id=300,
     )
 
     assert ch.model_lists == [(100, "openai", "b", 2, 200)]
@@ -503,8 +579,11 @@ async def test_mdl_page_rejects_unknown_tier_code():
     handler = CallbackHandler(ch)
 
     await handler._handle_models_callback(
-        cb_id="cb-1", cb_data="mdl_page_openai_x_2",
-        chat_id=100, message_id=200, user_id=300,
+        cb_id="cb-1",
+        cb_data="mdl_page_openai_x_2",
+        chat_id=100,
+        message_id=200,
+        user_id=300,
     )
 
     assert ch.model_lists == []
@@ -519,13 +598,17 @@ async def test_mdl_sel_assigns_model_and_refreshes(monkeypatch):
     ch = _FakeCallbackChannel()
     handler = CallbackHandler(ch)
 
-    monkeypatch.setattr("navig.providers.registry.get_provider",
-                        lambda pid: _make_fake_manifest(pid))
+    monkeypatch.setattr(
+        "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
 
     # mdl_sel_openai_1_s_0  →  select model index 1 in small tier, page 0
     await handler._handle_models_callback(
-        cb_id="cb-1", cb_data="mdl_sel_openai_1_s_0",
-        chat_id=100, message_id=200, user_id=300,
+        cb_id="cb-1",
+        cb_data="mdl_sel_openai_1_s_0",
+        chat_id=100,
+        message_id=200,
+        user_id=300,
     )
 
     # LLM mode router updated with small tier → model at index 1
@@ -550,7 +633,9 @@ async def test_mdl_sel_save_failure_shows_warning_and_refreshes(monkeypatch):
     ch = _FailingSaveCallbackChannel()
     handler = CallbackHandler(ch)
 
-    monkeypatch.setattr("navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid))
+    monkeypatch.setattr(
+        "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
 
     await handler._handle_models_callback(
         cb_id="cb-fail",
@@ -570,12 +655,45 @@ async def test_mdl_sel_save_failure_shows_warning_and_refreshes(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_mdl_sel_refresh_failure_does_not_override_success(monkeypatch):
+    """mdl_sel should keep success result even if post-save refresh crashes."""
+
+    class _RefreshFailCallbackChannel(_FakeCallbackChannel):
+        async def _show_models_model_list(
+            self, chat_id, prov_id, tier_code, page=0, message_id=None
+        ):
+            raise RuntimeError("refresh failed")
+
+    ch = _RefreshFailCallbackChannel()
+    handler = CallbackHandler(ch)
+
+    monkeypatch.setattr(
+        "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
+
+    await handler._handle_models_callback(
+        cb_id="cb-refresh-fail",
+        cb_data="mdl_sel_openai_1_s_0",
+        chat_id=100,
+        message_id=200,
+        user_id=300,
+    )
+
+    answers = [payload for method, payload in ch.api_calls if method == "answerCallbackQuery"]
+    assert answers
+    assert "✅" in answers[-1].get("text", "")
+    assert answers[-1].get("show_alert") is False
+
+
+@pytest.mark.asyncio
 async def test_mdl_sel_rejects_negative_index(monkeypatch):
     """mdl_sel must reject negative model indices (no Python reverse indexing)."""
     ch = _FakeCallbackChannel()
     handler = CallbackHandler(ch)
 
-    monkeypatch.setattr("navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid))
+    monkeypatch.setattr(
+        "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
 
     await handler._handle_models_callback(
         cb_id="cb-neg",
@@ -605,7 +723,9 @@ async def test_mdl_sel_resolution_failure_shows_warning(monkeypatch):
     ch = _FailingResolveCallbackChannel()
     handler = CallbackHandler(ch)
 
-    monkeypatch.setattr("navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid))
+    monkeypatch.setattr(
+        "navig.providers.registry.get_provider", lambda pid: _make_fake_manifest(pid)
+    )
 
     await handler._handle_models_callback(
         cb_id="cb-resolve-fail",
@@ -631,8 +751,11 @@ async def test_mdl_unknown_callback_warns():
     handler = CallbackHandler(ch)
 
     await handler._handle_models_callback(
-        cb_id="cb-1", cb_data="mdl_nonexistent_action",
-        chat_id=100, message_id=200, user_id=300,
+        cb_id="cb-1",
+        cb_data="mdl_nonexistent_action",
+        chat_id=100,
+        message_id=200,
+        user_id=300,
     )
 
     answers = [c for c in ch.api_calls if c[0] == "answerCallbackQuery"]
@@ -651,8 +774,10 @@ async def test_provider_picker_shows_ready_providers(monkeypatch):
 
     manifest = _make_fake_manifest("xai", "xAI Grok", "🦊")
     monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [manifest])
-    monkeypatch.setattr("navig.providers.verifier.verify_provider",
-                        lambda m: SimpleNamespace(key_detected=True, local_probe_ok=False))
+    monkeypatch.setattr(
+        "navig.providers.verifier.verify_provider",
+        lambda m: SimpleNamespace(key_detected=True, local_probe_ok=False),
+    )
 
     await ch._show_models_provider_picker(chat_id=100)
 

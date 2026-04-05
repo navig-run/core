@@ -322,12 +322,14 @@ def _isolate_navig_config_dir(tmp_path_factory):
 
     # -- Cleanup: close any open vault SQLite connections (Windows file lock fix) --
     try:
-        from navig.vault.core_v2 import _VAULT_INSTANCE
+        import navig.vault.core_v2 as _vault_v2_mod
 
-        if _VAULT_INSTANCE is not None and hasattr(_VAULT_INSTANCE, "_store"):
-            store = _VAULT_INSTANCE._store
+        vault_v2 = getattr(_vault_v2_mod, "_vault_v2", None)
+        if vault_v2 is not None and hasattr(vault_v2, "_store"):
+            store = vault_v2._store
             if store is not None:
                 store.close()
+        _vault_v2_mod._vault_v2 = None
     except Exception:  # noqa: BLE001 — best-effort cleanup
         pass
 
@@ -369,6 +371,18 @@ def _reset_navig_singletons():
     except Exception:  # noqa: BLE001
         pass
     try:
+        import navig.vault.core_v2 as _v2
+
+        _v2._vault_v2 = None
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import navig.agent.ai_client as _ai_client
+
+        _ai_client._default_client = None
+    except Exception:  # noqa: BLE001
+        pass
+    try:
         import navig.platform.paths as _paths
 
         _paths._DETECTED_OS = None
@@ -384,6 +398,18 @@ def _reset_navig_singletons():
     try:
         import navig.vault as _v
         _v._vault = None
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import navig.vault.core_v2 as _v2
+
+        _v2._vault_v2 = None
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import navig.agent.ai_client as _ai_client
+
+        _ai_client._default_client = None
     except Exception:  # noqa: BLE001
         pass
     try:

@@ -1202,7 +1202,7 @@ class CallbackHandler:
             except Exception:
                 logger.warning("Provider model resolution failed for pms_%s", prov_id)
                 await self._answer(cb_id, "⚠️ Could not load models for this provider", show_alert=True)
-                return
+                return False
 
         if not models and manifest and getattr(manifest, "tier", "") == "local":
             if prov_id == "llamacpp":
@@ -1528,13 +1528,16 @@ class CallbackHandler:
             mark_chat_onboarding_step_completed("ai-provider")
         except (ImportError, AttributeError, TypeError, ValueError):
             logger.debug("Unable to mark ai-provider step after tier assignment")
-        await self.channel._show_provider_model_picker(
-            chat_id,
-            prov_id,
-            page=page,
-            selected_tier=tier_code,
-            message_id=message_id,
-        )
+        try:
+            await self.channel._show_provider_model_picker(
+                chat_id,
+                prov_id,
+                page=page,
+                selected_tier=tier_code,
+                message_id=message_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Provider picker refresh skipped after successful pms_: %s", exc)
 
     async def _handle_models_callback(
         self,
@@ -1700,13 +1703,16 @@ class CallbackHandler:
                 logger.debug("Exception suppressed in chat onboarding step: %s", exc)
 
             # Refresh model list showing new ✅
-            await self.channel._show_models_model_list(
-                chat_id,
-                prov_id,
-                tier_code,
-                page=page,
-                message_id=message_id,
-            )
+            try:
+                await self.channel._show_models_model_list(
+                    chat_id,
+                    prov_id,
+                    tier_code,
+                    page=page,
+                    message_id=message_id,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Model list refresh skipped after successful mdl_sel_: %s", exc)
             return
 
         # ── Paginate: mdl_page_{prov_id}_{tier_code}_{page} ────────────────

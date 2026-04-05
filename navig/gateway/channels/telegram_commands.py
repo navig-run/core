@@ -2904,11 +2904,13 @@ class TelegramCommandsMixin:
 
         # Resolve models
         models: list = []
+        resolution_failed = False
         if hasattr(self, "_resolve_provider_models"):
             try:
                 models = await self._resolve_provider_models(prov_id, manifest=manifest)
             except Exception:  # noqa: BLE001
-                pass
+                resolution_failed = True
+                logger.warning("Model resolution failed for provider model list: %s", prov_id)
 
         # Safety net: fall back to static registry list if resolution failed
         if not models and manifest and getattr(manifest, "models", None):
@@ -2918,7 +2920,11 @@ class TelegramCommandsMixin:
             lines = [
                 f"📝 *{tier_label} — {emoji} {name}*",
                 "",
-                "⚠️ No models available for this provider.",
+                (
+                    "⚠️ Could not load models for this provider right now."
+                    if resolution_failed
+                    else "⚠️ No models available for this provider."
+                ),
             ]
             keyboard = [
                 [{"text": "← Back", "callback_data": f"mdl_back_tiers_{prov_id}"}],
@@ -3139,19 +3145,19 @@ class TelegramCommandsMixin:
         bridge_online, bridge_url = await self._probe_bridge_grid()
 
         active_prov = ""
-        if bridge_online:
-            active_prov = "bridge_copilot"
-        else:
-            try:
-                from navig.llm_router import get_llm_router
+        try:
+            from navig.llm_router import get_llm_router
 
-                lr = get_llm_router()
-                if lr:
-                    m = lr.modes.get_mode("big_tasks")
-                    if m and getattr(m, "provider", None):
-                        active_prov = m.provider
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+            lr = get_llm_router()
+            if lr:
+                m = lr.modes.get_mode("big_tasks")
+                if m and getattr(m, "provider", None):
+                    active_prov = m.provider
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
+
+        if not active_prov and bridge_online:
+            active_prov = "bridge_copilot"
 
         try:
             from navig.providers.registry import list_enabled_providers

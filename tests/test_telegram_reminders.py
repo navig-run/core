@@ -810,6 +810,60 @@ async def test_providers_header_is_clean_and_shows_current_models(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_providers_online_bridge_does_not_override_router_current_provider(monkeypatch):
+    bot = _make_dummy_bot()
+
+    class _Mode:
+        def __init__(self, provider, model):
+            self.provider = provider
+            self.model = model
+
+    class _Modes:
+        def get_mode(self, name):
+            mapping = {
+                "small_talk": _Mode("openai", "openai/gpt-4o-mini"),
+                "big_tasks": _Mode("openai", "openai/gpt-4o"),
+                "coding": _Mode("openai", "openai/gpt-4o"),
+            }
+            return mapping.get(name)
+
+    class _Router:
+        modes = _Modes()
+
+    class _Manifest:
+        id = "openai"
+        display_name = "OpenAI"
+        emoji = "🤖"
+        tier = "cloud"
+        local_probe = None
+        requires_key = False
+
+    class _Verify:
+        key_detected = True
+        local_probe_ok = True
+
+    class _ProviderInfo:
+        id = "openai"
+        display_name = "OpenAI"
+        emoji = "🤖"
+
+    async def _probe():
+        return True, "http://127.0.0.1:11435"
+
+    bot._probe_bridge_grid = _probe
+    monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
+    monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [_Manifest()])
+    monkeypatch.setattr("navig.providers.verifier.verify_provider", lambda _m: _Verify())
+    monkeypatch.setattr("navig.providers.registry.get_provider", lambda _pid: _ProviderInfo())
+
+    await bot._handle_providers(123, 456)
+
+    text = bot.messages[-1][1]
+    assert "✅ Current: *🤖 OpenAI*" in text
+    assert "✅ Current: *⚡ Bridge*" not in text
+
+
+@pytest.mark.asyncio
 async def test_providers_does_not_mark_step_when_no_ready_provider(monkeypatch):
     bot = _make_dummy_bot()
     marked: list[str] = []
