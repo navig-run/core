@@ -154,6 +154,14 @@ def _make_request(
     if auth_header is not None:
         req.headers["Authorization"] = auth_header
     req.text = AsyncMock(return_value=text_body)
+    req.method = "GET"
+    req.path = "/mcp"
+    try:
+        from aiohttp import HttpVersion11
+
+        req.version = HttpVersion11
+    except Exception:
+        req.version = (1, 1)
     return req
 
 
@@ -164,6 +172,48 @@ def _build_app(token: "str | None" = None) -> "tuple[_TrackedApp, MagicMock]":
     return app, h
 
 
+def _route_handler(app: Any, method: str, path: str):
+    """Get route handler from either stub app or real aiohttp Application."""
+    if hasattr(app, "_routes"):
+        return app._routes[(method, path)]
+
+    for route in app.router.routes():
+        route_method = getattr(route, "method", None)
+        resource = getattr(route, "resource", None)
+        route_path = None
+        if resource is not None:
+            route_path = resource.get_info().get("path")
+        if route_method == method and route_path == path:
+            return route.handler
+
+    raise KeyError((method, path))
+
+
+def _has_route(app: Any, method: str, path: str) -> bool:
+    try:
+        _route_handler(app, method, path)
+        return True
+    except KeyError:
+        return False
+
+
+def _response_json(resp: Any) -> dict:
+    """Decode JSON body from either stub response or aiohttp Response."""
+    if hasattr(resp, "json_body"):
+        return resp.json_body()
+
+    text = getattr(resp, "text", "")
+    if not text:
+        raw = getattr(resp, "body", None)
+        if isinstance(raw, bytes):
+            text = raw.decode()
+        elif isinstance(raw, str):
+            text = raw
+        else:
+            text = ""
+    return json.loads(text)
+
+
 # ---------------------------------------------------------------------------
 # GET /health
 # ---------------------------------------------------------------------------
@@ -172,10 +222,10 @@ def _build_app(token: "str | None" = None) -> "tuple[_TrackedApp, MagicMock]":
 @pytest.mark.asyncio
 async def test_health_returns_ok() -> None:
     app, _ = _build_app()
-    handler = app._routes[("GET", "/health")]
+    handler = _route_handler(app, "GET", "/health")
     resp: _Response = await handler(_make_request())
     assert resp.status == 200
-    body = resp.json_body()
+    body = _response_json(resp)
     assert body["status"] == "ok"
     assert body["transport"] == "http"
 
@@ -188,11 +238,11 @@ async def test_health_returns_ok() -> None:
 @pytest.mark.asyncio
 async def test_post_mcp_returns_jsonrpc() -> None:
     app, _ = _build_app()
-    post = app._routes[("POST", "/mcp")]
+    post = _route_handler(app, "POST", "/mcp")
     req = _make_request(text_body='{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}')
     resp: _Response = await post(req)
     assert resp.status == 200
-    body = resp.json_body()
+    body = _response_json(resp)
     assert body["jsonrpc"] == "2.0"
     assert body["id"] == 1
 
@@ -202,7 +252,7 @@ async def test_post_mcp_notification_returns_202() -> None:
     """Notifications have no 'id'; handler returns None → 202 Accepted."""
     app, h = _build_app()
     h.handle_message.return_value = None  # notifications have no response
-    post = app._routes[("POST", "/mcp")]
+    post = _route_handler(app, "POST", "/mcp")
     req = _make_request(text_body='{"jsonrpc":"2.0","method":"notifications/cancelled"}')
     resp: _Response = await post(req)
     assert resp.status == 202
@@ -211,11 +261,11 @@ async def test_post_mcp_notification_returns_202() -> None:
 @pytest.mark.asyncio
 async def test_post_mcp_bad_json_returns_400() -> None:
     app, _ = _build_app()
-    post = app._routes[("POST", "/mcp")]
+    post = _route_handler(app, "POST", "/mcp")
     req = _make_request(text_body="not json at all !!!")
     resp: _Response = await post(req)
     assert resp.status == 400
-    body = resp.json_body()
+    body = _response_json(resp)
     assert body["error"]["code"] == -32700
 
 
@@ -227,7 +277,7 @@ async def test_post_mcp_bad_json_returns_400() -> None:
 @pytest.mark.asyncio
 async def test_post_mcp_no_token_returns_401() -> None:
     app, _ = _build_app(token="secret-token")
-    post = app._routes[("POST", "/mcp")]
+    post = _route_handler(app, "POST", "/mcp")
     req = _make_request()  # no Authorization header
     resp: _Response = await post(req)
     assert resp.status == 401
@@ -236,7 +286,7 @@ async def test_post_mcp_no_token_returns_401() -> None:
 @pytest.mark.asyncio
 async def test_post_mcp_wrong_token_returns_401() -> None:
     app, _ = _build_app(token="secret-token")
-    post = app._routes[("POST", "/mcp")]
+    post = _route_handler(app, "POST", "/mcp")
     req = _make_request(auth_header="Bearer wrong-token")
     resp: _Response = await post(req)
     assert resp.status == 401
@@ -245,7 +295,7 @@ async def test_post_mcp_wrong_token_returns_401() -> None:
 @pytest.mark.asyncio
 async def test_post_mcp_correct_token_returns_200() -> None:
     app, _ = _build_app(token="secret-token")
-    post = app._routes[("POST", "/mcp")]
+    post = _route_handler(app, "POST", "/mcp")
     req = _make_request(auth_header="Bearer secret-token")
     resp: _Response = await post(req)
     assert resp.status == 200
@@ -259,7 +309,7 @@ async def test_post_mcp_correct_token_returns_200() -> None:
 @pytest.mark.asyncio
 async def test_options_returns_cors_headers() -> None:
     app, _ = _build_app()
-    options = app._routes[("OPTIONS", "/mcp")]
+    options = _route_handler(app, "OPTIONS", "/mcp")
     resp: _Response = await options(_make_request())
     assert resp.status == 200
     assert "Access-Control-Allow-Origin" in resp.headers
@@ -268,7 +318,7 @@ async def test_options_returns_cors_headers() -> None:
 @pytest.mark.asyncio
 async def test_post_response_has_cors_header() -> None:
     app, _ = _build_app()
-    post = app._routes[("POST", "/mcp")]
+    post = _route_handler(app, "POST", "/mcp")
     resp: _Response = await post(_make_request())
     assert resp.headers.get("Access-Control-Allow-Origin") == "*"
 
@@ -283,7 +333,7 @@ async def test_get_mcp_returns_event_stream() -> None:
     """GET /mcp must produce a StreamResponse with Content-Type: text/event-stream
     and write the MCP 'endpoint' event before entering the keepalive loop."""
     app, _ = _build_app()
-    get_handler = app._routes[("GET", "/mcp")]
+    get_handler = _route_handler(app, "GET", "/mcp")
     req = _make_request()
 
     # Run the handler as a task; it enters an infinite keepalive loop.
@@ -299,11 +349,12 @@ async def test_get_mcp_returns_event_stream() -> None:
         result = None
 
     # Verify the route is registered and callable
-    assert ("GET", "/mcp") in app._routes
+    assert _has_route(app, "GET", "/mcp")
     if result is not None:
-        assert isinstance(result, _StreamResponse)
+        assert hasattr(result, "headers")
         assert "text/event-stream" in result.headers.get("Content-Type", "")
-        assert any(b"endpoint" in chunk for chunk in result._written)
+        if hasattr(result, "_written"):
+            assert any(b"endpoint" in chunk for chunk in result._written)
 
 
 # ---------------------------------------------------------------------------

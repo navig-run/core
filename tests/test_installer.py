@@ -469,6 +469,7 @@ class TestTelegramModule:
         from navig.installer.modules.telegram import plan
 
         monkeypatch.delenv("NAVIG_TELEGRAM_BOT_TOKEN", raising=False)
+        monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
         ctx = InstallerContext(profile="operator", config_dir=tmp_path)
         actions = plan(ctx)
         assert len(actions) == 1
@@ -482,6 +483,7 @@ class TestTelegramModule:
         marker = tmp_path / ".telegram_configured"
         marker.write_text("1")
         monkeypatch.delenv("NAVIG_TELEGRAM_BOT_TOKEN", raising=False)
+        monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
         ctx = InstallerContext(profile="operator", config_dir=tmp_path)
         assert plan(ctx) == []
 
@@ -513,6 +515,7 @@ class TestTelegramModule:
         from navig.installer.modules.telegram import plan
 
         monkeypatch.delenv("NAVIG_TELEGRAM_BOT_TOKEN", raising=False)
+        monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
         ctx = InstallerContext(
             profile="operator",
             config_dir=tmp_path,

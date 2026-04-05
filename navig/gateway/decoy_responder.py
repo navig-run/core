@@ -102,7 +102,7 @@ STORIES = [
     "It sent 73% of traffic to a server it described as 'the kind one.' "
     "Uptime improved by 4%.",
     "The backup ran perfectly. It backed up everything: the data, the "
-    "config, the timestamp of the last time someone said 'thank you' "
+    "settings, the timestamp of the last time someone said 'thank you' "
     "to the server. That field was mostly empty.",
     "At the bottom of the ocean, fiber optic cables carry light from "
     "continent to continent. Sometimes, between the ones and zeros, "
