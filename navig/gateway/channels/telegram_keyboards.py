@@ -981,18 +981,12 @@ class CallbackHandler:
 
         if action == "providers":
             await self._answer(cb_id, "")
-            try:
-                await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
-            except TypeError:
-                await self.channel._handle_providers(chat_id)
+            await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
             return
 
         if action == "models":
             await self._answer(cb_id, "")
-            try:
-                await self.channel._handle_models_command(chat_id, user_id, message_id=message_id)
-            except TypeError:
-                await self.channel._handle_models_command(chat_id)
+            await self.channel._handle_models_command(chat_id, user_id, message_id=message_id)
             return
 
         await self._answer(cb_id, "⚠️ Unknown navigation")
@@ -1138,7 +1132,7 @@ class CallbackHandler:
         if cb_data in prov_map:
             prov_id = prov_map[cb_data]
             await self._answer(cb_id, "")
-            await self.channel._show_provider_model_picker(chat_id, prov_id)
+            await self.channel._show_provider_model_picker(chat_id, prov_id, message_id=message_id)
             return
 
         await self._answer(cb_id, "⚠️ Unknown model action")
@@ -1221,23 +1215,18 @@ class CallbackHandler:
             else:
                 self.channel._user_model_prefs[user_id] = "noai"
             await self._answer(cb_id, "🚫 Raw mode armed for next message")
-            try:
-                await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
-            except TypeError:
-                await self.channel._handle_providers(chat_id)
+            await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
             return
 
         if cb_data == "prov_bridge":
             online, url = await self.channel._probe_bridge_grid()
             if online:
-                await self._answer(cb_id, "⚡ Bridge activated")
+                await self._answer(cb_id, "⚡ Bridge active — browsing model tiers")
                 await self.channel._show_models_tier_summary(
                     chat_id, "bridge_copilot", message_id=message_id
                 )
             else:
-                await self._answer(
-                    cb_id, f"⚡ Bridge is offline ({url}).", show_alert=True
-                )
+                await self._answer(cb_id, f"⚡ Bridge is offline ({url}).", show_alert=True)
             return
 
         if cb_data == "prov_bridge_offline":
@@ -1250,37 +1239,28 @@ class CallbackHandler:
 
         if cb_data == "prov_back":
             await self._answer(cb_id, "")
-            try:
-                await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
-            except TypeError:
-                await self.channel._handle_providers(chat_id)
+            await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
             return
 
-        # ── Pagination: prov_page_{prov_id}_{page} ──────────────────────────
+        # ── Pagination: prov_page_{prov_id}_{tier_code}_{page} ──────────────
         if cb_data.startswith("prov_page_"):
             rest = cb_data[len("prov_page_") :]
-            # prov_id may contain underscores; page number is always the last segment
-            parts = rest.rsplit("_", 1)
-            if len(parts) == 2:
-                prov_id_p, page_str = parts
+            # format: {prov_id}_{tier_code}_{page}  (prov_id may contain underscores)
+            parts = rest.rsplit("_", 2)
+            if len(parts) == 3:
+                prov_id_p, tier_code, page_str = parts
                 try:
                     page_num = int(page_str)
                 except ValueError:
                     page_num = 0
                 await self._answer(cb_id, "")
-                try:
-                    await self.channel._show_provider_model_picker(
-                        chat_id,
-                        prov_id_p,
-                        page=page_num,
-                        selected_tier="s",
-                        message_id=message_id,
-                    )
-                except TypeError:
-                    try:
-                        await self.channel._show_provider_model_picker(chat_id, prov_id_p, page_num)
-                    except TypeError:
-                        await self.channel._show_provider_model_picker(chat_id, prov_id_p)
+                await self.channel._show_provider_model_picker(
+                    chat_id,
+                    prov_id_p,
+                    page=page_num,
+                    selected_tier=tier_code,
+                    message_id=message_id,
+                )
             else:
                 await self._answer(cb_id, "⚠️ Bad page callback")
             return

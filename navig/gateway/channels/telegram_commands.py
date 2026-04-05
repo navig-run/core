@@ -3327,7 +3327,9 @@ class TelegramCommandsMixin:
             )
             return
 
-        await self.send_message(chat_id, text_payload, keyboard=keyboard_rows)
+        await self.send_message(
+            chat_id, text_payload, parse_mode="Markdown", keyboard=keyboard_rows
+        )
 
     async def _show_provider_activation_confirmation(
         self,
@@ -3790,12 +3792,18 @@ class TelegramCommandsMixin:
             page_nav: list[dict[str, str]] = []
             if page > 0:
                 page_nav.append(
-                    {"text": "⬅️ Prev", "callback_data": f"prov_page_{prov_id}_{page - 1}"}
+                    {
+                        "text": "⬅️ Prev",
+                        "callback_data": f"prov_page_{prov_id}_{selected_tier}_{page - 1}",
+                    }
                 )
             page_nav.append({"text": f"📄 {page + 1}/{total_pages}", "callback_data": "prov_back"})
             if page < total_pages - 1:
                 page_nav.append(
-                    {"text": "Next ➡️", "callback_data": f"prov_page_{prov_id}_{page + 1}"}
+                    {
+                        "text": "Next ➡️",
+                        "callback_data": f"prov_page_{prov_id}_{selected_tier}_{page + 1}",
+                    }
                 )
             keyboard.append(page_nav)
 
@@ -3839,7 +3847,7 @@ class TelegramCommandsMixin:
     ) -> None:
         """Combined view: model routing table + AI provider hub."""
         await self._handle_models_command(chat_id, user_id)
-        await self._handle_providers(chat_id)
+        await self._handle_providers(chat_id, user_id)
 
     # -- Diagnostics -----------------------------------------------------------
 
