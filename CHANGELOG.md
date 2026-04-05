@@ -7,7 +7,13 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 <!-- Add entries here until the next release, then move them under a new version heading. -->
-<!-- Run: git log v2.4.20..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+<!-- Run: git log v2.5.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+
+
+## [2.5.0] - 2026-04-05
+
+<!-- Entries below were in [Unreleased] through 2026-04-05. -->
+<!-- Run: git log v2.4.20..v2.5.0 --pretty="- %s (%h)" to review commits. -->
 
 ### Added
 - **HTTP Streamable-HTTP MCP transport (`navig mcp serve --transport http`)**: NAVIG can now be exposed as an HTTP MCP server for AI assistants that connect via URL rather than stdio/WebSocket. Implements the MCP 2024-11-05 Streamable HTTP spec: `POST /mcp` (JSON-RPC 2.0), `GET /mcp` (SSE keepalive stream), `OPTIONS /mcp` (CORS preflight), `GET /health` (liveness). Optional Bearer-token auth (`--token`). `--print-config` prints a Perplexity-ready MCP Server URL, VS Code `mcp.json` snippet, and Claude Desktop config block. `_build_http_app()` factory extracted for testability. `generate_perplexity_mcp_config()` helper returns the Perplexity connector dict. Default port: 3001. 12 tests in `tests/test_mcp_http.py` (stub-based, no live aiohttp import required).
