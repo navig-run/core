@@ -104,7 +104,9 @@ class ConversationalAgent:
             if soul:
                 return soul
         except Exception as exc:  # noqa: BLE001
-            logger.debug("Exception suppressed: %s", exc)  # best-effort — fall through to legacy logic below
+            logger.debug(
+                "Exception suppressed: %s", exc
+            )  # best-effort — fall through to legacy logic below
 
         soul_candidates: list[tuple] = []  # (path, source_tag)
 
@@ -132,7 +134,9 @@ class ConversationalAgent:
                         raw_parts.append(text)
                         sources.append(tag)
             except Exception as exc:  # noqa: BLE001
-                logger.debug("Exception suppressed: %s", exc)  # best-effort; failure is non-critical
+                logger.debug(
+                    "Exception suppressed: %s", exc
+                )  # best-effort; failure is non-critical
 
         if not raw_parts:
             return ""
@@ -723,7 +727,10 @@ For conversation, respond naturally without JSON.
         # Keep history manageable
         if len(self.conversation_history) > 20:
             idx = len(self.conversation_history) - 20
-            while idx < len(self.conversation_history) and self.conversation_history[idx].get("role") != "user":
+            while (
+                idx < len(self.conversation_history)
+                and self.conversation_history[idx].get("role") != "user"
+            ):
                 idx += 1
             if idx >= len(self.conversation_history):
                 idx = len(self.conversation_history) - 20
@@ -813,6 +820,7 @@ For conversation, respond naturally without JSON.
         explicit_toolsets: list[str] = [toolset] if isinstance(toolset, str) else list(toolset)
         try:
             from navig.llm_router import suggest_toolsets
+
             suggested = suggest_toolsets(user_input=message)
             # Merge: explicit always wins; add suggestions that aren't already present
             merged: list[str] = list(explicit_toolsets)
@@ -820,8 +828,12 @@ For conversation, respond naturally without JSON.
                 if s not in merged:
                     merged.append(s)
             toolsets = merged
-            logger.debug("F-20 semantic routing: explicit=%s suggested=%s → merged=%s",
-                         explicit_toolsets, suggested, toolsets)
+            logger.debug(
+                "F-20 semantic routing: explicit=%s suggested=%s → merged=%s",
+                explicit_toolsets,
+                suggested,
+                toolsets,
+            )
         except Exception:
             toolsets = explicit_toolsets
 
@@ -830,9 +842,7 @@ For conversation, respond naturally without JSON.
             ToolDefinition(
                 name=s["function"]["name"],
                 description=s["function"].get("description", ""),
-                parameters=s["function"].get(
-                    "parameters", {"type": "object", "properties": {}}
-                ),
+                parameters=s["function"].get("parameters", {"type": "object", "properties": {}}),
             )
             for s in raw_schemas
         ]
@@ -892,9 +902,7 @@ For conversation, respond naturally without JSON.
             _plan_block = _pc.format_for_prompt(_snapshot)
             if _plan_block:
                 system_prompt += "\n\n" + _plan_block
-            _non_null = sum(
-                1 for k, v in _snapshot.items() if k != "errors" and v is not None
-            )
+            _non_null = sum(1 for k, v in _snapshot.items() if k != "errors" and v is not None)
             logger.info(
                 "plan_context_loaded space=%s non_null_keys=%d",
                 _space,
@@ -1028,7 +1036,9 @@ For conversation, respond naturally without JSON.
             current_calls = [(tc.name, tc.arguments) for tc in response.tool_calls]
             if getattr(self, "_last_tool_calls_turn", None) == current_calls:
                 logger.warning("Duplicate tool calls detected. Breaking to prevent infinite loop.")
-                final_response = response.content or "[Agent halted to prevent duplicate tool call loop]"
+                final_response = (
+                    response.content or "[Agent halted to prevent duplicate tool call loop]"
+                )
                 break
             self._last_tool_calls_turn = current_calls
 
@@ -1090,9 +1100,15 @@ For conversation, respond naturally without JSON.
                 except Exception as exc:
                     logger.debug("Exception suppressed: %s", exc)
 
-                # Execute tool
+                # Execute tool (speculative cache integration)
                 try:
-                    result_str = _AGENT_REGISTRY.dispatch(tc_item.name, args)
+                    from navig.agent.speculative import get_speculative_executor
+
+                    spec = get_speculative_executor()
+                    if spec is not None:
+                        result_str = spec.execute(tc_item.name, args)
+                    else:
+                        result_str = _AGENT_REGISTRY.dispatch(tc_item.name, args)
                 except Exception as exc:
                     result_str = f"[Tool error: {exc}]"
                 return (tc_item.id, result_str)
@@ -1123,9 +1139,7 @@ For conversation, respond naturally without JSON.
                 )
                 for i, pr in enumerate(par_results):
                     if isinstance(pr, BaseException):
-                        collected_results.append(
-                            (parallel_batch[i].id, f"[Tool error: {pr}]")
-                        )
+                        collected_results.append((parallel_batch[i].id, f"[Tool error: {pr}]"))
                     else:
                         collected_results.append(pr)
 
@@ -1146,20 +1160,34 @@ For conversation, respond naturally without JSON.
             # ── End tool dispatch — continue to next LLM turn ──
 
         if not final_response:
-            final_response = (
-                "Agent iteration budget exhausted without producing a final response."
-            )
+            final_response = "Agent iteration budget exhausted without producing a final response."
 
         # Update conversation history
         self.conversation_history.append({"role": "user", "content": message})
         self.conversation_history.append({"role": "assistant", "content": final_response})
-        if len(self.conversation_history) > 20:
-            idx = len(self.conversation_history) - 20
-            while idx < len(self.conversation_history) and self.conversation_history[idx].get("role") != "user":
-                idx += 1
-            if idx >= len(self.conversation_history):
-                idx = len(self.conversation_history) - 20
-            self.conversation_history = self.conversation_history[idx:]
+        self.conversation_history = self._truncate_history(self.conversation_history, max_messages=20)
+
+        # Cancel background speculations before final logging
+        try:
+            from navig.agent.speculative import (
+                get_speculative_executor,
+                reset_speculative_executor,
+            )
+
+            spec = get_speculative_executor()
+            if spec is not None:
+                spec.cancel_speculations()
+                stats = spec.stats
+                if stats["cache_hits"] > 0:
+                    logger.info(
+                        "speculative cache stats: hits=%d misses=%d hit_rate=%.1f%%",
+                        stats["cache_hits"],
+                        stats["cache_misses"],
+                        stats["cache_hit_rate"] * 100,
+                    )
+                reset_speculative_executor()
+        except Exception:
+            pass  # best-effort cleanup
 
         # Log cost summary
         cost = _tracker.session_cost()
@@ -1292,7 +1320,8 @@ For conversation, respond naturally without JSON.
             if (
                 "no ai provider available" in err
                 or "no provider available" in err
-                or "provider available" in err and "set openrouter_api_key" in err
+                or "provider available" in err
+                and "set openrouter_api_key" in err
             ):
                 return await self._simple_response(message)
             return f"I'm having trouble thinking right now: {e}"
