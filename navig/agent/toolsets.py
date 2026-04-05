@@ -105,15 +105,18 @@ PARALLEL_SAFE_TOOLS: frozenset[str] = frozenset(
         "wiki_read",
         "kb_lookup",
         "memory_read",
+        "fts_search",
         "navig_db_list",
         "navig_host_show",
         "navig_host_test",
         "navig_host_monitor",
         "navig_docker_ps",
+        "navig_docker_logs",
+        "navig_file_show",
+        "navig_file_get",
         "navig_web_vhosts",
         "navig_app_list",
         "navig_app_show",
-        "fts_search",
         "git_status",
         "git_diff",
         "git_log",
@@ -122,6 +125,14 @@ PARALLEL_SAFE_TOOLS: frozenset[str] = frozenset(
         "remote_execute",
         "remote_file_read",
         "remote_host_switch",
+        # Plan / task observability
+        "get_plan_context",
+        "todo_show",
+        "background_task_status",
+        "background_task_output",
+        # Worktree / coordinator reads
+        "worktree_list",
+        "coordinator_status",
     }
 )
 

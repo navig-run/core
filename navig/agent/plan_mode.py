@@ -22,7 +22,7 @@ Usage (from ``ConversationalAgent``)::
     interceptor.approve()                   # move to EXECUTING
     # now interceptor.should_block("write_file") → False
 
-FA-01 implementation 
+FA-01 implementation
 """
 
 from __future__ import annotations
@@ -179,6 +179,7 @@ class PlanInterceptor:
             # Memory / wiki reads
             "memory_read",
             "kb_lookup",
+            "fts_search",
             "wiki_search",
             "wiki_read",
             # DevOps read-only
@@ -189,8 +190,9 @@ class PlanInterceptor:
             "navig_app_show",
             "navig_db_list",
             "navig_docker_ps",
+            "navig_docker_logs",
             "navig_file_show",
-            "navig_file_list",
+            "navig_file_get",
             "navig_web_vhosts",
             # Git read-only
             "git_status",
@@ -200,10 +202,17 @@ class PlanInterceptor:
             # Remote read-only
             "remote_file_read",
             "remote_host_switch",
-            # Plan management
+            # Plan / task observability (read-only)
             "plan_add_step",
             "plan_show",
             "plan_approve",
+            "get_plan_context",
+            "todo_show",
+            "background_task_status",
+            "background_task_output",
+            # Worktree / coordinator reads
+            "worktree_list",
+            "coordinator_status",
         }
     )
 
