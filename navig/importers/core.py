@@ -60,6 +60,8 @@ class UniversalImporter:
                         return "telegram"
             except Exception:
                 pass  # best-effort: zip unreadable; skip telegram format probe
+
+        if candidate.exists() and candidate.is_file():
             try:
                 payload = json.loads(candidate.read_text(encoding="utf-8"))
                 if isinstance(payload, dict) and isinstance(payload.get("roots"), dict):
@@ -70,9 +72,7 @@ class UniversalImporter:
                         return "chrome"
             except Exception:
                 pass  # best-effort: JSON unreadable; skip bookmarks format probe
-            if "microsoft" in probe or "edge" in probe:
-                return "edge"
-            return "chrome"
+
         return None
 
     def run_all(self) -> dict[str, list[ImportedItem]]:

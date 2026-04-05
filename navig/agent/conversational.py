@@ -103,8 +103,8 @@ class ConversationalAgent:
             soul = _load_soul()
             if soul:
                 return soul
-        except Exception:  # noqa: BLE001
-            pass  # best-effort — fall through to legacy logic below
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Exception suppressed: %s", exc)  # best-effort — fall through to legacy logic below
 
         soul_candidates: list[tuple] = []  # (path, source_tag)
 
@@ -112,8 +112,8 @@ class ConversationalAgent:
         try:
             home = Path.home()
             soul_candidates.append((home / ".navig" / "workspace" / "SOUL.md", "workspace"))
-        except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Exception suppressed: %s", exc)  # best-effort; failure is non-critical
 
         # 2. Rich default SOUL (navig/resources/SOUL.default.md)
         pkg_root = Path(__file__).parent.parent  # navig/
@@ -131,8 +131,8 @@ class ConversationalAgent:
                     if text:
                         raw_parts.append(text)
                         sources.append(tag)
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Exception suppressed: %s", exc)  # best-effort; failure is non-critical
 
         if not raw_parts:
             return ""
@@ -538,8 +538,8 @@ For conversation, respond naturally without JSON.
             tracker = get_user_state_tracker()
             mode = tracker.get_preference("chat_mode", "work")
             parts.append(f"Current focus mode: {mode}.")
-        except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Exception suppressed: %s", exc)  # best-effort; failure is non-critical
 
         active_persona = self._active_persona or self._runtime_persona
         if active_persona:
@@ -722,7 +722,12 @@ For conversation, respond naturally without JSON.
 
         # Keep history manageable
         if len(self.conversation_history) > 20:
-            self.conversation_history = self.conversation_history[-20:]
+            idx = len(self.conversation_history) - 20
+            while idx < len(self.conversation_history) and self.conversation_history[idx].get("role") != "user":
+                idx += 1
+            if idx >= len(self.conversation_history):
+                idx = len(self.conversation_history) - 20
+            self.conversation_history = self.conversation_history[idx:]
 
         # Get AI response
         response = await self._get_ai_response(message)
@@ -800,8 +805,8 @@ For conversation, respond naturally without JSON.
                 from navig.tools.approval import set_approval_policy
 
                 set_approval_policy(approval_policy)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Exception suppressed: %s", exc)
 
         # ── Tool schemas → ToolDefinition list ──
         # F-20: merge explicit toolset arg with semantic routing suggestions
@@ -847,8 +852,8 @@ For conversation, respond naturally without JSON.
             temperature = resolved.temperature
             max_tokens = resolved.max_tokens
             base_url = resolved.base_url
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Exception suppressed: %s", exc)
 
         # ── Create provider client ──
         try:
@@ -931,8 +936,8 @@ For conversation, respond naturally without JSON.
             from navig.agent.context_compressor import ContextCompressor
 
             _compressor = ContextCompressor()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Exception suppressed: %s", exc)
 
         # ─── ReAct loop ───────────────────────────────────────────
         while not budget.is_exhausted():
@@ -1011,12 +1016,21 @@ For conversation, respond naturally without JSON.
                         cache_write_tokens=usage.get("cache_creation_input_tokens", 0),
                     )
                 )
-            except Exception:
-                pass  # best-effort: skip on failed usage metric recording
-                # Model produced a final answer
+            except Exception as exc:
+                logger.debug("Exception suppressed: %s", exc)
+
+            # Model produced a final answer (no tool calls pending)
+            if not response.tool_calls:
                 final_response = response.content or ""
                 working_messages.append(Message(role="assistant", content=final_response))
                 break
+
+            current_calls = [(tc.name, tc.arguments) for tc in response.tool_calls]
+            if getattr(self, "_last_tool_calls_turn", None) == current_calls:
+                logger.warning("Duplicate tool calls detected. Breaking to prevent infinite loop.")
+                final_response = response.content or "[Agent halted to prevent duplicate tool call loop]"
+                break
+            self._last_tool_calls_turn = current_calls
 
             # ── Append assistant message with tool_calls ──
             assistant_tool_calls_raw = [
@@ -1073,8 +1087,8 @@ For conversation, respond naturally without JSON.
                                 tc_item.id,
                                 f"[Denied: operator did not approve '{tc_item.name}']",
                             )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug("Exception suppressed: %s", exc)
 
                 # Execute tool
                 try:
@@ -1140,7 +1154,12 @@ For conversation, respond naturally without JSON.
         self.conversation_history.append({"role": "user", "content": message})
         self.conversation_history.append({"role": "assistant", "content": final_response})
         if len(self.conversation_history) > 20:
-            self.conversation_history = self.conversation_history[-20:]
+            idx = len(self.conversation_history) - 20
+            while idx < len(self.conversation_history) and self.conversation_history[idx].get("role") != "user":
+                idx += 1
+            if idx >= len(self.conversation_history):
+                idx = len(self.conversation_history) - 20
+            self.conversation_history = self.conversation_history[idx:]
 
         # Log cost summary
         cost = _tracker.session_cost()
@@ -1211,8 +1230,8 @@ For conversation, respond naturally without JSON.
         try:
             if hasattr(self.ai_client, "is_available") and not self.ai_client.is_available():
                 return await self._simple_response(message)
-        except Exception:
-            pass  # best-effort; failure is non-critical
+        except Exception as exc:
+            logger.debug("Exception suppressed: %s", exc)  # best-effort; failure is non-critical
 
         try:
             system_prompt = self._build_system_prompt(message)

@@ -1146,8 +1146,8 @@ class CallbackHandler:
                     "deleteMessage",
                     {"chat_id": chat_id, "message_id": message_id},
                 )
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Exception suppressed: %s", exc)  # best-effort; failure is non-critical
             return
 
         # aitier_{key} — key is "auto", "small", "big", or "coder_big"
@@ -1170,8 +1170,8 @@ class CallbackHandler:
         if handler:
             try:
                 await handler(chat_id=chat_id, user_id=user_id, message_id=message_id)
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; if edit fails, still ack the tap
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Exception suppressed: %s", exc)  # best-effort; if edit fails, still ack the tap
 
         tier_labels = {
             "": "🔄 Auto",
@@ -1265,8 +1265,8 @@ class CallbackHandler:
                     "deleteMessage",
                     {"chat_id": chat_id, "message_id": message_id},
                 )
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Exception suppressed: %s", exc)  # best-effort; failure is non-critical
             return
 
         if cb_data == "prov_noai":
@@ -1545,8 +1545,8 @@ class CallbackHandler:
                     "deleteMessage",
                     {"chat_id": chat_id, "message_id": message_id},
                 )
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Exception suppressed: %s", exc)
             return
 
         if cb_data == "mdl_chgprov":
@@ -1801,8 +1801,8 @@ class CallbackHandler:
                 await self.channel._api_call(
                     "deleteMessage", {"chat_id": chat_id, "message_id": message_id}
                 )
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Exception suppressed: %s", exc)  # best-effort; failure is non-critical
             await self._answer(cb_id, "")
             return
 
@@ -2013,8 +2013,8 @@ class CallbackHandler:
                         "message_id": message_id,
                     },
                 )
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Exception suppressed: %s", exc)  # best-effort; failure is non-critical
             return
 
         # Map callback → (field, value) or toggle
@@ -2113,8 +2113,8 @@ class CallbackHandler:
         # Persist
         try:
             sm._save_session(session)
-        except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Exception suppressed: %s", exc)  # best-effort; failure is non-critical
 
         toast = _TOAST.get(cb_data, lambda _: "✅ Updated")(session)
         await self._answer(cb_id, toast)
