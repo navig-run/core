@@ -21,6 +21,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+try:
+    import ctypes
+except ImportError:
+    ctypes = None
+
 from navig.platform import paths
 
 NAVIG_HOME = paths.config_dir()

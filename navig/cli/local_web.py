@@ -291,6 +291,8 @@ def register_local_web_commands(app: typer.Typer) -> None:
         """List HestiaCP resources (users, domains)."""
         ctx.obj["plain"] = plain
         if users:
+            from navig.commands.hestia import list_domains_cmd
+
             list_domains_cmd(user_filter, ctx.obj)
         else:
             from navig.commands.hestia import list_users_cmd

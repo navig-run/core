@@ -641,7 +641,7 @@ def ui_cmd(
         typer.secho(f"[{i}/{len(files)}] {f.name}", fg=typer.colors.WHITE, bold=True)
         typer.echo(f"  Category  : {result.category}")
         typer.echo(f"  Confidence: {result.confidence:.2%}  ({result.method})")
-        typer.echo(f"  Space     : {selected_space}")
+        typer.echo(f"  Space     : {result.category}")
 
         while True:
             choice = typer.prompt("  → route? [y/n/q/?]", default="y").strip().lower()

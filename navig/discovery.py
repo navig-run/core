@@ -5,6 +5,7 @@ Automatically detect server configuration, services, and environment details.
 The Schema sees all. Catalogues all. Knows all.
 """
 
+import os
 import re
 import subprocess
 from pathlib import Path

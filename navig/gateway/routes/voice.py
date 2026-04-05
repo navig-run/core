@@ -250,6 +250,8 @@ def _events(gw):
         import asyncio
         import json
 
+        from navig.gateway.routes.common import _get_web  # noqa: PLC0415
+
         _web = _get_web()
         response = _web.StreamResponse(
             status=200,
