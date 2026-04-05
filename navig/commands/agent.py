@@ -76,7 +76,7 @@ def continuation_status(
         return
 
     policy = policy_from_context(state.get("context") or {})
-    continuation_meta = ((state.get("context") or {}).get("continuation") or {})
+    continuation_meta = (state.get("context") or {}).get("continuation") or {}
     space = continuation_meta.get("space", "")
     busy_until = continuation_meta.get("busy_until", "")
     busy_reason = continuation_meta.get("busy_reason", "")
@@ -90,12 +90,13 @@ def continuation_status(
     windows = suppression_windows_for_profile(policy.profile)
     sensitivity = decision_sensitivity_for_profile(policy.profile)
     ch.info(
-        "Suppression windows: "
-        f"wait={windows.get('wait', 0)}s, blocked={windows.get('blocked', 0)}s"
+        f"Suppression windows: wait={windows.get('wait', 0)}s, blocked={windows.get('blocked', 0)}s"
     )
     ch.info(f"Decision sensitivity: {sensitivity}")
     if busy_until:
-        ch.info(f"Busy suppression until: {busy_until}" + (f" ({busy_reason})" if busy_reason else ""))
+        ch.info(
+            f"Busy suppression until: {busy_until}" + (f" ({busy_reason})" if busy_reason else "")
+        )
     if last_skip_reason:
         ch.info(f"Last skip reason: {last_skip_reason}")
     if space:
@@ -112,7 +113,9 @@ def continuation_continue(
     space: str | None = typer.Option(None, "--space", help="Optional space focus"),
     user_id: int | None = typer.Option(None, "--user-id", help="Runtime user id (default: 0)"),
     chat_id: int | None = typer.Option(None, "--chat-id", help="Runtime chat id (default: 0)"),
-    persona: str | None = typer.Option(None, "--persona", help="Persona used when state is initialized"),
+    persona: str | None = typer.Option(
+        None, "--persona", help="Persona used when state is initialized"
+    ),
 ):
     """Enable continuation policy for local runtime state."""
     from navig.core.continuation import (
@@ -181,7 +184,9 @@ def continuation_start(
     space: str | None = typer.Option(None, "--space", help="Optional space focus"),
     user_id: int | None = typer.Option(None, "--user-id", help="Runtime user id (default: 0)"),
     chat_id: int | None = typer.Option(None, "--chat-id", help="Runtime chat id (default: 0)"),
-    persona: str | None = typer.Option(None, "--persona", help="Persona used when state is initialized"),
+    persona: str | None = typer.Option(
+        None, "--persona", help="Persona used when state is initialized"
+    ),
 ):
     """Enable continuation policy (alias for `continuation continue`)."""
     continuation_continue(
@@ -1829,6 +1834,114 @@ NAVIG stands for "No Admin Visible In Graveyard" — I keep your systems alive a
         ch.error(f"Unknown action: {action}")
         ch.info("Valid actions: show, edit, create, reload, path")
         raise typer.Exit(1)
+
+
+# ============================================================================
+# Voice Transcription
+# ============================================================================
+
+
+@agent_app.command("transcribe")
+def agent_transcribe(
+    audio_file: Path = typer.Argument(..., help="Path to audio file (mp3, wav, ogg, flac, …)"),
+    language: str | None = typer.Option(
+        None, "--language", "-l", help="Language code (auto-detect if omitted)"
+    ),
+    backend: str | None = typer.Option(
+        None,
+        "--backend",
+        "-b",
+        help="Backend: faster_whisper, whisper_api, deepgram, whisper_local",
+    ),
+    model: str = typer.Option(
+        "base",
+        "--model",
+        "-m",
+        help="Model size for faster-whisper (tiny, base, small, medium, large-v3)",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    plain: bool = typer.Option(False, "--plain", help="Plain text output (transcript only)"),
+):
+    """Transcribe an audio file to text using the best available backend.
+
+    Auto-detects the transcription backend unless --backend is specified.
+    Supports faster-whisper (local), OpenAI Whisper API, Deepgram, and
+    openai-whisper (local, slow).
+
+    Examples:
+        navig agent transcribe recording.mp3
+        navig agent transcribe voice.ogg --language en
+        navig agent transcribe meeting.wav --backend faster_whisper --model small
+        navig agent transcribe note.m4a --json
+    """
+    import asyncio
+
+    from navig.agent.voice_input import (
+        TranscriptionBackend,
+        TranscriptionConfig,
+        VoiceInputHandler,
+    )
+
+    if not audio_file.exists():
+        ch.error(f"File not found: {audio_file}")
+        raise typer.Exit(1)
+
+    # Build config
+    config = TranscriptionConfig(model=model)
+    if backend:
+        try:
+            config.backend = TranscriptionBackend(backend)
+        except ValueError:
+            valid = ", ".join(
+                b.value for b in TranscriptionBackend if b != TranscriptionBackend.NONE
+            )
+            ch.error(f"Unknown backend: {backend}. Valid: {valid}")
+            raise typer.Exit(1) from None
+
+    handler = VoiceInputHandler(config=config)
+
+    if not plain and not json_output:
+        ch.info(f"Transcribing {audio_file.name} (backend: {handler.config.backend.value})...")
+
+    result = asyncio.run(handler.transcribe(audio_file, language=language))
+
+    if json_output:
+        import json
+
+        ch.console.print(
+            json.dumps(
+                {
+                    "success": result.success,
+                    "text": result.text,
+                    "language": result.language,
+                    "duration_ms": result.duration_ms,
+                    "backend": result.backend.value if result.backend else None,
+                    "confidence": result.confidence,
+                    "error": result.error,
+                },
+                indent=2,
+            )
+        )
+    elif plain:
+        if result.text:
+            print(result.text)
+        elif result.error:
+            print(f"ERROR: {result.error}", file=sys.stderr)
+            raise typer.Exit(1)
+    else:
+        if result.success and result.text:
+            ch.success("Transcription complete")
+            if result.language:
+                ch.dim(f"  Language: {result.language}")
+            if result.duration_ms:
+                ch.dim(f"  Duration: {result.duration_ms}ms")
+            if result.confidence is not None:
+                ch.dim(f"  Confidence: {result.confidence:.2f}")
+            ch.console.print()
+            ch.console.print(result.text)
+        else:
+            ch.error(f"Transcription failed: {result.error}")
+            raise typer.Exit(1)
 
 
 # ============================================================================

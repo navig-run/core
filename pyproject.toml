@@ -69,6 +69,7 @@ dev = [
 voice = [
   "edge-tts>=6.1.9",
   "openai>=1.0.0",
+  "faster-whisper>=1.0.0",
 ]
 keyring = [
   "keyring>=25.0.0",

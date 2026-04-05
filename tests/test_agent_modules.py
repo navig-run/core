@@ -35,7 +35,7 @@ class TestToolsets:
     """Tests for navig.agent.toolsets module."""
 
     def test_toolsets_dict_has_expected_keys(self):
-        expected = {"core", "search", "research", "code", "devops", "memory", "wiki", "delegation", "full"}
+        expected = {"core", "search", "research", "code", "devops", "memory", "wiki", "delegation", "full", "git", "remote"}
         assert expected == set(TOOLSETS.keys())
 
     def test_core_toolset_is_list(self):
