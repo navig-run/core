@@ -9,6 +9,9 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Add entries here until the next release, then move them under a new version heading. -->
 <!-- Run: git log v2.5.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
 
+### Added
+- **MCP connector tool bridge (`navig/mcp/tools/connectors.py`)**: All registered connectors are now auto-exposed as callable MCP tools at startup — no manual wiring required. `list_connector_tools(registry)` inspects each connector's `ConnectorManifest.can_search/can_fetch/can_act` flags and emits up to three typed tools per connector (`connector.<id>.search`, `connector.<id>.fetch`, `connector.<id>.act`) with correct JSON-Schema `inputSchema` blocks. `handle_connector_call(tool_name, params)` parses the `connector.<id>.<op>` naming convention and dispatches to the connector's `search()`/`fetch()`/`act()` methods. Connectors with broken manifests are warned and skipped without blocking others. Bundle registered last in `register_all_tools()` so it never interferes with memory/wiki/runtime bundles. `ConnectorRegistry.all_classes()` snapshot accessor added. 17 tests in `tests/test_mcp_connector_bridge.py`.
+
 
 ## [2.5.0] - 2026-04-05
 

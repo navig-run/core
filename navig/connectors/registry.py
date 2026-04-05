@@ -120,6 +120,14 @@ class ConnectorRegistry:
             if inst.status in (ConnectorStatus.CONNECTED, ConnectorStatus.DEGRADED)
         ]
 
+    def all_classes(self) -> "dict[str, type[BaseConnector]]":
+        """Return a snapshot of all registered connector classes keyed by connector id.
+
+        Returns a copy so callers cannot mutate internal state.
+        Used by the MCP tool bridge to enumerate tools without instantiating connectors.
+        """
+        return dict(self._classes)
+
     # -- Lifecycle ---------------------------------------------------------
 
     def reset(self) -> None:
