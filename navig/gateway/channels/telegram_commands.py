@@ -246,6 +246,13 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="docker",
         usage="/restart [daemon|<container-name>]",
     ),
+    SlashCommandEntry(
+        "exec",
+        "Execute command in container",
+        cli_template='docker exec {args}',
+        category="docker",
+        usage="/exec <container> <command>",
+    ),
     # --- Database ------------------------------------------------------------
     SlashCommandEntry("db", "List databases", cli_template="db list", category="database"),
     SlashCommandEntry(
@@ -255,14 +262,55 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="database",
         usage="/tables <database-name>",
     ),
+    SlashCommandEntry(
+        "query",
+        "Execute SQL query (+ db + query)",
+        cli_template='db query "{args}"',
+        category="database",
+        usage="/query -d <db> <SQL>",
+    ),
     # --- Tools ---------------------------------------------------------------
     SlashCommandEntry("hosts", "Configured servers", cli_template="host list", category="tools"),
+    SlashCommandEntry(
+        "test",
+        "Test SSH connectivity to active host",
+        cli_template="host test",
+        category="tools",
+        usage="/test  — verifies SSH connection",
+    ),
     SlashCommandEntry(
         "use",
         "Switch active host (+ name)",
         cli_template="host use {args}",
         category="tools",
         usage="/use <hostname>",
+    ),
+    SlashCommandEntry(
+        "apps",
+        "List applications on current host",
+        cli_template="app list",
+        category="tools",
+    ),
+    SlashCommandEntry(
+        "app",
+        "Switch active app (+ name)",
+        cli_template="app use {args}",
+        category="tools",
+        usage="/app <app-name>",
+    ),
+    SlashCommandEntry(
+        "files",
+        "List remote directory contents",
+        cli_template="file list {args}",
+        category="tools",
+        usage="/files [path]  — defaults to current dir",
+    ),
+    SlashCommandEntry(
+        "cat",
+        "View remote file contents",
+        cli_template="file show {args}",
+        category="tools",
+        usage="/cat <path> [--lines N]",
     ),
     SlashCommandEntry(
         "run",
@@ -272,6 +320,27 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         usage="/run <shell command>",
     ),
     SlashCommandEntry("backup", "Backup status", cli_template="backup show", category="tools"),
+    SlashCommandEntry(
+        "tunnels",
+        "List active SSH tunnels",
+        cli_template="tunnel list",
+        category="tools",
+        visible=False,
+    ),
+    SlashCommandEntry(
+        "flows",
+        "List available workflows",
+        cli_template="flow list",
+        category="tools",
+        visible=False,
+    ),
+    SlashCommandEntry(
+        "vhosts",
+        "List web server virtual hosts",
+        cli_template="web vhosts",
+        category="tools",
+        visible=False,
+    ),
     SlashCommandEntry(
         "plans", "Plans and spaces progress", cli_template="plans status", category="tools"
     ),
