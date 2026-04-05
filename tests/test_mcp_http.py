@@ -25,6 +25,7 @@ All 10 original scenarios are preserved:
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import sys
 from typing import Any
@@ -119,13 +120,17 @@ _web_stub.Request = MagicMock  # used only as a type annotation in mcp_server.py
 _aio_stub = MagicMock(name="aiohttp")
 _aio_stub.web = _web_stub
 
-# Install into sys.modules BEFORE any navig.mcp_server import so that
-# `from aiohttp import web` inside _build_http_app returns _web_stub.
-sys.modules.setdefault("aiohttp", _aio_stub)
-sys.modules.setdefault("aiohttp.web", _web_stub)
+@pytest.fixture(autouse=True)
+def _isolate_aiohttp_stub(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure aiohttp stubs are scoped to this module's tests only."""
+    monkeypatch.setitem(sys.modules, "aiohttp", _aio_stub)
+    monkeypatch.setitem(sys.modules, "aiohttp.web", _web_stub)
 
-# Now safe to import from navig.mcp_server (aiohttp is lazy-imported there)
-from navig.mcp_server import _build_http_app, generate_perplexity_mcp_config  # noqa: E402
+
+def _mcp_exports() -> tuple[Any, Any]:
+    """Fetch MCP server exports after aiohttp stubs are injected."""
+    module = importlib.import_module("navig.mcp_server")
+    return module._build_http_app, module.generate_perplexity_mcp_config
 
 
 class _PayloadWriter:
@@ -194,6 +199,7 @@ def _make_request(
 
 def _build_app(token: "str | None" = None) -> "tuple[_TrackedApp, MagicMock]":
     """Build the stub app and return *(app, handler_mock)*."""
+    _build_http_app, _ = _mcp_exports()
     h = _make_handler()
     app: _TrackedApp = _build_http_app(h, token=token)  # type: ignore[assignment]
     return app, h
@@ -394,6 +400,7 @@ async def test_get_mcp_returns_event_stream(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_perplexity_config_default() -> None:
+    _, generate_perplexity_mcp_config = _mcp_exports()
     cfg = generate_perplexity_mcp_config()
     assert cfg["mcp_server_url"] == "http://127.0.0.1:3001/mcp"
     assert cfg["name"] == "NAVIG"
@@ -401,6 +408,7 @@ def test_perplexity_config_default() -> None:
 
 
 def test_perplexity_config_with_token() -> None:
+    _, generate_perplexity_mcp_config = _mcp_exports()
     cfg = generate_perplexity_mcp_config(host="0.0.0.0", port=8080, token="tok123")
     assert cfg["mcp_server_url"] == "http://0.0.0.0:8080/mcp"
     assert cfg["authorization"] == "Bearer tok123"

@@ -875,6 +875,22 @@ MODE_TOOLSET_HINTS: dict[str, list[str]] = {
 }
 
 
+def detect_mode(user_input: str) -> str:
+    """Backward-compatible mode detector returning the canonical mode string."""
+    text = (user_input or "").strip()
+    lower = text.lower()
+    if lower and re.search(
+        r"\b(research|analy[sz]e|compare|differences?\s+between|investigate)\b",
+        lower,
+    ):
+        return "research"
+
+    from navig.routing.detect import detect_mode as _detect_canonical  # noqa: PLC0415
+
+    mode, _, _ = _detect_canonical(text)
+    return mode
+
+
 def suggest_toolsets(
     user_input: str | None = None,
     *,
