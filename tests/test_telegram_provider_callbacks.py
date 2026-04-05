@@ -727,6 +727,39 @@ async def test_activate_helper_resolution_failure_returns_false_and_alert(monkey
 
 
 @pytest.mark.asyncio
+async def test_activate_helper_resolution_failure_uses_manifest_models_fallback(monkeypatch):
+    """Resolver failure should fall back to manifest.models when available."""
+    from types import SimpleNamespace
+
+    class _ResolverFailChannel(_FakeChannel):
+        async def _resolve_provider_models(self, prov_id, manifest=None):
+            raise RuntimeError("resolver down")
+
+    channel = _ResolverFailChannel()
+    handler = CallbackHandler(channel)
+
+    manifest = SimpleNamespace(
+        id="fakeprov",
+        display_name="Fake Provider",
+        emoji="🔲",
+        tier="cloud",
+        models=["fake/model-1", "fake/model-2"],
+    )
+
+    result = await handler._activate_provider_with_defaults("cb-rf-ok", 100, 200, "fakeprov", manifest)
+
+    assert result is True
+    assert channel.llm_mode_calls
+    assert channel.llm_mode_calls[0][0] == "fakeprov"
+    alert_answers = [
+        p
+        for m, p in channel.api_calls
+        if m == "answerCallbackQuery" and p.get("show_alert") is True
+    ]
+    assert not alert_answers
+
+
+@pytest.mark.asyncio
 async def test_activate_helper_local_llamacpp_fallback(monkeypatch):
     """_activate_provider_with_defaults uses hardcoded fallback for llamacpp with no models."""
     from types import SimpleNamespace

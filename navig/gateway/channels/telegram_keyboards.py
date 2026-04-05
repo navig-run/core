@@ -1201,8 +1201,10 @@ class CallbackHandler:
                 models = await self.channel._resolve_provider_models(prov_id, manifest=manifest)
             except Exception:
                 logger.warning("Provider model resolution failed for pms_%s", prov_id)
-                await self._answer(cb_id, "⚠️ Could not load models for this provider", show_alert=True)
-                return False
+                models = list(getattr(manifest, "models", []) or [])
+                if not models:
+                    await self._answer(cb_id, "⚠️ Could not load models for this provider", show_alert=True)
+                    return False
 
         if not models and manifest and getattr(manifest, "tier", "") == "local":
             if prov_id == "llamacpp":
