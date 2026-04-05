@@ -40,15 +40,14 @@ from typing import Any
 
 from navig.platform.paths import global_config_path, msg_trace_path
 from navig.ui.icons import icon as _ni
-
-logger = logging.getLogger(__name__)
-
 from navig.gateway.channels.types import MessageMetadata
 from navig.gateway.channels.utils.decorators import (
     error_handled,
     rate_limited,
     typing_context,
 )
+
+logger = logging.getLogger(__name__)
 
 # -- Optional keyboard / session / audio-menu deps ----------------------------
 try:
@@ -2822,13 +2821,16 @@ class TelegramCommandsMixin:
 
             lr = get_llm_router()
             if lr:
-                for tier, modes in self._TIER_TO_MODES.items():
+                # Use class reference: self may be TelegramChannel which does not
+                # inherit from TelegramCommandsMixin, so self._TIER_TO_MODES would
+                # raise AttributeError and silently leave all tiers as "—".
+                for tier, modes in TelegramCommandsMixin._TIER_TO_MODES.items():
                     mc = lr.modes.get_mode(modes[0])
                     if mc and getattr(mc, "model", None):
                         model = mc.model
                         current[tier] = model.split("/")[-1].split(":")[-1]
         except Exception:  # noqa: BLE001
-            pass
+            logger.debug("Failed to read LLM mode router for tier summary", exc_info=True)
 
         lines = [
             f"📝 *Models — {emoji} {name}*",
@@ -2943,13 +2945,14 @@ class TelegramCommandsMixin:
 
             lr = get_llm_router()
             if lr:
-                modes = self._TIER_TO_MODES.get(tier, [])
+                # Use class reference (see _show_models_tier_summary for rationale)
+                modes = TelegramCommandsMixin._TIER_TO_MODES.get(tier, [])
                 if modes:
                     mc = lr.modes.get_mode(modes[0])
                     if mc:
                         current_model = getattr(mc, "model", "") or ""
         except Exception:  # noqa: BLE001
-            pass
+            logger.debug("Failed to read LLM mode router for model list", exc_info=True)
 
         total_pages = (len(models) + PAGE_SIZE - 1) // PAGE_SIZE
         page = max(0, min(page, total_pages - 1))
@@ -3616,7 +3619,8 @@ class TelegramCommandsMixin:
                 return
 
             for tier, model in tier_models.items():
-                for mode_name in self._TIER_TO_MODES.get(tier, []):
+                # Use class reference (self may be TelegramChannel, not mixin)
+                for mode_name in TelegramCommandsMixin._TIER_TO_MODES.get(tier, []):
                     router.update_mode(mode_name, provider=provider_id, model=model)
 
             # Persist to global config under ``llm_router.llm_modes``
@@ -4013,7 +4017,10 @@ class TelegramCommandsMixin:
                 if ts_raw:
                     try:
                         if isinstance(ts_raw, (int, float)):
-                            ts_prefix = _dt.utcfromtimestamp(ts_raw).strftime("%H:%M") + " "
+                            ts_prefix = (
+                                datetime.fromtimestamp(ts_raw, tz=timezone.utc).strftime("%H:%M")
+                                + " "
+                            )
                         else:
                             ts_prefix = str(ts_raw)[:5] + " "
                     except Exception:  # noqa: BLE001
