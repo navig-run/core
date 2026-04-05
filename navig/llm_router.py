@@ -409,80 +409,10 @@ class ResolvedLLMConfig:
         )
 
 
-# ─────────────────────────────────────────────────────────────
-# Mode Detection — heuristic classifier
-# ─────────────────────────────────────────────────────────────
-
-# Precompiled patterns for detect_mode
-_CODE_PATTERNS = re.compile(
-    r"```|def\s+\w+|class\s+\w+|function\s+\w+|import\s+\w+|"
-    r"const\s+\w+|let\s+\w+|var\s+\w+|console\.|print\(|"
-    r"write\s+(?:a\s+)?(script|function|class|code|program|module)|"
-    r"fix\s+(this|the|my)\s+(code|bug|error|script|function)|"
-    r"debug|refactor|implement|unittest|pytest|"
-    r"(python|javascript|typescript|rust|go|java|c\+\+|ruby|php|bash|shell)\s+(code|script|function)|"
-    r"code\s+review|pull\s+request|merge\s+conflict|git\s+diff",
-    re.IGNORECASE,
-)
-
-_GREETING_PATTERNS = re.compile(
-    r"^(hey|hi|hello|hola|sup|yo|what'?s?\s+up|how\s+are\s+you|good\s+(morning|afternoon|evening))\b",
-    re.IGNORECASE,
-)
-
-_CASUAL_PATTERNS = re.compile(
-    r"^(thanks?|thx|ok|okay|cool|nice|great|lol|haha|yes|no|sure|nah|nope|yep|yeah)\s*[!.?]*$",
-    re.IGNORECASE,
-)
-
-_SUMMARIZE_PATTERNS = re.compile(
-    r"\b(summarize|summary|tl;?dr|tldr|digest|condense|brief|recap|overview\s+of)\b",
-    re.IGNORECASE,
-)
-
-_RESEARCH_PATTERNS = re.compile(
-    r"\b(research|analyze|analysis|compare|comparison|sources|"
-    r"investigate|examine|evaluate|review\s+the|study|"
-    r"pros?\s+and\s+cons?|advantages?\s+and\s+disadvantages?|"
-    r"what\s+are\s+the\s+differences?|deep\s+dive)\b",
-    re.IGNORECASE,
-)
-
-
-def detect_mode(user_input: str) -> str:
-    """
-    Classify user input into a canonical LLM mode.
-
-    Returns one of: 'coding', 'small_talk', 'summarize', 'research', 'big_tasks'.
-    """
-    text = user_input.strip()[:2000]  # Cap length to prevent ReDoS on pathological input
-    if not text:
-        return "small_talk"
-
-    # Short inputs (< 15 chars) that are greetings
-    if len(text) < 60 and _GREETING_PATTERNS.search(text):
-        return "small_talk"
-    if _CASUAL_PATTERNS.match(text):
-        return "small_talk"
-
-    # Code patterns (highest signal)
-    if _CODE_PATTERNS.search(text):
-        return "coding"
-
-    # Summarization
-    if _SUMMARIZE_PATTERNS.search(text):
-        return "summarize"
-
-    # Research
-    if _RESEARCH_PATTERNS.search(text):
-        return "research"
-
-    # Short single-sentence questions → small_talk
-    if len(text) < 80 and text.count("\n") == 0 and text.endswith("?"):
-        return "small_talk"
-
-    # Default
-    return "big_tasks"
+# ────────────────────────────────────────────────────────────────
+# Mode Detection — canonical impl lives in navig.routing.detect
+# LLMModeRouter.detect_mode() delegates there; no duplicate here.
+# ────────────────────────────────────────────────────────────────
 
 
 # ─────────────────────────────────────────────────────────────
@@ -639,8 +569,11 @@ class LLMModeRouter:
         return MODE_ALIASES.get(h, "big_tasks")
 
     def detect_mode(self, user_input: str) -> str:
-        """Heuristic mode detection from user text."""
-        return detect_mode(user_input)
+        """Heuristic mode detection from user text (delegates to navig.routing.detect)."""
+        from navig.routing.detect import detect_mode as _detect_canonical  # noqa: PLC0415
+
+        mode, _, _ = _detect_canonical(user_input)
+        return mode
 
     # ── Main routing logic ────────────────────────────────
 
@@ -955,7 +888,9 @@ def suggest_toolsets(
     Returns an empty list when no tools should be offered (e.g. ``small_talk``).
     """
     if mode is None:
-        mode = detect_mode(user_input or "")
+        from navig.routing.detect import detect_mode as _detect_canonical  # noqa: PLC0415
+
+        mode, _, _ = _detect_canonical(user_input or "")
     else:
         mode = LLMModeRouter.resolve_mode(mode)
     return list(MODE_TOOLSET_HINTS.get(mode, ["core"]))

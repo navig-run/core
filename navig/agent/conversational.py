@@ -725,7 +725,9 @@ For conversation, respond naturally without JSON.
         self.conversation_history.append({"role": "user", "content": message})
 
         # Keep history manageable
-        self.conversation_history = self._truncate_history(self.conversation_history, max_messages=20)
+        self.conversation_history = self._truncate_history(
+            self.conversation_history, max_messages=20
+        )
 
         # Get AI response
         response = await self._get_ai_response(message)
@@ -1026,11 +1028,15 @@ For conversation, respond naturally without JSON.
                 break
 
             current_calls = [(tc.name, tc.arguments) for tc in response.tool_calls]
-            
+
             # Detect duplicate tool calls to prevent infinite loops (A->B->A->B etc.)
             if current_calls in past_tool_calls_this_turn:
-                logger.warning("Duplicate tool calls detected in recent history. Breaking to prevent infinite loop.")
-                final_response = response.content or "[Agent halted to prevent duplicate tool call loop]"
+                logger.warning(
+                    "Duplicate tool calls detected in recent history. Breaking to prevent infinite loop."
+                )
+                final_response = (
+                    response.content or "[Agent halted to prevent duplicate tool call loop]"
+                )
                 break
             past_tool_calls_this_turn.append(current_calls)
 
@@ -1157,7 +1163,9 @@ For conversation, respond naturally without JSON.
         # Update conversation history
         self.conversation_history.append({"role": "user", "content": message})
         self.conversation_history.append({"role": "assistant", "content": final_response})
-        self.conversation_history = self._truncate_history(self.conversation_history, max_messages=20)
+        self.conversation_history = self._truncate_history(
+            self.conversation_history, max_messages=20
+        )
 
         # Cancel background speculations before final logging
         try:
@@ -1242,22 +1250,28 @@ For conversation, respond naturally without JSON.
 
         return _re.sub(r"[\u4E00-\u9FFF\u3400-\u4DBF\u3000-\u303F]+", "", text).strip()
 
-    def _truncate_history(self, history: list[dict[str, Any]], max_messages: int = 20) -> list[dict[str, Any]]:
+    def _truncate_history(
+        self, history: list[dict[str, Any]], max_messages: int = 20
+    ) -> list[dict[str, Any]]:
         """Safely truncate conversation history preserving tool-call pairs."""
         if len(history) <= max_messages:
             return history
-            
+
         # Find a safe 'user' message to start from
         idx = len(history) - max_messages
         while idx < len(history):
             if history[idx].get("role") == "user":
                 # Ensure we don't start in the middle of a tool call sequence
-                if idx == 0 or history[idx - 1].get("role") != "assistant" or not history[idx - 1].get("tool_calls"):
+                if (
+                    idx == 0
+                    or history[idx - 1].get("role") != "assistant"
+                    or not history[idx - 1].get("tool_calls")
+                ):
                     return history[idx:]
             idx += 1
-            
+
         # Fallback if no safe user message found
-        return history[len(history) - max_messages:]
+        return history[len(history) - max_messages :]
 
     async def _get_ai_response(self, message: str) -> str:
         """Query AI for response via the unified router (all entrypoints)."""
@@ -1337,6 +1351,13 @@ For conversation, respond naturally without JSON.
 
     # Maps LLM mode names to HybridRouter tier names for the TR pass-through.
     _MODE_TIER_MAP: dict[str, str] = {
+        # Canonical mode names returned by detect_mode()
+        "small_talk": "small",
+        "summarize": "small",
+        "big_tasks": "big",
+        "research": "big",
+        "coding": "coder_big",
+        # Legacy / alias names kept for backward compat
         "code": "coder_big",
         "debug": "coder_big",
         "explain": "coder_big",
@@ -1344,8 +1365,6 @@ For conversation, respond naturally without JSON.
         "planning": "big",
         "complex": "big",
         "analysis": "big",
-        "summarize": "small",
-        "small_talk": "small",
         "quick": "small",
     }
 
