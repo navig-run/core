@@ -271,11 +271,7 @@ def _is_ignored(rel_path: str, ignore_patterns: list[str], is_dir: bool = False)
     """
     # Force-include whitelist: always index plans and wiki inside .navig
     _norm = rel_path.replace("\\", "/")
-    if (
-        _norm == ".navig"
-        or _norm.startswith(".navig/plans")
-        or _norm.startswith(".navig/wiki")
-    ):
+    if _norm == ".navig" or _norm.startswith(".navig/plans") or _norm.startswith(".navig/wiki"):
         return False
 
     parts = _norm.split("/")
@@ -966,7 +962,7 @@ class ProjectIndexer:
 
         # Group by top-level directory
         groups: dict[str, list[str]] = {}
-        for path, ct in rows:
+        for path, _ct in rows:
             parts = path.replace("\\", "/").split("/")
             key = parts[0] if len(parts) > 1 else "."
             groups.setdefault(key, []).append(path)

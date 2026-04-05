@@ -63,7 +63,7 @@ class _WatchfilesBackend:
 
         logger.info("Inbox watcher started (watchfiles) on: %s", self._dirs)
         for changes in _watch(*self._dirs, stop_event=self._stop_event):
-            for change_type, path_str in changes:
+            for _change_type, path_str in changes:
                 path = Path(path_str)
                 if path.is_file() and not path.name.startswith("."):
                     try:

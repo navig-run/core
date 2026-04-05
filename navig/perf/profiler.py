@@ -115,7 +115,7 @@ def _extract_and_store(profiler: cProfile.Profile, elapsed_ms: float) -> None:
         # Parse the stats into structured dicts
         hot_functions: list[dict[str, Any]] = []
         profiler.create_stats()
-        for (filename, lineno, funcname), (cc, nc, tt, ct, _) in profiler.stats.items():  # type: ignore[union-attr]
+        for (filename, lineno, funcname), (_cc, nc, tt, ct, _) in profiler.stats.items():  # type: ignore[union-attr]
             hot_functions.append(
                 {
                     "fn": funcname,

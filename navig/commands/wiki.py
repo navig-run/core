@@ -199,7 +199,7 @@ def init_wiki(wiki_path: Path, force: bool = False) -> bool:
         folder_path.mkdir(parents=True, exist_ok=True)
 
         if isinstance(contents, dict):
-            for subname, subcontents in contents.items():
+            for subname, _subcontents in contents.items():
                 if subname == "_files":
                     continue
                 subfolder = folder_path / subname

@@ -205,7 +205,7 @@ class CapabilityPromoter:
             return None, None
 
         # Pick best candidate, avoiding recent repeats
-        for feature, score in candidates:
+        for feature, _score in candidates:
             if feature.key not in self._promotion_history[-5:]:
                 msg = self._build_promotion_message(feature)
                 self._promotion_history.append(feature.key)

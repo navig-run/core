@@ -350,9 +350,7 @@ class NavigConfig:
     # Step 2 — Provider
     ai_provider: str = "openrouter"
     api_key: str = ""
-    ai_provider_env_var: str = (
-        ""  # env var name resolved at runtime (never a raw secret)
-    )
+    ai_provider_env_var: str = ""  # env var name resolved at runtime (never a raw secret)
 
     # Step 3 — Runtime
     local_runtime_enabled: bool = False
@@ -397,9 +395,7 @@ def _store_in_vault(
         return cred_id
     except Exception as exc:  # vault init can fail on locked-down systems
         if console:
-            exc_text = str(exc).replace(
-                "[", "\\["
-            )  # escape Rich markup in exception messages
+            exc_text = str(exc).replace("[", "\\[")  # escape Rich markup in exception messages
             provider_safe = provider.replace(
                 "[", "\\["
             )  # provider may be user-typed in manual flow
@@ -565,9 +561,7 @@ def detect_providers(timeout_ms: int = 500) -> dict[str, bool]:
 
     if port_providers:
         remaining = max(0.05, deadline - time.monotonic())
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=len(port_providers)
-        ) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(port_providers)) as executor:
             futures = {executor.submit(_tcp_probe, p): p for p in port_providers}
             try:
                 for fut in concurrent.futures.as_completed(futures, timeout=remaining):
@@ -615,9 +609,7 @@ def render_provider_menu(
     other = [p for p in PROVIDER_REGISTRY if p.type == "other"]
     ordered: list[ProviderDef] = cloud + local + other
 
-    console.print(
-        "\n  [dim]✓ = configured   ◉ = local service running   · = not detected[/dim]\n"
-    )
+    console.print("\n  [dim]✓ = configured   ◉ = local service running   · = not detected[/dim]\n")
 
     def _print_group(header: str, group: list[ProviderDef], start: int) -> int:
         bar = "─" * max(0, 52 - len(header))
@@ -700,9 +692,7 @@ def _handle_provider_selection(
                 f"[green]✓ {provider.label} running{port_info} — no API key needed.[/green]"
             )
         else:
-            console.print(
-                f"\n[yellow]⚠ {provider.label} is not currently running.[/yellow]"
-            )
+            console.print(f"\n[yellow]⚠ {provider.label} is not currently running.[/yellow]")
             if provider.api_key_url:
                 console.print(
                     f"  Download: [link={provider.api_key_url}]{provider.api_key_url}[/link]"
@@ -713,21 +703,15 @@ def _handle_provider_selection(
             try:
                 input("  Press Enter when ready (or Ctrl+C to cancel)... ")
             except KeyboardInterrupt:
-                raise SystemExit(
-                    "Setup cancelled. Re-run navig init to try again."
-                ) from None
+                raise SystemExit("Setup cancelled. Re-run navig init to try again.") from None
 
             # Re-probe with generous 2 s timeout
             re_detected = detect_providers(timeout_ms=2000)
             if re_detected.get(provider.id):
                 port_info = f" on :{provider.port}" if provider.port else ""
-                console.print(
-                    f"[green]✓ {provider.label} is now running{port_info}.[/green]"
-                )
+                console.print(f"[green]✓ {provider.label} is now running{port_info}.[/green]")
             else:
-                console.print(
-                    f"[yellow]⚠ Still cannot reach {provider.label}.[/yellow]"
-                )
+                console.print(f"[yellow]⚠ Still cannot reach {provider.label}.[/yellow]")
                 try:
                     choice = Prompt.ask(
                         "  [c]ontinue anyway or [e]xit?",
@@ -735,22 +719,16 @@ def _handle_provider_selection(
                         default="c",
                     )
                     if choice == "e":
-                        raise SystemExit(
-                            "Setup cancelled. Re-run navig init to try again."
-                        )
+                        raise SystemExit("Setup cancelled. Re-run navig init to try again.")
                 except KeyboardInterrupt:
-                    raise SystemExit(
-                        "Setup cancelled. Re-run navig init to try again."
-                    ) from None
+                    raise SystemExit("Setup cancelled. Re-run navig init to try again.") from None
         return (provider.id, "")
 
     # ── Cloud provider ────────────────────────────────────────────────────────
     primary_env = provider.env_vars[0] if provider.env_vars else ""
 
     if is_detected:
-        console.print(
-            f"[green]✓ {provider.label} — key found in {primary_env}.[/green]"
-        )
+        console.print(f"[green]✓ {provider.label} — key found in {primary_env}.[/green]")
         return (provider.id, primary_env)
 
     # Key not found — prompt user
@@ -760,28 +738,19 @@ def _handle_provider_selection(
     def _validate_key(key: str) -> bool:
         stripped = key.strip()
         return bool(
-            stripped
-            and len(stripped) >= 10
-            and " " not in stripped
-            and "\t" not in stripped
+            stripped and len(stripped) >= 10 and " " not in stripped and "\t" not in stripped
         )
 
-    api_key = Prompt.ask(
-        f"  Enter your {provider.label} API key", password=True, default=""
-    )
+    api_key = Prompt.ask(f"  Enter your {provider.label} API key", password=True, default="")
     if not _validate_key(api_key):
-        console.print(
-            "[yellow]⚠ Invalid key format — must be ≥ 10 chars with no spaces.[/yellow]"
-        )
+        console.print("[yellow]⚠ Invalid key format — must be ≥ 10 chars with no spaces.[/yellow]")
         api_key = Prompt.ask(
             f"  Enter your {provider.label} API key (retry)", password=True, default=""
         )
         if not _validate_key(api_key):
             raise SystemExit("Setup cancelled. Re-run navig init to try again.")
 
-    vault_id = _store_in_vault(
-        provider.id, primary_env, api_key.strip(), "api_key", console
-    )
+    vault_id = _store_in_vault(provider.id, primary_env, api_key.strip(), "api_key", console)
     if vault_id:
         console.print(f"[green]✓ {provider.label} API key saved to vault.[/green]")
     else:
@@ -888,9 +857,7 @@ if _TEXTUAL_AVAILABLE:
             step_num = self.current_step + 1
             labels = ["Identity", "Provider", "Runtime", "Packs", "Shell"]
             label = labels[min(self.current_step, len(labels) - 1)]
-            return (
-                f"  {' '.join(dots)}   Step {step_num} / {self.total_steps} — {label}"
-            )
+            return f"  {' '.join(dots)}   Step {step_num} / {self.total_steps} — {label}"
 
     class SummaryPanel(Static):
         """Live config summary panel."""
@@ -1176,9 +1143,7 @@ if _TEXTUAL_AVAILABLE:
                 )
                 yield Label("")
                 with Horizontal(id="welcome-btns"):
-                    yield Button(
-                        "Advanced Setup  →", variant="primary", id="btn-advanced"
-                    )
+                    yield Button("Advanced Setup  →", variant="primary", id="btn-advanced")
                     yield Button("Quickstart", variant="default", id="btn-quickstart")
 
         @on(Button.Pressed, "#btn-advanced")
@@ -1281,9 +1246,7 @@ if _TEXTUAL_AVAILABLE:
                 for idx, (label, *_) in enumerate(self._CHECK_DEFS):
                     import re as _re
 
-                    _safe_id = _re.sub(
-                        r"[^a-zA-Z0-9_-]", "", label[:24].replace(" ", "_")
-                    )
+                    _safe_id = _re.sub(r"[^a-zA-Z0-9_-]", "", label[:24].replace(" ", "_"))
                     row = CheckRow(label, id=f"check-{_safe_id or str(idx)}")
                     yield row
                 yield Label("")
@@ -1303,7 +1266,7 @@ if _TEXTUAL_AVAILABLE:
         async def _run_checks(self) -> None:
             try:
                 rows = list(self.query(CheckRow))
-                for (label, fn, is_critical, hint), row in zip(self._CHECK_DEFS, rows):
+                for (_label, fn, is_critical, hint), row in zip(self._CHECK_DEFS, rows):
                     row.set_pending()
                     await asyncio.sleep(0.05)
                     try:
@@ -1452,9 +1415,7 @@ if _TEXTUAL_AVAILABLE:
             self._ordered_providers = sorted(PROVIDER_REGISTRY, key=_sort_key)
 
         def compose(self) -> ComposeResult:
-            yield Label(
-                "AI Provider  [dim](✓ configured · ◉ running)[/dim]", markup=True
-            )
+            yield Label("AI Provider  [dim](✓ configured · ◉ running)[/dim]", markup=True)
             with RadioSet(id="radio-provider"):
                 for p in self._ordered_providers:
                     is_det = self._detected.get(p.id, False)
@@ -1466,9 +1427,7 @@ if _TEXTUAL_AVAILABLE:
                         badge = ""
                     display = f"{p.label}{badge}"
                     yield RadioButton(display, value=(p.id == self._cfg.ai_provider))
-            yield Label(
-                "API Key  [dim](stored in vault — not echoed)[/dim]", markup=True
-            )
+            yield Label("API Key  [dim](stored in vault — not echoed)[/dim]", markup=True)
             yield Input(
                 value="",
                 placeholder="sk-… or leave blank",
@@ -1482,17 +1441,11 @@ if _TEXTUAL_AVAILABLE:
                 label_plain: str = event.pressed.label.plain  # type: ignore[union-attr]
                 # Map displayed label back to provider id via _ordered_providers
                 matched = next(
-                    (
-                        p
-                        for p in self._ordered_providers
-                        if label_plain.startswith(p.label)
-                    ),
+                    (p for p in self._ordered_providers if label_plain.startswith(p.label)),
                     None,
                 )
                 self._cfg.ai_provider = matched.id if matched else label_plain.strip()
-                local_ids = {p.id for p in PROVIDER_REGISTRY if p.type == "local"} | {
-                    "none"
-                }
+                local_ids = {p.id for p in PROVIDER_REGISTRY if p.type == "local"} | {"none"}
                 inp: Input = self.query_one("#inp-api-key", Input)
                 inp.display = self._cfg.ai_provider not in local_ids
                 self._notify_parent()
@@ -1567,9 +1520,7 @@ if _TEXTUAL_AVAILABLE:
         def compose(self) -> ComposeResult:
             yield Label("Capability packs to activate")
             for display, key in self._PACKS:
-                yield Checkbox(
-                    display, value=(key in self._cfg.capability_packs), id=f"cb-{key}"
-                )
+                yield Checkbox(display, value=(key in self._cfg.capability_packs), id=f"cb-{key}")
 
         @on(Checkbox.Changed)
         def _pack_toggled(self, event: Checkbox.Changed) -> None:
@@ -1578,9 +1529,7 @@ if _TEXTUAL_AVAILABLE:
                 if key not in self._cfg.capability_packs:
                     self._cfg.capability_packs.append(key)
             else:
-                self._cfg.capability_packs = [
-                    p for p in self._cfg.capability_packs if p != key
-                ]
+                self._cfg.capability_packs = [p for p in self._cfg.capability_packs if p != key]
             try:
                 self.app.query_one(SummaryPanel).refresh_from(self._cfg)
             except NoMatches:
@@ -1749,10 +1698,7 @@ if _TEXTUAL_AVAILABLE:
                     self.notify("Operator name cannot be empty.", severity="warning")
                     return False
             if self._step == 1:
-                if (
-                    self._cfg.ai_provider not in ("ollama", "none")
-                    and not self._cfg.api_key
-                ):
+                if self._cfg.ai_provider not in ("ollama", "none") and not self._cfg.api_key:
                     self.notify(
                         "No API key entered. You can add one later via `navig ai providers`.",
                         severity="warning",
@@ -1802,9 +1748,7 @@ if _TEXTUAL_AVAILABLE:
                 yield SummaryPanel(self._cfg, id="review-summary")
                 yield Label("")
                 with Horizontal(id="review-btns"):
-                    yield Button(
-                        "Confirm & Install  ✔", variant="primary", id="btn-confirm"
-                    )
+                    yield Button("Confirm & Install  ✔", variant="primary", id="btn-confirm")
                     yield Button("← Edit", variant="default", id="btn-back")
 
         def on_mount(self) -> None:
@@ -1864,10 +1808,7 @@ if _TEXTUAL_AVAILABLE:
 
         def compose(self) -> ComposeResult:
             env = detect_environment()
-            packs_str = (
-                "  ".join(f"{p.capitalize()} ✔" for p in self._cfg.capability_packs)
-                or "—"
-            )
+            packs_str = "  ".join(f"{p.capitalize()} ✔" for p in self._cfg.capability_packs) or "—"
             summary_text = (
                 f"[bold #22d3ee]NAVIG — Setup Complete[/bold #22d3ee]\n"
                 f"\n"
@@ -1942,8 +1883,7 @@ if _TEXTUAL_AVAILABLE:
                 summary_widget: Static = self.query_one("#final-summary", Static)
                 env = detect_environment()
                 packs_str = (
-                    "  ".join(f"{p.capitalize()} ✔" for p in self._cfg.capability_packs)
-                    or "—"
+                    "  ".join(f"{p.capitalize()} ✔" for p in self._cfg.capability_packs) or "—"
                 )
                 summary_widget.update(
                     f"[bold #22d3ee]NAVIG — Setup Complete[/bold #22d3ee]\n"
@@ -2049,9 +1989,7 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
         return
 
     print_banner(console)
-    console.print(
-        "[dim]────────────────────────────────────────────────────────────[/dim]"
-    )
+    console.print("[dim]────────────────────────────────────────────────────────────[/dim]")
     console.print(
         "[#2c8bb7]▸[/#2c8bb7] [bold]Connect[/bold] to any server via SSH with a single command"
     )
@@ -2067,9 +2005,7 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
     console.print(
         "[#2c8bb7]▸[/#2c8bb7] [bold]Monitor[/bold] servers, logs, and health from one terminal"
     )
-    console.print(
-        "[dim]────────────────────────────────────────────────────────────[/dim]"
-    )
+    console.print("[dim]────────────────────────────────────────────────────────────[/dim]")
     console.print(
         "[dim]Press Ctrl+C at any time to cancel · Run with --skip to exit immediately[/dim]\n"
     )
@@ -2110,9 +2046,7 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
                 console.print(
                     "  [bold blue]2. Advanced[/bold blue] - Full configuration with all options"
                 )
-                choice = Prompt.ask(
-                    "Select setup mode", choices=["1", "2"], default="1"
-                )
+                choice = Prompt.ask("Select setup mode", choices=["1", "2"], default="1")
                 flow = "quickstart" if choice == "1" else "manual"
 
             if flow == "quickstart":
@@ -2138,30 +2072,22 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
             pass
 
         console.print()
-        console.rule(
-            "[bold #2c8bb7]✅ Onboarding Complete![/bold #2c8bb7]", style="#2c8bb7"
-        )
+        console.rule("[bold #2c8bb7]✅ Onboarding Complete![/bold #2c8bb7]", style="#2c8bb7")
 
-        summary = Table(
-            title="Configuration Summary", show_header=False, border_style="#2c8bb7"
-        )
+        summary = Table(title="Configuration Summary", show_header=False, border_style="#2c8bb7")
         summary.add_column("Setting", style="#2c8bb7")
         summary.add_column("Value", style="white")
         summary.add_row("Config File", str(DEFAULT_CONFIG_FILE))
         summary.add_row("Workspace", config["agents"]["defaults"]["workspace"])
         summary.add_row("AI Provider", config["agents"]["defaults"]["model"])
-        summary.add_row(
-            "Typing Mode", config["agents"]["defaults"].get("typing_mode", "instant")
-        )
+        summary.add_row("Typing Mode", config["agents"]["defaults"].get("typing_mode", "instant"))
         telegram_cfg = config.get("channels", {}).get("telegram", {})
         if telegram_cfg.get("enabled"):
             summary.add_row("Telegram", "Enabled ✓")
         console.print(summary)
 
         console.print("\n[bold]Next Steps:[/bold]")
-        console.print(
-            "  1. Add a host:        [#2c8bb7]navig host add myserver[/#2c8bb7]"
-        )
+        console.print("  1. Add a host:        [#2c8bb7]navig host add myserver[/#2c8bb7]")
         console.print(
             "  2. Configure AI:      [#2c8bb7]navig ai providers --add openrouter[/#2c8bb7]"
         )
@@ -2200,9 +2126,7 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
         console.print(
             "[dim]▸ Settings live in [/dim][#2c8bb7]~/.navig/navig.json[/#2c8bb7][dim] — edit anytime.[/dim]"
         )
-        console.print(
-            "[dim]▸ Press Ctrl+C during any prompt to cancel without saving.[/dim]\n"
-        )
+        console.print("[dim]▸ Press Ctrl+C during any prompt to cancel without saving.[/dim]\n")
 
     except KeyboardInterrupt:
         console.print("\n[yellow]Onboarding cancelled.[/yellow]")
@@ -2241,9 +2165,7 @@ def run_quickstart(console: ConsoleType) -> dict[str, Any]:
     }
 
     # Step 1: AI Provider
-    console.print(
-        "[#2c8bb7]\u25b8[/#2c8bb7] [#2c8bb7]\\[1/3][/#2c8bb7] [bold]AI Provider[/bold]"
-    )
+    console.print("[#2c8bb7]\u25b8[/#2c8bb7] [#2c8bb7]\\[1/3][/#2c8bb7] [bold]AI Provider[/bold]")
     console.print("Which AI provider do you want to use?\n")
 
     detected = detect_providers()
@@ -2259,15 +2181,11 @@ def run_quickstart(console: ConsoleType) -> dict[str, Any]:
         if not (0 <= choice_idx < total):
             raise ValueError
     except ValueError:
-        console.print(
-            f"[yellow]Invalid choice — using default ({default_idx}).[/yellow]"
-        )
+        console.print(f"[yellow]Invalid choice — using default ({default_idx}).[/yellow]")
         choice_idx = default_idx - 1
 
     selected_provider = ordered_providers[choice_idx]
-    provider_id, provider_env_var = _handle_provider_selection(
-        selected_provider, detected, console
-    )
+    provider_id, provider_env_var = _handle_provider_selection(selected_provider, detected, console)
     config["agents"]["defaults"]["model"] = provider_id
     config["agents"]["defaults"]["ai_provider_env_var"] = provider_env_var
 
@@ -2293,29 +2211,21 @@ def run_quickstart(console: ConsoleType) -> dict[str, Any]:
                 "enabled": True,
                 "allowed_users": [int(user_id)] if user_id.isdigit() else [],
             }
-            vault_id = _store_in_vault(
-                "telegram", "bot_token", bot_token, "token", console
-            )
+            vault_id = _store_in_vault("telegram", "bot_token", bot_token, "token", console)
             if vault_id:
                 tg_cfg["bot_token_vault_id"] = vault_id
                 console.print("[green]✓ Telegram token saved to vault[/green]")
             else:
-                console.print(
-                    "[yellow]⚠ Telegram token could not be vaulted — skipped[/yellow]"
-                )
+                console.print("[yellow]⚠ Telegram token could not be vaulted — skipped[/yellow]")
             config["channels"]["telegram"] = tg_cfg
 
     # Step 3: Workspace
-    console.print(
-        "\n[#2c8bb7]\u25b8[/#2c8bb7] [#2c8bb7]\\[3/3][/#2c8bb7] [bold]Workspace[/bold]"
-    )
+    console.print("\n[#2c8bb7]\u25b8[/#2c8bb7] [#2c8bb7]\\[3/3][/#2c8bb7] [bold]Workspace[/bold]")
     console.print(f"Default workspace: [#2c8bb7]{DEFAULT_WORKSPACE_DIR}[/#2c8bb7]")
 
     use_default = Confirm.ask("Use default workspace location?", default=True)
     if not use_default:
-        requested_workspace = Prompt.ask(
-            "Enter workspace path", default=str(DEFAULT_WORKSPACE_DIR)
-        )
+        requested_workspace = Prompt.ask("Enter workspace path", default=str(DEFAULT_WORKSPACE_DIR))
         console.print(
             "[yellow]Personal/state workspace files are always managed at "
             f"{DEFAULT_WORKSPACE_DIR}[/yellow]"
@@ -2361,17 +2271,11 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> dict[str,
 
     # Section 1: Workspace Configuration
     if not non_interactive:
-        console.print(
-            "[dim][1/5] Press Enter to continue, or Ctrl+C to cancel...[/dim]"
-        )
+        console.print("[dim][1/5] Press Enter to continue, or Ctrl+C to cancel...[/dim]")
         input()
-    console.print(
-        Panel("[bold]Section 1: Workspace Configuration[/bold]", border_style="#2c8bb7")
-    )
+    console.print(Panel("[bold]Section 1: Workspace Configuration[/bold]", border_style="#2c8bb7"))
 
-    requested_workspace = Prompt.ask(
-        "Workspace directory", default=str(DEFAULT_WORKSPACE_DIR)
-    )
+    requested_workspace = Prompt.ask("Workspace directory", default=str(DEFAULT_WORKSPACE_DIR))
     if requested_workspace != str(DEFAULT_WORKSPACE_DIR):
         console.print(
             "[yellow]Personal/state workspace files are always managed at "
@@ -2383,14 +2287,10 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> dict[str,
 
     # Section 2: AI Provider Configuration
     if not non_interactive:
-        console.print(
-            "[dim][2/5] Press Enter to continue, or Ctrl+C to cancel...[/dim]"
-        )
+        console.print("[dim][2/5] Press Enter to continue, or Ctrl+C to cancel...[/dim]")
         input()
     console.print(
-        Panel(
-            "[bold]Section 2: AI Provider Configuration[/bold]", border_style="#2c8bb7"
-        )
+        Panel("[bold]Section 2: AI Provider Configuration[/bold]", border_style="#2c8bb7")
     )
 
     detected = detect_providers()
@@ -2406,9 +2306,7 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> dict[str,
         if not (0 <= choice_idx < total):
             raise ValueError
     except ValueError:
-        console.print(
-            f"[yellow]Invalid choice — using default ({default_idx}).[/yellow]"
-        )
+        console.print(f"[yellow]Invalid choice — using default ({default_idx}).[/yellow]")
         choice_idx = default_idx - 1
 
     selected_provider = ordered_providers[choice_idx]
@@ -2453,13 +2351,9 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> dict[str,
 
     # Section 3: Agent Settings
     if not non_interactive:
-        console.print(
-            "[dim][3/5] Press Enter to continue, or Ctrl+C to cancel...[/dim]"
-        )
+        console.print("[dim][3/5] Press Enter to continue, or Ctrl+C to cancel...[/dim]")
         input()
-    console.print(
-        Panel("[bold]Section 3: Agent Settings[/bold]", border_style="#2c8bb7")
-    )
+    console.print(Panel("[bold]Section 3: Agent Settings[/bold]", border_style="#2c8bb7"))
 
     typing_mode = Prompt.ask(
         "Typing indicator mode",
@@ -2468,9 +2362,7 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> dict[str,
     )
     config["agents"]["defaults"]["typing_mode"] = typing_mode
 
-    typing_interval = Prompt.ask(
-        "Typing indicator refresh interval (seconds)", default="4.0"
-    )
+    typing_interval = Prompt.ask("Typing indicator refresh interval (seconds)", default="4.0")
     try:
         config["agents"]["defaults"]["typing_interval"] = float(typing_interval)
     except ValueError:
@@ -2484,13 +2376,9 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> dict[str,
 
     # Section 4: Channel Configuration
     if not non_interactive:
-        console.print(
-            "[dim][4/5] Press Enter to continue, or Ctrl+C to cancel...[/dim]"
-        )
+        console.print("[dim][4/5] Press Enter to continue, or Ctrl+C to cancel...[/dim]")
         input()
-    console.print(
-        Panel("[bold]Section 4: Channel Configuration[/bold]", border_style="#2c8bb7")
-    )
+    console.print(Panel("[bold]Section 4: Channel Configuration[/bold]", border_style="#2c8bb7"))
 
     # Telegram
     setup_telegram = Confirm.ask("Configure Telegram bot?", default=False)
@@ -2510,9 +2398,7 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> dict[str,
             tg_cfg_manual["bot_token_vault_id"] = vault_id
             console.print("[green]✓ Telegram token saved to vault[/green]")
         else:
-            console.print(
-                "[yellow]⚠ Telegram token could not be vaulted — skipped[/yellow]"
-            )
+            console.print("[yellow]⚠ Telegram token could not be vaulted — skipped[/yellow]")
         config["channels"]["telegram"] = tg_cfg_manual
 
     # Discord (placeholder)
@@ -2523,13 +2409,9 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> dict[str,
 
     # Section 5: Command Settings
     if not non_interactive:
-        console.print(
-            "[dim][5/5] Press Enter to continue, or Ctrl+C to cancel...[/dim]"
-        )
+        console.print("[dim][5/5] Press Enter to continue, or Ctrl+C to cancel...[/dim]")
         input()
-    console.print(
-        Panel("[bold]Section 5: Command Settings[/bold]", border_style="#2c8bb7")
-    )
+    console.print(Panel("[bold]Section 5: Command Settings[/bold]", border_style="#2c8bb7"))
 
     confirm_destructive = Confirm.ask(
         "Confirm destructive operations (delete, restart, etc.)?", default=True
@@ -2545,9 +2427,7 @@ def run_manual(console: ConsoleType, non_interactive: bool = False) -> dict[str,
     return config
 
 
-def create_workspace_templates(
-    workspace_path: Path, console: ConsoleType = None
-) -> None:
+def create_workspace_templates(workspace_path: Path, console: ConsoleType = None) -> None:
     """Create workspace template files (Agent-style bootstrap files)."""
     templates = {
         "AGENTS.md": """---
@@ -2862,19 +2742,13 @@ See documentation for enabling automated monitoring.
                     console.print(f"  [green]✓[/green] Created {filename}")
             except OSError as exc:
                 if console:
-                    console.print(
-                        f"  [yellow]⚠[/yellow] Could not create {filename}: {exc}"
-                    )
+                    console.print(f"  [yellow]⚠[/yellow] Could not create {filename}: {exc}")
 
     if console:
-        console.print(
-            f"\n[green]Workspace initialized at:[/green] {canonical_workspace}"
-        )
+        console.print(f"\n[green]Workspace initialized at:[/green] {canonical_workspace}")
 
 
-def save_config(
-    config: dict[str, Any], config_path: Path, console: ConsoleType = None
-) -> None:
+def save_config(config: dict[str, Any], config_path: Path, console: ConsoleType = None) -> None:
     """Save configuration to JSON file."""
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -2917,12 +2791,8 @@ def sync_to_env(config: dict[str, Any], console: ConsoleType = None) -> None:
     telegram_config = config.get("channels", {}).get("telegram", {})
 
     updates = {
-        "NAVIG_AI_MODEL": config.get("agents", {})
-        .get("defaults", {})
-        .get("model", "openrouter"),
-        "TYPING_MODE": config.get("agents", {})
-        .get("defaults", {})
-        .get("typing_mode", "instant"),
+        "NAVIG_AI_MODEL": config.get("agents", {}).get("defaults", {}).get("model", "openrouter"),
+        "TYPING_MODE": config.get("agents", {}).get("defaults", {}).get("typing_mode", "instant"),
     }
 
     if telegram_config:
@@ -3014,31 +2884,23 @@ def _auto_install_textual() -> bool:
         if result.returncode != 0:
             err = result.stderr.decode(errors="replace").strip()
             if console and err:
-                console.print(
-                    f"[dim yellow]textual install warning: {err[:200]}[/dim yellow]"
-                )
+                console.print(f"[dim yellow]textual install warning: {err[:200]}[/dim yellow]")
             return False
     except (OSError, subprocess.TimeoutExpired):
         if console:
-            console.print(
-                "[dim yellow]TUI install timed out — using text mode[/dim yellow]"
-            )
+            console.print("[dim yellow]TUI install timed out — using text mode[/dim yellow]")
         return False
 
     try:
         importlib.import_module("textual")
         if console:
-            console.print(
-                "[bold green]✓[/bold green] textual installed — launching TUI…\n"
-            )
+            console.print("[bold green]✓[/bold green] textual installed — launching TUI…\n")
         return True
     except ImportError:
         return False
 
 
-def run_onboard(
-    flow: str = "auto", non_interactive: bool = False, skip: bool = False
-) -> None:
+def run_onboard(flow: str = "auto", non_interactive: bool = False, skip: bool = False) -> None:
     """
     Run the NAVIG onboarding wizard.
 
@@ -3059,9 +2921,7 @@ def run_onboard(
     if skip:
         if console:
             print_banner(console)
-            console.print(
-                "[dim]Onboarding skipped. Run 'navig onboard' to configure.[/dim]"
-            )
+            console.print("[dim]Onboarding skipped. Run 'navig onboard' to configure.[/dim]")
         else:
             print("Onboarding skipped. Run 'navig onboard' to configure.")
         return

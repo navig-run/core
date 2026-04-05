@@ -279,7 +279,7 @@ def topic_index_from_manifest(manifest: dict[str, Any]) -> dict[str, list[dict[s
         topic = parts[1]
         topics[topic].append(command)
 
-    for topic, rows in topics.items():
+    for _topic, rows in topics.items():
         rows.sort(key=lambda row: str(row.get("path", "")))
 
     return dict(sorted(topics.items()))

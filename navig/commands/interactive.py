@@ -254,7 +254,7 @@ def create_menu_table(title: str, items: list[tuple[str, str]], show_keys: bool 
     table.add_column("Key", style=COLORS["accent"], width=6 if show_keys else 0)
     table.add_column("Option", style=COLORS["secondary"])
 
-    for idx, (key, option) in enumerate(items, 1):
+    for _idx, (key, option) in enumerate(items, 1):
         display_key = f"[{key}]" if show_keys else ""
         table.add_row(display_key, option)
 

@@ -110,7 +110,7 @@ class SystemChecksScreen(Screen):  # type: ignore[type-arg]
     async def _run_checks(self) -> None:
         try:
             rows = list(self.query(CheckRow))
-            for (label, fn, is_critical, hint), row in zip(self._CHECK_DEFS, rows):
+            for (_label, fn, is_critical, hint), row in zip(self._CHECK_DEFS, rows):
                 row.set_pending()
                 await asyncio.sleep(0.05)
                 try:

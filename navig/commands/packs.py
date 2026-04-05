@@ -292,7 +292,7 @@ class PackManager:
         packs = []
         seen_names = set()
 
-        for key, manifest in self._packs.items():
+        for _key, manifest in self._packs.items():
             # Skip duplicates (prefer installed over builtin)
             if manifest.name in seen_names:
                 continue
@@ -320,12 +320,12 @@ class PackManager:
 
         # Try normalized name
         normalized = name.lower().replace(" ", "-")
-        for key, manifest in self._packs.items():
+        for _key, manifest in self._packs.items():
             if manifest.name.lower().replace(" ", "-") == normalized:
                 return manifest
 
         # Try partial match
-        for key, manifest in self._packs.items():
+        for _key, manifest in self._packs.items():
             if normalized in manifest.name.lower():
                 return manifest
 

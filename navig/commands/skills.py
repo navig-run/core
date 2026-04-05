@@ -460,7 +460,7 @@ def run_skill_cmd(spec: str, extra_args: list[str], options: dict[str, Any]) -> 
         if syntax.lower().startswith("navig "):
             cli_args = syntax[6:].strip()
             # Replace placeholders with positional args
-            for i, arg in enumerate(extra_args):
+            for _i, arg in enumerate(extra_args):
                 # Replace first <placeholder> or {placeholder}
                 import re
 

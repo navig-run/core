@@ -561,7 +561,7 @@ def get_comms_router() -> CommsRouter:
         facts = get_knowledge_graph().recall("user", predicate="comms_preferred_channel")
         if facts:
             preferred_name = facts[0].object
-            for i, ch in enumerate(channels):
+            for _i, ch in enumerate(channels):
                 if ch.name == preferred_name:
                     # Will be promoted on first use
                     break
