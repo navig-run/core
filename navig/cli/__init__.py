@@ -1142,6 +1142,18 @@ def ask_compat(
     ask_ai(question, model, opts)
 
 
+@app.command("chat", hidden=True)
+def chat_compat(
+    ctx: typer.Context,
+    question: str | None = typer.Argument(None, help="Question to ask"),
+) -> None:
+    """[DEPRECATED] Use 'navig ask' instead."""
+    deprecation_warning("navig chat", "navig ask")
+    from navig.commands.chat import run_ai_chat
+
+    run_ai_chat(question, single_query=question is not None)
+
+
 # ── hestia/template/addon removed; server_template_app, mcp_app → via _EXTERNAL_CMD_MAP
 
 # ── App INITIALIZATION
