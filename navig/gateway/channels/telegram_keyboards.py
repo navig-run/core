@@ -1174,7 +1174,9 @@ class CallbackHandler:
                     {"chat_id": chat_id, "message_id": message_id},
                 )
             except Exception as exc:  # noqa: BLE001
-                logger.debug("Exception suppressed: %s", exc)  # best-effort; failure is non-critical
+                logger.debug(
+                    "Exception suppressed: %s", exc
+                )  # best-effort; failure is non-critical
             return
 
         # aitier_{key} — key is "auto", "small", "big", or "coder_big"
@@ -1198,7 +1200,9 @@ class CallbackHandler:
             try:
                 await handler(chat_id=chat_id, user_id=user_id, message_id=message_id)
             except Exception as exc:  # noqa: BLE001
-                logger.debug("Exception suppressed: %s", exc)  # best-effort; if edit fails, still ack the tap
+                logger.debug(
+                    "Exception suppressed: %s", exc
+                )  # best-effort; if edit fails, still ack the tap
 
         tier_labels = {
             "": "🔄 Auto",
@@ -1220,7 +1224,8 @@ class CallbackHandler:
         """Resolve models, assign curated tier defaults, update routers, navigate to tier summary.
 
         Shared by prov_activate_, prov_{id}, and mdl_prov_ callback handlers.
-        Returns True on success; on error answers cb_id and returns False.
+        Provider selection is always persisted immediately regardless of model availability.
+        Returns True on success.
         """
         models: list = []
         if hasattr(self.channel, "_resolve_provider_models"):
@@ -1229,20 +1234,12 @@ class CallbackHandler:
             except Exception:
                 logger.warning("Provider model resolution failed for pms_%s", prov_id)
                 models = list(getattr(manifest, "models", []) or [])
-                if not models:
-                    await self._answer(cb_id, "⚠️ Could not load models for this provider", show_alert=True)
-                    return False
 
         if not models and manifest and getattr(manifest, "tier", "") == "local":
             if prov_id == "llamacpp":
                 models = ["llama.cpp/default", "llama3.2"]
             elif prov_id == "ollama":
                 models = ["qwen2.5:7b", "phi3.5"]
-
-        if not models:
-            prov_label = manifest.display_name if manifest else prov_id
-            await self._answer(cb_id, f"⚠️ No models found for {prov_label}", show_alert=True)
-            return False
 
         defaults = self.channel._select_curated_tier_defaults(prov_id, models)
 
@@ -1255,13 +1252,14 @@ class CallbackHandler:
                 for tier in ("small", "big", "coder_big"):
                     slot = router.cfg.slot_for_tier(tier)
                     slot.provider = prov_id
-                    slot.model = defaults[tier]
+                    if defaults.get(tier):
+                        slot.model = defaults[tier]
                 if hasattr(self.channel, "_persist_hybrid_router_assignments"):
                     self.channel._persist_hybrid_router_assignments(router.cfg)
         except Exception:  # noqa: BLE001
             logger.debug("Hybrid router update skipped for provider=%s", prov_id)
 
-        # Always update LLM Mode Router (primary routing layer)
+        # Always update LLM Mode Router (primary routing layer) — persists provider immediately
         if hasattr(self.channel, "_update_llm_mode_router"):
             self.channel._update_llm_mode_router(prov_id, defaults)
 
@@ -1275,6 +1273,15 @@ class CallbackHandler:
             mark_chat_onboarding_step_completed("ai-provider")
         except (ImportError, AttributeError, TypeError, ValueError):
             logger.debug("Unable to mark ai-provider onboarding step for %s", prov_id)
+
+        if not models:
+            # Provider is saved; no models resolved yet — guide user to /models
+            await self.channel.send_message(
+                chat_id,
+                f"⚠️ No models found for {prov_name} — use /models to assign models manually.",
+                parse_mode=None,
+            )
+            return True
 
         await self.channel._show_models_tier_summary(
             chat_id,
@@ -1300,7 +1307,9 @@ class CallbackHandler:
                     {"chat_id": chat_id, "message_id": message_id},
                 )
             except Exception as exc:  # noqa: BLE001
-                logger.debug("Exception suppressed: %s", exc)  # best-effort; failure is non-critical
+                logger.debug(
+                    "Exception suppressed: %s", exc
+                )  # best-effort; failure is non-critical
             return
 
         if cb_data == "prov_noai":
@@ -1517,7 +1526,9 @@ class CallbackHandler:
                 models = await self.channel._resolve_provider_models(prov_id, manifest=manifest)
             except Exception:
                 logger.warning("Provider model resolution failed for pms_%s", prov_id)
-                await self._answer(cb_id, "⚠️ Could not load models for this provider", show_alert=True)
+                await self._answer(
+                    cb_id, "⚠️ Could not load models for this provider", show_alert=True
+                )
                 return
 
         if model_idx < 0 or model_idx >= len(models):
@@ -1687,7 +1698,9 @@ class CallbackHandler:
                     )
                 except Exception:
                     logger.warning("Provider model resolution failed for mdl_sel_%s", prov_id)
-                    await self._answer(cb_id, "⚠️ Could not load models for this provider", show_alert=True)
+                    await self._answer(
+                        cb_id, "⚠️ Could not load models for this provider", show_alert=True
+                    )
                     return
 
             if model_idx < 0 or model_idx >= len(models_list):
@@ -1870,7 +1883,9 @@ class CallbackHandler:
                     "deleteMessage", {"chat_id": chat_id, "message_id": message_id}
                 )
             except Exception as exc:  # noqa: BLE001
-                logger.debug("Exception suppressed: %s", exc)  # best-effort; failure is non-critical
+                logger.debug(
+                    "Exception suppressed: %s", exc
+                )  # best-effort; failure is non-critical
             await self._answer(cb_id, "")
             return
 
@@ -2082,7 +2097,9 @@ class CallbackHandler:
                     },
                 )
             except Exception as exc:  # noqa: BLE001
-                logger.debug("Exception suppressed: %s", exc)  # best-effort; failure is non-critical
+                logger.debug(
+                    "Exception suppressed: %s", exc
+                )  # best-effort; failure is non-critical
             return
 
         # Map callback → (field, value) or toggle

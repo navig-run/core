@@ -72,8 +72,10 @@ class _FakeChannel:
 
     @staticmethod
     def _select_curated_tier_defaults(prov_id, models):
+        if not models:
+            return {"small": "", "big": "", "coder_big": ""}
         return {
-            "small": models[1],
+            "small": models[1] if len(models) > 1 else models[0],
             "big": models[0],
             "coder_big": models[0],
         }
@@ -624,8 +626,8 @@ async def test_provider_callback_answered_before_activation(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_provider_callback_activation_failure_shows_alert(monkeypatch):
-    """When activation fails, a show_alert error toast should appear."""
+async def test_provider_callback_activation_failure_saves_provider_and_sends_guidance(monkeypatch):
+    """When model resolution fails, provider is still saved and a guidance message is sent."""
 
     class _FailActivateChannel(_FakeChannel):
         async def _resolve_provider_models(self, prov_id, manifest=None):
@@ -649,26 +651,33 @@ async def test_provider_callback_activation_failure_shows_alert(monkeypatch):
         user_id=401,
     )
 
+    # Provider must be saved even when model resolution fails
+    assert channel.llm_mode_calls, "Provider should be persisted despite model resolution failure"
+    assert channel.llm_mode_calls[0][0] == "openai"
+    # No blocking alert — user sees a success toast + guidance message
     show_alert_answers = [
         payload
         for method, payload in channel.api_calls
         if method == "answerCallbackQuery" and payload.get("show_alert") is True
     ]
-    assert show_alert_answers, "Expected a show_alert toast on activation failure"
-    alert_text = show_alert_answers[0].get("text", "").lower()
-    assert "failed" in alert_text or "could not load models" in alert_text
+    assert not show_alert_answers, "No blocking alert should appear when provider is activated"
+    guidance_msgs = [
+        payload
+        for method, payload in channel.api_calls
+        if method == "sendMessage" and "/models" in payload.get("text", "").lower()
+    ]
+    assert guidance_msgs, "Expected guidance message directing user to /models"
 
 
 # ─── Tests for _activate_provider_with_defaults helper ────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_activate_helper_no_models_shows_alert(monkeypatch):
-    """_activate_provider_with_defaults returns False and shows alert when no models."""
+async def test_activate_helper_no_models_saves_provider_and_sends_guidance(monkeypatch):
+    """_activate_provider_with_defaults saves provider and sends guidance when no models found."""
     from types import SimpleNamespace
 
     channel = _FakeChannel()
-    channel._resolve_cache = []  # type: ignore[attr-defined]
 
     async def _empty_models(prov_id, manifest=None):
         return []
@@ -685,19 +694,29 @@ async def test_activate_helper_no_models_shows_alert(monkeypatch):
 
     result = await handler._activate_provider_with_defaults("cb-x", 100, 200, "fakeprov", manifest)
 
-    assert result is False
+    # Provider is saved even when no models available
+    assert result is True
+    assert channel.llm_mode_calls, "Provider should be saved even with no models"
+    assert channel.llm_mode_calls[0][0] == "fakeprov"
+    # No blocking alert
     alert_answers = [
         p
         for m, p in channel.api_calls
         if m == "answerCallbackQuery" and p.get("show_alert") is True
     ]
-    assert alert_answers, "Should show alert when no models"
-    assert "No models found" in alert_answers[0]["text"]
+    assert not alert_answers, "Should not show blocking alert — provider was still selected"
+    # Guidance message sent
+    guidance = [
+        p
+        for m, p in channel.api_calls
+        if m == "sendMessage" and "No models found" in p.get("text", "")
+    ]
+    assert guidance, "Should send guidance message directing user to /models"
 
 
 @pytest.mark.asyncio
-async def test_activate_helper_resolution_failure_returns_false_and_alert(monkeypatch):
-    """_activate_provider_with_defaults must return False on resolver errors."""
+async def test_activate_helper_resolution_failure_saves_provider_and_sends_guidance(monkeypatch):
+    """_activate_provider_with_defaults saves provider and sends guidance when resolver raises."""
     from types import SimpleNamespace
 
     class _ResolverFailChannel(_FakeChannel):
@@ -716,14 +735,24 @@ async def test_activate_helper_resolution_failure_returns_false_and_alert(monkey
 
     result = await handler._activate_provider_with_defaults("cb-rf", 100, 200, "fakeprov", manifest)
 
-    assert result is False
+    # Provider is saved despite exception
+    assert result is True
+    assert channel.llm_mode_calls, "Provider should be persisted even when resolver raises"
+    assert channel.llm_mode_calls[0][0] == "fakeprov"
+    # No blocking alert
     alert_answers = [
         p
         for m, p in channel.api_calls
         if m == "answerCallbackQuery" and p.get("show_alert") is True
     ]
-    assert alert_answers
-    assert "Could not load models" in alert_answers[-1].get("text", "")
+    assert not alert_answers, "No blocking alert should appear"
+    # Guidance message sent
+    guidance = [
+        p
+        for m, p in channel.api_calls
+        if m == "sendMessage" and "No models found" in p.get("text", "")
+    ]
+    assert guidance, "Should send guidance message directing user to /models"
 
 
 @pytest.mark.asyncio
@@ -746,7 +775,9 @@ async def test_activate_helper_resolution_failure_uses_manifest_models_fallback(
         models=["fake/model-1", "fake/model-2"],
     )
 
-    result = await handler._activate_provider_with_defaults("cb-rf-ok", 100, 200, "fakeprov", manifest)
+    result = await handler._activate_provider_with_defaults(
+        "cb-rf-ok", 100, 200, "fakeprov", manifest
+    )
 
     assert result is True
     assert channel.llm_mode_calls
