@@ -108,7 +108,7 @@ class ConfigManager:
                 except Exception:  # noqa: BLE001
                     pass  # best-effort; failure is non-critical
         else:
-            self._app_root = self._find_app_root()
+            self._app_root = paths.find_app_root(verbose=self.verbose)
             if self._app_root:
                 self.app_config_dir = self._app_root / ".navig"
                 self.base_dir = self.app_config_dir
@@ -178,75 +178,9 @@ class ConfigManager:
         self._global_config = value
         self._global_config_loaded = True
 
-    def _find_app_root(self) -> Path | None:
-        """
-        Find app root by searching upward for .navig/ directory.
-
-        Starts from current working directory and searches upward through
-        parent directories until .navig/ folder is found or filesystem root
-        is reached.
-
-        Returns:
-            Path to directory containing .navig/ folder, or None if not found
-        """
-        current = Path.cwd()
-
-        # Search upward through parent directories
-        while True:
-            navig_dir = current / ".navig"
-
-            try:
-                # Check if .navig/ directory exists and is accessible
-                if navig_dir.exists() and navig_dir.is_dir():
-                    # Verify we can actually access it
-                    if self._is_directory_accessible(navig_dir):
-                        return current
-                    else:
-                        # Directory exists but is not accessible - skip it
-                        if self.verbose:
-                            from navig import console_helper as ch
-
-                            ch.warning(
-                                f"Found .navig at {navig_dir} but cannot access it (permission denied)"
-                            )
-            except (PermissionError, OSError) as e:
-                # Permission error checking directory - skip it
-                if self.verbose:
-                    from navig import console_helper as ch
-
-                    ch.warning(f"Cannot check {navig_dir}: {e}")
-
-            # Check if we've reached filesystem root
-            parent = current.parent
-            if parent == current:
-                # Reached root without finding accessible .navig/
-                return None
-
-            current = parent
-
     def _is_directory_accessible(self, directory: Path) -> bool:
-        """
-        Check if a directory is accessible (can read/write).
-
-        Args:
-            directory: Path to check
-
-        Returns:
-            True if directory is accessible, False otherwise
-        """
-        try:
-            # If the directory doesn't exist yet, try to create it.
-            # Fresh installs and test environments commonly start without ~/.navig.
-            if not directory.exists():
-                directory.mkdir(parents=True, exist_ok=True)
-
-            # Try to list directory contents (basic read access check)
-            if directory.is_dir():
-                list(directory.iterdir())
-                return True
-        except (PermissionError, OSError):
-            pass  # best-effort cleanup; ignore access/IO errors
-        return False
+        """Helper to invoke platform accessibility check."""
+        return paths.is_directory_accessible(directory)
 
     def _get_config_directories(self) -> list[Path]:
         """

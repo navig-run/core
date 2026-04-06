@@ -219,21 +219,19 @@ class ConversationalAgent:
         "- When the user is just chatting, chat back naturally. You're a friend, not a service desk."
     )
 
-    _MULTILINGUAL_MEMORY_SYSTEM_RULE = (
-        "You are a multilingual AI assistant.\n\n"
-        "LANGUAGE RULE:\n"
-        "- Detect the language of the user's latest message.\n"
-        "- Respond exclusively in that detected language.\n"
-        "- Never ask the user what language they prefer.\n"
-        "- Support all natural languages without exception.\n\n"
+    _MEMORY_LANGUAGE_RULE = (
         "MEMORY RULE:\n"
-        "- All facts, summaries, and stored context must be written and saved in English.\n"
-        "- When recalling stored memory to compose a reply, silently translate it into\n"
-        "  the user's current detected language before including it in your response.\n"
+        "- All facts, summaries, and stored context are saved in English internally.\n"
+        "- When recalling stored memory, silently translate it into the reply language.\n"
         "- The user never sees raw English memory entries."
     )
 
-    _SUPPORTED_LANGUAGE_CODES = {"en", "fr", "ru", "ar", "zh", "es", "hi", "ja"}
+    _SUPPORTED_LANGUAGE_CODES = {"en", "fr", "ru", "ar", "zh", "es", "hi", "ja", "ko", "de", "pt"}
+
+    # How many consecutive messages in a different language before a pinned
+    # language override is automatically cancelled.
+    _OVERRIDE_AUTO_CANCEL_THRESHOLD: int = 2
+
     _LANGUAGE_OVERRIDE_ALIASES = {
         "english": "en",
         "french": "fr",
@@ -248,6 +246,11 @@ class ConversationalAgent:
         "español": "es",
         "hindi": "hi",
         "japanese": "ja",
+        "korean": "ko",
+        "german": "de",
+        "deutsch": "de",
+        "portuguese": "pt",
+        "português": "pt",
     }
 
     def __init__(
@@ -271,7 +274,14 @@ class ConversationalAgent:
         self._runtime_persona: str = ""
         self._detected_language_hint: str = ""
         self._last_detected_language: str = "en"
+        self._session_fallback_language: str = ""  # from Telegram session metadata
+        self._has_text_detected: bool = False  # True once text detection ran this session
         self._language_override_code: str = ""
+        # Counter: consecutive messages where text detection disagrees with
+        # the pinned language override.  When this reaches the threshold, the
+        # pinned override is auto-cancelled (the user is clearly no longer
+        # writing in the pinned language).
+        self._override_mismatch_count: int = 0
 
         # Soul / identity — can be injected or auto-loaded
         if soul_content is not None:
@@ -316,7 +326,10 @@ class ConversationalAgent:
 
         Args:
             detected_language: per-message detected language code (e.g. voice STT)
-            last_detected_language: previous successful language for ambiguity fallback
+            last_detected_language: previous successful language from session storage.
+                Only used as fallback when text-based detection yields "mixed" or
+                "unknown".  Does NOT overwrite a language already detected from
+                actual message text in this session.
         """
         hint = (detected_language or "").strip().lower()
         if hint:
@@ -324,7 +337,11 @@ class ConversationalAgent:
 
         previous = (last_detected_language or "").strip().lower()
         if previous:
-            self._last_detected_language = previous
+            # Store as fallback; only apply to _last_detected_language when
+            # the agent hasn't done its own text detection yet this session.
+            self._session_fallback_language = previous
+            if not self._has_text_detected:
+                self._last_detected_language = previous
 
     def _normalize_language_code(self, value: str) -> str:
         raw = (value or "").strip().lower().replace("_", "-")
@@ -657,13 +674,69 @@ class ConversationalAgent:
 
         # Sanitize history: if user is Cyrillic, drop any past assistant
         # messages that contain CJK to prevent model from copying them.
-        lang = self._get_pinned_language_override() or self._detected_language_hint
+        # Use _detect_message_language (text-only) so we see actual script
+        # switches even when a pinned override exists.
+        text_lang = self._detect_message_language(message)
+        if text_lang and text_lang not in ("", "mixed", "unknown"):
+            self._has_text_detected = True
+
+        pinned = self._get_pinned_language_override()
+
+        # ── Auto-cancel stale pinned override ──
+        # If the user is consistently writing in a different language than
+        # the pinned override, cancel it automatically.  This prevents the
+        # bot from getting stuck in a language the user no longer wants.
+        #
+        # Guard: skip the mismatch increment when the message has no real
+        # language signal — URLs, numbers, emoji-only, or very short tokens
+        # that default to "en" just because of Latin fallback.
+        _words = message.split()
+        _is_lang_ambiguous = (
+            text_lang == "en"
+            and len(_words) <= 2
+            and all(
+                w.startswith("http") or w.replace(".", "").replace(",", "").isdigit()
+                for w in _words
+            )
+        )
+        if (
+            pinned
+            and text_lang
+            and text_lang not in ("", "mixed", "unknown")
+            and text_lang != pinned
+            and not _is_lang_ambiguous
+        ):
+            self._override_mismatch_count += 1
+            if self._override_mismatch_count >= self._OVERRIDE_AUTO_CANCEL_THRESHOLD:
+                logger.info(
+                    "Auto-cancelling pinned language override '%s' — "
+                    "user sent %d consecutive messages in '%s'",
+                    pinned,
+                    self._override_mismatch_count,
+                    text_lang,
+                )
+                self._clear_pinned_language_override()
+                pinned = ""
+                self._override_mismatch_count = 0
+        elif pinned and text_lang == pinned:
+            # Reset counter when user writes in the pinned language
+            self._override_mismatch_count = 0
+
+        lang = pinned or self._detected_language_hint
         if not lang:
-            lang = self._detect_language_code(message)
+            lang = text_lang
         if lang in ("", "mixed", "unknown"):
             lang = self._last_detected_language or "en"
-        else:
-            self._last_detected_language = lang
+        # If the user is actively writing in a different language than the
+        # persisted one (and there's no pinned override), trust the text.
+        if (
+            text_lang
+            and text_lang not in ("", "mixed", "unknown")
+            and text_lang != lang
+            and not self._get_pinned_language_override()
+        ):
+            lang = text_lang
+        self._last_detected_language = lang
         if lang == "ru":
             self.conversation_history = [
                 m
@@ -1229,7 +1302,6 @@ class ConversationalAgent:
         try:
             system_prompt = self._build_system_prompt(message)
             messages = [
-                {"role": "system", "content": self._MULTILINGUAL_MEMORY_SYSTEM_RULE},
                 {"role": "system", "content": system_prompt},
                 *self.conversation_history,
             ]
@@ -1237,7 +1309,7 @@ class ConversationalAgent:
             # Add context if available
             if self.context:
                 context_str = f"\nCurrent context: {json.dumps(self.context)}"
-                messages[1]["content"] += context_str
+                messages[0]["content"] += context_str
 
             tier_override = getattr(self, "_tier_override", "")
 
@@ -1252,12 +1324,18 @@ class ConversationalAgent:
                     or getattr(self, "_detected_language_hint", "")
                     or self._detect_language_code(message)
                 )
+                _req_meta: dict = {}
+                if lang_hint:
+                    _req_meta["detected_language"] = lang_hint
+                _sto = getattr(self, "_session_tier_overrides", None)
+                if _sto:
+                    _req_meta["session_tier_overrides"] = _sto
                 req = RouteRequest(
                     messages=messages,
                     text=message,
                     tier_override=tier_override,
                     entrypoint=entrypoint,
-                    metadata={"detected_language": lang_hint} if lang_hint else {},
+                    metadata=_req_meta or None,
                 )
                 response_text, trace = await router.run(req)
                 if response_text:
@@ -1266,18 +1344,11 @@ class ConversationalAgent:
                 logger.warning("Unified router failed (%s), falling back to legacy", e)
 
             # ── Legacy fallback (LLM Mode Router → Tier Router) ──
-            # Only attempted when ai_client is available; if not, fall through
-            # to _simple_response below rather than erroring here.
+            # Always attempt mode routing even when ai_client.is_available()
+            # returns False — the HybridRouter/LLM Mode Router can route to
+            # providers that _detect_best_provider() doesn't know about yet
+            # (xai, anthropic, google, groq, etc. with vault keys).
             if self.ai_client:
-                try:
-                    if (
-                        hasattr(self.ai_client, "is_available")
-                        and not self.ai_client.is_available()
-                    ):
-                        return await self._simple_response(message)
-                except Exception as exc:
-                    logger.debug("Exception suppressed: %s", exc)
-
                 # When mode routing can't dispatch (no provider for the detected
                 # mode), it returns the L1 tier hint so chat_routed() doesn't
                 # have to re-run mode detection from scratch (TR fix).
@@ -1289,17 +1360,23 @@ class ConversationalAgent:
                     if llm_response is not None:
                         return llm_response
 
-                if hasattr(self.ai_client, "chat_routed"):
-                    response = await self.ai_client.chat_routed(
-                        messages,
-                        user_message=message,
-                        tier_override=tier_override or mode_tier_hint,
-                    )
-                else:
-                    response = await self.ai_client.chat(messages)
-                return response
+                # Only try chat_routed if the legacy provider actually has
+                # something configured (avoids "none" provider errors).
+                if hasattr(self.ai_client, "is_available") and self.ai_client.is_available():
+                    try:
+                        if hasattr(self.ai_client, "chat_routed"):
+                            response = await self.ai_client.chat_routed(
+                                messages,
+                                user_message=message,
+                                tier_override=tier_override or mode_tier_hint,
+                            )
+                        else:
+                            response = await self.ai_client.chat(messages)
+                        return response
+                    except Exception as exc:
+                        logger.debug("Legacy chat_routed failed: %s", exc)
 
-            # Both Unified Router and legacy ai_client unavailable
+            # All routing paths exhausted
             return await self._simple_response(message)
 
         except Exception as e:
@@ -1365,9 +1442,16 @@ class ConversationalAgent:
                 return None, tier_hint
 
             # ── Language-aware model preference ──
-            # For French users, prefer Mistral models (trained on French data)
+            # For French users with an *explicit* pinned override, prefer
+            # Mistral models (trained on French data).  Do NOT switch models
+            # based on auto-detected language alone — that caused the bot to
+            # get stuck in French when the pinned override lingered.
             lang = self._detect_language_code(message)
-            if lang == "fr" and resolved.provider == "github_models":
+            if (
+                lang == "fr"
+                and self._get_pinned_language_override() == "fr"
+                and resolved.provider == "github_models"
+            ):
                 if mode in ("small_talk", "summarize"):
                     resolved.model = "Mistral-Nemo"
                 else:
@@ -1421,79 +1505,211 @@ class ConversationalAgent:
             logger.debug("LLM Mode routing failed (%s), falling back to tier router", e)
             return None, tier_hint
 
+    _LANGUAGE_LABELS: dict[str, str] = {
+        "en": "English",
+        "fr": "French (français)",
+        "ru": "Russian (русский)",
+        "ar": "Arabic (العربية)",
+        "zh": "Simplified Chinese (简体中文)",
+        "es": "Spanish (español)",
+        "hi": "Hindi (हिन्दी)",
+        "ja": "Japanese (日本語)",
+        "ko": "Korean (한국어)",
+        "de": "German (Deutsch)",
+        "pt": "Portuguese (Português)",
+    }
+
     def _build_language_instruction(self, message: str) -> str:
         """
         Build an aggressive language-enforcement block.
 
         This is placed FIRST in the system prompt so the model sees it
-        before any identity or capability text.  For models with strong
-        Chinese training bias (e.g., Qwen-family), we explicitly ban
-        CJK characters when the user writes in Cyrillic.
+        before any identity or capability text.  Every detected language
+        gets the same ABSOLUTE enforcement — not just Russian/Chinese.
         """
+        # Always detect the actual message language (not pinned override)
+        # so we can detect language switches.
+        text_language = self._detect_message_language(message)
+
+        # Resolve effective language: pinned override > voice hint > text detection
         language_code = self._get_pinned_language_override() or self._detected_language_hint
         if not language_code:
-            language_code = self._detect_language_code(message)
+            language_code = text_language
         if language_code in ("", "mixed", "unknown"):
             language_code = self._last_detected_language or "en"
-        else:
-            self._last_detected_language = language_code
 
+        # Detect language switch: user is now writing in a different language
+        previous_lang = self._last_detected_language or "en"
+        switched = (
+            text_language
+            and text_language not in ("", "mixed", "unknown")
+            and text_language != previous_lang
+        )
+
+        # If text detection disagrees with pinned/persisted language,
+        # trust the text — the user is actively writing in that language.
+        if switched and not self._get_pinned_language_override():
+            language_code = text_language
+
+        self._last_detected_language = language_code
+
+        language_label = self._LANGUAGE_LABELS.get(language_code, language_code)
+
+        # Build the language-switch notice (strongest signal for the LLM)
+        switch_notice = ""
+        if switched:
+            prev_label = self._LANGUAGE_LABELS.get(previous_lang, previous_lang)
+            switch_notice = (
+                f"IMPORTANT: The user just switched from {prev_label} to {language_label}. "
+                f"You MUST follow the switch and reply in {language_label} now.\n"
+            )
+
+        # Script-specific bans for models with strong training bias
+        script_ban = ""
         if language_code == "ru":
-            return (
-                "### ABSOLUTE LANGUAGE RULE — HIGHEST PRIORITY ###\n"
-                "You MUST reply ONLY in Russian (русский) using Cyrillic script.\n"
-                "NEVER output Chinese/Japanese characters or mixed scripts.\n"
-                "NEVER mix languages. Every single word of your reply must be Russian.\n"
-                "### END LANGUAGE RULE ###"
+            script_ban = (
+                "NEVER output Chinese, Japanese, or CJK characters.\n"
+                "Every character must be Cyrillic or standard punctuation.\n"
             )
-
-        if language_code == "zh":
-            return (
-                "### ABSOLUTE LANGUAGE RULE — HIGHEST PRIORITY ###\n"
-                "You MUST reply ONLY in Simplified Chinese (简体中文).\n"
+        elif language_code == "zh":
+            script_ban = (
                 "NEVER output Cyrillic, Arabic, or non-CJK scripts.\n"
-                "NEVER mix languages. Every single word of your reply must be Chinese.\n"
-                "### END LANGUAGE RULE ###"
+                "Every character must be CJK or standard punctuation.\n"
             )
-
-        language_label = {
-            "en": "English",
-            "fr": "French",
-            "ru": "Russian",
-            "ar": "Arabic",
-            "zh": "Chinese",
-            "es": "Spanish",
-            "hi": "Hindi",
-            "ja": "Japanese",
-        }.get(language_code, language_code)
+        elif language_code == "en":
+            script_ban = (
+                "NEVER reply in French, Spanish, Russian, Chinese, or any other language.\n"
+                "Even if earlier messages in the conversation were in another language, "
+                "the user is NOW writing in English. Match their current language.\n"
+            )
+        elif language_code == "fr":
+            script_ban = (
+                "NEVER reply in English, Spanish, or any other language.\n"
+                "The user is writing in French. Reply in French only.\n"
+            )
+        elif language_code == "es":
+            script_ban = (
+                "NEVER reply in English, French, or any other language.\n"
+                "The user is writing in Spanish. Reply in Spanish only.\n"
+            )
+        elif language_code == "ar":
+            script_ban = (
+                "NEVER output Latin, Cyrillic, CJK, or Devanagari characters.\n"
+                "Every character must be Arabic script or standard punctuation.\n"
+                "The user is writing in Arabic. Reply in Arabic only.\n"
+            )
+        elif language_code == "hi":
+            script_ban = (
+                "NEVER output Latin, Cyrillic, CJK, or Arabic characters.\n"
+                "Every character must be Devanagari script or standard punctuation.\n"
+                "The user is writing in Hindi. Reply in Hindi only.\n"
+            )
+        elif language_code == "ja":
+            script_ban = (
+                "NEVER output Cyrillic, Arabic, or Devanagari characters.\n"
+                "Every character must be Japanese (Hiragana, Katakana, Kanji) or standard punctuation.\n"
+                "The user is writing in Japanese. Reply in Japanese only.\n"
+            )
+        elif language_code == "ko":
+            script_ban = (
+                "NEVER output Cyrillic, Arabic, CJK (Chinese), or Devanagari characters.\n"
+                "Every character must be Korean (Hangul) or standard punctuation.\n"
+                "The user is writing in Korean. Reply in Korean only.\n"
+            )
+        elif language_code == "de":
+            script_ban = (
+                "NEVER reply in English, French, or any other language.\n"
+                "The user is writing in German. Reply in German only.\n"
+            )
+        elif language_code == "pt":
+            script_ban = (
+                "NEVER reply in English, Spanish, or any other language.\n"
+                "The user is writing in Portuguese. Reply in Portuguese only.\n"
+            )
 
         return (
-            "### LANGUAGE RULE ###\n"
-            "Reply in the same language as the user's latest message.\n"
-            "Never ask the user for language preference and never use menus or prompts for language.\n"
-            f"If the latest message is mixed or ambiguous, default to {language_label}.\n"
-            "Do not mix multiple languages or scripts in your reply.\n"
+            "### ABSOLUTE LANGUAGE RULE — HIGHEST PRIORITY ###\n"
+            f"{switch_notice}"
+            f"You MUST reply ONLY in {language_label}.\n"
+            f"{script_ban}"
+            "NEVER mix languages or scripts in your reply.\n"
+            "Never ask the user what language they prefer.\n"
+            f"{self._MEMORY_LANGUAGE_RULE}\n"
             "### END LANGUAGE RULE ###"
         )
 
     def _detect_language_code(self, message: str) -> str:
-        """Detect dominant script/language from message text.
+        """Detect language from message text, respecting pinned overrides.
 
-        Script-based detection for CJK and Cyrillic, then heuristic
-        keyword detection for Latin-script languages (French, etc.).
+        For callers that need the *effective* language (taking pinned
+        overrides into account).  For raw message-only detection, use
+        ``_detect_message_language()`` instead.
         """
         pinned = self._get_pinned_language_override()
         if pinned:
             return pinned
+        return self._detect_message_language(message)
 
+    # Common English greetings and short phrases that are unambiguously English.
+    # These override the "insufficient markers" heuristic for short messages.
+    _ENGLISH_GREETINGS = frozenset(
+        {
+            "hello",
+            "hi",
+            "hey",
+            "yo",
+            "sup",
+            "whatsup",
+            "what's up",
+            "wassup",
+            "howdy",
+            "good morning",
+            "good afternoon",
+            "good evening",
+            "good night",
+            "how are you",
+            "how's it going",
+            "what's new",
+            "what's good",
+            "how do you do",
+            "nice to meet you",
+            "thanks",
+            "thank you",
+            "yes",
+            "no",
+            "ok",
+            "okay",
+            "sure",
+            "please",
+            "help",
+            "help me",
+            "bye",
+            "goodbye",
+            "see you",
+            "later",
+        }
+    )
+
+    def _detect_message_language(self, message: str) -> str:
+        """Detect dominant script/language from message text only.
+
+        Script-based detection for CJK and Cyrillic, then heuristic
+        keyword detection for Latin-script languages (French, etc.).
+
+        This method does NOT consult pinned overrides — it only looks
+        at the actual characters and words in the message.
+        """
         has_cyrillic = any("\u0400" <= ch <= "\u04ff" for ch in message)
         has_arabic = any("\u0600" <= ch <= "\u06ff" for ch in message)
         has_devanagari = any("\u0900" <= ch <= "\u097f" for ch in message)
         has_hiragana = any("\u3040" <= ch <= "\u309f" for ch in message)
         has_katakana = any("\u30a0" <= ch <= "\u30ff" for ch in message)
         has_cjk = any("\u4e00" <= ch <= "\u9fff" for ch in message)
+        has_hangul = any("\uac00" <= ch <= "\ud7af" or "\u1100" <= ch <= "\u11ff" for ch in message)
         has_latin = any(("A" <= ch <= "Z") or ("a" <= ch <= "z") for ch in message)
 
+        if has_hangul and not (has_cyrillic or has_cjk or has_arabic or has_devanagari):
+            return "ko"
         if has_hiragana or has_katakana:
             return "ja"
         if has_arabic and not (has_cyrillic or has_cjk or has_latin):
@@ -1505,8 +1721,13 @@ class ConversationalAgent:
         if has_cjk and not (has_cyrillic or has_arabic or has_devanagari):
             return "zh"
         if has_latin and not (has_cyrillic or has_cjk or has_arabic or has_devanagari):
+            lower = message.lower().strip()
+
+            # Check for unambiguously English greetings / short phrases
+            if lower in self._ENGLISH_GREETINGS:
+                return "en"
+
             # Detect French via common markers (accented chars + keywords)
-            lower = message.lower()
             french_markers = (
                 "à",
                 "â",
@@ -1568,10 +1789,54 @@ class ConversationalAgent:
             spanish_score = sum(1 for m in spanish_markers if m in lower) + sum(
                 2 for k in spanish_keywords if k in lower
             )
-            if spanish_score >= 2 and spanish_score > french_score:
-                return "es"
-            if french_score >= 2:
-                return "fr"
+
+            # German keyword detection
+            german_markers = ("ä", "ö", "ü", "ß")
+            german_keywords = (
+                "hallo",
+                "danke",
+                "bitte",
+                "guten",
+                "wie geht",
+                "ich bin",
+                "warum",
+                "auf wiedersehen",
+                "tschüss",
+                "ja",
+                "nein",
+            )
+            german_score = sum(1 for m in german_markers if m in lower) + sum(
+                2 for k in german_keywords if k in lower
+            )
+
+            # Portuguese keyword detection
+            portuguese_markers = ("ã", "õ", "ç")
+            portuguese_keywords = (
+                "olá",
+                "obrigado",
+                "obrigada",
+                "por favor",
+                "como vai",
+                "tudo bem",
+                "bom dia",
+                "boa noite",
+                "sim",
+                "não",
+            )
+            portuguese_score = sum(1 for m in portuguese_markers if m in lower) + sum(
+                2 for k in portuguese_keywords if k in lower
+            )
+
+            # Return the highest-scoring Latin-script language
+            scores = {
+                "es": spanish_score,
+                "fr": french_score,
+                "de": german_score,
+                "pt": portuguese_score,
+            }
+            best_lang = max(scores, key=scores.get)
+            if scores[best_lang] >= 2:
+                return best_lang
             return "en"
         return "mixed"
 

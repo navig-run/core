@@ -193,35 +193,27 @@ class RoutingConfig:
                 num_ctx=cfg.big.num_ctx,
             )
 
-        # Inject default API key where not overridden
+        # Inject API keys where not overridden.
         for slot in (cfg.small, cfg.big, cfg.coder_big):
-            if slot.provider in ("openrouter", "openai") and not slot.api_key:
-                if slot.provider == "openrouter":
+            provider_id = str(slot.provider or "").strip().lower()
+
+            # Keep explicit openrouter/openai defaults for backward compatibility.
+            if provider_id in ("openrouter", "openai") and not slot.api_key:
+                if provider_id == "openrouter":
                     slot.api_key = default_api_key
-                elif slot.provider == "openai":
+                elif provider_id == "openai":
                     slot.api_key = os.environ.get("OPENAI_API_KEY", "") or default_api_key
 
-            # GitHub Models — resolve token from vault → config → env
-            if slot.provider == "github_models" and not slot.api_key:
-                gh_token = ""
-                # 1. Vault
-                try:
-                    from navig.vault import get_vault
-
-                    vault = get_vault()
-                    secret = vault.get_secret("github_models", "token", caller="model_router")
-                    if secret:
-                        gh_token = secret
-                except Exception:  # noqa: BLE001
-                    pass  # best-effort; failure is non-critical
-                # 2. Config
-                if not gh_token:
-                    gh_token = global_cfg.get("github_models", {}).get("token", "")
-                # 3. Environment
-                if not gh_token:
-                    gh_token = os.environ.get("GITHUB_TOKEN", "")
+            # Keep explicit config-token preference for GitHub Models.
+            if provider_id in ("github_models", "github") and not slot.api_key:
+                gh_token = str((global_cfg.get("github_models") or {}).get("token", "")).strip()
                 if gh_token:
                     slot.api_key = gh_token
+
+            if not slot.api_key:
+                resolved_key = _resolve_provider_api_key(provider_id, global_cfg=global_cfg)
+                if resolved_key:
+                    slot.api_key = resolved_key
 
         # Router model for router_llm_json classification calls
         cfg.router_model = data.get("router_model") or ""
@@ -252,6 +244,96 @@ def _normalize_mode(raw: str) -> str:
         "rules": "rules_then_fallback",
     }
     return mapping.get(raw, raw)
+
+
+def _resolve_provider_api_key(
+    provider: str,
+    global_cfg: dict[str, Any] | None = None,
+) -> str:
+    """Resolve provider API key from env, vault(s), and config in best-effort mode."""
+    provider_id = str(provider or "").strip().lower()
+    if not provider_id:
+        return ""
+
+    no_key_providers = {"ollama", "llamacpp", "llama.cpp", "llama_cpp", "airllm", "mcp_bridge"}
+    if provider_id in no_key_providers:
+        return ""
+
+    global_cfg = global_cfg or {}
+
+    manifest_env_vars: list[str] = []
+    manifest_vault_keys: list[str] = []
+    try:
+        from navig.providers.registry import get_provider
+
+        manifest = get_provider(provider_id)
+        if manifest is not None:
+            manifest_env_vars = list(manifest.env_vars or [])
+            manifest_vault_keys = list(manifest.vault_keys or [])
+    except Exception:  # noqa: BLE001
+        pass
+
+    env_candidates: list[str] = []
+
+    def _append_env(name: str) -> None:
+        env_name = str(name or "").strip()
+        if env_name and env_name not in env_candidates:
+            env_candidates.append(env_name)
+
+    for env_name in manifest_env_vars:
+        _append_env(env_name)
+
+    try:
+        from navig.providers.types import PROVIDER_ENV_VARS
+
+        for env_name in PROVIDER_ENV_VARS.get(provider_id, []):
+            _append_env(env_name)
+    except Exception:  # noqa: BLE001
+        pass
+
+    _append_env(f"{provider_id.upper().replace('-', '_')}_API_KEY")
+
+    for env_name in env_candidates:
+        value = os.environ.get(env_name, "").strip()
+        if value:
+            return value
+
+    if manifest_vault_keys:
+        try:
+            from navig.vault import get_vault_v2
+
+            vault_v2 = get_vault_v2()
+            for path in manifest_vault_keys:
+                try:
+                    secret = (vault_v2.get_secret(path) or "").strip()
+                    if secret:
+                        return secret
+                except Exception:  # noqa: BLE001
+                    continue
+        except Exception:  # noqa: BLE001
+            pass
+
+    try:
+        from navig.vault import get_vault
+
+        secret = get_vault().get_api_key(provider_id, caller="model_router")
+        if secret:
+            resolved = secret.reveal() if hasattr(secret, "reveal") else str(secret)
+            resolved = resolved.strip()
+            if resolved:
+                return resolved
+    except Exception:  # noqa: BLE001
+        pass
+
+    if provider_id in ("github_models", "github"):
+        try:
+            token = str((global_cfg.get("github_models") or {}).get("token", "")).strip()
+            if token:
+                return token
+        except Exception:  # noqa: BLE001
+            pass
+
+    return ""
 
 
 # ═══════════════════════════════════════════════════════════════════

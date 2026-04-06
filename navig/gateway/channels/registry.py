@@ -52,6 +52,8 @@ class ChannelId(str, Enum):
     SIGNAL = "signal"
     IMESSAGE = "imessage"
     GOOGLECHAT = "googlechat"
+    SMS = "sms"
+    MESSENGER = "messenger"  # Facebook Messenger
     CLI = "cli"  # Local CLI channel
     WEB = "web"  # Web interface
 
@@ -154,6 +156,8 @@ CHANNEL_ORDER = [
     ChannelId.DISCORD,
     ChannelId.SLACK,
     ChannelId.SIGNAL,
+    ChannelId.SMS,
+    ChannelId.MESSENGER,
     ChannelId.IMESSAGE,
     ChannelId.GOOGLECHAT,
     ChannelId.WEB,
@@ -168,6 +172,11 @@ CHANNEL_ALIASES: dict[str, ChannelId] = {
     "imsg": ChannelId.IMESSAGE,
     "gchat": ChannelId.GOOGLECHAT,
     "google-chat": ChannelId.GOOGLECHAT,
+    "txt": ChannelId.SMS,
+    "text": ChannelId.SMS,
+    "fb": ChannelId.MESSENGER,
+    "fbm": ChannelId.MESSENGER,
+    "facebook": ChannelId.MESSENGER,
 }
 
 # Default channel metadata
@@ -345,6 +354,39 @@ DEFAULT_CHANNEL_META: dict[ChannelId, ChannelMeta] = {
             ChannelCapability.TEXT,
         ],
         status=ChannelStatus.AVAILABLE,
+    ),
+    ChannelId.SMS: ChannelMeta(
+        id=ChannelId.SMS,
+        label="SMS",
+        description="SMS via Twilio / Vonage / gateway API",
+        icon="📟",
+        docs_url="/docs/channels/sms",
+        capabilities=[
+            ChannelCapability.TEXT,
+            ChannelCapability.DMS,
+        ],
+        required_config=["sms_provider", "sms_api_key"],
+        module_path="navig.messaging.adapters.sms",
+        adapter_class="SmsAdapter",
+        status=ChannelStatus.UNAVAILABLE,
+        status_message="SMS adapter requires provider configuration",
+    ),
+    ChannelId.MESSENGER: ChannelMeta(
+        id=ChannelId.MESSENGER,
+        label="Messenger",
+        description="Facebook Messenger via Graph API",
+        icon="💬",
+        docs_url="/docs/channels/messenger",
+        capabilities=[
+            ChannelCapability.TEXT,
+            ChannelCapability.IMAGES,
+            ChannelCapability.FILES,
+            ChannelCapability.BUTTONS,
+            ChannelCapability.DMS,
+        ],
+        required_config=["messenger_page_token", "messenger_app_secret"],
+        status=ChannelStatus.UNAVAILABLE,
+        status_message="Messenger adapter not yet implemented",
     ),
 }
 

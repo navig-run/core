@@ -13,6 +13,15 @@ from .airllm import (
     is_airllm_available,
 )
 from .auth import AuthProfileManager
+from .capabilities import (
+    Capability,
+    ModelCapabilityEntry,
+    capabilities_label,
+    get_model_capabilities,
+    has_capability,
+    list_models_with_capability,
+    list_vision_models,
+)
 from .clients import (
     AnthropicClient,
     BaseProviderClient,
@@ -25,6 +34,16 @@ from .clients import (
     ToolDefinition,
     create_client,
     get_builtin_provider,
+)
+from .discovery import (
+    ModelInfo,
+    get_vision_api_format,
+    list_available_models,
+    list_connected_providers,
+    resolve_vision_model,
+)
+from .discovery import (
+    ProviderInfo as DiscoveryProviderInfo,
 )
 from .fallback import (
     FallbackCandidate,
@@ -88,8 +107,10 @@ except ImportError:
     PerplexitySearchResult = None
     create_perplexity_client = None
     perplexity_search = None
+
     def is_perplexity_available():
         return False
+
     PERPLEXITY_PROVIDER = None
 
 
@@ -109,6 +130,21 @@ __all__ = [
     "BUILTIN_PROVIDERS",
     "PROVIDER_ENV_VARS",
     "builtin_provider_configs",
+    # Capabilities
+    "Capability",
+    "ModelCapabilityEntry",
+    "get_model_capabilities",
+    "has_capability",
+    "list_vision_models",
+    "list_models_with_capability",
+    "capabilities_label",
+    # Discovery
+    "DiscoveryProviderInfo",
+    "ModelInfo",
+    "list_connected_providers",
+    "list_available_models",
+    "resolve_vision_model",
+    "get_vision_api_format",
     # Registry
     "ProviderManifest",
     "ProviderTier",

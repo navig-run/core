@@ -319,6 +319,72 @@ class SessionManager:
         self._save_session(session)
         return session
 
+    # ── Session Override Helpers ─────────────────────────────────────────
+    # Overrides use the ``so:`` namespace prefix in session metadata.
+    # They are ephemeral per-session and NEVER written to global config.
+
+    _SO_PREFIX = "so:"
+
+    def set_session_override(
+        self,
+        chat_id: int,
+        user_id: int,
+        key: str,
+        value: Any,
+        is_group: bool = False,
+    ) -> None:
+        """Set a session-scoped override (``so:<key>`` in metadata)."""
+        self.set_session_metadata(
+            chat_id, user_id, f"{self._SO_PREFIX}{key}", value, is_group=is_group
+        )
+
+    def get_session_override(
+        self,
+        chat_id: int,
+        user_id: int,
+        key: str,
+        default: Any = None,
+        is_group: bool = False,
+    ) -> Any:
+        """Read a session-scoped override, or *default* if absent."""
+        return self.get_session_metadata(
+            chat_id, user_id, f"{self._SO_PREFIX}{key}", default, is_group=is_group
+        )
+
+    def get_all_session_overrides(
+        self,
+        chat_id: int,
+        user_id: int,
+        is_group: bool = False,
+    ) -> dict[str, Any]:
+        """Return all ``so:*`` overrides as ``{key: value}`` (prefix stripped)."""
+        session = self.get_or_create_session(chat_id, user_id, is_group=is_group)
+        meta = session.metadata or {}
+        prefix = self._SO_PREFIX
+        return {
+            k[len(prefix):]: v
+            for k, v in meta.items()
+            if k.startswith(prefix)
+        }
+
+    def clear_session_overrides(
+        self,
+        chat_id: int,
+        user_id: int,
+        is_group: bool = False,
+    ) -> int:
+        """Remove all ``so:*`` overrides. Returns count of keys removed."""
+        session = self.get_or_create_session(chat_id, user_id, is_group=is_group)
+        if not session.metadata:
+            return 0
+        prefix = self._SO_PREFIX
+        to_remove = [k for k in session.metadata if k.startswith(prefix)]
+        for k in to_remove:
+            del session.metadata[k]
+        if to_remove:
+            self._save_session(session)
+        return len(to_remove)
+
     def delete_session(self, session_key: str):
         """Delete a session completely."""
         if session_key in self._sessions:

@@ -65,6 +65,42 @@ messaging:
   # Can be overridden by NAVIG_MESSAGING_PROVIDER env var.
   provider: telegram
 
+# Unified messaging adapters (multi-network dispatch layer)
+# Each adapter wraps a transport network (SMS, WhatsApp, Discord, etc.).
+# Configure credentials via vault (`navig init`) or set keys here.
+adapters:
+  telegram:
+    enabled: true
+    # No extra config needed — uses gateway bot token
+  sms:
+    enabled: false
+    # Provider: twilio | vonage
+    provider: twilio
+    # Credentials resolved from vault first, then these keys, then env vars:
+    #   TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_PHONE_NUMBER
+    #   VONAGE_API_KEY / VONAGE_API_SECRET / VONAGE_PHONE_NUMBER
+    account_sid: ""
+    auth_token: ""
+    phone_number: ""
+  whatsapp:
+    enabled: false
+    # WhatsApp Cloud API (Meta Business Suite)
+    # Credentials resolved from vault or env:
+    #   WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID
+    access_token: ""
+    phone_number_id: ""
+    api_version: "v18.0"
+  discord:
+    enabled: false
+    # Uses discord.py official bot — requires bot token
+    # Credentials from vault or env: DISCORD_BOT_TOKEN
+    bot_token: ""
+  # Experimental adapters (requires opt-in via enabled: true)
+  # matrix:
+  #   enabled: false
+  # signal:
+  #   enabled: false
+
 telegram:
   # Polling or webhook mode. Set automatically by navig init.
   mode: polling

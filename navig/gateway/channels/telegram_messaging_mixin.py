@@ -1,0 +1,391 @@
+"""
+Telegram Messaging Commands Mixin — Handler implementations for /send, /sms,
+/wa, /thread, /threads, /contact, /contacts, /reply slash commands.
+
+Mixed into the Telegram channel adapter alongside ``TelegramCommandsMixin``.
+Each handler method corresponds to a :data:`SlashCommandEntry` registered in
+``_SLASH_REGISTRY`` with ``category="messaging"``.
+
+Expects ``self`` to be a :class:`TelegramChannel` instance providing:
+- ``send_message(chat_id, text, parse_mode=...)``
+- ``allowed_users: set[int]``
+
+Handlers follow the existing dispatch convention: individual ``**kwargs``
+injected by the ``_SLASH_REGISTRY`` dispatcher (``chat_id``, ``user_id``,
+``text``, ``metadata``, ``session``, ``is_group``, ``username``).
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# Known network aliases accepted by /send
+_NETWORK_ALIASES: dict[str, str] = {
+    "sms": "sms",
+    "whatsapp": "whatsapp",
+    "wa": "whatsapp",
+    "whatsapp_cloud": "whatsapp",
+    "discord": "discord",
+    "telegram": "telegram",
+    "tg": "telegram",
+    "matrix": "matrix",
+    "mx": "matrix",
+    "signal": "signal",
+}
+
+
+class TelegramMessagingMixin:
+    """
+    Mixin providing messaging slash-command handlers for TelegramChannel.
+
+    All public ``_handle_messaging_*`` methods match :data:`SlashCommandEntry`
+    ``handler`` names in the *messaging* category of ``_SLASH_REGISTRY``.
+    """
+
+    # ── /send @alias [network] message ────────────────────────
+
+    async def _handle_messaging_send(
+        self, chat_id: int, text: str = "", user_id: int = 0, **_: Any
+    ) -> None:
+        """Route a message through the unified messaging layer."""
+        args = text.split() if text else []
+        # Strip leading "/send" if the dispatcher passed the full text
+        if args and args[0].lower() in ("/send",):
+            args = args[1:]
+
+        if len(args) < 2:
+            await self.send_message(
+                chat_id,
+                "Usage: `/send @alias [network] message`\n"
+                "Example: `/send @alice Hello!`\n"
+                "Example: `/send @alice whatsapp Hello!`",
+                parse_mode="Markdown",
+            )
+            return
+
+        target = args[0]
+        network: str | None = None
+
+        if len(args) >= 3 and args[1].lower() in _NETWORK_ALIASES:
+            network = _NETWORK_ALIASES[args[1].lower()]
+            body = " ".join(args[2:])
+        else:
+            body = " ".join(args[1:])
+
+        if not body.strip():
+            await self.send_message(chat_id, "Message body cannot be empty.")
+            return
+
+        try:
+            receipt = await self._messaging_dispatch(target, body, network=network)
+            if receipt.ok:
+                status = f"✅ Sent via *{receipt.adapter or 'adapter'}*"
+                if receipt.message_id:
+                    status += f" (`{receipt.message_id}`)"
+                await self.send_message(chat_id, status, parse_mode="Markdown")
+            else:
+                await self.send_message(chat_id, f"❌ Send failed: {receipt.error}")
+        except Exception as exc:
+            logger.error("messaging_send_error | target=%s | %s", target, exc)
+            await self.send_message(chat_id, f"❌ Error: {exc}")
+
+    # ── /sms @alias message ───────────────────────────────────
+
+    async def _handle_messaging_sms(
+        self, chat_id: int, text: str = "", user_id: int = 0, **_: Any
+    ) -> None:
+        """Shortcut for ``/send @alias sms message``."""
+        args = text.split() if text else []
+        if args and args[0].lower() in ("/sms",):
+            args = args[1:]
+
+        if len(args) < 2:
+            await self.send_message(chat_id, "Usage: `/sms @alias message`", parse_mode="Markdown")
+            return
+
+        target = args[0]
+        body = " ".join(args[1:])
+        try:
+            receipt = await self._messaging_dispatch(target, body, network="sms")
+            if receipt.ok:
+                await self.send_message(
+                    chat_id,
+                    f"✅ SMS sent (`{receipt.message_id or 'ok'}`)",
+                    parse_mode="Markdown",
+                )
+            else:
+                await self.send_message(chat_id, f"❌ SMS failed: {receipt.error}")
+        except Exception as exc:
+            await self.send_message(chat_id, f"❌ Error: {exc}")
+
+    # ── /wa @alias message ────────────────────────────────────
+
+    async def _handle_messaging_wa(
+        self, chat_id: int, text: str = "", user_id: int = 0, **_: Any
+    ) -> None:
+        """Shortcut for ``/send @alias whatsapp message``."""
+        args = text.split() if text else []
+        if args and args[0].lower() in ("/wa",):
+            args = args[1:]
+
+        if len(args) < 2:
+            await self.send_message(chat_id, "Usage: `/wa @alias message`", parse_mode="Markdown")
+            return
+
+        target = args[0]
+        body = " ".join(args[1:])
+        try:
+            receipt = await self._messaging_dispatch(target, body, network="whatsapp")
+            if receipt.ok:
+                await self.send_message(
+                    chat_id,
+                    f"✅ WhatsApp sent (`{receipt.message_id or 'ok'}`)",
+                    parse_mode="Markdown",
+                )
+            else:
+                await self.send_message(chat_id, f"❌ WhatsApp failed: {receipt.error}")
+        except Exception as exc:
+            await self.send_message(chat_id, f"❌ Error: {exc}")
+
+    # ── /thread [id] ──────────────────────────────────────────
+
+    async def _handle_messaging_thread(self, chat_id: int, text: str = "", **_: Any) -> None:
+        """Show thread details by ID, or fall through to ``/threads``."""
+        args = text.split() if text else []
+        if args and args[0].lower() in ("/thread",):
+            args = args[1:]
+
+        from navig.store.threads import get_thread_store
+
+        store = get_thread_store()
+
+        if args:
+            try:
+                thread_id = int(args[0])
+            except ValueError:
+                await self.send_message(chat_id, "Usage: `/thread [id]`", parse_mode="Markdown")
+                return
+
+            thread = store.get_by_id(thread_id)
+            if thread is None:
+                await self.send_message(chat_id, f"Thread #{thread_id} not found.")
+                return
+
+            lines = [
+                f"🧵 *Thread #{thread.id}*",
+                f"  Adapter: `{thread.adapter}`",
+                f"  Remote: `{thread.remote_conversation_id}`",
+                f"  Contact: {thread.contact_alias or '(none)'}",
+                f"  Status: {thread.status}",
+                f"  Last active: {thread.last_active}",
+            ]
+            await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+        else:
+            await self._handle_messaging_threads(chat_id=chat_id, text="")
+
+    # ── /threads [adapter] ────────────────────────────────────
+
+    async def _handle_messaging_threads(self, chat_id: int, text: str = "", **_: Any) -> None:
+        """List active conversation threads, optionally filtered by adapter."""
+        args = text.split() if text else []
+        if args and args[0].lower() in ("/threads",):
+            args = args[1:]
+
+        from navig.store.threads import get_thread_store
+
+        store = get_thread_store()
+        adapter_filter = args[0] if args else None
+        threads = store.list_threads(adapter=adapter_filter, limit=20)
+
+        if not threads:
+            await self.send_message(chat_id, "No active threads.")
+            return
+
+        lines = ["🧵 *Active Threads*\n"]
+        for t in threads:
+            alias_str = f"@{t.contact_alias}" if t.contact_alias else "(unknown)"
+            lines.append(f"  `#{t.id}` [{t.adapter}] {alias_str} — {t.status}")
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+
+    # ── /contact @alias ───────────────────────────────────────
+
+    async def _handle_messaging_contact(self, chat_id: int, text: str = "", **_: Any) -> None:
+        """Show contact details by alias."""
+        args = text.split() if text else []
+        if args and args[0].lower() in ("/contact",):
+            args = args[1:]
+
+        if not args:
+            await self.send_message(chat_id, "Usage: `/contact @alias`", parse_mode="Markdown")
+            return
+
+        alias = args[0].lstrip("@")
+        from navig.store.contacts import get_contact_store
+
+        store = get_contact_store()
+        contact = store.resolve_alias(alias)
+
+        if contact is None:
+            await self.send_message(chat_id, f"Contact @{alias} not found.")
+            return
+
+        lines = [
+            f"👤 *@{contact.alias}*",
+            f"  Name: {contact.display_name or '(none)'}",
+            f"  Default: {contact.default_network or '(auto)'}",
+        ]
+        if contact.routes:
+            lines.append("  Routes:")
+            for r in contact.routes:
+                lines.append(f"    • {r.network}: `{r.address}` (pri={r.priority})")
+        if contact.fallbacks:
+            lines.append(f"  Fallbacks: {', '.join(contact.fallbacks)}")
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+
+    # ── /contacts ─────────────────────────────────────────────
+
+    async def _handle_messaging_contacts(self, chat_id: int, text: str = "", **_: Any) -> None:
+        """List all contacts in the address book."""
+        from navig.store.contacts import get_contact_store
+
+        store = get_contact_store()
+        contacts = store.list_contacts(limit=50)
+
+        if not contacts:
+            await self.send_message(
+                chat_id,
+                "No contacts yet. Add one with:\n"
+                "`navig contacts add --alias alice --name 'Alice' "
+                "--route 'whatsapp:+33612345678'`",
+                parse_mode="Markdown",
+            )
+            return
+
+        lines = ["👥 *Contacts*\n"]
+        for c in contacts:
+            nets = ", ".join(r.network for r in c.routes) or "no routes"
+            lines.append(f"  @{c.alias} — {c.display_name or '(unnamed)'} [{nets}]")
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+
+    # ── /reply [thread_id] message ────────────────────────────
+
+    async def _handle_messaging_reply(
+        self, chat_id: int, text: str = "", user_id: int = 0, **_: Any
+    ) -> None:
+        """Reply to an existing conversation thread."""
+        args = text.split() if text else []
+        if args and args[0].lower() in ("/reply",):
+            args = args[1:]
+
+        if not args:
+            await self.send_message(
+                chat_id,
+                "Usage: `/reply [thread_id] message`\nExample: `/reply 42 Thanks for the update!`",
+                parse_mode="Markdown",
+            )
+            return
+
+        from navig.store.threads import get_thread_store
+
+        store = get_thread_store()
+
+        # Try to parse first arg as thread_id
+        try:
+            thread_id = int(args[0])
+            body = " ".join(args[1:])
+            if not body.strip():
+                await self.send_message(chat_id, "Message body cannot be empty.")
+                return
+        except ValueError:
+            # No explicit thread_id — reply to most recent open thread
+            recent = store.list_threads(status="open", limit=1)
+            if not recent:
+                await self.send_message(chat_id, "No open threads to reply to.")
+                return
+            thread_id = recent[0].id
+            body = " ".join(args)
+
+        thread = store.get_by_id(thread_id)
+        if thread is None:
+            await self.send_message(chat_id, f"Thread `#{thread_id}` not found.")
+            return
+
+        try:
+            receipt = await self._messaging_reply_to_thread(thread, body)
+            if receipt.ok:
+                await self.send_message(
+                    chat_id,
+                    f"✅ Reply sent to `#{thread_id}` via *{thread.adapter}*",
+                    parse_mode="Markdown",
+                )
+            else:
+                await self.send_message(chat_id, f"❌ Reply failed: {receipt.error}")
+        except Exception as exc:
+            await self.send_message(chat_id, f"❌ Error: {exc}")
+
+    # ── Internal dispatch helpers ─────────────────────────────
+
+    async def _messaging_dispatch(
+        self, target: str, body: str, *, network: str | None = None
+    ) -> Any:
+        """
+        Resolve *target*, select adapter, send *body*, track delivery.
+
+        Returns a :class:`~navig.messaging.adapter.DeliveryReceipt`.
+        """
+        from navig.messaging.adapter import DeliveryReceipt
+        from navig.messaging.adapter_registry import get_adapter_registry
+        from navig.messaging.delivery import get_delivery_tracker
+        from navig.messaging.routing import RoutingEngine
+        from navig.store.contacts import get_contact_store
+        from navig.store.threads import get_thread_store
+
+        engine = RoutingEngine(get_contact_store(), get_thread_store(), get_adapter_registry())
+        decision = engine.resolve(target, network=network)
+        adapter = get_adapter_registry().get(decision.adapter_name)
+        if adapter is None:
+            return DeliveryReceipt.failure(f"Adapter '{decision.adapter_name}' not available")
+
+        tracker = get_delivery_tracker()
+        delivery_id = tracker.record_send(
+            adapter=decision.adapter_name,
+            target=decision.resolved_target.address,
+            contact_alias=decision.resolved_target.display_hint or None,
+            compliance=decision.compliance_mode,
+        )
+
+        thread = await adapter.get_or_create_thread(
+            f"{decision.adapter_name}:{decision.resolved_target.address}"
+        )
+        receipt = await adapter.send_message(thread.remote_conversation_id, body)
+        tracker.apply_receipt(delivery_id, receipt)
+        return receipt
+
+    async def _messaging_reply_to_thread(self, thread: Any, body: str) -> Any:
+        """Send *body* through an existing *thread*'s adapter."""
+        from navig.messaging.adapter import DeliveryReceipt
+        from navig.messaging.adapter_registry import get_adapter_registry
+        from navig.messaging.delivery import get_delivery_tracker
+
+        adapter = get_adapter_registry().get(thread.adapter)
+        if adapter is None:
+            return DeliveryReceipt.failure(f"Adapter '{thread.adapter}' not available")
+
+        tracker = get_delivery_tracker()
+        delivery_id = tracker.record_send(
+            adapter=thread.adapter,
+            target=thread.remote_conversation_id,
+            contact_alias=thread.contact_alias,
+            thread_id=thread.id,
+        )
+
+        receipt = await adapter.send_message(thread.remote_conversation_id, body)
+        tracker.apply_receipt(delivery_id, receipt)
+
+        from navig.store.threads import get_thread_store
+
+        get_thread_store().touch(thread.id)
+        return receipt

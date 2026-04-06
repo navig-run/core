@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -87,7 +88,11 @@ class IdentityStore:
     def __init__(self, db_path: Path):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self.db_path))
+        self._conn = sqlite3.connect(
+            str(self.db_path),
+            check_same_thread=False,  # connections shared across threads via lock
+        )
+        self._lock = threading.Lock()  # guards all write operations
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_DDL)
@@ -106,28 +111,29 @@ class IdentityStore:
         profile = self.get(telegram_id)
         if profile:
             return profile
-        now = datetime.utcnow().isoformat()
+        now = datetime.now().isoformat()  # utcnow() deprecated in Py3.12+
         profile = UserProfile(telegram_id=telegram_id, **kwargs)
-        self._conn.execute(
-            """INSERT INTO navig_identities
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO navig_identities
                (telegram_id, username, display_name, preferred_channel,
                 language, socials, metadata, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, '[]', '{}', ?, ?)""",
-            (
-                telegram_id,
-                profile.username,
-                profile.display_name,
-                profile.preferred_channel,
-                profile.language,
-                now,
-                now,
-            ),
-        )
-        self._conn.commit()
+                (
+                    telegram_id,
+                    profile.username,
+                    profile.display_name,
+                    profile.preferred_channel,
+                    profile.language,
+                    now,
+                    now,
+                ),
+            )
+            self._conn.commit()
         return self.get(telegram_id)
 
     def save(self, profile: UserProfile) -> None:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now().isoformat()  # utcnow() deprecated in Py3.12+
         socials_json = json.dumps(
             [
                 {"platform": s.platform, "handle": s.handle, "verified": s.verified}
@@ -135,29 +141,30 @@ class IdentityStore:
             ]
         )
         metadata_json = json.dumps(profile.metadata)
-        self._conn.execute(
-            """INSERT OR REPLACE INTO navig_identities
+        with self._lock:
+            self._conn.execute(
+                """INSERT OR REPLACE INTO navig_identities
                (telegram_id, username, display_name, ton_wallet_address,
                 ton_verified, preferred_channel, matrix_user_id, language,
                 timezone, socials, metadata, created_at, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                profile.telegram_id,
-                profile.username,
-                profile.display_name,
-                profile.ton_wallet_address,
-                int(profile.ton_verified),
-                profile.preferred_channel,
-                profile.matrix_user_id,
-                profile.language,
-                profile.timezone,
-                socials_json,
-                metadata_json,
-                profile.created_at.isoformat(),
-                now,
-            ),
-        )
-        self._conn.commit()
+                (
+                    profile.telegram_id,
+                    profile.username,
+                    profile.display_name,
+                    profile.ton_wallet_address,
+                    int(profile.ton_verified),
+                    profile.preferred_channel,
+                    profile.matrix_user_id,
+                    profile.language,
+                    profile.timezone,
+                    socials_json,
+                    metadata_json,
+                    profile.created_at.isoformat(),
+                    now,
+                ),
+            )
+            self._conn.commit()
 
     def delete(self, telegram_id: int) -> bool:
         cur = self._conn.execute(
@@ -211,12 +218,12 @@ class IdentityStore:
             created_at=(
                 datetime.fromisoformat(row["created_at"])
                 if row["created_at"]
-                else datetime.utcnow()
+                else datetime.now()  # utcnow() deprecated in Py3.12+
             ),
             updated_at=(
                 datetime.fromisoformat(row["updated_at"])
                 if row["updated_at"]
-                else datetime.utcnow()
+                else datetime.now()  # utcnow() deprecated in Py3.12+
             ),
         )
 

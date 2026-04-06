@@ -234,6 +234,9 @@ class NavigGateway:
         # Wire unified comms dispatcher
         await self._init_comms()
 
+        # Register messaging adapters (unified multi-network layer)
+        await self._init_messaging_adapters()
+
         logger.info("✅ NAVIG Gateway started on %s:%s", self.config.host, self.config.port)
         print(f"\n✅ NAVIG Gateway running at http://{self.config.host}:{self.config.port}")
         print(f"   Heartbeat: {'enabled' if self.config.heartbeat_enabled else 'disabled'}")
@@ -625,6 +628,7 @@ class NavigGateway:
         try:
             # Initialize MCP client manager
             from navig.mcp import MCPClientManager
+            from navig.mcp.client import MCPClientConfig
 
             self.mcp_client_manager = MCPClientManager()
 
@@ -632,16 +636,19 @@ class NavigGateway:
             mcp_servers = self.config_manager.global_config.get("mcp", {}).get("servers", [])
             for server_cfg in mcp_servers:
                 try:
-                    await self.mcp_client_manager.add_client(
-                        name=server_cfg["name"],
+                    cfg = MCPClientConfig(
+                        id=server_cfg["name"],
                         command=server_cfg.get("command"),
                         url=server_cfg.get("url"),
+                        transport="sse" if server_cfg.get("url") else "stdio",
                     )
+                    await self.mcp_client_manager.add_client(cfg)
                 except Exception as e:
                     logger.warning("Failed to connect MCP server %s: %s", server_cfg.get('name'), e)
 
             logger.info(
-                f"MCP client manager initialized with {len(self.mcp_client_manager.clients)} clients"
+                "MCP client manager initialized with %d clients",
+                len(self.mcp_client_manager.clients),
             )
         except ImportError as e:
             logger.warning("MCP module not available: %s", e)
@@ -792,6 +799,90 @@ class NavigGateway:
             logger.debug("navig.comms not available, skipping comms init")
         except Exception as exc:
             logger.warning("Comms init failed: %s", exc)
+
+    async def _init_messaging_adapters(self):
+        """Register multi-network messaging adapters from config.
+
+        Reads ``adapters:`` section from :file:`defaults.yaml` / user config
+        and populates :func:`~navig.messaging.adapter_registry.get_adapter_registry`.
+        """
+        try:
+            from navig.messaging.adapter_registry import get_adapter_registry
+
+            registry = get_adapter_registry()
+            adapters_cfg = self.config_manager.global_config.get("adapters", {})
+
+            # ── Telegram adapter — inject the live bot instance ──
+            tg_cfg = adapters_cfg.get("telegram", {})
+            if tg_cfg.get("enabled", True):
+                try:
+                    from navig.gateway.channels.registry import ChannelRegistry
+                    from navig.messaging.adapters.telegram_adapter import TelegramMessagingAdapter
+
+                    chan_registry = (
+                        ChannelRegistry.instance()
+                        if hasattr(ChannelRegistry, "instance")
+                        else None
+                    )
+                    tg_adapter = TelegramMessagingAdapter()
+                    if chan_registry:
+                        tg_channel = chan_registry.get_adapter("telegram")
+                        bot = getattr(tg_channel, "_bot", None) or getattr(
+                            tg_channel, "bot", None
+                        )
+                        if bot:
+                            tg_adapter.set_bot(bot)
+                    registry.register(tg_adapter)
+                    logger.debug("Messaging adapter registered: telegram")
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Telegram messaging adapter skipped: %s", exc)
+
+            # ── SMS adapter ──
+            sms_cfg = adapters_cfg.get("sms", {})
+            if sms_cfg.get("enabled", False):
+                try:
+                    from navig.messaging.adapters.sms import SmsAdapter
+
+                    adapter = SmsAdapter(config=sms_cfg)
+                    registry.register(adapter)
+                    logger.debug("Messaging adapter registered: sms")
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("SMS adapter skipped: %s", exc)
+
+            # ── WhatsApp Cloud adapter ──
+            wa_cfg = adapters_cfg.get("whatsapp", {})
+            if wa_cfg.get("enabled", False):
+                try:
+                    from navig.messaging.adapters.whatsapp_cloud import WhatsAppCloudAdapter
+
+                    adapter = WhatsAppCloudAdapter(config=wa_cfg)
+                    registry.register(adapter)
+                    logger.debug("Messaging adapter registered: whatsapp")
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("WhatsApp adapter skipped: %s", exc)
+
+            # ── Discord adapter ──
+            discord_cfg = adapters_cfg.get("discord", {})
+            if discord_cfg.get("enabled", False):
+                try:
+                    from navig.messaging.adapters.discord_adapter import DiscordMessagingAdapter
+
+                    adapter = DiscordMessagingAdapter(config=discord_cfg)
+                    # Client injection happens later when the discord.py bot connects
+                    registry.register(adapter)
+                    logger.debug("Messaging adapter registered: discord")
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Discord adapter skipped: %s", exc)
+
+            enabled = registry.available_names()
+            if enabled:
+                logger.info("Messaging adapters ready: %s", ", ".join(enabled))
+            else:
+                logger.debug("No messaging adapters enabled")
+        except ImportError:
+            logger.debug("Messaging adapter layer not available, skipping")
+        except Exception as exc:
+            logger.warning("Messaging adapter init failed: %s", exc)
 
     def _setup_webhook_routes(self):
         """Setup webhook routes from receiver."""

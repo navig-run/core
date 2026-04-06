@@ -212,10 +212,23 @@ class ChannelRouter:
         # Extract tier override from metadata (set by Telegram /big /small /coder)
         tier_override = metadata.get("tier_override", "")
 
+        # Forward session tier overrides (from /provider_hybrid) to the
+        # agent so the UnifiedRouter can respect per-tier provider/model
+        # overrides without touching durable config.
+        _sto = metadata.get("session_tier_overrides")
+        if _sto:
+            agent._session_tier_overrides = _sto  # type: ignore[attr-defined]
+
         # Try conversational processing first
         try:
             response = await agent.chat(message, tier_override=tier_override)
             if response:
+                # Persist the text-detected language back to metadata so the
+                # Telegram session store stays in sync and doesn't feed a
+                # stale language hint on the next message.
+                agent_lang = getattr(agent, "_last_detected_language", "")
+                if agent_lang and agent_lang != last_detected_language:
+                    metadata["_updated_language"] = agent_lang
                 return response
         except Exception as e:
             logger.error("Conversational agent error: %s", e)

@@ -225,6 +225,77 @@ def workspace_dir() -> Path:
     return config_dir() / "workspace"
 
 
+def find_app_root(verbose: bool = False) -> Path | None:
+    """
+    Find app root by searching upward for .navig/ directory.
+
+    Starts from current working directory and searches upward through
+    parent directories until .navig/ folder is found or filesystem root
+    is reached.
+
+    Returns:
+        Path to directory containing .navig/ folder, or None if not found
+    """
+    current = Path.cwd()
+
+    while True:
+        navig_dir = current / ".navig"
+
+        try:
+            if navig_dir.exists() and navig_dir.is_dir():
+                if is_directory_accessible(navig_dir):
+                    return current
+                else:
+                    if verbose:
+                        try:
+                            from navig import console_helper as ch
+
+                            ch.warning(
+                                f"Found .navig at {navig_dir} but cannot access it (permission denied)"
+                            )
+                        except ImportError:
+                            pass
+        except (PermissionError, OSError) as e:
+            if verbose:
+                try:
+                    from navig import console_helper as ch
+
+                    ch.warning(f"Cannot check {navig_dir}: {e}")
+                except ImportError:
+                    pass
+
+        parent = current.parent
+        if parent == current:
+            return None
+
+        current = parent
+
+
+def is_directory_accessible(directory: Path) -> bool:
+    """
+    Check if a directory is accessible (can read/write).
+
+    Args:
+        directory: Path to check
+
+    Returns:
+        True if directory is accessible, False otherwise
+    """
+    try:
+        # If the directory doesn't exist yet, try to create it.
+        # Fresh installs and test environments commonly start without ~/.navig.
+        if not directory.exists():
+            directory.mkdir(parents=True, exist_ok=True)
+
+        # Try to list directory contents (basic read access check)
+        if directory.is_dir():
+            list(directory.iterdir())
+            return True
+    except (PermissionError, OSError):
+        pass  # best-effort cleanup; ignore access/IO errors
+    return False
+
+
 def debug_log_path() -> Path:
     """Path to the debug log file (inside the platform log directory)."""
     return log_dir() / "debug.log"

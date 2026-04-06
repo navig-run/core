@@ -32,7 +32,6 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from navig.tools.api_schema import ApiToolResult
-from typing import Any
 
 from navig.platform import paths
 

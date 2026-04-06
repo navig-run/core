@@ -426,7 +426,18 @@ def _call_provider_rich(
         async def _run():
             return await client.complete(request)
 
-        result = _safe_run_async(_run)
+        async def _close_client() -> None:
+            close_fn = getattr(client, "close", None)
+            if callable(close_fn):
+                await close_fn()
+
+        try:
+            result = _safe_run_async(_run)
+        finally:
+            try:
+                _safe_run_async(_close_client)
+            except Exception as close_exc:  # noqa: BLE001
+                logger.debug("_call_provider_rich client close skipped: %s", close_exc)
         content = result.content or ""
         prompt_tokens = getattr(result, "prompt_tokens", 0) or 0
         completion_tokens = getattr(result, "completion_tokens", 0) or 0
@@ -510,6 +521,11 @@ def _call_provider_rich_stream(
             chunks.append(chunk)
         return chunks
 
+    async def _close_client() -> None:
+        close_fn = getattr(client, "close", None)
+        if callable(close_fn):
+            await close_fn()
+
     try:
         return _safe_run_async(_stream)
     except Exception as exc:
@@ -525,6 +541,11 @@ def _call_provider_rich_stream(
             thinking_params=thinking_params,
         )
         return [StreamChunk(delta=content, finish_reason="stop", provider=provider, model=model)]
+    finally:
+        try:
+            _safe_run_async(_close_client)
+        except Exception as close_exc:  # noqa: BLE001
+            logger.debug("_call_provider_rich_stream client close skipped: %s", close_exc)
 
 
 def llm_generate_stream(
@@ -982,7 +1003,18 @@ def _call_via_providers_system(
     async def _run():
         return await client.complete(request)
 
-    result = _safe_run_async(_run)
+    async def _close_client() -> None:
+        close_fn = getattr(client, "close", None)
+        if callable(close_fn):
+            await close_fn()
+
+    try:
+        result = _safe_run_async(_run)
+    finally:
+        try:
+            _safe_run_async(_close_client)
+        except Exception as close_exc:  # noqa: BLE001
+            logger.debug("_call_via_providers_system client close skipped: %s", close_exc)
     return result.content or ""
 
 

@@ -150,8 +150,8 @@ PROVIDER_ENV_KEYS: dict[str, list[str]] = {
     "openai": ["OPENAI_API_KEY"],
     "anthropic": ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
     "deepseek": ["DEEPSEEK_API_KEY"],
-    "grok": ["GROK_API_KEY", "XAI_API_KEY"],
-    "xai": ["XAI_API_KEY", "GROK_API_KEY"],
+    "grok": ["GROK_API_KEY", "XAI_API_KEY", "GROK_KEY"],
+    "xai": ["XAI_API_KEY", "GROK_API_KEY", "GROK_KEY"],
     "openrouter": ["OPENROUTER_API_KEY"],
     "groq": ["GROQ_API_KEY"],
     "google": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
@@ -461,7 +461,19 @@ def _check_ollama_models(base_url: str = "http://127.0.0.1:11434") -> dict[str, 
 
 def _resolve_api_key(provider: str) -> str | None:
     """Resolve API key from environment variables, vault, or config."""
-    env_vars = PROVIDER_ENV_KEYS.get(provider, [])
+    env_vars = list(PROVIDER_ENV_KEYS.get(provider, []))
+    manifest = None
+    try:
+        from navig.providers.registry import get_provider
+
+        manifest = get_provider(provider)
+        if manifest and manifest.env_vars:
+            for var in manifest.env_vars:
+                if var and var not in env_vars:
+                    env_vars.append(var)
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
+
     for var in env_vars:
         val = os.environ.get(var)
         if val:
@@ -487,6 +499,30 @@ def _resolve_api_key(provider: str) -> str | None:
                 return token
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
+
+    # Finally, best-effort lookup via vault v2 using provider manifest keys.
+    try:
+        if manifest is None:
+            from navig.providers.registry import get_provider
+
+            manifest = get_provider(provider)
+
+        if manifest and manifest.vault_keys:
+            from navig.vault.core_v2 import get_vault_v2
+
+            vault_v2 = get_vault_v2()
+            for path in manifest.vault_keys:
+                if not path:
+                    continue
+                try:
+                    key = vault_v2.get_secret(path)
+                except Exception:  # noqa: BLE001
+                    key = None
+                if key:
+                    return key
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; failure is non-critical
+
     return None
 
 

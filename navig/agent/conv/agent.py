@@ -290,6 +290,7 @@ class ConversationalAgent:
         def _deterministic_fallback() -> str:
             result = self._planner.plan(message)
             return json.dumps(result) if result else "I'm ready to help."
+
         system_prompt = self._build_system_prompt(message)
         msgs = [
             {"role": "system", "content": system_prompt},
@@ -361,6 +362,11 @@ class ConversationalAgent:
         try:
             from navig.routing.router import RouteRequest, get_router
 
+            _req_meta: dict[str, Any] = {}
+            _sto = getattr(self, "_session_tier_overrides", None)
+            if _sto:
+                _req_meta["session_tier_overrides"] = _sto
+
             text = (
                 await get_router().run(
                     RouteRequest(
@@ -368,6 +374,7 @@ class ConversationalAgent:
                         text=message,
                         tier_override=tier,
                         entrypoint=self._entrypoint,
+                        metadata=_req_meta or None,
                     )
                 )
             )[0]
