@@ -513,6 +513,15 @@ class UnifiedRouter:
         if not model:
             raise RuntimeError(f"No model configured for {provider_name}/{decision.mode}")
 
+        # Language-aware model override: French users get Mistral on github_models.
+        lang = (request.metadata or {}).get("detected_language", "")
+        if lang == "fr" and provider_name == "github_models":
+            model = (
+                "Mistral-Nemo"
+                if decision.mode in ("small_talk", "summarize")
+                else "Mistral-large-2407"
+            )
+
         # Guard: log a warning if Opus is about to be used — it must never auto-route.
         if "claude-opus" in model.lower():
             logger.warning(

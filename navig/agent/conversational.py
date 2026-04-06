@@ -203,41 +203,6 @@ class ConversationalAgent:
         "You see no boundary between tech and life — both matter."
     )
 
-    # ---------- Task-execution capabilities (kept for big-tier only) ----------
-
-    _CAPABILITIES_PROMPT = """
-CAPABILITIES (when user asks to control a computer):
-- Open applications: auto.open_app("Calculator")
-- Click at coordinates: auto.click(x, y)
-- Type text: auto.type("Hello!")
-- Manage windows: auto.snap_window("App", "left")
-- Run commands: command.run("ls -la")
-- Execute workflows: workflow.run("workflow_name")
-
-TASK EXECUTION:
-When asked to do something concrete:
-1. Understand the goal
-2. Create a step-by-step plan
-3. Execute each step
-4. Check if it worked
-5. If not, try alternatives
-6. Report back with results
-
-For tasks, respond with a JSON plan:
-```json
-{
-  "understanding": "What I think you want",
-  "plan": [
-    {"action": "auto.open_app", "params": {"target": "Calculator"}, "description": "Opening Calculator"}
-  ],
-  "confirmation_needed": false,
-  "message": "I'll open Calculator for you."
-}
-```
-
-For conversation, respond naturally without JSON.
-"""
-
     # ---------- Slim chat rules for small local models ----------
     _CHAT_RULES = (
         "CONVERSATION RULES:\n"
@@ -341,21 +306,6 @@ For conversation, respond naturally without JSON.
             name = (config_or_name or "").strip() if config_or_name else ""
             self._active_persona = name
             self._runtime_persona = name
-
-    def set_runtime_persona(self, persona: str = "") -> None:
-        """Deprecated — use ``set_active_persona`` instead.
-
-        Kept for one release cycle for backward compatibility with callers in
-        ``channel_router.py`` and other gateway code.
-        """
-        import warnings  # noqa: PLC0415
-
-        warnings.warn(
-            "set_runtime_persona() is deprecated; use set_active_persona() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        self.set_active_persona(persona)
 
     def set_language_preferences(
         self,
@@ -1297,11 +1247,17 @@ For conversation, respond naturally without JSON.
 
                 router = get_router()
                 entrypoint = getattr(self, "_entrypoint", "") or "channel"
+                lang_hint = (
+                    self._get_pinned_language_override()
+                    or getattr(self, "_detected_language_hint", "")
+                    or self._detect_language_code(message)
+                )
                 req = RouteRequest(
                     messages=messages,
                     text=message,
                     tier_override=tier_override,
                     entrypoint=entrypoint,
+                    metadata={"detected_language": lang_hint} if lang_hint else {},
                 )
                 response_text, trace = await router.run(req)
                 if response_text:

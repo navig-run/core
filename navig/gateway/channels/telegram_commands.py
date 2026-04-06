@@ -621,12 +621,6 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="ai",
     ),
     SlashCommandEntry(
-        "auto_roles",
-        "List available AI personalities (deprecated — use /personas)",
-        handler="_handle_auto_roles",
-        category="ai",
-    ),
-    SlashCommandEntry(
         "persona",
         "Switch active AI persona",
         handler="_handle_persona",
@@ -828,7 +822,6 @@ _HELP_CATEGORIES: list[_HelpCategory] = [
                     "continue",
                     "pause",
                     "skip",
-                    "auto_roles",
                 ],
             ),
         ],
@@ -2934,9 +2927,7 @@ class TelegramCommandsMixin:
                 msg_count = getattr(session, "message_count", 0)
                 lines.append("")
                 lines.append("*Preferences*")
-                lines.append(
-                    f"{_ni('voice')} Voice replies: {'🔊 on' if voice_on else '🔇 off'}"
-                )
+                lines.append(f"{_ni('voice')} Voice replies: {'🔊 on' if voice_on else '🔇 off'}")
                 lines.append(f"{_ni('focus')} Focus mode: `{focus}`")
                 if msg_count:
                     lines.append(f"{_ni('note')} Messages in session: {msg_count}")
@@ -2961,9 +2952,7 @@ class TelegramCommandsMixin:
             ],
             [{"text": "✖ Close", "callback_data": "prov_close"}],
         ]
-        await self.send_message(
-            chat_id, "\n".join(lines), parse_mode="Markdown", keyboard=keyboard
-        )
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown", keyboard=keyboard)
 
     async def _handle_mode(self, chat_id: int, text: str = "", user_id: int = 0) -> None:
         """Set focus/behavior mode. Uses MOOD_REGISTRY with fuzzy matching."""
@@ -5857,11 +5846,6 @@ class TelegramCommandsMixin:
         except Exception as e:
             logger.error("Failed to set skip-next continuation: %s", e)
             await self.send_message(chat_id, "❌ Failed to set skip-next continuation.")
-
-    async def _handle_auto_roles(self, chat_id: int) -> None:
-        """Deprecated — delegates to _handle_personas."""
-        logger.debug("_handle_auto_roles called; delegating to _handle_personas (deprecated)")
-        await self._handle_personas(chat_id=chat_id, user_id=0)
 
     # ── Persona commands ──────────────────────────────────────────────────────
 

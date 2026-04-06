@@ -191,8 +191,8 @@ class ChannelRouter:
 
         # Apply transient runtime persona from channel metadata (e.g., Telegram auto mode)
         runtime_persona = str(metadata.get("auto_reply_persona", "") or "").strip()
-        if hasattr(agent, "set_runtime_persona"):
-            agent.set_runtime_persona(runtime_persona)
+        if hasattr(agent, "set_active_persona"):
+            agent.set_active_persona(runtime_persona)
 
         detected_language = str(metadata.get("detected_language", "") or "").strip().lower()
         last_detected_language = str(metadata.get("last_detected_language", "") or "")

@@ -11,6 +11,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+
 import typer
 
 from navig import __version__ as __version__
@@ -120,12 +121,18 @@ def _get_ai_assistant():
 # Re-exported here so ``from navig.cli import show_subcommand_help`` keeps working.
 from navig.cli._callbacks import (  # noqa: E402
     _get_hacker_quotes as _get_hacker_quotes,
+)
+from navig.cli._callbacks import (
     _schema_callback,
     help_callback,
-    make_subcommand_callback as make_subcommand_callback,
     show_compact_help,
-    show_subcommand_help as show_subcommand_help,
     version_callback,
+)
+from navig.cli._callbacks import (
+    make_subcommand_callback as make_subcommand_callback,
+)
+from navig.cli._callbacks import (
+    show_subcommand_help as show_subcommand_help,
 )
 from navig.cli.help_dictionaries import HELP_REGISTRY as HELP_REGISTRY  # noqa: E402
 
@@ -305,22 +312,27 @@ def main(
     # Initialize operation recorder for history tracking
     # void: every command becomes a memory. every memory becomes a lesson.
     from navig.cli.middleware import init_operation_recorder
+
     init_operation_recorder(ctx, host=host, app=app, verbose=verbose)
 
     # Initialize debug logger if enabled (via flag OR config)
     # void: every action leaves a trace. we just choose which traces to keep.
     from navig.cli.middleware import init_debug_logger
-    init_debug_logger(ctx, debug_log=debug_log, host=host, app=app, verbose=verbose, quiet=quiet, dry_run=dry_run)
 
+    init_debug_logger(
+        ctx, debug_log=debug_log, host=host, app=app, verbose=verbose, quiet=quiet, dry_run=dry_run
+    )
 
     # Register fact extraction handler — runs silently after every CLI invocation.
     # void: every command is a signal. we harvest meaning from routine.
     from navig.cli.middleware import register_fact_extraction
+
     register_fact_extraction()
 
     # Initialize proactive assistant if enabled
     # void: we built an AI to watch our systems. now who watches the AI?
     from navig.cli.middleware import init_proactive_assistant
+
     init_proactive_assistant(ctx, quiet=quiet)
 
     # Show compact help if no subcommand is invoked
@@ -362,6 +374,7 @@ def main(
             # Treat as natural language query → start AI chat
             query = " ".join(non_flag_args)
             from navig.commands.chat import run_ai_chat
+
             run_ai_chat(query, single_query=True)
         else:
             # No args - show help
@@ -371,6 +384,7 @@ def main(
 def _run_ai_chat(initial_query: str | None = None, single_query: bool = False) -> None:
     """Run interactive AI chat — delegates to navig.commands.chat."""
     from navig.commands.chat import run_ai_chat
+
     run_ai_chat(initial_query, single_query=single_query)
 
 
@@ -421,16 +435,6 @@ def upgrade_command(
 def update_alias(ctx: typer.Context):
     """Alias for 'navig upgrade'."""
     upgrade_command(ctx=ctx, check=False, force=False)
-
-
-@app.command("chat")
-def chat_command(
-    query: str | None = typer.Argument(None, help="Optional initial query"),
-):
-    """[DEPRECATED: Use 'navig ask'] Start interactive AI chat."""
-    deprecation_warning("navig chat", "navig ask")
-    from navig.commands.chat import run_ai_chat
-    run_ai_chat(query, single_query=False)
 
 
 @app.command("help")
@@ -556,7 +560,15 @@ def fetch_command(
     """
     from navig.commands.docs_cmd import run_fetch
 
-    run_fetch(ctx, url=url, mode=mode, max_chars=max_chars, timeout=timeout, plain=plain, json_output=json_output)
+    run_fetch(
+        ctx,
+        url=url,
+        mode=mode,
+        max_chars=max_chars,
+        timeout=timeout,
+        plain=plain,
+        json_output=json_output,
+    )
 
 
 @app.command("search")
@@ -603,7 +615,9 @@ def search_command(
     """
     from navig.commands.docs_cmd import run_search
 
-    run_search(ctx, query=query, limit=limit, provider=provider, plain=plain, json_output=json_output)
+    run_search(
+        ctx, query=query, limit=limit, provider=provider, plain=plain, json_output=json_output
+    )
 
 
 # ============================================================================
@@ -746,6 +760,7 @@ def init_command(
         navig init --provider    # configure AI provider
     """
     from navig.commands.init import run_init_command
+
     run_init_command(
         ctx,
         reconfigure=reconfigure,
@@ -791,6 +806,7 @@ def init_rollback_command(
         navig init-rollback --dry-run          # preview rollback
     """
     from navig.commands.init import run_init_rollback
+
     run_init_rollback(last=last, profile=profile, dry_run=dry_run)
 
 
@@ -1115,9 +1131,7 @@ def ask_compat(
     opts["ask_detected_reasons"] = reasons
 
     if plan:
-        ch.dim(
-            f"Intent route: {mode} (confidence={confidence:.2f}; reasons={', '.join(reasons)})"
-        )
+        ch.dim(f"Intent route: {mode} (confidence={confidence:.2f}; reasons={', '.join(reasons)})")
         if not execute:
             ch.warning(
                 "Plan preview only — command not executed.",
@@ -1126,21 +1140,6 @@ def ask_compat(
             return
 
     ask_ai(question, model, opts)
-
-
-# Legacy flat command for backward compatibility
-@app.command("ai", hidden=True)
-def ai_legacy(
-    ctx: typer.Context,
-    question: str = typer.Argument(..., help="Natural language question"),
-    model: str | None = typer.Option(None, "--model", "-m", help="Override default AI model"),
-):
-    """[DEPRECATED: Use 'navig ai ask'] Ask AI about server."""
-    deprecation_warning("navig ai <question>", "navig ai ask <question>")
-    from navig.commands.ai import ask_ai
-
-    ask_ai(question, model, ctx.obj)
-
 
 
 # ── hestia/template/addon removed; server_template_app, mcp_app → via _EXTERNAL_CMD_MAP
@@ -1214,12 +1213,12 @@ def quick_start(
         navig start --no-bot         # Gateway only
     """
     from navig.commands.start import run_quick_start
+
     run_quick_start(bot=bot, gateway=gateway, port=port, background=background)
 
 
 # ── heartbeat_app, cron_app, approve_app, queue_app → navig.commands.gateway / _EXTERNAL_CMD_MAP
 # ── memory_app → navig.commands.memory via _EXTERNAL_CMD_MAP
-
 
 
 # ============================================================================
@@ -1240,9 +1239,17 @@ def quick_start(
 
 from navig.cli.registration import (
     _EXTERNAL_CMD_MAP as _EXTERNAL_CMD_MAP,
+)
+from navig.cli.registration import (
     _HIDDEN_COMMANDS as _HIDDEN_COMMANDS,
+)
+from navig.cli.registration import (
     _register_external_commands,
+)
+from navig.cli.registration import (
     get_external_commands as get_external_commands,
+)
+from navig.cli.registration import (
     is_external_command as is_external_command,
 )
 
