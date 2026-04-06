@@ -145,3 +145,91 @@ class TestSSETransportIsConnected:
         t._session = MagicMock()
         t._session.closed = False
         assert t.is_connected()
+
+
+# ── StdioTransport helpers ────────────────────────────────────────────────────
+
+
+def _make_stdio_transport():
+    from navig.mcp.transport import StdioTransport
+
+    return StdioTransport(command="fake-mcp-server")
+
+
+def _fake_stdio_process(*, returncode=None):
+    """Build a minimal asyncio.subprocess.Process stub."""
+    proc = MagicMock()
+    proc.returncode = returncode
+    proc.stdin = MagicMock()
+    proc.stdin.write = MagicMock()
+    proc.stdin.drain = AsyncMock()
+    return proc
+
+
+# ── StdioTransport.is_connected() ────────────────────────────────────────────
+
+
+class TestStdioTransportIsConnected:
+    def test_false_when_no_process(self):
+        t = _make_stdio_transport()
+        assert not t.is_connected()
+
+    def test_false_when_process_exited(self):
+        """returncode is set (non-None) → process has terminated → not connected."""
+        t = _make_stdio_transport()
+        t._process = _fake_stdio_process(returncode=0)
+        assert not t.is_connected()
+
+    def test_true_when_process_running(self):
+        """returncode is None → process still alive → connected."""
+        t = _make_stdio_transport()
+        t._process = _fake_stdio_process(returncode=None)
+        assert t.is_connected()
+
+
+# ── StdioTransport.send() ─────────────────────────────────────────────────────
+
+
+class TestStdioTransportSend:
+    @pytest.mark.asyncio
+    async def test_send_raises_when_not_connected(self):
+        """send() with no process raises RuntimeError immediately."""
+        t = _make_stdio_transport()
+        with pytest.raises(RuntimeError, match="not connected"):
+            await t.send(json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}))
+
+    @pytest.mark.asyncio
+    async def test_send_timeout_raises_runtime_error(self):
+        """send() raises RuntimeError('Request timeout: N') after asyncio.wait_for times out."""
+        t = _make_stdio_transport()
+        t._process = _fake_stdio_process()
+
+        with patch("asyncio.wait_for", new=AsyncMock(side_effect=asyncio.TimeoutError)):
+            with pytest.raises(RuntimeError, match="timeout"):
+                await t.send(json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}))
+
+    @pytest.mark.asyncio
+    async def test_send_timeout_cleans_pending(self):
+        """pending dict must be empty after a TimeoutError (finally block)."""
+        t = _make_stdio_transport()
+        t._process = _fake_stdio_process()
+
+        with patch("asyncio.wait_for", new=AsyncMock(side_effect=asyncio.TimeoutError)):
+            with pytest.raises(RuntimeError):
+                await t.send(json.dumps({"jsonrpc": "2.0", "id": 77, "method": "ping"}))
+
+        assert 77 not in t._pending
+
+    @pytest.mark.asyncio
+    async def test_send_notification_returns_none(self):
+        """Messages without 'id' are notifications; send() writes and returns None without
+        registering a future in _pending."""
+        t = _make_stdio_transport()
+        t._process = _fake_stdio_process()
+
+        result = await t.send(
+            json.dumps({"jsonrpc": "2.0", "method": "notify/progress", "params": {}})
+        )
+
+        assert result is None
+        assert not t._pending  # no future created for notification
