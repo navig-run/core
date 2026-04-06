@@ -73,16 +73,12 @@ class StdioTransport(MCPTransport):
         if self.env:
             # Resolve environment variable references
             for key, value in self.env.items():
-                if (
-                    isinstance(value, str)
-                    and value.startswith("${")
-                    and value.endswith("}")
-                ):
+                if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
                     env_var = value[2:-1]
                     value = os.environ.get(env_var, "")
                 full_env[key] = value
 
-        logger.debug("Starting MCP server: %s %s", self.command, ' '.join(self.args))
+        logger.debug("Starting MCP server: %s %s", self.command, " ".join(self.args))
 
         try:
             self._process = await asyncio.create_subprocess_exec(
@@ -104,9 +100,7 @@ class StdioTransport(MCPTransport):
             logger.info("MCP stdio transport connected: %s", self.command)
 
         except FileNotFoundError as _exc:
-            raise RuntimeError(
-                f"MCP server command not found: {self.command}"
-            ) from _exc
+            raise RuntimeError(f"MCP server command not found: {self.command}") from _exc
         except Exception as e:
             raise RuntimeError(f"Failed to start MCP server: {e}") from e
 
@@ -269,32 +263,59 @@ class SSETransport(MCPTransport):
     ):
         self.url = url
         self.headers = headers or {}
+        self.post_url = url
 
         self._session = None
         self._sse_task: asyncio.Task | None = None
         self._pending: dict[Any, asyncio.Future] = {}
 
     async def connect(self):
-        """Create HTTP session.
-
-        .. warning::
-            SSE listener is not started.  Requests via :meth:`send` will
-            time out because no reader resolves pending futures.
-            See NAVIG-BUG-004.
-        """
+        """Create HTTP session and start SSE listener."""
         try:
             import aiohttp
         except ImportError as _exc:
-            raise ImportError(
-                "aiohttp required for SSE transport: pip install aiohttp"
-            ) from _exc
+            raise ImportError("aiohttp required for SSE transport: pip install aiohttp") from _exc
 
         self._session = aiohttp.ClientSession(headers=self.headers)
         logger.info("MCP SSE transport connected: %s", self.url)
-        logger.warning(
-            "SSETransport: SSE listener not implemented (NAVIG-BUG-004). "
-            "Requests will rely on synchronous HTTP response bodies only."
-        )
+
+        self._sse_task = asyncio.create_task(self._sse_listen_loop())
+
+    async def _sse_listen_loop(self):
+        """Listen for SSE events and resolve pending requests."""
+        import json
+        from urllib.parse import urljoin
+
+        try:
+            async with self._session.get(
+                self.url, headers={"Accept": "text/event-stream"}
+            ) as response:
+                if response.status != 200:
+                    logger.warning("SSE listener failed to connect: %s", response.status)
+                    return
+
+                async for line in response.content:
+                    line_text = line.decode("utf-8", errors="replace").strip()
+                    if line_text.startswith("endpoint: "):
+                        endpoint_path = line_text[10:].strip()
+                        self.post_url = urljoin(self.url, endpoint_path)
+                    elif line_text.startswith("data: "):
+                        data_str = line_text[6:].strip()
+                        if data_str:
+                            try:
+                                payload = json.loads(data_str)
+                                req_id = payload.get("id")
+                                if req_id is not None and req_id in self._pending:
+                                    future = self._pending.pop(req_id)
+                                    if not future.done():
+                                        future.set_result(data_str)
+                            except Exception as e:
+                                logger.debug("SSE payload parse error: %s", e)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            if self._session and not self._session.closed:
+                logger.warning("SSE listen loop error: %s", e)
 
     async def disconnect(self):
         """Close HTTP session."""
@@ -318,23 +339,52 @@ class SSETransport(MCPTransport):
 
     async def send(self, data: str) -> str | None:
         """
-        Send request via HTTP POST and return the response body.
-
-        Note: This does **not** use the SSE push path — it reads
-        the HTTP response body directly.  Servers that push responses
-        via SSE will not work correctly until NAVIG-BUG-004 is resolved.
+        Send request via HTTP POST. Return synchronous response if available,
+        otherwise await the delayed response via the SSE listener.
         """
         if not self._session:
             raise RuntimeError("Transport not connected")
 
+        import json
+
+        req_id = None
+        try:
+            payload = json.loads(data)
+            req_id = payload.get("id")
+        except Exception:
+            pass
+
+        future = None
+        if req_id is not None:
+            future = asyncio.get_running_loop().create_future()
+            self._pending[req_id] = future
+
         async with self._session.post(
-            self.url, data=data, headers={"Content-Type": "application/json"}
+            self.post_url, data=data, headers={"Content-Type": "application/json"}
         ) as response:
-            if response.status != 200:
+            if response.status not in (200, 202):
                 error = await response.text()
+                if req_id is not None:
+                    self._pending.pop(req_id, None)
                 raise RuntimeError(f"MCP request failed: {response.status} {error}")
 
-            return await response.text()
+            resp_text = await response.text()
+            if resp_text and resp_text.strip():
+                if req_id is not None:
+                    self._pending.pop(req_id, None)
+                return resp_text
+
+        if future is not None:
+            try:
+                return await asyncio.wait_for(future, timeout=30)
+            except asyncio.TimeoutError:
+                raise RuntimeError(  # noqa: B904
+                    f"MCP SSE request timed out (no response for req_id={req_id})"
+                ) from None
+            finally:
+                self._pending.pop(req_id, None)
+
+        return None
 
     async def send_notification(self, data: str):
         """Send notification via HTTP POST."""

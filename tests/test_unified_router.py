@@ -157,6 +157,11 @@ class TestDetectProviderFromRegistry:
 
     def test_finds_xai_from_env(self, monkeypatch):
         monkeypatch.setenv("GROK_KEY", "grok-test-key")
+        # Isolate from vault state: prevent real vault keys from interfering
+        monkeypatch.setattr("navig.vault.get_vault_v2", lambda: None, raising=False)
+        _mock_vault = MagicMock()
+        _mock_vault.get_api_key.return_value = None
+        monkeypatch.setattr("navig.vault.get_vault", lambda: _mock_vault, raising=False)
         from navig.agent.ai_client import AIClient
 
         client = AIClient.__new__(AIClient)
@@ -187,6 +192,11 @@ class TestDetectProviderFromRegistry:
             "BLOCKRUN_WALLET_KEY",
         ):
             monkeypatch.delenv(var, raising=False)
+        # Isolate from both vault v2 and v1 so dev-machine credentials don't leak in.
+        monkeypatch.setattr("navig.vault.get_vault_v2", lambda: None, raising=False)
+        _mock_vault = MagicMock()
+        _mock_vault.get_api_key.return_value = None
+        monkeypatch.setattr("navig.vault.get_vault", lambda: _mock_vault, raising=False)
         from navig.agent.ai_client import AIClient
 
         client = AIClient.__new__(AIClient)
@@ -197,6 +207,10 @@ class TestDetectProviderFromRegistry:
     def test_skips_already_checked_providers(self, monkeypatch):
         """Should not return openrouter/ollama/etc — those are checked earlier."""
         monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+        monkeypatch.setattr("navig.vault.get_vault_v2", lambda: None, raising=False)
+        _mock_vault = MagicMock()
+        _mock_vault.get_api_key.return_value = None
+        monkeypatch.setattr("navig.vault.get_vault", lambda: _mock_vault, raising=False)
         from navig.agent.ai_client import AIClient
 
         client = AIClient.__new__(AIClient)
@@ -204,6 +218,23 @@ class TestDetectProviderFromRegistry:
         result = client._detect_provider_from_registry()
         # openrouter is in the skip list, so it shouldn't be returned here
         assert result != "openrouter"
+
+    def test_deterministic_when_multiple_keys_set(self, monkeypatch):
+        """With both NVIDIA and xai keys set, xai must win (precedence order)."""
+        monkeypatch.setenv("GROK_KEY", "grok-test-key")
+        monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
+        monkeypatch.setenv("MISTRAL_API_KEY", "mistral-test-key")
+        monkeypatch.setattr("navig.vault.get_vault_v2", lambda: None, raising=False)
+        _mock_vault = MagicMock()
+        _mock_vault.get_api_key.return_value = None
+        monkeypatch.setattr("navig.vault.get_vault", lambda: _mock_vault, raising=False)
+        from navig.agent.ai_client import AIClient
+
+        client = AIClient.__new__(AIClient)
+        client._config = {}
+        result = client._detect_provider_from_registry()
+        # xai must win — it is first in _PROVIDER_DETECTION_PRECEDENCE
+        assert result == "xai"
 
 
 # ── 5. ConversationalAgent._get_ai_response gate removal ─────────────

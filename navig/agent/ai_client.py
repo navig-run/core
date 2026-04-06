@@ -225,8 +225,81 @@ class AIClient:
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
+        # ── Generic sweep: check all registry providers for available keys ──
+        found = self._detect_provider_from_registry()
+        if found:
+            return found
+
         # Default to pattern matching (no LLM available)
         return "none"
+
+    # Explicit probe order for the registry sweep so that provider detection is
+    # deterministic even when multiple API keys are available simultaneously.
+    _PROVIDER_DETECTION_PRECEDENCE = [
+        "xai",
+        "anthropic",
+        "google",
+        "groq",
+        "cerebras",
+        "mistral",
+        "nvidia",
+        "kilocode",
+        "qwen",
+        "blockrun",
+    ]
+
+    def _detect_provider_from_registry(self) -> str:
+        """Probe all providers from the registry for available API keys.
+
+        Returns the first provider (in ``_PROVIDER_DETECTION_PRECEDENCE`` order,
+        then remaining registry entries) that has credentials available via env
+        vars or vault, or empty string if none found.
+        """
+        _KNOWN_SKIP = frozenset(
+            (
+                "mcp_bridge",
+                "openrouter",
+                "openai",
+                "airllm",
+                "ollama",
+                "llamacpp",
+                "github_models",
+            )
+        )
+        try:
+            from navig.agent.model_router import _resolve_provider_api_key
+            from navig.providers.registry import list_all_providers
+
+            all_manifests = {m.id: m for m in list_all_providers()}
+
+            # ① Check providers in explicit precedence order first.
+            for pid in self._PROVIDER_DETECTION_PRECEDENCE:
+                if pid in _KNOWN_SKIP:
+                    continue
+                manifest = all_manifests.get(pid)
+                if manifest is None:
+                    continue
+                if not getattr(manifest, "requires_key", True):
+                    continue
+                key = _resolve_provider_api_key(pid)
+                if key:
+                    logger.info("Provider detected via registry sweep: %s", pid)
+                    return pid
+
+            # ② Fall through to remaining registry entries (alphabetic by insertion).
+            seen = set(self._PROVIDER_DETECTION_PRECEDENCE) | _KNOWN_SKIP
+            for pid, manifest in all_manifests.items():
+                if pid in seen:
+                    continue
+                if not getattr(manifest, "requires_key", True):
+                    continue
+                key = _resolve_provider_api_key(pid)
+                if key:
+                    logger.info("Provider detected via registry sweep: %s", pid)
+                    return pid
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; failure is non-critical
+        return ""
 
     def _get_bridge_mcp_url(self) -> str:
         """Read Bridge MCP WebSocket URL from bridge-grid.json, config, env, or default.
@@ -850,6 +923,65 @@ def get_ai_client() -> AIClient:
             if _default_client is None:
                 _default_client = AIClient()
     return _default_client
+
+
+async def close_default_ai_client() -> None:
+    """Close and clear the module-level default AI client singleton."""
+    global _default_client
+    with _default_client_lock:
+        client = _default_client
+        _default_client = None
+    if client is None:
+        return
+    await client.close()
+
+
+def reset_default_ai_client(*, close_session: bool = False) -> None:
+    """Reset the default AI client singleton.
+
+    When ``close_session`` is True, this function tries to close any open
+    aiohttp session held by the singleton in a synchronous-safe way.
+    """
+    global _default_client
+    with _default_client_lock:
+        client = _default_client
+        _default_client = None
+
+    if not close_session or client is None:
+        return
+
+    try:
+        asyncio.run(client.close())
+    except RuntimeError as exc:
+        message = str(exc)
+        if "asyncio.run() cannot be called from a running event loop" not in message:
+            logger.debug("Could not close default AI client session during reset: %s", exc)
+            return
+
+        close_error: Exception | None = None
+        done = threading.Event()
+
+        def _close_in_thread() -> None:
+            nonlocal close_error
+            try:
+                asyncio.run(client.close())
+            except Exception as thread_exc:  # noqa: BLE001
+                close_error = thread_exc
+            finally:
+                done.set()
+
+        thread = threading.Thread(
+            target=_close_in_thread,
+            name="navig-ai-client-reset",
+            daemon=True,
+        )
+        thread.start()
+        done.wait(timeout=5.0)
+        if close_error is not None:
+            logger.debug(
+                "Could not close default AI client session during threaded reset: %s",
+                close_error,
+            )
 
 
 async def quick_chat(message: str, system: str | None = None) -> str:

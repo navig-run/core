@@ -185,6 +185,26 @@ async def _stop_gateway_http(gateway: NavigGateway) -> None:
         logger.info("Gateway HTTP server stopped")
 
 
+def _transport_for_url(url: str) -> str:
+    """Map URL scheme to the correct MCPClientConfig transport type.
+
+    http/https  → 'sse'         (HTTP+SSE Streamable-HTTP)
+    ws/wss      → 'websocket'   (WebSocket)
+    other       → 'stdio'       (legacy fallback; logged as warning)
+    """
+    import logging as _logging
+
+    lower = (url or "").lower()
+    if lower.startswith(("http://", "https://")):
+        return "sse"
+    if lower.startswith(("ws://", "wss://")):
+        return "websocket"
+    _logging.getLogger(__name__).warning(
+        "MCP URL %r has unrecognised scheme; defaulting to 'stdio'", url
+    )
+    return "stdio"
+
+
 async def _mcp_reconnect_loop(
     gateway: NavigGateway,
     mcp_cfg: dict,
@@ -221,7 +241,7 @@ async def _mcp_reconnect_loop(
                     config=MCPClientConfig(
                         id=name,
                         url=mcp_cfg["mcp_url"],
-                        transport="sse" if "http" in mcp_cfg["mcp_url"] else "stdio",
+                        transport=_transport_for_url(mcp_cfg["mcp_url"]),
                     )
                 )
                 logger.info("MCP reconnect: %s connected", name)
@@ -284,9 +304,7 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
             if provider_name == "telegram":
                 logger.error("Failed to initialize Telegram channel")
             else:
-                logger.error(
-                    "Failed to initialize messaging channel (provider=%s)", provider_name
-                )
+                logger.error("Failed to initialize messaging channel (provider=%s)", provider_name)
         else:
             gateway.channels[provider_name] = channel
 
@@ -316,7 +334,7 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
                     config=MCPClientConfig(
                         id="vscode-copilot",
                         url=mcp_cfg["mcp_url"],
-                        transport="sse" if "http" in mcp_cfg["mcp_url"] else "stdio",
+                        transport=_transport_for_url(mcp_cfg["mcp_url"]),
                     )
                 )
                 logger.info("MCP Bridge client connected → %s", mcp_cfg["mcp_url"])
