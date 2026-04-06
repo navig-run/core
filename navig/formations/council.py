@@ -152,8 +152,10 @@ def run_council(
         }
 
     logger.info(
-        f"[COUNCIL] Starting deliberation: '{question}' "
-        f"with {len(formation.loaded_agents)} agents, {rounds} round(s)"
+        "[COUNCIL] Starting deliberation: '%s' with %s agents, %s round(s)",
+        question,
+        len(formation.loaded_agents),
+        rounds,
     )
 
     # Pre-compute "other roles" for each agent so they know what NOT to cover
@@ -278,9 +280,9 @@ def run_council(
     }
 
     logger.info(
-        f"[COUNCIL] Deliberation complete: "
-        f"confidence={overall_confidence:.2f}, "
-        f"duration={total_duration_ms}ms"
+        "[COUNCIL] Deliberation complete: confidence=%.2f, duration=%sms",
+        overall_confidence,
+        total_duration_ms,
     )
 
     return result

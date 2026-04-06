@@ -110,8 +110,10 @@ def discover_formations() -> dict[str, Path]:
                     formation_map[formation_id] = subdir
                 else:
                     logger.warning(
-                        f"[FORMATION] Duplicate formation ID '{formation_id}' "
-                        f"found at {subdir}, already registered from {formation_map[formation_id]}"
+                        "[FORMATION] Duplicate formation ID '%s' found at %s, already registered from %s",
+                        formation_id,
+                        subdir,
+                        formation_map[formation_id],
                     )
 
                 # Aliases: additional lookup keys
@@ -120,7 +122,9 @@ def discover_formations() -> dict[str, Path]:
                         formation_map[alias] = subdir
                     else:
                         logger.debug(
-                            f"[FORMATION] Alias '{alias}' already mapped, skipping from {subdir}"
+                            "[FORMATION] Alias '%s' already mapped, skipping from %s",
+                            alias,
+                            subdir,
                         )
 
             except (json.JSONDecodeError, KeyError) as e:
@@ -152,7 +156,7 @@ def read_profile(workspace_dir: Path | None = None) -> ProfileConfig | None:
 
     errors = validate_profile_data(data, path=profile_path)
     if errors:
-        logger.error("[FORMATION] Invalid profile.json: %s", '; '.join(errors))
+        logger.error("[FORMATION] Invalid profile.json: %s", "; ".join(errors))
         return None
 
     return ProfileConfig.from_dict(data)
@@ -177,8 +181,9 @@ def resolve_formation(
     formation_dir = formation_map.get(profile)
     if formation_dir is None:
         logger.warning(
-            f"[FORMATION] Unknown profile '{profile}'. "
-            f"Available: {', '.join(sorted(formation_map.keys())) or '(none)'}"
+            "[FORMATION] Unknown profile '%s'. Available: %s",
+            profile,
+            ", ".join(sorted(formation_map.keys())) or "(none)",
         )
         return None
 
@@ -386,8 +391,10 @@ def load_formation(formation_dir: Path) -> Formation | None:
                 if agent:
                     formation.loaded_agents[agent_id] = agent
                     logger.debug(
-                        f"[FORMATION] Loaded agent profile: {agent.name} ({agent.id}) "
-                        f"from {agent_dir}"
+                        "[FORMATION] Loaded agent profile: %s (%s) from %s",
+                        agent.name,
+                        agent.id,
+                        agent_dir,
                     )
                     continue
 
@@ -398,7 +405,10 @@ def load_formation(formation_dir: Path) -> Formation | None:
                 logger.debug("[FORMATION] Loaded agent: %s (%s)", agent.name, agent.id)
             else:
                 logger.warning(
-                    f"[FORMATION] Agent '{agent_id}' not found at {agent_dir} or {agent_file}"
+                    "[FORMATION] Agent '%s' not found at %s or %s",
+                    agent_id,
+                    agent_dir,
+                    agent_file,
                 )
         except FormationValidationError as e:
             logger.warning("[FORMATION] Skipping agent '%s': %s", agent_id, e)
@@ -440,8 +450,9 @@ def get_active_formation(workspace_dir: Path | None = None) -> Formation | None:
         # Fallback to default if configured profile not found
         if profile_name != DEFAULT_PROFILE:
             logger.warning(
-                f"[FORMATION] Profile '{profile_name}' not found, "
-                f"falling back to '{DEFAULT_PROFILE}'"
+                "[FORMATION] Profile '%s' not found, falling back to '%s'",
+                profile_name,
+                DEFAULT_PROFILE,
             )
             formation_dir = resolve_formation(DEFAULT_PROFILE)
         if formation_dir is None:

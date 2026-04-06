@@ -591,9 +591,7 @@ class IntentParser:
             except asyncio.TimeoutError:
                 logger.warning("AI intent parsing timed out, falling back to patterns")
             except Exception as e:
-                logger.warning(
-                    "AI intent parsing failed: %s, falling back to patterns", e
-                )
+                logger.warning("AI intent parsing failed: %s, falling back to patterns", e)
 
         # Fallback to pattern matching
         result = self._parse_with_patterns(user_message)
@@ -672,9 +670,7 @@ Determine the user's intent and extract any parameters. Respond with JSON only."
                 method="ai_error",
             )
 
-    def _parse_ai_response(
-        self, response: str, original_message: str
-    ) -> IntentParseResult:
+    def _parse_ai_response(self, response: str, original_message: str) -> IntentParseResult:
         """Parse JSON response from AI."""
         try:
             # Extract JSON from response (AI might include extra text)
@@ -821,9 +817,7 @@ Determine the user's intent and extract any parameters. Respond with JSON only."
         """Cache a parse result."""
         if len(self._pattern_cache) >= self._cache_max_size:
             # Remove oldest entries (simple LRU approximation)
-            keys_to_remove = list(self._pattern_cache.keys())[
-                : self._cache_max_size // 2
-            ]
+            keys_to_remove = list(self._pattern_cache.keys())[: self._cache_max_size // 2]
             for k in keys_to_remove:
                 del self._pattern_cache[k]
 

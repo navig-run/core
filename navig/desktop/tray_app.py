@@ -126,7 +126,7 @@ class ProcessState:
 
     def stop(self):
         if self.process and self.is_alive:
-            log.info(f"Stopping {self.name} (PID {self.process.pid})")
+            log.info("Stopping %s (PID %s)", self.name, self.process.pid)
             try:
                 self.process.terminate()
                 try:
@@ -135,7 +135,7 @@ class ProcessState:
                     self.process.kill()
                     self.process.wait(timeout=3)
             except Exception as e:
-                log.error(f"Error stopping {self.name}: {e}")
+                log.error("Error stopping %s: %s", self.name, e)
         self.process = None
         if getattr(self, "log_fh", None) is not None:
             try:
@@ -226,7 +226,7 @@ class NavigTray:
         self._update_icon()
 
         cmd = [self._python, "-m", "navig"] + args
-        log.info(f"Starting {state.name}: {' '.join(cmd)}")
+        log.info("Starting %s: %s", state.name, " ".join(cmd))
 
         try:
             log_file = LOG_DIR / f"{state.name.lower()}.log"
@@ -242,11 +242,11 @@ class NavigTray:
             state.status = Status.RUNNING
             state.started_at = datetime.now()
             state.last_error = ""
-            log.info(f"{state.name} started (PID {state.process.pid})")
+            log.info("%s started (PID %s)", state.name, state.process.pid)
         except Exception as e:
             state.status = Status.ERROR
             state.last_error = str(e)
-            log.error(f"Failed to start {state.name}: {e}")
+            log.error("Failed to start %s: %s", state.name, e)
 
         self._update_icon()
 
@@ -293,13 +293,13 @@ class NavigTray:
                         timeout=5,
                         creationflags=subprocess.CREATE_NO_WINDOW,
                     )
-                    log.info(f"Killed orphan bot process PID {pid}")
+                    log.info("Killed orphan bot process PID %s", pid)
                 except Exception:  # noqa: BLE001
                     pass  # best-effort; failure is non-critical
             if pids:
-                log.info(f"Cleaned up {len(pids)} orphan bot process(es)")
+                log.info("Cleaned up %s orphan bot process(es)", len(pids))
         except Exception as e:
-            log.error(f"Orphan bot cleanup failed: {e}")
+            log.error("Orphan bot cleanup failed: %s", e)
 
     def start_daemon(self):
         """Start the NAVIG daemon supervisor (manages bot, gateway, scheduler)."""
@@ -315,7 +315,7 @@ class NavigTray:
         pythonw = Path(self._python).parent / "pythonw.exe"
         exe = str(pythonw) if pythonw.exists() else self._python
         cmd = [exe, "-m", "navig.daemon.entry"]
-        log.info(f"Starting Daemon: {' '.join(cmd)}")
+        log.info("Starting Daemon: %s", " ".join(cmd))
 
         try:
             log_file = LOG_DIR / "daemon-tray.log"
@@ -335,11 +335,11 @@ class NavigTray:
             self.daemon.status = Status.RUNNING
             self.daemon.started_at = datetime.now()
             self.daemon.last_error = ""
-            log.info(f"Daemon started (PID {self.daemon.process.pid})")
+            log.info("Daemon started (PID %s)", self.daemon.process.pid)
         except Exception as e:
             self.daemon.status = Status.ERROR
             self.daemon.last_error = str(e)
-            log.error(f"Failed to start Daemon: {e}")
+            log.error("Failed to start Daemon: %s", e)
 
         self._update_icon()
 
@@ -359,7 +359,7 @@ class NavigTray:
                 pass  # best-effort; failure is non-critical
 
         if daemon_pid:
-            log.info(f"Stopping daemon PID {daemon_pid} gracefully...")
+            log.info("Stopping daemon PID %s gracefully...", daemon_pid)
             try:
                 # Send CTRL_BREAK_EVENT — caught by SIGBREAK handler in supervisor
                 # This triggers graceful _shutdown() which kills children properly
@@ -370,7 +370,7 @@ class NavigTray:
                 else:
                     os.kill(daemon_pid, signal.SIGTERM)
             except Exception as e:
-                log.warning(f"Graceful signal failed: {e}")
+                log.warning("Graceful signal failed: %s", e)
 
             # Wait up to 8s for graceful shutdown
             for _ in range(16):
@@ -382,7 +382,7 @@ class NavigTray:
                     break
             else:
                 # Force kill if graceful failed
-                log.warning(f"Force-killing daemon PID {daemon_pid}")
+                log.warning("Force-killing daemon PID %s", daemon_pid)
                 try:
                     subprocess.run(
                         ["taskkill", "/F", "/PID", str(daemon_pid), "/T"],
@@ -477,7 +477,7 @@ class NavigTray:
                     pyw_script = PROJECT_ROOT / "scripts" / "navig_tray.py"
                 value = f'"{pythonw}" "{pyw_script}"'
                 winreg.SetValueEx(key, REGISTRY_VALUE, 0, winreg.REG_SZ, value)
-                log.info(f"Auto-start enabled: {value}")
+                log.info("Auto-start enabled: %s", value)
             else:
                 try:
                     winreg.DeleteValue(key, REGISTRY_VALUE)
@@ -489,7 +489,7 @@ class NavigTray:
             self.settings.auto_start = enabled
             self.settings.save()
         except Exception as e:
-            log.error(f"Failed to set auto-start: {e}")
+            log.error("Failed to set auto-start: %s", e)
 
     # --- Health Monitor ---
 
@@ -503,7 +503,7 @@ class NavigTray:
                     exit_code = state.process.returncode if state.process else -1
                     state.status = Status.ERROR
                     state.last_error = f"Exited with code {exit_code}"
-                    log.warning(f"{state.name} died (exit {exit_code})")
+                    log.warning("%s died (exit %s)", state.name, exit_code)
                     changed = True
 
             # Check for externally-started daemon
@@ -545,7 +545,7 @@ class NavigTray:
                 self._icon.icon = self._create_icon_image(self._overall_status())
                 self._icon.title = self._tooltip()
             except Exception as e:
-                log.error(f"Icon update failed: {e}")
+                log.error("Icon update failed: %s", e)
 
     def _build_menu(self):
         """Build the tray context menu items.
@@ -762,7 +762,7 @@ class NavigTray:
                 creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0),
             )
         except Exception as e:
-            log.error(f"Failed to run navig command: {e}")
+            log.error("Failed to run navig command: %s", e)
 
     def _run_navig_interactive(self, args: list[str]):
         """Run a navig CLI command in a visible terminal that stays open.
@@ -778,13 +778,13 @@ class NavigTray:
             try:
                 subprocess.Popen(full, creationflags=subprocess.CREATE_NEW_CONSOLE)
             except Exception as e:
-                log.error(f"Failed to run interactive command: {e}")
+                log.error("Failed to run interactive command: %s", e)
         else:
             cmd = [self._python, "-m", "navig"] + args
             try:
                 subprocess.Popen(cmd)
             except Exception as e:
-                log.error(f"Failed to run interactive command: {e}")
+                log.error("Failed to run interactive command: %s", e)
 
     def _open_navig_shell(self):
         """Open an interactive terminal pre-loaded for navig commands."""
@@ -795,14 +795,14 @@ class NavigTray:
             try:
                 subprocess.Popen(f'cmd /k "{init}"', creationflags=subprocess.CREATE_NEW_CONSOLE)
             except Exception as e:
-                log.error(f"Failed to open NAVIG shell: {e}")
+                log.error("Failed to open NAVIG shell: %s", e)
 
     def _toggle_setting(self, attr: str):
         """Toggle a boolean TraySettings field and persist."""
         current = getattr(self.settings, attr, False)
         setattr(self.settings, attr, not current)
         self.settings.save()
-        log.info(f"Setting {attr} = {not current}")
+        log.info("Setting %s = %s", attr, not current)
 
     def _on_quit(self, icon, item):
         """Stop everything and exit."""
