@@ -69,24 +69,42 @@ ALL_PROVIDERS: list[ProviderManifest] = [
     ProviderManifest(
         id="openai",
         display_name="OpenAI",
-        description="GPT-4o, GPT-4 Turbo, GPT-3.5 Turbo and o-series reasoning models.",
+        description="GPT-4.1, GPT-4o, o-series reasoning models — latest OpenAI lineup.",
         tier="cloud",
         env_vars=["OPENAI_API_KEY"],
         vault_keys=["openai/api-key", "openai/api_key"],
-        models=["gpt-4o", "gpt-4o-mini", "gpt-4-turbo-preview", "gpt-3.5-turbo"],
+        models=[
+            # GPT-4.1 series (April 2025)
+            "gpt-4.1",
+            "gpt-4.1-mini",
+            "gpt-4.1-nano",
+            # GPT-4o series
+            "gpt-4o",
+            "gpt-4o-mini",
+            # Reasoning / o-series
+            "o4-mini",
+            "o3",
+            "o3-mini",
+            "o1",
+            "o1-mini",
+        ],
         emoji="🤖",
     ),
     # ── Cloud: Anthropic ──────────────────────────────────────────────────────
     ProviderManifest(
         id="anthropic",
         display_name="Anthropic",
-        description="Claude 3.5 Sonnet, Haiku, and Opus — long context, strong reasoning.",
+        description="Claude 3.7 Sonnet, Claude 3.5 series — extended thinking and long context.",
         tier="cloud",
         env_vars=["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
         vault_keys=["anthropic/api-key", "anthropic/api_key"],
         models=[
+            # Claude 3.7 (February 2025 — extended thinking)
+            "claude-3-7-sonnet-20250219",
+            # Claude 3.5 series
             "claude-3-5-sonnet-20241022",
             "claude-3-5-haiku-20241022",
+            # Claude 3 (legacy)
             "claude-3-opus-20240229",
         ],
         emoji="🟣",
@@ -95,11 +113,18 @@ ALL_PROVIDERS: list[ProviderManifest] = [
     ProviderManifest(
         id="google",
         display_name="Google Gemini",
-        description="Gemini 2.5 Flash and Pro — multimodal, up to 2M token context.",
+        description="Gemini 2.5 Pro/Flash, 2.0 Flash, 1.5 Pro/Flash — multimodal up to 2M context.",
         tier="cloud",
         env_vars=["GEMINI_API_KEY", "GOOGLE_API_KEY"],
         vault_keys=["google/api-key", "google/api_key", "gemini/api-key"],
-        models=["gemini-2.5-flash", "gemini-2.5-pro"],
+        models=[
+            "gemini-2.5-pro-preview-05-06",
+            "gemini-2.5-flash-preview-04-17",
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-lite",
+            "gemini-1.5-pro",
+            "gemini-1.5-flash",
+        ],
         emoji="🔵",
     ),
     # ── Cloud: OpenRouter ─────────────────────────────────────────────────────
@@ -111,18 +136,38 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         env_vars=["OPENROUTER_API_KEY"],
         vault_keys=["openrouter/api-key", "openrouter/api_key"],
         models=[
-            "anthropic/claude-3.5-sonnet",
-            "anthropic/claude-3-haiku",
+            # Anthropic
+            "anthropic/claude-3-7-sonnet",
+            "anthropic/claude-3-5-sonnet",
+            "anthropic/claude-3-5-haiku",
+            # OpenAI
+            "openai/gpt-4.1",
+            "openai/gpt-4.1-mini",
             "openai/gpt-4o",
             "openai/gpt-4o-mini",
+            "openai/o3-mini",
+            # Google
+            "google/gemini-2.5-pro-preview-05-06",
+            "google/gemini-2.5-flash-preview-04-17",
             "google/gemini-2.0-flash-001",
-            "google/gemini-flash-1.5",
+            # Meta Llama
             "meta-llama/llama-3.3-70b-instruct",
-            "deepseek/deepseek-chat",
+            "meta-llama/llama-3.1-8b-instruct",
+            # DeepSeek
+            "deepseek/deepseek-chat-v3-0324",
             "deepseek/deepseek-r1",
-            "mistralai/mistral-large",
+            # xAI
+            "x-ai/grok-3-beta",
+            "x-ai/grok-3-mini-beta",
+            # Mistral
+            "mistralai/mistral-large-2411",
+            "mistralai/mistral-small-3.1-24b-instruct",
+            # Qwen
+            "qwen/qwq-32b",
             "qwen/qwen-2.5-72b-instruct",
-            "x-ai/grok-2-1212",
+            # Misc
+            "nvidia/llama-3.1-nemotron-70b-instruct",
+            "microsoft/phi-4",
         ],
         emoji="🌐",
     ),
@@ -130,11 +175,23 @@ ALL_PROVIDERS: list[ProviderManifest] = [
     ProviderManifest(
         id="groq",
         display_name="Groq",
-        description="Ultra-fast inference via LPU hardware — Llama 3.3 70B, Mixtral 8x7B.",
+        description="Ultra-fast LPU inference — Llama 3.3, DeepSeek-R1, Qwen, Gemma.",
         tier="cloud",
         env_vars=["GROQ_API_KEY"],
         vault_keys=["groq/api-key", "groq/api_key"],
-        models=["llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
+        models=[
+            "llama-3.3-70b-versatile",
+            "llama-3.3-70b-specdec",
+            "llama-3.1-8b-instant",
+            "llama3-70b-8192",
+            "mixtral-8x7b-32768",
+            "deepseek-r1-distill-llama-70b",
+            "deepseek-r1-distill-qwen-32b",
+            "qwen-qwq-32b",
+            "qwen2.5-72b-instruct",
+            "gemma2-9b-it",
+            "compound-beta",
+        ],
         emoji="⚡",
     ),
     # ── Cloud: NVIDIA NIM ─────────────────────────────────────────────────────
@@ -146,16 +203,30 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         env_vars=["NVIDIA_API_KEY", "NIM_API_KEY"],
         vault_keys=["nvidia/api-key", "nvidia/api_key"],
         models=[
+            # Meta Llama
             "meta/llama-3.3-70b-instruct",
+            "meta/llama-3.1-405b-instruct",
             "meta/llama-3.1-70b-instruct",
             "meta/llama-3.1-8b-instruct",
+            # NVIDIA Nemotron
             "nvidia/llama-3.1-nemotron-70b-instruct",
             "nvidia/llama-3.3-nemotron-super-49b-v1",
+            # Mistral
+            "mistralai/mistral-large-2-instruct",
             "mistralai/mistral-7b-instruct-v0.3",
             "mistralai/mixtral-8x22b-instruct-v0.1",
-            "google/gemma-2-27b-it",
+            # Google
+            "google/gemma-3-27b-it",
+            # Microsoft
+            "microsoft/phi-4",
+            "microsoft/phi-4-mini-instruct",
             "microsoft/phi-3-medium-4k-instruct",
+            # DeepSeek
             "deepseek-ai/deepseek-r1",
+            "deepseek-ai/deepseek-r1-distill-llama-70b",
+            # Qwen
+            "qwen/qwq-32b",
+            "qwen/qwen2.5-72b-instruct",
         ],
         emoji="🟩",
     ),
@@ -169,9 +240,10 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         vault_keys=["xai/api-key", "xai/api_key"],
         models=[
             "grok-3",
+            "grok-3-fast",
             "grok-3-mini",
+            "grok-3-mini-fast",
             "grok-2-1212",
-            "grok-2",
             "grok-2-vision-1212",
         ],
         emoji="🌩",
@@ -185,7 +257,28 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         env_vars=["GITHUB_TOKEN", "GH_TOKEN"],
         vault_keys=["github/token", "github/api-key"],
         auth_mode="token",
-        models=["gpt-4o", "phi-3.5-mini-instruct", "meta-llama-3.1-405b-instruct"],
+        models=[
+            # OpenAI
+            "gpt-4.1",
+            "gpt-4.1-mini",
+            "gpt-4o",
+            "gpt-4o-mini",
+            "o4-mini",
+            "o3-mini",
+            # Microsoft Phi
+            "phi-4",
+            "phi-4-mini",
+            "phi-3.5-mini-instruct",
+            # Meta Llama
+            "meta-llama-3.1-405b-instruct",
+            "meta-llama-3.1-70b-instruct",
+            # Mistral
+            "mistral-large-2411",
+            "mistral-small-2503",
+            # DeepSeek
+            "deepseek-r1",
+            "deepseek-v3-0324",
+        ],
         emoji="🐙",
     ),
     # ── Cloud: Mistral ────────────────────────────────────────────────────────
@@ -196,7 +289,14 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         tier="cloud",
         env_vars=["MISTRAL_API_KEY"],
         vault_keys=["mistral/api-key", "mistral/api_key"],
-        models=["mistral-large-latest", "codestral-latest", "open-mixtral-8x22b"],
+        models=[
+            "mistral-large-latest",
+            "mistral-medium-latest",
+            "mistral-small-latest",
+            "codestral-latest",
+            "open-mistral-nemo",
+            "pixtral-large-latest",
+        ],
         emoji="🌬",
         enabled=False,  # Key in PROVIDER_ENV_VARS but no ProviderConfig yet — opt-in
     ),
@@ -208,7 +308,12 @@ ALL_PROVIDERS: list[ProviderManifest] = [
         tier="cloud",
         env_vars=["CEREBRAS_API_KEY"],
         vault_keys=["cerebras/api-key"],
-        models=["llama3.1-8b", "llama3.1-70b"],
+        models=[
+            "llama-3.3-70b",
+            "llama3.1-70b",
+            "llama3.1-8b",
+            "qwen-3-32b",
+        ],
         emoji="🧠",
         enabled=False,  # Key in PROVIDER_ENV_VARS but no ProviderConfig yet — opt-in
     ),
