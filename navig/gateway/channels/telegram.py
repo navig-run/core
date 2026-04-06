@@ -435,11 +435,9 @@ class TelegramChannel:
                     retry_after = 1
                     try:
                         err_body = await resp.json()
-                        retry_after = int(
-                            err_body.get("parameters", {}).get("retry_after", 1)
-                        )
+                        retry_after = int(err_body.get("parameters", {}).get("retry_after", 1))
                     except Exception:
-                        retry_after = 2 ** _retry_count  # exponential backoff
+                        retry_after = 2**_retry_count  # exponential backoff
                     logger.warning(
                         "Telegram API rate limited on %s — retry %d/%d in %ds",
                         method,
@@ -676,6 +674,10 @@ class TelegramChannel:
                     if not text:
                         return  # transcription failed; error already sent
                     # text is now the transcript — fall through to pipeline
+                # ── Photo: vision analysis pipeline ───────────────────────
+                elif content_type == "photo":
+                    await self._handle_photo_vision(chat_id, user_id, is_group, message)
+                    return
                 else:
                     logger.debug(
                         "Non-text message (%s) from user %s — skipping",
@@ -687,7 +689,6 @@ class TelegramChannel:
                         ack = {
                             "voice": "can't process voice messages yet — try typing it out?",
                             "sticker": random.choice(["👀", "😄", "nice one"]),
-                            "photo": "can't see images yet, but working on it.",
                             "video": "video processing isn't wired up yet.",
                             "document": "can't read files through Telegram yet. try uploading via the deck.",
                             "gif": random.choice(["😄", "ha"]),
@@ -881,6 +882,30 @@ class TelegramChannel:
                 if tier_override:
                     metadata["tier_override"] = tier_override
 
+                # ── Inject session tier overrides for routing ──
+                # These are set by /provider_hybrid and consumed by the
+                # UnifiedRouter to override provider+model per tier
+                # without touching durable config.
+                if session and HAS_SESSIONS:
+                    try:
+                        from navig.gateway.channels.telegram_sessions import (
+                            get_session_manager as _get_so_mgr,
+                        )
+
+                        _so_mgr = _get_so_mgr()
+                        _all_so = _so_mgr.get_all_session_overrides(session)
+                        if _all_so:
+                            _tier_map: dict[str, dict[str, str]] = {}
+                            for _t in ("small", "big", "coder_big"):
+                                _p = _all_so.get(f"tier_{_t}_provider", "")
+                                _m = _all_so.get(f"tier_{_t}_model", "")
+                                if _p or _m:
+                                    _tier_map[_t] = {"provider": _p, "model": _m}
+                            if _tier_map:
+                                metadata["session_tier_overrides"] = _tier_map
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; session overrides are optional
+
                 try:
                     if await self._handle_nl_pending_reply(
                         chat_id=chat_id,
@@ -1032,6 +1057,22 @@ class TelegramChannel:
                             )
                             if mixin_handler is not None:
                                 handler_func = functools.partial(mixin_handler, self)
+                        # Messaging mixin fallback
+                        if handler_func is None:
+                            try:
+                                from navig.gateway.channels.telegram_messaging_mixin import (
+                                    TelegramMessagingMixin,
+                                )
+
+                                msg_handler = getattr(
+                                    TelegramMessagingMixin,
+                                    registry_entry.handler,
+                                    None,
+                                )
+                                if msg_handler is not None:
+                                    handler_func = functools.partial(msg_handler, self)
+                            except ImportError:
+                                pass
                         if handler_func:
                             sig = inspect.signature(handler_func)
                             kwargs = {}
@@ -1157,11 +1198,15 @@ class TelegramChannel:
                 await self.send_typing(chat_id)
                 await asyncio.sleep(interval)
                 elapsed += interval
-            logger.debug("Typing indicator timed out after %.0fs for chat %s", max_duration, chat_id)
+            logger.debug(
+                "Typing indicator timed out after %.0fs for chat %s", max_duration, chat_id
+            )
         except asyncio.CancelledError:
             pass  # task cancelled; expected during shutdown
 
-    async def _keep_recording(self, chat_id: int, interval: float = 4.0, max_duration: float = 120.0):
+    async def _keep_recording(
+        self, chat_id: int, interval: float = 4.0, max_duration: float = 120.0
+    ):
         """Re-send 'record_voice' chat action every ``interval`` seconds until cancelled or timeout.
 
         Used during voice-message download + transcription so the user sees a
@@ -1181,7 +1226,9 @@ class TelegramChannel:
                 )
                 await asyncio.sleep(interval)
                 elapsed += interval
-            logger.debug("Recording indicator timed out after %.0fs for chat %s", max_duration, chat_id)
+            logger.debug(
+                "Recording indicator timed out after %.0fs for chat %s", max_duration, chat_id
+            )
         except asyncio.CancelledError:
             pass  # task cancelled; expected during shutdown
 
@@ -1245,6 +1292,39 @@ class TelegramChannel:
                 is_group,
             )
 
+    # ── Language persistence helper ──────────────────────────────────────
+
+    def _persist_updated_language(
+        self,
+        metadata: dict,
+        chat_id: int,
+        user_id: int,
+        session_manager,
+        is_group: bool,
+        username: str = "",
+    ) -> None:
+        """Persist agent-detected language back to the session store.
+
+        The channel_router sets ``metadata["_updated_language"]`` when the
+        conversational agent detects a language that differs from the value
+        loaded from the session at the start of the turn.  We write it back
+        so the next inbound message gets a fresh (non-stale) hint.
+        """
+        updated = (metadata.get("_updated_language") or "").strip()
+        if not updated or session_manager is None:
+            return
+        try:
+            session_manager.set_session_metadata(
+                chat_id,
+                user_id,
+                "last_detected_language",
+                updated,
+                is_group=is_group,
+                username=username or str(metadata.get("username", "")),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Could not persist updated language metadata: %s", exc)
+
     async def _handle_talk(
         self,
         text: str,
@@ -1272,6 +1352,7 @@ class TelegramChannel:
                 pass  # task cancelled; expected during shutdown
 
         if response:
+            self._persist_updated_language(metadata, chat_id, user_id, session_manager, is_group)
             self._record_assistant_msg(
                 session, session_manager, chat_id, user_id, response, is_group
             )
@@ -1421,6 +1502,7 @@ class TelegramChannel:
             if not next_response:
                 return
 
+            self._persist_updated_language(metadata, chat_id, user_id, session_manager, is_group)
             self._record_assistant_msg(
                 session,
                 session_manager,
@@ -1480,6 +1562,8 @@ class TelegramChannel:
 
         if not response:
             return
+
+        self._persist_updated_language(metadata, chat_id, user_id, session_manager, is_group)
 
         # Only append model footer in debug/trace mode — keep normal replies clean
         model_name = self._resolve_model_name(metadata) if self._is_debug_mode(user_id) else ""
@@ -1545,6 +1629,8 @@ class TelegramChannel:
 
         if not response:
             return
+
+        self._persist_updated_language(metadata, chat_id, user_id, session_manager, is_group)
 
         if self._is_debug_mode(user_id):
             model_name = self._resolve_model_name(metadata)
@@ -1698,6 +1784,7 @@ class TelegramChannel:
                 pass  # task cancelled; expected during shutdown
 
         # ── Step 3: finalize ──
+        self._persist_updated_language(metadata, chat_id, user_id, session_manager, is_group)
         model_name = self._resolve_model_name(metadata)
 
         # Build structured conclusion
@@ -1770,6 +1857,421 @@ class TelegramChannel:
                 )
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
+
+    async def _handle_photo_vision(
+        self,
+        chat_id: int,
+        user_id: int,
+        is_group: bool,
+        message: dict,
+    ) -> None:
+        """Handle a photo message by routing it through the vision model.
+
+        Resolves the best vision provider/model from session overrides → config
+        → active provider → any connected provider. Downloads the largest photo
+        variant from Telegram, sends it to the resolved vision model, and posts
+        the description back.
+        """
+        import base64
+
+        caption = message.get("caption", "") or ""
+
+        # Resolve vision model
+        session_overrides: dict = {}
+        try:
+            from navig.gateway.channels.telegram_sessions import get_session_manager
+
+            sm = get_session_manager()
+            session_overrides = sm.get_all_session_overrides(chat_id, user_id, is_group=is_group)
+        except Exception:  # noqa: BLE001
+            pass
+
+        try:
+            from navig.providers.discovery import get_vision_api_format, resolve_vision_model
+
+            vision = resolve_vision_model(session_overrides)
+        except Exception:  # noqa: BLE001
+            vision = None
+
+        if not vision:
+            await self.send_message(
+                chat_id,
+                "👁 No vision model available. "
+                "Use /provider\\_vision to pick one, or connect a vision-capable provider.",
+                parse_mode="Markdown",
+            )
+            return
+
+        provider_id, model_name, reason = vision
+        api_format = get_vision_api_format(provider_id)
+
+        # Get the largest photo variant
+        photos = message.get("photo", [])
+        if not photos:
+            await self.send_message(chat_id, "⚠️ Could not read photo.", parse_mode=None)
+            return
+        best_photo = max(photos, key=lambda p: p.get("file_size", 0))
+        file_id = best_photo.get("file_id")
+        if not file_id:
+            await self.send_message(chat_id, "⚠️ Could not read photo.", parse_mode=None)
+            return
+
+        # Signal we're processing
+        try:
+            await self._api_call("sendChatAction", {"chat_id": chat_id, "action": "typing"})
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Download file from Telegram
+        try:
+            file_info = await self._api_call("getFile", {"file_id": file_id})
+            if not file_info:
+                await self.send_message(
+                    chat_id, "⚠️ Could not retrieve photo from Telegram.", parse_mode=None
+                )
+                return
+            file_path = file_info.get("file_path", "")
+            if not file_path:
+                await self.send_message(
+                    chat_id, "⚠️ Could not retrieve photo from Telegram.", parse_mode=None
+                )
+                return
+
+            dl_url = f"https://api.telegram.org/file/bot{self.bot_token}/{file_path}"
+            if not self._session:
+                await self.send_message(
+                    chat_id, "⚠️ Internal error: no HTTP session.", parse_mode=None
+                )
+                return
+
+            async with self._session.get(dl_url) as dl_resp:
+                if dl_resp.status != 200:
+                    await self.send_message(chat_id, "⚠️ Failed to download photo.", parse_mode=None)
+                    return
+                image_bytes = await dl_resp.read()
+        except Exception as exc:
+            logger.warning("Photo download failed for chat %s: %s", chat_id, exc)
+            await self.send_message(chat_id, "⚠️ Failed to download photo.", parse_mode=None)
+            return
+
+        # Build the vision API call based on provider format
+        b64_image = base64.b64encode(image_bytes).decode()
+        prompt = caption or (
+            "Describe this image concisely (2-4 sentences). "
+            "Focus on what's depicted, key subjects, setting, "
+            "and any notable details. Be factual."
+        )
+
+        description = await self._call_vision_api(
+            provider_id, model_name, api_format, b64_image, prompt
+        )
+
+        if description:
+            short_model = model_name.split("/")[-1].split(":")[-1]
+            footer = f"\n\n_👁 {short_model}_"
+            await self.send_message(chat_id, description + footer, parse_mode="Markdown")
+        else:
+            await self.send_message(
+                chat_id,
+                "⚠️ Vision analysis failed — the model could not process this image.",
+                parse_mode=None,
+            )
+
+    async def _call_vision_api(
+        self,
+        provider_id: str,
+        model_name: str,
+        api_format: str,
+        b64_image: str,
+        prompt: str,
+    ) -> str | None:
+        """Call a vision model API and return the text description.
+
+        Supports OpenAI-compatible, Anthropic, and Google formats.
+        """
+
+        try:
+            import httpx
+        except ImportError:
+            logger.warning("httpx not available for vision API call")
+            return None
+
+        timeout = httpx.Timeout(60.0, connect=10.0)
+
+        try:
+            if api_format == "anthropic":
+                return await self._call_vision_anthropic(model_name, b64_image, prompt, timeout)
+            if api_format == "google":
+                return await self._call_vision_google(model_name, b64_image, prompt, timeout)
+            # Default: OpenAI-compatible
+            return await self._call_vision_openai(
+                provider_id, model_name, b64_image, prompt, timeout
+            )
+        except Exception as exc:
+            logger.warning("Vision API call failed (%s/%s): %s", provider_id, model_name, exc)
+            return None
+
+    async def _call_vision_openai(
+        self,
+        provider_id: str,
+        model_name: str,
+        b64_image: str,
+        prompt: str,
+        timeout,
+    ) -> str | None:
+        """OpenAI-compatible vision call (works for groq, xai, nvidia, etc.)."""
+        import os as _os
+
+        import httpx
+
+        # Resolve API key and endpoint based on provider
+        _PROVIDER_ENDPOINTS: dict[str, tuple[str, list[str]]] = {
+            "openai": (
+                "https://api.openai.com/v1/chat/completions",
+                ["OPENAI_API_KEY"],
+            ),
+            "groq": (
+                "https://api.groq.com/openai/v1/chat/completions",
+                ["GROQ_API_KEY"],
+            ),
+            "xai": (
+                "https://api.x.ai/v1/chat/completions",
+                ["XAI_API_KEY", "GROK_KEY"],
+            ),
+            "nvidia": (
+                "https://integrate.api.nvidia.com/v1/chat/completions",
+                ["NVIDIA_API_KEY", "NIM_API_KEY"],
+            ),
+            "openrouter": (
+                "https://openrouter.ai/api/v1/chat/completions",
+                ["OPENROUTER_API_KEY"],
+            ),
+            "github_models": (
+                "https://models.inference.ai.azure.com/chat/completions",
+                ["GITHUB_TOKEN"],
+            ),
+            "mistral": (
+                "https://api.mistral.ai/v1/chat/completions",
+                ["MISTRAL_API_KEY"],
+            ),
+            "cerebras": (
+                "https://api.cerebras.ai/v1/chat/completions",
+                ["CEREBRAS_API_KEY"],
+            ),
+            "github_copilot": (
+                "https://api.githubcopilot.com/chat/completions",
+                ["GITHUB_COPILOT_TOKEN"],
+            ),
+        }
+
+        endpoint, env_keys = _PROVIDER_ENDPOINTS.get(
+            provider_id,
+            ("https://api.openai.com/v1/chat/completions", ["OPENAI_API_KEY"]),
+        )
+
+        api_key = ""
+        for k in env_keys:
+            api_key = _os.environ.get(k, "")
+            if api_key:
+                break
+
+        # Fallback to vault
+        if not api_key:
+            try:
+                from navig.providers.registry import get_provider
+
+                manifest = get_provider(provider_id)
+                if manifest and manifest.vault_keys:
+                    from navig.vault import get_vault_v2
+
+                    vault = get_vault_v2()
+                    for vk in manifest.vault_keys:
+                        api_key = vault.get_secret(vk) or ""
+                        if api_key:
+                            break
+            except Exception:  # noqa: BLE001
+                pass
+
+        if not api_key:
+            logger.warning("No API key found for vision provider %s", provider_id)
+            return None
+
+        payload = {
+            "model": model_name,
+            "max_tokens": 500,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{b64_image}",
+                                "detail": "auto",
+                            },
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ],
+        }
+
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            r = await client.post(
+                endpoint,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            r.raise_for_status()
+            data = r.json()
+
+        return (
+            (data or {}).get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+        ) or None
+
+    async def _call_vision_anthropic(
+        self,
+        model_name: str,
+        b64_image: str,
+        prompt: str,
+        timeout,
+    ) -> str | None:
+        """Anthropic Claude vision API call."""
+        import os as _os
+
+        import httpx
+
+        api_key = _os.environ.get("ANTHROPIC_API_KEY") or _os.environ.get("CLAUDE_API_KEY", "")
+        if not api_key:
+            try:
+                from navig.providers.registry import get_provider as _get_prov
+                from navig.vault import get_vault_v2
+
+                vault = get_vault_v2()
+                _manifest = _get_prov("anthropic")
+                for _vk in (
+                    _manifest.vault_keys
+                    if _manifest
+                    else ["anthropic/api-key", "anthropic/api_key"]
+                ):
+                    api_key = vault.get_secret(_vk) or ""
+                    if api_key:
+                        break
+            except Exception:  # noqa: BLE001
+                pass
+        if not api_key:
+            return None
+
+        payload = {
+            "model": model_name,
+            "max_tokens": 500,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/jpeg",
+                                "data": b64_image,
+                            },
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ],
+        }
+
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            r = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            r.raise_for_status()
+            data = r.json()
+
+        blocks = data.get("content", [])
+        texts = [b.get("text", "") for b in blocks if b.get("type") == "text"]
+        return " ".join(texts).strip() or None
+
+    async def _call_vision_google(
+        self,
+        model_name: str,
+        b64_image: str,
+        prompt: str,
+        timeout,
+    ) -> str | None:
+        """Google Gemini vision API call."""
+        import os as _os
+
+        import httpx
+
+        api_key = _os.environ.get("GOOGLE_API_KEY") or _os.environ.get("GEMINI_API_KEY", "")
+        if not api_key:
+            try:
+                from navig.providers.registry import get_provider as _get_prov
+                from navig.vault import get_vault_v2
+
+                vault = get_vault_v2()
+                _manifest = _get_prov("google")
+                for _vk in (
+                    _manifest.vault_keys
+                    if _manifest
+                    else ["google/api-key", "google/api_key", "gemini/api-key"]
+                ):
+                    api_key = vault.get_secret(_vk) or ""
+                    if api_key:
+                        break
+            except Exception:  # noqa: BLE001
+                pass
+        if not api_key:
+            return None
+
+        endpoint = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+        )
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "inlineData": {
+                                "mimeType": "image/jpeg",
+                                "data": b64_image,
+                            }
+                        },
+                        {"text": prompt},
+                    ]
+                }
+            ],
+            "generationConfig": {"maxOutputTokens": 500},
+        }
+
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            r = await client.post(
+                endpoint,
+                params={"key": api_key},
+                headers={"Content-Type": "application/json"},
+                json=payload,
+            )
+            r.raise_for_status()
+            data = r.json()
+
+        candidates = data.get("candidates", [])
+        if candidates:
+            parts = candidates[0].get("content", {}).get("parts", [])
+            texts = [p.get("text", "") for p in parts if "text" in p]
+            return " ".join(texts).strip() or None
+        return None
 
     async def _transcribe_voice_message(
         self,
@@ -2376,6 +2878,35 @@ class TelegramChannel:
             message_id=message_id,
         )
 
+    async def _resolve_provider_models(self, prov_id: str, manifest=None) -> list[str]:
+        """Delegate provider model resolution used by activation/model pickers."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return await TelegramCommandsMixin._resolve_provider_models(
+            self,
+            prov_id,
+            manifest=manifest,
+        )
+
+    @staticmethod
+    def _select_curated_tier_defaults(prov_id: str, models: list[str]) -> dict[str, str]:
+        """Delegate curated tier defaults selection used by provider activation callbacks."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._select_curated_tier_defaults(prov_id, models)
+
+    def _persist_hybrid_router_assignments(self, router_cfg) -> None:
+        """Delegate hybrid router assignment persistence helper."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        TelegramCommandsMixin._persist_hybrid_router_assignments(self, router_cfg)
+
+    def _update_llm_mode_router(self, provider_id: str, tier_models: dict[str, str]) -> None:
+        """Delegate primary LLM mode-router update helper."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        TelegramCommandsMixin._update_llm_mode_router(self, provider_id, tier_models)
+
     async def _show_models_model_list(
         self,
         chat_id: int,
@@ -2864,6 +3395,19 @@ class TelegramChannel:
         from .telegram_commands import TelegramCommandsMixin
 
         await TelegramCommandsMixin._handle_help(self, chat_id)
+
+    async def _handle_help_callback(self, cb_data: str, chat_id: int, message_id: int) -> None:
+        """Delegate help encyclopedia callback routing to the mixin."""
+        from .telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_help_callback(self, cb_data, chat_id, message_id)
+
+    @staticmethod
+    def _build_help_home():
+        """Delegate help home builder to the mixin."""
+        from .telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._build_help_home()
 
     @staticmethod
     def _generate_help_text(deck_enabled: bool = False) -> str:
