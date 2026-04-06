@@ -1627,20 +1627,24 @@ class CallbackHandler:
 
                 saved_any = False
                 tier_models: dict[str, str] = {}
-                save_provider = ""
+                tier_providers: dict[str, str] = {}
                 for tier in ("small", "big", "coder_big"):
                     prov = overrides.get(f"tier_{tier}_provider", "")
                     model = overrides.get(f"tier_{tier}_model", "")
                     if prov and model:
                         tier_models[tier] = model
-                        if not save_provider:
-                            save_provider = prov
+                        tier_providers[tier] = prov
                         saved_any = True
 
-                if saved_any and save_provider:
+                if saved_any and tier_providers:
                     if hasattr(self.channel, "_update_llm_mode_router"):
-                        self.channel._update_llm_mode_router(save_provider, tier_models)
-                    # Also update hybrid router
+                        # Group tiers by provider so each provider's modes are updated together.
+                        by_provider: dict[str, dict[str, str]] = {}
+                        for tier, prov in tier_providers.items():
+                            by_provider.setdefault(prov, {})[tier] = tier_models[tier]
+                        for prov, tiers in by_provider.items():
+                            self.channel._update_llm_mode_router(prov, tiers)
+                    # Also update hybrid router slots with per-tier providers.
                     try:
                         from navig.agent.ai_client import get_ai_client
 
@@ -1648,7 +1652,7 @@ class CallbackHandler:
                         if router and router.is_active:
                             for tier, model in tier_models.items():
                                 slot = router.cfg.slot_for_tier(tier)
-                                slot.provider = save_provider
+                                slot.provider = tier_providers[tier]
                                 slot.model = model
                             if hasattr(self.channel, "_persist_hybrid_router_assignments"):
                                 self.channel._persist_hybrid_router_assignments(router.cfg)

@@ -47,7 +47,7 @@ class KnowledgeEntry:
     summary: str | None = None
     tags: list[str] = field(default_factory=list)
     source: str = ""  # Where this knowledge came from
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=datetime.now)  # utcnow deprecated in Py3.12+
     expires_at: datetime | None = None
     metadata: dict = field(default_factory=dict)
     embedding: list[float] | None = None
@@ -196,7 +196,7 @@ class KnowledgeBase:
     def _clean_expired(self) -> int:
         """Remove expired entries."""
         conn = self._get_conn()
-        now = datetime.utcnow().isoformat()
+        now = datetime.now().isoformat()
 
         with self._lock:
             cursor = conn.execute(
@@ -314,7 +314,7 @@ class KnowledgeBase:
     ) -> list[KnowledgeEntry]:
         """Get all entries with a specific tag."""
         conn = self._get_conn()
-        now = datetime.utcnow().isoformat()
+        now = datetime.now().isoformat()
 
         # JSON contains check
         cursor = conn.execute(
@@ -337,7 +337,7 @@ class KnowledgeBase:
     ) -> list[KnowledgeEntry]:
         """Get all entries from a specific source."""
         conn = self._get_conn()
-        now = datetime.utcnow().isoformat()
+        now = datetime.now().isoformat()
 
         cursor = conn.execute(
             """
@@ -380,7 +380,7 @@ class KnowledgeBase:
 
         # Get all entries (with optional tag filter)
         conn = self._get_conn()
-        now = datetime.utcnow().isoformat()
+        now = datetime.now().isoformat()
 
         if tags:
             tag_conditions = " AND ".join(f"tags LIKE '%\"{tag}\"%'" for tag in tags)
@@ -438,7 +438,7 @@ class KnowledgeBase:
             Matching entries
         """
         conn = self._get_conn()
-        now = datetime.utcnow().isoformat()
+        now = datetime.now().isoformat()
         pattern = f"%{query}%"
 
         sql = """
@@ -479,7 +479,7 @@ class KnowledgeBase:
         Returns:
             Stored entry
         """
-        expires_at = datetime.utcnow() + timedelta(hours=ttl_hours)
+        expires_at = datetime.now() + timedelta(hours=ttl_hours)
 
         entry = KnowledgeEntry(
             key=key,
@@ -493,7 +493,7 @@ class KnowledgeBase:
     def count(self) -> int:
         """Get total number of non-expired entries."""
         conn = self._get_conn()
-        now = datetime.utcnow().isoformat()
+        now = datetime.now().isoformat()
 
         cursor = conn.execute(
             "SELECT COUNT(*) FROM knowledge WHERE expires_at IS NULL OR expires_at > ?",
@@ -516,7 +516,7 @@ class KnowledgeBase:
     def export_entries(self) -> list[dict]:
         """Export all entries as dictionaries."""
         conn = self._get_conn()
-        now = datetime.utcnow().isoformat()
+        now = datetime.now().isoformat()
 
         cursor = conn.execute(
             "SELECT * FROM knowledge WHERE expires_at IS NULL OR expires_at > ?", (now,)

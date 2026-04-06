@@ -102,6 +102,7 @@ def test_build_step_registry_includes_new_integration_steps(tmp_path: Path) -> N
         "ai-provider",
         "vault-init",
         "web-search-provider",
+        "voice-provider",
         "first-host",
         "matrix",
         "telegram-bot",
@@ -228,9 +229,7 @@ def test_matrix_step_skips_when_no_url_entered(monkeypatch, tmp_path: Path) -> N
     assert (tmp_path / ".matrix_configured").read_text(encoding="utf-8") == "skipped"
 
 
-def test_matrix_step_rerun_with_skipped_marker_stays_skipped(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_matrix_step_rerun_with_skipped_marker_stays_skipped(monkeypatch, tmp_path: Path) -> None:
     step = next(step for step in _registry(tmp_path) if step.id == "matrix")
     (tmp_path / ".matrix_configured").write_text("skipped", encoding="utf-8")
 
@@ -242,9 +241,7 @@ def test_matrix_step_rerun_with_skipped_marker_stays_skipped(
     assert result.output["reason"] == "non-interactive environment"
 
 
-def test_email_step_rerun_with_skipped_marker_stays_skipped(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_email_step_rerun_with_skipped_marker_stays_skipped(monkeypatch, tmp_path: Path) -> None:
     step = next(step for step in _registry(tmp_path) if step.id == "email")
     (tmp_path / ".email_configured").write_text("skipped", encoding="utf-8")
 
@@ -256,9 +253,7 @@ def test_email_step_rerun_with_skipped_marker_stays_skipped(
     assert result.output["reason"] == "non-interactive environment"
 
 
-def test_social_step_rerun_with_skipped_marker_stays_skipped(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_social_step_rerun_with_skipped_marker_stays_skipped(monkeypatch, tmp_path: Path) -> None:
     step = next(step for step in _registry(tmp_path) if step.id == "social-networks")
     (tmp_path / ".social_configured").write_text("skipped", encoding="utf-8")
 
@@ -393,6 +388,7 @@ def test_review_step_keyboard_interrupt_propagates(monkeypatch, tmp_path: Path) 
     monkeypatch.setattr("sys.stdout.flush", lambda: None)
 
     import pytest as _pytest
+
     with _pytest.raises(KeyboardInterrupt):
         step.run()
 
