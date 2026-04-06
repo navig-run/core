@@ -641,7 +641,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         usage="/explain_ai <topic>",
     ),
     SlashCommandEntry(
-        "music", "Convert music links (beta)", handler="_handle_music", category="media"
+        "music", "Convert music links (beta)", handler="_handle_music", category="media", visible=False
     ),
     SlashCommandEntry(
         "imagegen",
@@ -649,6 +649,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         handler="_handle_imagegen",
         category="media",
         usage="/imagegen <prompt>",
+        visible=False,
     ),
     SlashCommandEntry(
         "profile", "View user profiles", handler="_handle_profile", category="social"
@@ -658,6 +659,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "Save and view quotes (beta)",
         handler="_handle_quote",
         category="social",
+        visible=False,
     ),
     SlashCommandEntry(
         "respect",
@@ -672,12 +674,14 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         handler="_handle_currency",
         category="utilities",
         usage="/currency <query>",
+        visible=False,
     ),
     SlashCommandEntry(
         "crypto_list",
         "List cryptocurrencies (beta)",
         handler="_handle_crypto_list",
         category="utilities",
+        visible=False,
     ),
     SlashCommandEntry(
         "remindme",
@@ -2969,8 +2973,10 @@ class TelegramCommandsMixin:
             if _HAS_SESSIONS:
                 try:
                     sm = get_session_manager()
-                    session = sm.get_or_create_session(chat_id, _uid)
-                    current = session.focus_mode
+                    _is_grp = chat_id != _uid
+                    current = sm.get_session_metadata(
+                        chat_id, _uid, "focus_mode", "balance", is_group=_is_grp
+                    )
                 except Exception:  # noqa: BLE001
                     pass  # best-effort; failure is non-critical
             for mid, mp in MOOD_REGISTRY.items():
@@ -2987,7 +2993,10 @@ class TelegramCommandsMixin:
             if _HAS_SESSIONS:
                 try:
                     sm = get_session_manager()
-                    sm.update_settings(chat_id, _uid, focus_mode="balance")
+                    sm.set_session_metadata(
+                        chat_id, _uid, "focus_mode", "balance",
+                        is_group=chat_id != _uid,
+                    )
                 except Exception as e:
                     logger.debug("Failed to clear focus mode: %s", e)
             try:
@@ -3013,7 +3022,10 @@ class TelegramCommandsMixin:
         if _HAS_SESSIONS:
             try:
                 sm = get_session_manager()
-                sm.update_settings(chat_id, _uid, focus_mode=mood.id)
+                sm.set_session_metadata(
+                    chat_id, _uid, "focus_mode", mood.id,
+                    is_group=chat_id != _uid,
+                )
             except Exception as e:
                 logger.debug("Failed to persist focus_mode: %s", e)
         try:
@@ -3058,8 +3070,13 @@ class TelegramCommandsMixin:
     ) -> None:
         """Enable voice replies from dynamic slash dispatch."""
         if _HAS_SESSIONS:
-            sm = get_session_manager()
-            sm.set_voice_enabled(chat_id, user_id, True, is_group=is_group)
+            try:
+                sm = get_session_manager()
+                sm.set_session_metadata(
+                    chat_id, user_id, "voice_replies_enabled", True, is_group=is_group
+                )
+            except Exception as _e:  # noqa: BLE001
+                logger.debug("_handle_voiceon_cmd session update failed: %s", _e)
         await self.send_message(chat_id, "🔊 Voice replies enabled.", parse_mode=None)
 
     async def _handle_voiceoff_cmd(
@@ -3070,13 +3087,37 @@ class TelegramCommandsMixin:
     ) -> None:
         """Disable voice replies from dynamic slash dispatch."""
         if _HAS_SESSIONS:
-            sm = get_session_manager()
-            sm.set_voice_enabled(chat_id, user_id, False, is_group=is_group)
+            try:
+                sm = get_session_manager()
+                sm.set_session_metadata(
+                    chat_id, user_id, "voice_replies_enabled", False, is_group=is_group
+                )
+            except Exception as _e:  # noqa: BLE001
+                logger.debug("_handle_voiceoff_cmd session update failed: %s", _e)
         await self.send_message(
             chat_id,
             "🔇 Voice replies disabled. You'll receive text only.",
             parse_mode=None,
         )
+
+    async def _handle_autoheal(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        text: str = "",
+    ) -> None:
+        """Delegate /autoheal to AutoHealMixin (TelegramChannel is a flat class)."""
+        try:
+            from navig.gateway.channels.telegram_autoheal import AutoHealMixin
+
+            await AutoHealMixin._handle_autoheal(self, chat_id, user_id, text)
+        except Exception as _e:  # noqa: BLE001
+            logger.debug("_handle_autoheal delegation failed: %s", _e)
+            await self.send_message(
+                chat_id,
+                "⚠️ Auto-Heal module unavailable in this build.",
+                parse_mode=None,
+            )
 
     async def _handle_trace_cmd(
         self,
@@ -4155,6 +4196,33 @@ class TelegramCommandsMixin:
         "coder_big": ["coding"],
     }
 
+    def _refresh_ai_runtime_after_router_update(self) -> None:
+        """Best-effort refresh of router/client singletons after provider/model updates."""
+        try:
+            from navig.routing.router import reset_router
+
+            reset_router()
+        except Exception:  # noqa: BLE001
+            logger.debug("Failed to reset unified router singleton", exc_info=True)
+
+        try:
+            from navig.llm_router import get_llm_router
+
+            get_llm_router(force_new=True)
+        except Exception:  # noqa: BLE001
+            logger.debug("Failed to refresh llm router singleton", exc_info=True)
+
+        try:
+            from navig.agent.ai_client import get_ai_client
+
+            client = get_ai_client()
+            if hasattr(client, "_init_model_router"):
+                client._init_model_router()
+            if hasattr(client, "re_detect_provider"):
+                client.re_detect_provider()
+        except Exception:  # noqa: BLE001
+            logger.debug("Failed to refresh ai client routing/provider state", exc_info=True)
+
     def _update_llm_mode_router(self, provider_id: str, tier_models: dict[str, str]) -> None:
         """Update the LLM Mode Router for the given tiers and persist to config.
 
@@ -4186,6 +4254,7 @@ class TelegramCommandsMixin:
             llm_router_cfg = dict(global_cfg.get("llm_router") or {})
             llm_router_cfg["llm_modes"] = all_modes
             cfg_mgr.update_global_config({"llm_router": llm_router_cfg})
+            self._refresh_ai_runtime_after_router_update()
         except Exception:  # noqa: BLE001
             logger.debug(
                 "Failed to persist LLM mode router assignments for %s",
@@ -4548,7 +4617,7 @@ class TelegramCommandsMixin:
         if _HAS_SESSIONS:
             try:
                 sm = get_session_manager()
-                all_sessions_count = len(sm.sessions)
+                all_sessions_count = len(sm._sessions)  # _sessions is the private backing dict
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -4610,10 +4679,11 @@ class TelegramCommandsMixin:
         if _HAS_SESSIONS:
             try:
                 sm = get_session_manager()
-                _sk = f"agent:default:telegram:default:dm:{user_id}"
-                _s = sm.sessions.get(_sk)
-                if _s is not None:
-                    voice_label = "on" if _s.metadata.get("voice_enabled", False) else "off"
+                _voice = sm.get_session_metadata(
+                    chat_id, user_id, "voice_replies_enabled", None
+                )
+                if _voice is not None:
+                    voice_label = "on" if _voice else "off"
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -4696,8 +4766,8 @@ class TelegramCommandsMixin:
         if _HAS_SESSIONS:
             try:
                 sm = get_session_manager()
-                sk = f"agent:default:telegram:default:dm:{user_id}"
-                raw_session = sm.sessions.get(sk)
+                # Use the real session object via the public API
+                raw_session = sm.get_session(chat_id, user_id)
                 if raw_session is not None:
                     return list(raw_session.messages or [])
             except Exception:  # noqa: BLE001
@@ -4970,7 +5040,7 @@ class TelegramCommandsMixin:
         self,
         chat_id: int,
         user_id: int,
-        text_arg: str = "",
+        text: str = "",
     ) -> None:
         """/format [text] — convert Markdown to Telegram Unicode format."""
         from navig.gateway.channels.telegram_formatter import (
@@ -4981,6 +5051,9 @@ class TelegramCommandsMixin:
         store = get_formatter_store()
         prefs = store.get(user_id)
         formatter = MarkdownFormatter()
+
+        # Strip the command prefix so bare /format shows settings panel
+        text_arg = text[len("/format"):].strip() if text.lower().startswith("/format") else text.strip()
 
         if not text_arg:
             # Show settings panel if no text provided
@@ -4997,7 +5070,7 @@ class TelegramCommandsMixin:
             )
             return
 
-        chunks = formatter.convert_chunked(text_arg, prefs)
+        chunks = formatter.convert_chunked(text_arg, prefs)  # text_arg stripped above
         for chunk in chunks:
             await self.send_message(chat_id, chunk, parse_mode=None)
 
@@ -5932,8 +6005,8 @@ class TelegramCommandsMixin:
         """Reset persona to the built-in default."""
         await self._handle_persona_switch(chat_id, user_id, "default")
 
-    async def _handle_explain_ai(self, chat_id: int, text: str) -> None:
-        topic = text[len("/explain_ai") :].strip()
+    async def _handle_explain_ai(self, chat_id: int, user_id: int = 0, text: str = "") -> None:
+        topic = (text[len("/explain_ai") :].strip() if text.lower().startswith("/explain_ai") else text.strip())
         if not topic:
             await self.send_message(
                 chat_id,
@@ -5943,14 +6016,28 @@ class TelegramCommandsMixin:
 
         await self.send_typing(chat_id)
         try:
-            from navig.ai.llm_router import route_llm
-
-            prompt = f"Explain the following topic clearly and comprehensively, structured for a Telegram message:\n\nTopic: {topic}"
-            response = await route_llm(
-                prompt, tier="small", system_prompt="You are an expert explainer."
+            prompt = (
+                "Explain the following topic clearly and comprehensively, "
+                "structured for a Telegram message:\n\nTopic: " + topic
             )
-            await self.send_message(chat_id, response.text)
-        except Exception as e:
+            # Route through the standard LLM path (same as /think)
+            if hasattr(self, "on_message"):
+                await self.on_message(
+                    chat_id,
+                    user_id or chat_id,
+                    prompt,
+                    system_override="You are an expert explainer.",
+                )
+            else:
+                # Minimal fallback: call llm_router directly
+                from navig.llm_router import get_llm_router
+
+                lr = get_llm_router()
+                if lr is None:
+                    raise RuntimeError("LLM router not initialised")
+                result = await lr.route(prompt, tier="small")
+                await self.send_message(chat_id, str(result))
+        except Exception as e:  # noqa: BLE001
             await self.send_message(chat_id, f"❌ Failed to explain: {e}", parse_mode=None)
 
     async def _handle_music(self, chat_id: int) -> None:
