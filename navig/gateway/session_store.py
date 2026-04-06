@@ -181,8 +181,13 @@ class SessionStore:
 
     def update(self, key: SessionKey, updates: dict[str, Any]) -> None:
         """Merge *updates* into the context meta for *key* (creates if absent)."""
+        k = str(key)
         with self._lock:  # guard meta.update() + last_active assignment atomically
-            ctx = self.get_or_create(key)
+            # Inline get-or-create to avoid re-acquiring the non-reentrant lock.
+            if k not in self._contexts:
+                self._contexts[k] = OperatorContext(key=key)
+                logger.debug("session_store: created context for %s", k)
+            ctx = self._contexts[k]
             ctx.meta.update(updates)
             ctx.last_active = time.time()
 
