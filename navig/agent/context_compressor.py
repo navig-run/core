@@ -20,9 +20,9 @@ Usage::
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any
-from collections.abc import Callable
 
 if TYPE_CHECKING:
     pass

@@ -94,7 +94,7 @@ class KnowledgeEntry:
         """Check if entry has expired."""
         if self.expires_at is None:
             return False
-        return datetime.utcnow() > self.expires_at
+        return datetime.now() > self.expires_at
 
 
 class KnowledgeBase:

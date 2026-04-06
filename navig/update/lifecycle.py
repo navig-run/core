@@ -332,7 +332,7 @@ class UpdateEngine:
             "ok": nr.ok,
             "elapsed_seconds": round(nr.elapsed_seconds, 2),
             "rolled_back": nr.rolled_back,
-            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.datetime.now().isoformat() + "Z",  # utcnow() deprecated in Py3.12+
             "error": nr.error,
         }
         try:

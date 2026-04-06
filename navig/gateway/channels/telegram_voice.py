@@ -459,7 +459,7 @@ class TelegramVoiceMixin:
             import logging
 
             logging.getLogger("navig.telegram_voice").warning(
-                f"Failed to generate audio title: {e}"
+                "Failed to generate audio title: %s", e
             )
             return "NAVIG Voice"
 

@@ -495,7 +495,7 @@ class TaskQueue:
             return
 
         try:
-            with open(self._persist_path) as f:
+            with open(self._persist_path, encoding="utf-8") as f:
                 data = json.load(f)
 
             self._completed = set(data.get("completed", []))

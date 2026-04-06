@@ -47,6 +47,7 @@ class ApprovalRequest:
             "status": self.status.value,
         }
 
+
 class ApprovalManager:
     """
     Manages approval flows for dangerous operations.
@@ -262,7 +263,9 @@ class ApprovalManager:
                 default_approve = False
 
             logger.info(
-                f"Approval timeout for {request_id}: {'approved' if default_approve else 'denied'}"
+                "Approval timeout for %s: %s",
+                request_id,
+                "approved" if default_approve else "denied",
             )
             return default_approve
 

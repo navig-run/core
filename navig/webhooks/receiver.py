@@ -93,7 +93,7 @@ class WebhookReceiver:
         app.router.add_routes(receiver.get_routes())
     """
 
-    def __init__(self, config: dict = None):
+    def __init__(self, config: dict | None = None):
         config = config or {}
         self.webhook_config = config.get("webhooks", {})
         self.enabled = self.webhook_config.get("enabled", True)
@@ -374,7 +374,7 @@ class WebhookReceiver:
         """Remove a webhook source configuration."""
         self._sources.pop(name, None)
 
-    def get_recent_events(self, limit: int = 20, source: str = None) -> list[WebhookEvent]:
+    def get_recent_events(self, limit: int = 20, source: str | None = None) -> list[WebhookEvent]:
         """Get recent events, optionally filtered by source."""
         events = self._recent_events[-limit:]
         if source:

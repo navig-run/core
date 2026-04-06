@@ -16,10 +16,11 @@ Usage:
     browser = await get_browser_auto(url)
 """
 
+from typing import TYPE_CHECKING
+
 from navig.browser.controller import BrowserConfig, BrowserController
 from navig.browser.stealth import StealthConfig, StealthController
 from navig.debug_logger import get_debug_logger
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from navig.browser.cdp_bridge import CDPBridge

@@ -16,8 +16,8 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass, field
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 
 # Track which one-time hints have already been shown this process lifetime.
 _hints_shown: set[str] = set()

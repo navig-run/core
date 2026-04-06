@@ -282,7 +282,7 @@ def _make_sync_connector_handler(tool_name: str) -> Any:
     """
 
     def _handler(server: Any, args: dict[str, Any]) -> Any:  # noqa: ARG001
-        future = _POOL.submit(asyncio.run, handle_connector_call(tool_name, args))
+        future = _POOL.submit(lambda: asyncio.run(handle_connector_call(tool_name, args)))
         try:
             return future.result(timeout=30)
         except concurrent.futures.TimeoutError:
@@ -316,7 +316,7 @@ def _tool_connector_health(server: Any, args: dict[str, Any]) -> dict[str, Any]:
         connector = reg.get(connector_id)
     except Exception as exc:  # noqa: BLE001
         return {"error": str(exc), "isError": True}
-    future = _POOL.submit(asyncio.run, connector.health_check())
+    future = _POOL.submit(lambda: asyncio.run(connector.health_check()))
     try:
         health = future.result(timeout=15)
         return health.to_dict()

@@ -997,7 +997,7 @@ def write_chat_onboarding_handoff_state(
             "token_configured": bool(token_configured),
             "auto_started": bool(auto_started),
             "steps": get_chat_onboarding_step_progress(navig_dir),
-            "created_at": datetime.utcnow().isoformat() + "Z",
+            "created_at": datetime.now().isoformat() + "Z",  # utcnow() deprecated in Py3.12+
         }
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     except Exception:
@@ -1015,7 +1015,7 @@ def consume_chat_onboarding_handoff_state(
         if not bool(payload.get("pending")):
             return None
         payload["pending"] = False
-        payload["consumed_at"] = datetime.utcnow().isoformat() + "Z"
+        payload["consumed_at"] = datetime.now().isoformat() + "Z"  # utcnow() deprecated in Py3.12+
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return payload
     except Exception:

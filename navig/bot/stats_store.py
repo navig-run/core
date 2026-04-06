@@ -26,7 +26,7 @@ from typing import Any
 
 def _utc_now() -> datetime:
     """Get current UTC time."""
-    return datetime.utcnow()
+    return datetime.now()  # utcnow() deprecated in Py3.12+
 
 
 def _bot_db_path() -> Path:

@@ -427,7 +427,7 @@ if PYDANTIC_AVAILABLE:
                 if not expanded.exists():
                     import logging
 
-                    logging.getLogger("navig.config").debug(f"SSH key not found: {expanded}")
+                    logging.getLogger("navig.config").debug("SSH key not found: %s", expanded)
             return v
 
         @field_validator("password")

@@ -252,7 +252,7 @@ def _knowledge_add(gw):
             if data.get("ttl_hours"):
                 from datetime import datetime, timedelta
 
-                entry.expires_at = datetime.utcnow() + timedelta(hours=data["ttl_hours"])
+                entry.expires_at = datetime.now() + timedelta(hours=data["ttl_hours"])  # utcnow() deprecated in Py3.12+
             stored = kb.upsert(entry, compute_embedding=False)
             return json_ok({"entry": {"id": stored.id, "key": stored.key}})
         except KeyError as e:

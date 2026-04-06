@@ -324,7 +324,7 @@ class CronService:
             "jobs": [j.to_dict() for j in self.jobs.values()],
         }
 
-        self._get_jobs_path().write_text(json.dumps(data, indent=2))
+        self._get_jobs_path().write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     def _generate_id(self) -> str:
         """Generate unique job ID."""
@@ -374,7 +374,7 @@ class CronService:
         schedule: str,
         command: str,
         enabled: bool = True,
-        timeout_seconds: int = None,
+        timeout_seconds: int | None = None,
     ) -> CronJob:
         """
         Add a new cron job.

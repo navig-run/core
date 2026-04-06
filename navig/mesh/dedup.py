@@ -148,7 +148,8 @@ class HandoffQueue:
             if now > deadline:
                 age = now - enqueued_at
                 logger.warning(
-                    f"[handoff] Dropping queued message (age={age:.1f}s > ttl — deadline expired)"
+                    "[handoff] Dropping queued message (age=%.1fs > ttl \u2014 deadline expired)",
+                    age,
                 )
                 dropped += 1
                 continue

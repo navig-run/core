@@ -219,8 +219,10 @@ class EngagementCoordinator:
         self._deliver(winner)
 
         logger.info(
-            f"Proactive engagement: {winner.action.value} "
-            f"(priority={winner.priority}, state={operator_state.value})"
+            "Proactive engagement: %s (priority=%s, state=%s)",
+            winner.action.value,
+            winner.priority,
+            operator_state.value,
         )
         return winner
 

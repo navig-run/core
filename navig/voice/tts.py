@@ -199,7 +199,7 @@ class TTS:
         Returns:
             TTSResult with audio path or error
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now()  # utcnow() deprecated in Py3.12+
 
         # Validate and prepare text
         text = self._prepare_text(text)
@@ -235,7 +235,7 @@ class TTS:
                 )
                 if result.success:
                     # Calculate latency
-                    result.latency_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+                    result.latency_ms = int((datetime.now() - start_time).total_seconds() * 1000)
 
                     # Cache on success
                     if self.config.cache_enabled and result.audio_path:
@@ -641,7 +641,7 @@ class TTS:
         """Get a temp file path for audio output."""
         if self.config.cache_enabled:
             cache_dir = self.config.get_cache_dir()
-            return cache_dir / f"{prefix}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}{suffix}"
+            return cache_dir / f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{suffix}"
         else:
             fd, path = tempfile.mkstemp(suffix=suffix, prefix=f"navig_tts_{prefix}_")
             os.close(fd)

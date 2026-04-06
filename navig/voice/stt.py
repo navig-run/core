@@ -153,7 +153,7 @@ class STT:
         Returns:
             STTResult with transcribed text or error
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now()  # utcnow() deprecated in Py3.12+
         audio_path = Path(audio_path)
 
         if not audio_path.exists():
@@ -186,7 +186,7 @@ class STT:
                 )
                 if result.success:
                     result.latency_ms = int(
-                        (datetime.utcnow() - start_time).total_seconds() * 1000
+                        (datetime.now() - start_time).total_seconds() * 1000
                     )
                     return result
                 else:

@@ -156,8 +156,10 @@ async def route_with_fallback(
         if result is not None:
             return result
         logger.info(
-            f"[mesh.router] route_with_fallback: peer {peer.node_id} failed, "
-            f"trying next ({peers.index(peer) + 1}/{len(peers)})"
+            "[mesh.router] route_with_fallback: peer %s failed, trying next (%s/%s)",
+            peer.node_id,
+            peers.index(peer) + 1,
+            len(peers),
         )
 
     return None

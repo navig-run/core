@@ -584,13 +584,15 @@ class IntentParser:
                     self._cache_result(cache_key, result)
                     return result
                 logger.debug(
-                    f"AI confidence {result.confidence:.2f} below threshold {self.confidence_threshold}"
+                    "AI confidence %.2f below threshold %s",
+                    result.confidence,
+                    self.confidence_threshold,
                 )
             except asyncio.TimeoutError:
                 logger.warning("AI intent parsing timed out, falling back to patterns")
             except Exception as e:
                 logger.warning(
-                    f"AI intent parsing failed: {e}, falling back to patterns"
+                    "AI intent parsing failed: %s, falling back to patterns", e
                 )
 
         # Fallback to pattern matching
