@@ -545,6 +545,20 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="voice",
         usage="/voiceoff",
     ),
+    SlashCommandEntry(
+        "provider_voice",
+        "Voice provider keys (Deepgram, ElevenLabs)",
+        handler="_handle_provider_voice",
+        category="voice",
+        usage="/provider_voice",
+    ),
+    SlashCommandEntry(
+        "voice_provider",
+        "Voice provider keys (alias)",
+        handler="_handle_provider_voice",
+        category="voice",
+        visible=False,
+    ),
     # --- Diagnostics ---------------------------------------------------------
     # --- User / profile ------------------------------------------------------
     SlashCommandEntry(
@@ -641,7 +655,11 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         usage="/explain_ai <topic>",
     ),
     SlashCommandEntry(
-        "music", "Convert music links (beta)", handler="_handle_music", category="media", visible=False
+        "music",
+        "Convert music links (beta)",
+        handler="_handle_music",
+        category="media",
+        visible=False,
     ),
     SlashCommandEntry(
         "imagegen",
@@ -2994,7 +3012,10 @@ class TelegramCommandsMixin:
                 try:
                     sm = get_session_manager()
                     sm.set_session_metadata(
-                        chat_id, _uid, "focus_mode", "balance",
+                        chat_id,
+                        _uid,
+                        "focus_mode",
+                        "balance",
                         is_group=chat_id != _uid,
                     )
                 except Exception as e:
@@ -3023,7 +3044,10 @@ class TelegramCommandsMixin:
             try:
                 sm = get_session_manager()
                 sm.set_session_metadata(
-                    chat_id, _uid, "focus_mode", mood.id,
+                    chat_id,
+                    _uid,
+                    "focus_mode",
+                    mood.id,
                     is_group=chat_id != _uid,
                 )
             except Exception as e:
@@ -4679,9 +4703,7 @@ class TelegramCommandsMixin:
         if _HAS_SESSIONS:
             try:
                 sm = get_session_manager()
-                _voice = sm.get_session_metadata(
-                    chat_id, user_id, "voice_replies_enabled", None
-                )
+                _voice = sm.get_session_metadata(chat_id, user_id, "voice_replies_enabled", None)
                 if _voice is not None:
                     voice_label = "on" if _voice else "off"
             except Exception:  # noqa: BLE001
@@ -4995,6 +5017,98 @@ class TelegramCommandsMixin:
     # Backward-compat alias
     _handle_settings_menu = _handle_audio_menu
 
+    async def _handle_provider_voice(
+        self,
+        chat_id: int,
+        user_id: int,
+        is_group: bool = False,
+        message_id: int | None = None,
+    ) -> None:
+        """/provider_voice — Voice API key status panel (Deepgram, ElevenLabs)."""
+        _VOICE_PROVIDERS = [
+            {
+                "id": "deepgram",
+                "label": "Deepgram",
+                "role": "STT + TTS",
+                "env_keys": ("DEEPGRAM_API_KEY", "DEEPGRAM_KEY"),
+            },
+            {
+                "id": "elevenlabs",
+                "label": "ElevenLabs",
+                "role": "TTS",
+                "env_keys": ("ELEVENLABS_API_KEY", "XI_API_KEY"),
+            },
+        ]
+
+        import os
+
+        # Resolve vault availability
+        vault = None
+        try:
+            from navig.vault import get_vault as _gv
+
+            vault = _gv()
+        except Exception:  # noqa: BLE001
+            pass
+
+        def _has_key(prov: dict) -> bool:
+            """Return True if a key exists in vault or env."""
+            if vault is not None:
+                try:
+                    cred = vault.get(prov["id"])
+                    if cred is not None:
+                        return True
+                except Exception:  # noqa: BLE001
+                    pass
+            for env_key in prov["env_keys"]:
+                if os.environ.get(env_key, "").strip():
+                    return True
+            return False
+
+        lines = ["\U0001f3a4 *Voice API Providers*", ""]
+        lines.append("STT \u2014 Speech to Text  |  TTS \u2014 Text to Speech")
+        lines.append("")
+
+        keyboard_rows: list[list[dict]] = []
+        for prov in _VOICE_PROVIDERS:
+            has = _has_key(prov)
+            status = "\u2705" if has else "\U0001f512"
+            lines.append(f"{status} *{prov['label']}* \u2014 `{prov['role']}`")
+            if not has:
+                lines.append(f"  _No key found — tap to add_")
+                cb = f"voice_prov_add:{prov['id']}"
+            else:
+                lines.append("  _Key stored in vault_")
+                cb = f"voice_prov_check:{prov['id']}"
+            keyboard_rows.append(
+                [
+                    {
+                        "text": f"{status} {prov['label']}",
+                        "callback_data": cb,
+                    }
+                ]
+            )
+
+        lines.append("")
+        lines.append("_Tap a provider to add or validate its key._")
+
+        keyboard_rows.append(
+            [
+                {"text": "\U0001f399 /voice settings", "callback_data": "st_goto_voice"},
+                {"text": "\u2715 Close", "callback_data": "st_close"},
+            ]
+        )
+
+        text = "\n".join(lines)
+        if message_id:
+            await self.edit_message(
+                chat_id, message_id, text, parse_mode="Markdown", keyboard=keyboard_rows
+            )
+        else:
+            sent = await self.send_message(chat_id, text, keyboard=keyboard_rows)
+            if sent and isinstance(sent, dict):
+                self._get_navigation_state(chat_id)["message_id"] = sent.get("message_id")
+
     async def _handle_settings_hub(
         self,
         chat_id: int,
@@ -5053,7 +5167,9 @@ class TelegramCommandsMixin:
         formatter = MarkdownFormatter()
 
         # Strip the command prefix so bare /format shows settings panel
-        text_arg = text[len("/format"):].strip() if text.lower().startswith("/format") else text.strip()
+        text_arg = (
+            text[len("/format") :].strip() if text.lower().startswith("/format") else text.strip()
+        )
 
         if not text_arg:
             # Show settings panel if no text provided
@@ -6006,7 +6122,11 @@ class TelegramCommandsMixin:
         await self._handle_persona_switch(chat_id, user_id, "default")
 
     async def _handle_explain_ai(self, chat_id: int, user_id: int = 0, text: str = "") -> None:
-        topic = (text[len("/explain_ai") :].strip() if text.lower().startswith("/explain_ai") else text.strip())
+        topic = (
+            text[len("/explain_ai") :].strip()
+            if text.lower().startswith("/explain_ai")
+            else text.strip()
+        )
         if not topic:
             await self.send_message(
                 chat_id,

@@ -90,6 +90,7 @@ def build_step_registry(
         _step_ai_provider(navig_dir),
         _step_vault_init(navig_dir),
         _step_web_search_provider(navig_dir),
+        _step_voice_provider(navig_dir),
         _step_first_host(navig_dir),
         _step_matrix(navig_dir),
         _step_telegram_bot(navig_dir),
@@ -197,7 +198,6 @@ def _prompt_masked(text: str, default: str = "") -> str:
 # ── Individual step factories ──────────────────────────────────────────────
 
 
-
 def _step_terminal_setup(navig_dir: Path) -> OnboardingStep:
     """Detect Nerd Font availability; offer install on first run.
 
@@ -274,7 +274,7 @@ def _step_terminal_setup(navig_dir: Path) -> OnboardingStep:
         # User declined
         write_terminal_json(navig_dir, nerd_font=False)
         ch.dim("  Skipped. Icons will use Unicode/ASCII fallbacks.")
-        ch.dim("  Set NAVIG_NERD_FONT=1 or re-run \'navig init\' to enable later.")
+        ch.dim("  Set NAVIG_NERD_FONT=1 or re-run 'navig init' to enable later.")
         return StepResult(
             status="skipped",
             output={"nerd_font": False, "reason": "declined"},
@@ -292,6 +292,7 @@ def _step_terminal_setup(navig_dir: Path) -> OnboardingStep:
         independent=True,
         phase="bootstrap",
     )
+
 
 def _step_workspace_init(navig_dir: Path) -> OnboardingStep:
     workspace = navig_dir / "workspace"
@@ -437,9 +438,9 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             cfg: dict[str, Any] = {}
             if config_path.exists():
                 cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-            cfg.setdefault("llm_router", {}).setdefault("provider_base_urls", {})[
-                provider_id
-            ] = base_url
+            cfg.setdefault("llm_router", {}).setdefault("provider_base_urls", {})[provider_id] = (
+                base_url
+            )
             config_path.write_text(
                 yaml.dump(cfg, allow_unicode=True, sort_keys=False),
                 encoding="utf-8",
@@ -546,11 +547,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
 
         ch.info("Choose your AI provider:")
         for i, p in enumerate(providers, start=1):
-            local_tag = (
-                "  (local, no key needed)"
-                if not getattr(p, "requires_key", True)
-                else ""
-            )
+            local_tag = "  (local, no key needed)" if not getattr(p, "requires_key", True) else ""
             sources = source_by_provider.get(p.id, [])
             ready_tag = f"  (already configured: {'/'.join(sources)})" if sources else ""
             active_tag = "  (current)" if p.id == current_provider else ""
@@ -584,10 +581,14 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
 
         if requires_key and has_env_source and not has_vault_source:
             try:
-                import_env_choice = typer.prompt(
-                    "  Environment key detected. Import to vault now? [Y/n]",
-                    default="y",
-                ).strip().lower()
+                import_env_choice = (
+                    typer.prompt(
+                        "  Environment key detected. Import to vault now? [Y/n]",
+                        default="y",
+                    )
+                    .strip()
+                    .lower()
+                )
             except KeyboardInterrupt:
                 raise
             except EOFError:
@@ -681,6 +682,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
                             if fb_key:
                                 try:
                                     from navig.vault.core_v2 import get_vault_v2 as _gv2
+
                                     vfb = _gv2()
                                     if vfb is not None:
                                         vfb.put(
@@ -709,9 +711,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
                 modes = cfg["routing"].setdefault("llm_modes", {})
                 for tier in ("small_talk", "big_tasks", "coding", "summarize", "research"):
                     modes.setdefault(tier, {})["fallback_provider"] = fallback_pid
-                config_path.write_text(
-                    yaml.dump(cfg, allow_unicode=True), encoding="utf-8"
-                )
+                config_path.write_text(yaml.dump(cfg, allow_unicode=True), encoding="utf-8")
             except Exception:  # noqa: BLE001
                 pass  # best-effort; never block onboarding
 
@@ -892,9 +892,7 @@ def _step_vault_init(navig_dir: Path) -> OnboardingStep:
         try:
             pw = _prompt_masked("  Vault passphrase", default="").strip()
             if not pw:
-                return StepResult(
-                    status="skipped", output={"reason": "empty passphrase"}
-                )
+                return StepResult(status="skipped", output={"reason": "empty passphrase"})
             confirm = _prompt_masked("  Confirm passphrase", default="").strip()
         except KeyboardInterrupt:
             raise
@@ -902,9 +900,7 @@ def _step_vault_init(navig_dir: Path) -> OnboardingStep:
             return StepResult(status="skipped", output={"reason": "interrupted"})
 
         if pw != confirm:
-            return StepResult(
-                status="skipped", output={"reason": "passphrases did not match"}
-            )
+            return StepResult(status="skipped", output={"reason": "passphrases did not match"})
 
         try:
             from navig.vault.core_v2 import VaultV2
@@ -930,6 +926,152 @@ def _step_vault_init(navig_dir: Path) -> OnboardingStep:
         on_failure="skip",
         phase="configuration",
         tier="recommended",
+    )
+
+
+# ── Voice providers catalog ────────────────────────────────────────────────
+_VOICE_PROVIDER_CATALOG: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
+    (
+        "deepgram",
+        "Deepgram    (STT + TTS — streaming & batched, low latency)",
+        "STT+TTS",
+        ("DEEPGRAM_API_KEY", "DEEPGRAM_KEY"),
+    ),
+    (
+        "elevenlabs",
+        "ElevenLabs  (TTS — ultra-realistic voices, 30+ languages)",
+        "TTS",
+        ("ELEVENLABS_API_KEY", "XI_API_KEY"),
+    ),
+)
+
+
+def _step_voice_provider(navig_dir: Path) -> OnboardingStep:
+    """Configure voice API keys (Deepgram STT/TTS, ElevenLabs TTS)."""
+    marker = navig_dir / ".voice_provider_configured"
+
+    def _detect_env_key(env_vars: tuple[str, ...]) -> str:
+        for env_var in env_vars:
+            val = os.environ.get(env_var, "").strip()
+            if val:
+                return val
+        return ""
+
+    def _store_key(provider_id: str, api_key: str) -> str:
+        label = f"{provider_id}/api_key"
+        try:
+            from navig.vault.core_v2 import get_vault_v2  # type: ignore[import]
+
+            vault = get_vault_v2()
+            if vault is not None:
+                vault.put(label, json.dumps({"value": api_key}).encode())
+                return "vault"
+        except Exception:  # noqa: BLE001
+            pass
+        return "skipped"
+
+    def _validate_key(provider_id: str, api_key: str) -> bool:
+        try:
+            from navig.vault.types import Credential, CredentialType  # type: ignore[import]
+            from navig.vault.validators import get_validator  # type: ignore[import]
+
+            cred = Credential(
+                provider=provider_id,
+                credential_type=CredentialType.API_KEY,
+                data={"api_key": api_key},
+            )
+            result = get_validator(provider_id).validate(cred)
+            return result.success
+        except Exception:  # noqa: BLE001
+            return False
+
+    def run() -> StepResult:  # noqa: C901
+        if marker.exists():
+            return StepResult(status="completed", output={"note": "already configured"})
+
+        tty = _tty_check()
+        if tty is not None:
+            return tty
+
+        import typer
+
+        from navig import console_helper as ch
+
+        # Fast-path: detect existing env keys and offer import.
+        auto_imported: list[str] = []
+        for prov_id, _desc, _role, env_vars in _VOICE_PROVIDER_CATALOG:
+            val = _detect_env_key(env_vars)
+            if val:
+                try:
+                    if typer.confirm(f"  Import {prov_id} key from environment?", default=True):
+                        source = _store_key(prov_id, val)
+                        if source == "vault":
+                            auto_imported.append(prov_id)
+                except (KeyboardInterrupt, EOFError):
+                    break
+
+        if auto_imported:
+            marker.write_text(",".join(auto_imported), encoding="utf-8")
+            return StepResult(
+                status="completed",
+                output={"imported": auto_imported, "source": "environment"},
+            )
+
+        # Interactive picker.
+        try:
+            answer = (
+                typer.prompt(
+                    "  Set up a voice provider? (deepgram/elevenlabs/skip)",
+                    default="skip",
+                )
+                .strip()
+                .lower()
+            )
+        except (KeyboardInterrupt, EOFError):
+            return StepResult(status="skipped", output={"reason": "interrupted"})
+
+        if answer in ("", "skip", "s", "no", "n"):
+            return StepResult(status="skipped", output={"reason": "user chose to skip"})
+
+        catalog_ids = [p[0] for p in _VOICE_PROVIDER_CATALOG]
+        provider_id = answer if answer in catalog_ids else ""
+        if not provider_id:
+            ch.warning(f"  Unknown provider '{answer}'. Valid choices: {', '.join(catalog_ids)}")
+            return StepResult(status="skipped", output={"reason": "unknown provider"})
+
+        try:
+            api_key = _prompt_masked(f"  {provider_id} API key", default="").strip()
+        except (KeyboardInterrupt, EOFError):
+            return StepResult(status="skipped", output={"reason": "interrupted"})
+
+        if not api_key:
+            return StepResult(status="skipped", output={"reason": "no key entered"})
+
+        # Live validation.
+        ch.info("  Validating key...")
+        valid = _validate_key(provider_id, api_key)
+        if not valid:
+            ch.warning("  Key validation failed — storing anyway (check connectivity).")
+
+        source = _store_key(provider_id, api_key)
+        marker.write_text(provider_id, encoding="utf-8")
+        return StepResult(
+            status="completed",
+            output={"provider": provider_id, "keySource": source, "validated": valid},
+        )
+
+    def verify() -> bool:
+        return marker.exists()
+
+    return OnboardingStep(
+        id="voice-provider",
+        title="Set up voice provider (STT/TTS)",
+        run=run,
+        verify=verify,
+        on_failure="skip",
+        independent=True,
+        phase="configuration",
+        tier="optional",
     )
 
 
@@ -976,9 +1118,7 @@ def _step_first_host(navig_dir: Path) -> OnboardingStep:
             )
             existing = list(hosts_dir.glob("*.yaml")) if hosts_dir.exists() else []
             if existing:
-                return StepResult(
-                    status="completed", output={"hostsFound": len(existing)}
-                )
+                return StepResult(status="completed", output={"hostsFound": len(existing)})
 
         return StepResult(
             status="skipped",
@@ -1083,7 +1223,9 @@ def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
         env_provider_raw = os.environ.get("NAVIG_WEB_SEARCH_PROVIDER", "").strip().lower()
         env_provider = provider_aliases.get(env_provider_raw, "")
         if env_provider_raw and env_provider_raw != "skip":
-            catalog = {pid: (label, env_vars) for pid, label, env_vars in _WEB_SEARCH_PROVIDER_CATALOG}
+            catalog = {
+                pid: (label, env_vars) for pid, label, env_vars in _WEB_SEARCH_PROVIDER_CATALOG
+            }
             if env_provider in catalog:
                 _, env_vars = catalog[env_provider]
                 env_key = _resolve_env_key(env_vars)
@@ -1152,7 +1294,9 @@ def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
 
         if not entered_key:
             try:
-                entered_key = _prompt_masked(f"  {provider_label.split('(')[0].strip()} API key", default="").strip()
+                entered_key = _prompt_masked(
+                    f"  {provider_label.split('(')[0].strip()} API key", default=""
+                ).strip()
             except KeyboardInterrupt:
                 raise
             except EOFError:
@@ -1166,7 +1310,9 @@ def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
             output={
                 "provider": provider_id,
                 "providerSaved": provider_written,
-                "keySource": "environment" if env_key else ("interactive" if entered_key else "none"),
+                "keySource": "environment"
+                if env_key
+                else ("interactive" if entered_key else "none"),
                 "keyTarget": key_target,
             },
         )
@@ -1279,11 +1425,7 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
         try:
             env_path = navig_dir / ".env"
             existing = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
-            lines = [
-                ln
-                for ln in existing.splitlines()
-                if not ln.startswith("TELEGRAM_BOT_TOKEN=")
-            ]
+            lines = [ln for ln in existing.splitlines() if not ln.startswith("TELEGRAM_BOT_TOKEN=")]
             lines.append(f"TELEGRAM_BOT_TOKEN={token}")
             env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
             try:
@@ -1300,6 +1442,7 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
 
             if not resolve_telegram_uid():
                 import typer as _typer
+
                 try:
                     uid_raw = _typer.prompt(
                         "  Your Telegram user ID (leave blank to skip — find it via @userinfobot)",
@@ -1309,14 +1452,21 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
                     uid_raw = ""
                 if uid_raw and uid_raw.isdigit():
                     from navig.vault.core_v2 import get_vault_v2 as _gv2
+
                     _v2 = _gv2()
                     if _v2 is not None:
                         _v2.put("telegram/user_id", json.dumps({"value": uid_raw}).encode())
                     # Also persist to .env for env-based fallback
                     try:
                         env_path = navig_dir / ".env"
-                        _existing = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
-                        _lines = [ln for ln in _existing.splitlines() if not ln.startswith("NAVIG_TELEGRAM_UID=")]
+                        _existing = (
+                            env_path.read_text(encoding="utf-8") if env_path.exists() else ""
+                        )
+                        _lines = [
+                            ln
+                            for ln in _existing.splitlines()
+                            if not ln.startswith("NAVIG_TELEGRAM_UID=")
+                        ]
                         _lines.append(f"NAVIG_TELEGRAM_UID={uid_raw}")
                         env_path.write_text("\n".join(_lines) + "\n", encoding="utf-8")
                     except Exception:  # noqa: BLE001
@@ -1373,9 +1523,7 @@ def _step_skills_activation(navig_dir: Path) -> OnboardingStep:
 
         if not available:
             marker.write_text("none", encoding="utf-8")
-            return StepResult(
-                status="skipped", output={"reason": "no packs configured"}
-            )
+            return StepResult(status="skipped", output={"reason": "no packs configured"})
 
         import typer
 
@@ -1414,9 +1562,7 @@ def _step_skills_activation(navig_dir: Path) -> OnboardingStep:
             if config_path.exists():
                 cfg2 = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
             cfg2.setdefault("skills", {})["active_packs"] = chosen
-            config_path.write_text(
-                yaml.dump(cfg2, allow_unicode=True), encoding="utf-8"
-            )
+            config_path.write_text(yaml.dump(cfg2, allow_unicode=True), encoding="utf-8")
         except Exception:  # noqa: BLE001
             pass
 
@@ -1450,9 +1596,7 @@ def _step_sigil_genesis(navig_dir: Path, genesis: GenesisData) -> OnboardingStep
 
     def run() -> StepResult:
         if marker.exists():
-            return StepResult(
-                status="completed", output={"note": "already initialized"}
-            )
+            return StepResult(status="completed", output={"note": "already initialized"})
 
         try:
             from navig.identity.sigil_store import ensure_sigil  # type: ignore[import]
@@ -1487,9 +1631,7 @@ def _step_core_navig(navig_dir: Path) -> OnboardingStep:
 
     def run() -> StepResult:
         if marker.exists():
-            return StepResult(
-                status="completed", output={"note": "already initialized"}
-            )
+            return StepResult(status="completed", output={"note": "already initialized"})
 
         # Ensure the base directory tree exists
         for sub in ("state", "logs", "vault"):
@@ -1554,9 +1696,7 @@ def _step_matrix(navig_dir: Path) -> OnboardingStep:
 
         if not homeserver_url:
             marker.write_text("skipped", encoding="utf-8")
-            return StepResult(
-                status="skipped", output={"reason": "no homeserver URL provided"}
-            )
+            return StepResult(status="skipped", output={"reason": "no homeserver URL provided"})
 
         try:
             access_token = typer.prompt(
@@ -1568,9 +1708,7 @@ def _step_matrix(navig_dir: Path) -> OnboardingStep:
 
         if not access_token:
             marker.write_text("skipped", encoding="utf-8")
-            return StepResult(
-                status="skipped", output={"reason": "no access token provided"}
-            )
+            return StepResult(status="skipped", output={"reason": "no access token provided"})
 
         # Validate — import here to avoid circular deps at module load
         from navig.onboarding.validators import validate_matrix
@@ -1585,18 +1723,14 @@ def _step_matrix(navig_dir: Path) -> OnboardingStep:
         if not typer.confirm("  Token validated. Save and continue?", default=True):
             return StepResult(status="skipped", output={"reason": "user declined"})
 
-        default_room_id = typer.prompt(
-            "  Default room ID (e.g. !abc:matrix.org)"
-        ).strip()
+        default_room_id = typer.prompt("  Default room ID (e.g. !abc:matrix.org)").strip()
 
         # Persist token to vault
         try:
             from navig.vault.core_v2 import get_vault_v2  # type: ignore[import]
 
             vault = get_vault_v2()
-            vault.put(
-                "matrix/access_token", json.dumps({"value": access_token}).encode()
-            )
+            vault.put("matrix/access_token", json.dumps({"value": access_token}).encode())
         except Exception:  # noqa: BLE001
             pass
 
@@ -1655,9 +1789,7 @@ def _step_email(navig_dir: Path) -> OnboardingStep:
         smtp_host = typer.prompt("  SMTP host (or blank to skip)", default="").strip()
         if not smtp_host:
             marker.write_text("skipped", encoding="utf-8")
-            return StepResult(
-                status="skipped", output={"reason": "no SMTP host provided"}
-            )
+            return StepResult(status="skipped", output={"reason": "no SMTP host provided"})
 
         smtp_port_str = typer.prompt("  SMTP port", default="587").strip()
         try:
@@ -1721,9 +1853,7 @@ def _step_social_networks(navig_dir: Path) -> OnboardingStep:
 
         import typer
 
-        configure = typer.confirm(
-            "  Configure social network integrations?", default=False
-        )
+        configure = typer.confirm("  Configure social network integrations?", default=False)
         if not configure:
             marker.write_text("skipped", encoding="utf-8")
             return StepResult(status="skipped", output={"reason": "user declined"})
@@ -1786,9 +1916,7 @@ def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
             if not val:
                 continue
             try:
-                if typer.confirm(
-                    f"  Import {display_name} from environment?", default=True
-                ):
+                if typer.confirm(f"  Import {display_name} from environment?", default=True):
                     if vault is not None:
                         vault.put(vault_label, json.dumps({"value": val}).encode())
                     imported.append(display_name)
@@ -1850,17 +1978,39 @@ def _step_review(navig_dir: Path, step_titles: dict[str, str] | None = None) -> 
 
     # Phase grouping for summary display.
     _PHASE_GROUPS: list[tuple[str, list[str]]] = [
-        ("Bootstrap", [
-            "workspace-init", "workspace-templates", "config-file",
-            "configure-ssh", "verify-network", "sigil-genesis", "core-navig",
-        ]),
-        ("Configuration", [
-            "ai-provider", "vault-init", "web-search-provider", "first-host",
-        ]),
-        ("Integrations & Optional", [
-            "telegram-bot", "matrix", "email", "social-networks",
-            "runtime-secrets", "skills-activation", "review",
-        ]),
+        (
+            "Bootstrap",
+            [
+                "workspace-init",
+                "workspace-templates",
+                "config-file",
+                "configure-ssh",
+                "verify-network",
+                "sigil-genesis",
+                "core-navig",
+            ],
+        ),
+        (
+            "Configuration",
+            [
+                "ai-provider",
+                "vault-init",
+                "web-search-provider",
+                "first-host",
+            ],
+        ),
+        (
+            "Integrations & Optional",
+            [
+                "telegram-bot",
+                "matrix",
+                "email",
+                "social-networks",
+                "runtime-secrets",
+                "skills-activation",
+                "review",
+            ],
+        ),
     ]
 
     def run() -> StepResult:

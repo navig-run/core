@@ -410,7 +410,11 @@ class TelegramValidator(CredentialValidator):
             import httpx
 
             response = httpx.get(f"https://api.telegram.org/bot{token}/getMe", timeout=10)
-            payload = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
+            payload = (
+                response.json()
+                if response.headers.get("content-type", "").startswith("application/json")
+                else {}
+            )
             if response.status_code == 200 and payload.get("ok"):
                 result = payload.get("result", {})
                 return TestResult(
@@ -455,6 +459,44 @@ class DeepgramValidator(CredentialValidator):
                     message="Deepgram API key is valid",
                     details={
                         "projects": len(projects),
+                        "validation_mode": "remote",
+                    },
+                )
+            if response.status_code in (401, 403):
+                return TestResult(success=False, message="Invalid API key")
+            return TestResult(success=False, message=f"API error: {response.status_code}")
+        except ImportError:
+            return TestResult(success=False, message="httpx not available for validation")
+        except Exception as e:
+            return TestResult(success=False, message=f"Connection error: {e}")
+
+
+class ElevenLabsValidator(CredentialValidator):
+    """Validate ElevenLabs API key via user endpoint."""
+
+    def validate(self, credential: Credential) -> TestResult:
+        api_key = credential.data.get("api_key") or credential.data.get("token", "")
+        if not api_key:
+            return TestResult(success=False, message="API key is empty")
+
+        try:
+            import httpx
+
+            response = httpx.get(
+                "https://api.elevenlabs.io/v1/user",
+                headers={"xi-api-key": api_key},
+                timeout=10,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                sub = data.get("subscription", {})
+                return TestResult(
+                    success=True,
+                    message="ElevenLabs API key is valid",
+                    details={
+                        "tier": sub.get("tier", "unknown"),
+                        "character_limit": sub.get("character_limit"),
+                        "character_count": sub.get("character_count"),
                         "validation_mode": "remote",
                     },
                 )
@@ -532,9 +574,7 @@ class NvidiaValidator(CredentialValidator):
                 return TestResult(success=False, message="Invalid API key")
 
             generic_result = GenericValidator().validate(credential)
-            generic_result.message = (
-                f"Credential data exists (NVIDIA remote validation unavailable: {response.status_code})"
-            )
+            generic_result.message = f"Credential data exists (NVIDIA remote validation unavailable: {response.status_code})"
             return generic_result
         except ImportError:
             return TestResult(success=False, message="httpx not available for validation")
@@ -603,6 +643,7 @@ VALIDATORS: dict[str, type[CredentialValidator]] = {
     "xai": XAIValidator,
     "nvidia": NvidiaValidator,
     "deepgram": DeepgramValidator,
+    "elevenlabs": ElevenLabsValidator,
     "telegram": TelegramValidator,
     # Version Control
     "github": GitHubValidator,

@@ -668,6 +668,7 @@ def build_settings_hub_keyboard(session: Any = None) -> list[list[dict[str, Any]
             {"text": "🤖  Providers & Models", "callback_data": "st_goto_providers"},
         ],
         [
+            {"text": "🎤  Voice API Keys", "callback_data": "st_goto_voice_provider"},
             {"text": "🛠  Debug", "callback_data": "st_goto_debug"},
         ],
         [
@@ -2154,6 +2155,7 @@ class CallbackHandler:
         _NAV = {
             "st_goto_audio": "_handle_audio_menu",
             "st_goto_voice": "_handle_voice_menu",
+            "st_goto_voice_provider": "_handle_provider_voice",
             "st_goto_providers": "_handle_providers_and_models",
             "st_goto_focus": "_handle_mode_menu",
             "st_goto_model": "_handle_models_command",

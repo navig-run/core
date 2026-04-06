@@ -39,12 +39,14 @@ def _resolve_test_target_mode(vault, target: str, provider: str | None, credenti
     if normalized_provider:
         return "provider", normalized_provider
 
-    if re.fullmatch(r"[0-9a-f]{8}", normalized_target.lower()) and vault.get_by_id(
-        normalized_target
-    ) is not None:
+    if (
+        re.fullmatch(r"[0-9a-f]{8}", normalized_target.lower())
+        and vault.get_by_id(normalized_target) is not None
+    ):
         return "id", normalized_target
 
     return "provider", normalized_target
+
 
 # ── Provider shortcuts: auto-detect type, data key, and label ─────────────
 # Maps provider aliases → (canonical_provider, credential_type, data_key, default_label)
@@ -57,6 +59,9 @@ PROVIDER_DEFAULTS = {
     "github_models": ("github_models", "token", "token", "GitHub Models"),
     "github-models": ("github_models", "token", "token", "GitHub Models"),
     "copilot": ("github_models", "token", "token", "GitHub Copilot Models"),
+    # Voice providers
+    "deepgram": ("deepgram", "api_key", "api_key", "Deepgram"),
+    "elevenlabs": ("elevenlabs", "api_key", "api_key", "ElevenLabs"),
     # VCS
     "github": ("github", "token", "token", "GitHub"),
     "gitlab": ("gitlab", "token", "token", "GitLab"),
@@ -652,6 +657,7 @@ def vault_set(
     if "." in path or "/" in path:
         try:
             from navig.vault.core_v2 import get_vault_v2 as _gv2
+
             _v2 = _gv2()
             if _v2 is not None:
                 _v2.put(path, json.dumps({"value": value}).encode())
@@ -674,6 +680,7 @@ def vault_get(
     if "." in path or (cred is None and "/" in path):
         try:
             from navig.vault.core_v2 import get_vault_v2 as _gv2
+
             _v2 = _gv2()
             if _v2 is not None:
                 v2_secret = (_v2.get_secret(path) or "").strip()
@@ -682,7 +689,9 @@ def vault_get(
                         _ch.warning("Revealing secret!")
                         _rprint(v2_secret)
                     else:
-                        _rprint(f"[dim]{path}:[/dim] {'*' * min(len(v2_secret), 12)} (use --reveal to show)")
+                        _rprint(
+                            f"[dim]{path}:[/dim] {'*' * min(len(v2_secret), 12)} (use --reveal to show)"
+                        )
                     return
         except Exception:
             pass  # best-effort: vault v2 unavailable; fall back to v1 credential
@@ -697,7 +706,9 @@ def vault_get(
         _ch.warning("Revealing secret!")
         _rprint(secret)
     else:
-        _rprint(f"[dim]{provider}/{data_key}:[/dim] {'*' * min(len(secret), 12)} (use --reveal to show)")
+        _rprint(
+            f"[dim]{provider}/{data_key}:[/dim] {'*' * min(len(secret), 12)} (use --reveal to show)"
+        )
 
 
 @vault_app.command("list")
@@ -713,11 +724,16 @@ def vault_list(
 
     if json_output:
         import dataclasses
+
         _rprint(json.dumps([dataclasses.asdict(c) for c in creds], default=str))
         return
 
     if not creds:
-        _ch.warning("Vault is empty." if not (provider or profile) else "No credentials found matching filters.")
+        _ch.warning(
+            "Vault is empty."
+            if not (provider or profile)
+            else "No credentials found matching filters."
+        )
         _ch.info("Use 'navig vault set <path> <value>' to add a credential.")
         return
 
@@ -740,18 +756,19 @@ def vault_list(
         import os  # noqa: PLC0415
 
         _AI_SIGNALS: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
-            ("openrouter", ("OPENROUTER_API_KEY",),               ("openrouter_api_key",)),
-            ("openai",     ("OPENAI_API_KEY",),                   ("openai_api_key",)),
-            ("anthropic",  ("ANTHROPIC_API_KEY", "CLAUDE_API_KEY"), ("anthropic_api_key",)),
-            ("groq",       ("GROQ_API_KEY",),                     ("groq_api_key",)),
-            ("gemini",     ("GEMINI_API_KEY", "GOOGLE_API_KEY"),   ("google_api_key", "gemini_api_key")),
-            ("nvidia",     ("NVIDIA_API_KEY", "NIM_API_KEY"),      ("nvidia_api_key", "nim_api_key")),
-            ("xai",        ("XAI_API_KEY", "GROK_KEY"),           ("xai_api_key", "grok_key")),
-            ("mistral",    ("MISTRAL_API_KEY",),                  ("mistral_api_key",)),
+            ("openrouter", ("OPENROUTER_API_KEY",), ("openrouter_api_key",)),
+            ("openai", ("OPENAI_API_KEY",), ("openai_api_key",)),
+            ("anthropic", ("ANTHROPIC_API_KEY", "CLAUDE_API_KEY"), ("anthropic_api_key",)),
+            ("groq", ("GROQ_API_KEY",), ("groq_api_key",)),
+            ("gemini", ("GEMINI_API_KEY", "GOOGLE_API_KEY"), ("google_api_key", "gemini_api_key")),
+            ("nvidia", ("NVIDIA_API_KEY", "NIM_API_KEY"), ("nvidia_api_key", "nim_api_key")),
+            ("xai", ("XAI_API_KEY", "GROK_KEY"), ("xai_api_key", "grok_key")),
+            ("mistral", ("MISTRAL_API_KEY",), ("mistral_api_key",)),
         ]
         vault_providers = {c.provider for c in creds}
         try:
             from navig.config import get_config_manager  # noqa: PLC0415
+
             _gcfg = get_config_manager().global_config
         except Exception:  # noqa: BLE001
             _gcfg = {}
@@ -774,8 +791,51 @@ def vault_list(
             con = _console()
             con.print("\n[dim]Credentials detected outside vault:[/dim]")
             for prov_id, source in external:
-                con.print(f"  [yellow]•[/yellow] [cyan]{prov_id}[/cyan] [dim]({source})[/dim] — not synced to vault")
+                con.print(
+                    f"  [yellow]•[/yellow] [cyan]{prov_id}[/cyan] [dim]({source})[/dim] — not synced to vault"
+                )
             con.print("[dim]  → Sync with: navig vault set <provider> <value>[/dim]")
+
+    # ── Detect voice provider keys outside vault ───────────────────────────
+    if not (provider or profile):
+        import os  # noqa: PLC0415
+
+        _VOICE_SIGNALS: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
+            ("deepgram", ("DEEPGRAM_API_KEY", "DEEPGRAM_KEY"), ("deepgram_api_key",)),
+            ("elevenlabs", ("ELEVENLABS_API_KEY", "XI_API_KEY"), ("elevenlabs_api_key",)),
+        ]
+        vault_providers_v = {c.provider for c in creds}
+        try:
+            from navig.config import get_config_manager  # noqa: PLC0415
+
+            _gcfg_v = get_config_manager().global_config
+        except Exception:  # noqa: BLE001
+            _gcfg_v = {}
+
+        voice_external: list[tuple[str, str]] = []
+        for prov_id, env_keys, cfg_keys in _VOICE_SIGNALS:
+            if prov_id in vault_providers_v:
+                continue
+            for env_key in env_keys:
+                if os.environ.get(env_key, "").strip():
+                    voice_external.append((prov_id, f"env:{env_key}"))
+                    break
+            else:
+                for cfg_key in cfg_keys:
+                    if str(_gcfg_v.get(cfg_key) or "").strip():
+                        voice_external.append((prov_id, f"config:{cfg_key}"))
+                        break
+
+        if voice_external:
+            con = _console()
+            con.print("\n[dim]Voice credentials detected outside vault:[/dim]")
+            for prov_id, source in voice_external:
+                con.print(
+                    f"  [yellow]•[/yellow] [cyan]{prov_id}[/cyan] [dim]({source})[/dim] — not synced to vault"
+                )
+            con.print(
+                "[dim]  → Sync with: navig cred add deepgram  or  navig cred add elevenlabs[/dim]"
+            )
 
 
 @vault_app.command("validate")
@@ -792,7 +852,10 @@ def vault_validate(
         cred = vault.get(provider, profile_id=profile, caller="vault.validate")
         if cred is not None:
             tested_at = getattr(result, "tested_at", None)
-            meta = {"validation_success": bool(result.success), "validation_message": str(result.message or "")}
+            meta = {
+                "validation_success": bool(result.success),
+                "validation_message": str(result.message or ""),
+            }
             if tested_at:
                 meta["validation_tested_at"] = tested_at.isoformat()
             vault.update(cred.id, metadata=meta)
@@ -811,6 +874,98 @@ def vault_validate(
         if result.details:
             _rprint(result.details)
         raise typer.Exit(1)
+
+
+@vault_app.command("check-all")
+def vault_check_all(
+    json_output: bool = typer.Option(False, "--json", help="Output results as JSON"),
+    profile: str = typer.Option(None, "--profile", "-P", help="Filter by profile"),
+) -> None:
+    """Validate every stored credential and print a status table.
+
+    Exits with code 1 if any credential fails validation.
+    Use --json for machine-readable output (CI-friendly).
+    """
+    vault = _vault_mod.get_vault()
+    creds = vault.list(profile_id=profile)
+    creds = [c for c in creds if c.enabled]
+
+    if not creds:
+        _ch.warning("Vault is empty — nothing to check.")
+        return
+
+    con = _console()
+    results: list[dict] = []
+    any_failed = False
+
+    for cred in creds:
+        validator = _validators_mod.get_validator(cred.provider)
+        try:
+            result = validator.validate(cred)
+        except Exception as exc:  # noqa: BLE001
+            from navig.vault.types import TestResult  # noqa: PLC0415
+
+            result = TestResult(success=False, message=f"Unexpected error: {exc}")
+
+        status_icon = "\u2705" if result.success else "\u274c"
+        if not result.success:
+            any_failed = True
+
+        is_generic = type(validator).__name__ == "GenericValidator"
+        validation_mode = "presence" if is_generic else "remote"
+
+        results.append(
+            {
+                "id": cred.id,
+                "provider": cred.provider,
+                "label": cred.label,
+                "success": result.success,
+                "message": result.message or "",
+                "details": result.details or {},
+                "validation_mode": validation_mode,
+            }
+        )
+
+    if json_output:
+        import json  # noqa: PLC0415
+
+        _rprint(json.dumps(results, default=str))
+        if any_failed:
+            raise typer.Exit(1)
+        return
+
+    table = _Table(title="Vault Key Health Check")
+    table.add_column("Provider", style="cyan")
+    table.add_column("Label")
+    table.add_column("Status", justify="center")
+    table.add_column("Mode", style="dim")
+    table.add_column("Details")
+
+    for r in results:
+        icon = "\u2705 OK" if r["success"] else "\u274c FAIL"
+        details_str = ""
+        if r["details"]:
+            details_str = "  ".join(f"{k}={v}" for k, v in list(r["details"].items())[:3])
+        elif r["message"]:
+            details_str = r["message"][:60]
+        table.add_row(
+            r["provider"],
+            r["label"],
+            icon,
+            r["validation_mode"],
+            details_str,
+        )
+
+    con.print(table)
+    total = len(results)
+    passed = sum(1 for r in results if r["success"])
+    failed = total - passed
+
+    if any_failed:
+        con.print(f"[red]\u274c {failed}/{total} credential(s) failed.[/red]")
+        raise typer.Exit(1)
+    else:
+        con.print(f"[green]\u2705 All {total} credential(s) passed.[/green]")
 
 
 @vault_app.command("delete")
