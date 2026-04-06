@@ -289,8 +289,8 @@ class TestKnowledgeEntry:
 
     def test_entry_expiration(self):
         """Test entry expiration check."""
-        past = datetime.utcnow() - timedelta(hours=1)
-        future = datetime.utcnow() + timedelta(hours=1)
+        past = datetime.now() - timedelta(hours=1)
+        future = datetime.now() + timedelta(hours=1)
 
         expired_entry = KnowledgeEntry(
             key="expired",
@@ -450,7 +450,7 @@ class TestKnowledgeBase:
         )
 
         assert entry.expires_at is not None
-        assert entry.expires_at > datetime.utcnow()
+        assert entry.expires_at > datetime.now()  # naive datetime from add_with_ttl
 
     def test_count(self, kb):
         """Test counting entries."""

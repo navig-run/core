@@ -12,7 +12,7 @@ import sqlite3
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 
 from navig.store.base import BaseStore
 
@@ -41,7 +41,7 @@ class Message:
     session_key: str = ""
     role: str = "user"  # user, assistant, system, tool
     content: str = ""
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: dict = field(default_factory=dict)
     token_count: int = 0
 
@@ -226,7 +226,7 @@ class ConversationStore(BaseStore):
             The stored message with ID
         """
         conn = self._get_conn()
-        now = datetime.utcnow().isoformat()
+        now = datetime.now().isoformat()  # utcnow() deprecated in Py3.12+
 
         with self._lock:
             old_iso = conn.isolation_level

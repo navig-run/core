@@ -294,9 +294,9 @@ class TestFTS5Migration:
 
         # Insert test data
         import uuid
-        from datetime import datetime
+        from datetime import datetime, timezone
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         conn.execute(
             "INSERT INTO sessions VALUES (?, ?, ?, '{}', 0)",
             ("migrate-session", now, now),
