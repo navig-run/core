@@ -111,6 +111,27 @@ class TestSessionStore:
         ctx = store.get_or_create(key)
         assert ctx.get("host") == "prod"
 
+    def test_update_no_deadlock_on_new_key(self):
+        """update() must not deadlock when the key does not yet exist.
+
+        Previously update() called self.get_or_create() while already
+        holding self._lock (a non-reentrant threading.Lock), causing an
+        infinite hang on the very first call with a new key.
+        """
+        import threading
+
+        store = SessionStore()
+        result: list[bool] = []
+
+        def _run() -> None:
+            store.update(SessionKey("cli", "regression"), {"x": 1})
+            result.append(True)
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        t.join(timeout=2.0)
+        assert result == [True], "update() deadlocked — did not complete within 2 s"
+
     def test_remove(self):
         store = SessionStore()
         key = SessionKey("cli")
