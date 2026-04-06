@@ -221,12 +221,13 @@ class TestAIClientDetection:
         client = self._make_client()
         with patch.object(client, "_get_bridge_mcp_url", return_value=""):
             with patch.object(client, "_get_github_models_token", return_value=""):
-                with patch("socket.socket") as mock_sock_cls:
-                    mock_sock = MagicMock()
-                    mock_sock.connect_ex.return_value = 1  # Port closed
-                    mock_sock_cls.return_value = mock_sock
-                    result = client._detect_best_provider()
-                    assert result == "none"
+                with patch.object(client, "_detect_provider_from_registry", return_value=""):
+                    with patch("socket.socket") as mock_sock_cls:
+                        mock_sock = MagicMock()
+                        mock_sock.connect_ex.return_value = 1  # Port closed
+                        mock_sock_cls.return_value = mock_sock
+                        result = client._detect_best_provider()
+                        assert result == "none"
 
 
 # ── Telegram Webhook Tests ──────────────────────────────────────────
