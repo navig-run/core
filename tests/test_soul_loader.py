@@ -5,15 +5,14 @@ Covers the Phase-1 IDENTITY.md addition from RFC #37, plus regression tests
 for the existing chain steps.
 """
 
+import os
+import tempfile
 from pathlib import Path
 from unittest.mock import patch
-import tempfile
-import os
 
 import pytest
 
 from navig.personas.soul_loader import load_soul
-
 
 # ---------------------------------------------------------------------------
 # Helpers

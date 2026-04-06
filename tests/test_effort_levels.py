@@ -28,7 +28,6 @@ from navig.agent.effort import (
     supports_thinking,
 )
 
-
 # ── EffortLevel Enum ─────────────────────────────────────────────
 
 

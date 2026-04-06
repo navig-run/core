@@ -17,7 +17,6 @@ import pytest
 # ═════════════════════════════════════════════════════════════
 # F-04 — Toolsets
 # ═════════════════════════════════════════════════════════════
-
 from navig.agent.toolsets import (
     NAVIG_CORE_TOOLS,
     NEVER_PARALLEL_TOOLS,

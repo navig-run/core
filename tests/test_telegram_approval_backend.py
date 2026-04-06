@@ -33,7 +33,6 @@ from navig.tools.telegram_approval_backend import (
     parse_callback_data,
 )
 
-
 # ─────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────

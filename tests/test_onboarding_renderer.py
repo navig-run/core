@@ -27,7 +27,6 @@ from navig.onboarding.renderer import (
     render_step_success,
 )
 
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 

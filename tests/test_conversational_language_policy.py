@@ -24,81 +24,95 @@ def test_detect_language_code_matrix(text, expected):
     assert agent._detect_language_code(text) == expected
 
 
-def test_mixed_language_falls_back_to_last_detected_language():
+def test_mixed_language_falls_back_to_session_language():
+    """When the message has mixed scripts, fall back to the session language."""
     agent = ConversationalAgent(ai_client=None, soul_content="test soul")
     agent.set_language_preferences(last_detected_language="fr")
 
     instruction = agent._build_language_instruction("hello مرحبا")
 
-    assert "default to French" in instruction
+    # Mixed Latin + Arabic → "mixed" → falls back to session language (fr)
+    assert "ABSOLUTE LANGUAGE RULE" in instruction
+    assert "French" in instruction
 
 
 @pytest.mark.asyncio
 async def test_explicit_override_persists_after_session_reset(tmp_path, monkeypatch):
     store = KeyFactStore(db_path=tmp_path / "kf_override.db")
-    monkeypatch.setattr("navig.agent.conversational.get_key_fact_store", lambda: store)
+    try:
+        monkeypatch.setattr("navig.agent.conversational.get_key_fact_store", lambda: store)
 
-    agent1 = ConversationalAgent(ai_client=None, soul_content="test soul")
-    agent1.set_user_identity(user_id="42", username="operator")
-    await agent1.chat("reply in French from now on")
+        agent1 = ConversationalAgent(ai_client=None, soul_content="test soul")
+        agent1.set_user_identity(user_id="42", username="operator")
+        await agent1.chat("reply in French from now on")
 
-    agent2 = ConversationalAgent(ai_client=None, soul_content="test soul")
-    agent2.set_user_identity(user_id="42", username="operator")
+        agent2 = ConversationalAgent(ai_client=None, soul_content="test soul")
+        agent2.set_user_identity(user_id="42", username="operator")
 
-    assert agent2._get_pinned_language_override() == "fr"
-    instruction = agent2._build_language_instruction("hello")
-    assert "default to French" in instruction
+        assert agent2._get_pinned_language_override() == "fr"
+        instruction = agent2._build_language_instruction("hello")
+        # Pinned override forces French regardless of text language
+        assert "ABSOLUTE LANGUAGE RULE" in instruction
+        assert "French" in instruction
+    finally:
+        store.close()
 
 
 @pytest.mark.asyncio
 async def test_explicit_override_cancel_clears_persistence(tmp_path, monkeypatch):
     store = KeyFactStore(db_path=tmp_path / "kf_override_cancel.db")
-    monkeypatch.setattr("navig.agent.conversational.get_key_fact_store", lambda: store)
+    try:
+        monkeypatch.setattr("navig.agent.conversational.get_key_fact_store", lambda: store)
 
-    agent1 = ConversationalAgent(ai_client=None, soul_content="test soul")
-    agent1.set_user_identity(user_id="42", username="operator")
-    await agent1.chat("reply in French from now on")
-    await agent1.chat("use auto language")
+        agent1 = ConversationalAgent(ai_client=None, soul_content="test soul")
+        agent1.set_user_identity(user_id="42", username="operator")
+        await agent1.chat("reply in French from now on")
+        await agent1.chat("use auto language")
 
-    agent2 = ConversationalAgent(ai_client=None, soul_content="test soul")
-    agent2.set_user_identity(user_id="42", username="operator")
+        agent2 = ConversationalAgent(ai_client=None, soul_content="test soul")
+        agent2.set_user_identity(user_id="42", username="operator")
 
-    assert agent2._get_pinned_language_override() == ""
+        assert agent2._get_pinned_language_override() == ""
+    finally:
+        store.close()
 
 
 def test_invalid_override_code_logged_and_discarded(tmp_path, monkeypatch):
     store = KeyFactStore(db_path=tmp_path / "kf_invalid_override.db")
-    monkeypatch.setattr("navig.agent.conversational.get_key_fact_store", lambda: store)
+    try:
+        monkeypatch.setattr("navig.agent.conversational.get_key_fact_store", lambda: store)
 
-    fact = KeyFact(
-        content="Pinned language override: xx-invalid",
-        category="preference",
-        confidence=1.0,
-        metadata={
-            "type": "language_override",
-            "language": "xx-invalid",
-            "source": "explicit_user_instruction",
-            "pinned": True,
-            "scope": "user_id:42",
-        },
-    )
-    store.upsert(fact)
+        fact = KeyFact(
+            content="Pinned language override: xx-invalid",
+            category="preference",
+            confidence=1.0,
+            metadata={
+                "type": "language_override",
+                "language": "xx-invalid",
+                "source": "explicit_user_instruction",
+                "pinned": True,
+                "scope": "user_id:42",
+            },
+        )
+        store.upsert(fact)
 
-    agent = ConversationalAgent(ai_client=None, soul_content="test soul")
-    agent.set_user_identity(user_id="42", username="operator")
+        agent = ConversationalAgent(ai_client=None, soul_content="test soul")
+        agent.set_user_identity(user_id="42", username="operator")
 
-    warnings = []
-    monkeypatch.setattr(
-        "navig.agent.conversational.logger.warning",
-        lambda *args, **kwargs: warnings.append(args),
-    )
+        warnings = []
+        monkeypatch.setattr(
+            "navig.agent.conversational.logger.warning",
+            lambda *args, **kwargs: warnings.append(args),
+        )
 
-    resolved = agent._get_pinned_language_override()
+        resolved = agent._get_pinned_language_override()
 
-    assert resolved == ""
-    assert any("Unrecognized pinned language override" in str(args[0]) for args in warnings)
-    assert store.get(fact.id) is not None
-    assert store.get(fact.id).deleted is True
+        assert resolved == ""
+        assert any("Unrecognized pinned language override" in str(args[0]) for args in warnings)
+        assert store.get(fact.id) is not None
+        assert store.get(fact.id).deleted is True
+    finally:
+        store.close()
 
 
 @pytest.mark.asyncio

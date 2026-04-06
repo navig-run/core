@@ -4,10 +4,11 @@ Tests for flow command delegation.
 Verifies that `navig flow` properly delegates to the workflow command group.
 """
 
-import pytest
 from typer.testing import CliRunner
 
-from navig.cli import app
+from navig.cli import _register_external_commands, app
+
+_register_external_commands(register_all=True, target_app=app)
 
 runner = CliRunner()
 

@@ -33,13 +33,12 @@ from navig.agent.memory_auto_extractor import (
     MAX_TURN_CONTENT_CHARS,
     MEMORY_EXTRACTION_INTERVAL,
     MIN_CONFIDENCE,
-    ExtractionConfig,
     ExtractedFact,
+    ExtractionConfig,
     MemoryAutoExtractor,
     fact_key,
     parse_extraction_response,
 )
-
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -95,7 +94,7 @@ class FailingStore:
     """Store that raises on every put."""
 
     def put(self, key: str, value: str, **kw):
-        raise IOError("Disk full")
+        raise OSError("Disk full")
 
 
 # ── TestExtractedFact ─────────────────────────────────────────

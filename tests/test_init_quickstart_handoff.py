@@ -8,8 +8,8 @@ from typer.testing import CliRunner
 from navig.cli import app
 from navig.commands.init import (
     get_chat_onboarding_step_progress,
-    run_chat_first_handoff,
     mark_chat_onboarding_step_completed,
+    run_chat_first_handoff,
 )
 
 runner = CliRunner()

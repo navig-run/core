@@ -13,7 +13,6 @@ from navig.plans.inbox_reader import (
     parse_suffix_state,
 )
 
-
 # ── Suffix state parsing ─────────────────────────────────────
 
 

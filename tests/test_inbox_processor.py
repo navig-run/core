@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 
 from navig.plans.inbox_processor import (
-    ContentNormaliser,
     ConflictDetector,
+    ContentNormaliser,
     DuplicateScanner,
     InboxProcessor,
     ReconciliationResult,
@@ -18,7 +18,6 @@ from navig.plans.inbox_processor import (
     StalenessDetector,
 )
 from navig.plans.inbox_reader import InboxItem, InboxReader
-
 
 # ── Helpers ───────────────────────────────────────────────────
 
@@ -41,7 +40,7 @@ def _make_item(
     path = tmp_path / name
     path.write_text(content, encoding="utf-8")
 
-    from navig.plans.inbox_reader import _parse_frontmatter, parse_suffix_state, canonical_name
+    from navig.plans.inbox_reader import _parse_frontmatter, canonical_name, parse_suffix_state
 
     frontmatter, body_text = _parse_frontmatter(content)
     return InboxItem(

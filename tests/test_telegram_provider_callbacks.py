@@ -1,5 +1,6 @@
 import pytest
 
+from navig.gateway.channels.telegram import TelegramChannel
 from navig.gateway.channels.telegram_keyboards import CallbackHandler
 
 
@@ -85,6 +86,23 @@ class _FakeChannel:
 
     def _update_llm_mode_router(self, provider_id, tier_models):
         self.llm_mode_calls.append((provider_id, tier_models))
+
+
+def test_telegram_channel_exposes_curated_tier_defaults_delegate():
+    """Real TelegramChannel must expose selector used by provider activation helper."""
+    defaults = TelegramChannel._select_curated_tier_defaults(
+        "openai",
+        ["gpt-4o", "gpt-4o-mini", "o3-mini"],
+    )
+    assert set(defaults.keys()) == {"small", "big", "coder_big"}
+    assert defaults["big"]
+
+
+def test_telegram_channel_exposes_provider_activation_delegates():
+    """Real TelegramChannel must expose callback helper delegates used by provider activation."""
+    assert hasattr(TelegramChannel, "_resolve_provider_models")
+    assert hasattr(TelegramChannel, "_persist_hybrid_router_assignments")
+    assert hasattr(TelegramChannel, "_update_llm_mode_router")
 
 
 @pytest.mark.asyncio

@@ -5,7 +5,6 @@ from typer.testing import CliRunner
 from navig.commands.agent import agent_app
 from navig.spaces import normalize_space_name
 
-
 runner = CliRunner()
 
 

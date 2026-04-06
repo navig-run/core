@@ -9,16 +9,15 @@ from unittest.mock import patch
 import pytest
 
 from navig.agent.tool_caps import (
+    _LINE_SNAP_MIN_RATIO,
     DEFAULT_MAX_RESULT_CHARS,
     SPILLOVER_DIR,
     SPILLOVER_TTL,
     TOOL_SPECIFIC_CAPS,
-    _LINE_SNAP_MIN_RATIO,
     cap_result,
     cleanup_spillover,
     get_cap_for_tool,
 )
-
 
 # ─────────────────────────────────────────────────────────────
 # get_cap_for_tool

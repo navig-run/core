@@ -1,9 +1,11 @@
+import json
+from zipfile import ZipFile
+
+import pytest
+
 from navig.importers.base import BaseImporter
 from navig.importers.core import UniversalImporter
 from navig.importers.models import ImportedItem
-import pytest
-import json
-from zipfile import ZipFile
 
 
 class _OkImporter(BaseImporter):

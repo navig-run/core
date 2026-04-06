@@ -25,7 +25,6 @@ from navig.agent.context_compressor import (
     get_reactive_compactor,
 )
 
-
 # ─────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────

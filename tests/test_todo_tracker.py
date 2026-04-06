@@ -18,7 +18,6 @@ from navig.agent.todo_tracker import (
     TodoStatus,
 )
 
-
 # ─────────────────────────────────────────────────────────────
 # TodoStatus
 # ─────────────────────────────────────────────────────────────
@@ -542,10 +541,9 @@ class TestTodoToolsRegistration:
         assert "todo_show" in names
 
     def test_register_todo_tools_helper(self):
+        import navig.agent.agent_tool_registry as mod
         from navig.agent.agent_tool_registry import AgentToolRegistry
         from navig.agent.tools.todo_tools import register_todo_tools
-
-        import navig.agent.agent_tool_registry as mod
 
         old = mod._AGENT_REGISTRY
         try:

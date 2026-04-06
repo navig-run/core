@@ -330,9 +330,9 @@ async def test_status_shows_setup_readiness_and_fix_commands(monkeypatch):
     await bot._handle_status(123, 456)
 
     output = "\n".join(msg[1] for msg in bot.messages)
-    assert "Setup readiness:" in output
+    assert "*Setup*" in output
     assert "needs-attention" in output
-    assert "Setup fixes:" in output
+    assert "Pending fixes:" in output
     assert "navig init --provider" in output
     assert "navig host add <name>" in output
 

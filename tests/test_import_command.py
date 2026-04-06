@@ -4,7 +4,6 @@ from typer.testing import CliRunner
 
 from navig.commands.import_cmd import import_app
 
-
 runner = CliRunner()
 
 

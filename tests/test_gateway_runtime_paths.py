@@ -6,6 +6,7 @@ def test_audit_log_default_path_respects_config_dir(monkeypatch, tmp_path):
     monkeypatch.setenv("NAVIG_CONFIG_DIR", str(cfg_root))
 
     import importlib
+
     import navig.gateway.audit_log as audit_mod
 
     importlib.reload(audit_mod)
@@ -20,6 +21,7 @@ def test_billing_emitter_default_path_respects_config_dir(monkeypatch, tmp_path)
     monkeypatch.setenv("NAVIG_CONFIG_DIR", str(cfg_root))
 
     import importlib
+
     import navig.gateway.billing_emitter as billing_mod
 
     importlib.reload(billing_mod)

@@ -9,7 +9,6 @@ import pytest
 
 from navig.agent.plan_mode import PlanInterceptor, PlanSession, PlanState, PlanStep
 
-
 # ─────────────────────────────────────────────────────────────
 # PlanState enum
 # ─────────────────────────────────────────────────────────────

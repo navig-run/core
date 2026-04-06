@@ -232,3 +232,11 @@ class TestResolvedLLMConfig:
         cfg = ResolvedLLMConfig(provider="ollama", model="dolphin:8b", mode="small_talk")
         assert "ollama" in repr(cfg)
         assert "dolphin" in repr(cfg)
+
+
+def test_resolve_api_key_xai_accepts_grok_key_env(monkeypatch):
+    from navig.llm_router import _resolve_api_key
+
+    monkeypatch.setenv("GROK_KEY", "grok-test-key")
+
+    assert _resolve_api_key("xai") == "grok-test-key"

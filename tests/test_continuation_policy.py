@@ -1,8 +1,8 @@
 from navig.core.continuation import (
+    ContinuationPolicy,
     apply_busy_suppression,
     busy_window_seconds,
     classify_continuation_state,
-    ContinuationPolicy,
     decision_sensitivity_for_profile,
     get_busy_suppression,
     merge_policy,

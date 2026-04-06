@@ -12,7 +12,6 @@ import importlib
 
 import pytest
 
-
 # ── vault/core – class attribute (evaluated at import time) ──────────────────
 
 

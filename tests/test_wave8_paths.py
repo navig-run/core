@@ -17,7 +17,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ── inbox/watcher ─────────────────────────────────────────────────────────────
 
 

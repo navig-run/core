@@ -1,7 +1,6 @@
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 
 pytest.importorskip("navig.gateway.channels.telegram")
 
@@ -22,9 +21,7 @@ class _DummySessionManager:
     def get_session(self, chat_id, user_id, is_group):
         return _DummySession()
 
-    def add_user_message(
-        self, chat_id, user_id, text, message_id, reply_to, is_group, username
-    ):
+    def add_user_message(self, chat_id, user_id, text, message_id, reply_to, is_group, username):
         return _DummySession()
 
     def get_session_metadata(self, chat_id, user_id, key, default=None, is_group=False):
@@ -81,7 +78,9 @@ class _AutoStateStore:
 
 @pytest.mark.asyncio
 async def test_group_message_bypasses_mention_gate_when_auto_active(monkeypatch):
-    channel = TelegramChannel(bot_token="123:FAKE", allowed_users=[42], on_message=lambda *args, **kwargs: None)
+    channel = TelegramChannel(
+        bot_token="123:FAKE", allowed_users=[42], on_message=lambda *args, **kwargs: None
+    )
     channel._bot_username = "mybot"
     channel._dispatch_by_mode = AsyncMock()
     channel._match_cli_command = lambda _text: None
@@ -126,7 +125,9 @@ async def test_group_message_bypasses_mention_gate_when_auto_active(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_telegram_metadata_includes_last_detected_language(monkeypatch):
-    channel = TelegramChannel(bot_token="123:FAKE", allowed_users=[42], on_message=lambda *args, **kwargs: None)
+    channel = TelegramChannel(
+        bot_token="123:FAKE", allowed_users=[42], on_message=lambda *args, **kwargs: None
+    )
     channel._bot_username = "mybot"
     channel._dispatch_by_mode = AsyncMock()
     channel._match_cli_command = lambda _text: None
@@ -157,7 +158,9 @@ async def test_telegram_metadata_includes_last_detected_language(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_group_message_still_blocked_when_auto_inactive(monkeypatch):
-    channel = TelegramChannel(bot_token="123:FAKE", allowed_users=[42], on_message=lambda *args, **kwargs: None)
+    channel = TelegramChannel(
+        bot_token="123:FAKE", allowed_users=[42], on_message=lambda *args, **kwargs: None
+    )
     channel._bot_username = "mybot"
     channel._dispatch_by_mode = AsyncMock()
     channel._match_cli_command = lambda _text: None
@@ -476,3 +479,63 @@ async def test_auto_continuation_busy_suppression_blocks_immediate_retry(monkeyp
     assert channel._send_response.await_count == 2
     continuation = (state_store._state.get("context") or {}).get("continuation") or {}
     assert continuation.get("last_skip_reason", "").startswith("busy_suppressed:")
+
+
+@pytest.mark.asyncio
+async def test_auto_continuation_persists_updated_language(monkeypatch):
+    """Auto-continuation path must persist metadata['_updated_language'] to session store."""
+    state_store = _AutoStateStore(
+        {
+            "user_id": 42,
+            "chat_id": 42,
+            "mode": "active",
+            "persona": "assistant",
+            "context": {
+                "continuation": {
+                    "enabled": True,
+                    "paused": False,
+                    "skip_next": False,
+                    "cooldown_seconds": 0,
+                    "max_turns": 2,
+                    "turns_used": 0,
+                    "last_continued_at": "",
+                    "dry_run": False,
+                    "space": "project",
+                }
+            },
+        }
+    )
+
+    async def _on_message(channel, user_id, message, metadata):
+        if metadata.get("auto_continuation_turn"):
+            return "Executing next concrete step now."
+        return "Should I continue with the next step?"
+
+    session_manager = _DummySessionManager()
+    session = _DummySession()
+
+    channel = TelegramChannel(bot_token="123:FAKE", allowed_users=[42], on_message=_on_message)
+    channel._record_assistant_msg = MagicMock()
+    channel._send_response = AsyncMock()
+
+    monkeypatch.setattr(
+        "navig.store.runtime.get_runtime_store",
+        lambda: state_store,
+    )
+
+    metadata = {"_updated_language": "en", "username": "user42"}
+
+    await channel._maybe_auto_continue(
+        chat_id=42,
+        user_id=42,
+        metadata=metadata,
+        trigger_text="Should I continue with the next step?",
+        session=session,
+        session_manager=session_manager,
+        is_group=False,
+    )
+
+    assert (
+        session_manager.get_session_metadata(42, 42, "last_detected_language", is_group=False)
+        == "en"
+    )

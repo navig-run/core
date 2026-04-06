@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import navig.agent.tools.skill_tools as skill_tools_mod
 from navig.agent.skills_context import (
     KEYWORD_MATCH_SCORE,
     MAX_ACTIVE_SKILLS,
@@ -25,8 +26,6 @@ from navig.agent.tools.skill_tools import (
     handle_manage_skills,
     register_skill_tools,
 )
-import navig.agent.tools.skill_tools as skill_tools_mod
-
 
 # ═══════════════════════════════════════════════════════════════
 # Helpers

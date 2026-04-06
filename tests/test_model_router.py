@@ -70,6 +70,21 @@ class TestRoutingConfig:
         assert cfg.slot_for_tier("coder_big").model == "c"
         assert cfg.slot_for_tier("unknown").model == "b"  # fallback to big
 
+    def test_from_dict_hydrates_xai_api_key_from_env(self, monkeypatch):
+        monkeypatch.setenv("GROK_KEY", "grok-test-key")
+        data = {
+            "models": {
+                "small": {
+                    "provider": "xai",
+                    "model": "grok-3",
+                },
+            },
+        }
+
+        cfg = RoutingConfig.from_dict(data)
+
+        assert cfg.small.api_key == "grok-test-key"
+
 
 # ---- Heuristic routing ----
 

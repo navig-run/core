@@ -20,6 +20,9 @@ class _FakeAgent:
     def set_runtime_persona(self, persona=""):
         self.persona_calls.append(persona)
 
+    def set_active_persona(self, persona=""):
+        self.persona_calls.append(persona)
+
     def set_language_preferences(self, detected_language="", last_detected_language=""):
         self.language_calls.append((detected_language, last_detected_language))
 

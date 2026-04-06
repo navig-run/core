@@ -10,7 +10,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _reload_theme():
@@ -228,8 +227,9 @@ class TestTerminalSetupStep:
 
     def test_registered_in_build_step_registry(self):
         """terminal-setup must appear in the build_step_registry output."""
-        from navig.onboarding import steps as s
         from unittest.mock import MagicMock
+
+        from navig.onboarding import steps as s
 
         cfg = MagicMock()
         cfg.navig_dir = Path("/tmp/fake_navig_dir")

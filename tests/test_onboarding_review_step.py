@@ -18,7 +18,6 @@ import pytest
 
 from navig.onboarding.steps import _step_review
 
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 

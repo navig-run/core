@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -28,7 +28,6 @@ from navig.agent.worktree import (
     get_manager,
     reset_manager,
 )
-
 
 # ─────────────────────────────────────────────────────────────
 # Helpers

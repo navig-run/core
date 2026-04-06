@@ -20,7 +20,6 @@ import typer
 from typer.testing import CliRunner
 
 # ── imports under test ──────────────────────────────────────────────────────
-
 from navig.commands.vault import PROVIDER_DEFAULTS, cred_app, vault_app
 
 runner = CliRunner()
@@ -296,8 +295,8 @@ def test_check_all_disabled_creds_skipped():
 
 def test_voice_provider_step_is_registered():
     """voice-provider step exists in the onboarding registry."""
-    from unittest.mock import MagicMock, patch
     from pathlib import Path
+    from unittest.mock import MagicMock, patch
 
     cfg = MagicMock()
     cfg.navig_dir = Path("/tmp/navig_test")
@@ -314,8 +313,8 @@ def test_voice_provider_step_is_registered():
 
 def test_voice_provider_step_position():
     """voice-provider comes after web-search-provider and before first-host."""
-    from unittest.mock import MagicMock
     from pathlib import Path
+    from unittest.mock import MagicMock
 
     cfg = MagicMock()
     cfg.navig_dir = Path("/tmp/navig_test")

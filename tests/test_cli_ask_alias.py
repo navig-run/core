@@ -155,8 +155,8 @@ def test_ai_suggest_subcommand_emits_deprecation_warning(monkeypatch, capsys):
 
 def test_ai_diagnose_subcommand_emits_deprecation_warning(monkeypatch, capsys):
     """navig ai diagnose must print a deprecation warning and still delegate."""
-    import types
     import sys
+    import types
 
     from navig.commands import ai as ai_mod
 

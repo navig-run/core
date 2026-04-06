@@ -4,7 +4,6 @@ from typer.testing import CliRunner
 
 from navig.commands.space import space_app
 
-
 runner = CliRunner()
 
 

@@ -35,7 +35,7 @@ def _make_state(*step_specs: tuple[str, str]) -> EngineState:
 
 def _optional_tiers(*step_ids: str) -> dict[str, str]:
     """Return a tier mapping marking all given step IDs as 'optional'."""
-    return {step_id: "optional" for step_id in step_ids}
+    return dict.fromkeys(step_ids, "optional")
 
 
 class TestDeferredIntegrationCommands:

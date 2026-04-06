@@ -8,7 +8,6 @@ import pytest
 
 from navig.plans.current_phase_manager import CurrentPhaseManager, PhaseState
 
-
 _PHASE_CONTENT = """\
 ---
 phase: 01

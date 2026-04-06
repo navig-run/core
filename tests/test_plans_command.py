@@ -5,7 +5,6 @@ from typer.testing import CliRunner
 
 from navig.commands.plans import plans_app
 
-
 runner = CliRunner()
 
 

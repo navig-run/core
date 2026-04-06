@@ -8,7 +8,6 @@ import pytest
 
 from navig.plans.milestone_progress import MilestoneProgressEngine, MilestoneState
 
-
 _MVP1_CONTENT = """\
 ---
 title: Minimum Viable Product

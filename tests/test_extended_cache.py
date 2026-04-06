@@ -14,22 +14,22 @@ Covers:
 from __future__ import annotations
 
 import copy
+
 import pytest
 
 from navig.agent.prompt_caching import (
+    _SKILLS_MARKERS,
+    _TOOL_DEF_MARKERS,
     EXTENDED_CACHE_BETA_HEADER,
     CacheBreakpointPlacer,
     CacheStats,
     ExtendedCacheConfig,
-    apply_anthropic_cache_control,
-    has_cache_breakpoint,
     _content_as_str,
     _is_prefix_boundary,
     _matches_markers,
-    _TOOL_DEF_MARKERS,
-    _SKILLS_MARKERS,
+    apply_anthropic_cache_control,
+    has_cache_breakpoint,
 )
-
 
 # ── Fixtures ───────────────────────────────────────────────────────
 

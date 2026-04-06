@@ -46,6 +46,14 @@ class _FakeSession:
         return response
 
 
+class _FakeClosableClient:
+    def __init__(self):
+        self.closed = False
+
+    async def close(self):
+        self.closed = True
+
+
 def test_trim_messages_preserves_system_and_recent_history() -> None:
     client = AIClient(api_key="test", model="test", provider="openrouter")
     messages = [{"role": "system", "content": "rules"}] + [
@@ -93,3 +101,23 @@ async def test_chat_api_retries_once_on_rate_limit(monkeypatch) -> None:
     assert result == "ok"
     assert fake_session.calls == 2
     assert sleep_calls == [1]
+
+
+def test_reset_default_ai_client_closes_session_when_enabled() -> None:
+    fake = _FakeClosableClient()
+    ai_client_module._default_client = fake
+
+    ai_client_module.reset_default_ai_client(close_session=True)
+
+    assert ai_client_module._default_client is None
+    assert fake.closed is True
+
+
+def test_reset_default_ai_client_skips_close_when_disabled() -> None:
+    fake = _FakeClosableClient()
+    ai_client_module._default_client = fake
+
+    ai_client_module.reset_default_ai_client(close_session=False)
+
+    assert ai_client_module._default_client is None
+    assert fake.closed is False
