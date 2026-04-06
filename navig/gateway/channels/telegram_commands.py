@@ -249,7 +249,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     SlashCommandEntry(
         "exec",
         "Execute command in container",
-        cli_template='docker exec {args}',
+        cli_template="docker exec {args}",
         category="docker",
         usage="/exec <container> <command>",
     ),
@@ -580,8 +580,8 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="diagnostics",
         usage="/autoheal [on|off|status|hive on|hive off]",
     ),
-    # --- Digital Ghost / Laravel Port ---
-    SlashCommandEntry("about", "Learn about the bot", handler="_handle_about", category="core"),
+    # --- Bot Identity ---
+    SlashCommandEntry("about", "Learn about NAVIG", handler="_handle_about", category="core"),
     SlashCommandEntry(
         "auto_start",
         "Enable AI auto-replies",
@@ -773,6 +773,7 @@ def _iter_unique_registry(*, visible_only: bool = False) -> list[SlashCommandEnt
 # Help Encyclopedia — interactive category-based navigation
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class _HelpSubcategory:
     """A subcategory inside a help category (for categories with many commands)."""
@@ -807,9 +808,29 @@ _HELP_CATEGORIES: list[_HelpCategory] = [
         label="AI & Models",
         emoji="🤖",
         subcategories=[
-            _HelpSubcategory("models", "Models & Providers", "🧠", ["ai", "models", "settings", "providers", "mode", "big", "small", "coder", "auto"]),
-            _HelpSubcategory("personas", "Personas & Style", "🎭", ["persona", "personas", "explain_ai"]),
-            _HelpSubcategory("continuation", "Continuation & Auto", "⚡", ["auto_start", "auto_stop", "auto_status", "continue", "pause", "skip", "auto_roles"]),
+            _HelpSubcategory(
+                "models",
+                "Models & Providers",
+                "🧠",
+                ["ai", "models", "settings", "providers", "mode", "big", "small", "coder", "auto"],
+            ),
+            _HelpSubcategory(
+                "personas", "Personas & Style", "🎭", ["persona", "personas", "explain_ai"]
+            ),
+            _HelpSubcategory(
+                "continuation",
+                "Continuation & Auto",
+                "⚡",
+                [
+                    "auto_start",
+                    "auto_stop",
+                    "auto_status",
+                    "continue",
+                    "pause",
+                    "skip",
+                    "auto_roles",
+                ],
+            ),
         ],
     ),
     _HelpCategory(
@@ -849,8 +870,15 @@ _HELP_CATEGORIES: list[_HelpCategory] = [
         subcategories=[
             _HelpSubcategory("network", "Network & DNS", "🌐", ["ip", "dns", "ssl", "whois"]),
             _HelpSubcategory("text", "Text & Reasoning", "📝", ["format", "think", "refine"]),
-            _HelpSubcategory("reminders", "Reminders", "⏰", ["remindme", "myreminders", "cancelreminder"]),
-            _HelpSubcategory("info", "Info & Convert", "📌", ["time", "weather", "currency", "crypto_list", "choice"]),
+            _HelpSubcategory(
+                "reminders", "Reminders", "⏰", ["remindme", "myreminders", "cancelreminder"]
+            ),
+            _HelpSubcategory(
+                "info",
+                "Info & Convert",
+                "📌",
+                ["time", "weather", "currency", "crypto_list", "choice"],
+            ),
         ],
     ),
     _HelpCategory(
@@ -1074,18 +1102,18 @@ class TelegramCommandsMixin:
         if screen_name == "help":
             text, keyboard = self._build_help_home()
             # Append nav footer for renderScreen context
-            keyboard.append([
-                {"text": "🔙 Back", "callback_data": "nav:back"},
-                {"text": "🏠 Home", "callback_data": "nav:home"},
-            ])
+            keyboard.append(
+                [
+                    {"text": "🔙 Back", "callback_data": "nav:back"},
+                    {"text": "🏠 Home", "callback_data": "nav:home"},
+                ]
+            )
             if target_message_id:
                 await self.edit_message(
                     chat_id, target_message_id, text, parse_mode="Markdown", keyboard=keyboard
                 )
                 return
-            sent = await self.send_message(
-                chat_id, text, parse_mode="Markdown", keyboard=keyboard
-            )
+            sent = await self.send_message(chat_id, text, parse_mode="Markdown", keyboard=keyboard)
             if sent and isinstance(sent, dict):
                 state["message_id"] = sent.get("message_id")
             return
@@ -1332,10 +1360,12 @@ class TelegramCommandsMixin:
         rows: list[list[dict[str, str]]] = []
         row: list[dict[str, str]] = []
         for cat in _HELP_CATEGORIES:
-            row.append({
-                "text": f"{cat.emoji} {cat.label}",
-                "callback_data": f"help:c:{cat.key}",
-            })
+            row.append(
+                {
+                    "text": f"{cat.emoji} {cat.label}",
+                    "callback_data": f"help:c:{cat.key}",
+                }
+            )
             if len(row) == 2:
                 rows.append(row)
                 row = []
@@ -1366,14 +1396,20 @@ class TelegramCommandsMixin:
             ]
             rows: list[list[dict[str, str]]] = []
             for sub in cat.subcategories:
-                rows.append([{
-                    "text": f"{sub.emoji} {sub.label}",
-                    "callback_data": f"help:s:{cat_key}:{sub.key}",
-                }])
-            rows.append([
-                {"text": "◀ Categories", "callback_data": "help:home"},
-                {"text": "✕ Close", "callback_data": "help:close"},
-            ])
+                rows.append(
+                    [
+                        {
+                            "text": f"{sub.emoji} {sub.label}",
+                            "callback_data": f"help:s:{cat_key}:{sub.key}",
+                        }
+                    ]
+                )
+            rows.append(
+                [
+                    {"text": "◀ Categories", "callback_data": "help:home"},
+                    {"text": "✕ Close", "callback_data": "help:close"},
+                ]
+            )
             return "\n".join(lines), rows
 
         # -- Category with direct commands ---------------------------------
@@ -1396,19 +1432,23 @@ class TelegramCommandsMixin:
         row: list[dict[str, str]] = []
         for cmd_name in cmds:
             if idx.get(cmd_name):
-                row.append({
-                    "text": f"/{cmd_name}",
-                    "callback_data": f"help:d:{cmd_name}:{cat_key}",
-                })
+                row.append(
+                    {
+                        "text": f"/{cmd_name}",
+                        "callback_data": f"help:d:{cmd_name}:{cat_key}",
+                    }
+                )
                 if len(row) == 2:
                     rows.append(row)
                     row = []
         if row:
             rows.append(row)
-        rows.append([
-            {"text": "◀ Categories", "callback_data": "help:home"},
-            {"text": "✕ Close", "callback_data": "help:close"},
-        ])
+        rows.append(
+            [
+                {"text": "◀ Categories", "callback_data": "help:home"},
+                {"text": "✕ Close", "callback_data": "help:close"},
+            ]
+        )
         return text, rows
 
     @staticmethod
@@ -1442,19 +1482,23 @@ class TelegramCommandsMixin:
         row: list[dict[str, str]] = []
         for cmd_name in sub.commands:
             if idx.get(cmd_name):
-                row.append({
-                    "text": f"/{cmd_name}",
-                    "callback_data": f"help:d:{cmd_name}:{cat_key}:{sub_key}",
-                })
+                row.append(
+                    {
+                        "text": f"/{cmd_name}",
+                        "callback_data": f"help:d:{cmd_name}:{cat_key}:{sub_key}",
+                    }
+                )
                 if len(row) == 2:
                     rows.append(row)
                     row = []
         if row:
             rows.append(row)
-        rows.append([
-            {"text": f"◀ {cat.emoji} {cat.label}", "callback_data": f"help:c:{cat_key}"},
-            {"text": "✕ Close", "callback_data": "help:close"},
-        ])
+        rows.append(
+            [
+                {"text": f"◀ {cat.emoji} {cat.label}", "callback_data": f"help:c:{cat_key}"},
+                {"text": "✕ Close", "callback_data": "help:close"},
+            ]
+        )
         return text, rows
 
     @staticmethod
@@ -1497,9 +1541,7 @@ class TelegramCommandsMixin:
         ]
         return text, keyboard
 
-    async def _handle_help_callback(
-        self, cb_data: str, chat_id: int, message_id: int
-    ) -> None:
+    async def _handle_help_callback(self, cb_data: str, chat_id: int, message_id: int) -> None:
         """Route a ``help:*`` callback to the correct builder and edit in-place."""
         parts = cb_data.split(":")
 
@@ -1517,41 +1559,35 @@ class TelegramCommandsMixin:
         result: tuple[str, list] | None = None
 
         if len(parts) >= 2 and parts[1] == "home":
-            result = self._build_help_home()
+            result = TelegramCommandsMixin._build_help_home()
 
         elif len(parts) >= 3 and parts[1] == "c":
-            result = self._build_help_category(parts[2])
+            result = TelegramCommandsMixin._build_help_category(parts[2])
 
         elif len(parts) >= 4 and parts[1] == "s":
-            result = self._build_help_subcategory(parts[2], parts[3])
+            result = TelegramCommandsMixin._build_help_subcategory(parts[2], parts[3])
 
         elif len(parts) >= 4 and parts[1] == "d":
             cmd_name = parts[2]
             back_cat = parts[3]
             back_sub = parts[4] if len(parts) >= 5 else None
-            result = self._build_help_command_detail(cmd_name, back_cat, back_sub)
+            result = TelegramCommandsMixin._build_help_command_detail(cmd_name, back_cat, back_sub)
 
         if result is None:
             # Fallback — return to home
-            result = self._build_help_home()
+            result = TelegramCommandsMixin._build_help_home()
 
         text, keyboard = result
-        await self.edit_message(
-            chat_id, message_id, text, parse_mode="Markdown", keyboard=keyboard
-        )
+        await self.edit_message(chat_id, message_id, text, parse_mode="Markdown", keyboard=keyboard)
 
     async def _handle_help(self, chat_id: int, message_id: int | None = None) -> None:
         """Interactive help encyclopedia (/help, /helpme).
 
         Sends the category home screen. Subsequent navigation happens
         via ``help:*`` callbacks that edit the message in-place.
-        Falls back to the static text wall when *message_id* is provided
-        from ``renderScreen`` navigation context.
         """
-        text, keyboard = self._build_help_home()
-        sent = await self.send_message(
-            chat_id, text, parse_mode="Markdown", keyboard=keyboard
-        )
+        text, keyboard = TelegramCommandsMixin._build_help_home()
+        sent = await self.send_message(chat_id, text, parse_mode="Markdown", keyboard=keyboard)
         # Track the message so future nav: callbacks can edit it
         if sent and isinstance(sent, dict):
             state = self._get_navigation_state(chat_id)
@@ -1631,110 +1667,102 @@ class TelegramCommandsMixin:
         selected_space = get_default_space()
         rows = collect_spaces_progress()
 
-        lines = ["*NAVIG Status*", ""]
-
-        # Active host
+        # ── Active host ──────────────────────────────────────────────────────
+        # Use the canonical config-manager resolution chain (env → project →
+        # cache → global).  When nothing is configured the user is operating
+        # locally, so fall back explicitly to "localhost".
         try:
-            from navig.config import load_config
+            from navig.config import get_config_manager
 
-            cfg = load_config()
-            active_host = (cfg.get("active_host") or "—") if cfg else "—"
+            active_host: str = get_config_manager().get_active_host() or "localhost"
         except Exception:
-            active_host = "—"
-        lines.append(f"Host: `{active_host}`")
+            active_host = "localhost"
 
-        # Model tier
+        # ── Model tier ───────────────────────────────────────────────────────
         if hasattr(self, "_get_user_tier_pref"):
             tier = self._get_user_tier_pref(chat_id, user_id)
         else:
             tier = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
-        lines.append(f"Model: `{tier or 'auto'}`")
+        model_label = tier or "auto"
 
-        # Active persona
+        # ── Active persona ───────────────────────────────────────────────────
         try:
             from navig.personas.store import get_active_persona
 
-            persona = get_active_persona(user_id, chat_id) or "assistant"
+            persona = get_active_persona(user_id, chat_id) or "default"
         except Exception:
-            persona = "assistant"
-        lines.append(f"Persona: `{persona}`")
+            persona = "default"
 
-        # Active reminders
+        # ── Active reminders ─────────────────────────────────────────────────
+        reminder_count: int | None = None
         try:
             from navig.store.runtime import get_runtime_store
 
-            active_count = len(get_runtime_store().get_user_reminders(user_id) or [])
-            lines.append(f"Reminders: `{active_count} active`")
+            reminder_count = len(get_runtime_store().get_user_reminders(user_id) or [])
         except Exception:
-            pass  # best-effort: reminder count is non-critical for /status display
+            pass
 
+        # ── Setup readiness ──────────────────────────────────────────────────
+        readiness_state = "unknown"
+        readiness_score = 0
         status_fix_issues: list[dict[str, str]] = []
-
-        # Setup readiness (CLI parity with `navig init --status`)
         try:
             from navig.commands.init import get_init_status_payload
 
             init_status = get_init_status_payload()
             readiness = init_status.get("readiness", {}) if isinstance(init_status, dict) else {}
-            readiness_state = str(readiness.get("state") or "needs-attention")
+            readiness_state = str(readiness.get("state") or "unknown")
             readiness_score = int(readiness.get("score") or 0)
-            lines.append(f"Setup readiness: `{readiness_state}` ({readiness_score}%)")
-
             issues = readiness.get("issues", []) if isinstance(readiness, dict) else []
-            if isinstance(issues, list) and issues:
-                lines.append("")
-                lines.append("*Setup fixes:*")
+            if isinstance(issues, list):
                 status_fix_issues = [i for i in issues if isinstance(i, dict)]
-                for issue in issues[:2]:
-                    if not isinstance(issue, dict):
-                        continue
-                    summary = str(issue.get("summary") or "").strip()
-                    command = str(issue.get("command") or "").strip()
-                    if summary and command:
-                        lines.append(f"• {summary} -> `{command}`")
-                remaining = len(issues) - 2
-                if remaining > 0:
-                    lines.append(f"• +{remaining} more in `navig init --status`")
         except Exception:
-            pass  # best-effort: setup readiness is non-critical for /status display
+            pass
 
-        # Default space + progression
-        lines.append("")
-        lines.append(f"Space: `{selected_space}`")
-        if rows:
+        # ── Assemble message ─────────────────────────────────────────────────
+        readiness_icon = "✅" if readiness_state == "ready" else "⚠️"
+        reminder_str = f"`{reminder_count} active`" if reminder_count is not None else "`—`"
+
+        lines: list[str] = [
+            "🧭 *NAVIG Status*",
+            "",
+            "🖥  *Infrastructure*",
+            f"Host      `{active_host}`",
+            f"Space     `{selected_space}`",
+            "",
+            "🤖  *AI Session*",
+            f"Model     `{model_label}`",
+            f"Persona   `{persona}`",
+            "",
+            f"⏰  *Reminders*   {reminder_str}",
+            "",
+            f"{readiness_icon}  *Setup*   `{readiness_state}` ({readiness_score}%)",
+        ]
+
+        # Setup fix hints (max 2)
+        if status_fix_issues:
             lines.append("")
-            lines.append("*Progression:*")
+            lines.append("*Pending fixes:*")
+            for issue in status_fix_issues[:2]:
+                if not isinstance(issue, dict):
+                    continue
+                summary = str(issue.get("summary") or "").strip()
+                command = str(issue.get("command") or "").strip()
+                if summary and command:
+                    lines.append(f"  • {summary} → `{command}`")
+            remaining = len(status_fix_issues) - 2
+            if remaining > 0:
+                lines.append(f"  • +{remaining} more — run `navig init --status`")
+
+        # Progression
+        lines.append("")
+        lines.append("📈  *Progression*")
+        if rows:
             lines.extend(format_spaces_progress_lines(rows, max_items=5))
         else:
-            lines.append("_No spaces discovered yet._")
+            lines.append("   _No spaces discovered yet._")
 
-        # Navigation context: show Back / Home only when rendered inside a nav screen
-        if message_id:
-            keyboard: list[list[dict[str, str]]] = []
-            for issue in status_fix_issues[:2]:
-                code = str(issue.get("code") or "").strip()
-                summary = str(issue.get("summary") or "").strip()
-                if not code:
-                    continue
-                title = summary or "Run setup fix"
-                if len(title) > 36:
-                    title = title[:33] + "..."
-                keyboard.append([{"text": f"🛠 {title}", "callback_data": f"stfix:{code}"}])
-            keyboard.append(
-                [
-                    {"text": "🔙 Back", "callback_data": "nav:back"},
-                    {"text": "🏠 Home", "callback_data": "nav:home"},
-                ],
-            )
-            await self.edit_message(
-                chat_id,
-                message_id,
-                "\n".join(lines),
-                parse_mode="Markdown",
-                keyboard=keyboard,
-            )
-            return
-        keyboard = None
+        # ── Build fix buttons (shared between both send paths) ────────────────
         fix_buttons: list[list[dict[str, str]]] = []
         for issue in status_fix_issues[:2]:
             code = str(issue.get("code") or "").strip()
@@ -1745,9 +1773,32 @@ class TelegramCommandsMixin:
             if len(title) > 36:
                 title = title[:33] + "..."
             fix_buttons.append([{"text": f"🛠 {title}", "callback_data": f"stfix:{code}"}])
-        if fix_buttons:
-            keyboard = fix_buttons
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown", keyboard=keyboard)
+
+        text = "\n".join(lines)
+
+        # ── Deliver ───────────────────────────────────────────────────────────
+        if message_id:
+            keyboard: list[list[dict[str, str]]] = fix_buttons + [
+                [
+                    {"text": "🔙 Back", "callback_data": "nav:back"},
+                    {"text": "🏠 Home", "callback_data": "nav:home"},
+                ],
+            ]
+            await self.edit_message(
+                chat_id,
+                message_id,
+                text,
+                parse_mode="Markdown",
+                keyboard=keyboard,
+            )
+            return
+
+        await self.send_message(
+            chat_id,
+            text,
+            parse_mode="Markdown",
+            keyboard=fix_buttons or None,
+        )
 
     async def _handle_status_fix_callback(
         self,
@@ -2825,16 +2876,28 @@ class TelegramCommandsMixin:
 
     async def _handle_user(self, chat_id: int, user_id: int, username: str) -> None:
         """Show user profile, preferences, and session state (/user)."""
-        lines: list[str] = [f"👤 *User Profile* — @{username or 'unknown'}", ""]
-        lines.append(f"🆔 User ID: `{user_id}`")
-        lines.append(f"💬 Chat ID: `{chat_id}`")
+        is_group = chat_id != user_id
 
-        # Auth status
+        # ── Identity ──────────────────────────────────────────────────────
+        header = "👤 *User Profile*"
+        if username:
+            header += f" — @{username}"
+        lines: list[str] = [header, ""]
+        lines.append(f"🆔 User ID: `{user_id}`")
+        if is_group:
+            lines.append(f"💬 Chat ID: `{chat_id}` _(group)_")
+
+        # ── Auth ──────────────────────────────────────────────────────────
         if getattr(self, "allowed_users", None):
             is_allowed = user_id in self.allowed_users
-            lines.append(
-                f"{_ni('auth')} Auth: {_ni('tick') + ' Allowed' if is_allowed else 'Not in allowed list'}"
-            )
+            auth_label = f"{_ni('tick')} Allowed" if is_allowed else "⛔ Not in allowed list"
+        else:
+            auth_label = f"{_ni('tick')} Open access"
+        lines.append(f"{_ni('auth')} Auth: {auth_label}")
+
+        # ── AI settings ───────────────────────────────────────────────────
+        lines.append("")
+        lines.append("*AI Settings*")
 
         # Model tier preference
         if hasattr(self, "_get_user_tier_pref"):
@@ -2843,31 +2906,64 @@ class TelegramCommandsMixin:
             tier = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
         lines.append(f"{_ni('brain')} Model tier: `{tier or 'auto'}`")
 
-        # Voice & focus from session
+        # Active provider from LLM router
+        active_prov = ""
+        try:
+            from navig.llm_router import get_llm_router
+
+            lr = get_llm_router()
+            if lr:
+                _m = lr.modes.get_mode("big_tasks")
+                if _m and getattr(_m, "provider", None):
+                    active_prov = _m.provider
+        except Exception:  # noqa: BLE001
+            pass
+        lines.append(f"🤖 Provider: `{active_prov or 'not set'}`")
+
+        # ── Preferences (from session metadata) ───────────────────────────
         if _HAS_SESSIONS:
             try:
                 sm = get_session_manager()
-                session = sm.get_or_create_session(chat_id, user_id)
-                voice_on = getattr(session, "voice_replies_enabled", False)
-                focus = getattr(session, "focus_mode", "balance")
-                lines.append(f"{_ni('voice')} Voice replies: {'on' if voice_on else 'off'}")
+                session = sm.get_or_create_session(chat_id, user_id, is_group=is_group)
+                voice_on = sm.get_session_metadata(
+                    chat_id, user_id, "voice_replies_enabled", False, is_group=is_group
+                )
+                focus = sm.get_session_metadata(
+                    chat_id, user_id, "focus_mode", "balance", is_group=is_group
+                )
+                msg_count = getattr(session, "message_count", 0)
+                lines.append("")
+                lines.append("*Preferences*")
+                lines.append(
+                    f"{_ni('voice')} Voice replies: {'🔊 on' if voice_on else '🔇 off'}"
+                )
                 lines.append(f"{_ni('focus')} Focus mode: `{focus}`")
-                # Session count
-                try:
-                    all_s = sm.get_all_sessions_for_user(user_id)
-                    lines.append(f"{_ni('note')} Sessions: {len(all_s)}")
-                except Exception:  # noqa: BLE001
-                    pass  # best-effort; failure is non-critical
-            except Exception as _e:
+                if msg_count:
+                    lines.append(f"{_ni('note')} Messages in session: {msg_count}")
+            except Exception as _e:  # noqa: BLE001
                 logger.debug("_handle_user session fetch failed: %s", _e)
 
         # Debug mode flag
         if getattr(self, "_debug_users", None) and user_id in self._debug_users:
             lines.append(f"{_ni('debug')} Debug mode: on")
 
-        lines.append("")
-        lines.append("`/settings` to configure · `/voice` for audio · `/status` for routing")
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+        # ── Inline keyboard ───────────────────────────────────────────────
+        keyboard = [
+            [
+                {"text": "⚙️ Settings", "callback_data": "st_goto_settings"},
+                {"text": "🔊 Voice", "callback_data": "st_goto_voice"},
+                {"text": "🎯 Focus", "callback_data": "st_goto_focus"},
+            ],
+            [
+                {"text": "🤖 Provider", "callback_data": "st_goto_providers"},
+                {"text": "📝 Models", "callback_data": "st_goto_model"},
+                {"text": "📊 Status", "callback_data": "helpme"},
+            ],
+            [{"text": "✖ Close", "callback_data": "prov_close"}],
+        ]
+        await self.send_message(
+            chat_id, "\n".join(lines), parse_mode="Markdown", keyboard=keyboard
+        )
 
     async def _handle_mode(self, chat_id: int, text: str = "", user_id: int = 0) -> None:
         """Set focus/behavior mode. Uses MOOD_REGISTRY with fuzzy matching."""
@@ -5532,16 +5628,16 @@ class TelegramCommandsMixin:
                     logger.debug("Could not read deck_url from config %s: %s", cfg_path, e)
         return None
 
-    # ── Digital Ghost / Laravel Port Features ───────────────────────────────
+    # ── Bot Identity & Auto-Reply Features ─────────────────────────────────
 
     async def _handle_about(self, chat_id: int) -> None:
-        """Learn about the bot origin."""
+        """Learn about NAVIG."""
         msg = (
-            "🤖 *Digital Ghost*\n\n"
-            "An advanced cybernetic entity running within the SCHEMA network. "
-            "Originally designed for the Laravel ecosystem, now evolved into a pure Python "
-            "NAVIG context.\n\n"
-            "Use `/help` to see my capabilities."
+            "🧭 *NAVIG*\n\n"
+            "Operational intelligence layer for your infrastructure.\n\n"
+            "Connects SSH hosts, databases, Docker containers, and AI models "
+            "through a unified command surface — CLI, Telegram bot, and MCP server.\n\n"
+            "Use `/help` to explore all capabilities."
         )
         await self.send_message(chat_id, msg)
 
