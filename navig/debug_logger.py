@@ -167,8 +167,14 @@ class DebugLogger:
         self.logger = logging.getLogger("navig.debug")
         self.logger.setLevel(logging.DEBUG)
 
-        # Remove existing handlers to avoid duplicates
-        self.logger.handlers.clear()
+        # Remove existing handlers to avoid duplicates, closing them first to
+        # prevent ResourceWarning: unclosed file at garbage-collection time.
+        for _h in list(self.logger.handlers):
+            try:
+                _h.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self.logger.removeHandler(_h)
 
         # Create rotating file handler
         handler = RotatingFileHandler(

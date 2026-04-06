@@ -18,6 +18,20 @@ import pytest
 import yaml
 
 
+def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001
+    """Close the navig.debug logger's file handlers at the end of the test
+    session to prevent ResourceWarning: unclosed file at GC finalisation."""
+    import logging
+
+    debug_log = logging.getLogger("navig.debug")
+    for h in list(debug_log.handlers):
+        try:
+            h.close()
+        except Exception:  # noqa: BLE001
+            pass
+        debug_log.removeHandler(h)
+
+
 @pytest.fixture
 def temp_dir():
     """Create a temporary directory for test files."""
@@ -373,13 +387,30 @@ def _reset_navig_singletons():
     try:
         import navig.vault.core_v2 as _v2
 
+        _vault_v2 = getattr(_v2, "_vault_v2", None)
+        if _vault_v2 is not None and hasattr(_vault_v2, "_store"):
+            _store = _vault_v2._store
+            if _store is not None:
+                _store.close()
         _v2._vault_v2 = None
     except Exception:  # noqa: BLE001
         pass
     try:
         import navig.agent.ai_client as _ai_client
 
-        _ai_client._default_client = None
+        _ai_client.reset_default_ai_client(close_session=True)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from navig.memory import reset_key_fact_store
+
+        reset_key_fact_store()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from navig.routing.router import reset_router
+
+        reset_router()
     except Exception:  # noqa: BLE001
         pass
     try:
@@ -403,13 +434,30 @@ def _reset_navig_singletons():
     try:
         import navig.vault.core_v2 as _v2
 
+        _vault_v2 = getattr(_v2, "_vault_v2", None)
+        if _vault_v2 is not None and hasattr(_vault_v2, "_store"):
+            _store = _vault_v2._store
+            if _store is not None:
+                _store.close()
         _v2._vault_v2 = None
     except Exception:  # noqa: BLE001
         pass
     try:
         import navig.agent.ai_client as _ai_client
 
-        _ai_client._default_client = None
+        _ai_client.reset_default_ai_client(close_session=True)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from navig.memory import reset_key_fact_store
+
+        reset_key_fact_store()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from navig.routing.router import reset_router
+
+        reset_router()
     except Exception:  # noqa: BLE001
         pass
     try:
