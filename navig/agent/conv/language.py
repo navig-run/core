@@ -144,8 +144,12 @@ _INSTRUCTIONS: dict[str, str] = {
         "### END LANGUAGE RULE ###"
     ),
     "fr": (
-        "### LANGUAGE RULE ###\n"
-        "Reply in English only. Do not mix in other languages or scripts.\n"
+        "### ABSOLUTE LANGUAGE RULE — HIGHEST PRIORITY ###\n"
+        "You MUST reply ONLY in French (français) using the Latin script.\n"
+        "NEVER output Cyrillic, Arabic, CJK, or any non-Latin script.\n"
+        "NEVER reply in English, Spanish, or any other language.\n"
+        "NEVER mix languages. Every single word of your reply must be French.\n"
+        "Violation of this rule makes the entire response invalid.\n"
         "### END LANGUAGE RULE ###"
     ),
     "mixed": (

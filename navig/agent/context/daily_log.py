@@ -48,8 +48,18 @@ MAX_CONTEXT_CHARS = 2000
 
 
 def get_daily_log_path() -> Path:
-    """Get path to daily log database."""
-    navig_dir = Path.home() / ".navig"
+    """Get path to daily log database.
+
+    Uses :func:`navig.platform.paths.config_dir` as the single source of truth
+    so the database lands in the same root as all other NAVIG state, including
+    on Windows where ~/.navig differs from ~/Documents/.navig.
+    """
+    try:
+        from navig.platform import paths as _paths
+
+        navig_dir = _paths.config_dir()
+    except Exception:
+        navig_dir = Path.home() / ".navig"
     navig_dir.mkdir(parents=True, exist_ok=True)
     return navig_dir / "daily_log.db"
 
@@ -134,12 +144,12 @@ class DailyLog:
     def session_id(self) -> str:
         """Get or create current session ID."""
         if self._session_id is None:
-            self._session_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            self._session_id = datetime.now().strftime("%Y%m%d_%H%M%S")  # utcnow deprecated in Py3.12+
         return self._session_id
 
     def start_session(self, session_id: str | None = None) -> str:
         """Start a new logging session."""
-        self._session_id = session_id or datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        self._session_id = session_id or datetime.now().strftime("%Y%m%d_%H%M%S")  # utcnow deprecated in Py3.12+
         return self._session_id
 
     # =========================================================================
@@ -171,7 +181,7 @@ class DailyLog:
         """
         self._ensure_initialized()
 
-        now = datetime.utcnow()
+        now = datetime.now()  # utcnow deprecated in Py3.12+
         date_str = now.strftime("%Y-%m-%d")
 
         # Truncate content for privacy (no full messages stored)
@@ -237,7 +247,7 @@ class DailyLog:
         """
         self._ensure_initialized()
 
-        cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+        cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()  # utcnow deprecated in Py3.12+
 
         with self._get_connection() as conn:
             rows = conn.execute(
@@ -254,7 +264,7 @@ class DailyLog:
 
     def get_today_entries(self) -> list[dict[str, Any]]:
         """Get all entries from today."""
-        return self.get_entries_for_date(datetime.utcnow().strftime("%Y-%m-%d"))
+        return self.get_entries_for_date(datetime.now().strftime("%Y-%m-%d"))  # utcnow deprecated in Py3.12+
 
     def get_entries_for_date(self, date: str) -> list[dict[str, Any]]:
         """Get entries for a specific date (YYYY-MM-DD)."""
@@ -361,7 +371,7 @@ class DailyLog:
 
         Uses simple extraction for now; could be enhanced with LLM.
         """
-        date = date or datetime.utcnow().strftime("%Y-%m-%d")
+        date = date or datetime.now().strftime("%Y-%m-%d")  # utcnow deprecated in Py3.12+
         entries = self.get_entries_for_date(date)
 
         if not entries:
@@ -397,7 +407,7 @@ class DailyLog:
         """Save a daily summary to the database."""
         self._ensure_initialized()
 
-        date = date or datetime.utcnow().strftime("%Y-%m-%d")
+        date = date or datetime.now().strftime("%Y-%m-%d")  # utcnow deprecated in Py3.12+
         summary = self.generate_daily_summary(date)
         entries = self.get_entries_for_date(date)
 
@@ -413,7 +423,7 @@ class DailyLog:
                     summary,
                     len(entries),
                     None,  # Topics could be extracted with NLP
-                    datetime.utcnow().isoformat(),
+                    datetime.now().isoformat(),  # utcnow deprecated in Py3.12+
                 ),
             )
 
@@ -429,7 +439,7 @@ class DailyLog:
         """
         self._ensure_initialized()
 
-        cutoff = (datetime.utcnow() - timedelta(days=self.retention_days)).strftime("%Y-%m-%d")
+        cutoff = (datetime.now() - timedelta(days=self.retention_days)).strftime("%Y-%m-%d")  # utcnow deprecated
 
         with self._get_connection() as conn:
             cursor = conn.execute("DELETE FROM interactions WHERE date < ?", (cutoff,))
@@ -448,7 +458,7 @@ class DailyLog:
             total = conn.execute("SELECT COUNT(*) FROM interactions").fetchone()[0]
             today = conn.execute(
                 "SELECT COUNT(*) FROM interactions WHERE date = ?",
-                (datetime.utcnow().strftime("%Y-%m-%d"),),
+                (datetime.now().strftime("%Y-%m-%d"),),  # utcnow deprecated in Py3.12+
             ).fetchone()[0]
 
             oldest = conn.execute("SELECT MIN(date) FROM interactions").fetchone()[0]

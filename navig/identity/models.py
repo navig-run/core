@@ -14,7 +14,7 @@ class SocialLink:
     platform: str  # "github", "twitter", "discord", etc.
     handle: str  # username / ID on that platform
     verified: bool = False
-    linked_at: datetime = field(default_factory=datetime.utcnow)
+    linked_at: datetime = field(default_factory=datetime.now)  # utcnow deprecated in Py3.12+
 
 
 @dataclass
@@ -44,8 +44,8 @@ class UserProfile:
     timezone: str | None = None
 
     # Metadata
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=datetime.now)  # utcnow deprecated in Py3.12+
+    updated_at: datetime = field(default_factory=datetime.now)  # utcnow deprecated in Py3.12+
     metadata: dict[str, Any] = field(default_factory=dict)
 
     # ---- Serialisation helpers -----------------------------------------
@@ -91,10 +91,10 @@ class UserProfile:
             language=d.get("language", "en"),
             timezone=d.get("timezone"),
             created_at=(
-                datetime.fromisoformat(d["created_at"]) if "created_at" in d else datetime.utcnow()
+                datetime.fromisoformat(d["created_at"]) if "created_at" in d else datetime.now()
             ),
             updated_at=(
-                datetime.fromisoformat(d["updated_at"]) if "updated_at" in d else datetime.utcnow()
+                datetime.fromisoformat(d["updated_at"]) if "updated_at" in d else datetime.now()
             ),
             metadata=d.get("metadata", {}),
         )

@@ -46,7 +46,7 @@ class MCPClientManager:
         await manager.stop()
     """
 
-    def __init__(self, config: dict = None):
+    def __init__(self, config: dict | None = None):
         self.config = config or {}
         self._clients: dict[str, MCPClient] = {}
         self._reconnect_tasks: dict[str, asyncio.Task] = {}
@@ -124,13 +124,15 @@ class MCPClientManager:
         """
         Add a new MCP client.
 
-        If manager is already started and config.auto_connect is True,
-        the client will be connected immediately.
+        If config.auto_connect is True the client will be connected immediately
+        in the background (regardless of whether start() has been called).
         """
         client = MCPClient(config)
         self._clients[config.id] = client
 
-        if self._started and config.auto_connect:
+        if config.auto_connect:
+            # Connect immediately — do not gate on _started since the gateway
+            # calls add_client() before start() is ever invoked.
             self._fire_and_forget(self._connect_with_retry(client))
 
         return client
@@ -274,7 +276,11 @@ class MCPClientManager:
                 return
             except Exception as e:
                 logger.warning(
-                    f"MCP client {client.id} connect failed (attempt {attempt + 1}/{max_attempts}): {e}"
+                    "MCP client %s connect failed (attempt %d/%d): %s",
+                    client.id,
+                    attempt + 1,
+                    max_attempts,
+                    e,
                 )
                 if attempt < max_attempts - 1:
                     await asyncio.sleep(retry_delay * (attempt + 1))

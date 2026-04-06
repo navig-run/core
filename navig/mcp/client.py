@@ -157,10 +157,11 @@ class MCPClient:
 
             self._initialized = True
             logger.info(
-                f"MCP client {self.id} connected: "
-                f"{len(self._tools)} tools, "
-                f"{len(self._resources)} resources, "
-                f"{len(self._prompts)} prompts"
+                "MCP client %s connected: %d tools, %d resources, %d prompts",
+                self.id,
+                len(self._tools),
+                len(self._resources),
+                len(self._prompts),
             )
 
         except Exception as e:
@@ -183,7 +184,7 @@ class MCPClient:
 
         logger.info("MCP client %s disconnected", self.id)
 
-    async def call_tool(self, name: str, arguments: dict[str, Any] = None) -> Any:
+    async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any:
         """
         Call a tool on the connected server.
 
@@ -244,7 +245,7 @@ class MCPClient:
 
         return response.result
 
-    async def get_prompt(self, name: str, arguments: dict[str, str] = None) -> Any:
+    async def get_prompt(self, name: str, arguments: dict[str, str] | None = None) -> Any:
         """
         Get a prompt from the connected server.
 

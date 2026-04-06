@@ -133,7 +133,8 @@ class ElectionManager:
         ):
             self._registry.set_my_role("standby", self._current_epoch)
             logger.info(
-                f"[election] Leader {leader.node_id} is healthy — entering standby"
+                "[election] Leader %s is healthy — entering standby",
+                leader.node_id,
             )
         else:
             # No known leader: wait one TTL for HELLO packets to settle, then propose
@@ -210,8 +211,10 @@ class ElectionManager:
                 if age >= self._ttl_seconds:
                     if not self._proposed_this_epoch:
                         logger.info(
-                            f"[election] Watchdog: leader {leader.node_id} TTL expired "
-                            f"(age={age:.1f}s ≥ {self._ttl_seconds}s)"
+                            "[election] Watchdog: leader %s TTL expired (age=%.1fs >= %ds)",
+                            leader.node_id,
+                            age,
+                            self._ttl_seconds,
                         )
                         self._fire_and_forget(
                             self._propose_candidacy(reason="ttl_expiry")
@@ -243,8 +246,10 @@ class ElectionManager:
 
         self._registry.set_my_role("candidate", self._current_epoch)
         logger.info(
-            f"[election] Proposing candidacy (reason={reason}, "
-            f"epoch={self._current_epoch}, tiebreaker={my_tiebreaker})"
+            "[election] Proposing candidacy (reason=%s, epoch=%d, tiebreaker=%d)",
+            reason,
+            self._current_epoch,
+            my_tiebreaker,
         )
 
         await self._discovery.send_election_packet(
@@ -268,8 +273,9 @@ class ElectionManager:
             # We won
             self._registry.set_my_role("leader", self._current_epoch)
             logger.info(
-                f"[election] Won election "
-                f"(epoch={self._current_epoch}, score={winner_score}) — role: LEADER"
+                "[election] Won election (epoch=%d, score=%d) — role: LEADER",
+                self._current_epoch,
+                winner_score,
             )
             await self._discovery.send_election_packet(
                 ELECT_PROMOTE,
@@ -282,8 +288,10 @@ class ElectionManager:
             # Another node won or tied
             self._registry.set_my_role("standby", self._current_epoch)
             logger.info(
-                f"[election] Lost election to {winner_id} "
-                f"(their score={winner_score}, ours={my_tiebreaker})"
+                "[election] Lost election to %s (their score=%d, ours=%d)",
+                winner_id,
+                winner_score,
+                my_tiebreaker,
             )
             # Reset proposed flag so we can enter future elections
             self._proposed_this_epoch = False
@@ -308,7 +316,8 @@ class ElectionManager:
         self._yield_event = asyncio.Event()
         self._registry.set_my_role("yielding", self._current_epoch)
         logger.info(
-            f"[election] Graceful yield initiated (target={target_node_id or 'auto'})"
+            "[election] Graceful yield initiated (target=%s)",
+            target_node_id or "auto",
         )
 
         await self._discovery.send_election_packet(
@@ -327,8 +336,8 @@ class ElectionManager:
             logger.info("[election] Yield ACK received — new leader confirmed")
         except asyncio.TimeoutError:
             logger.warning(
-                f"[election] No ELECT_PROMOTE received within "
-                f"{YIELD_ACK_TIMEOUT_S}s — forcing standby anyway"
+                "[election] No ELECT_PROMOTE received within %ds — forcing standby anyway",
+                YIELD_ACK_TIMEOUT_S,
             )
 
         self._registry.set_my_role("standby", self._current_epoch)
@@ -365,8 +374,10 @@ class ElectionManager:
         # Ignore stale-epoch proposals
         if incoming_epoch < self._current_epoch:
             logger.debug(
-                f"[election] Ignoring stale PROPOSE from {record.node_id} "
-                f"(epoch {incoming_epoch} < our {self._current_epoch})"
+                "[election] Ignoring stale PROPOSE from %s (epoch %d < our %d)",
+                record.node_id,
+                incoming_epoch,
+                self._current_epoch,
             )
             return
 
@@ -378,8 +389,10 @@ class ElectionManager:
 
         self._received_proposals[record.node_id] = incoming_score
         logger.debug(
-            f"[election] Recorded proposal from {record.node_id} "
-            f"(score={incoming_score}, epoch={incoming_epoch})"
+            "[election] Recorded proposal from %s (score=%d, epoch=%d)",
+            record.node_id,
+            incoming_score,
+            incoming_epoch,
         )
 
     def _on_promote(self, record: NodeRecord, raw: dict) -> None:
@@ -390,7 +403,8 @@ class ElectionManager:
         if self._yield_event and not self._yield_event.is_set():
             self._yield_event.set()
             logger.info(
-                f"[election] Received PROMOTE from {record.node_id} — yield confirmed"
+                "[election] Received PROMOTE from %s — yield confirmed",
+                record.node_id,
             )
 
         # Update own role if we were a candidate or standby
@@ -419,8 +433,9 @@ class ElectionManager:
 
         if is_targeted or (not target and is_best_standby):
             logger.info(
-                f"[election] Received YIELD from {record.node_id} "
-                f"— initiating takeover (targeted={is_targeted})"
+                "[election] Received YIELD from %s — initiating takeover (targeted=%s)",
+                record.node_id,
+                is_targeted,
             )
             # Reset proposed flag to allow immediate candidacy
             self._proposed_this_epoch = False
@@ -428,8 +443,9 @@ class ElectionManager:
             await self._propose_candidacy(reason="yield_takeover")
         else:
             logger.debug(
-                f"[election] Received YIELD from {record.node_id} "
-                f"— not our turn (target={target or 'auto'})"
+                "[election] Received YIELD from %s — not our turn (target=%s)",
+                record.node_id,
+                target or "auto",
             )
 
     def _is_best_available_standby(self) -> bool:

@@ -169,17 +169,16 @@ class TaskWorker:
         """Main worker loop."""
         while self._running:
             try:
-                # Wait for available slot
-                async with self._semaphore:
-                    # Get next task
-                    task = await self.queue.get_next(
-                        wait=True, timeout=self.config.poll_interval
-                    )
+                # Get next task first (does NOT hold the semaphore while waiting)
+                task = await self.queue.get_next(
+                    wait=True, timeout=self.config.poll_interval
+                )
 
-                    if task:
-                        # Start execution
-                        asyncio_task = asyncio.create_task(self._execute_task(task))
-                        self._tasks[task.id] = asyncio_task
+                if task:
+                    # Acquire slot only once we have a task to run
+                    await self._semaphore.acquire()
+                    asyncio_task = asyncio.create_task(self._execute_task(task))
+                    self._tasks[task.id] = asyncio_task
 
             except asyncio.CancelledError:
                 break
@@ -230,6 +229,7 @@ class TaskWorker:
 
         finally:
             self._tasks.pop(task.id, None)
+            self._semaphore.release()  # Release slot acquired in _worker_loop
 
     async def execute_now(self, task: Task) -> Any:
         """

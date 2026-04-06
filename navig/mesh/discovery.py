@@ -55,6 +55,7 @@ def _build_packet(
     ptype: str,
     seq: int = 0,
     secret: bytes | None = None,
+    extra: dict | None = None,
 ) -> bytes:
     """Serialize a discovery packet from the local self record.
 
@@ -74,14 +75,19 @@ def _build_packet(
         "formation": rec.formation,
         "load": rec.load,
         "version": rec.version,
+        "role": getattr(rec, "role", "standby"),
+        "epoch": getattr(rec, "epoch", 0),
         "ts": int(time.time()),
     }
+    if extra:
+        payload.update(extra)
     if secret:
         payload = attach_hmac(payload, secret)
     data = json.dumps(payload, separators=(",", ":")).encode()
     if len(data) > MAX_PACKET_SIZE:
         logger.warning(
-            f"[mesh.discovery] Packet too large ({len(data)} bytes) — truncating capabilities"
+            "[mesh.discovery] Packet too large (%d bytes) — truncating capabilities",
+            len(data),
         )
         payload["capabilities"] = payload["capabilities"][:4]
         if secret:
@@ -118,6 +124,8 @@ def _parse_packet(
             formation=d.get("formation", ""),
             load=float(d.get("load", 0.0)),
             version=d.get("version", "unknown"),
+            role=d.get("role", "standby"),
+            epoch=d.get("epoch", 0),
             last_seen=time.time(),
             is_self=False,
         )
@@ -194,6 +202,7 @@ class MeshDiscovery:
         self._running = False
         self._seq: int = 0  # monotonic per-node packet sequence counter
         self._peer_seqs: dict = {}  # node_id -> last seen seq (loss detection)
+        self._election_callback = None
         if self._secret:
             logger.info("[mesh.discovery] BLAKE2b HMAC authentication enabled")
 
@@ -256,10 +265,40 @@ class MeshDiscovery:
                 lambda: self._sender.sendto(data, (MCAST_GROUP, MCAST_PORT)),  # type: ignore[union-attr]
             )
             logger.debug(
-                f"[mesh.discovery] Sent {ptype} seq={self._seq} ({len(data)} bytes)"
+                "[mesh.discovery] Sent %s seq=%d (%d bytes)",
+                ptype,
+                self._seq,
+                len(data),
             )
         except Exception as e:
             logger.warning("[mesh.discovery] Send error: %s", e)
+
+    def set_election_callback(self, callback) -> None:
+        """Register the callback for election-related packets."""
+        self._election_callback = callback
+
+    async def send_election_packet(self, ptype: str, extra: dict | None = None) -> None:
+        """Send a multicast election packet with optional extra payload."""
+        if not self._sender:
+            return
+        try:
+            self._seq += 1
+            data = _build_packet(
+                self._registry, ptype, seq=self._seq, secret=self._secret, extra=extra
+            )
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(
+                None,
+                lambda: self._sender.sendto(data, (MCAST_GROUP, MCAST_PORT)),  # type: ignore[union-attr]
+            )
+            logger.debug(
+                "[mesh.discovery] Sent %s seq=%d (%d bytes)",
+                ptype,
+                self._seq,
+                len(data),
+            )
+        except Exception as e:
+            logger.warning("[mesh.discovery] Election send error: %s", e)
 
     async def _heartbeat_loop(self) -> None:
         try:
@@ -362,8 +401,12 @@ class MeshDiscovery:
             if prev_seq and incoming_seq > prev_seq + 1:
                 lost = incoming_seq - prev_seq - 1
                 logger.debug(
-                    f"[mesh.discovery] Packet loss detected from {record.node_id}: "
-                    f"{lost} packet(s) missing (last={prev_seq} current={incoming_seq})"
+                    "[mesh.discovery] Packet loss detected from %s: "
+                    "%d packet(s) missing (last=%d current=%d)",
+                    record.node_id,
+                    lost,
+                    prev_seq,
+                    incoming_seq,
                 )
             self._peer_seqs[record.node_id] = incoming_seq
 
@@ -382,10 +425,18 @@ class MeshDiscovery:
             record.consecutive_failures = 0  # live packet → clear circuit
         self._registry.upsert_peer(record)
         logger.info(
-            f"[mesh.discovery] Peer {ptype}: {record.node_id} @ "
-            f"{record.gateway_url} ({record.health})"
+            "[mesh.discovery] Peer %s: %s @ %s (%s)",
+            ptype,
+            record.node_id,
+            record.gateway_url,
+            record.health,
         )
 
         # Reply with our own HELLO so the new peer knows about us immediately
         if ptype == "hello":
             await self._send("hello")
+
+        # Route election packets to the election manager
+        if ptype in (ELECT_PROPOSE, ELECT_PROMOTE, ELECT_YIELD, ELECT_ACK):
+            if self._election_callback:
+                self._election_callback(ptype, record, raw)

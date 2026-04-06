@@ -47,7 +47,7 @@ class MemoryChunk:
     token_count: int  # Estimated tokens
     embedding: list[float] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
     def to_dict(self) -> dict:
         return {
@@ -77,7 +77,7 @@ class MemoryChunk:
                 if isinstance(data["metadata"], str)
                 else data.get("metadata", {})
             ),
-            created_at=data.get("created_at", datetime.utcnow().isoformat()),
+            created_at=data.get("created_at", datetime.now().isoformat()),
         )
 
 
@@ -90,7 +90,7 @@ class FileMetadata:
     last_modified: str  # File modification timestamp
     chunk_count: int  # Number of chunks from this file
     total_tokens: int  # Total tokens in all chunks
-    indexed_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    indexed_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
     def to_dict(self) -> dict:
         return {
@@ -110,7 +110,7 @@ class FileMetadata:
             last_modified=data["last_modified"],
             chunk_count=data.get("chunk_count", 0),
             total_tokens=data.get("total_tokens", 0),
-            indexed_at=data.get("indexed_at", datetime.utcnow().isoformat()),
+            indexed_at=data.get("indexed_at", datetime.now().isoformat()),
         )
 
 
@@ -558,7 +558,7 @@ class MemoryStorage:
             return 0
 
         conn = self._get_conn()
-        created_at = datetime.utcnow().isoformat()
+        created_at = datetime.now().isoformat()
 
         # Prepare data
         data = [(h, json.dumps(e), m, created_at) for h, e, m in entries]
@@ -636,7 +636,7 @@ class MemoryStorage:
                     value = excluded.value,
                     updated_at = excluded.updated_at
             """,
-                (key, json.dumps(value), datetime.utcnow().isoformat()),
+                (key, json.dumps(value), datetime.now().isoformat()),
             )
             conn.commit()
 

@@ -19,8 +19,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-import platform
 import socket
+import sys
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -59,8 +59,14 @@ class NodeRecord:
     formation: str  # active formation name (may be "")
     load: float  # 0.0–1.0 composite (CPU * 0.6 + MEM * 0.4)
     version: str  # navig-core semver
+    role: str = "standby"
+    epoch: int = 0
     last_seen: float = field(default_factory=time.time)
     is_self: bool = False  # True only for the local node record
+
+    def last_heartbeat_age_s(self) -> float:
+        """Seconds since last contact."""
+        return time.time() - self.last_seen
 
     # ── Probe / circuit-breaker state (not persisted, never serialised) ──────
     consecutive_failures: int = field(default=0, compare=False, repr=False)
@@ -166,8 +172,10 @@ def _derive_node_id() -> str:
 
 
 def _detect_os() -> str:
-    p = platform.system().lower()
-    if p == "windows":
+    # sys.platform is a string constant set at interpreter init — 0ms, no subprocess.
+    # platform.system() on Windows 3.12+ triggers a WMI query that can hang.
+    p = sys.platform
+    if p == "win32":
         return "windows"
     if p == "darwin":
         return "macos"
@@ -238,6 +246,8 @@ class NodeRegistry:
             formation=formation,
             load=_measure_load(),
             version=ver,
+            role="standby",
+            epoch=0,
             last_seen=time.time(),
             is_self=True,
         )
@@ -285,6 +295,24 @@ class NodeRegistry:
             self._self.load = _measure_load()
             self._self.last_seen = time.time()
         return self._self  # type: ignore[return-value]
+
+    def get_leader(self) -> NodeRecord | None:
+        """Return the current known leader peer, or self if we are leader."""
+        for peer in self.get_all():
+            if peer.role == "leader" and peer.health != "offline":
+                return peer
+        return None
+
+    def am_i_leader(self) -> bool:
+        """Return True if this local node is the leader."""
+        return self.self_record.role == "leader"
+
+    def set_my_role(self, role: str, epoch: int) -> None:
+        """Set local node election role and epoch."""
+        if self._self:
+            self._self.role = role
+            self._self.epoch = epoch
+            self._save_to_disk()
 
     def upsert_peer(self, record: NodeRecord) -> None:
         """Add or refresh a remote peer record. Ignores is_self flag from remote."""
@@ -401,8 +429,9 @@ class NodeRegistry:
             peer.record_probe_failure()
             if peer.circuit_open:
                 logger.warning(
-                    f"[mesh.registry] Circuit OPEN for {node_id} "
-                    f"({peer.consecutive_failures} consecutive failures)"
+                    "[mesh.registry] Circuit OPEN for %s (%d consecutive failures)",
+                    node_id,
+                    peer.consecutive_failures,
                 )
 
     def to_api_dict(self) -> dict:
@@ -473,7 +502,7 @@ class NodeRegistry:
     def _save_to_disk(self) -> None:
         try:
             data = [r.to_dict() for r in self._peers.values() if not r.is_self]
-            self._peers_file.write_text(json.dumps(data, indent=2))
+            self._peers_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
         except Exception as e:
             logger.warning("[mesh.registry] Failed to save peers: %s", e)
 
@@ -481,7 +510,7 @@ class NodeRegistry:
         if not self._peers_file.exists():
             return
         try:
-            data = json.loads(self._peers_file.read_text())
+            data = json.loads(self._peers_file.read_text(encoding="utf-8"))
             for d in data:
                 record = NodeRecord.from_dict(d)
                 if record.node_id != self._self.node_id:

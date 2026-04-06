@@ -174,15 +174,17 @@ class SessionStore:
 
     def touch(self, key: SessionKey) -> None:
         """Update the last_active timestamp for *key* (no-op if not present)."""
-        ctx = self._contexts.get(str(key))
-        if ctx:
-            ctx.last_active = time.time()
+        with self._lock:  # guard against concurrent remove()
+            ctx = self._contexts.get(str(key))
+            if ctx:
+                ctx.last_active = time.time()
 
     def update(self, key: SessionKey, updates: dict[str, Any]) -> None:
         """Merge *updates* into the context meta for *key* (creates if absent)."""
-        ctx = self.get_or_create(key)
-        ctx.meta.update(updates)
-        ctx.last_active = time.time()
+        with self._lock:  # guard meta.update() + last_active assignment atomically
+            ctx = self.get_or_create(key)
+            ctx.meta.update(updates)
+            ctx.last_active = time.time()
 
     def remove(self, key: SessionKey) -> bool:
         """Remove a context. Returns True if it existed."""
@@ -212,13 +214,16 @@ class SessionStore:
         return len(idle_keys)
 
     def save(self) -> None:
-        """Persist all contexts to JSON. No-op when no persist_path."""
+        """Persist all contexts to JSON (atomic write). No-op when no persist_path."""
         if not self._persist_path:
             return
         try:
-            data = {k: ctx.to_dict() for k, ctx in self._contexts.items()}
+            with self._lock:
+                data = {k: ctx.to_dict() for k, ctx in self._contexts.items()}
             self._persist_path.parent.mkdir(parents=True, exist_ok=True)
-            self._persist_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            tmp = self._persist_path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            tmp.replace(self._persist_path)  # atomic on POSIX; best-effort on Windows
         except Exception as exc:
             logger.warning("session_store: failed to persist: %s", exc)
 

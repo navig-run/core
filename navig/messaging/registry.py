@@ -6,7 +6,16 @@ from typing import Any
 from navig.messaging.provider import IMessagingProvider
 from navig.messaging.secrets import resolve_telegram_bot_token, resolve_telegram_uid
 
-_SUPPORTED_PROVIDER_NAMES = frozenset({"telegram", "none"})
+_SUPPORTED_PROVIDER_NAMES = frozenset(
+    {
+        "telegram",
+        "discord",
+        "sms",
+        "whatsapp_cloud",
+        "wa_web",
+        "none",
+    }
+)
 
 
 class TelegramProvider:
@@ -80,6 +89,7 @@ def supported_provider_names() -> tuple[str, ...]:
 def _provider_for(name: str) -> IMessagingProvider | None:
     if name == "telegram":
         return TelegramProvider()
+    # Other providers are handled by the adapter registry, not legacy providers.
     return None
 
 

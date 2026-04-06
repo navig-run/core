@@ -237,19 +237,22 @@ class SessionManager:
         return Session(key=session_key)
 
     async def save_session(self, session: Session):
-        """Save session to disk."""
+        """Save session to disk (lock covers mutation only; I/O is outside the lock)."""
+        # Stamp updated_at and snapshot data under the lock
         async with self.lock:
             session.updated_at = datetime.now()
-            session_file = self._get_session_file(session.key)
+            data = session.to_dict()  # snapshot while locked
 
-            try:
-                session_file.write_text(
-                    json.dumps(session.to_dict(), indent=2, ensure_ascii=False),
-                    encoding="utf-8",
-                )
-                logger.debug("Saved session: %s", session.key)
-            except Exception as e:
-                logger.error("Failed to save session %s: %s", session.key, e)
+        # Write outside the lock — blocking I/O must not hold the event-loop lock
+        session_file = self._get_session_file(session.key)
+        try:
+            payload = json.dumps(data, indent=2, ensure_ascii=False)
+            tmp = session_file.with_suffix(".tmp")
+            tmp.write_text(payload, encoding="utf-8")
+            tmp.replace(session_file)  # atomic on POSIX; best-effort on Windows
+            logger.debug("Saved session: %s", session.key)
+        except Exception as e:
+            logger.error("Failed to save session %s: %s", session.key, e)
 
     async def save_all(self):
         """Save all cached sessions to disk."""
