@@ -85,3 +85,41 @@ def test_telegram_config_without_env(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(tw, "resolve_telegram_bot_token", lambda _cfg=None: "cfg-only")
     result = tw._telegram_config()
     assert result["bot_token"] == "cfg-only"
+
+
+# ── _transport_for_url ────────────────────────────────────────────────────────
+
+
+class TestTransportForUrl:
+    """_transport_for_url maps URL scheme to MCP transport type."""
+
+    def _fn(self):
+        from navig.daemon.telegram_worker import _transport_for_url
+
+        return _transport_for_url
+
+    def test_http_maps_to_sse(self):
+        assert self._fn()("http://localhost:8080/mcp") == "sse"
+
+    def test_https_maps_to_sse(self):
+        assert self._fn()("https://myserver.example.com/mcp") == "sse"
+
+    def test_ws_maps_to_websocket(self):
+        assert self._fn()("ws://localhost:9000/ws") == "websocket"
+
+    def test_wss_maps_to_websocket(self):
+        assert self._fn()("wss://secure.example.com/ws") == "websocket"
+
+    def test_unknown_scheme_falls_back_to_stdio(self):
+        # e.g. an old "ws://" was previously caught by the "http" substring
+        # check — now it must land cleanly in websocket; an unknown scheme
+        # like "tcp://" should fall through to stdio
+        assert self._fn()("tcp://some-host:1234") == "stdio"
+
+    def test_empty_string_falls_back_to_stdio(self):
+        assert self._fn()("") == "stdio"
+
+    def test_case_insensitive(self):
+        # URLs are lowercased internally
+        assert self._fn()("HTTP://HOST/mcp") == "sse"
+        assert self._fn()("WS://HOST/ws") == "websocket"
