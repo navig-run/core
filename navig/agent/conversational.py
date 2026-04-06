@@ -1276,15 +1276,6 @@ For conversation, respond naturally without JSON.
 
     async def _get_ai_response(self, message: str) -> str:
         """Query AI for response via the unified router (all entrypoints)."""
-        if not self.ai_client:
-            return await self._simple_response(message)
-
-        try:
-            if hasattr(self.ai_client, "is_available") and not self.ai_client.is_available():
-                return await self._simple_response(message)
-        except Exception as exc:
-            logger.debug("Exception suppressed: %s", exc)  # best-effort; failure is non-critical
-
         try:
             system_prompt = self._build_system_prompt(message)
             messages = [
@@ -1300,7 +1291,7 @@ For conversation, respond naturally without JSON.
 
             tier_override = getattr(self, "_tier_override", "")
 
-            # ── Unified Router (primary — all entrypoints) ──
+            # ── Unified Router (primary — provider-independent, always tried first) ──
             try:
                 from navig.routing.router import RouteRequest, get_router
 
@@ -1319,24 +1310,41 @@ For conversation, respond naturally without JSON.
                 logger.warning("Unified router failed (%s), falling back to legacy", e)
 
             # ── Legacy fallback (LLM Mode Router → Tier Router) ──
-            # When mode routing can't dispatch (no provider for the detected
-            # mode), it returns the L1 tier hint so chat_routed() doesn't
-            # have to re-run mode detection from scratch (TR fix).
-            mode_tier_hint: str | None = None
-            if not tier_override:
-                llm_response, mode_tier_hint = await self._try_llm_mode_routing(message, messages)
-                if llm_response is not None:
-                    return llm_response
+            # Only attempted when ai_client is available; if not, fall through
+            # to _simple_response below rather than erroring here.
+            if self.ai_client:
+                try:
+                    if (
+                        hasattr(self.ai_client, "is_available")
+                        and not self.ai_client.is_available()
+                    ):
+                        return await self._simple_response(message)
+                except Exception as exc:
+                    logger.debug("Exception suppressed: %s", exc)
 
-            if hasattr(self.ai_client, "chat_routed"):
-                response = await self.ai_client.chat_routed(
-                    messages,
-                    user_message=message,
-                    tier_override=tier_override or mode_tier_hint,
-                )
-            else:
-                response = await self.ai_client.chat(messages)
-            return response
+                # When mode routing can't dispatch (no provider for the detected
+                # mode), it returns the L1 tier hint so chat_routed() doesn't
+                # have to re-run mode detection from scratch (TR fix).
+                mode_tier_hint: str | None = None
+                if not tier_override:
+                    llm_response, mode_tier_hint = await self._try_llm_mode_routing(
+                        message, messages
+                    )
+                    if llm_response is not None:
+                        return llm_response
+
+                if hasattr(self.ai_client, "chat_routed"):
+                    response = await self.ai_client.chat_routed(
+                        messages,
+                        user_message=message,
+                        tier_override=tier_override or mode_tier_hint,
+                    )
+                else:
+                    response = await self.ai_client.chat(messages)
+                return response
+
+            # Both Unified Router and legacy ai_client unavailable
+            return await self._simple_response(message)
 
         except Exception as e:
             logger.error("AI response error: %s", e)
@@ -1344,8 +1352,7 @@ For conversation, respond naturally without JSON.
             if (
                 "no ai provider available" in err
                 or "no provider available" in err
-                or "provider available" in err
-                and "set openrouter_api_key" in err
+                or ("provider available" in err and "set openrouter_api_key" in err)
             ):
                 return await self._simple_response(message)
             return f"I'm having trouble thinking right now: {e}"
