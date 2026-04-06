@@ -236,6 +236,46 @@ class TestDetectProviderFromRegistry:
         # xai must win — it is first in _PROVIDER_DETECTION_PRECEDENCE
         assert result == "xai"
 
+    def test_skips_disabled_providers(self, monkeypatch):
+        """Providers with enabled=False must never be returned even when a key is set.
+
+        cerebras and github_copilot both ship as enabled=False (opt-in). If their
+        env vars are set on the developer's machine, detection must still return ''
+        (or an enabled provider), never a disabled one.
+        """
+        # Set keys ONLY for known-disabled providers; clear all enabled ones.
+        for var in (
+            "GROK_KEY",
+            "XAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "CLAUDE_API_KEY",
+            "GOOGLE_API_KEY",
+            "GEMINI_API_KEY",
+            "GROQ_API_KEY",
+            "NVIDIA_API_KEY",
+            "NIM_API_KEY",
+            "BLOCKRUN_WALLET_KEY",
+        ):
+            monkeypatch.delenv(var, raising=False)
+        # These are all enabled=False
+        monkeypatch.setenv("CEREBRAS_API_KEY", "csk-test")
+        monkeypatch.setenv("GITHUB_COPILOT_TOKEN", "ghp-test")
+        monkeypatch.setenv("KILOCODE_API_KEY", "kilo-test")
+        monkeypatch.setenv("MISTRAL_API_KEY", "ms-test")
+        monkeypatch.setattr("navig.vault.get_vault_v2", lambda: None, raising=False)
+        _mock_vault = MagicMock()
+        _mock_vault.get_api_key.return_value = None
+        monkeypatch.setattr("navig.vault.get_vault", lambda: _mock_vault, raising=False)
+        from navig.agent.ai_client import AIClient
+
+        client = AIClient.__new__(AIClient)
+        client._config = {}
+        result = client._detect_provider_from_registry()
+        # Must not return any disabled provider
+        assert result not in ("cerebras", "github_copilot", "kilocode", "mistral", "qwen")
+        # With no enabled provider keys set, must return empty string
+        assert result == ""
+
 
 # ── 5. ConversationalAgent._get_ai_response gate removal ─────────────
 

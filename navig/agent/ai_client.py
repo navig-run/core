@@ -279,6 +279,8 @@ class AIClient:
                 manifest = all_manifests.get(pid)
                 if manifest is None:
                     continue
+                if not manifest.enabled:
+                    continue  # skip opt-in / not-yet-wired providers
                 if not getattr(manifest, "requires_key", True):
                     continue
                 key = _resolve_provider_api_key(pid)
@@ -291,6 +293,8 @@ class AIClient:
             for pid, manifest in all_manifests.items():
                 if pid in seen:
                     continue
+                if not manifest.enabled:
+                    continue  # skip opt-in / not-yet-wired providers
                 if not getattr(manifest, "requires_key", True):
                     continue
                 key = _resolve_provider_api_key(pid)
