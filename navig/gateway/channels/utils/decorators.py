@@ -87,12 +87,11 @@ def error_handled(func: Callable) -> Callable:
         try:
             return await func(self, update_or_chat_id, *args, **kwargs)
         except Exception as e:
-            logger.error(
+            logger.exception(
                 "Unhandled error in %s: %s",
                 func.__name__,
                 e,
-                exc_info=True,
-                extra={"handler": func.__name__, "args": args, "kwargs": kwargs},
+                extra={"handler": func.__name__, "handler_args": args, "handler_kwargs": kwargs},
             )
             chat_id = kwargs.get("chat_id")
             if chat_id is None and isinstance(update_or_chat_id, int):

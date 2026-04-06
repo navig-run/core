@@ -557,7 +557,7 @@ class ToolRouter:
             )
         except Exception as e:
             latency = int((time.monotonic() - t0) * 1000)
-            logger.error("Tool %s execution failed: %s", canonical, e, exc_info=True)
+            logger.exception("Tool %s execution failed: %s", canonical, e)
             return ToolResult(
                 tool=canonical,
                 status=ToolResultStatus.ERROR,

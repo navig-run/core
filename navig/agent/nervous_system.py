@@ -231,8 +231,8 @@ class NervousSystem:
                     # Log but don't crash
                     import logging
 
-                    logging.getLogger("navig.agent.nervous_system").error(
-                        f"Error in event handler: {e}", exc_info=True
+                    logging.getLogger("navig.agent.nervous_system").exception(
+                        "Error in event handler: %s", e
                     )
 
             await asyncio.gather(*[safe_call(h) for h in handlers], return_exceptions=True)
