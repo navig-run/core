@@ -559,6 +559,42 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="voice",
         visible=False,
     ),
+    # --- Provider control surface --------------------------------------------
+    SlashCommandEntry(
+        "provider_hybrid",
+        "Hybrid routing — assign models to tiers",
+        handler="_handle_provider_hybrid",
+        category="model",
+        usage="/provider_hybrid",
+    ),
+    SlashCommandEntry(
+        "provider_vision",
+        "Vision model picker",
+        handler="_handle_provider_vision",
+        category="model",
+        usage="/provider_vision",
+    ),
+    SlashCommandEntry(
+        "provider_show",
+        "Show current routing state",
+        handler="_handle_provider_show",
+        category="model",
+        usage="/provider_show",
+    ),
+    SlashCommandEntry(
+        "provider_reset",
+        "Reset session provider overrides",
+        handler="_handle_provider_reset",
+        category="model",
+        usage="/provider_reset",
+    ),
+    SlashCommandEntry(
+        "models_reset",
+        "Reset tier assignments to provider defaults",
+        handler="_handle_models_reset",
+        category="model",
+        usage="/models_reset",
+    ),
     # --- Diagnostics ---------------------------------------------------------
     # --- User / profile ------------------------------------------------------
     SlashCommandEntry(
@@ -766,6 +802,62 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="admin",
         usage="/search <query>",
         visible=False,
+    ),
+    # --- Messaging -----------------------------------------------------------
+    SlashCommandEntry(
+        "send",
+        "Send message via any network",
+        handler="_handle_messaging_send",
+        category="messaging",
+        usage="/send @alias [network] message",
+    ),
+    SlashCommandEntry(
+        "sms",
+        "Send SMS shortcut",
+        handler="_handle_messaging_sms",
+        category="messaging",
+        usage="/sms @alias message",
+    ),
+    SlashCommandEntry(
+        "wa",
+        "Send WhatsApp shortcut",
+        handler="_handle_messaging_wa",
+        category="messaging",
+        usage="/wa @alias message",
+    ),
+    SlashCommandEntry(
+        "thread",
+        "List or show threads",
+        handler="_handle_messaging_thread",
+        category="messaging",
+        usage="/thread [id]",
+    ),
+    SlashCommandEntry(
+        "threads",
+        "Active conversations",
+        handler="_handle_messaging_threads",
+        category="messaging",
+        usage="/threads [adapter]",
+    ),
+    SlashCommandEntry(
+        "contact",
+        "Show or manage a contact",
+        handler="_handle_messaging_contact",
+        category="messaging",
+        usage="/contact @alias",
+    ),
+    SlashCommandEntry(
+        "contacts",
+        "List all contacts",
+        handler="_handle_messaging_contacts",
+        category="messaging",
+    ),
+    SlashCommandEntry(
+        "reply",
+        "Reply to active thread",
+        handler="_handle_messaging_reply",
+        category="messaging",
+        usage="/reply [thread_id] message",
     ),
 ]
 
@@ -3701,6 +3793,7 @@ class TelegramCommandsMixin:
 
         Tap a provider to immediately activate it with curated model defaults.
         The ✅ indicator shows the currently active provider.
+        Includes session override banner, vision status, and action shortcuts.
         """
         # Quick-focus: /providers openai  --  /provider anthropic  etc.
         provider_arg = ""
@@ -3746,8 +3839,34 @@ class TelegramCommandsMixin:
         else:
             user_pref = getattr(self, "_user_model_prefs", {}).get(user_id, "")
 
+        # ── Session overrides banner ────────────────────────────────────
+        session_overrides: dict = {}
+        try:
+            from navig.gateway.channels.telegram_sessions import get_session_manager
+
+            sm = get_session_manager()
+            session_overrides = sm.get_all_session_overrides(chat_id, user_id)
+        except Exception:  # noqa: BLE001
+            pass
+
         # ── Header ──────────────────────────────────────────────────────
         lines: list[str] = ["🎛️ *AI Providers*", ""]
+
+        # Session override banner
+        if session_overrides:
+            override_parts: list[str] = []
+            _tier_prov_keys = [
+                k for k in session_overrides if k.startswith("tier_") and k.endswith("_provider")
+            ]
+            if _tier_prov_keys:
+                _tier_names = [
+                    k.replace("tier_", "").replace("_provider", "") for k in _tier_prov_keys
+                ]
+                override_parts.append(f"tiers={','.join(_tier_names)}")
+            if "vision_provider" in session_overrides:
+                override_parts.append(f"vision={session_overrides['vision_provider']}")
+            if override_parts:
+                lines.append(f"🔶 Session: {', '.join(override_parts)}")
 
         # Active provider line
         active_name = ""
@@ -3788,6 +3907,18 @@ class TelegramCommandsMixin:
                 lines.append(f"⚡`{_short(small)}` · 🧠`{_short(big)}` · 💻`{_short(code)}`")
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
+
+        # Vision status
+        try:
+            from navig.providers.discovery import resolve_vision_model
+
+            vision_result = resolve_vision_model(session_overrides or None)
+            if vision_result:
+                v_prov, v_model, v_reason = vision_result
+                v_short = v_model.split("/")[-1].split(":")[-1]
+                lines.append(f"👁 Vision: `{v_short}` ({v_reason})")
+        except Exception:  # noqa: BLE001
+            pass
 
         if user_pref == "noai":
             lines.append("")
@@ -3891,6 +4022,19 @@ class TelegramCommandsMixin:
         keyboard_rows.append(
             [{"text": f"{noai_prefix}🚫 No AI — raw mode", "callback_data": "prov_noai"}]
         )
+
+        # ── Action shortcuts ────────────────────────────────────────────
+        keyboard_rows.append(
+            [
+                {"text": "🔀 Hybrid", "callback_data": "pu_hybrid"},
+                {"text": "👁 Vision", "callback_data": "pu_vision"},
+                {"text": "📊 Show", "callback_data": "pu_show"},
+            ]
+        )
+        if session_overrides:
+            keyboard_rows.append(
+                [{"text": "🔄 Reset session", "callback_data": "pu_reset_session"}]
+            )
         if message_id:
             keyboard_rows.append(
                 [
@@ -4494,6 +4638,490 @@ class TelegramCommandsMixin:
                 )
 
         await self.send_message(chat_id, text_payload, keyboard=keyboard, parse_mode="HTML")
+
+    # ── Provider control surface: handler methods ────────────────────────
+
+    async def _handle_provider_hybrid(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        message_id: int | None = None,
+        text: str = "",
+    ) -> None:
+        """Hybrid routing — one-tap per-tier provider/model assignment.
+
+        Session-only by default.  A "Save as default" button persists to config.
+        """
+        try:
+            from navig.providers.discovery import (
+                _get_current_tier_assignments,
+                list_connected_providers,
+            )
+        except Exception:  # noqa: BLE001
+            await self.send_message(chat_id, "⚠️ Provider discovery not available.", parse_mode=None)
+            return
+
+        providers = list_connected_providers()
+        tier_assignments = _get_current_tier_assignments()
+
+        # ── Session overrides ───────────────────────────────────────────
+        session_overrides: dict = {}
+        try:
+            from navig.gateway.channels.telegram_sessions import get_session_manager
+
+            sm = get_session_manager()
+            session_overrides = sm.get_all_session_overrides(chat_id, user_id)
+        except Exception:  # noqa: BLE001
+            pass
+
+        tier_emoji = {"small": "⚡", "big": "🧠", "coder_big": "💻"}
+        tier_label = {"small": "Small", "big": "Big", "coder_big": "Code"}
+
+        lines: list[str] = ["<b>🔀 Hybrid Routing</b>", ""]
+        lines.append("Assign a provider to each tier. Tap a tier to change it.")
+        lines.append("")
+
+        for tier in ("small", "big", "coder_big"):
+            # Session override takes precedence for display
+            so_prov = session_overrides.get(f"tier_{tier}_provider", "")
+            so_model = session_overrides.get(f"tier_{tier}_model", "")
+            if so_prov and so_model:
+                short_model = so_model.split("/")[-1].split(":")[-1]
+                lines.append(
+                    f"{tier_emoji[tier]} {tier_label[tier]}: "
+                    f"<code>{short_model}</code> ({so_prov}) 🔶"
+                )
+            elif tier in tier_assignments:
+                prov_id, model = tier_assignments[tier]
+                short_model = model.split("/")[-1].split(":")[-1] if model else "—"
+                prov_display = prov_id or "—"
+                lines.append(
+                    f"{tier_emoji[tier]} {tier_label[tier]}: "
+                    f"<code>{short_model}</code> ({prov_display})"
+                )
+            else:
+                lines.append(f"{tier_emoji[tier]} {tier_label[tier]}: —")
+
+        if session_overrides:
+            lines.append("")
+            lines.append("🔶 = session override (not saved to config)")
+
+        lines.append("")
+        lines.append("<i>Tap a tier below to pick a provider for it.</i>")
+
+        # Build keyboard: one row per tier
+        keyboard: list[list[dict[str, str]]] = []
+        for tier in ("small", "big", "coder_big"):
+            keyboard.append(
+                [
+                    {
+                        "text": f"{tier_emoji[tier]} {tier_label[tier]}",
+                        "callback_data": f"hyb_tier_{tier}",
+                    }
+                ]
+            )
+
+        # Connected providers summary row (for quick pick)
+        connected = [p for p in providers if p.connected]
+        if connected:
+            prov_row: list[dict[str, str]] = []
+            for p in connected[:4]:  # max 4 per row
+                prov_row.append(
+                    {"text": f"{p.emoji} {p.display_name}", "callback_data": f"hyb_pick_{p.id}"}
+                )
+            keyboard.append(prov_row)
+
+        # Save / Reset / Back
+        if session_overrides:
+            keyboard.append(
+                [
+                    {"text": "💾 Save as default", "callback_data": "hyb_save"},
+                    {"text": "🔄 Reset session", "callback_data": "hyb_reset"},
+                ]
+            )
+        keyboard.append(
+            [
+                {"text": "🔙 Providers", "callback_data": "nav:providers"},
+                {"text": "✖ Close", "callback_data": "prov_close"},
+            ]
+        )
+
+        text_payload = "\n".join(lines)
+        if message_id:
+            try:
+                await self.edit_message(
+                    chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
+                )
+                return
+            except Exception:  # noqa: BLE001
+                pass
+        await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
+
+    async def _handle_provider_vision(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        message_id: int | None = None,
+        text: str = "",
+    ) -> None:
+        """Vision model picker — select which model handles image analysis."""
+        try:
+            from navig.providers.capabilities import Capability
+            from navig.providers.discovery import list_available_models, resolve_vision_model
+        except Exception:  # noqa: BLE001
+            await self.send_message(chat_id, "⚠️ Provider discovery not available.", parse_mode=None)
+            return
+
+        # Get session overrides for current resolution
+        session_overrides: dict = {}
+        try:
+            from navig.gateway.channels.telegram_sessions import get_session_manager
+
+            sm = get_session_manager()
+            session_overrides = sm.get_all_session_overrides(chat_id, user_id)
+        except Exception:  # noqa: BLE001
+            pass
+
+        vision_models = list_available_models(capability=Capability.VISION, connected_only=True)
+        current = resolve_vision_model(session_overrides)
+
+        lines: list[str] = ["<b>👁 Vision Model</b>", ""]
+
+        if current:
+            cur_prov, cur_model, cur_reason = current
+            short_model = cur_model.split("/")[-1].split(":")[-1]
+            reason_labels = {
+                "session_override": "session override 🔶",
+                "global_config": "saved in config",
+                "active_provider": "from active provider",
+                "fallback": "auto-detected fallback",
+            }
+            reason_text = reason_labels.get(cur_reason, cur_reason)
+            lines.append(f"Active: <code>{short_model}</code> ({cur_prov})")
+            lines.append(f"Source: {reason_text}")
+        else:
+            lines.append("⚠️ No vision model available — connect a vision-capable provider.")
+
+        lines.append("")
+
+        if vision_models:
+            lines.append("<i>Tap a model to use it for image analysis:</i>")
+            lines.append("")
+            # Group by provider
+            by_provider: dict[str, list] = {}
+            for m in vision_models:
+                by_provider.setdefault(m.provider_id, []).append(m)
+
+            for prov_id, models in by_provider.items():
+                for m in models[:5]:  # limit per provider
+                    short = m.name.split("/")[-1].split(":")[-1]
+                    is_cur = current and current[0] == m.provider_id and current[1] == m.name
+                    marker = " ✅" if is_cur else ""
+                    lines.append(
+                        f"  • {m.capability_label} <code>{short}</code> ({prov_id}){marker}"
+                    )
+        else:
+            lines.append("No vision-capable models found from connected providers.")
+
+        # Build keyboard
+        keyboard: list[list[dict[str, str]]] = []
+        for m in vision_models[:12]:  # max 12 buttons
+            short = m.name.split("/")[-1].split(":")[-1]
+            is_cur = current and current[0] == m.provider_id and current[1] == m.name
+            check = " ✅" if is_cur else ""
+            keyboard.append(
+                [
+                    {
+                        "text": f"👁 {short}{check}",
+                        "callback_data": f"vis_{m.provider_id}:{m.name[:40]}",
+                    }
+                ]
+            )
+
+        # Clear vision override if we have one
+        if session_overrides.get("vision_provider"):
+            keyboard.append([{"text": "🔄 Clear vision override", "callback_data": "vis_clear"}])
+
+        keyboard.append(
+            [
+                {"text": "🔙 Providers", "callback_data": "nav:providers"},
+                {"text": "✖ Close", "callback_data": "prov_close"},
+            ]
+        )
+
+        text_payload = "\n".join(lines)
+        if message_id:
+            try:
+                await self.edit_message(
+                    chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
+                )
+                return
+            except Exception:  # noqa: BLE001
+                pass
+        await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
+
+    async def _handle_provider_show(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        message_id: int | None = None,
+        text: str = "",
+    ) -> None:
+        """Show comprehensive routing state — config vs session overrides."""
+        try:
+            from navig.providers.discovery import (
+                _get_active_provider,
+                _get_current_tier_assignments,
+                resolve_vision_model,
+            )
+        except Exception:  # noqa: BLE001
+            await self.send_message(chat_id, "⚠️ Provider discovery not available.", parse_mode=None)
+            return
+
+        session_overrides: dict = {}
+        try:
+            from navig.gateway.channels.telegram_sessions import get_session_manager
+
+            sm = get_session_manager()
+            session_overrides = sm.get_all_session_overrides(chat_id, user_id)
+        except Exception:  # noqa: BLE001
+            pass
+
+        active_prov = _get_active_provider()
+        tier_assignments = _get_current_tier_assignments()
+        vision = resolve_vision_model(session_overrides)
+
+        tier_emoji = {"small": "⚡", "big": "🧠", "coder_big": "💻"}
+        tier_label = {"small": "Small", "big": "Big", "coder_big": "Code"}
+
+        lines: list[str] = ["<b>📊 Routing State</b>", ""]
+
+        # Active provider
+        prov_display = active_prov or "<i>none</i>"
+        lines.append(f"🎯 Active provider: <code>{prov_display}</code>")
+        lines.append("")
+
+        # Config tier assignments
+        lines.append("<b>Config (saved):</b>")
+        for tier in ("small", "big", "coder_big"):
+            if tier in tier_assignments:
+                prov_id, model = tier_assignments[tier]
+                short = model.split("/")[-1].split(":")[-1] if model else "—"
+                lines.append(
+                    f"  {tier_emoji[tier]} {tier_label[tier]}: <code>{short}</code> ({prov_id})"
+                )
+            else:
+                lines.append(f"  {tier_emoji[tier]} {tier_label[tier]}: —")
+
+        # Session overrides
+        if session_overrides:
+            lines.append("")
+            lines.append("<b>Session overrides 🔶:</b>")
+            for key, value in sorted(session_overrides.items()):
+                lines.append(f"  • {key}: <code>{value}</code>")
+            lines.append("")
+            lines.append("<i>Session overrides are temporary and lost on restart.</i>")
+
+            # Show effective routing (config + session merged)
+            lines.append("")
+            lines.append("<b>Effective (after session merge):</b>")
+            for tier in ("small", "big", "coder_big"):
+                so_prov = session_overrides.get(f"tier_{tier}_provider", "")
+                so_model = session_overrides.get(f"tier_{tier}_model", "")
+                if so_prov and so_model:
+                    short = so_model.split("/")[-1].split(":")[-1]
+                    lines.append(
+                        f"  {tier_emoji[tier]} {tier_label[tier]}: "
+                        f"<code>{short}</code> ({so_prov}) 🔶"
+                    )
+                elif tier in tier_assignments:
+                    prov_id, model = tier_assignments[tier]
+                    short = model.split("/")[-1].split(":")[-1] if model else "—"
+                    lines.append(
+                        f"  {tier_emoji[tier]} {tier_label[tier]}: <code>{short}</code> ({prov_id})"
+                    )
+                else:
+                    lines.append(f"  {tier_emoji[tier]} {tier_label[tier]}: —")
+        else:
+            lines.append("")
+            lines.append("<i>No session overrides active.</i>")
+
+        # Vision
+        lines.append("")
+        if vision:
+            v_prov, v_model, v_reason = vision
+            short_v = v_model.split("/")[-1].split(":")[-1]
+            lines.append(f"👁 Vision: <code>{short_v}</code> ({v_prov}) — {v_reason}")
+        else:
+            lines.append("👁 Vision: <i>not available</i>")
+
+        keyboard: list[list[dict[str, str]]] = [
+            [
+                {"text": "🔀 Hybrid", "callback_data": "pu_hybrid"},
+                {"text": "👁 Vision", "callback_data": "pu_vision"},
+            ],
+        ]
+        if session_overrides:
+            keyboard.append([{"text": "🔄 Reset session", "callback_data": "pu_reset_session"}])
+        keyboard.append(
+            [
+                {"text": "🔙 Providers", "callback_data": "nav:providers"},
+                {"text": "✖ Close", "callback_data": "prov_close"},
+            ]
+        )
+
+        text_payload = "\n".join(lines)
+        if message_id:
+            try:
+                await self.edit_message(
+                    chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
+                )
+                return
+            except Exception:  # noqa: BLE001
+                pass
+        await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
+
+    async def _handle_provider_reset(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        message_id: int | None = None,
+        text: str = "",
+    ) -> None:
+        """Clear all session overrides for current chat."""
+        count = 0
+        try:
+            from navig.gateway.channels.telegram_sessions import get_session_manager
+
+            sm = get_session_manager()
+            count = sm.clear_session_overrides(chat_id, user_id)
+        except Exception:  # noqa: BLE001
+            pass
+
+        if count > 0:
+            lines = [
+                "✅ <b>Session reset</b>",
+                "",
+                f"Cleared {count} session override{'s' if count != 1 else ''}.",
+                "Routing is now using saved config defaults.",
+            ]
+        else:
+            lines = [
+                "ℹ️ <b>No session overrides</b>",
+                "",
+                "Nothing to clear — already using config defaults.",
+            ]
+
+        keyboard: list[list[dict[str, str]]] = [
+            [
+                {"text": "🔙 Providers", "callback_data": "nav:providers"},
+                {"text": "✖ Close", "callback_data": "prov_close"},
+            ]
+        ]
+
+        text_payload = "\n".join(lines)
+        if message_id:
+            try:
+                await self.edit_message(
+                    chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
+                )
+                return
+            except Exception:  # noqa: BLE001
+                pass
+        await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
+
+    async def _handle_models_reset(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        message_id: int | None = None,
+        text: str = "",
+    ) -> None:
+        """Reset model assignments to curated defaults for the active provider."""
+        active_prov = ""
+        try:
+            from navig.providers.discovery import _get_active_provider
+
+            active_prov = _get_active_provider()
+        except Exception:  # noqa: BLE001
+            pass
+
+        if not active_prov:
+            await self.send_message(
+                chat_id,
+                "⚠️ No active provider detected. Use /providers to activate one first.",
+                parse_mode=None,
+            )
+            return
+
+        try:
+            from navig.providers.registry import get_provider as _gp
+
+            manifest = _gp(active_prov)
+        except Exception:  # noqa: BLE001
+            manifest = None
+
+        models = await self._resolve_provider_models(active_prov, manifest=manifest)
+        if not models:
+            await self.send_message(
+                chat_id,
+                f"⚠️ No models found for {active_prov}.",
+                parse_mode=None,
+            )
+            return
+
+        defaults = self._select_curated_tier_defaults(active_prov, models)
+        self._update_llm_mode_router(active_prov, defaults)
+
+        # Also update hybrid router if available
+        try:
+            from navig.agent.ai_client import get_ai_client
+
+            router = get_ai_client().model_router
+            if router and router.is_active:
+                for tier, model in defaults.items():
+                    slot = router.cfg.slot_for_tier(tier)
+                    slot.provider = active_prov
+                    slot.model = model
+                self._persist_hybrid_router_assignments(router.cfg)
+        except Exception:  # noqa: BLE001
+            pass
+
+        self._refresh_ai_runtime_after_router_update()
+
+        def _short(m: str) -> str:
+            return m.split("/")[-1].split(":")[-1] if m else "—"
+
+        lines = [
+            f"✅ <b>Models reset for {active_prov}</b>",
+            "",
+            f"⚡ Small: <code>{_short(defaults.get('small', ''))}</code>",
+            f"🧠 Big: <code>{_short(defaults.get('big', ''))}</code>",
+            f"💻 Code: <code>{_short(defaults.get('coder_big', ''))}</code>",
+            "",
+            "<i>Saved to config. Use /models to customise per tier.</i>",
+        ]
+
+        keyboard: list[list[dict[str, str]]] = [
+            [
+                {"text": "🎛️ Providers", "callback_data": "nav:providers"},
+                {"text": "📝 Models", "callback_data": "nav:models"},
+            ],
+            [{"text": "✖ Close", "callback_data": "prov_close"}],
+        ]
+
+        text_payload = "\n".join(lines)
+        if message_id:
+            try:
+                await self.edit_message(
+                    chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
+                )
+                return
+            except Exception:  # noqa: BLE001
+                pass
+        await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
+
+    # ── End Provider control surface ─────────────────────────────────────
 
     async def _handle_providers_and_models(
         self, chat_id: int, user_id: int = 0, is_group: bool = False

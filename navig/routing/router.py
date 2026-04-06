@@ -184,6 +184,15 @@ class ProviderStatus:
 
 # ── Unified Router ──────────────────────────────────────────────────
 
+# Maps conversation mode names to tier keys used in session_tier_overrides.
+_MODE_TO_TIER: dict[str, str] = {
+    "small_talk": "small",
+    "big_tasks": "big",
+    "coding": "coder_big",
+    "summarize": "big",
+    "research": "big",
+}
+
 
 class UnifiedRouter:
     """
@@ -281,8 +290,40 @@ class UnifiedRouter:
         trace.capability_profile = decision.mode
         trace.purpose_sent = decision.purpose
 
+        # 1b. Apply session tier overrides (from Telegram /provider_hybrid).
+        #     These override the provider+model for a specific tier/mode
+        #     without touching durable config.
+        _sto = (request.metadata or {}).get("session_tier_overrides")
+        if _sto and isinstance(_sto, dict):
+            _tier = _MODE_TO_TIER.get(decision.mode, "big")
+            _tier_data = _sto.get(_tier)
+            if _tier_data and isinstance(_tier_data, dict):
+                _so_model = _tier_data.get("model", "")
+                _so_provider = _tier_data.get("provider", "")
+                if _so_model:
+                    decision.model = _so_model
+                    decision.reasons.append(f"session_override:{_tier}")
+                    logger.info(
+                        "Session override applied: tier=%s provider=%s model=%s",
+                        _tier,
+                        _so_provider,
+                        _so_model,
+                    )
+
         # 2. Try providers in priority order
         provider_chain = self._get_provider_chain()
+
+        # Prioritize session-override provider so we don't waste attempts
+        # on providers that don't know the overridden model.
+        if _sto and isinstance(_sto, dict):
+            _tier_data2 = _sto.get(_MODE_TO_TIER.get(decision.mode, "big"))
+            if _tier_data2 and _tier_data2.get("provider"):
+                _prov = _tier_data2["provider"]
+                if _prov in provider_chain:
+                    provider_chain = [_prov] + [p for p in provider_chain if p != _prov]
+                else:
+                    provider_chain = [_prov] + provider_chain
+
         response_text = ""
         last_error = ""
 
@@ -393,8 +434,13 @@ class UnifiedRouter:
     # ── Provider Management ─────────────────────────────────────────
 
     def _get_provider_chain(self) -> list[str]:
-        """Ordered provider chain. VS Code first, then cloud, then local."""
-        chain = self._config.get(
+        """Ordered provider chain.
+
+        Starts with any user-configured provider (from Telegram /models,
+        ``ai.default_provider``, or ``llm_router.llm_modes``), then the
+        static defaults: mcp_bridge → openrouter → github_models → ollama.
+        """
+        static_chain: list[str] = self._config.get(
             "provider_chain",
             [
                 "mcp_bridge",
@@ -403,7 +449,56 @@ class UnifiedRouter:
                 "ollama",
             ],
         )
+
+        # Discover user-configured providers and prepend them
+        user_providers = self._discover_user_providers()
+        if not user_providers:
+            return static_chain
+
+        chain: list[str] = []
+        seen: set[str] = set()
+        for p in user_providers + static_chain:
+            if p not in seen:
+                chain.append(p)
+                seen.add(p)
         return chain
+
+    def _discover_user_providers(self) -> list[str]:
+        """Read user-configured providers from config (llm_modes, ai.default_provider)."""
+        providers: list[str] = []
+        seen: set[str] = set()
+
+        def _add(name: str) -> None:
+            n = (name or "").strip().lower()
+            if n and n not in seen:
+                providers.append(n)
+                seen.add(n)
+
+        # 1. ai.default_provider (set by Telegram /models activation)
+        ai_cfg = self._config.get("ai") or {}
+        _add(ai_cfg.get("default_provider", ""))
+
+        # 2. llm_router.llm_modes — unique providers across all modes
+        try:
+            llm_router_cfg = self._config.get("llm_router") or {}
+            modes_cfg = llm_router_cfg.get("llm_modes") or {}
+            for _mode_name, mode_data in modes_cfg.items():
+                if isinstance(mode_data, dict):
+                    _add(mode_data.get("provider", ""))
+        except Exception:  # noqa: BLE001
+            pass  # best-effort
+
+        # 3. ai.routing.models — HybridRouter tier slots
+        try:
+            routing_cfg = ai_cfg.get("routing") or {}
+            models_cfg = routing_cfg.get("models") or {}
+            for _tier, slot_data in models_cfg.items():
+                if isinstance(slot_data, dict):
+                    _add(slot_data.get("provider", ""))
+        except Exception:  # noqa: BLE001
+            pass  # best-effort
+
+        return providers
 
     def _get_provider_instance(self, name: str):
         """Get or create a provider instance by name."""
@@ -420,7 +515,14 @@ class UnifiedRouter:
             return None
 
     def _create_provider(self, name: str):
-        """Create a provider from config."""
+        """Create a provider from config.
+
+        Special-cased providers (mcp_bridge, openrouter, github_models, ollama)
+        keep their custom init logic.  All other providers (xai, anthropic,
+        google, groq, nvidia, mistral, cerebras, …) are created via the
+        generic ``create_provider()`` factory from ``llm_providers.py``,
+        with API keys resolved by ``_resolve_provider_api_key()``.
+        """
         from navig.agent.llm_providers import (
             GitHubModelsProvider,
             McpBridgeProvider,
@@ -476,7 +578,23 @@ class UnifiedRouter:
         elif name == "ollama":
             return OllamaProvider()
 
-        return None
+        # ── Generic provider (xai, anthropic, google, groq, …) ──
+        return self._create_generic_provider(name)
+
+    def _create_generic_provider(self, name: str):
+        """Create any provider via the llm_providers factory + model_router key resolver."""
+        try:
+            from navig.agent.llm_providers import create_provider
+            from navig.agent.model_router import _resolve_provider_api_key
+
+            api_key = _resolve_provider_api_key(name, self._config)
+            if not api_key:
+                logger.debug("No API key found for generic provider %s", name)
+                return None
+            return create_provider(name, api_key=api_key)
+        except Exception:  # noqa: BLE001
+            logger.debug("Cannot create generic provider %s", name, exc_info=True)
+            return None
 
     # ── Execution ───────────────────────────────────────────────────
 

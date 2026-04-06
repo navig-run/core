@@ -788,6 +788,23 @@ class CallbackHandler:
                     await self._answer(cb_id, "⚠️ Setup fix unavailable")
                 return
 
+            # ── Hybrid routing callbacks (hyb_*) — provider control surface ──
+            if cb_data.startswith("hyb_"):
+                await self._handle_hybrid_callback(cb_id, cb_data, chat_id, message_id, user_id)
+                return
+
+            # ── Vision picker callbacks (vis_*) — provider control surface ──
+            if cb_data.startswith("vis_"):
+                await self._handle_vision_callback(cb_id, cb_data, chat_id, message_id, user_id)
+                return
+
+            # ── Provider utility callbacks (pu_*) — provider control surface ──
+            if cb_data.startswith("pu_"):
+                await self._handle_provider_utility_callback(
+                    cb_id, cb_data, chat_id, message_id, user_id
+                )
+                return
+
             # ── Audio deep menu (audio:*) — no store needed ──
             if cb_data.startswith("audio:"):
                 try:
@@ -1579,6 +1596,362 @@ class CallbackHandler:
             )
         except Exception as exc:  # noqa: BLE001
             logger.debug("Provider picker refresh skipped after successful pms_: %s", exc)
+
+    # ── Provider control surface callback handlers ───────────────────────
+
+    async def _handle_hybrid_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        """Handle hybrid routing callbacks (hyb_* prefix).
+
+        Callback formats:
+        - hyb_tier_{tier}          : show provider picker for a specific tier
+        - hyb_pick_{prov_id}       : quick-pick provider (applies to last selected tier)
+        - hyb_assign_{tier}_{prov} : assign provider to tier as session override
+        - hyb_save                 : save session overrides to durable config
+        - hyb_reset                : clear session tier overrides
+        """
+        if cb_data == "hyb_save":
+            # Save current session tier overrides to config
+            await self._answer(cb_id, "")
+            try:
+                from navig.gateway.channels.telegram_sessions import get_session_manager
+
+                sm = get_session_manager()
+                overrides = sm.get_all_session_overrides(chat_id, user_id)
+
+                saved_any = False
+                tier_models: dict[str, str] = {}
+                save_provider = ""
+                for tier in ("small", "big", "coder_big"):
+                    prov = overrides.get(f"tier_{tier}_provider", "")
+                    model = overrides.get(f"tier_{tier}_model", "")
+                    if prov and model:
+                        tier_models[tier] = model
+                        if not save_provider:
+                            save_provider = prov
+                        saved_any = True
+
+                if saved_any and save_provider:
+                    if hasattr(self.channel, "_update_llm_mode_router"):
+                        self.channel._update_llm_mode_router(save_provider, tier_models)
+                    # Also update hybrid router
+                    try:
+                        from navig.agent.ai_client import get_ai_client
+
+                        router = get_ai_client().model_router
+                        if router and router.is_active:
+                            for tier, model in tier_models.items():
+                                slot = router.cfg.slot_for_tier(tier)
+                                slot.provider = save_provider
+                                slot.model = model
+                            if hasattr(self.channel, "_persist_hybrid_router_assignments"):
+                                self.channel._persist_hybrid_router_assignments(router.cfg)
+                    except Exception:  # noqa: BLE001
+                        pass
+
+                    # Clear the session overrides after saving
+                    sm.clear_session_overrides(chat_id, user_id)
+
+                    await self.channel.send_message(
+                        chat_id,
+                        "✅ Session overrides saved to config and cleared.",
+                        parse_mode=None,
+                    )
+                else:
+                    await self.channel.send_message(
+                        chat_id,
+                        "ℹ️ No tier overrides in session to save.",
+                        parse_mode=None,
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("hyb_save failed: %s", exc)
+                await self.channel.send_message(
+                    chat_id, "⚠️ Failed to save overrides.", parse_mode=None
+                )
+            return
+
+        if cb_data == "hyb_reset":
+            await self._answer(cb_id, "")
+            await self.channel._handle_provider_reset(chat_id, user_id, message_id=message_id)
+            return
+
+        # hyb_tier_{tier} — show providers for this tier
+        if cb_data.startswith("hyb_tier_"):
+            tier = cb_data[len("hyb_tier_") :]
+            if tier not in ("small", "big", "coder_big"):
+                await self._answer(cb_id, "⚠️ Unknown tier")
+                return
+            await self._answer(cb_id, "")
+            # Show a provider list scoped to this tier
+            await self._show_hybrid_tier_picker(chat_id, message_id, user_id, tier)
+            return
+
+        # hyb_pick_{prov_id} — quick-pick provider (needs tier context)
+        if cb_data.startswith("hyb_pick_"):
+            prov_id = cb_data[len("hyb_pick_") :]
+            await self._answer(cb_id, "")
+            # Show tier assignment buttons for this provider
+            await self._show_hybrid_provider_tiers(chat_id, message_id, user_id, prov_id)
+            return
+
+        # hyb_assign_{tier}_{prov_id} — assign provider to specific tier (session)
+        if cb_data.startswith("hyb_assign_"):
+            rest = cb_data[len("hyb_assign_") :]
+            # tier_provid: tier is small/big/coder_big, rest is provider id
+            for tier in ("coder_big", "big", "small"):  # longest first
+                if rest.startswith(f"{tier}_"):
+                    prov_id = rest[len(f"{tier}_") :]
+                    break
+            else:
+                await self._answer(cb_id, "⚠️ Bad assignment callback")
+                return
+
+            # Resolve best model for this provider+tier
+            try:
+                from navig.providers.registry import get_provider
+
+                manifest = get_provider(prov_id)
+                models = await self.channel._resolve_provider_models(prov_id, manifest=manifest)
+                defaults = self.channel._select_curated_tier_defaults(prov_id, models)
+                model = defaults.get(tier, models[0] if models else "")
+            except Exception:  # noqa: BLE001
+                model = ""
+
+            if not model:
+                await self._answer(cb_id, "⚠️ No model resolved", show_alert=True)
+                return
+
+            # Set as session override
+            try:
+                from navig.gateway.channels.telegram_sessions import get_session_manager
+
+                sm = get_session_manager()
+                sm.set_session_override(chat_id, user_id, f"tier_{tier}_provider", prov_id)
+                sm.set_session_override(chat_id, user_id, f"tier_{tier}_model", model)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Failed to set session override for hyb_assign: %s", exc)
+
+            short = model.split("/")[-1].split(":")[-1]
+            tier_emoji = {"small": "⚡", "big": "🧠", "coder_big": "💻"}
+            await self._answer(cb_id, f"{tier_emoji.get(tier, '📝')} {tier} → {short} (session)")
+
+            # Refresh hybrid view
+            await self.channel._handle_provider_hybrid(chat_id, user_id, message_id=message_id)
+            return
+
+        await self._answer(cb_id, "⚠️ Unknown hybrid action")
+
+    async def _show_hybrid_tier_picker(
+        self,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+        tier: str,
+    ) -> None:
+        """Show connected providers to assign to a specific tier."""
+        try:
+            from navig.providers.discovery import list_connected_providers
+        except Exception:  # noqa: BLE001
+            return
+
+        providers = list_connected_providers()
+        connected = [p for p in providers if p.connected]
+
+        tier_emoji = {"small": "⚡", "big": "🧠", "coder_big": "💻"}
+        tier_label = {"small": "Small", "big": "Big", "coder_big": "Code"}
+
+        lines = [
+            f"<b>{tier_emoji.get(tier, '📝')} Pick provider for {tier_label.get(tier, tier)}</b>",
+            "",
+            "<i>This sets a session override (not saved to config).</i>",
+        ]
+
+        keyboard: list[list[dict[str, str]]] = []
+        for p in connected:
+            keyboard.append(
+                [
+                    {
+                        "text": f"{p.emoji} {p.display_name}",
+                        "callback_data": f"hyb_assign_{tier}_{p.id}",
+                    }
+                ]
+            )
+        keyboard.append(
+            [
+                {"text": "🔙 Back", "callback_data": "pu_hybrid"},
+                {"text": "✖ Close", "callback_data": "prov_close"},
+            ]
+        )
+
+        text_payload = "\n".join(lines)
+        try:
+            await self.channel.edit_message(
+                chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
+            )
+        except Exception:  # noqa: BLE001
+            await self.channel.send_message(
+                chat_id, text_payload, parse_mode="HTML", keyboard=keyboard
+            )
+
+    async def _show_hybrid_provider_tiers(
+        self,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+        prov_id: str,
+    ) -> None:
+        """Show tier assignment buttons for a specific provider."""
+        emoji, name = "🤖", prov_id
+        try:
+            from navig.providers.registry import get_provider
+
+            manifest = get_provider(prov_id)
+            if manifest:
+                emoji = manifest.emoji
+                name = manifest.display_name
+        except Exception:  # noqa: BLE001
+            pass
+
+        lines = [
+            f"<b>{emoji} {name}</b> — assign to tier",
+            "",
+            "<i>Tap a tier to assign this provider (session override).</i>",
+        ]
+
+        keyboard: list[list[dict[str, str]]] = [
+            [
+                {"text": "⚡ Small", "callback_data": f"hyb_assign_small_{prov_id}"},
+                {"text": "🧠 Big", "callback_data": f"hyb_assign_big_{prov_id}"},
+                {"text": "💻 Code", "callback_data": f"hyb_assign_coder_big_{prov_id}"},
+            ],
+            [
+                {"text": "🔙 Back", "callback_data": "pu_hybrid"},
+                {"text": "✖ Close", "callback_data": "prov_close"},
+            ],
+        ]
+
+        text_payload = "\n".join(lines)
+        try:
+            await self.channel.edit_message(
+                chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
+            )
+        except Exception:  # noqa: BLE001
+            await self.channel.send_message(
+                chat_id, text_payload, parse_mode="HTML", keyboard=keyboard
+            )
+
+    async def _handle_vision_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        """Handle vision picker callbacks (vis_* prefix).
+
+        Callback formats:
+        - vis_{prov_id}:{model_name} : set vision model as session override
+        - vis_clear                   : clear vision session override
+        """
+        if cb_data == "vis_clear":
+            try:
+                from navig.gateway.channels.telegram_sessions import get_session_manager
+
+                sm = get_session_manager()
+                sm.set_session_override(chat_id, user_id, "vision_provider", "")
+                sm.set_session_override(chat_id, user_id, "vision_model", "")
+            except Exception:  # noqa: BLE001
+                pass
+            await self._answer(cb_id, "✅ Vision override cleared")
+            # Refresh vision picker
+            await self.channel._handle_provider_vision(chat_id, user_id, message_id=message_id)
+            return
+
+        # vis_{prov_id}:{model_name}
+        rest = cb_data[4:]  # strip "vis_"
+        if ":" not in rest:
+            await self._answer(cb_id, "⚠️ Invalid vision callback")
+            return
+
+        prov_id, model_name = rest.split(":", 1)
+
+        # Model name may be truncated by callback_data 64-byte limit.
+        # If truncated, try to find the full model name from the provider.
+        if model_name:
+            try:
+                from navig.providers.registry import get_provider
+
+                manifest = get_provider(prov_id)
+                if manifest:
+                    for m in manifest.models:
+                        if m[:40] == model_name or m == model_name:
+                            model_name = m
+                            break
+            except Exception:  # noqa: BLE001
+                pass
+
+        try:
+            from navig.gateway.channels.telegram_sessions import get_session_manager
+
+            sm = get_session_manager()
+            sm.set_session_override(chat_id, user_id, "vision_provider", prov_id)
+            sm.set_session_override(chat_id, user_id, "vision_model", model_name)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to set vision session override: %s", exc)
+            await self._answer(cb_id, "⚠️ Could not save override", show_alert=True)
+            return
+
+        short = model_name.split("/")[-1].split(":")[-1]
+        await self._answer(cb_id, f"👁 Vision → {short} (session)")
+        # Refresh vision picker
+        await self.channel._handle_provider_vision(chat_id, user_id, message_id=message_id)
+
+    async def _handle_provider_utility_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        """Handle utility button callbacks from provider hub (pu_* prefix).
+
+        Callback formats:
+        - pu_hybrid         : open hybrid routing view
+        - pu_vision         : open vision picker
+        - pu_show           : open routing state view
+        - pu_reset_session  : reset all session overrides
+        """
+        if cb_data == "pu_hybrid":
+            await self._answer(cb_id, "")
+            await self.channel._handle_provider_hybrid(chat_id, user_id, message_id=message_id)
+            return
+
+        if cb_data == "pu_vision":
+            await self._answer(cb_id, "")
+            await self.channel._handle_provider_vision(chat_id, user_id, message_id=message_id)
+            return
+
+        if cb_data == "pu_show":
+            await self._answer(cb_id, "")
+            await self.channel._handle_provider_show(chat_id, user_id, message_id=message_id)
+            return
+
+        if cb_data == "pu_reset_session":
+            await self._answer(cb_id, "")
+            await self.channel._handle_provider_reset(chat_id, user_id, message_id=message_id)
+            return
+
+        await self._answer(cb_id, "⚠️ Unknown action", show_alert=True)
+
+    # ── End provider control surface callbacks ───────────────────────────
 
     async def _handle_models_callback(
         self,
