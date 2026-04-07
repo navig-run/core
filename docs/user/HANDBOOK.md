@@ -5509,6 +5509,11 @@ navig cred add gmail --email user@gmail.com  # Interactive password prompt
 navig cred show <id>
 navig cred show <id> --reveal       # Show secret values (use with caution)
 
+# Full information panel (identity + keys + last validation + recent audit)
+navig cred info <id>                # Cached validation result
+navig cred info <id> --test         # Re-run live connection probe, refresh cache
+navig cred info <id> --test --reveal  # Live test AND reveal secret values
+
 # Edit a credential
 navig cred edit <id> --key sk-new-key --label "Updated Label"
 
@@ -6599,6 +6604,22 @@ navig search "nginx configuration" --provider duckduckgo
 export BRAVE_API_KEY="your-api-key"
 # Or: navig config set web.search.api_key=YOUR_KEY
 ```
+
+### 26.10 Firecrawl Scraping & Crawling (MCP + REST Fallback)
+
+NAVIG now exposes Firecrawl as a first-class scraping/crawling capability via MCP tool `firecrawl_scrape`.
+
+- Free tier works without a key (up to Firecrawl's free quota).
+- If a key exists, NAVIG uses it automatically from `FIRECRAWL_API_KEY` or vault labels.
+- MCP path is preferred when available; otherwise NAVIG logs and falls back to direct REST.
+
+**Optional API key setup (vault-validated):**
+```bash
+# Key is validated against Firecrawl /v1/account before save
+navig cred add firecrawl --key fc-xxxxxxxx --label "Firecrawl API Key"
+```
+
+If validation fails, NAVIG blocks save and prints an inline error.
 
 ---
 

@@ -134,3 +134,74 @@ def test_vault_cli_add_firecrawl_rejects_invalid_key(monkeypatch):
 
     assert result.exit_code == 1
     assert "Firecrawl API key rejected" in result.output
+
+
+def test_vault_cli_info_basic(vault):
+    """info command shows identity panel and masked secret keys."""
+    runner.invoke(
+        app,
+        [
+            "cred",
+            "add",
+            "openai",
+            "--key",
+            "sk-test-info-key",
+            "--profile",
+            "info-test",
+            "--no-interactive",
+        ],
+    )
+
+    creds = vault.list_creds(provider="openai")
+    target = next((c for c in creds if c.profile_id == "info-test"), None)
+    assert target is not None
+
+    result = runner.invoke(app, ["cred", "info", target.id[:8]])
+    assert result.exit_code == 0, result.output
+    # Identity section
+    assert "openai" in result.output
+    assert "info-test" in result.output
+    # Secret keys masked
+    assert "api_key" in result.output
+    assert "sk-test-info-key" not in result.output  # not revealed
+    # Validation section present
+    assert "Validation" in result.output or "validation" in result.output.lower()
+    # Audit section present
+    assert "Audit" in result.output or "created" in result.output
+
+    # Cleanup
+    vault.delete(target.id)
+
+
+def test_vault_cli_info_reveal(vault):
+    """info --reveal exposes actual secret value."""
+    runner.invoke(
+        app,
+        [
+            "cred",
+            "add",
+            "openai",
+            "--key",
+            "sk-reveal-me",
+            "--profile",
+            "reveal-test",
+            "--no-interactive",
+        ],
+    )
+
+    creds = vault.list_creds(provider="openai")
+    target = next((c for c in creds if c.profile_id == "reveal-test"), None)
+    assert target is not None
+
+    result = runner.invoke(app, ["cred", "info", target.id[:8], "--reveal"])
+    assert result.exit_code == 0, result.output
+    assert "sk-reveal-me" in result.output
+
+    vault.delete(target.id)
+
+
+def test_vault_cli_info_unknown_id():
+    """info on a non-existent ID exits 1 with 'not found' message."""
+    result = runner.invoke(app, ["cred", "info", "00000000"])
+    assert result.exit_code == 1
+    assert "not found" in result.output.lower() or "no credential" in result.output.lower()

@@ -336,6 +336,223 @@ def show_credential(
         _ch.info("Use --reveal to see secret values")
 
 
+@cred_app.command("info")
+def info_credential(
+    credential_id: str = typer.Argument(..., help="Credential ID (or first 8 chars)"),
+    test: bool = typer.Option(False, "--test/--no-test", help="Run a live connection test"),
+    reveal: bool = typer.Option(False, "--reveal", help="Reveal secret values (DANGER!)"),
+):
+    """Show a full information panel for a credential.
+
+    \b
+    Displays identity, stored secret keys, last validation result, and recent
+    audit history in a structured panel layout.
+
+    \b
+    Use --test to run a live connection probe against the provider API and
+    refresh the cached validation result.
+
+    \b
+    Examples:
+      navig cred info d08ae821
+      navig cred info d08ae821 --test
+      navig cred info d08ae821 --test --reveal
+    """
+    from rich.console import Group
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.text import Text
+
+    vault = _vault_mod.get_vault()
+
+    # ── Resolve short-ID → full UUID ────────────────────────────────────────
+    target_id = credential_id.strip()
+    if len(target_id) <= 8:
+        all_items = vault.list()
+        matches = [i for i in all_items if i.id.startswith(target_id)]
+        if not matches:
+            _ch.error(f"No credential found with ID starting with '{target_id}'.")
+            raise typer.Exit(1)
+        if len(matches) > 1:
+            _ch.error(
+                f"Ambiguous short ID '{target_id}' matches {len(matches)} credentials — use more chars."
+            )
+            raise typer.Exit(1)
+        target_id = matches[0].id
+
+    # ── Load data ────────────────────────────────────────────────────────────
+    cred = vault.get_by_id(target_id)
+    if cred is None:
+        _ch.error(f"Credential '{target_id}' not found.")
+        raise typer.Exit(1)
+
+    raw = vault._store.get_by_id(target_id)  # VaultItem — full metadata, no decrypt
+
+    # ── Optional live test ───────────────────────────────────────────────────
+    test_result = None
+    if test:
+        con = _console()
+        con.print(f"[dim]Running live test for [cyan]{cred.provider}[/cyan]…[/dim]")
+        try:
+            test_result = vault.test(target_id)
+            # Write validation metadata back (same as cred test command)
+            update_meta: dict = {
+                "validation_success": bool(test_result.success),
+                "validation_message": str(test_result.message or ""),
+            }
+            tested_at = getattr(test_result, "tested_at", None)
+            if tested_at:
+                update_meta["validation_tested_at"] = tested_at.isoformat()
+            if isinstance(getattr(test_result, "details", None), dict):
+                if test_result.details.get("validation_mode"):
+                    update_meta["validation_mode"] = test_result.details["validation_mode"]
+            vault.update(cred.id, metadata=update_meta)
+            # Refresh raw item so panels show the updated metadata
+            raw = vault._store.get_by_id(target_id)
+        except Exception as exc:
+            _ch.warning(f"Live test failed: {exc}")
+
+    raw_meta = (raw.metadata if raw else {}) or {}
+    con = _console()
+
+    # ── Section 1: Identity ──────────────────────────────────────────────────
+    id_table = Table(box=None, show_header=False, padding=(0, 1))
+    id_table.add_column("Key", style="dim", no_wrap=True)
+    id_table.add_column("Value")
+
+    active_flag = raw_meta.get("active", False)
+    enabled_flag = cred.enabled
+
+    id_table.add_row("ID", f"[cyan]{cred.id[:8]}[/cyan]  [dim]({cred.id})[/dim]")
+    id_table.add_row("Provider", f"[green]{cred.provider}[/green]")
+    id_table.add_row("Profile", f"[magenta]{cred.profile_id}[/magenta]")
+    id_table.add_row("Label", cred.label or "[dim]—[/dim]")
+    id_table.add_row("Type", cred.credential_type.value)
+    id_table.add_row("Kind", raw.kind.value if raw else "[dim]?[/dim]")
+    id_table.add_row("Version", str(raw.version) if raw else "[dim]?[/dim]")
+    id_table.add_row("Active", "⭐ yes" if active_flag else "[dim]—[/dim]")
+    id_table.add_row("Enabled", "✅ yes" if enabled_flag else "❌ no")
+    id_table.add_row("Created", str(cred.created_at.strftime("%Y-%m-%d %H:%M:%S %Z")).strip())
+    id_table.add_row(
+        "Updated",
+        str(cred.updated_at.strftime("%Y-%m-%d %H:%M:%S %Z")).strip() if cred.updated_at else "—",
+    )
+    id_table.add_row(
+        "Last Used",
+        str(cred.last_used_at.strftime("%Y-%m-%d %H:%M:%S %Z")).strip()
+        if cred.last_used_at
+        else "[dim]Never[/dim]",
+    )
+
+    identity_panel = Panel(id_table, title="[bold]Identity[/bold]", border_style="cyan")
+
+    # ── Section 2: Secret Keys ───────────────────────────────────────────────
+    keys_table = Table(box=None, show_header=False, padding=(0, 1))
+    keys_table.add_column("Key", style="dim", no_wrap=True)
+    keys_table.add_column("Value")
+
+    if cred.data:
+        for k, v in cred.data.items():
+            if reveal:
+                keys_table.add_row(k, f"[yellow]{v}[/yellow]")
+            else:
+                short = str(v)[:4] + "…" if v and len(str(v)) > 4 else "…"
+                keys_table.add_row(
+                    k, f"[dim]{short}[/dim]  [dim italic](--reveal to show)[/dim italic]"
+                )
+    else:
+        keys_table.add_row("", "[dim italic]no secret data stored[/dim italic]")
+
+    if reveal:
+        keys_panel = Panel(
+            keys_table,
+            title="[bold yellow]⚠ Secret Keys (REVEALED)[/bold yellow]",
+            border_style="yellow",
+        )
+    else:
+        keys_panel = Panel(keys_table, title="[bold]Secret Keys[/bold]", border_style="blue")
+
+    # ── Section 3: Validation ────────────────────────────────────────────────
+    val_table = Table(box=None, show_header=False, padding=(0, 1))
+    val_table.add_column("Key", style="dim", no_wrap=True)
+    val_table.add_column("Value")
+
+    v_success = raw_meta.get("validation_success")
+    v_message = raw_meta.get("validation_message", "")
+    v_tested_at = raw_meta.get("validation_tested_at", "")
+    v_mode = raw_meta.get("validation_mode", "")
+
+    if v_success is None and test_result is None:
+        val_table.add_row("Status", "[dim italic]Never tested — run with --test[/dim italic]")
+    else:
+        # If we just ran a live test, use that result directly
+        if test_result is not None:
+            ok = test_result.success
+            msg = test_result.message or ""
+            details = getattr(test_result, "details", {}) or {}
+        else:
+            ok = bool(v_success)
+            msg = v_message
+            details = {}
+
+        status_icon = "✅ passed" if ok else "❌ failed"
+        val_table.add_row(
+            "Status", f"[green]{status_icon}[/green]" if ok else f"[red]{status_icon}[/red]"
+        )
+        if msg:
+            val_table.add_row("Message", msg)
+        if v_tested_at:
+            val_table.add_row("Tested At", v_tested_at.replace("T", " ").split(".")[0])
+        if v_mode:
+            val_table.add_row("Mode", v_mode)
+        for dk, dv in details.items():
+            if dk not in ("validation_mode",):
+                val_table.add_row(dk, str(dv))
+
+    val_color = "green" if v_success else ("red" if v_success is False else "dim")
+    val_panel = Panel(val_table, title="[bold]Last Validation[/bold]", border_style=val_color)
+
+    # ── Section 4: Recent Audit ──────────────────────────────────────────────
+    audit_table = Table(box=None, show_header=True, padding=(0, 1))
+    audit_table.add_column("Time", style="dim", no_wrap=True)
+    audit_table.add_column("Action", style="bold")
+    audit_table.add_column("Actor", style="dim")
+
+    audit_logs = vault.get_audit_log(target_id, limit=5)
+    if audit_logs:
+        for entry in audit_logs:
+            action = entry.get("action", "?")
+            action_style = (
+                "green"
+                if action in ("created", "enabled", "activated")
+                else "red"
+                if action in ("deleted", "disabled")
+                else "yellow"
+            )
+            audit_table.add_row(
+                entry.get("timestamp", "")[:19],
+                f"[{action_style}]{action}[/{action_style}]",
+                entry.get("accessed_by", "—"),
+            )
+    else:
+        audit_table.add_row("[dim]—[/dim]", "[dim italic]no audit entries[/dim italic]", "")
+
+    audit_panel = Panel(audit_table, title="[bold]Recent Audit[/bold]", border_style="magenta")
+
+    # ── Render ───────────────────────────────────────────────────────────────
+    title_text = Text(
+        f"  Credential Info — {cred.provider} / {cred.profile_id}  ",
+        style="bold white on dark_blue",
+    )
+    con.print()
+    con.print(title_text, justify="left")
+    con.print(
+        Panel(
+            Group(identity_panel, keys_panel, val_panel, audit_panel), border_style="bright_black"
+        )
+    )
+
+
 @cred_app.command("edit")
 def edit_credential(
     credential_id: str = typer.Argument(..., help="Credential ID"),
