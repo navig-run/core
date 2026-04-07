@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,7 @@ def register(server: Any) -> None:
             },
             "navig_web_search": {
                 "name": "navig_web_search",
-                "description": "Search the web for information. Uses Brave Search API (if configured) or DuckDuckGo as fallback.",
+                "description": "Search the web for information. Uses Firecrawl first (if configured) with runtime fallback to other providers.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -417,6 +418,27 @@ def _firecrawl_call_mcp_or_rest(
     mode: str,
 ) -> dict[str, Any]:
     """Run Firecrawl via MCP client when available, else via local REST client."""
+    def _mcp_error_allows_rest_fallback(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        fallback_markers = (
+            "not connected",
+            "connection",
+            "timeout",
+            "timed out",
+            "transport",
+            "tool not found",
+            "unknown tool",
+            "mcp unavailable",
+            "server unavailable",
+            "broken pipe",
+            "eof",
+        )
+        if any(marker in msg for marker in fallback_markers):
+            return True
+        if "tool call failed" in msg:
+            return False
+        return False
+
     mcp_client = getattr(server, "_mcp_client", None)
     if mcp_client is not None and hasattr(mcp_client, "call_tool"):
         try:
@@ -427,8 +449,11 @@ def _firecrawl_call_mcp_or_rest(
                 "mode": mode,
                 "result": result,
             }
-        except Exception:
-            logger.info("[firecrawl] MCP unavailable, using REST")
+        except Exception as exc:
+            if _mcp_error_allows_rest_fallback(exc):
+                logger.info("[firecrawl] MCP unavailable, using REST")
+            else:
+                raise
     else:
         logger.info("[firecrawl] MCP unavailable, using REST")
 
@@ -453,6 +478,9 @@ def _tool_firecrawl_scrape(server: Any, args: dict[str, Any]) -> dict[str, Any]:
         url = str(args.get("url") or "").strip()
         if not url:
             return {"error": "URL is required"}
+        parsed = urlsplit(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return {"error": "URL must start with http:// or https:// and include a hostname"}
 
         mode = str(args.get("mode") or "scrape").strip().lower()
         if mode not in {"scrape", "crawl"}:
@@ -464,6 +492,8 @@ def _tool_firecrawl_scrape(server: Any, args: dict[str, Any]) -> dict[str, Any]:
                 max_pages = int(max_pages)
             except (TypeError, ValueError):
                 return {"error": "maxPages must be an integer"}
+            if max_pages < 1:
+                return {"error": "maxPages must be >= 1"}
 
         mcp_args: dict[str, Any] = {
             "url": url,
@@ -500,6 +530,9 @@ def _tool_firecrawl_crawl(server: Any, args: dict[str, Any]) -> dict[str, Any]:
         url = str(args.get("url") or "").strip()
         if not url:
             return {"error": "URL is required"}
+        parsed = urlsplit(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return {"error": "URL must start with http:// or https:// and include a hostname"}
 
         max_pages = args.get("maxPages")
         if max_pages is not None:
@@ -507,6 +540,8 @@ def _tool_firecrawl_crawl(server: Any, args: dict[str, Any]) -> dict[str, Any]:
                 max_pages = int(max_pages)
             except (TypeError, ValueError):
                 return {"error": "maxPages must be an integer"}
+            if max_pages < 1:
+                return {"error": "maxPages must be >= 1"}
 
         mcp_args: dict[str, Any] = {
             "url": url,
@@ -549,6 +584,8 @@ def _tool_firecrawl_search(server: Any, args: dict[str, Any]) -> dict[str, Any]:
             count = int(count)
         except (TypeError, ValueError):
             return {"error": "count must be an integer"}
+        if count < 1 or count > 20:
+            return {"error": "count must be between 1 and 20"}
 
         scrape_inline = bool(args.get("scrapeInline", False))
 

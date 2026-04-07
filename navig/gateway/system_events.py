@@ -9,6 +9,7 @@ Handles:
 """
 
 import asyncio
+import inspect
 import json
 import os
 from collections.abc import Callable
@@ -288,7 +289,7 @@ class SystemEventQueue:
         errors = []
         for handler in handlers:
             try:
-                if asyncio.iscoroutinefunction(handler):
+                if inspect.iscoroutinefunction(handler):
                     await handler(event)
                 else:
                     handler(event)

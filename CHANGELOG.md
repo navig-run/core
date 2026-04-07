@@ -14,6 +14,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Onboarding step labels** (#45): Added missing human-readable labels for `sigil-genesis`, `core-navig`, `web-search-provider`, `matrix-bot`, `email-smtp`, `social-link`, and `import-secrets` in `navig/onboarding/renderer.py` so the setup summary displays friendly names instead of raw step IDs.
 
 ### Fixed
+- **Firecrawl key requirement clarity**: Firecrawl calls now fail fast with a clear `FIRECRAWL_API_KEY is required` error when no key is configured; `navig search --provider firecrawl` returns that explicit error instead of silently falling back to other providers, while `--provider auto` still degrades gracefully.
 - **Pytest basetemp on fresh clone** (#34): Created root `conftest.py` with `pytest_sessionstart` hook that ensures `.local/.pytest_tmp` exists before collection, preventing `--basetemp` failures on first run.
 - **`navig help <cmd>` order-agnostic** (#47): `_normalize_help_compat_args()` in `navig/main.py` now rewrites leading `navig help db` → `navig db --help` (previously only trailing `navig db help` was normalized).
 - **Telegram silent drop when AI unconfigured** (#36): Added an `else` branch to the `if self.on_message:` gate in `navig/gateway/channels/telegram.py` so the bot sends a helpful fallback message instead of silently ignoring user input when the AI handler is not configured.

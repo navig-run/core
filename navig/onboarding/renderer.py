@@ -146,9 +146,6 @@ _STEP_LABELS: dict[str, str] = {
     "skills-activation": "skills",
     "review": "review",
     # Phase 2 — optional / extended
-    "sigil-genesis": "identity sigil",
-    "core-navig": "core setup",
-    "web-search-provider": "web search",
     "matrix-bot": "matrix",
     "email-smtp": "email",
     "social-link": "social",

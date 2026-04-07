@@ -6602,9 +6602,9 @@ navig search "nginx configuration" --provider duckduckgo
 - `auto` uses Firecrawl first.
 - If Firecrawl is unavailable/unconfigured at runtime, NAVIG gracefully falls back to legacy providers.
 
-**Optional Firecrawl key setup:**
+**Required Firecrawl key setup:**
 ```bash
-# Free tier works without key; key unlocks higher quota
+# Firecrawl requests require an API key (even on free credits)
 navig cred add firecrawl --key fc-xxxxxxxx --label "Firecrawl API Key"
 ```
 
@@ -6620,11 +6620,11 @@ export BRAVE_API_KEY="your-api-key"
 
 NAVIG now exposes Firecrawl as a first-class scraping/crawling capability via MCP tool `firecrawl_scrape`.
 
-- Free tier works without a key (up to Firecrawl's free quota).
-- If a key exists, NAVIG uses it automatically from `FIRECRAWL_API_KEY` or vault labels.
+- Firecrawl requests require an API key.
+- NAVIG resolves key automatically from `FIRECRAWL_API_KEY` or vault labels.
 - MCP path is preferred when available; otherwise NAVIG logs and falls back to direct REST.
 
-**Optional API key setup (vault-validated):**
+**API key setup (vault-validated):**
 ```bash
 # Key is validated against Firecrawl /v1/account before save
 navig cred add firecrawl --key fc-xxxxxxxx --label "Firecrawl API Key"

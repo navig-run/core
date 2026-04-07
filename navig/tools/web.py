@@ -887,6 +887,9 @@ def web_search(
     if selected_provider == "firecrawl":
         result = _search_firecrawl(query, count)
         if not result.success:
+            if requested_provider == "firecrawl":
+                return result
+
             tavily_key = _resolve_key("tavily", search_cfg)
             brave_key = _resolve_key("brave", search_cfg)
             if tavily_key:

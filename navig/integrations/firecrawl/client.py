@@ -22,7 +22,7 @@ class FirecrawlError(RuntimeError):
 
 @dataclass
 class FirecrawlClient:
-    """Thin Firecrawl REST client supporting free-tier (no key) usage."""
+    """Thin Firecrawl REST client."""
 
     api_key: str | None = None
     base_url: str = FIRECRAWL_API_BASE
@@ -35,6 +35,13 @@ class FirecrawlClient:
         return headers
 
     def _request(self, method: str, path: str, *, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        if not self.api_key:
+            raise FirecrawlError(
+                "FIRECRAWL_API_KEY is required. Set it via env or `navig cred add firecrawl --key ...`.",
+                status_code=401,
+                retryable=False,
+            )
+
         try:
             import requests
         except ImportError as exc:  # pragma: no cover - environment dependency guard
@@ -147,10 +154,7 @@ class FirecrawlClient:
 
 
 def get_firecrawl_client() -> FirecrawlClient:
-    """Resolve Firecrawl API key from vault/env and return a ready client.
-
-    No key is a supported path (Firecrawl free tier).
-    """
+    """Resolve Firecrawl API key from vault/env and return a ready client."""
     api_key = resolve_secret(
         env_vars=("FIRECRAWL_API_KEY",),
         vault_labels=(
@@ -161,6 +165,10 @@ def get_firecrawl_client() -> FirecrawlClient:
             "web/firecrawl_api_key",
         ),
     )
-    if api_key:
-        return FirecrawlClient(api_key=api_key)
-    return FirecrawlClient(api_key=None)
+    if not api_key:
+        raise FirecrawlError(
+            "FIRECRAWL_API_KEY is required. Set it via env or `navig cred add firecrawl --key ...`.",
+            status_code=401,
+            retryable=False,
+        )
+    return FirecrawlClient(api_key=api_key)

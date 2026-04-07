@@ -5,8 +5,8 @@ Extracted from ``navig/cli/__init__.py`` during CLI decomposition.
 
 from __future__ import annotations
 
-import logging
 import locale
+import logging
 import os
 import platform
 import subprocess
@@ -70,6 +70,21 @@ def _decode_command_output(raw: bytes | str) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
+def _host_exists(config_manager: Any, host_name: str) -> bool:
+    """Best-effort host existence check with backward-compatible fallback."""
+    if not host_name:
+        return False
+
+    checker = getattr(config_manager, "host_exists", None)
+    if callable(checker):
+        try:
+            return bool(checker(host_name))
+        except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+            logger.debug("host_exists check failed for %s: %s", host_name, exc)
+
+    return True
+
+
 def ask_ai(question: str, model: str | None, options: dict[str, Any]):
     """Ask AI about server, get context-aware answers."""
     from navig.ai import AIAssistant
@@ -85,20 +100,20 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
         or options.get("host")
         or config_manager.get_active_server()
     )
+    synthetic_local_context = False
     if not server_name:
         compat_active = str((config_manager.global_config or {}).get("active_host") or "").strip()
-        if compat_active and config_manager.host_exists(compat_active):
+        if compat_active and _host_exists(config_manager, compat_active):
             server_name = compat_active
 
     if not server_name:
-        from navig.cli.recovery import require_active_server
-        server_name = require_active_server(
-            options,
-            config_manager,
-            allow_local_bootstrap=False,
-        )
+        # Keep `ask` usable even without a configured host/server.
+        # This enables generic AI usage and preserves exit-code behavior for
+        # downstream provider/config exceptions raised by AIAssistant.ask().
+        synthetic_local_context = True
+        server_name = "local"
 
-    if not config_manager.host_exists(server_name):
+    if not synthetic_local_context and not _host_exists(config_manager, server_name):
         ch.error(
             f"Active host '{server_name}' not found",
             "Use 'navig host list' and 'navig host use <name>'",
@@ -108,14 +123,26 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
     # Gather context
     ch.dim("The Schema's engines are analyzing...\n")
 
-    try:
-        server_config = config_manager.load_server_config(server_name)
-    except FileNotFoundError as e:
-        ch.error(
-            f"Host configuration for '{server_name}' not found",
-            "Use 'navig host list' and 'navig host use <name>'",
+    if synthetic_local_context:
+        server_config = {
+            "name": "local",
+            "type": "local",
+            "host": "localhost",
+            "is_local": True,
+        }
+        ch.warning(
+            "No active server configured.",
+            "Continuing with local AI-only context.",
         )
-        raise typer.Exit(2) from e
+    else:
+        try:
+            server_config = config_manager.load_server_config(server_name)
+        except FileNotFoundError as e:
+            ch.error(
+                f"Host configuration for '{server_name}' not found",
+                "Use 'navig host list' and 'navig host use <name>'",
+            )
+            raise typer.Exit(2) from e
 
     remote_ops = RemoteOperations(config_manager)
 

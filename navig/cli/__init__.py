@@ -1256,10 +1256,10 @@ from navig.cli.registration import (
     _HIDDEN_COMMANDS as _HIDDEN_COMMANDS,
 )
 from navig.cli.registration import (
-    _register_external_commands,
+    _clear_registration_cache as _clear_registration_cache,
 )
 from navig.cli.registration import (
-    _clear_registration_cache as _clear_registration_cache,
+    _register_external_commands,
 )
 from navig.cli.registration import (
     get_external_commands as get_external_commands,

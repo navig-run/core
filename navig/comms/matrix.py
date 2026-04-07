@@ -8,6 +8,7 @@ Uses `matrix-nio` (lazy-imported) so the package is only required when
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import time
 from collections.abc import Callable
@@ -608,7 +609,7 @@ class NavigMatrixBot:
                     "sender": getattr(event, "sender", ""),
                     "transaction_id": txn_id,
                 }
-                if asyncio.iscoroutinefunction(cb):
+                if inspect.iscoroutinefunction(cb):
                     await cb(etype, txn_id, data)
                 else:
                     cb(etype, txn_id, data)

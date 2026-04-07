@@ -628,7 +628,11 @@ class NavigGateway:
         try:
             # Initialize MCP client manager
             from navig.mcp import MCPClientManager
-            from navig.mcp.client import MCPClientConfig
+
+            try:
+                from navig.mcp.client import MCPClientConfig
+            except ImportError:
+                MCPClientConfig = None  # type: ignore[assignment]
 
             self.mcp_client_manager = MCPClientManager()
 
@@ -636,13 +640,20 @@ class NavigGateway:
             mcp_servers = self.config_manager.global_config.get("mcp", {}).get("servers", [])
             for server_cfg in mcp_servers:
                 try:
-                    cfg = MCPClientConfig(
-                        id=server_cfg["name"],
-                        command=server_cfg.get("command"),
-                        url=server_cfg.get("url"),
-                        transport="sse" if server_cfg.get("url") else "stdio",
-                    )
-                    await self.mcp_client_manager.add_client(cfg)
+                    if MCPClientConfig is not None:
+                        cfg = MCPClientConfig(
+                            id=server_cfg["name"],
+                            command=server_cfg.get("command"),
+                            url=server_cfg.get("url"),
+                            transport="sse" if server_cfg.get("url") else "stdio",
+                        )
+                        await self.mcp_client_manager.add_client(cfg)
+                    else:
+                        await self.mcp_client_manager.add_client(
+                            server_cfg["name"],
+                            command=server_cfg.get("command"),
+                            url=server_cfg.get("url"),
+                        )
                 except Exception as e:
                     logger.warning("Failed to connect MCP server %s: %s", server_cfg.get('name'), e)
 

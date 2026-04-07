@@ -303,8 +303,10 @@ def _isolate_navig_config_dir(tmp_path_factory):
     # cleanup failures. Using ignore_errors=True and wrapping in try/except.
     try:
         base_tmp = tmp_path_factory.getbasetemp()
-    except PermissionError:
-        # If getbasetemp() fails due to locked files, use a fresh directory
+    except Exception:  # noqa: BLE001
+        # If getbasetemp() fails due to locked/stale files, use a fresh directory.
+        # On Windows this can surface as PermissionError or FileNotFoundError
+        # while pytest attempts to clean old basetemp contents.
         base_tmp = Path(tempfile.mkdtemp(prefix="navig_pytest_"))
 
     # Clean up any leftover navig_cfg_isolated* directories
@@ -315,14 +317,10 @@ def _isolate_navig_config_dir(tmp_path_factory):
     except PermissionError:
         pass  # Best-effort cleanup — proceed anyway
 
-    # Use tempfile.mkdtemp instead of tmp_path_factory.mktemp("navig_cfg_isolated")
-    # because pytest may try to recycle/remove older numbered dirs with the same
-    # prefix (e.g. navig_cfg_isolated0), which fails on Windows if a stale
-    # SQLite handle still holds a lock from a prior crashed run.
-    try:
-        isolated = Path(tempfile.mkdtemp(prefix="navig_cfg_isolated_", dir=str(base_tmp)))
-    except Exception:  # noqa: BLE001
-        isolated = Path(tempfile.mkdtemp(prefix="navig_cfg_isolated_"))
+    # Use a temp dir OUTSIDE pytest basetemp for NAVIG_CONFIG_DIR.
+    # This avoids pytest's own basetemp recycling from racing with live SQLite
+    # handles (vault.db) on Windows between test modules.
+    isolated = Path(tempfile.mkdtemp(prefix="navig_cfg_isolated_"))
     old_value = os.environ.get("NAVIG_CONFIG_DIR")
     os.environ["NAVIG_CONFIG_DIR"] = str(isolated)
     yield isolated
@@ -336,14 +334,24 @@ def _isolate_navig_config_dir(tmp_path_factory):
 
     # -- Cleanup: close any open vault SQLite connections (Windows file lock fix) --
     try:
-        import navig.vault.core as _vault_v2_mod
+        import navig.vault.core as _vault_core_mod
 
-        vault_v2 = getattr(_vault_v2_mod, "_vault_v2", None)
+        # Current singleton (post V1/V2 consolidation)
+        vault_singleton = getattr(_vault_core_mod, "_vault", None)
+        if vault_singleton is not None and hasattr(vault_singleton, "_store"):
+            store = vault_singleton._store
+            if store is not None:
+                store.close()
+        _vault_core_mod._vault = None
+
+        # Legacy compatibility singleton (if present in older paths)
+        vault_v2 = getattr(_vault_core_mod, "_vault_v2", None)
         if vault_v2 is not None and hasattr(vault_v2, "_store"):
             store = vault_v2._store
             if store is not None:
                 store.close()
-        _vault_v2_mod._vault_v2 = None
+        if hasattr(_vault_core_mod, "_vault_v2"):
+            _vault_core_mod._vault_v2 = None
     except Exception:  # noqa: BLE001 — best-effort cleanup
         pass
 

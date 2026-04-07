@@ -1,6 +1,7 @@
 """Task worker for executing queued tasks."""
 
 import asyncio
+import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -198,7 +199,7 @@ class TaskWorker:
             timeout = task.timeout or self.config.default_timeout
 
             try:
-                if asyncio.iscoroutinefunction(handler):
+                if inspect.iscoroutinefunction(handler):
                     result = await asyncio.wait_for(
                         handler(task.params),
                         timeout=timeout,
@@ -256,7 +257,7 @@ class TaskWorker:
         try:
             timeout = task.timeout or self.config.default_timeout
 
-            if asyncio.iscoroutinefunction(handler):
+            if inspect.iscoroutinefunction(handler):
                 result = await asyncio.wait_for(
                     handler(task.params),
                     timeout=timeout,
@@ -313,8 +314,6 @@ def create_task_handler(func: Callable) -> Callable:
         await my_handler({"host": "example.com", "port": 22})
     """
     import functools
-    import inspect
-
     @functools.wraps(func)
     async def wrapper(params: dict):
         sig = inspect.signature(func)
@@ -327,7 +326,7 @@ def create_task_handler(func: Callable) -> Callable:
             elif param.default is inspect.Parameter.empty:
                 raise ValueError(f"Missing required parameter: {name}")
 
-        if asyncio.iscoroutinefunction(func):
+        if inspect.iscoroutinefunction(func):
             return await func(**kwargs)
         else:
             return func(**kwargs)

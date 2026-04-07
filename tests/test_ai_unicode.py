@@ -8,6 +8,10 @@ from __future__ import annotations
 import subprocess
 from unittest.mock import MagicMock, patch
 
+import navig.ai as ai_core
+import navig.commands.ai as ai_mod
+import navig.config as cfg_mod
+
 
 def test_ask_ai_handles_non_utf8_tasklist_output():
     """ask_ai must not raise UnicodeDecodeError when tasklist emits non-UTF-8 bytes.
@@ -25,10 +29,6 @@ def test_ask_ai_handles_non_utf8_tasklist_output():
     )
 
     captured_context: dict = {}
-
-    import navig.commands.ai as ai_mod
-    import navig.config as cfg_mod
-    import navig.ai as ai_core
 
     fake_cfg = MagicMock()
     fake_cfg.get_active_server.return_value = "local"
@@ -60,8 +60,6 @@ def test_ask_ai_non_utf8_tasklist_bytes_decoded_gracefully():
     Creates a CompletedProcess with stdout that contains the byte 0xFF (the
     Windows-1252 encoding for 'ÿ') and confirms that ask_ai does not crash.
     """
-    import navig.commands.ai as ai_mod
-
     # Byte 0xFF is valid in cp1252 ('ÿ') but illegal as a UTF-8 start byte.
     bad_bytes = b'"SomeApp\xff.exe","999","Console","1","10,240 K"\r\n'
     fake_proc = subprocess.CompletedProcess(
@@ -79,9 +77,6 @@ def test_ask_ai_non_utf8_tasklist_bytes_decoded_gracefully():
     }
     fake_assistant = MagicMock()
     fake_assistant.ask.return_value = "mocked answer"
-
-    import navig.config as cfg_mod
-    import navig.ai as ai_core
 
     with (
         patch("os.name", "nt"),

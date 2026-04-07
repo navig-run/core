@@ -176,6 +176,10 @@ def test_ai_provider_empty_enter_skips_on_fresh_init(
     step = next(step for step in _registry(tmp_path) if step.id == "ai-provider")
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr(
+        "navig.providers.source_scan.detect_provider_sources",
+        lambda provider_id, navig_dir=None: [],
+    )
     # Simulate pressing Enter — typer.prompt returns the default "s"
     monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: kwargs.get("default", "s"))
 

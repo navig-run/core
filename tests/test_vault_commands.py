@@ -205,3 +205,34 @@ def test_vault_cli_info_unknown_id():
     result = runner.invoke(app, ["cred", "info", "00000000"])
     assert result.exit_code == 1
     assert "not found" in result.output.lower() or "no credential" in result.output.lower()
+
+
+def test_vault_list_shows_short_id(vault):
+    """`navig vault list` should display 8-char IDs, not full UUIDs."""
+    add_result = runner.invoke(
+        app,
+        [
+            "cred",
+            "add",
+            "openai",
+            "--key",
+            "sk-short-id-check",
+            "--label",
+            "Vault List Short ID",
+            "--profile",
+            "short-id",
+            "--no-interactive",
+        ],
+    )
+    assert add_result.exit_code == 0, add_result.output
+
+    creds = vault.list_creds(provider="openai")
+    created = next((c for c in creds if c.profile_id == "short-id"), None)
+    assert created is not None
+
+    list_result = runner.invoke(app, ["vault", "list", "--provider", "openai"])
+    assert list_result.exit_code == 0, list_result.output
+    assert created.id[:8] in list_result.output
+    assert created.id not in list_result.output
+
+    vault.delete(created.id)

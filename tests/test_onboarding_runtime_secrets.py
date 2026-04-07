@@ -84,7 +84,7 @@ def test_runtime_secrets_emits_retroactive_update_for_openai_key(
 
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-openai")
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    monkeypatch.setattr("navig.vault.core_v2.get_vault_v2", lambda: fake_vault)
+    monkeypatch.setattr("navig.vault.core.get_vault", lambda: fake_vault)
     monkeypatch.setattr("typer.confirm", lambda *args, **kwargs: True)
     monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "")
     monkeypatch.setattr("builtins.input", lambda *args, **kwargs: "")
@@ -115,7 +115,7 @@ def test_runtime_secrets_emits_retroactive_update_for_anthropic_key(
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    monkeypatch.setattr("navig.vault.core_v2.get_vault_v2", lambda: fake_vault)
+    monkeypatch.setattr("navig.vault.core.get_vault", lambda: fake_vault)
     monkeypatch.setattr("typer.confirm", lambda *args, **kwargs: True)
     monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "")
     monkeypatch.setattr("builtins.input", lambda *args, **kwargs: "")
@@ -140,7 +140,7 @@ def test_runtime_secrets_no_retroactive_update_for_non_ai_keys(
 
     monkeypatch.setenv("SERPAPI_KEY", "serpapi-test-key")
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    monkeypatch.setattr("navig.vault.core_v2.get_vault_v2", lambda: fake_vault)
+    monkeypatch.setattr("navig.vault.core.get_vault", lambda: fake_vault)
     monkeypatch.setattr("typer.confirm", lambda *args, **kwargs: True)
     monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "")
     monkeypatch.setattr("builtins.input", lambda *args, **kwargs: "")
@@ -162,7 +162,7 @@ def test_runtime_secrets_only_first_ai_provider_emits_retroactive_update(
     monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-test")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    monkeypatch.setattr("navig.vault.core_v2.get_vault_v2", lambda: fake_vault)
+    monkeypatch.setattr("navig.vault.core.get_vault", lambda: fake_vault)
     monkeypatch.setattr("typer.confirm", lambda *args, **kwargs: True)
     monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "")
     monkeypatch.setattr("builtins.input", lambda *args, **kwargs: "")

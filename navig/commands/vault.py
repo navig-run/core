@@ -1022,10 +1022,11 @@ def vault_list(
     table.add_column("Last Used", style="dim")
 
     for item in items:
+        short_id = item.id[:8]
         created = item.created_at.strftime("%Y-%m-%d") if item.created_at else "-"
         last_used = item.last_used_at.strftime("%Y-%m-%d %H:%M") if item.last_used_at else "-"
         table.add_row(
-            item.id, item.kind.value, item.provider or "-", item.label, created, last_used
+            short_id, item.kind.value, item.provider or "-", item.label, created, last_used
         )
 
     _console().print(table)

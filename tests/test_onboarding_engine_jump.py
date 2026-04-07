@@ -25,7 +25,6 @@ from navig.onboarding.engine import (
     StepResult,
 )
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 

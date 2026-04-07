@@ -25,9 +25,10 @@ class _FakeResponse:
 
 def test_get_firecrawl_client_without_key(monkeypatch):
     monkeypatch.setattr("navig.integrations.firecrawl.client.resolve_secret", lambda *a, **k: None)
-    client = get_firecrawl_client()
-    assert isinstance(client, FirecrawlClient)
-    assert client.api_key is None
+    with pytest.raises(FirecrawlError) as exc:
+        get_firecrawl_client()
+    assert exc.value.status_code == 401
+    assert "FIRECRAWL_API_KEY is required" in str(exc.value)
 
 
 def test_get_firecrawl_client_with_key(monkeypatch):
@@ -158,3 +159,75 @@ def test_firecrawl_search_and_crawl_use_rest_fallback(monkeypatch):
     )
     assert search_result["success"] is True
     assert search_result["route"] == "rest"
+
+
+def test_firecrawl_mcp_transport_failure_falls_back_to_rest(monkeypatch):
+    class _Client:
+        def scrape(self, *, url: str, mode: str = "scrape", max_pages: int | None = None):
+            return {"url": url, "mode": mode, "max_pages": max_pages}
+
+    class _McpClient:
+        def call_tool(self, name: str, params: dict[str, Any]):
+            raise RuntimeError("MCP transport timeout")
+
+    class _Server:
+        def __init__(self):
+            self._mcp_client = _McpClient()
+
+    monkeypatch.setattr("navig.integrations.firecrawl.get_firecrawl_client", lambda: _Client())
+
+    result = system_tools._tool_firecrawl_scrape(_Server(), {"url": "https://example.com"})
+
+    assert result["success"] is True
+    assert result["route"] == "rest"
+
+
+def test_firecrawl_mcp_tool_failure_does_not_fallback(monkeypatch):
+    class _Client:
+        def scrape(self, *, url: str, mode: str = "scrape", max_pages: int | None = None):
+            return {"url": url, "mode": mode, "max_pages": max_pages}
+
+    class _McpClient:
+        def call_tool(self, name: str, params: dict[str, Any]):
+            raise RuntimeError("Tool call failed: invalid request")
+
+    class _Server:
+        def __init__(self):
+            self._mcp_client = _McpClient()
+
+    monkeypatch.setattr("navig.integrations.firecrawl.get_firecrawl_client", lambda: _Client())
+
+    result = system_tools._tool_firecrawl_scrape(_Server(), {"url": "https://example.com"})
+
+    assert "error" in result
+    assert "Tool call failed" in result["error"]
+
+
+def test_firecrawl_scrape_rejects_invalid_url():
+    class _Server:
+        pass
+
+    result = system_tools._tool_firecrawl_scrape(_Server(), {"url": "example.com"})
+    assert result == {"error": "URL must start with http:// or https:// and include a hostname"}
+
+
+def test_firecrawl_crawl_rejects_invalid_max_pages():
+    class _Server:
+        pass
+
+    result = system_tools._tool_firecrawl_crawl(
+        _Server(),
+        {"url": "https://example.com", "maxPages": 0},
+    )
+    assert result == {"error": "maxPages must be >= 1"}
+
+
+def test_firecrawl_search_rejects_out_of_range_count():
+    class _Server:
+        pass
+
+    result = system_tools._tool_firecrawl_search(
+        _Server(),
+        {"query": "python", "count": 21},
+    )
+    assert result == {"error": "count must be between 1 and 20"}

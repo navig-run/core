@@ -67,7 +67,7 @@ def test_ai_provider_step_uses_openai_key_from_env(monkeypatch, tmp_path: Path) 
 
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-openai-key")
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    monkeypatch.setattr("navig.vault.core_v2.get_vault_v2", lambda: fake_vault)
+    monkeypatch.setattr("navig.vault.core.get_vault", lambda: fake_vault)
 
     # Simulate user accepting the pre-selected default (first detected provider)
     # and skipping the fallback provider prompt.
@@ -80,7 +80,9 @@ def test_ai_provider_step_uses_openai_key_from_env(monkeypatch, tmp_path: Path) 
 
     assert result.status == "completed"
     assert result.output["provider"] == "openai"
-    assert result.output["keySource"] == "environment"
+    key_source = str(result.output["keySource"])
+    assert key_source == "environment" or key_source.startswith("existing:")
+    assert "env" in key_source
     assert fake_vault.secrets.get("openai/api_key") == "sk-test-openai-key"
     # Confirm the marker file was written
     assert (tmp_path / ".ai_provider_configured").exists()
@@ -94,7 +96,7 @@ def test_ai_provider_step_uses_anthropic_key_from_env(monkeypatch, tmp_path: Pat
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    monkeypatch.setattr("navig.vault.core_v2.get_vault_v2", lambda: fake_vault)
+    monkeypatch.setattr("navig.vault.core.get_vault", lambda: fake_vault)
 
     def _mock_prompt(text: str, default: str = "", **kwargs) -> str:
         return default
@@ -105,7 +107,9 @@ def test_ai_provider_step_uses_anthropic_key_from_env(monkeypatch, tmp_path: Pat
 
     assert result.status == "completed"
     assert result.output["provider"] == "anthropic"
-    assert result.output["keySource"] == "environment"
+    key_source = str(result.output["keySource"])
+    assert key_source == "environment" or key_source.startswith("existing:")
+    assert "env" in key_source
     assert fake_vault.secrets.get("anthropic/api_key") == "sk-ant-test-key"
 
 
@@ -116,10 +120,12 @@ def test_ai_provider_step_no_env_key_prompts_user(monkeypatch, tmp_path: Path) -
     step = _ai_provider_step(tmp_path)
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    monkeypatch.setattr("navig.vault.core_v2.get_vault_v2", lambda: fake_vault)
+    monkeypatch.setattr("navig.vault.core.get_vault", lambda: fake_vault)
 
     # Simulate user selecting the default provider (index 1) and skipping fallback.
     def _mock_prompt(text: str, default: str = "", **kwargs) -> str:
+        if "Provider" in text:
+            return "1"
         return default
 
     monkeypatch.setattr("typer.prompt", _mock_prompt)

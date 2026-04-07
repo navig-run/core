@@ -5,6 +5,7 @@ from typing import Any
 from typer.testing import CliRunner
 
 from navig.cli import app
+from navig.integrations.firecrawl.client import FirecrawlError
 from navig.tools.web import SearchResult, WebSearchResult, web_search
 
 
@@ -144,3 +145,33 @@ def test_web_search_explicit_provider_tavily_uses_tavily(monkeypatch):
     assert result.success is True
     assert result.provider == "tavily"
     assert result.results and "cfg-tavily-key" in result.results[0].snippet
+
+
+def test_web_search_explicit_firecrawl_without_key_returns_error(monkeypatch):
+    monkeypatch.setattr("navig.tools.web.REQUESTS_AVAILABLE", True)
+    monkeypatch.setattr(
+        "navig.integrations.firecrawl.get_firecrawl_client",
+        lambda: (_ for _ in ()).throw(
+            FirecrawlError(
+                "FIRECRAWL_API_KEY is required. Set it via env or `navig cred add firecrawl --key ...`.",
+                status_code=401,
+            )
+        ),
+    )
+    monkeypatch.setattr("navig.tools.web._search_duckduckgo", _ok_ddg)
+    monkeypatch.setattr(
+        "navig.tools.web.get_web_config",
+        lambda config_manager=None: {
+            "search": {
+                "provider": "firecrawl",
+                "api_key": "",
+                "api_keys": {},
+            }
+        },
+    )
+
+    result = web_search("python", provider="firecrawl", use_cache=False)
+
+    assert result.success is False
+    assert result.provider == "firecrawl"
+    assert result.error and "FIRECRAWL_API_KEY is required" in result.error

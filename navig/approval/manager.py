@@ -1,6 +1,7 @@
 """Approval manager for dangerous operations."""
 
 import asyncio
+import inspect
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -241,7 +242,7 @@ class ApprovalManager:
         # Notify callbacks
         for callback in self._on_request_callbacks:
             try:
-                if asyncio.iscoroutinefunction(callback):
+                if inspect.iscoroutinefunction(callback):
                     await callback(request)
                 else:
                     callback(request)
