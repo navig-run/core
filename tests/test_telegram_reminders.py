@@ -36,6 +36,124 @@ def _make_dummy_bot():
     return DummyTelegram()
 
 
+class _FakeVault:
+    """Minimal vault stub for provider tests.
+
+    Parameters
+    ----------
+    entries : dict | None
+        ``{provider_id: validation_success_bool}``.  A provider present in the
+        dict means a vault key exists; the value controls whether it passed
+        validation.  Absent → no vault key.
+    """
+
+    class _Store:
+        def __init__(self, entries: dict) -> None:
+            self._entries = entries
+
+        def get(self, label: str):
+            pid = label.split("/")[0] if "/" in label else label
+            if pid not in self._entries:
+                return None
+
+            class _Item:
+                pass
+
+            _Item.metadata = {"validation_success": self._entries[pid]}
+            return _Item()
+
+    def __init__(self, entries: dict | None = None) -> None:
+        self._entries = dict(entries or {})
+
+    def list(self, provider: str | None = None, profile_id=None):
+        if provider not in self._entries:
+            return []
+
+        class _Info:
+            pass
+
+        _Info.metadata = {"validation_success": self._entries[provider]}
+        return [_Info()]
+
+    def store(self):
+        return _FakeVault._Store(self._entries)
+
+
+def _make_provider_bot(
+    providers,
+    *,
+    verify_fn=None,
+    vault=None,
+    probe=(False, "127.0.0.1:11435"),
+    provider_info=None,
+):
+    """Build a DummyBot with provider/vault seams pre-wired via subclass.
+
+    All provider/vault behaviour is injected through subclass overrides of the
+    four seam methods, so no ``monkeypatch.setattr`` on module globals is needed.
+
+    Parameters
+    ----------
+    providers:
+        Iterable of provider manifest objects for ``_list_enabled_providers``.
+    verify_fn:
+        Single result object (or callable) for ``_verify_provider``.
+        Pass ``None`` to make the call raise ``RuntimeError("boom")``.
+    vault:
+        Object returned by ``_get_vault``.  ``None`` → vault absent.
+    probe:
+        ``(online: bool, url: str)`` for ``_probe_bridge_grid``.
+    provider_info:
+        Object (or callable) for ``_get_provider_info``.
+        ``None`` → returns ``None`` (no active-provider display).
+    """
+    mixin = _get_mixin()
+
+    class _ProviderBot(mixin):
+        def __init__(self):
+            self.messages = []
+            self.edits = []
+            self.api_calls = []
+
+        async def send_message(self, chat_id, text, parse_mode="Markdown", **kwargs):
+            self.messages.append((chat_id, text, parse_mode, kwargs))
+            return {"ok": True}
+
+        async def _api_call(self, method, data):
+            self.api_calls.append((method, data))
+            return {"ok": True}
+
+        async def edit_message(
+            self, chat_id, message_id, text, parse_mode="Markdown", keyboard=None
+        ):
+            self.edits.append((chat_id, message_id, text, parse_mode, keyboard))
+            return {"ok": True}
+
+        def _list_enabled_providers(self):
+            return list(providers)
+
+        def _verify_provider(self, manifest):
+            if verify_fn is None:
+                raise RuntimeError("boom")
+            return verify_fn(manifest) if callable(verify_fn) else verify_fn
+
+        def _get_vault(self):
+            return vault
+
+        def _get_provider_info(self, pid):
+            if provider_info is None:
+                return None
+            return provider_info(pid) if callable(provider_info) else provider_info
+
+    bot = _ProviderBot()
+
+    async def _bridge():
+        return probe
+
+    bot._probe_bridge_grid = _bridge
+    return bot
+
+
 class FakeStore:
     def __init__(self):
         self.created = []
@@ -753,7 +871,6 @@ async def test_start_consumes_chat_onboarding_handoff_once(monkeypatch, tmp_path
 
 @pytest.mark.asyncio
 async def test_providers_header_is_clean_and_shows_current_models(monkeypatch):
-    bot = _make_dummy_bot()
     marked: list[str] = []
 
     class _Mode:
@@ -786,20 +903,16 @@ async def test_providers_header_is_clean_and_shows_current_models(monkeypatch):
         key_detected = True
         local_probe_ok = True
 
-    async def _probe():
-        return False, "127.0.0.1:11435"
-
-    bot._probe_bridge_grid = _probe
+    bot = _make_provider_bot(
+        [_Manifest("nvidia", "NVIDIA NIM")],
+        verify_fn=_Verify(),
+        vault=None,
+    )
     monkeypatch.setattr(
         "navig.commands.init.mark_chat_onboarding_step_completed",
         lambda step_id, navig_dir=None: marked.append(step_id) or True,
     )
     monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
-    monkeypatch.setattr(
-        "navig.providers.registry.list_enabled_providers",
-        lambda: [_Manifest("nvidia", "NVIDIA NIM")],
-    )
-    monkeypatch.setattr("navig.providers.verifier.verify_provider", lambda _m: _Verify())
 
     await bot._handle_providers(123, 456)
     assert marked == []
@@ -811,8 +924,6 @@ async def test_providers_header_is_clean_and_shows_current_models(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_providers_online_bridge_does_not_override_router_current_provider(monkeypatch):
-    bot = _make_dummy_bot()
-
     class _Mode:
         def __init__(self, provider, model):
             self.provider = provider
@@ -847,14 +958,15 @@ async def test_providers_online_bridge_does_not_override_router_current_provider
         display_name = "OpenAI"
         emoji = "🤖"
 
-    async def _probe():
-        return True, "http://127.0.0.1:11435"
-
-    bot._probe_bridge_grid = _probe
+    _provider = _ProviderInfo()
+    bot = _make_provider_bot(
+        [_Manifest()],
+        verify_fn=_Verify(),
+        vault=None,
+        probe=(True, "http://127.0.0.1:11435"),
+        provider_info=_provider,
+    )
     monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
-    monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [_Manifest()])
-    monkeypatch.setattr("navig.providers.verifier.verify_provider", lambda _m: _Verify())
-    monkeypatch.setattr("navig.providers.registry.get_provider", lambda _pid: _ProviderInfo())
 
     await bot._handle_providers(123, 456)
 
@@ -865,7 +977,6 @@ async def test_providers_online_bridge_does_not_override_router_current_provider
 
 @pytest.mark.asyncio
 async def test_providers_does_not_mark_step_when_no_ready_provider(monkeypatch):
-    bot = _make_dummy_bot()
     marked: list[str] = []
 
     class _Manifest:
@@ -880,17 +991,15 @@ async def test_providers_does_not_mark_step_when_no_ready_provider(monkeypatch):
         key_detected = False
         local_probe_ok = False
 
-    async def _probe():
-        return False, "127.0.0.1:11435"
-
-    bot._probe_bridge_grid = _probe
+    bot = _make_provider_bot(
+        [_Manifest()],
+        verify_fn=_Verify(),
+        vault=None,
+    )
     monkeypatch.setattr(
         "navig.commands.init.mark_chat_onboarding_step_completed",
         lambda step_id, navig_dir=None: marked.append(step_id) or True,
     )
-    monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [_Manifest()])
-    monkeypatch.setattr("navig.providers.verifier.verify_provider", lambda _m: _Verify())
-    monkeypatch.setattr(bot, "_provider_vault_validation_status", lambda _m: (False, False))
 
     await bot._handle_providers(123, 456)
     assert marked == []
@@ -1004,11 +1113,7 @@ async def test_provider_model_picker_is_tier_first_and_edit_in_place(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_providers_unconfigured_cloud_shows_provider_row_with_icon_only_key_action(
-    monkeypatch,
-):
-    bot = _make_dummy_bot()
-
+async def test_providers_unconfigured_cloud_shows_provider_row_with_icon_only_key_action():
     class _Manifest:
         id = "openai"
         display_name = "OpenAI"
@@ -1022,26 +1127,11 @@ async def test_providers_unconfigured_cloud_shows_provider_row_with_icon_only_ke
         key_detected = False
         local_probe_ok = True
 
-    class _LegacyVault:
-        def list(self, provider=None, profile_id=None):
-            return []
-
-    class _Store:
-        def get(self, label):
-            return None
-
-    class _Vault:
-        def store(self):
-            return _Store()
-
-    async def _probe():
-        return False, "127.0.0.1:11435"
-
-    bot._probe_bridge_grid = _probe
-    monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [_Manifest()])
-    monkeypatch.setattr("navig.providers.verifier.verify_provider", lambda _m: _Verify())
-    monkeypatch.setattr("navig.vault.get_vault", lambda: _LegacyVault())
-    monkeypatch.setattr("navig.vault.get_vault", lambda: _Vault())
+    bot = _make_provider_bot(
+        [_Manifest()],
+        verify_fn=_Verify(),
+        vault=_FakeVault(),
+    )
 
     await bot._handle_providers(123, 456)
     keyboard = bot.messages[-1][3].get("keyboard") or []
@@ -1057,9 +1147,7 @@ async def test_providers_unconfigured_cloud_shows_provider_row_with_icon_only_ke
 
 
 @pytest.mark.asyncio
-async def test_providers_cloud_button_hidden_when_vault_present_but_not_ready(monkeypatch):
-    bot = _make_dummy_bot()
-
+async def test_providers_cloud_button_hidden_when_vault_present_but_not_ready():
     class _Manifest:
         id = "openai"
         display_name = "OpenAI"
@@ -1073,44 +1161,13 @@ async def test_providers_cloud_button_hidden_when_vault_present_but_not_ready(mo
         key_detected = False
         local_probe_ok = True
 
-    class _Cred:
-        def __init__(self, ok: bool):
-            self.data = {"api_key": "sk-test"}
-            self.metadata = {"validation_success": ok}
-
-    class _Info:
-        def __init__(self, ok: bool):
-            self.metadata = {"validation_success": ok}
-
-    class _Vault:
-        def __init__(self, ok: bool):
-            self._ok = ok
-
-        def get(self, provider, profile_id=None, caller="unknown"):
-            if provider == "openai":
-                return _Cred(self._ok)
-            return None
-
-        def list(self, provider=None, profile_id=None):
-            if provider == "openai":
-                return [_Info(self._ok)]
-            return []
-
-    async def _probe():
-        return False, "127.0.0.1:11435"
-
-    bot._probe_bridge_grid = _probe
-    monkeypatch.setattr(
-        "navig.providers.registry.list_enabled_providers",
-        lambda: [_Manifest()],
+    # vault entry exists but not validated: has_key=True, validated=False → not ready,
+    # stub button suppressed (vault_has_key guard skips the 🔒 row too)
+    bot = _make_provider_bot(
+        [_Manifest()],
+        verify_fn=_Verify(),
+        vault=_FakeVault({"openai": False}),
     )
-    monkeypatch.setattr("navig.providers.verifier.verify_provider", lambda _m: _Verify())
-    monkeypatch.setattr(
-        "navig.gateway.channels.telegram_commands.verify_provider",
-        lambda _m: _Verify(),
-        raising=False,
-    )
-    monkeypatch.setattr("navig.vault.get_vault", lambda: _Vault(False))
 
     await bot._handle_providers(123, 456)
     keyboard = bot.messages[-1][3].get("keyboard") or []
@@ -1119,9 +1176,7 @@ async def test_providers_cloud_button_hidden_when_vault_present_but_not_ready(mo
 
 
 @pytest.mark.asyncio
-async def test_providers_cloud_button_shown_after_successful_vault_validation(monkeypatch):
-    bot = _make_dummy_bot()
-
+async def test_providers_cloud_button_shown_after_successful_vault_validation():
     class _Manifest:
         id = "openai"
         display_name = "OpenAI"
@@ -1135,35 +1190,12 @@ async def test_providers_cloud_button_shown_after_successful_vault_validation(mo
         key_detected = True
         local_probe_ok = True
 
-    class _Cred:
-        data = {"api_key": "sk-test"}
-        metadata = {"validation_success": True}
-
-    class _Info:
-        metadata = {"validation_success": True}
-
-    class _Vault:
-        def get(self, provider, profile_id=None, caller="unknown"):
-            if provider == "openai":
-                return _Cred()
-            return None
-
-        def list(self, provider=None, profile_id=None):
-            if provider == "openai":
-                return [_Info()]
-            return []
-
-    async def _probe():
-        return False, "127.0.0.1:11435"
-
-    bot._probe_bridge_grid = _probe
-    monkeypatch.setattr(
-        "navig.providers.registry.list_enabled_providers",
-        lambda: [_Manifest()],
+    # vault entry validated: ready via both key_detected and vault_validated paths
+    bot = _make_provider_bot(
+        [_Manifest()],
+        verify_fn=_Verify(),
+        vault=_FakeVault({"openai": True}),
     )
-    monkeypatch.setattr("navig.providers.verifier.verify_provider", lambda _m: _Verify())
-    monkeypatch.setattr("navig.vault.get_vault", lambda: _Vault())
-    monkeypatch.setattr("navig.vault.get_vault", lambda: None)
 
     await bot._handle_providers(123, 456)
     keyboard = bot.messages[-1][3].get("keyboard") or []
@@ -1172,9 +1204,7 @@ async def test_providers_cloud_button_shown_after_successful_vault_validation(mo
 
 
 @pytest.mark.asyncio
-async def test_providers_verify_exception_does_not_crash(monkeypatch):
-    bot = _make_dummy_bot()
-
+async def test_providers_verify_exception_does_not_crash():
     class _Manifest:
         id = "openai"
         display_name = "OpenAI"
@@ -1184,15 +1214,8 @@ async def test_providers_verify_exception_does_not_crash(monkeypatch):
         requires_key = True
         vault_keys = ["openai/api_key"]
 
-    async def _probe():
-        return False, "127.0.0.1:11435"
-
-    bot._probe_bridge_grid = _probe
-    monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [_Manifest()])
-    monkeypatch.setattr(
-        "navig.providers.verifier.verify_provider",
-        lambda _m: (_ for _ in ()).throw(RuntimeError("boom")),
-    )
+    # verify_fn=None → _verify_provider raises RuntimeError("boom")
+    bot = _make_provider_bot([_Manifest()])
 
     await bot._handle_providers(123, 456)
     text = bot.messages[-1][1]
@@ -1201,19 +1224,13 @@ async def test_providers_verify_exception_does_not_crash(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_providers_screen_shows_noai_selection_state(monkeypatch):
-    bot = _make_dummy_bot()
-    bot._user_model_prefs = {}
-    bot._user_model_prefs[456] = "noai"
-
     class _Router:
         modes = None
 
-    async def _probe():
-        return False, "127.0.0.1:11435"
-
-    bot._probe_bridge_grid = _probe
+    bot = _make_provider_bot([], vault=None)
+    bot._user_model_prefs = {}
+    bot._user_model_prefs[456] = "noai"
     monkeypatch.setattr("navig.llm_router.get_llm_router", lambda: _Router())
-    monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [])
 
     await bot._handle_providers(123, 456)
     text = bot.messages[-1][1]

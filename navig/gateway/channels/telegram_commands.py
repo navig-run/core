@@ -3826,10 +3826,7 @@ class TelegramCommandsMixin:
             active_prov = "bridge_copilot"
 
         try:
-            from navig.providers.registry import list_enabled_providers
-            from navig.providers.verifier import verify_provider
-
-            providers = list_enabled_providers()
+            providers = self._list_enabled_providers()
         except Exception:
             providers = []
 
@@ -3872,9 +3869,7 @@ class TelegramCommandsMixin:
         active_name = ""
         if active_prov and active_prov != "bridge_copilot":
             try:
-                from navig.providers.registry import get_provider as _gp
-
-                _am = _gp(active_prov)
+                _am = self._get_provider_info(active_prov)
                 active_name = f"{_am.emoji} {_am.display_name}" if _am else active_prov
             except Exception:  # noqa: BLE001
                 active_name = active_prov
@@ -3955,7 +3950,7 @@ class TelegramCommandsMixin:
             key_detected = False
             result = None
             try:
-                result = verify_provider(manifest)
+                result = self._verify_provider(manifest)
                 key_detected = bool(getattr(result, "key_detected", False))
                 if manifest.tier == "local" and manifest.local_probe:
                     ready = bool(result.local_probe_ok)
@@ -4117,29 +4112,54 @@ class TelegramCommandsMixin:
                 pass  # fall through to send_message
         await self.send_message(chat_id, text_payload, parse_mode="Markdown", keyboard=keyboard)
 
-    @staticmethod
-    def _provider_vault_validation_status(manifest) -> tuple[bool, bool]:
-        """Return (has_vault_key, is_validated) for a cloud provider manifest."""
+    # ── Dependency seams ── override in a subclass to inject test doubles ──────
+
+    def _get_vault(self):
+        """Return the active vault instance.  Override in tests via subclass."""
+        from navig.vault import get_vault
+
+        return get_vault()
+
+    def _get_provider_info(self, provider_id: str):
+        """Return the provider manifest for *provider_id*, or ``None``."""
+        try:
+            from navig.providers.registry import get_provider
+
+            return get_provider(provider_id)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _list_enabled_providers(self) -> list:
+        """Return all enabled provider manifests.  Override in tests."""
+        from navig.providers.registry import list_enabled_providers
+
+        return list_enabled_providers()
+
+    def _verify_provider(self, manifest):
+        """Verify a single provider manifest.  Override in tests."""
+        from navig.providers.verifier import verify_provider
+
+        return verify_provider(manifest)
+
+    def _provider_vault_validation_status(self, manifest) -> tuple[bool, bool]:
+        """Return ``(has_vault_key, is_validated)`` for a cloud provider manifest."""
         has_vault_key = False
         validated = False
 
         try:
-            from navig.vault import get_vault
-
-            legacy_vault = get_vault()
-            infos = legacy_vault.list(provider=manifest.id)
-            if infos:
-                has_vault_key = True
-                metadata = (infos[0].metadata or {}) if infos[0] else {}
-                if metadata.get("validation_success") is True:
-                    validated = True
+            vault = self._get_vault()
+            if vault is not None:
+                infos = vault.list(provider=manifest.id)
+                if infos:
+                    has_vault_key = True
+                    metadata = (infos[0].metadata or {}) if infos[0] else {}
+                    if metadata.get("validation_success") is True:
+                        validated = True
         except Exception as exc:  # noqa: BLE001
             logger.debug("Legacy vault provider readiness check failed: %s", exc)
 
         try:
-            from navig.vault import get_vault
-
-            vault = get_vault()
+            vault = self._get_vault()
             if vault is not None:
                 store = vault.store()
                 for label in getattr(manifest, "vault_keys", []) or []:

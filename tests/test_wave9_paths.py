@@ -20,10 +20,9 @@ def test_vault_default_path_respects_config_env(tmp_path, monkeypatch):
     custom = tmp_path / "cfg"
     monkeypatch.setenv("NAVIG_CONFIG_DIR", str(custom))
 
-    import navig.vault.core as vault_mod
-    importlib.reload(vault_mod)
+    from navig.vault.core import Vault
 
-    v = vault_mod.Vault(auto_migrate=False)
+    v = Vault(auto_migrate=False)
     assert v.vault_dir == custom / "vault"
 
 
@@ -32,6 +31,7 @@ def test_vault_explicit_path_unaffected(tmp_path, monkeypatch):
     monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path / "env_cfg"))
 
     from navig.vault.core import Vault
+
     explicit = tmp_path / "my_vault.db"
     # Do NOT use auto_migrate to avoid side effects in tests
     v = Vault(vault_path=explicit, auto_migrate=False)
@@ -48,6 +48,7 @@ def test_memory_navig_home_respects_config_env(tmp_path, monkeypatch):
     monkeypatch.delenv("NAVIG_HOME", raising=False)
 
     from navig.memory.paths import navig_home
+
     assert navig_home() == custom
 
 
@@ -59,6 +60,7 @@ def test_memory_navig_home_prefers_navig_home_env(tmp_path, monkeypatch):
     monkeypatch.setenv("NAVIG_CONFIG_DIR", str(override))
 
     from navig.memory.paths import navig_home
+
     assert navig_home() == legacy
 
 
@@ -72,6 +74,7 @@ def test_get_memory_dir_respects_config_env(tmp_path, monkeypatch):
     monkeypatch.delenv("NAVIG_DATA_DIR", raising=False)
 
     from navig.memory.user_profile import _get_memory_dir
+
     # data_dir() = config_dir()/data when NAVIG_DATA_DIR not set
     assert _get_memory_dir() == custom / "data" / "memory"
 
@@ -82,6 +85,7 @@ def test_get_memory_dir_respects_data_env(tmp_path, monkeypatch):
     monkeypatch.setenv("NAVIG_DATA_DIR", str(data_root))
 
     from navig.memory.user_profile import _get_memory_dir
+
     assert _get_memory_dir() == data_root / "memory"
 
 
@@ -94,6 +98,7 @@ def test_ipc_promoted_flag_respects_config_env(tmp_path, monkeypatch):
     monkeypatch.setenv("NAVIG_CONFIG_DIR", str(custom))
 
     import navig.ipc_pipe as ipc_mod
+
     importlib.reload(ipc_mod)
 
     assert ipc_mod._PROMOTED_FLAG == custom / ".ipc_promoted"
