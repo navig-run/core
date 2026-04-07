@@ -202,7 +202,7 @@ class RoutingConfig:
                 if provider_id == "openrouter":
                     slot.api_key = default_api_key
                 elif provider_id == "openai":
-                    slot.api_key = os.environ.get("OPENAI_API_KEY", "") or default_api_key
+                    slot.api_key = os.environ.get("OPENAI_API_KEY", "")
 
             # Keep explicit config-token preference for GitHub Models.
             if provider_id in ("github_models", "github") and not slot.api_key:
@@ -270,8 +270,8 @@ def _resolve_provider_api_key(
         if manifest is not None:
             manifest_env_vars = list(manifest.env_vars or [])
             manifest_vault_keys = list(manifest.vault_keys or [])
-    except Exception:  # noqa: BLE001
-        pass
+    except (ImportError, AttributeError, RuntimeError) as exc:
+        logger.debug("Provider manifest lookup failed for %s: %s", provider_id, exc)
 
     env_candidates: list[str] = []
 
@@ -288,8 +288,8 @@ def _resolve_provider_api_key(
 
         for env_name in PROVIDER_ENV_VARS.get(provider_id, []):
             _append_env(env_name)
-    except Exception:  # noqa: BLE001
-        pass
+    except (ImportError, AttributeError, RuntimeError) as exc:
+        logger.debug("Provider env-var map lookup failed for %s: %s", provider_id, exc)
 
     _append_env(f"{provider_id.upper().replace('-', '_')}_API_KEY")
 
@@ -302,16 +302,16 @@ def _resolve_provider_api_key(
         try:
             from navig.vault import get_vault
 
-            vault_v2 = get_vault()
+            vault = get_vault()
             for path in manifest_vault_keys:
                 try:
-                    secret = (vault_v2.get_secret(path) or "").strip()
+                    secret = (vault.get_secret(path) or "").strip()
                     if secret:
                         return secret
-                except Exception:  # noqa: BLE001
+                except (KeyError, AttributeError, TypeError, ValueError):
                     continue
-        except Exception:  # noqa: BLE001
-            pass
+        except (ImportError, AttributeError, RuntimeError) as exc:
+            logger.debug("Vault label lookup failed for %s: %s", provider_id, exc)
 
     try:
         from navig.vault import get_vault
@@ -322,16 +322,16 @@ def _resolve_provider_api_key(
             resolved = resolved.strip()
             if resolved:
                 return resolved
-    except Exception:  # noqa: BLE001
-        pass
+    except (ImportError, AttributeError, RuntimeError) as exc:
+        logger.debug("Vault provider-key lookup failed for %s: %s", provider_id, exc)
 
     if provider_id in ("github_models", "github"):
         try:
             token = str((global_cfg.get("github_models") or {}).get("token", "")).strip()
             if token:
                 return token
-        except Exception:  # noqa: BLE001
-            pass
+        except (AttributeError, TypeError, ValueError) as exc:
+            logger.debug("github_models token lookup failed: %s", exc)
 
     return ""
 

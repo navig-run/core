@@ -17,6 +17,7 @@ from navig.agent.voice_input import (
     TranscriptionResult,
     VoiceInputHandler,
     detect_transcription_backend,
+    get_voice_handler,
 )
 
 # ---------------------------------------------------------------------------
@@ -357,3 +358,31 @@ class TestConvenience:
                 assert result is None
         finally:
             tmp.unlink(missing_ok=True)
+
+
+class TestResolveKeyAndSingleton:
+    def test_resolve_key_prefers_vault_label(self, monkeypatch):
+        from navig.agent.voice_input import _resolve_key
+
+        class _Vault:
+            def get_secret(self, label):
+                if label == "deepgram/api-key":
+                    return "vault-key"
+                return None
+
+        monkeypatch.setattr("navig.vault.get_vault", lambda: _Vault())
+        monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
+
+        assert _resolve_key("deepgram/api-key", "DEEPGRAM_API_KEY") == "vault-key"
+
+    def test_get_voice_handler_singleton_ignores_second_config(self):
+        import navig.agent.voice_input as voice_input_mod
+
+        voice_input_mod._default_handler = None
+        first = get_voice_handler(TranscriptionConfig(backend=TranscriptionBackend.DEEPGRAM))
+        second = get_voice_handler(TranscriptionConfig(backend=TranscriptionBackend.WHISPER_API))
+
+        assert first is second
+        assert second.config.backend == TranscriptionBackend.DEEPGRAM
+
+        voice_input_mod._default_handler = None

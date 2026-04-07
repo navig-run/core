@@ -1407,6 +1407,76 @@ class CallbackHandler:
                 await self._answer(cb_id, "⚠️ Activation failed — please try again", show_alert=True)
             return
 
+        # Providers that open a full model↔tier picker
+        # Static map for known providers + dynamic fallback via registry
+        picker_map: dict = {
+            "prov_openrouter": "openrouter",
+            "prov_github": "github_models",
+            "prov_github_models": "github_models",
+            "prov_nvidia": "nvidia",
+            "prov_nvidia_nim": "nvidia",
+            "prov_ollama": "ollama",
+            "prov_xai": "xai",
+            "prov_openai": "openai",
+            "prov_anthropic": "anthropic",
+            "prov_google": "google",
+            "prov_groq": "groq",
+            "prov_mistral": "mistral",
+            "prov_llamacpp": "llamacpp",
+            "prov_airllm": "airllm",
+        }
+        if cb_data in picker_map:
+            prov_id = picker_map[cb_data]
+            # Answer the callback immediately so Telegram removes the loading
+            # spinner regardless of how long the picker takes to render.
+            await self._answer(cb_id, "")
+            try:
+                await self.channel._show_provider_model_picker(
+                    chat_id,
+                    prov_id,
+                    page=0,
+                    selected_tier="s",
+                    message_id=message_id,
+                )
+            except TypeError as exc:
+                err = str(exc)
+                signature_mismatch = (
+                    "unexpected keyword argument" in err
+                    or "positional argument" in err
+                    or "required positional argument" in err
+                )
+                if signature_mismatch:
+                    await self.channel._show_provider_model_picker(chat_id, prov_id=prov_id)
+                else:
+                    logger.warning(
+                        "Provider picker failed for %s: %s",
+                        prov_id,
+                        exc,
+                    )
+                    try:
+                        await self.channel._show_provider_model_picker(chat_id, prov_id)
+                    except Exception:
+                        # Callback already answered; fall back to providers hub silently.
+                        try:
+                            await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
+                        except TypeError:
+                            await self.channel._handle_providers(chat_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Provider picker failed for %s: %s",
+                    prov_id,
+                    exc,
+                )
+                try:
+                    await self.channel._show_provider_model_picker(chat_id, prov_id)
+                except Exception:
+                    # Callback already answered; fall back to providers hub silently.
+                    try:
+                        await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
+                    except TypeError:
+                        await self.channel._handle_providers(chat_id)
+            return
+
         # Deepgram: STT only, no LLM routing
         if cb_data == "prov_deepgram":
             await self._answer(

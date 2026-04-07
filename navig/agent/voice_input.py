@@ -139,8 +139,8 @@ def _resolve_key(*names: str) -> str | None:
                 val = vault.get_secret(name)
                 if val:
                     return val
-    except Exception:  # noqa: BLE001
-        pass  # non-critical
+    except (ImportError, AttributeError, RuntimeError, KeyError) as exc:
+        logger.debug("Voice key vault lookup failed: %s", exc)
     # Env vars
     for name in names:
         if "/" not in name:

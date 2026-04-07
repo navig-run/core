@@ -85,6 +85,19 @@ class TestRoutingConfig:
 
         assert cfg.small.api_key == "grok-test-key"
 
+    def test_from_dict_openai_does_not_fallback_to_openrouter_key(self, monkeypatch):
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+        cfg = RoutingConfig.from_dict(
+            {
+                "models": {
+                    "small": {"provider": "openai", "model": "gpt-4o-mini"},
+                }
+            },
+            global_cfg={},
+        )
+        assert cfg.small.api_key == ""
+
 
 # ---- Heuristic routing ----
 
@@ -240,6 +253,28 @@ class TestHybridRouter:
         router = HybridRouter.from_config(global_cfg)
         assert router.cfg.mode == "rules_then_fallback"
         assert router.cfg.small.model == "qwen:3b"
+
+    @pytest.mark.asyncio
+    async def test_close_clears_provider_cache_when_close_raises(self):
+        cfg = RoutingConfig(
+            enabled=True,
+            mode="rules_then_fallback",
+            small=ModelSlot(provider="ollama", model="qwen:3b"),
+            big=ModelSlot(provider="openrouter", model="gpt-4o"),
+            coder_big=ModelSlot(provider="openrouter", model="deepseek-coder"),
+        )
+        router = HybridRouter(cfg)
+
+        bad_provider = type("_P", (), {})()
+
+        async def _close():
+            raise RuntimeError("boom")
+
+        bad_provider.close = _close
+        router._providers["x"] = bad_provider
+
+        await router.close()
+        assert router._providers == {}
 
 
 # ---- RoutingDecision ----

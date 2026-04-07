@@ -576,6 +576,8 @@ def _invoke_shell(command: str, cwd: Path) -> int:
 # TYPER SUB-APP — extracted from navig/cli/__init__.py
 # ============================================================================
 
+from pathlib import Path  # noqa: E402
+
 import typer  # noqa: E402
 
 from navig.cli._callbacks import show_subcommand_help  # noqa: E402

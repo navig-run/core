@@ -471,8 +471,8 @@ def _resolve_api_key(provider: str) -> str | None:
             for var in manifest.env_vars:
                 if var and var not in env_vars:
                     env_vars.append(var)
-    except Exception:  # noqa: BLE001
-        pass  # best-effort; failure is non-critical
+    except (ImportError, AttributeError, RuntimeError) as exc:
+        logger.debug("Provider manifest lookup failed for %s: %s", provider, exc)
 
     for var in env_vars:
         val = os.environ.get(var)
@@ -486,8 +486,8 @@ def _resolve_api_key(provider: str) -> str | None:
         key = vault.get_api_key(provider)
         if key:
             return key
-    except Exception:  # noqa: BLE001
-        pass  # best-effort; failure is non-critical
+    except (ImportError, AttributeError, RuntimeError) as exc:
+        logger.debug("Vault API key lookup failed for %s: %s", provider, exc)
     # For github_models, also check config.yaml
     if provider == "github_models":
         try:
@@ -497,8 +497,8 @@ def _resolve_api_key(provider: str) -> str | None:
             token = cfg.get("github_models", {}).get("token", "")
             if token:
                 return token
-        except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
+        except (ImportError, AttributeError, RuntimeError) as exc:
+            logger.debug("github_models config token lookup failed: %s", exc)
 
     # Finally, best-effort lookup via vault labels using provider manifest keys.
     try:
@@ -516,12 +516,12 @@ def _resolve_api_key(provider: str) -> str | None:
                     continue
                 try:
                     key = vault.get_secret(path)
-                except Exception:  # noqa: BLE001
+                except (KeyError, AttributeError, TypeError, ValueError):
                     key = None
                 if key:
                     return key
-    except Exception:  # noqa: BLE001
-        pass  # best-effort; failure is non-critical
+    except (ImportError, AttributeError, RuntimeError) as exc:
+        logger.debug("Vault label lookup failed for %s: %s", provider, exc)
 
     return None
 
@@ -605,11 +605,25 @@ class LLMModeRouter:
         return MODE_ALIASES.get(h, "big_tasks")
 
     def detect_mode(self, user_input: str) -> str:
-        """Heuristic mode detection from user text (delegates to navig.routing.detect)."""
-        from navig.routing.detect import detect_mode as _detect_canonical  # noqa: PLC0415
+        """Heuristic mode detection from user text."""
+        return detect_mode(user_input)
 
-        mode, _, _ = _detect_canonical(user_input)
-        return mode
+    def _pick_model_for_provider(self, provider: str, mode: str, current_model: str) -> str:
+        """Select a model compatible with *provider*, preferring the current mode mapping."""
+        provider = (provider or "").strip().lower()
+        if not provider:
+            return current_model
+
+        mode_cfg = self.modes.get_mode(mode)
+        if mode_cfg and mode_cfg.provider == provider and mode_cfg.model:
+            return mode_cfg.model
+
+        for canonical_mode in ("small_talk", "big_tasks", "coding", "summarize", "research"):
+            cfg = self.modes.get_mode(canonical_mode)
+            if cfg and cfg.provider == provider and cfg.model:
+                return cfg.model
+
+        return current_model
 
     # ── Main routing logic ────────────────────────────────
 
@@ -704,12 +718,20 @@ class LLMModeRouter:
         """
         resolved = self._get_config_impl(mode_hint, prefer_uncensored)
         if self._default_provider and resolved.provider != self._default_provider:
+            original_provider = resolved.provider
+            original_model = resolved.model
             resolved.provider = self._default_provider
+            resolved.model = self._pick_model_for_provider(
+                self._default_provider,
+                resolved.mode,
+                resolved.model,
+            )
             resolved.base_url = PROVIDER_BASE_URLS.get(self._default_provider, "")
             resolved.api_key_env = _get_env_var_name(self._default_provider)
             resolved.resolution_reason = (
                 f"{resolved.resolution_reason} "
-                f"[default_provider override: {self._default_provider}]"
+                f"[default_provider override: {original_provider}:{original_model} -> "
+                f"{resolved.provider}:{resolved.model}]"
             )
         return resolved
 

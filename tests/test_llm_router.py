@@ -240,3 +240,34 @@ def test_resolve_api_key_xai_accepts_grok_key_env(monkeypatch):
     monkeypatch.setenv("GROK_KEY", "grok-test-key")
 
     assert _resolve_api_key("xai") == "grok-test-key"
+
+
+def test_default_provider_override_keeps_provider_compatible_model():
+    from navig.llm_router import LLMModeRouter
+
+    router = LLMModeRouter(
+        {
+            "ai": {"default_provider": "openai"},
+            "llm_modes": {
+                "small_talk": {"provider": "ollama", "model": "qwen2.5:3b"},
+                "big_tasks": {"provider": "openai", "model": "gpt-4o-mini"},
+                "coding": {"provider": "openrouter", "model": "deepseek/deepseek-coder"},
+                "summarize": {"provider": "openrouter", "model": "openai/gpt-4o-mini"},
+                "research": {"provider": "openrouter", "model": "openai/gpt-4o-mini"},
+            },
+        }
+    )
+
+    resolved = router.get_config("small_talk")
+    assert resolved.provider == "openai"
+    assert resolved.model == "gpt-4o-mini"
+    assert "default_provider override" in resolved.resolution_reason
+
+
+def test_class_and_module_detect_mode_match_for_research():
+    from navig.llm_router import LLMModeRouter, detect_mode
+
+    text = "please research and compare these two approaches"
+    router = LLMModeRouter({})
+
+    assert router.detect_mode(text) == detect_mode(text)
