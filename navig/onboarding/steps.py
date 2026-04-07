@@ -485,14 +485,37 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
                 ),
             ]
 
-    def _fast_path_key(provider_id: str) -> str:
-        """Return an env-var API key for *provider_id* if one is set, else ''."""
-        try:
-            from navig.providers.source_scan import provider_env_key
+    # Common env var map shared by both helpers below
+    _PROVIDER_ENV_VARS: dict[str, list[str]] = {
+        "openai": ["OPENAI_API_KEY"],
+        "anthropic": ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
+        "openrouter": ["OPENROUTER_API_KEY"],
+        "groq": ["GROQ_API_KEY"],
+        "google": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+        "nvidia": ["NVIDIA_API_KEY", "NIM_API_KEY"],
+        "xai": ["XAI_API_KEY", "GROK_KEY"],
+        "github_models": ["GITHUB_TOKEN", "GH_TOKEN"],
+        "mistral": ["MISTRAL_API_KEY"],
+    }
 
-            return provider_env_key(provider_id)
+    def _detect_provider_key(provider_id: str) -> tuple[str, str]:
+        """Return *(env_var_name, key_value)* for *provider_id*, or ('', '')."""
+        try:
+            from navig.providers.source_scan import provider_env_key  # noqa: F401
+
+            manifest = get_provider(provider_id)
+            if manifest:
+                for var in manifest.env_vars:
+                    val = os.environ.get(var, "").strip()
+                    if val:
+                        return var, val
         except Exception:  # noqa: BLE001
-            return ""
+            pass  # best-effort; failure is non-critical
+        for var in _PROVIDER_ENV_VARS.get(provider_id, []):
+            val = os.environ.get(var, "").strip()
+            if val:
+                return var, val
+        return "", ""
 
     def _detected_sources(provider_id: str) -> list[str]:
         try:
@@ -501,6 +524,16 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             return detect_provider_sources(provider_id, navig_dir=navig_dir)
         except Exception:  # noqa: BLE001
             return []
+
+    def _fast_path_key(provider_id: str) -> str:
+        """Return an env-var API key for *provider_id* if one is set, else ''."""
+        _, val = _detect_provider_key(provider_id)
+        return val
+
+    def _env_var_for_provider(provider_id: str) -> str:
+        """Return the name of the first detected env var for *provider_id*, or ''."""
+        var, _ = _detect_provider_key(provider_id)
+        return var
 
     def run() -> StepResult:
         # Environment-variable fast path (works in CI / non-TTY)
@@ -529,34 +562,55 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             p.id: _detected_sources(p.id) for p in providers
         }
 
+        # ── Scan env vars for recognized provider keys (upfront detection) ──
+        env_detected: dict[str, str] = {}  # provider_id → env_var_name
+        for p in providers:
+            if not getattr(p, "requires_key", True):
+                continue
+            var_name = _env_var_for_provider(p.id)
+            if var_name:
+                env_detected[p.id] = var_name
+
+        if env_detected:
+            ch.info("API key(s) detected in environment:")
+            for pid_det, var_name in env_detected.items():
+                label_det = next(
+                    (p.display_name for p in providers if p.id == pid_det), pid_det
+                )
+                ch.dim(f"    · {var_name}  →  {label_det}")
+
         try:
             current_provider = marker.read_text(encoding="utf-8").strip() if marker.exists() else ""
         except (OSError, UnicodeError):
             current_provider = ""
-        default_idx = 0
+
+        # Default: current provider > first env-detected > first-sourced > index 1
         if current_provider:
-            for i, p in enumerate(providers):
-                if p.id == current_provider:
-                    default_idx = i
-                    break
+            default_choice = "s"
         else:
-            for i, p in enumerate(providers):
-                if source_by_provider.get(p.id):
-                    default_idx = i
-                    break
+            first_env = next(
+                (str(i + 1) for i, p in enumerate(providers) if p.id in env_detected),
+                None,
+            )
+            first_sourced = next(
+                (str(i + 1) for i, p in enumerate(providers) if source_by_provider.get(p.id)),
+                None,
+            )
+            default_choice = first_env or first_sourced or "1"
 
         ch.info("Choose your AI provider:")
         for i, p in enumerate(providers, start=1):
             local_tag = "  (local, no key needed)" if not getattr(p, "requires_key", True) else ""
             sources = source_by_provider.get(p.id, [])
-            ready_tag = f"  (already configured: {'/'.join(sources)})" if sources else ""
+            ready_tag = f"  (configured: {'/'.join(sources)})" if sources else ""
+            env_tag = "  [✓ env var]" if p.id in env_detected else ""
             active_tag = "  ← current" if p.id == current_provider else ""
-            ch.dim(f"    [{i}] {p.display_name}{local_tag}{ready_tag}{active_tag}")
+            ch.dim(f"    [{i}] {p.display_name}{local_tag}{env_tag}{ready_tag}{active_tag}")
         skip_hint = " (keep existing)" if current_provider else " for now"
         ch.dim(f"    [s] Skip{skip_hint}")
 
         try:
-            choice_raw = typer.prompt("  Provider", default="s")
+            choice_raw = typer.prompt("  Provider", default=default_choice)
             if choice_raw.strip().lower() in ("s", "skip", ""):
                 return StepResult(status="skipped", output={"reason": "skipped by user"})
             idx = int(choice_raw.strip()) - 1
@@ -576,7 +630,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         requires_key = getattr(chosen, "requires_key", True)
         existing_sources = source_by_provider.get(pid, [])
         configured_base_url = ""
-        key_source_output = "interactive"
+        key_source = "interactive"
         keep_existing_key = False
 
         env_detected_key = _fast_path_key(pid)
@@ -615,7 +669,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         if not requires_key:
             # Local provider — no key needed
             api_key = "local"
-            key_source_output = "local"
+            key_source = "local"
             if pid == "llamacpp":
                 default_url = _local_default_url(pid) or "http://127.0.0.1:8080"
                 try:
@@ -629,6 +683,11 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
                     configured_base_url = default_url
                 if not configured_base_url:
                     configured_base_url = default_url
+        elif pid in env_detected:
+            # Key available from environment — use it automatically
+            api_key = _fast_path_key(pid)
+            key_source = "environment"
+            ch.dim(f"  ✓ Using {label} key from {env_detected[pid]}.")
         else:
             try:
                 prompt_text = f"  {label} API key"
@@ -642,7 +701,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             if not api_key:
                 if existing_sources:
                     keep_existing_key = True
-                    key_source_output = "existing:" + "/".join(existing_sources)
+                    key_source = "existing:" + "/".join(existing_sources)
                 else:
                     return StepResult(status="skipped", output={"reason": "no key entered"})
 
@@ -749,7 +808,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             base_url_saved = _persist_provider_url(pid, configured_base_url)
 
         marker.write_text(pid, encoding="utf-8")
-        out: dict = {"provider": pid, "keySource": key_source_output}
+        out: dict = {"provider": pid, "keySource": key_source}
         if configured_base_url:
             out["base_url"] = configured_base_url
             out["baseUrlSaved"] = "config" if base_url_saved else "none"
@@ -1921,10 +1980,11 @@ def _step_social_networks(navig_dir: Path) -> OnboardingStep:
     )
 
 
-# Known env vars to offer importing into vault
+# Known env vars to offer importing into vault at the runtime-secrets step.
+# AI-provider keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, GROQ_API_KEY, etc.) are
+# detected and imported earlier at the ai-provider step; only non-provider keys
+# belong here.
 _ENV_KEY_IMPORTS: list[tuple[str, str, str]] = [
-    ("OPENAI_API_KEY", "openai/api_key", "OpenAI API key"),
-    ("ANTHROPIC_API_KEY", "anthropic/api_key", "Anthropic API key"),
     ("SERPAPI_KEY", "serpapi/key", "SerpAPI key"),
     ("DEEPGRAM_API_KEY", "deepgram/api_key", "Deepgram API key"),
 ]
