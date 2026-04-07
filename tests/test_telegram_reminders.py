@@ -1106,7 +1106,6 @@ async def test_providers_cloud_button_hidden_when_vault_present_but_not_ready(mo
     )
     monkeypatch.setattr("navig.providers.verifier.verify_provider", lambda _m: _Verify())
     monkeypatch.setattr("navig.vault.get_vault", lambda: _Vault(False))
-    monkeypatch.setattr("navig.vault.get_vault", lambda: None)
 
     await bot._handle_providers(123, 456)
     keyboard = bot.messages[-1][3].get("keyboard") or []

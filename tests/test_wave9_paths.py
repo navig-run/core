@@ -16,24 +16,25 @@ import pytest
 
 
 def test_vault_default_path_respects_config_env(tmp_path, monkeypatch):
-    """CredentialsVault.DEFAULT_VAULT_PATH must respect NAVIG_CONFIG_DIR."""
+    """Vault default vault_dir must respect NAVIG_CONFIG_DIR."""
     custom = tmp_path / "cfg"
     monkeypatch.setenv("NAVIG_CONFIG_DIR", str(custom))
 
     import navig.vault.core as vault_mod
     importlib.reload(vault_mod)
 
-    assert vault_mod.CredentialsVault.DEFAULT_VAULT_PATH == custom / "credentials" / "vault.db"
+    v = vault_mod.Vault(auto_migrate=False)
+    assert v.vault_dir == custom / "vault"
 
 
 def test_vault_explicit_path_unaffected(tmp_path, monkeypatch):
-    """CredentialsVault(vault_path=explicit) must use the explicit path."""
+    """Vault(vault_path=explicit) must use the explicit path."""
     monkeypatch.setenv("NAVIG_CONFIG_DIR", str(tmp_path / "env_cfg"))
 
-    from navig.vault.core import CredentialsVault
+    from navig.vault.core import Vault
     explicit = tmp_path / "my_vault.db"
     # Do NOT use auto_migrate to avoid side effects in tests
-    v = CredentialsVault(vault_path=explicit, auto_migrate=False)
+    v = Vault(vault_path=explicit, auto_migrate=False)
     assert v.vault_path == explicit
 
 
