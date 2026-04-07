@@ -197,6 +197,7 @@ class OnboardingEngine:
                     except Exception:  # noqa: BLE001
                         pass
                 result = self._execute(step)
+                self._apply_retroactive_updates(result)
                 record = StepRecord(
                     id=step.id,
                     title=step.title,
@@ -256,6 +257,7 @@ class OnboardingEngine:
 
         result = self._execute(step)
         result_duration = result.duration_ms
+        self._apply_retroactive_updates(result)
         record = StepRecord(
             id=step.id,
             title=step.title,
@@ -342,6 +344,49 @@ class OnboardingEngine:
         return any(
             r.id == step_id and r.status == "completed" for r in self._state.steps
         )
+
+    def _apply_retroactive_updates(self, result: StepResult) -> None:
+        """Apply retroactive step-record updates emitted by a step.
+
+        A step may include ``_retroactiveUpdates`` in its output dict to signal
+        that an earlier step's recorded status should be revised — for example,
+        ``runtime-secrets`` importing an AI-provider key should promote the
+        ``ai-provider`` step from ``skipped`` to ``completed``.
+
+        The field is consumed and removed from the output before it is persisted
+        to the artifact so only meaningful data is stored.  This method must be
+        called before ``result.output`` is read by the caller (the run loop
+        always calls this immediately after ``_execute``).
+
+        Promotion-only policy: updates only apply when the existing record is
+        NOT already ``completed``.  A later step can never downgrade a step that
+        successfully ran.
+        """
+        updates = result.output.pop("_retroactiveUpdates", [])
+        if not updates:
+            return
+        changed = False
+        for upd in updates:
+            upd_id = upd.get("id")
+            new_status = upd.get("status")
+            if not upd_id or not new_status:
+                continue
+            for i, rec in enumerate(self._state.steps):
+                # Only promote; never downgrade a step that already completed.
+                if rec.id == upd_id and rec.status != "completed":
+                    self._state.steps[i] = StepRecord(
+                        id=rec.id,
+                        title=rec.title,
+                        status=new_status,
+                        completed_at=rec.completed_at,
+                        duration_ms=rec.duration_ms,
+                        output={**rec.output, **upd.get("output", {})},
+                        error=rec.error,
+                    )
+                    changed = True
+                    break
+        if changed:
+            self._write_artifact()
 
     def _record(self, record: StepRecord) -> None:
         """Replace any existing record for this step ID, then flush immediately."""

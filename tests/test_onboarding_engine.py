@@ -201,3 +201,131 @@ def test_execute_single_returns_tuple(tmp_path: Path) -> None:
     vstep = _verified_step("vsolo")
     was_skipped2, result2 = engine.execute_single(vstep)
     assert was_skipped2 is True
+
+
+# ── 9. Retroactive step updates ───────────────────────────────────────────────
+
+
+def test_retroactive_update_promotes_skipped_to_completed(tmp_path: Path) -> None:
+    """A step that emits _retroactiveUpdates upgrades an earlier skipped record."""
+    config = _make_config(tmp_path)
+
+    early_step = OnboardingStep(
+        id="early",
+        title="Early Step",
+        run=lambda: StepResult(status="skipped", output={"reason": "user skipped"}),
+        on_failure="skip",
+    )
+
+    def _later_run() -> StepResult:
+        return StepResult(
+            status="completed",
+            output={
+                "done": True,
+                "_retroactiveUpdates": [
+                    {
+                        "id": "early",
+                        "status": "completed",
+                        "output": {"note": "fixed by later step"},
+                    }
+                ],
+            },
+        )
+
+    later_step = OnboardingStep(
+        id="later",
+        title="Later Step",
+        run=_later_run,
+        on_failure="skip",
+    )
+
+    engine = OnboardingEngine(config, [early_step, later_step])
+    state = engine.run()
+
+    statuses = {s.id: s.status for s in state.steps}
+    assert statuses["early"] == "completed", "early step should be promoted to completed"
+    assert statuses["later"] == "completed"
+
+    # _retroactiveUpdates must NOT appear in the persisted artifact output
+    artifact_data = json.loads((tmp_path / "onboarding.json").read_text(encoding="utf-8"))
+    later_record = next(s for s in artifact_data["steps"] if s["id"] == "later")
+    assert "_retroactiveUpdates" not in later_record["output"]
+
+    # The promoted record should carry the extra output fields
+    early_record = next(s for s in artifact_data["steps"] if s["id"] == "early")
+    assert early_record["output"].get("note") == "fixed by later step"
+
+
+def test_retroactive_update_does_not_downgrade_completed_step(tmp_path: Path) -> None:
+    """A retroactive update must not change a step that already completed."""
+    config = _make_config(tmp_path)
+
+    completed_step = OnboardingStep(
+        id="already-done",
+        title="Already Done",
+        run=lambda: StepResult(status="completed", output={"original": True}),
+        on_failure="skip",
+    )
+
+    def _later_run() -> StepResult:
+        return StepResult(
+            status="completed",
+            output={
+                "_retroactiveUpdates": [
+                    {
+                        "id": "already-done",
+                        "status": "skipped",  # attempted downgrade
+                        "output": {"hijacked": True},
+                    }
+                ]
+            },
+        )
+
+    later_step = OnboardingStep(
+        id="later",
+        title="Later Step",
+        run=_later_run,
+        on_failure="skip",
+    )
+
+    engine = OnboardingEngine(config, [completed_step, later_step])
+    state = engine.run()
+
+    statuses = {s.id: s.status for s in state.steps}
+    assert statuses["already-done"] == "completed", "completed step must not be downgraded"
+
+
+def test_execute_single_applies_retroactive_updates(tmp_path: Path) -> None:
+    """execute_single() also processes retroactive updates."""
+    config = _make_config(tmp_path)
+
+    early_step = OnboardingStep(
+        id="early",
+        title="Early",
+        run=lambda: StepResult(status="skipped", output={}),
+        on_failure="skip",
+    )
+
+    def _later_run() -> StepResult:
+        return StepResult(
+            status="completed",
+            output={
+                "_retroactiveUpdates": [
+                    {"id": "early", "status": "completed", "output": {"promoted": True}}
+                ]
+            },
+        )
+
+    later_step = OnboardingStep(
+        id="later",
+        title="Later",
+        run=_later_run,
+        on_failure="skip",
+    )
+
+    engine = OnboardingEngine(config, [early_step, later_step])
+    engine.execute_single(early_step)
+    engine.execute_single(later_step)
+
+    statuses = {s.id: s.status for s in engine.finalize().steps}
+    assert statuses["early"] == "completed"
