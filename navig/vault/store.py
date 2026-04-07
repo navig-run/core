@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS vault_items (
     metadata_json   TEXT NOT NULL DEFAULT '{}',
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL,
+    last_used_at    TEXT,
     version         INTEGER NOT NULL DEFAULT 1
 );
 
@@ -82,6 +83,11 @@ class VaultStore:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA foreign_keys=ON")
             conn.executescript(_CREATE_SQL)
+            # Add last_used_at column if upgrading from older schema
+            try:
+                conn.execute("ALTER TABLE vault_items ADD COLUMN last_used_at TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
             self._conn = conn
         return self._conn
 
@@ -105,8 +111,8 @@ class VaultStore:
                 """
                 INSERT INTO vault_items
                     (id, kind, label, provider, encrypted_dek, encrypted_blob,
-                     metadata_json, created_at, updated_at, version)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     metadata_json, created_at, updated_at, last_used_at, version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     kind           = excluded.kind,
                     label          = excluded.label,
@@ -115,6 +121,7 @@ class VaultStore:
                     encrypted_blob = excluded.encrypted_blob,
                     metadata_json  = excluded.metadata_json,
                     updated_at     = excluded.updated_at,
+                    last_used_at   = excluded.last_used_at,
                     version        = excluded.version
                 """,
                 (
@@ -127,6 +134,7 @@ class VaultStore:
                     json.dumps(item.metadata),
                     item.created_at.isoformat(),
                     item.updated_at.isoformat(),
+                    item.last_used_at.isoformat() if item.last_used_at else None,
                     item.version,
                 ),
             )
@@ -184,6 +192,17 @@ class VaultStore:
 
     # ── Audit log ────────────────────────────────────────────────────────────
 
+    def touch(self, item_id: str) -> None:
+        """Update last_used_at for an item (non-transactional best-effort)."""
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            self._connect().execute(
+                "UPDATE vault_items SET last_used_at = ? WHERE id = ?",
+                (now, item_id),
+            )
+        except Exception:  # noqa: BLE001
+            pass  # Non-critical; do not surface errors on usage tracking
+
     def audit(
         self,
         item_id: str,
@@ -191,18 +210,15 @@ class VaultStore:
         actor: str = "user",
         detail: str = "",
     ) -> None:
-        """Append an audit entry for an item."""
+        """Append an audit entry for an item and touch last_used_at on reads."""
+        now = datetime.now(timezone.utc).isoformat()
         with self._tx() as conn:
             conn.execute(
                 "INSERT INTO vault_audit (item_id, action, actor, ts, detail) VALUES (?,?,?,?,?)",
-                (
-                    item_id,
-                    action,
-                    actor,
-                    datetime.now(timezone.utc).isoformat(),
-                    detail,
-                ),
+                (item_id, action, actor, now, detail),
             )
+        if action == "read":
+            self.touch(item_id)
 
     def get_audit(self, item_id: str) -> list[dict]:
         """Return audit log for a specific item, newest first."""
@@ -230,9 +246,15 @@ class VaultStore:
 
     @staticmethod
     def _row_to_item(row: sqlite3.Row) -> VaultItem:
+        raw_kind = row["kind"]
+        try:
+            kind = VaultItemKind(raw_kind)
+        except ValueError:
+            kind = VaultItemKind.GENERIC  # Graceful fallback for unknown kinds
+        raw_last = row["last_used_at"] if "last_used_at" in row.keys() else None
         return VaultItem(
             id=row["id"],
-            kind=VaultItemKind(row["kind"]),
+            kind=kind,
             label=row["label"],
             provider=row["provider"],
             encrypted_dek=row["encrypted_dek"],
@@ -240,5 +262,6 @@ class VaultStore:
             metadata=json.loads(row["metadata_json"] or "{}"),
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
+            last_used_at=datetime.fromisoformat(raw_last) if raw_last else None,
             version=row["version"],
         )

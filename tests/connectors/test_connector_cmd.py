@@ -141,6 +141,44 @@ class TestConnectorList:
         assert result.exit_code == 1
 
 
+class TestConnectorAutoLoader:
+    def test_ensure_connectors_loaded_registers_extended_connectors(self, monkeypatch):
+        """Regression: new built-in connectors must be auto-registered by CLI loader."""
+        import navig.commands.connector_cmd as cmd_mod
+
+        registry = get_connector_registry()
+        registry.reset()
+        monkeypatch.setattr(cmd_mod, "_CONNECTORS_LOADED", False)
+
+        cmd_mod._ensure_connectors_loaded()
+
+        for connector_id in (
+            "perplexity",
+            "google_maps",
+            "youtube",
+            "supabase",
+            "gcp_translate",
+        ):
+            assert registry.has(connector_id), f"missing auto-registered connector: {connector_id}"
+
+    def test_ensure_connectors_loaded_is_idempotent(self, monkeypatch):
+        """Calling loader repeatedly should not error and should preserve registrations."""
+        import navig.commands.connector_cmd as cmd_mod
+
+        registry = get_connector_registry()
+        registry.reset()
+        monkeypatch.setattr(cmd_mod, "_CONNECTORS_LOADED", False)
+
+        cmd_mod._ensure_connectors_loaded()
+        first = set(registry.all_classes().keys())
+
+        # Second call should be a no-op due to _CONNECTORS_LOADED guard.
+        cmd_mod._ensure_connectors_loaded()
+        second = set(registry.all_classes().keys())
+
+        assert first == second
+
+
 class TestConnectorDisconnect:
     def test_disconnect_known(self):
         result = runner.invoke(connector_app, ["disconnect", "gmail"])

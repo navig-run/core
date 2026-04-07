@@ -206,6 +206,11 @@ class VaultItemKind(str, Enum):
     TOKEN = "token"  # OAuth / bearer token
     PASSWORD = "password"  # Password
     GENERIC = "generic"  # Catch-all
+    # Extended kinds (used by adapters and migration)
+    PROVIDER = "provider"  # Migrated / provider-keyed credential (V1 compat)
+    NOTE = "note"  # Plain-text note or memo
+    FILE = "file"  # Binary / JSON file (e.g. service-account key file)
+    CREDENTIAL = "credential"  # Generic credential bundle
 
 
 @dataclass
@@ -213,18 +218,28 @@ class VaultItem:
     """
     Single item stored in the vault with its own DEK (Data Encryption Key).
 
-    The payload is stored encrypted; this dataclass represents the decrypted
-    view returned to callers after unlocking.
+    The encrypted fields (``encrypted_dek``, ``encrypted_blob``) are used
+    internally by :class:`~navig.vault.store.VaultStore` and
+    :class:`~navig.vault.core_v2.VaultV2`.  Callers that receive a
+    ``VaultItem`` from high-level APIs (e.g. ``VaultV2.get_item()``) will
+    find the decrypted content in ``payload``; the encrypted fields will be
+    empty bytes in that context.
     """
 
     id: str
     kind: VaultItemKind
     label: str
     provider: str | None
-    payload: bytes  # Decrypted payload
+    payload: bytes = b""  # Decrypted payload (populated by VaultV2 after decrypt)
+    # ── Internal encrypted storage fields ────────────────────────────────────
+    encrypted_dek: bytes = field(default=b"", repr=False)   # DEK sealed with master key
+    encrypted_blob: bytes = field(default=b"", repr=False)  # Payload sealed with DEK
+    # ── Metadata / versioning ────────────────────────────────────────────────
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    last_used_at: datetime | None = None
+    version: int = 1
 
     @staticmethod
     def new_id() -> str:
