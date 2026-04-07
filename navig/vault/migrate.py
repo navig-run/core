@@ -9,7 +9,6 @@ The source is never modified or deleted.  Run ``navig vault migrate`` to execute
 from __future__ import annotations
 
 import json
-import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -70,7 +69,9 @@ def migrate_from_legacy(
     - Decryption errors from Fernet are reported but do not abort the migration.
     - The legacy DB is *never* modified or deleted.
     """
-    from navig.vault.core_v2 import get_vault_v2
+    from navig.vault.core import get_vault
+    from navig.vault.encryption import VaultEncryption
+    from navig.vault.storage import VaultStorage
     from navig.vault.types import VaultItemKind
 
     src = legacy_path or _LEGACY_DB
@@ -80,45 +81,28 @@ def migrate_from_legacy(
         report.errors.append(f"Legacy DB not found: {src}")
         return report
 
-    # Open legacy DB (read-only) using raw sqlite3 — avoids importing old storage module
+    # Open legacy vault using VaultStorage + VaultEncryption (Fernet / PBKDF2)
     try:
-        conn = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
-        conn.row_factory = sqlite3.Row
-    except sqlite3.OperationalError as exc:
-        report.errors.append(f"Cannot open legacy DB: {exc}")
-        return report
-
-    # Check legacy VaultStorage uses the old Fernet encryption; we need to
-    # import it so we can decrypt the blobs before re-encrypting.
-    try:
-        from navig.vault.core import CredentialsVault  # type: ignore[import]
-
-        legacy_vault = CredentialsVault(db_path=src)
+        legacy_enc = VaultEncryption(src.parent)
+        legacy_store = VaultStorage(src, legacy_enc)
     except Exception as exc:
         report.errors.append(f"Cannot initialize legacy vault: {exc}")
-        conn.close()
         return report
 
-    new_vault = get_vault_v2()
+    new_vault = get_vault()
 
+    # Read all credentials from the legacy table (metadata only first)
     try:
-        rows = conn.execute(
-            "SELECT id, provider, profile_id, label, credential_type FROM credentials"
-        ).fetchall()
-    except sqlite3.OperationalError:
-        report.errors.append("Legacy DB schema unrecognised — is this a NAVIG credentials DB?")
-        conn.close()
+        all_creds_info = legacy_store.list_all(include_disabled=True)
+    except Exception as exc:
+        report.errors.append(f"Cannot read legacy credentials: {exc}")
         return report
 
-    for row in rows:
-        label = f"{row['provider']}/{row['profile_id']}"
-        # Use full label if profile_id is "default", trim it for cleanliness
-        if row["profile_id"] == "default":
-            label = row["provider"]
-
+    for info in all_creds_info:
+        label = info.provider if info.profile_id == "default" else f"{info.provider}/{info.profile_id}"
         try:
-            # Fetch and decrypt via legacy vault
-            cred = legacy_vault.get(row["provider"], profile_id=row["profile_id"])
+            # Fetch with decrypted data
+            cred = legacy_store.get_by_provider_profile(info.provider, info.profile_id)
             if cred is None:
                 report.skipped += 1
                 continue
@@ -137,17 +121,17 @@ def migrate_from_legacy(
                     label=label,
                     payload=payload,
                     kind=VaultItemKind.PROVIDER,
-                    provider=row["provider"],
+                    provider=info.provider,
                     metadata={
                         "migrated_from": "legacy_vault",
-                        "credential_type": row["credential_type"],
-                        "profile_id": row["profile_id"],
+                        "credential_type": info.credential_type.value,
+                        "profile_id": info.profile_id,
+                        "label": info.label,
+                        "enabled": info.enabled,
                     },
                 )
             report.migrated += 1
 
         except Exception as exc:
             report.errors.append(f"  {label}: {exc}")
-
-    conn.close()
     return report
