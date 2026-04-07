@@ -112,6 +112,16 @@ class SyncManager:
                 await self._task
             except asyncio.CancelledError:
                 pass  # task cancelled; expected during shutdown
+
+        if self._bg_tasks:
+            for task in list(self._bg_tasks):
+                try:
+                    task.cancel()
+                except Exception:
+                    pass
+            await asyncio.gather(*list(self._bg_tasks), return_exceptions=True)
+            self._bg_tasks.clear()
+
         logger.info("[sync] SyncManager stopped")
 
     # ── Main loop ─────────────────────────────────────────────────────────────
@@ -205,6 +215,12 @@ class SyncManager:
     def _fire_and_forget(self, coro) -> None:
         """Run a coroutine in the background, retaining a strong reference."""
         task = asyncio.create_task(coro)
+        if not isinstance(task, asyncio.Task):
+            try:
+                coro.close()
+            except Exception:
+                pass
+            return
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
 
