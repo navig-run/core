@@ -76,7 +76,11 @@ def _item_to_credential(item: VaultItem, data: dict | None = None) -> Credential
         credential_type=cred_type,
         label=meta.get("label", item.label),
         data=data or {},
-        metadata={k: v for k, v in meta.items() if k not in ("credential_type", "profile_id", "label", "enabled")},
+        metadata={
+            k: v
+            for k, v in meta.items()
+            if k not in ("credential_type", "profile_id", "label", "enabled")
+        },
         enabled=bool(meta.get("enabled", True)),
         created_at=item.created_at,
         updated_at=item.updated_at,
@@ -101,7 +105,11 @@ def _item_to_cred_info(item: VaultItem) -> CredentialInfo:
         enabled=bool(meta.get("enabled", True)),
         created_at=item.created_at,
         last_used_at=item.last_used_at,
-        metadata={k: v for k, v in meta.items() if k not in ("credential_type", "profile_id", "label", "enabled")},
+        metadata={
+            k: v
+            for k, v in meta.items()
+            if k not in ("credential_type", "profile_id", "label", "enabled")
+        },
     )
 
 
@@ -133,6 +141,7 @@ class Vault:
             vault_dir = _vp.parent if _vp.suffix == ".db" else _vp
         if vault_dir is None:
             from navig.platform.paths import vault_dir as _vault_dir_fn  # noqa: PLC0415
+
             vault_dir = _vault_dir_fn()
         self.vault_dir = vault_dir
         # Store original vault_path kwarg for backward compat (callers may read .vault_path)
@@ -273,6 +282,7 @@ class Vault:
                 return SecretStr(data["value"])
             if item.provider:
                 from .provider import get_provider  # noqa: PLC0415
+
                 meta = get_provider(item.provider) or {}
                 key_field = meta.get("key_field", "api_key")
                 if key_field in data:
@@ -394,11 +404,14 @@ class Vault:
         if original_name:
             meta["original_file"] = original_name
 
-        return self.put(label, raw.encode("utf-8"), kind=VaultItemKind.FILE, provider=provider, metadata=meta)
+        return self.put(
+            label, raw.encode("utf-8"), kind=VaultItemKind.FILE, provider=provider, metadata=meta
+        )
 
     def get_json_file(self, label: str) -> dict:
         """Decrypt and return a stored JSON key file as a Python dict."""
         import json as _json  # noqa: PLC0415
+
         return _json.loads(self.get_bytes(label))
 
     def get_json_str(self, label: str) -> str:
@@ -487,17 +500,21 @@ class Vault:
         if item is None:
             # Fallback: search by provider tag (picks first match)
             matches = self._store.list(provider=provider)
-            prof = (profile_id or "default")
+            prof = profile_id or "default"
             matches = [m for m in matches if m.metadata.get("profile_id", "default") == prof]
             if not matches:
                 return None
             # Priority: active=True → most-recently-used → created_at desc
             active_m = [m for m in matches if m.metadata.get("active", False)]
-            item = active_m[0] if active_m else sorted(
-                matches,
-                key=lambda m: (m.last_used_at or m.created_at),
-                reverse=True,
-            )[0]
+            item = (
+                active_m[0]
+                if active_m
+                else sorted(
+                    matches,
+                    key=lambda m: m.last_used_at or m.created_at,
+                    reverse=True,
+                )[0]
+            )
         # Return None for disabled credentials
         if not item.metadata.get("enabled", True):
             return None
@@ -621,24 +638,40 @@ class Vault:
             if sib.metadata.get("active", False):
                 sib_meta = dict(sib.metadata)
                 sib_meta["active"] = False
-                self._store.upsert(VaultItem(
-                    id=sib.id, kind=sib.kind, label=sib.label, provider=sib.provider,
-                    encrypted_dek=sib.encrypted_dek, encrypted_blob=sib.encrypted_blob,
-                    metadata=sib_meta, created_at=sib.created_at,
-                    updated_at=datetime.now(timezone.utc),
-                    last_used_at=sib.last_used_at, version=sib.version + 1,
-                ))
+                self._store.upsert(
+                    VaultItem(
+                        id=sib.id,
+                        kind=sib.kind,
+                        label=sib.label,
+                        provider=sib.provider,
+                        encrypted_dek=sib.encrypted_dek,
+                        encrypted_blob=sib.encrypted_blob,
+                        metadata=sib_meta,
+                        created_at=sib.created_at,
+                        updated_at=datetime.now(timezone.utc),
+                        last_used_at=sib.last_used_at,
+                        version=sib.version + 1,
+                    )
+                )
 
         # Set active flag on target
         tgt_meta = dict(target.metadata)
         tgt_meta["active"] = True
-        self._store.upsert(VaultItem(
-            id=target.id, kind=target.kind, label=target.label, provider=target.provider,
-            encrypted_dek=target.encrypted_dek, encrypted_blob=target.encrypted_blob,
-            metadata=tgt_meta, created_at=target.created_at,
-            updated_at=datetime.now(timezone.utc),
-            last_used_at=target.last_used_at, version=target.version + 1,
-        ))
+        self._store.upsert(
+            VaultItem(
+                id=target.id,
+                kind=target.kind,
+                label=target.label,
+                provider=target.provider,
+                encrypted_dek=target.encrypted_dek,
+                encrypted_blob=target.encrypted_blob,
+                metadata=tgt_meta,
+                created_at=target.created_at,
+                updated_at=datetime.now(timezone.utc),
+                last_used_at=target.last_used_at,
+                version=target.version + 1,
+            )
+        )
         self._store.audit(target.id, "activated")
         self.set_active_profile(target.metadata.get("profile_id", "default"))
         return True
@@ -713,7 +746,9 @@ class Vault:
         if label:
             new_meta["label"] = label
         new_label = _cred_label(provider, profile)
-        return self.put(new_label, payload, kind=src_item.kind, provider=provider, metadata=new_meta)
+        return self.put(
+            new_label, payload, kind=src_item.kind, provider=provider, metadata=new_meta
+        )
 
     def list_profiles(self) -> list[str]:
         """Return all unique profile IDs across stored credentials."""
@@ -794,12 +829,15 @@ class Vault:
         """Validate the credential for *provider* against the provider's API."""
         cred = self.get(provider, profile_id)
         if cred is None:
-            return TestResult(success=False, message=f"No credential found for provider '{provider}'.")
+            return TestResult(
+                success=False, message=f"No credential found for provider '{provider}'."
+            )
         return self._run_validator(cred)
 
     def _run_validator(self, cred: Credential) -> TestResult:
         try:
             from navig.vault import validators as _validators_mod  # noqa: PLC0415
+
             validator = _validators_mod.get_validator(cred.provider)
             return validator.validate(cred)
         except Exception as exc:  # noqa: BLE001
@@ -840,6 +878,7 @@ def get_vault(vault_dir: Path | None = None) -> Vault:
     if _vault is None:
         if vault_dir is None:
             from navig.platform.paths import vault_dir as _vault_dir_fn  # noqa: PLC0415
+
             vault_dir = _vault_dir_fn()
         _vault = Vault(vault_dir)
         _auto_migrate(_vault)
@@ -890,6 +929,7 @@ def _auto_migrate(vault: Vault) -> None:
         return
     try:
         from navig.vault.migrate import check_legacy_exists, migrate_from_legacy  # noqa: PLC0415
+
         if not check_legacy_exists():
             sentinel.touch()
             return
@@ -898,5 +938,3 @@ def _auto_migrate(vault: Vault) -> None:
             sentinel.touch()
     except Exception:  # noqa: BLE001
         pass  # Never crash on auto-migration; user can run navig vault migrate manually
-
-

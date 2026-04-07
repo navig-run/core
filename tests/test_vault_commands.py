@@ -85,8 +85,13 @@ def test_vault_cli_show_nonexistent():
 
 def test_vault_cli_activate(vault):
     """activate sets the active flag; short-ID lookup works."""
-    runner.invoke(app, ["cred", "add", "openai", "--key", "sk-aaa", "--profile", "work", "--no-interactive"])
-    runner.invoke(app, ["cred", "add", "openai", "--key", "sk-bbb", "--profile", "personal", "--no-interactive"])
+    runner.invoke(
+        app, ["cred", "add", "openai", "--key", "sk-aaa", "--profile", "work", "--no-interactive"]
+    )
+    runner.invoke(
+        app,
+        ["cred", "add", "openai", "--key", "sk-bbb", "--profile", "personal", "--no-interactive"],
+    )
 
     creds = vault.list_creds(provider="openai")
     work = next((c for c in creds if c.profile_id == "work"), None)

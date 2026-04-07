@@ -5526,6 +5526,9 @@ navig cred test --id 4d731848       # Force credential-ID mode
 navig cred disable <id>
 navig cred enable <id>
 
+# Pin a credential as the active (preferred) one when a provider has multiple keys
+navig cred activate <id>            # short 8-char ID works too
+
 # Clone to another profile
 navig cred clone <id> work --label "Work Copy"
 
@@ -5536,6 +5539,54 @@ navig cred audit <id> --limit 20    # For specific credential
 # List supported providers with validation
 navig cred providers
 ```
+
+### Credential IDs
+
+`navig cred list` displays the first 8 characters of each credential's UUID.
+These short IDs are accepted by all commands that take `<id>` as an argument
+(`show`, `edit`, `delete`, `enable`, `disable`, `activate`, `audit`, `clone`).
+
+```
+┏━━━━━━━━━━┳━━━┳━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┓
+┃ ID       ┃   ┃ Provider ┃ Profile ┃ Type    ┃
+├──────────┼───┼──────────┼─────────┼─────────┤
+│ d08ae821 │ ⭐│ openai   │ work    │ api_key │
+│ e6d1ab63 │   │ openai   │ personal│ api_key │
+└──────────┴───┴──────────┴─────────┴─────────┘
+```
+
+The ⭐ column marks the **active** credential for its provider (see below).
+
+### Multiple Keys for the Same Provider
+
+When you store more than one key for a provider (e.g. `openai` work + personal),
+NAVIG must pick one when `get_api_key("openai")` is called without an explicit
+profile.
+
+**Resolution order:**
+
+| Priority | Condition | Wins |
+|----------|-----------|------|
+| 1 | Credential has been activated with `navig cred activate` | ⭐ activated one |
+| 2 | No activated credential | Most recently used |
+| 3 | Never used | Most recently created |
+| — | `--profile work` passed explicitly | That profile's key, ignores activate |
+
+**Pin the preferred key:**
+
+```bash
+# See all openai keys and their short IDs
+navig cred list --provider openai
+
+# Activate the work key
+navig cred activate d08ae821
+
+# Confirm (⭐ marker should appear next to d08ae821)
+navig cred list --provider openai
+```
+
+Once activated, `get_api_key("openai")` always returns the pinned key until
+you activate a different one or delete it.
 
 ### Credential Profile Management
 

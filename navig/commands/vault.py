@@ -533,7 +533,9 @@ def show_audit_log(
 
 @cred_app.command("activate")
 def activate_credential(
-    credential_id: str = typer.Argument(..., help="Credential ID (or first 8 chars) to mark as active"),
+    credential_id: str = typer.Argument(
+        ..., help="Credential ID (or first 8 chars) to mark as active"
+    ),
 ):
     """Set a credential as the active (preferred) one for its provider.
 
@@ -556,7 +558,9 @@ def activate_credential(
             _ch.error(f"No credential found with ID starting with '{target_id}'.")
             raise typer.Exit(1)
         if len(matches) > 1:
-            _ch.error(f"Ambiguous short ID '{target_id}' matches {len(matches)} credentials — use more chars.")
+            _ch.error(
+                f"Ambiguous short ID '{target_id}' matches {len(matches)} credentials — use more chars."
+            )
             raise typer.Exit(1)
         target_id = matches[0].id
 
@@ -786,7 +790,9 @@ def vault_list(
     for item in items:
         created = item.created_at.strftime("%Y-%m-%d") if item.created_at else "-"
         last_used = item.last_used_at.strftime("%Y-%m-%d %H:%M") if item.last_used_at else "-"
-        table.add_row(item.id, item.kind.value, item.provider or "-", item.label, created, last_used)
+        table.add_row(
+            item.id, item.kind.value, item.provider or "-", item.label, created, last_used
+        )
 
     _console().print(table)
 
