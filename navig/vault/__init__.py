@@ -1,65 +1,49 @@
-"""
-NAVIG Credentials Vault
+"""NAVIG Vault — public API.
 
-Unified, secure credential storage for all NAVIG components.
-Supports API keys, OAuth tokens, email credentials, and generic secrets.
+All vault access should go through :func:`get_vault`.  The returned
+:class:`Vault` instance is the unified credential store (AES-GCM + Argon2id)
+and exposes both the modern label-based API and the legacy V1 adapter API.
 
-Usage:
-    from navig.vault import get_vault, CredentialsVault
+Backward-compat names are preserved so existing imports keep working without
+any changes:
 
-    # Get global vault instance
+    # Modern (preferred)
+    from navig.vault import get_vault
     vault = get_vault()
 
-    # Add a credential
-    cred_id = vault.add(
-        provider="openai",
-        credential_type="api_key",
-        data={"api_key": "sk-..."},
-        profile_id="work",
-        label="Work OpenAI"
-    )
-
-    # Get credential
-    cred = vault.get("openai", profile_id="work")
-
-    # Get API key with env var fallback
-    api_key = vault.get_api_key("openai")
-
-    # Test credential
-    result = vault.test(cred_id)
+    # Legacy V1 names (still work)
+    from navig.vault import get_vault_v2, VaultV2, CredentialsVault
+    from navig.vault.core_v2 import get_vault_v2  # also works
 """
 
-from .core import CredentialsVault
-from .core_v2 import get_vault_v2
+from .core_v2 import Vault, get_vault
+from .core_v2 import Vault as CredentialsVault  # backward compat — V1 call sites
+from .core_v2 import Vault as VaultV2  # backward compat alias
+from .core_v2 import get_vault as get_vault_v2  # backward compat alias
 from .secret_str import SecretStr
-from .types import Credential, CredentialInfo, CredentialType, TestResult
+from .types import (
+    Credential,
+    CredentialInfo,
+    CredentialType,
+    TestResult,
+    VaultItem,
+    VaultItemKind,
+)
 
 __all__ = [
+    # Canonical names
+    "Vault",
+    "get_vault",
+    # Backward compat
+    "VaultV2",
+    "get_vault_v2",
     "CredentialsVault",
+    # Types
     "Credential",
     "CredentialInfo",
     "CredentialType",
     "TestResult",
+    "VaultItem",
+    "VaultItemKind",
     "SecretStr",
-    "get_vault",
-    "get_vault_v2",
 ]
-
-# Global vault singleton
-_vault: CredentialsVault | None = None
-
-
-def get_vault() -> CredentialsVault:
-    """
-    Get or create the global vault instance.
-
-    The vault is lazily initialized on first access and reused
-    for all subsequent calls.
-
-    Returns:
-        CredentialsVault: The global vault instance
-    """
-    global _vault
-    if _vault is None:
-        _vault = CredentialsVault()
-    return _vault

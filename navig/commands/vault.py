@@ -105,7 +105,7 @@ def list_credentials(
 ):
     """List credentials in the vault."""
     vault = _vault_mod.get_vault()
-    creds = vault.list(provider=provider, profile_id=profile)
+    creds = vault.list_creds(provider=provider, profile_id=profile)
 
     if not show_disabled:
         creds = [c for c in creds if c.enabled]
@@ -652,17 +652,14 @@ def vault_set(
         )
         _ch.success(f"Stored credential for [bold]{provider}[/bold] (ID: {cred_id})")
 
-    # Also write to vault v2 when path uses dot/slash notation (e.g. telegram.user_id)
-    # so that resolve_telegram_uid() and other v2-first resolvers find it immediately.
+    # Direct label write for dot/slash-notation paths (e.g. telegram.user_id)
+    # vault.add() above stores using V1 provider model; also store under the
+    # exact path label so that get_secret(path) works for V2-style resolvers.
     if "." in path or "/" in path:
         try:
-            from navig.vault.core_v2 import get_vault_v2 as _gv2
-
-            _v2 = _gv2()
-            if _v2 is not None:
-                _v2.put(path, json.dumps({"value": value}).encode())
+            vault.put(path, json.dumps({"value": value}).encode())
         except Exception:
-            pass  # v2 write is additive; v1 store above is the canonical record
+            pass  # best-effort; the V1 record above is the canonical store
 
 
 @vault_app.command("get")
@@ -676,25 +673,21 @@ def vault_get(
     provider, data_key = _parse_vault_path(path)
     cred = vault.get(provider, profile_id=profile, caller="vault.get")
 
-    # For dot-notation keys also try vault v2 first (e.g. telegram.user_id)
+    # For dot-notation or slash paths try a direct label lookup in the unified vault.
     if "." in path or (cred is None and "/" in path):
         try:
-            from navig.vault.core_v2 import get_vault_v2 as _gv2
-
-            _v2 = _gv2()
-            if _v2 is not None:
-                v2_secret = (_v2.get_secret(path) or "").strip()
-                if v2_secret:
-                    if reveal:
-                        _ch.warning("Revealing secret!")
-                        _rprint(v2_secret)
-                    else:
-                        _rprint(
-                            f"[dim]{path}:[/dim] {'*' * min(len(v2_secret), 12)} (use --reveal to show)"
-                        )
-                    return
-        except Exception:
-            pass  # best-effort: vault v2 unavailable; fall back to v1 credential
+            v2_secret = (vault.get_secret(path) or "").strip()
+            if v2_secret:
+                if reveal:
+                    _ch.warning("Revealing secret!")
+                    _rprint(v2_secret)
+                else:
+                    _rprint(
+                        f"[dim]{path}:[/dim] {'*' * min(len(v2_secret), 12)} (use --reveal to show)"
+                    )
+                return
+        except (KeyError, Exception):
+            pass  # path not found as label; fall through to V1 credential lookup
 
     if cred is None:
         _ch.error(f"No credential found for provider '{provider}' in profile '{profile}'.")
@@ -719,16 +712,15 @@ def vault_list(
 ):
     """List credentials stored in the vault."""
     vault = _vault_mod.get_vault()
-    creds = vault.list(provider=provider, profile_id=profile)
-    creds = [c for c in creds if c.enabled]
+    items = vault.list(provider=provider, profile_id=profile)
 
     if json_output:
         import dataclasses
 
-        _rprint(json.dumps([dataclasses.asdict(c) for c in creds], default=str))
+        _rprint(json.dumps([dataclasses.asdict(i) for i in items], default=str))
         return
 
-    if not creds:
+    if not items:
         _ch.warning(
             "Vault is empty."
             if not (provider or profile)
@@ -737,17 +729,18 @@ def vault_list(
         _ch.info("Use 'navig vault set <path> <value>' to add a credential.")
         return
 
-    table = _Table(title="NAVIG Credentials Vault")
+    table = _Table(title="NAVIG Vault")
     table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Kind", style="yellow")
     table.add_column("Provider", style="green")
-    table.add_column("Profile", style="magenta")
-    table.add_column("Type", style="yellow")
     table.add_column("Label")
+    table.add_column("Created", style="dim")
     table.add_column("Last Used", style="dim")
 
-    for c in creds:
-        last_used = c.last_used_at.strftime("%Y-%m-%d %H:%M") if c.last_used_at else "-"
-        table.add_row(c.id, c.provider, c.profile_id, c.credential_type.value, c.label, last_used)
+    for item in items:
+        created = item.created_at.strftime("%Y-%m-%d") if item.created_at else "-"
+        last_used = item.last_used_at.strftime("%Y-%m-%d %H:%M") if item.last_used_at else "-"
+        table.add_row(item.id, item.kind.value, item.provider or "-", item.label, created, last_used)
 
     _console().print(table)
 
@@ -765,7 +758,7 @@ def vault_list(
             ("xai", ("XAI_API_KEY", "GROK_KEY"), ("xai_api_key", "grok_key")),
             ("mistral", ("MISTRAL_API_KEY",), ("mistral_api_key",)),
         ]
-        vault_providers = {c.provider for c in creds}
+        vault_providers = {c.provider for c in items}
         try:
             from navig.config import get_config_manager  # noqa: PLC0415
 
@@ -804,7 +797,7 @@ def vault_list(
             ("deepgram", ("DEEPGRAM_API_KEY", "DEEPGRAM_KEY"), ("deepgram_api_key",)),
             ("elevenlabs", ("ELEVENLABS_API_KEY", "XI_API_KEY"), ("elevenlabs_api_key",)),
         ]
-        vault_providers_v = {c.provider for c in creds}
+        vault_providers_v = {c.provider for c in items}
         try:
             from navig.config import get_config_manager  # noqa: PLC0415
 
@@ -887,7 +880,7 @@ def vault_check_all(
     Use --json for machine-readable output (CI-friendly).
     """
     vault = _vault_mod.get_vault()
-    creds = vault.list(profile_id=profile)
+    creds = vault.list_creds(profile_id=profile)
     creds = [c for c in creds if c.enabled]
 
     if not creds:

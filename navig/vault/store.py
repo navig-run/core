@@ -186,8 +186,12 @@ class VaultStore:
             cur = conn.execute("DELETE FROM vault_items WHERE label = ?", (label,))
             return cur.rowcount > 0
 
-    def count(self) -> int:
-        """Total number of items in the vault."""
+    def count(self, provider: str | None = None) -> int:
+        """Total number of items in the vault, optionally filtered by provider."""
+        if provider:
+            return self._connect().execute(
+                "SELECT COUNT(*) FROM vault_items WHERE provider = ?", (provider,)
+            ).fetchone()[0]
         return self._connect().execute("SELECT COUNT(*) FROM vault_items").fetchone()[0]
 
     # ── Audit log ────────────────────────────────────────────────────────────
@@ -217,7 +221,7 @@ class VaultStore:
                 "INSERT INTO vault_audit (item_id, action, actor, ts, detail) VALUES (?,?,?,?,?)",
                 (item_id, action, actor, now, detail),
             )
-        if action == "read":
+        if action in ("read", "accessed"):
             self.touch(item_id)
 
     def get_audit(self, item_id: str) -> list[dict]:

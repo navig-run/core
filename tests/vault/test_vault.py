@@ -319,6 +319,7 @@ class TestCredentialsVault:
             vault_path = Path(tmpdir) / "vault.db"
             vault = CredentialsVault(vault_path=vault_path, auto_migrate=False)
             yield vault
+            vault._store.close()  # release SQLite lock before temp dir cleanup
 
     def test_add_and_get(self, vault):
         """Test adding and retrieving credentials."""
@@ -330,7 +331,7 @@ class TestCredentialsVault:
             label="Test Key",
         )
 
-        assert len(cred_id) == 8
+        assert len(cred_id) == 36  # new vault returns full UUID
 
         cred = vault.get("openai")
         assert cred is not None
@@ -349,7 +350,7 @@ class TestCredentialsVault:
         secret = vault.get_secret("anthropic")
         assert secret is not None
         assert isinstance(secret, SecretStr)
-        assert str(secret) == "***"
+        assert str(secret) == "***"  # SecretStr redacts by default
         assert secret.reveal() == "sk-ant-123"
 
     def test_get_api_key(self, vault):
@@ -797,6 +798,7 @@ class TestVaultTestMethods:
             vault_path = Path(tmpdir) / "vault.db"
             vault = CredentialsVault(vault_path=vault_path, auto_migrate=False)
             yield vault
+            vault._store.close()  # release SQLite lock
 
     def test_test_nonexistent(self, vault):
         """Testing nonexistent credential should return failure."""
@@ -839,6 +841,7 @@ class TestVaultEnvFallback:
             vault_path = Path(tmpdir) / "vault.db"
             vault = CredentialsVault(vault_path=vault_path, auto_migrate=False)
             yield vault
+            vault._store.close()  # release SQLite lock
 
     def test_token_type_fallback(self, vault):
         """get_api_key should try 'token' key for token-type credentials."""
@@ -1320,3 +1323,5 @@ class TestMigration:
             # Legacy file should be renamed
             assert not legacy_file.exists()
             assert (vault_dir / "auth-profiles.json.migrated").exists()
+
+            vault._store.close()  # release SQLite lock before temp dir cleanup

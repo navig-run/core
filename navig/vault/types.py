@@ -245,3 +245,8 @@ class VaultItem:
     def new_id() -> str:
         """Generate a short random ID."""
         return str(uuid.uuid4())[:8]
+
+    @property
+    def enabled(self) -> bool:
+        """Whether this item is enabled (reads from metadata, defaults to True)."""
+        return bool(self.metadata.get("enabled", True))

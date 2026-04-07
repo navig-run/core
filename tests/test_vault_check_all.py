@@ -150,7 +150,7 @@ def _mock_vault_for_check_all(creds, validator_results: dict[str, bool]):
     """Return (mock_vault_module, mock_validators_module) for check-all tests."""
     vault_mod = MagicMock()
     vault_instance = MagicMock()
-    vault_instance.list.return_value = creds
+    vault_instance.list_creds.return_value = creds
     vault_mod.get_vault.return_value = vault_instance
 
     validators_mod = MagicMock()
@@ -173,7 +173,7 @@ def test_check_all_empty_vault():
     """check-all on empty vault: exit 0, warning shown."""
     vault_mod = MagicMock()
     vault_instance = MagicMock()
-    vault_instance.list.return_value = []
+    vault_instance.list_creds.return_value = []
     vault_mod.get_vault.return_value = vault_instance
 
     validators_mod = MagicMock()
@@ -270,7 +270,7 @@ def test_check_all_disabled_creds_skipped():
 
     vault_mod = MagicMock()
     vault_instance = MagicMock()
-    vault_instance.list.return_value = creds
+    vault_instance.list_creds.return_value = creds
     vault_mod.get_vault.return_value = vault_instance
 
     validators_mod = MagicMock()

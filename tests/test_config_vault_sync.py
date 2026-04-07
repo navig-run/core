@@ -128,8 +128,11 @@ def _make_dummy_cred(provider: str = "github_models") -> MagicMock:
     cred.profile_id = "default"
     cred.credential_type = MagicMock()
     cred.credential_type.value = "token"
+    cred.kind = MagicMock()
+    cred.kind.value = "provider"
     cred.label = provider.title()
     cred.last_used_at = None
+    cred.created_at = None
     return cred
 
 

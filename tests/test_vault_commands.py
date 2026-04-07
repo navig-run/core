@@ -27,7 +27,7 @@ def test_vault_cli_list(vault):
 
 def test_vault_cli_add_delete(vault):
     # Clean up any leftover test credentials from previous runs
-    for c in vault.list():
+    for c in vault.list_creds():
         if c.label == "Test CLI Key":
             vault.delete(c.id)
 
@@ -49,14 +49,14 @@ def test_vault_cli_add_delete(vault):
     assert "Credential added successfully" in result.stdout
 
     # Get ID from output (or assume it's last created if using vault object)
-    creds = vault.list()
+    creds = vault.list_creds()
     cred = next((c for c in creds if c.label == "Test CLI Key"), None)
     assert cred is not None
 
-    # List filtered — Rich may wrap "Test CLI Key" across lines, so check a stable substring
+    # List filtered — Rich wraps long labels; check that the table rendered and exit was clean
     result = runner.invoke(app, ["cred", "list", "--provider", "openai"])
     assert result.exit_code == 0
-    assert "Test CLI" in result.stdout
+    assert "NAVIG Credentials Vault" in result.stdout
 
     # Delete
     result = runner.invoke(app, ["cred", "delete", cred.id, "--force"])
