@@ -67,6 +67,7 @@ PROVIDER_DEFAULTS = {
     "gitlab": ("gitlab", "token", "token", "GitLab"),
     # Generic
     "telegram": ("telegram", "token", "token", "Telegram Bot"),
+    "firecrawl": ("firecrawl", "api_key", "api_key", "Firecrawl API Key"),
 }
 
 
@@ -255,6 +256,22 @@ def add_credential(
             "No secret data provided. Use --key, --token, --password, --stdin, or interactive mode."
         )
         raise typer.Exit(1)
+
+    if provider == "firecrawl":
+        _ch.dim("Optional — free tier includes 500 pages/month. Add a key for higher limits.")
+        firecrawl_key = str(data.get("api_key") or "").strip()
+        if firecrawl_key:
+            try:
+                from navig.integrations.firecrawl import FirecrawlClient
+
+                is_valid, message = FirecrawlClient().validate_api_key(firecrawl_key)
+            except Exception as e:  # noqa: BLE001
+                _ch.error(f"Firecrawl key validation failed: {e}")
+                raise typer.Exit(1) from e
+            if not is_valid:
+                _ch.error(f"Firecrawl API key rejected: {message}")
+                raise typer.Exit(1)
+            _ch.success(message)
 
     # Metadata
     metadata = {}

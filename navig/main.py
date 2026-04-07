@@ -206,6 +206,7 @@ def _normalize_help_compat_args(argv: list[str]) -> list[str]:
     Compatibility rules (best-effort):
     - ``navig <path> help`` -> ``navig <path> --help``
     - ``navig <path> -h``   -> ``navig <path> --help`` (only when ``-h`` is trailing)
+    - ``navig help <cmd>``  -> ``navig <cmd> --help``   (leading help rewrite)
 
     We intentionally do not rewrite top-level ``navig help`` or ``navig -h``.
     """
@@ -217,6 +218,10 @@ def _normalize_help_compat_args(argv: list[str]) -> list[str]:
 
     if args[0] == "help" and len(args) == 1:
         return argv
+
+    # Leading help: `navig help db` → `navig db --help`
+    if args[0] == "help" and len(args) >= 2:
+        return [argv[0]] + args[1:] + ["--help"]
 
     # Legacy alias: `navig memory list` -> `navig memory sessions`
     if len(args) >= 2 and args[0] == "memory" and args[1] == "list":

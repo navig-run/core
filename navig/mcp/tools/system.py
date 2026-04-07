@@ -1,5 +1,8 @@
+import logging
 from datetime import datetime
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def register(server: Any) -> None:
@@ -110,6 +113,31 @@ def register(server: Any) -> None:
                     "required": ["query"],
                 },
             },
+            "firecrawl_scrape": {
+                "name": "firecrawl_scrape",
+                "description": "Scrape or crawl a URL using Firecrawl. Returns markdown-oriented content and metadata.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "HTTP or HTTPS URL to scrape/crawl",
+                        },
+                        "mode": {
+                            "type": "string",
+                            "enum": ["scrape", "crawl"],
+                            "default": "scrape",
+                            "description": "Use 'scrape' for a single page or 'crawl' for multi-page discovery.",
+                        },
+                        "maxPages": {
+                            "type": "integer",
+                            "description": "Maximum pages for crawl mode",
+                            "minimum": 1,
+                        },
+                    },
+                    "required": ["url"],
+                },
+            },
         }
     )
 
@@ -121,6 +149,7 @@ def register(server: Any) -> None:
             "navig_web_fetch": _tool_web_fetch,
             "navig_web_search": _tool_web_search,
             "navig_search_docs": _tool_search_docs,
+            "firecrawl_scrape": _tool_firecrawl_scrape,
         }
     )
 
@@ -329,3 +358,68 @@ def _tool_search_docs(server: Any, args: dict[str, Any]) -> dict[str, Any]:
 
     except Exception as e:
         return {"error": f"Doc search failed: {str(e)}"}
+
+
+def _tool_firecrawl_scrape(server: Any, args: dict[str, Any]) -> dict[str, Any]:
+    """Scrape or crawl a URL using Firecrawl with MCP-first fallback semantics."""
+    try:
+        from navig.integrations.firecrawl import FirecrawlError, get_firecrawl_client
+
+        url = str(args.get("url") or "").strip()
+        if not url:
+            return {"error": "URL is required"}
+
+        mode = str(args.get("mode") or "scrape").strip().lower()
+        if mode not in {"scrape", "crawl"}:
+            return {"error": "mode must be 'scrape' or 'crawl'"}
+
+        max_pages = args.get("maxPages")
+        if max_pages is not None:
+            try:
+                max_pages = int(max_pages)
+            except (TypeError, ValueError):
+                return {"error": "maxPages must be an integer"}
+
+        mcp_client = getattr(server, "_mcp_client", None)
+        if mcp_client is not None and hasattr(mcp_client, "call_tool"):
+            try:
+                mcp_args: dict[str, Any] = {
+                    "url": url,
+                    "formats": ["markdown"],
+                    "onlyMainContent": True,
+                }
+                if mode == "crawl" and max_pages is not None:
+                    mcp_args["limit"] = max_pages
+
+                result = mcp_client.call_tool(
+                    "mcp_firecrawl_fir_firecrawl_scrape",
+                    mcp_args,
+                )
+                return {
+                    "success": True,
+                    "route": "mcp",
+                    "mode": mode,
+                    "result": result,
+                }
+            except Exception:
+                logger.info("[firecrawl] MCP unavailable, using REST")
+        else:
+            logger.info("[firecrawl] MCP unavailable, using REST")
+
+        client = get_firecrawl_client()
+        result = client.scrape(url=url, mode=mode, max_pages=max_pages)
+        return {
+            "success": True,
+            "route": "rest",
+            "mode": mode,
+            "result": result,
+        }
+
+    except FirecrawlError as e:
+        return {
+            "error": str(e),
+            "status_code": e.status_code,
+            "retryable": e.retryable,
+        }
+    except Exception as e:
+        return {"error": f"Firecrawl request failed: {str(e)}"}

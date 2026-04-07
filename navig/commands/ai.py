@@ -6,6 +6,7 @@ Extracted from ``navig/cli/__init__.py`` during CLI decomposition.
 from __future__ import annotations
 
 import logging
+import locale
 import os
 import platform
 import subprocess
@@ -45,6 +46,28 @@ def _format_openrouter_missing_key_error(config_manager, server_name: str) -> st
         f"Checked sources: {', '.join(source_checks)}. "
         "Set one with: navig config set ai.api_key <key>"
     )
+
+
+def _decode_command_output(raw: bytes | str) -> str:
+    """Decode subprocess output robustly across Windows locale/codepage variants."""
+    if isinstance(raw, str):
+        return raw
+    if not raw:
+        return ""
+
+    candidates = ["utf-8"]
+    preferred = locale.getpreferredencoding(False)
+    if preferred:
+        candidates.append(preferred)
+    candidates.extend(["cp1252", "latin-1"])
+
+    for encoding in candidates:
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+
+    return raw.decode("utf-8", errors="replace")
 
 
 def ask_ai(question: str, model: str | None, options: dict[str, Any]):
@@ -119,17 +142,12 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
             # with UnicodeDecodeError.
             _r = subprocess.run(
                 ["tasklist", "/FO", "CSV", "/NH"],
-                capture_output=True, timeout=10,
+                capture_output=True, text=False, timeout=10,
             )
             if _r.returncode == 0:
-                try:
-                    _stdout = _r.stdout.decode("utf-8")
-                except UnicodeDecodeError:
-                    import locale as _locale
-                    _enc = _locale.getpreferredencoding(False) or "cp1252"
-                    _stdout = _r.stdout.decode(_enc, errors="replace")
+                tasklist_text = _decode_command_output(_r.stdout)
                 _relevant = [
-                    ln for ln in _stdout.splitlines()
+                    ln for ln in tasklist_text.splitlines()
                     if any(k in ln.lower() for k in ("python", "nginx", "mysql", "node", "php", "apache"))
                 ]
                 context["processes"] = _relevant[:20] or ["(no web services detected)"]

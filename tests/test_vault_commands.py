@@ -109,3 +109,28 @@ def test_vault_cli_activate(vault):
     # Cleanup
     for c in vault.list_creds(provider="openai"):
         vault.delete(c.id)
+
+
+def test_vault_cli_add_firecrawl_rejects_invalid_key(monkeypatch):
+    class _BadClient:
+        def validate_api_key(self, api_key: str):
+            return False, "Invalid Firecrawl API key"
+
+    monkeypatch.setattr("navig.integrations.firecrawl.FirecrawlClient", _BadClient)
+
+    result = runner.invoke(
+        app,
+        [
+            "cred",
+            "add",
+            "firecrawl",
+            "--key",
+            "fc-invalid",
+            "--label",
+            "Bad Firecrawl Key",
+            "--no-interactive",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Firecrawl API key rejected" in result.output

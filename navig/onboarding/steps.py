@@ -56,7 +56,7 @@ _WEB_SEARCH_PROVIDER_CATALOG: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ),
     (
         "tavily",
-        "Tavily             (RAG-optimized, LLM-native search)",
+        "Tavily Search      (RAG-optimized, LLM-native search API)",
         ("TAVILY_API_KEY",),
     ),
 )
@@ -449,6 +449,19 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         except Exception:  # noqa: BLE001
             return False
 
+    def _has_vault_key(provider_id: str) -> bool:
+        """Return True when a provider API key already exists in vault."""
+        try:
+            from navig.vault.core import get_vault
+
+            vault = get_vault()
+            if vault is None:
+                return False
+            value = vault.get(f"{provider_id}/api_key")
+            return bool(value)
+        except Exception:  # noqa: BLE001
+            return False
+
     def _load_providers():
         """Load provider list dynamically from the registry at runtime."""
         try:
@@ -557,6 +570,14 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         from navig import console_helper as ch
 
         providers = _load_providers()
+        existing_vault = {p.id: _has_vault_key(p.id) for p in providers}
+
+        configured = [p for p in providers if existing_vault.get(p.id, False)]
+        if configured:
+            configured_list = ", ".join(p.display_name for p in configured)
+            sys.stdout.write(
+                f"\n  Existing vault credentials detected: {configured_list}\n"
+            )
 
         source_by_provider: dict[str, list[str]] = {
             p.id: _detected_sources(p.id) for p in providers
@@ -578,6 +599,12 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
                     (p.display_name for p in providers if p.id == pid_det), pid_det
                 )
                 ch.dim(f"    · {var_name}  →  {label_det}")
+
+        default_idx = 1
+        for i, p in enumerate(providers, start=1):
+            if existing_vault.get(p.id, False):
+                default_idx = i
+                break
 
         try:
             current_provider = marker.read_text(encoding="utf-8").strip() if marker.exists() else ""

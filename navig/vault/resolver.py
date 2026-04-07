@@ -103,6 +103,13 @@ ENV_VAULT_LABELS: dict[str, list[str]] = {
         "telegram_bot_token",
     ],
     "WHATSAPP_BRIDGE_API_KEY": ["whatsapp/bridge_api_key", "whatsapp/api_key"],
+    "FIRECRAWL_API_KEY": [
+        "firecrawl/api_key",
+        "firecrawl/api-key",
+        "firecrawl_api_key",
+        "web/firecrawl_api_key",
+        "FIRECRAWL_API_KEY",
+    ],
 }
 
 # Matches ${VAULT:any/path}, ${BLACKBOX:key}, ${CRED:provider}

@@ -145,6 +145,14 @@ _STEP_LABELS: dict[str, str] = {
     "runtime-secrets": "secrets",
     "skills-activation": "skills",
     "review": "review",
+    # Phase 2 — optional / extended
+    "sigil-genesis": "identity sigil",
+    "core-navig": "core setup",
+    "web-search-provider": "web search",
+    "matrix-bot": "matrix",
+    "email-smtp": "email",
+    "social-link": "social",
+    "import-secrets": "import secrets",
 }
 
 _LABEL_W = 18  # visual column width for step labels
