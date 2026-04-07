@@ -1,18 +1,11 @@
 from __future__ import annotations
 
+from collections import Counter
 import os
 import socket
 import sys
-<<<<<<< HEAD
-from collections import Counter
-from collections.abc import Sequence
-
-from navig import console_helper as ch
-from navig.platform import paths
-=======
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
->>>>>>> origin/copilot/fix-ansi-color-rendering
 
 from .engine import EngineConfig, EngineState, OnboardingEngine
 from .genesis import load_or_create
@@ -48,7 +41,7 @@ def should_auto_run_onboarding(argv: Sequence[str] | None = None) -> bool:
     if any(v in os.environ for v in ("_NAVIG_COMPLETE", "COMP_WORDS", "_TYPER_COMPLETE")):
         return False
 
-    navig_dir = paths.config_dir()
+    navig_dir = Path.home() / ".navig"
     if (navig_dir / "onboarding.json").exists():
         return False
 
@@ -69,20 +62,14 @@ def run_engine_onboarding(
     jump_to_step: str | None = None,
     show_banner: bool = True,
     respect_skip_env: bool = False,
-    skip_if_configured: bool = False,
     _revisit_depth: int = 0,
 ) -> EngineState | None:
     """Run canonical engine onboarding and return final state, or None if skipped."""
     if respect_skip_env and os.getenv("NAVIG_SKIP_ONBOARDING") == "1":
         return None
 
-    navig_dir = paths.config_dir()
-    if (
-        skip_if_configured
-        and not force
-        and (navig_dir / "onboarding.json").exists()
-        and not jump_to_step
-    ):
+    navig_dir = Path.home() / ".navig"
+    if not force and (navig_dir / "onboarding.json").exists() and not jump_to_step:
         return None
 
     cfg = EngineConfig(
@@ -112,17 +99,8 @@ def run_engine_onboarding(
 
     def _progress(step: object) -> None:
         started["n"] += 1
+        pct = int((started["n"] / max(step_total, 1)) * 100)
         title = getattr(step, "title", str(step))
-<<<<<<< HEAD
-        if jump_to_step:
-            # In targeted-jump mode the total-step fraction is misleading
-            # (only the target step plus its tail run). Use ordinal only.
-            ch.dim(f"  [step {started['n']}] · {title}...")
-        else:
-            pct = int((started["n"] / max(step_total, 1)) * 100)
-            tier = getattr(step, "tier", "essential")
-            ch.dim(f"  [{started['n']}/{step_total} {pct:>3}%] · {title} ({tier})...")
-=======
         tier = getattr(step, "tier", "essential")
         if _con is not None:
             _con.print(
@@ -132,19 +110,11 @@ def run_engine_onboarding(
         else:
             sys.stdout.write(f"  [{started['n']}/{step_total} {pct:>3}%] · {title} ({tier})...\n")
             sys.stdout.flush()
->>>>>>> origin/copilot/fix-ansi-color-rendering
 
     engine = OnboardingEngine(cfg, steps, on_step_start=_progress)
 
     if show_banner:
         if force:
-<<<<<<< HEAD
-            ch.info("Welcome back — reconfiguring your existing NAVIG installation.")
-            ch.dim("  Your previous settings will be preserved where not overwritten.")
-        else:
-            ch.info("Welcome to NAVIG — running first-time setup.")
-            ch.dim("  Set NAVIG_SKIP_ONBOARDING=1 to skip automatic setup.")
-=======
             _con_print(
                 "\n  [bold]Welcome back[/bold] — reconfiguring your existing NAVIG installation."
             )
@@ -156,7 +126,6 @@ def run_engine_onboarding(
             _con_print(
                 "  Set [dim]NAVIG_SKIP_ONBOARDING=1[/dim] to skip automatic setup.\n"
             )
->>>>>>> origin/copilot/fix-ansi-color-rendering
 
     previous_guard = os.getenv("NAVIG_ONBOARDING_ACTIVE")
     os.environ["NAVIG_ONBOARDING_ACTIVE"] = "1"
@@ -174,11 +143,7 @@ def run_engine_onboarding(
         review_record = next((s for s in state.steps if s.id == "review"), None)
         revisit_target = (review_record.output or {}).get("jumpTo", "") if review_record else ""
         if revisit_target:
-<<<<<<< HEAD
-            ch.step(f"Revisiting step: {revisit_target} …")
-=======
             _con_print(f"\n  Revisiting step: {revisit_target} …\n")
->>>>>>> origin/copilot/fix-ansi-color-rendering
             return run_engine_onboarding(
                 force=True,
                 jump_to_step=revisit_target,
@@ -189,74 +154,27 @@ def run_engine_onboarding(
 
     if show_banner:
         if state.interrupted_at:
-<<<<<<< HEAD
-            ch.warning("Setup paused. Run 'navig init' to resume.")
-        else:
-            ch.success("Setup complete. Run 'navig --help' to get started.")
-        _print_verification_dashboard(state, step_tiers)
-=======
             _con_print("\n  [yellow]Setup paused.[/yellow] Run [bold]navig init[/bold] to resume.\n")
         else:
             _con_print(
                 "\n  [green]Setup complete.[/green] Run [bold]navig --help[/bold] to get started.\n"
             )
         _print_verification_dashboard(state, step_tiers, _con)
->>>>>>> origin/copilot/fix-ansi-color-rendering
 
     return state
 
 
-<<<<<<< HEAD
-def _print_verification_dashboard(state: EngineState, step_tiers: dict[str, str]) -> None:
-
-=======
 def _print_verification_dashboard(
     state: EngineState,
     step_tiers: dict[str, str],
     con: RichConsole | None = None,
 ) -> None:
->>>>>>> origin/copilot/fix-ansi-color-rendering
     status_counts = Counter(rec.status for rec in state.steps)
     tier_counts = Counter(step_tiers.get(rec.id, "essential") for rec in state.steps)
     total = max(len(state.steps), 1)
     completed = status_counts.get("completed", 0)
-    skipped = status_counts.get("skipped", 0)
-    failed = status_counts.get("failed", 0)
     finished_pct = int((completed / total) * 100)
 
-<<<<<<< HEAD
-    ch.subheader("Verification Summary")
-
-    # Step counts with contextual icons
-    parts: list[str] = []
-    if completed:
-        parts.append(f"[green]✓ {completed} completed[/green]")
-    if skipped:
-        parts.append(f"[dim]· {skipped} skipped[/dim]")
-    if failed:
-        parts.append(f"[red]✗ {failed} failed[/red]")
-    ch.info(f"Steps: {' '.join(parts)}")
-
-    # Completion percentage with contextual color
-    if finished_pct == 100:
-        ch.success(f"Completion: {finished_pct}%")
-    elif finished_pct >= 50:
-        ch.warning(f"Completion: {finished_pct}%")
-    else:
-        ch.error(f"Completion: {finished_pct}%")
-
-    # State
-    if state.interrupted_at:
-        ch.warning(f"State: interrupted at {state.interrupted_at}")
-    else:
-        ch.success("State: finished")
-
-    # Tier breakdown
-    ch.dim(
-        f"  Tiers: essential={tier_counts.get('essential', 0)}  "
-        f"recommended={tier_counts.get('recommended', 0)}  "
-        f"optional={tier_counts.get('optional', 0)}"
-=======
     def _out(text: str) -> None:
         if con is not None:
             con.print(text)
@@ -290,20 +208,11 @@ def _print_verification_dashboard(
         f"  Tiers: essential={tier_counts.get('essential', 0)}"
         f"  recommended={tier_counts.get('recommended', 0)}"
         f"  optional={tier_counts.get('optional', 0)}"
->>>>>>> origin/copilot/fix-ansi-color-rendering
     )
 
-    # Recommended next action
     deferred = _deferred_integration_commands(state, step_tiers)
-    if not state.interrupted_at and (skipped > 0 or failed > 0):
-        ch.step("Recommended: navig init --reconfigure  (finish skipped/failed steps)")
     if deferred:
-        ch.dim("  Deferred integrations:")
         col_width = max(len(cmd) for cmd, _ in deferred)
-<<<<<<< HEAD
-        for cmd, description in deferred:
-            ch.dim(f"    → {cmd:<{col_width}}  {description}")
-=======
         _out("  Deferred integrations:")
         for cmd, description in deferred:
             if con:
@@ -311,7 +220,6 @@ def _print_verification_dashboard(
             else:
                 _out(f"    - {cmd:<{col_width}}  {description}")
     _out("")
->>>>>>> origin/copilot/fix-ansi-color-rendering
 
 
 def _deferred_integration_commands(
@@ -323,8 +231,6 @@ def _deferred_integration_commands(
         "email": ("navig email setup", "SMTP notifications for workflows and alerts"),
         "social-networks": ("navig social setup", "social network integrations (Twitter/X, etc.)"),
         "telegram-bot": ("navig telegram setup", "receive alerts and run commands via Telegram bot"),
-        "runtime-secrets": ("navig init --reconfigure", "import API keys into vault"),
-        "skills-activation": ("navig init --reconfigure", "activate skill packs"),
     }
     status_by_id = {rec.id: rec.status for rec in state.steps}
 
