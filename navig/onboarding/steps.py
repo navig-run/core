@@ -550,11 +550,15 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             local_tag = "  (local, no key needed)" if not getattr(p, "requires_key", True) else ""
             sources = source_by_provider.get(p.id, [])
             ready_tag = f"  (already configured: {'/'.join(sources)})" if sources else ""
-            active_tag = "  (current)" if p.id == current_provider else ""
+            active_tag = "  ← current" if p.id == current_provider else ""
             ch.dim(f"    [{i}] {p.display_name}{local_tag}{ready_tag}{active_tag}")
+        skip_hint = " (keep existing)" if current_provider else " for now"
+        ch.dim(f"    [s] Skip{skip_hint}")
 
         try:
-            choice_raw = typer.prompt("  Provider", default=str(default_idx + 1))
+            choice_raw = typer.prompt("  Provider", default="s")
+            if choice_raw.strip().lower() in ("s", "skip", ""):
+                return StepResult(status="skipped", output={"reason": "skipped by user"})
             idx = int(choice_raw.strip()) - 1
             if idx < 0 or idx >= len(providers):
                 raise ValueError("out of range")
@@ -1264,20 +1268,39 @@ def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
 
         from navig import console_helper as ch
 
+        # Read existing configured provider (if any) to show in reconfigure mode.
+        current_search_provider = ""
+        try:
+            import yaml  # type: ignore[import]
+
+            _cfg_path = navig_dir / "config.yaml"
+            if _cfg_path.exists():
+                _cfg = yaml.safe_load(_cfg_path.read_text(encoding="utf-8")) or {}
+                current_search_provider = str(
+                    ((_cfg.get("web") or {}).get("search") or {}).get("provider") or ""
+                ).strip()
+        except (OSError, yaml.YAMLError):
+            pass
+
         ch.info("Search provider")
-        for idx, (_, label, _) in enumerate(_WEB_SEARCH_PROVIDER_CATALOG, start=1):
-            ch.dim(f"    [{idx}] {label}")
-        ch.dim("    [s] Skip for now")
+        for idx, (pid, label, _) in enumerate(_WEB_SEARCH_PROVIDER_CATALOG, start=1):
+            current_tag = "  ← current" if pid == current_search_provider else ""
+            ch.dim(f"    [{idx}] {label}{current_tag}")
+        skip_hint = " (keep existing)" if current_search_provider else " for now"
+        ch.dim(f"    [s] Skip{skip_hint}")
 
         try:
-            choice_raw = typer.prompt("  Provider", default="1").strip().lower()
+            choice_raw = typer.prompt("  Provider", default="s").strip().lower()
         except KeyboardInterrupt:
             raise
         except EOFError:
             choice_raw = "s"
 
         if choice_raw in ("s", "skip", ""):
-            _persist_provider("auto")
+            # In reconfigure mode, preserve the existing provider value.
+            # On fresh init, fall back to "auto" so the config entry exists.
+            if not current_search_provider:
+                _persist_provider("auto")
             return StepResult(status="skipped", output={"reason": "skipped by user"})
 
         try:

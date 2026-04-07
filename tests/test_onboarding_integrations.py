@@ -126,6 +126,88 @@ def test_web_search_provider_step_accepts_env_duckduckgo(monkeypatch, tmp_path: 
     assert config["web"]["search"]["provider"] == "duckduckgo"
 
 
+def test_web_search_provider_empty_enter_skips_on_fresh_init(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Pressing Enter (default 's') on fresh init should skip and write 'auto'."""
+    step = next(step for step in _registry(tmp_path) if step.id == "web-search-provider")
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    # Simulate pressing Enter — typer.prompt returns the default "s"
+    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: kwargs.get("default", "s"))
+
+    result = step.run()
+
+    assert result.status == "skipped"
+    assert result.output["reason"] == "skipped by user"
+    config = yaml.safe_load((tmp_path / "config.yaml").read_text(encoding="utf-8"))
+    assert config["web"]["search"]["provider"] == "auto"
+
+
+def test_web_search_provider_empty_enter_preserves_existing_on_reconfigure(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Pressing Enter in reconfigure mode should preserve the existing provider."""
+    # Pre-write an existing provider config
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        yaml.dump({"web": {"search": {"provider": "brave"}}}), encoding="utf-8"
+    )
+
+    step = next(step for step in _registry(tmp_path) if step.id == "web-search-provider")
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    # Simulate pressing Enter — typer.prompt returns the default "s"
+    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: kwargs.get("default", "s"))
+
+    result = step.run()
+
+    assert result.status == "skipped"
+    assert result.output["reason"] == "skipped by user"
+    # Existing provider must NOT be overwritten to "auto"
+    config_after = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert config_after["web"]["search"]["provider"] == "brave"
+
+
+def test_ai_provider_empty_enter_skips_on_fresh_init(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Pressing Enter (default 's') on AI provider prompt should skip the step."""
+    step = next(step for step in _registry(tmp_path) if step.id == "ai-provider")
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    # Simulate pressing Enter — typer.prompt returns the default "s"
+    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: kwargs.get("default", "s"))
+
+    result = step.run()
+
+    assert result.status == "skipped"
+    assert result.output["reason"] == "skipped by user"
+    # Marker must NOT be written when the step is skipped
+    assert not (tmp_path / ".ai_provider_configured").exists()
+
+
+def test_ai_provider_empty_enter_skips_on_reconfigure(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Pressing Enter in reconfigure mode preserves the existing AI provider."""
+    marker = tmp_path / ".ai_provider_configured"
+    marker.write_text("anthropic", encoding="utf-8")
+
+    step = next(step for step in _registry(tmp_path) if step.id == "ai-provider")
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    # Simulate pressing Enter — typer.prompt returns the default "s"
+    monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: kwargs.get("default", "s"))
+
+    result = step.run()
+
+    assert result.status == "skipped"
+    assert result.output["reason"] == "skipped by user"
+    # Marker must retain the existing value, not be overwritten
+    assert marker.read_text(encoding="utf-8").strip() == "anthropic"
+
+
 def test_web_search_provider_step_invalid_env_falls_back_to_auto(
     monkeypatch, tmp_path: Path
 ) -> None:
