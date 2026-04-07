@@ -217,7 +217,11 @@ class TestAIClientDetection:
                 result = client._detect_best_provider()
                 assert result == "openrouter"
 
-    def test_none_when_nothing_available(self):
+    def test_none_when_nothing_available(self, monkeypatch):
+        # Ensure xai env vars are absent so provider detection returns "none"
+        # regardless of what the real dev environment has set.
+        monkeypatch.delenv("GROK_KEY", raising=False)
+        monkeypatch.delenv("XAI_API_KEY", raising=False)
         client = self._make_client()
         with patch.object(client, "_get_bridge_mcp_url", return_value=""):
             with patch.object(client, "_get_github_models_token", return_value=""):

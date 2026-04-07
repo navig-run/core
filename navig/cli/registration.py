@@ -214,6 +214,22 @@ _HIDDEN_COMMANDS: frozenset[str] = frozenset({
     "tg", "mx", "fx", "h", "a", "f", "l", "s", "database", "hist", "ctx"
 })
 
+# Track which commands have already been registered per app instance so that
+# calling _register_external_commands() multiple times (e.g. in tests) does not
+# add duplicate add_typer() entries and corrupt the Click group routing.
+_registered_app_cmds: dict[int, set[str]] = {}
+
+
+def _clear_registration_cache(target_app: "typer.Typer | None" = None) -> None:
+    """Clear the idempotency cache for a given app (or all apps if None).
+
+    Called by tests that need a completely fresh registration state.
+    """
+    if target_app is None:
+        _registered_app_cmds.clear()
+    else:
+        _registered_app_cmds.pop(id(target_app), None)
+
 
 def _register_external_commands(
     *,
@@ -244,6 +260,12 @@ def _register_external_commands(
         from navig.cli import app
         target_app = app
 
+    # Idempotency cache — prevents duplicate add_typer() calls on the same app
+    app_key = id(target_app)
+    if app_key not in _registered_app_cmds:
+        _registered_app_cmds[app_key] = set()
+    _already: set[str] = _registered_app_cmds[app_key]
+
     if register_all:
         target = None  # triggers fallback path below
     else:
@@ -253,28 +275,32 @@ def _register_external_commands(
     # Fast path: target is a known external command → import only it
     # ------------------------------------------------------------------
     if target in _EXTERNAL_CMD_MAP:
-        mod_path, attr = _EXTERNAL_CMD_MAP[target]
-        try:
-            mod = importlib.import_module(mod_path)
-            target_app.add_typer(
-                getattr(mod, attr),
-                name=target,
-                hidden=(target in _HIDDEN_COMMANDS),
-            )
-        except Exception as _ie:
-            sys.stderr.write(
-                f"[navig] \u26a0 command '{target}' unavailable (registration failed: {_ie})\n"
-            )
+        if target not in _already:
+            mod_path, attr = _EXTERNAL_CMD_MAP[target]
+            try:
+                mod = importlib.import_module(mod_path)
+                target_app.add_typer(
+                    getattr(mod, attr),
+                    name=target,
+                    hidden=(target in _HIDDEN_COMMANDS),
+                )
+                _already.add(target)
+            except Exception as _ie:
+                sys.stderr.write(
+                    f"[navig] \u26a0 command '{target}' unavailable (registration failed: {_ie})\n"
+                )
         return
 
     # AHK sub-app (Windows only)
     if target == "ahk" and sys.platform == "win32":
-        try:
-            from navig.commands.ahk import ahk_app
+        if "ahk" not in _already:
+            try:
+                from navig.commands.ahk import ahk_app
 
-            target_app.add_typer(ahk_app, name="ahk")
-        except ImportError:
-            pass  # optional dependency not installed; feature disabled
+                target_app.add_typer(ahk_app, name="ahk")
+                _already.add("ahk")
+            except ImportError:
+                pass  # optional dependency not installed; feature disabled
         return
 
     # ------------------------------------------------------------------
@@ -289,6 +315,8 @@ def _register_external_commands(
     # Fallback: register everything (e.g. bare ``navig`` with no args)
     # ------------------------------------------------------------------
     for cmd_name, (mod_path, attr) in _EXTERNAL_CMD_MAP.items():
+        if cmd_name in _already:
+            continue
         try:
             mod = importlib.import_module(mod_path)
             target_app.add_typer(
@@ -296,16 +324,18 @@ def _register_external_commands(
                 name=cmd_name,
                 hidden=(cmd_name in _HIDDEN_COMMANDS),
             )
+            _already.add(cmd_name)
         except Exception as _ie:
             sys.stderr.write(
                 f"[navig] \u26a0 command '{cmd_name}' unavailable (registration failed: {_ie})\n"
             )
 
-    if sys.platform == "win32":
+    if sys.platform == "win32" and "ahk" not in _already:
         try:
             from navig.commands.ahk import ahk_app
 
             target_app.add_typer(ahk_app, name="ahk")
+            _already.add("ahk")
         except ImportError:
             pass  # optional dependency not installed; feature disabled
 

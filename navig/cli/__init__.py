@@ -1259,6 +1259,9 @@ from navig.cli.registration import (
     _register_external_commands,
 )
 from navig.cli.registration import (
+    _clear_registration_cache as _clear_registration_cache,
+)
+from navig.cli.registration import (
     get_external_commands as get_external_commands,
 )
 from navig.cli.registration import (
@@ -1270,6 +1273,7 @@ __all_registration__ = [
     "_EXTERNAL_CMD_MAP",
     "_HIDDEN_COMMANDS",
     "_register_external_commands",
+    "_clear_registration_cache",
     "get_external_commands",
     "is_external_command",
 ]
