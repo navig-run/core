@@ -41,7 +41,7 @@ def test_export_bundle_encrypted_success(tmp_dir, dummy_bundle):
 
     with (
         patch("navig.blackbox.export.write_bundle", return_value=zip_path),
-        patch("navig.vault.core_v2.get_vault_v2") as mock_v2,
+        patch("navig.vault.core.get_vault") as mock_v2,
         patch("navig.vault.crypto.CryptoEngine.seal", return_value=b"sealed_data"),
     ):
         mock_v2.return_value.engine.return_value.derive_key.return_value = b"masterkey"
@@ -62,7 +62,7 @@ def test_export_bundle_encrypted_failure_fallback(tmp_dir, dummy_bundle):
     with (
         patch("navig.blackbox.export.write_bundle", return_value=zip_path),
         patch(
-            "navig.vault.core_v2.get_vault_v2",
+            "navig.vault.core.get_vault",
             side_effect=Exception("Failed to load vault"),
         ),
     ):

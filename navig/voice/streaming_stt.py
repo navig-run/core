@@ -16,7 +16,7 @@ Design decisions:
   first-token latency.
 - Fallback collapses all buffered chunks to a temp WAV file and calls the
   existing STT.transcribe() path — no code duplication.
-- VaultV2 is the exclusive key source; env-vars are never consulted directly.
+- Vault is the exclusive key source; env-vars are never consulted directly.
 - Interim results are emitted as they arrive; callers can display them
   immediately for reduced perceived latency.
 
@@ -425,11 +425,11 @@ class StreamingSTT:
     # ------------------------------------------------------------------ #
 
     def _get_deepgram_key(self) -> str | None:
-        """Resolve Deepgram API key exclusively from VaultV2."""
+        """Resolve Deepgram API key exclusively from Vault."""
         try:
-            from navig.vault import get_vault_v2
+            from navig.vault import get_vault
 
-            key = get_vault_v2().get_secret(self.config.deepgram_vault_label)
+            key = get_vault().get_secret(self.config.deepgram_vault_label)
             if key:
                 return key
         except KeyError:
@@ -444,11 +444,11 @@ class StreamingSTT:
         return None
 
     def _get_openai_key(self) -> str | None:
-        """Resolve OpenAI API key exclusively from VaultV2."""
+        """Resolve OpenAI API key exclusively from Vault."""
         try:
-            from navig.vault import get_vault_v2
+            from navig.vault import get_vault
 
-            return get_vault_v2().get_secret(self.config.openai_vault_label)
+            return get_vault().get_secret(self.config.openai_vault_label)
         except Exception:
             return None
 

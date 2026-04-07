@@ -58,7 +58,7 @@ def test_web_search_auto_uses_vault_key_before_config(monkeypatch):
     monkeypatch.setattr("navig.tools.web.REQUESTS_AVAILABLE", True)
     monkeypatch.setattr("navig.tools.web._search_brave", _ok_brave)
     monkeypatch.setattr("navig.tools.web._search_duckduckgo", _ok_ddg)
-    monkeypatch.setattr("navig.vault.core_v2.get_vault_v2", lambda: _VaultWithBraveKey())
+    monkeypatch.setattr("navig.vault.core.get_vault", lambda: _VaultWithBraveKey())
     monkeypatch.setattr(
         "navig.tools.web.get_web_config",
         lambda config_manager=None: {

@@ -1030,7 +1030,7 @@ async def test_providers_unconfigured_cloud_shows_provider_row_with_icon_only_ke
         def get(self, label):
             return None
 
-    class _VaultV2:
+    class _Vault:
         def store(self):
             return _Store()
 
@@ -1041,7 +1041,7 @@ async def test_providers_unconfigured_cloud_shows_provider_row_with_icon_only_ke
     monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [_Manifest()])
     monkeypatch.setattr("navig.providers.verifier.verify_provider", lambda _m: _Verify())
     monkeypatch.setattr("navig.vault.get_vault", lambda: _LegacyVault())
-    monkeypatch.setattr("navig.vault.get_vault_v2", lambda: _VaultV2())
+    monkeypatch.setattr("navig.vault.get_vault", lambda: _Vault())
 
     await bot._handle_providers(123, 456)
     keyboard = bot.messages[-1][3].get("keyboard") or []
@@ -1106,7 +1106,7 @@ async def test_providers_cloud_button_hidden_when_vault_present_but_not_ready(mo
     )
     monkeypatch.setattr("navig.providers.verifier.verify_provider", lambda _m: _Verify())
     monkeypatch.setattr("navig.vault.get_vault", lambda: _Vault(False))
-    monkeypatch.setattr("navig.vault.get_vault_v2", lambda: None)
+    monkeypatch.setattr("navig.vault.get_vault", lambda: None)
 
     await bot._handle_providers(123, 456)
     keyboard = bot.messages[-1][3].get("keyboard") or []
@@ -1159,7 +1159,7 @@ async def test_providers_cloud_button_shown_after_successful_vault_validation(mo
     )
     monkeypatch.setattr("navig.providers.verifier.verify_provider", lambda _m: _Verify())
     monkeypatch.setattr("navig.vault.get_vault", lambda: _Vault())
-    monkeypatch.setattr("navig.vault.get_vault_v2", lambda: None)
+    monkeypatch.setattr("navig.vault.get_vault", lambda: None)
 
     await bot._handle_providers(123, 456)
     keyboard = bot.messages[-1][3].get("keyboard") or []

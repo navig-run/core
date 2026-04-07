@@ -300,9 +300,9 @@ def _resolve_provider_api_key(
 
     if manifest_vault_keys:
         try:
-            from navig.vault import get_vault_v2
+            from navig.vault import get_vault
 
-            vault_v2 = get_vault_v2()
+            vault_v2 = get_vault()
             for path in manifest_vault_keys:
                 try:
                     secret = (vault_v2.get_secret(path) or "").strip()

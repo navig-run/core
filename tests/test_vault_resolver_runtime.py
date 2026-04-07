@@ -28,7 +28,7 @@ class _FakeVault:
 def test_resolve_secret_prefers_env(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "env-openai")
     monkeypatch.setattr(
-        "navig.vault.core_v2.get_vault_v2",
+        "navig.vault.core.get_vault",
         lambda: _FakeVault(secrets={"openai/api_key": "vault-openai"}),
     )
 
@@ -39,7 +39,7 @@ def test_resolve_secret_falls_back_to_vault(monkeypatch) -> None:
     monkeypatch.delenv("DEEPGRAM_KEY", raising=False)
     monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
     monkeypatch.setattr(
-        "navig.vault.core_v2.get_vault_v2",
+        "navig.vault.core.get_vault",
         lambda: _FakeVault(secrets={"deepgram/api_key": "vault-deepgram"}),
     )
 
@@ -62,7 +62,7 @@ def test_resolve_json_str_reads_path_from_env(monkeypatch, tmp_path: Path) -> No
 def test_resolve_json_str_falls_back_to_vault(monkeypatch) -> None:
     monkeypatch.delenv("GOOGLE_APPLICATION_CREDENTIALS", raising=False)
     monkeypatch.setattr(
-        "navig.vault.core_v2.get_vault_v2",
+        "navig.vault.core.get_vault",
         lambda: _FakeVault(
             json_blobs={"google/vision-service-account": '{"type":"service_account"}'}
         ),

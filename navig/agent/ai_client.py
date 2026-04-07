@@ -734,7 +734,12 @@ class AIClient:
             ) as response:
                 if response.status == 429:
                     # Rate-limited: honour Retry-After and retry once
-                    retry_after = int(response.headers.get("Retry-After", 1))
+                    retry_after_raw = response.headers.get("Retry-After", "1")
+                    try:
+                        retry_after = int(str(retry_after_raw).strip())
+                    except (TypeError, ValueError):
+                        retry_after = 1
+                    retry_after = max(0, retry_after)
                     await asyncio.sleep(retry_after)
                     async with session.post(
                         f"{base_url}/chat/completions",

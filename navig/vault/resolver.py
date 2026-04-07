@@ -161,9 +161,9 @@ def _fetch_secret(label: str) -> str:
     with label "openai".
     """
     # Lazy imports to avoid circular dependency at module load
-    from navig.vault.core_v2 import get_vault_v2  # type: ignore[import]
+    from navig.vault.core import get_vault  # type: ignore[import]
 
-    vcore = get_vault_v2()
+    vcore = get_vault()
     return vcore.get_secret(label)
 
 
@@ -203,9 +203,9 @@ def resolve_secret(
     if not labels:
         return None
 
-    from navig.vault.core_v2 import get_vault_v2  # type: ignore[import]
+    from navig.vault.core import get_vault  # type: ignore[import]
 
-    vault = get_vault_v2()
+    vault = get_vault()
     for label in labels:
         try:
             value = vault.get_secret(label)
@@ -247,9 +247,9 @@ def resolve_json_str(
     if not labels:
         return None
 
-    from navig.vault.core_v2 import get_vault_v2  # type: ignore[import]
+    from navig.vault.core import get_vault  # type: ignore[import]
 
-    vault = get_vault_v2()
+    vault = get_vault()
     for label in labels:
         try:
             value = vault.get_json_str(label)

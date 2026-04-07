@@ -278,12 +278,12 @@ class SetupWizard:
         """
         # Try vault-first (encrypted) storage.
         try:
-            from navig.vault.core_v2 import get_vault_v2
+            from navig.vault.core import get_vault
             from navig.vault.resolver import ENV_VAULT_LABELS
 
             vault_labels = ENV_VAULT_LABELS.get(env_var, [])
             vault_path = vault_labels[0] if vault_labels else env_var.lower().replace("_", "/")
-            vlt = get_vault_v2()
+            vlt = get_vault()
             vlt.put(vault_path, value.encode())
             print("  ✅ Saved to vault (encrypted)")
             return

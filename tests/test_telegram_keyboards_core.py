@@ -368,6 +368,20 @@ class TestResponseKeyboardBuilder:
                     assert "text" in btn
                     assert "callback_data" in btn
 
+    def test_make_button_long_actions_generate_distinct_callback_keys(self):
+        store = CallbackStore()
+        builder = ResponseKeyboardBuilder(store=store)
+
+        action1 = "a" * 80
+        action2 = "a" * 79 + "b"
+
+        btn1 = builder._make_button("One", action1, msg_hash="samehash")
+        btn2 = builder._make_button("Two", action2, msg_hash="samehash")
+
+        assert btn1["callback_data"] != btn2["callback_data"]
+        assert len(btn1["callback_data"].encode("utf-8")) <= 64
+        assert len(btn2["callback_data"].encode("utf-8")) <= 64
+
 
 # ────────────────────────────────────────────────────────────
 # CallbackHandler — dispatch for untested prefixes

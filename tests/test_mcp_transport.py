@@ -187,6 +187,21 @@ class TestStdioTransportIsConnected:
         assert t.is_connected()
 
 
+class TestStdioTransportDisconnect:
+    @pytest.mark.asyncio
+    async def test_disconnect_ignores_process_lookup_error(self):
+        """disconnect() should not fail if terminate() races with process exit."""
+        t = _make_stdio_transport()
+        proc = _fake_stdio_process(returncode=None)
+        proc.terminate = MagicMock(side_effect=ProcessLookupError)
+        proc.wait = AsyncMock(return_value=0)
+        t._process = proc
+
+        await t.disconnect()
+
+        assert t._process is None
+
+
 # ── StdioTransport.send() ─────────────────────────────────────────────────────
 
 

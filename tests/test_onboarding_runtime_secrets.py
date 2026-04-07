@@ -45,7 +45,7 @@ def test_runtime_secrets_step_marks_configured_when_blank(monkeypatch, tmp_path:
     step = _runtime_step(tmp_path)
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    monkeypatch.setattr("navig.vault.core_v2.get_vault_v2", lambda: fake_vault)
+    monkeypatch.setattr("navig.vault.core.get_vault", lambda: fake_vault)
     monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "")
     monkeypatch.setattr("builtins.input", lambda *args, **kwargs: "")
 
@@ -63,7 +63,7 @@ def test_runtime_secrets_step_imports_env_into_vault(monkeypatch, tmp_path: Path
 
     monkeypatch.setenv("OPENAI_API_KEY", "env-openai")
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    monkeypatch.setattr("navig.vault.core_v2.get_vault_v2", lambda: fake_vault)
+    monkeypatch.setattr("navig.vault.core.get_vault", lambda: fake_vault)
     monkeypatch.setattr("typer.confirm", lambda *args, **kwargs: True)
     monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "")
     monkeypatch.setattr("builtins.input", lambda *args, **kwargs: "")
@@ -84,7 +84,7 @@ def test_runtime_secrets_step_stores_google_json_in_both_labels(
     input_values = iter([json_blob, "END"])
 
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
-    monkeypatch.setattr("navig.vault.core_v2.get_vault_v2", lambda: fake_vault)
+    monkeypatch.setattr("navig.vault.core.get_vault", lambda: fake_vault)
     monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: "")
     monkeypatch.setattr("builtins.input", lambda *args, **kwargs: next(input_values))
 

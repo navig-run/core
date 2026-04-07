@@ -17,11 +17,11 @@ _TELEGRAM_VAULT_LABELS = (
 )
 
 
-def _resolve_telegram_token_from_vault_v2() -> str:
+def _resolve_telegram_token_from_vault() -> str:
     try:
-        from navig.vault.core_v2 import get_vault_v2
+        from navig.vault.core import get_vault
 
-        vault = get_vault_v2()
+        vault = get_vault()
         for label in _TELEGRAM_VAULT_LABELS:
             try:
                 value = vault.get_secret(label)
@@ -35,7 +35,7 @@ def _resolve_telegram_token_from_vault_v2() -> str:
     return ""
 
 
-def _resolve_telegram_token_from_vault_v1() -> str:
+def _resolve_telegram_token_from_legacy_store() -> str:
     try:
         from navig.vault import get_vault
 
@@ -111,18 +111,18 @@ def resolve_telegram_bot_token(raw_config: dict[str, Any] | None = None) -> str:
     """Resolve Telegram bot token with vault-first policy and compatibility fallbacks.
 
     Resolution order:
-    1) Vault v2 labels (telegram/bot_token, telegram/token, ...)
-    2) Vault v1 provider credential (telegram token/bot_token)
+    1) Vault labels (telegram/bot_token, telegram/token, ...)
+    2) Legacy provider credential (telegram token/bot_token)
     3) NAVIG_TELEGRAM_BOT_TOKEN / TELEGRAM_BOT_TOKEN environment variable
     4) ~/.navig/.env file (NAVIG_TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN)
     5) telegram.bot_token in provided config
     6) telegram.bot_token from global config manager
     """
-    token = _resolve_telegram_token_from_vault_v2()
+    token = _resolve_telegram_token_from_vault()
     if token:
         return token
 
-    token = _resolve_telegram_token_from_vault_v1()
+    token = _resolve_telegram_token_from_legacy_store()
     if token:
         return token
 
@@ -179,11 +179,11 @@ _TELEGRAM_UID_VAULT_LABELS = (
 )
 
 
-def _resolve_telegram_uid_from_vault_v2() -> str | None:
+def _resolve_telegram_uid_from_vault() -> str | None:
     try:
-        from navig.vault.core_v2 import get_vault_v2
+        from navig.vault.core import get_vault
 
-        vault = get_vault_v2()
+        vault = get_vault()
         for label in _TELEGRAM_UID_VAULT_LABELS:
             try:
                 value = vault.get_secret(label)
@@ -197,7 +197,7 @@ def _resolve_telegram_uid_from_vault_v2() -> str | None:
     return None
 
 
-def _resolve_telegram_uid_from_vault_v1() -> str | None:
+def _resolve_telegram_uid_from_legacy_store() -> str | None:
     try:
         from navig.vault import get_vault
 
@@ -240,8 +240,8 @@ def resolve_telegram_uid(raw_config: dict[str, Any] | None = None) -> str | None
     """Resolve the owner's Telegram user ID with vault-first policy.
 
     Resolution order:
-    1) Vault v2 labels (telegram/user_id, telegram.user_id, telegram_user_id)
-    2) Vault v1 provider credential (telegram user_id / uid)
+    1) Vault labels (telegram/user_id, telegram.user_id, telegram_user_id)
+    2) Legacy provider credential (telegram user_id / uid)
     3) NAVIG_TELEGRAM_UID environment variable
     4) ~/.navig/.env file (NAVIG_TELEGRAM_UID)
     5) telegram.user_id in provided config  (deprecated — emits warning)
@@ -250,11 +250,11 @@ def resolve_telegram_uid(raw_config: dict[str, Any] | None = None) -> str | None
     Returns ``None`` when no UID is configured so callers can distinguish
     "missing" from an empty string.
     """
-    uid = _resolve_telegram_uid_from_vault_v2()
+    uid = _resolve_telegram_uid_from_vault()
     if uid:
         return uid
 
-    uid = _resolve_telegram_uid_from_vault_v1()
+    uid = _resolve_telegram_uid_from_legacy_store()
     if uid:
         return uid
 
@@ -333,13 +333,13 @@ def ensure_telegram_uid(
     if not uid.isdigit():
         raise ValueError("Telegram user ID must be a numeric string.")
 
-    # Persist to vault v2 (fatal on failure — do not continue with unsaved UID)
+    # Persist to vault (fatal on failure — do not continue with unsaved UID)
     try:
         import json as _json
 
-        from navig.vault.core_v2 import get_vault_v2
+        from navig.vault.core import get_vault
 
-        _vault = vault if vault is not None else get_vault_v2()
+        _vault = vault if vault is not None else get_vault()
         if _vault is None:
             raise RuntimeError("Vault not available.")
         _vault.put("telegram/user_id", _json.dumps({"value": uid}).encode())

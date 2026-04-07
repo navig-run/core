@@ -4137,11 +4137,11 @@ class TelegramCommandsMixin:
             logger.debug("Legacy vault provider readiness check failed: %s", exc)
 
         try:
-            from navig.vault import get_vault_v2
+            from navig.vault import get_vault
 
-            vault_v2 = get_vault_v2()
-            if vault_v2 is not None:
-                store = vault_v2.store()
+            vault = get_vault()
+            if vault is not None:
+                store = vault.store()
                 for label in getattr(manifest, "vault_keys", []) or []:
                     try:
                         item = store.get(label)
@@ -4158,9 +4158,9 @@ class TelegramCommandsMixin:
                         ):
                             validated = True
                     except Exception as exc:  # noqa: BLE001
-                        logger.debug("Vault v2 metadata check failed for %s: %s", label, exc)
+                        logger.debug("Vault metadata check failed for %s: %s", label, exc)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("Vault v2 provider readiness check failed: %s", exc)
+            logger.debug("Vault provider readiness check failed: %s", exc)
 
         return has_vault_key, validated
 
@@ -5179,9 +5179,9 @@ class TelegramCommandsMixin:
             lines.append(f"navig: - `{e}`")
         try:
             from navig.platform import paths as _paths
-            from navig.vault import get_vault_v2
+            from navig.vault import get_vault
 
-            v = get_vault_v2()
+            v = get_vault()
             count = len(v.list()) if hasattr(v, "list") else "?"
             lines.append(f"vault: - `{count} entries` ({_paths.vault_dir()})")
         except Exception as e:
@@ -5384,9 +5384,9 @@ class TelegramCommandsMixin:
             lines.append("- *Daemon* - - no warnings")
 
         try:
-            from navig.vault import get_vault_v2
+            from navig.vault import get_vault
 
-            _v = get_vault_v2()
+            _v = get_vault()
             _items = _v.list() if hasattr(_v, "list") else []
             vault_msg = f"- {len(_items)} entries"
         except Exception as _ve:
@@ -6006,9 +6006,9 @@ class TelegramCommandsMixin:
         lines.append(f"- *LLM Bridge:* {'online (bridge_copilot)' if bridge_ok else 'offline'}")
 
         try:
-            from navig.vault import get_vault_v2
+            from navig.vault import get_vault
 
-            v = get_vault_v2()
+            v = get_vault()
             key_count = len(v.list()) if hasattr(v, "list") else "?"
             lines.append(f"- *Vault:* {key_count} keys stored")
         except Exception:  # noqa: BLE001

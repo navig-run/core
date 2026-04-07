@@ -118,16 +118,16 @@ class STT:
 
     @staticmethod
     def _resolve_api_key(vault_label: str, env_var: str) -> str | None:
-        """Try VaultV2 first, fall back to os.environ.
+        """Try Vault first, fall back to os.environ.
 
         This aligns stt.py with the vault-first pattern used in streaming_stt.py.
         A missing vault entry is not fatal — the env-var fallback preserves
         backwards compatibility for deployments that haven't migrated to the vault.
         """
         try:
-            from navig.vault import get_vault_v2
+            from navig.vault import get_vault
 
-            key = get_vault_v2().get_secret(vault_label)
+            key = get_vault().get_secret(vault_label)
             if key:
                 return key
         except Exception:  # noqa: BLE001

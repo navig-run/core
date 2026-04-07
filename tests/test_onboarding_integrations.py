@@ -197,7 +197,7 @@ def test_matrix_step_writes_config_and_vault(monkeypatch, tmp_path: Path) -> Non
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("typer.confirm", lambda *args, **kwargs: True)
     monkeypatch.setattr("typer.prompt", lambda *args, **kwargs: next(prompts))
-    monkeypatch.setattr("navig.vault.core_v2.get_vault_v2", lambda: fake_vault)
+    monkeypatch.setattr("navig.vault.core.get_vault", lambda: fake_vault)
     monkeypatch.setattr(
         "navig.onboarding.validators.validate_matrix",
         lambda homeserver_url, token: type(

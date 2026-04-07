@@ -539,6 +539,26 @@ async def test_mdl_tier_rejects_unknown_tier_code():
 
 
 @pytest.mark.asyncio
+async def test_mdl_tier_rejects_empty_provider_id():
+    """mdl_tier with empty provider id should warn and not render list."""
+    ch = _FakeCallbackChannel()
+    handler = CallbackHandler(ch)
+
+    await handler._handle_models_callback(
+        cb_id="cb-1",
+        cb_data="mdl_tier__s",
+        chat_id=100,
+        message_id=200,
+        user_id=300,
+    )
+
+    assert ch.model_lists == []
+    answers = [payload for method, payload in ch.api_calls if method == "answerCallbackQuery"]
+    assert answers
+    assert "Bad tier callback" in answers[-1].get("text", "")
+
+
+@pytest.mark.asyncio
 async def test_mdl_back_tiers_returns_to_summary():
     """mdl_back_tiers_{id} navigates back to tier summary."""
     ch = _FakeCallbackChannel()
@@ -590,6 +610,46 @@ async def test_mdl_page_rejects_unknown_tier_code():
     answers = [payload for method, payload in ch.api_calls if method == "answerCallbackQuery"]
     assert answers
     assert "Unknown tier" in answers[-1].get("text", "")
+
+
+@pytest.mark.asyncio
+async def test_mdl_page_rejects_bad_page_index():
+    """mdl_page with non-numeric page index should warn and not render list."""
+    ch = _FakeCallbackChannel()
+    handler = CallbackHandler(ch)
+
+    await handler._handle_models_callback(
+        cb_id="cb-1",
+        cb_data="mdl_page_openai_b_nope",
+        chat_id=100,
+        message_id=200,
+        user_id=300,
+    )
+
+    assert ch.model_lists == []
+    answers = [payload for method, payload in ch.api_calls if method == "answerCallbackQuery"]
+    assert answers
+    assert "Bad page index" in answers[-1].get("text", "")
+
+
+@pytest.mark.asyncio
+async def test_mdl_page_rejects_negative_page_index():
+    """mdl_page with negative page index should warn and not render list."""
+    ch = _FakeCallbackChannel()
+    handler = CallbackHandler(ch)
+
+    await handler._handle_models_callback(
+        cb_id="cb-1",
+        cb_data="mdl_page_openai_b_-1",
+        chat_id=100,
+        message_id=200,
+        user_id=300,
+    )
+
+    assert ch.model_lists == []
+    answers = [payload for method, payload in ch.api_calls if method == "answerCallbackQuery"]
+    assert answers
+    assert "Bad page index" in answers[-1].get("text", "")
 
 
 @pytest.mark.asyncio

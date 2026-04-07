@@ -336,7 +336,7 @@ def _isolate_navig_config_dir(tmp_path_factory):
 
     # -- Cleanup: close any open vault SQLite connections (Windows file lock fix) --
     try:
-        import navig.vault.core_v2 as _vault_v2_mod
+        import navig.vault.core as _vault_v2_mod
 
         vault_v2 = getattr(_vault_v2_mod, "_vault_v2", None)
         if vault_v2 is not None and hasattr(vault_v2, "_store"):
@@ -385,7 +385,7 @@ def _reset_navig_singletons():
     except Exception:  # noqa: BLE001
         pass
     try:
-        import navig.vault.core_v2 as _v2
+        import navig.vault.core as _v2
 
         _vault_v2 = getattr(_v2, "_vault_v2", None)
         if _vault_v2 is not None and hasattr(_vault_v2, "_store"):
@@ -432,7 +432,7 @@ def _reset_navig_singletons():
     except Exception:  # noqa: BLE001
         pass
     try:
-        import navig.vault.core_v2 as _v2
+        import navig.vault.core as _v2
 
         _vault_v2 = getattr(_v2, "_vault_v2", None)
         if _vault_v2 is not None and hasattr(_vault_v2, "_store"):

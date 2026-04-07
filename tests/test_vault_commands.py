@@ -81,3 +81,26 @@ def test_vault_cli_show_nonexistent():
     result = runner.invoke(app, ["cred", "show", "nonexistent"])
     assert result.exit_code != 0
     assert "not found" in result.stdout
+
+
+def test_vault_cli_activate(vault):
+    """activate sets the active flag; short-ID lookup works."""
+    runner.invoke(app, ["cred", "add", "openai", "--key", "sk-aaa", "--profile", "work", "--no-interactive"])
+    runner.invoke(app, ["cred", "add", "openai", "--key", "sk-bbb", "--profile", "personal", "--no-interactive"])
+
+    creds = vault.list_creds(provider="openai")
+    work = next((c for c in creds if c.profile_id == "work"), None)
+    assert work is not None
+
+    result = runner.invoke(app, ["cred", "activate", work.id[:8]])
+    assert result.exit_code == 0, result.output
+    assert "active" in result.output.lower() or work.id[:8] in result.output
+
+    items = {i.id: i for i in vault.list(provider="openai")}
+    work_item = next((v for v in items.values() if v.metadata.get("profile_id") == "work"), None)
+    assert work_item is not None
+    assert work_item.metadata.get("active") is True
+
+    # Cleanup
+    for c in vault.list_creds(provider="openai"):
+        vault.delete(c.id)

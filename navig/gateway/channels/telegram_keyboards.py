@@ -320,7 +320,9 @@ class ResponseKeyboardBuilder:
         label = text[:MAX_BUTTON_TEXT]
         cb_key = f"{action}:{msg_hash}"
         if len(cb_key) > MAX_CALLBACK_DATA:
-            cb_key = cb_key[:MAX_CALLBACK_DATA]
+            digest = _short_hash(cb_key, length=12)
+            action_max = max(1, MAX_CALLBACK_DATA - len(digest) - 1)
+            cb_key = f"{action[:action_max]}:{digest}"
 
         self.store.put(
             cb_key,
@@ -2024,6 +2026,9 @@ class CallbackHandler:
                 return
             prov_id = rest[:-2]
             tier_code = rest[-1]
+            if not prov_id:
+                await self._answer(cb_id, "⚠️ Bad tier callback")
+                return
             if tier_code not in _TIER_CODE_MAP:
                 await self._answer(cb_id, "⚠️ Unknown tier")
                 return
@@ -2046,6 +2051,9 @@ class CallbackHandler:
                 return
             prov_id, idx_str, tier_code, page_str = parts
 
+            if not prov_id:
+                await self._answer(cb_id, "⚠️ Bad selection callback")
+                return
             if tier_code not in _TIER_CODE_MAP:
                 await self._answer(cb_id, "⚠️ Unknown tier")
                 return
@@ -2059,7 +2067,11 @@ class CallbackHandler:
             try:
                 page = int(page_str)
             except ValueError:
-                page = 0
+                await self._answer(cb_id, "⚠️ Bad page index")
+                return
+            if page < 0:
+                await self._answer(cb_id, "⚠️ Bad page index")
+                return
 
             # Resolve models
             models_list: list = []
@@ -2143,13 +2155,20 @@ class CallbackHandler:
                 await self._answer(cb_id, "⚠️ Bad page callback")
                 return
             prov_id, tier_code, page_str = parts
+            if not prov_id:
+                await self._answer(cb_id, "⚠️ Bad page callback")
+                return
             if tier_code not in _TIER_CODE_MAP:
                 await self._answer(cb_id, "⚠️ Unknown tier")
                 return
             try:
                 page = int(page_str)
             except ValueError:
-                page = 0
+                await self._answer(cb_id, "⚠️ Bad page index")
+                return
+            if page < 0:
+                await self._answer(cb_id, "⚠️ Bad page index")
+                return
             await self._answer(cb_id, "")
             await self.channel._show_models_model_list(
                 chat_id,

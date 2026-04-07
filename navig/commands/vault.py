@@ -126,20 +126,26 @@ def list_credentials(
 
     table = _Table(title="NAVIG Credentials Vault")
     table.add_column("ID", style="cyan", no_wrap=True)
-    table.add_column("Enabled", justify="center")
+    table.add_column("", justify="center", no_wrap=True)  # ⭐ active indicator
     table.add_column("Provider", style="green")
     table.add_column("Profile", style="magenta")
     table.add_column("Type", style="yellow")
     table.add_column("Label")
     table.add_column("Last Used", style="dim")
 
+    # Pull raw VaultItems to read the active flag from metadata
+    vault_items = {i.id: i for i in vault.list()}
+
     for c in creds:
-        status = "✅" if c.enabled else "❌"
+        short_id = c.id[:8]
+        raw = vault_items.get(c.id)
+        is_active = bool(raw and raw.metadata.get("active", False))
+        star = "⭐" if is_active else ""
         last_used = c.last_used_at.strftime("%Y-%m-%d %H:%M") if c.last_used_at else "-"
 
         table.add_row(
-            c.id,
-            status,
+            short_id,
+            star,
             c.provider,
             c.profile_id,
             c.credential_type.value,
@@ -525,6 +531,46 @@ def show_audit_log(
     _console().print(table)
 
 
+@cred_app.command("activate")
+def activate_credential(
+    credential_id: str = typer.Argument(..., help="Credential ID (or first 8 chars) to mark as active"),
+):
+    """Set a credential as the active (preferred) one for its provider.
+
+    \b
+    When two credentials share a provider (e.g. two openai keys on different
+    profiles), this pins which one get_api_key() returns when no profile is
+    explicitly specified.
+
+    \b
+    Example:
+      navig cred activate d08ae821
+    """
+    vault = _vault_mod.get_vault()
+
+    target_id = credential_id.strip()
+    if len(target_id) <= 8:
+        all_items = vault.list()
+        matches = [i for i in all_items if i.id.startswith(target_id)]
+        if not matches:
+            _ch.error(f"No credential found with ID starting with '{target_id}'.")
+            raise typer.Exit(1)
+        if len(matches) > 1:
+            _ch.error(f"Ambiguous short ID '{target_id}' matches {len(matches)} credentials — use more chars.")
+            raise typer.Exit(1)
+        target_id = matches[0].id
+
+    ok = vault.activate(target_id)
+    if not ok:
+        _ch.error(f"Credential '{target_id}' not found.")
+        raise typer.Exit(1)
+
+    item = next((i for i in vault.list() if i.id == target_id), None)
+    provider = item.provider if item else "?"
+    _ch.success(f"[{provider}] Credential {target_id[:8]} is now active.")
+    _ch.dim("Use 'navig cred list' to confirm  ⭐")
+
+
 # ============================================================================
 # PROFILE COMMANDS
 # ============================================================================
@@ -653,13 +699,13 @@ def vault_set(
         _ch.success(f"Stored credential for [bold]{provider}[/bold] (ID: {cred_id})")
 
     # Direct label write for dot/slash-notation paths (e.g. telegram.user_id)
-    # vault.add() above stores using V1 provider model; also store under the
-    # exact path label so that get_secret(path) works for V2-style resolvers.
+    # vault.add() above stores using provider/profile credential model; also store
+    # under the exact path label so that get_secret(path) works for path resolvers.
     if "." in path or "/" in path:
         try:
             vault.put(path, json.dumps({"value": value}).encode())
         except Exception:
-            pass  # best-effort; the V1 record above is the canonical store
+            pass  # best-effort; the provider/profile record above is the canonical store
 
 
 @vault_app.command("get")
@@ -676,18 +722,18 @@ def vault_get(
     # For dot-notation or slash paths try a direct label lookup in the unified vault.
     if "." in path or (cred is None and "/" in path):
         try:
-            v2_secret = (vault.get_secret(path) or "").strip()
-            if v2_secret:
+            resolved_secret = (vault.get_secret(path) or "").strip()
+            if resolved_secret:
                 if reveal:
                     _ch.warning("Revealing secret!")
-                    _rprint(v2_secret)
+                    _rprint(resolved_secret)
                 else:
                     _rprint(
-                        f"[dim]{path}:[/dim] {'*' * min(len(v2_secret), 12)} (use --reveal to show)"
+                        f"[dim]{path}:[/dim] {'*' * min(len(resolved_secret), 12)} (use --reveal to show)"
                     )
                 return
         except (KeyError, Exception):
-            pass  # path not found as label; fall through to V1 credential lookup
+            pass  # path not found as label; fall through to provider credential lookup
 
     if cred is None:
         _ch.error(f"No credential found for provider '{provider}' in profile '{profile}'.")

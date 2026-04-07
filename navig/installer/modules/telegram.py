@@ -88,9 +88,9 @@ def apply(action: Action, ctx: InstallerContext) -> Result:
 
     # 1. Vault (primary, secure)
     try:
-        from navig.vault.core_v2 import get_vault_v2  # type: ignore[import]
+        from navig.vault.core import get_vault  # type: ignore[import]
 
-        vault = get_vault_v2()
+        vault = get_vault()
         if vault is not None:
             vault.put(
                 "telegram_bot_token",

@@ -220,8 +220,8 @@ class VaultItem:
 
     The encrypted fields (``encrypted_dek``, ``encrypted_blob``) are used
     internally by :class:`~navig.vault.store.VaultStore` and
-    :class:`~navig.vault.core_v2.VaultV2`.  Callers that receive a
-    ``VaultItem`` from high-level APIs (e.g. ``VaultV2.get_item()``) will
+    :class:`~navig.vault.core.Vault`.  Callers that receive a
+    ``VaultItem`` from high-level APIs (e.g. ``Vault.get_item()``) will
     find the decrypted content in ``payload``; the encrypted fields will be
     empty bytes in that context.
     """
@@ -230,7 +230,7 @@ class VaultItem:
     kind: VaultItemKind
     label: str
     provider: str | None
-    payload: bytes = b""  # Decrypted payload (populated by VaultV2 after decrypt)
+    payload: bytes = b""  # Decrypted payload (populated by Vault after decrypt)
     # ── Internal encrypted storage fields ────────────────────────────────────
     encrypted_dek: bytes = field(default=b"", repr=False)   # DEK sealed with master key
     encrypted_blob: bytes = field(default=b"", repr=False)  # Payload sealed with DEK

@@ -254,7 +254,10 @@ def connector_search(
         all_results = []
         for c in connectors:
             try:
-                results = await c.search(query)
+                try:
+                    results = await c.search(query, limit=limit)
+                except TypeError:
+                    results = await c.search(query)
                 all_results.extend(results[:limit])
             except Exception as exc:
                 ch.warning(f"Search failed on {c.manifest.id}: {exc}")
@@ -321,6 +324,10 @@ def connector_fetch(
         return await connector.fetch(resource_id)
 
     result = _run(_fetch())
+
+    if result is None:
+        ch.error(f"Resource not found: {resource}")
+        raise typer.Exit(1)
 
     if json_output:
         import json

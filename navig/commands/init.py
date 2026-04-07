@@ -681,9 +681,9 @@ def show_init_status(*, render: bool = True) -> dict[str, Any]:
             "kimi": ("web/kimi_api_key", "moonshot/api_key", "moonshot_api_key"),
         }
         try:
-            from navig.vault.core_v2 import get_vault_v2
+            from navig.vault.core import get_vault
 
-            vault = get_vault_v2()
+            vault = get_vault()
             for label in label_map.get(provider_name, ()):
                 try:
                     value = (vault.get_secret(label) or "").strip()
@@ -1032,9 +1032,9 @@ def _persist_telegram_bootstrap_token(token: str, navig_dir: Path | None = None)
     wrote = False
 
     try:
-        from navig.vault.core_v2 import get_vault_v2
+        from navig.vault.core import get_vault
 
-        vault = get_vault_v2()
+        vault = get_vault()
         if vault is not None:
             vault.put("telegram_bot_token", json.dumps({"value": token}).encode())
             wrote = True

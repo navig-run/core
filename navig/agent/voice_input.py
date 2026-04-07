@@ -131,9 +131,9 @@ def _resolve_key(*names: str) -> str | None:
     """Try vault then environment variables, return first hit."""
     # Vault
     try:
-        from navig.vault import get_vault_v2
+        from navig.vault import get_vault
 
-        vault = get_vault_v2()
+        vault = get_vault()
         for name in names:
             if "/" in name:  # vault-style label
                 val = vault.get_secret(name)

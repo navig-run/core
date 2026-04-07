@@ -121,12 +121,16 @@ class StdioTransport(MCPTransport):
                 pass  # task cancelled; expected during shutdown
 
         if self._process:
-            self._process.terminate()
             try:
-                await asyncio.wait_for(self._process.wait(), timeout=5)
-            except asyncio.TimeoutError:
-                self._process.kill()
-                await self._process.wait()
+                if self._process.returncode is None:
+                    self._process.terminate()
+                    try:
+                        await asyncio.wait_for(self._process.wait(), timeout=5)
+                    except asyncio.TimeoutError:
+                        self._process.kill()
+                        await self._process.wait()
+            except ProcessLookupError:
+                pass
 
         # Cancel pending futures
         for future in self._pending.values():
@@ -393,3 +397,111 @@ class SSETransport(MCPTransport):
     def is_connected(self) -> bool:
         """Check if session is active."""
         return self._session is not None and not self._session.closed
+
+
+class WebSocketTransport(MCPTransport):
+    """WebSocket transport for MCP servers.
+
+    Uses a single persistent websocket connection and routes responses
+    to pending futures by JSON-RPC id.
+    """
+
+    def __init__(self, url: str, headers: dict | None = None):
+        self.url = url
+        self.headers = headers or {}
+        self._ws = None
+        self._reader_task: asyncio.Task | None = None
+        self._pending: dict[Any, asyncio.Future] = {}
+        self._lock = asyncio.Lock()
+
+    async def connect(self):
+        try:
+            import websockets
+        except ImportError as _exc:
+            raise ImportError(
+                "websockets required for WebSocket transport: pip install websockets"
+            ) from _exc
+
+        self._ws = await websockets.connect(self.url, additional_headers=self.headers)
+        self._reader_task = asyncio.create_task(self._read_loop())
+        logger.info("MCP WebSocket transport connected: %s", self.url)
+
+    async def disconnect(self):
+        if self._reader_task:
+            self._reader_task.cancel()
+            try:
+                await self._reader_task
+            except asyncio.CancelledError:
+                pass
+
+        if self._ws:
+            await self._ws.close()
+            self._ws = None
+
+        for future in self._pending.values():
+            if not future.done():
+                future.cancel()
+        self._pending.clear()
+
+    async def send(self, data: str) -> str | None:
+        if not self._ws:
+            raise RuntimeError("Transport not connected")
+
+        req_id = None
+        try:
+            payload = json.loads(data)
+            req_id = payload.get("id")
+        except Exception:
+            pass
+
+        future = None
+        if req_id is not None:
+            future = asyncio.get_running_loop().create_future()
+            self._pending[req_id] = future
+
+        async with self._lock:
+            await self._ws.send(data)
+
+        if future is not None:
+            try:
+                return await asyncio.wait_for(future, timeout=30)
+            except asyncio.TimeoutError as _exc:
+                raise RuntimeError(f"Request timeout: {req_id}") from _exc
+            finally:
+                self._pending.pop(req_id, None)
+
+        return None
+
+    async def send_notification(self, data: str):
+        if not self._ws:
+            raise RuntimeError("Transport not connected")
+        async with self._lock:
+            await self._ws.send(data)
+
+    def is_connected(self) -> bool:
+        ws = self._ws
+        return ws is not None and not getattr(ws, "closed", True)
+
+    async def _read_loop(self):
+        while self._ws:
+            try:
+                message = await self._ws.recv()
+                if not message:
+                    continue
+
+                try:
+                    parsed = json.loads(message)
+                    req_id = parsed.get("id")
+                    if req_id is not None and req_id in self._pending:
+                        future = self._pending[req_id]
+                        if not future.done():
+                            future.set_result(message)
+                    else:
+                        logger.debug("MCP websocket notification: %s", str(message)[:100])
+                except json.JSONDecodeError:
+                    logger.warning("Invalid JSON from MCP websocket: %s", str(message)[:100])
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.debug("MCP websocket read loop ended: %s", e)
+                break

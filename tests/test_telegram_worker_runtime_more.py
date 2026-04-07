@@ -57,6 +57,7 @@ def test_load_env(monkeypatch):
 
     def mock_load_dotenv(path):
         loaded.append(path)
+
     monkeypatch.setitem(sys.modules, "dotenv", SimpleNamespace(load_dotenv=mock_load_dotenv))
 
     tw._load_env()
@@ -134,8 +135,9 @@ async def test_mcp_reconnect_loop():
 
     class DummyManager:
         def __init__(self):
-            self.clients = {"vscode-copilot": SimpleNamespace(connected=False)}
+            self.clients = {"vscode-copilot": SimpleNamespace(is_connected=False)}
             self.add_client = AsyncMock()
+            self.connect_client = AsyncMock(return_value=True)
 
     gateway = SimpleNamespace(mcp_client_manager=DummyManager())
 
@@ -150,6 +152,7 @@ async def test_mcp_reconnect_loop():
         gateway, {"reconnect_interval": 0.01, "mcp_url": "ws://mcp"}, stop_event
     )
     assert gateway.mcp_client_manager.add_client.await_count >= 1
+    assert gateway.mcp_client_manager.connect_client.await_count >= 1
 
 
 @pytest.mark.asyncio
@@ -173,6 +176,7 @@ async def test_run_fully_mocked(mock_config_manager, monkeypatch):
         def __init__(self):
             self.clients = {}
             self.add_client = AsyncMock()
+            self.connect_client = AsyncMock(return_value=True)
 
     import sys
 

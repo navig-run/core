@@ -182,7 +182,7 @@ class TelegramVoiceMixin:
             if val:
                 return val
         try:
-            from navig.vault import get_vault_v2 as _gv2
+            from navig.vault import get_vault as _gv2
 
             return _gv2().get_secret(vault_key) or None
         except Exception:

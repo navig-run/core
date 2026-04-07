@@ -229,6 +229,25 @@ class TestConnectorSearch:
         result = runner.invoke(connector_app, ["search", "test", "--source", "bogus"])
         assert result.exit_code == 1
 
+    def test_search_passes_limit_when_supported(self):
+        registry = get_connector_registry()
+        gmail = registry.get("gmail")
+        gmail._status = ConnectorStatus.CONNECTED
+
+        captured: dict[str, int | None] = {"limit": None}
+
+        async def _search(query: str, limit: int | None = None):
+            captured["limit"] = limit
+            return [
+                Resource(id="msg-1", source="gmail", title=f"Email: {query}", preview="one"),
+                Resource(id="msg-2", source="gmail", title=f"Email: {query}", preview="two"),
+            ]
+
+        gmail.search = _search
+        result = runner.invoke(connector_app, ["search", "meeting", "--limit", "1"])
+        assert result.exit_code == 0
+        assert captured["limit"] == 1
+
 
 class TestConnectorFetch:
     def test_fetch_resource(self):
@@ -250,6 +269,18 @@ class TestConnectorFetch:
     def test_fetch_unknown_connector(self):
         result = runner.invoke(connector_app, ["fetch", "bogus:123"])
         assert result.exit_code == 1
+
+    def test_fetch_missing_resource_exits_1(self):
+        registry = get_connector_registry()
+        gmail = registry.get("gmail")
+
+        async def _fetch_none(resource_id: str):
+            return None
+
+        gmail.fetch = _fetch_none
+        result = runner.invoke(connector_app, ["fetch", "gmail:missing"])
+        assert result.exit_code == 1
+        assert "Resource not found" in result.output
 
 
 class TestConnectorStatus:

@@ -14,7 +14,7 @@ from .protocol import (
     MCPResource,
     MCPTool,
 )
-from .transport import MCPTransport, SSETransport, StdioTransport
+from .transport import MCPTransport, SSETransport, StdioTransport, WebSocketTransport
 
 logger = get_debug_logger()
 
@@ -130,6 +130,10 @@ class MCPClient:
             if not self.config.url:
                 raise ValueError(f"SSE transport requires 'url' for client {self.id}")
             self._transport = SSETransport(self.config.url)
+        elif self.config.transport == "websocket":
+            if not self.config.url:
+                raise ValueError(f"WebSocket transport requires 'url' for client {self.id}")
+            self._transport = WebSocketTransport(self.config.url)
         else:
             if not self.config.command:
                 raise ValueError(f"Stdio transport requires 'command' for client {self.id}")
@@ -300,7 +304,7 @@ class MCPClient:
         self._server_info = result.get("serverInfo", {})
         self._capabilities = MCPCapabilities.from_dict(result)
 
-        logger.debug("MCP server: %s", self._server_info.get('name', 'unknown'))
+        logger.debug("MCP server: %s", self._server_info.get("name", "unknown"))
 
         # Send initialized notification
         await self._send_notification(MCPMethod.INITIALIZED, {})

@@ -743,9 +743,9 @@ def web_search(
 
     def _resolve_vault_key(provider_name: str) -> str:
         try:
-            from navig.vault.core_v2 import get_vault_v2
+            from navig.vault.core import get_vault
 
-            vault = get_vault_v2()
+            vault = get_vault()
             for label in _WEB_PROVIDER_VAULT_LABELS.get(provider_name, ()):
                 try:
                     value = (vault.get_secret(label) or "").strip()

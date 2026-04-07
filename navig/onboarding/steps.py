@@ -595,9 +595,9 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
                 import_env_choice = "y"
             if import_env_choice in ("", "y", "yes"):
                 try:
-                    from navig.vault.core_v2 import get_vault_v2
+                    from navig.vault.core import get_vault
 
-                    vault = get_vault_v2()
+                    vault = get_vault()
                     if vault is not None and env_detected_key:
                         vault.put(
                             f"{pid}/api_key",
@@ -644,9 +644,9 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
 
         # Persist in vault if available, else fall back to marker file
         try:
-            from navig.vault.core_v2 import get_vault_v2
+            from navig.vault.core import get_vault
 
-            vault = get_vault_v2()
+            vault = get_vault()
             if vault is not None and not keep_existing_key:
                 vault.put(
                     f"{pid}/api_key",
@@ -681,7 +681,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
                             ).strip()
                             if fb_key:
                                 try:
-                                    from navig.vault.core_v2 import get_vault_v2 as _gv2
+                                    from navig.vault.core import get_vault as _gv2
 
                                     vfb = _gv2()
                                     if vfb is not None:
@@ -903,11 +903,11 @@ def _step_vault_init(navig_dir: Path) -> OnboardingStep:
             return StepResult(status="skipped", output={"reason": "passphrases did not match"})
 
         try:
-            from navig.vault.core_v2 import VaultV2
+            from navig.vault.core import Vault
 
             vault_dir = navig_dir / "vault"
             vault_dir.mkdir(parents=True, exist_ok=True)
-            VaultV2(vault_dir).unlock(passphrase=pw.encode())
+            Vault(vault_dir).unlock(passphrase=pw.encode())
             return StepResult(
                 status="completed",
                 output={"vaultPath": str(vault_db)},
@@ -960,9 +960,9 @@ def _step_voice_provider(navig_dir: Path) -> OnboardingStep:
     def _store_key(provider_id: str, api_key: str) -> str:
         label = f"{provider_id}/api_key"
         try:
-            from navig.vault.core_v2 import get_vault_v2  # type: ignore[import]
+            from navig.vault.core import get_vault  # type: ignore[import]
 
-            vault = get_vault_v2()
+            vault = get_vault()
             if vault is not None:
                 vault.put(label, json.dumps({"value": api_key}).encode())
                 return "vault"
@@ -1183,9 +1183,9 @@ def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
 
         vault_label = f"web/{preferred_provider}_api_key"
         try:
-            from navig.vault.core_v2 import get_vault_v2
+            from navig.vault.core import get_vault
 
-            vault = get_vault_v2()
+            vault = get_vault()
             if vault is not None:
                 vault.put(vault_label, json.dumps({"value": api_key}).encode())
                 return "vault"
@@ -1348,7 +1348,7 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
     """Optionally configure a Telegram bot token for notifications.
 
     Token storage strategy:
-    1. Vault  — primary, secure (navig.vault.core_v2); requires vault-init step.
+    1. Vault  — primary, secure (navig.vault.core); requires vault-init step.
     2. .env   — legacy; used by the shell/PS1 installers and daemon env loading.
 
     Both writes are individually non-fatal.  Missing any one does not fail
@@ -1409,9 +1409,9 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
 
         # 1. Primary: vault (secure, per-user credential store)
         try:
-            from navig.vault.core_v2 import get_vault_v2
+            from navig.vault.core import get_vault
 
-            vault = get_vault_v2()
+            vault = get_vault()
             if vault is not None:
                 vault.put(
                     "telegram_bot_token",
@@ -1451,7 +1451,7 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
                 except (EOFError, KeyboardInterrupt):
                     uid_raw = ""
                 if uid_raw and uid_raw.isdigit():
-                    from navig.vault.core_v2 import get_vault_v2 as _gv2
+                    from navig.vault.core import get_vault as _gv2
 
                     _v2 = _gv2()
                     if _v2 is not None:
@@ -1727,9 +1727,9 @@ def _step_matrix(navig_dir: Path) -> OnboardingStep:
 
         # Persist token to vault
         try:
-            from navig.vault.core_v2 import get_vault_v2  # type: ignore[import]
+            from navig.vault.core import get_vault  # type: ignore[import]
 
-            vault = get_vault_v2()
+            vault = get_vault()
             vault.put("matrix/access_token", json.dumps({"value": access_token}).encode())
         except Exception:  # noqa: BLE001
             pass
@@ -1898,9 +1898,9 @@ def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
             return tty
 
         try:
-            from navig.vault.core_v2 import get_vault_v2  # type: ignore[import]
+            from navig.vault.core import get_vault  # type: ignore[import]
 
-            vault = get_vault_v2()
+            vault = get_vault()
         except Exception:  # noqa: BLE001
             vault = None
 

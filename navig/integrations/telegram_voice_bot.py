@@ -12,7 +12,7 @@ Also handles all existing bot features:
   - Webhook (production) and polling (development) modes
 
 Security:
-  - Bot token loaded exclusively from VaultV2 at startup; fail-fast if missing.
+  - Bot token loaded exclusively from Vault at startup; fail-fast if missing.
   - Optional whitelist of allowed chat_ids (empty = allow all authenticated users).
 
 Usage:
@@ -117,11 +117,11 @@ class TelegramVoiceBot:
     # ------------------------------------------------------------------ #
 
     def _load_token(self) -> str:
-        """Load bot token from VaultV2. Raises RuntimeError if not set."""
+        """Load bot token from Vault. Raises RuntimeError if not set."""
         try:
-            from navig.vault import get_vault_v2
+            from navig.vault import get_vault
 
-            token = get_vault_v2().get_secret(self.config.token_vault_label)
+            token = get_vault().get_secret(self.config.token_vault_label)
             if not token:
                 raise KeyError("empty token")
             return token

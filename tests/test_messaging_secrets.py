@@ -7,8 +7,8 @@ def test_resolve_telegram_token_prefers_navig_env(monkeypatch):
 
     # Vault is probed before env vars; stub both vault functions so the
     # env-var-preference branch is actually reached.
-    monkeypatch.setattr(mod, "_resolve_telegram_token_from_vault_v2", lambda: "")
-    monkeypatch.setattr(mod, "_resolve_telegram_token_from_vault_v1", lambda: "")
+    monkeypatch.setattr(mod, "_resolve_telegram_token_from_vault", lambda: "")
+    monkeypatch.setattr(mod, "_resolve_telegram_token_from_legacy_store", lambda: "")
 
     monkeypatch.setenv("NAVIG_TELEGRAM_BOT_TOKEN", "navig-token")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "legacy-token")
@@ -60,8 +60,8 @@ def test_resolve_telegram_token_from_config_yaml_emits_deprecation_warning(
     """Verify a deprecation warning is logged when bot_token is read from config."""
     mod = importlib.import_module("navig.messaging.secrets")
 
-    monkeypatch.setattr(mod, "_resolve_telegram_token_from_vault_v2", lambda: "")
-    monkeypatch.setattr(mod, "_resolve_telegram_token_from_vault_v1", lambda: "")
+    monkeypatch.setattr(mod, "_resolve_telegram_token_from_vault", lambda: "")
+    monkeypatch.setattr(mod, "_resolve_telegram_token_from_legacy_store", lambda: "")
     monkeypatch.setattr(mod, "_resolve_telegram_token_from_env_file", lambda: "")
     monkeypatch.delenv("NAVIG_TELEGRAM_BOT_TOKEN", raising=False)
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)

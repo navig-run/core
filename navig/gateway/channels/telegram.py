@@ -2082,9 +2082,9 @@ class TelegramChannel:
 
                 manifest = get_provider(provider_id)
                 if manifest and manifest.vault_keys:
-                    from navig.vault import get_vault_v2
+                    from navig.vault import get_vault
 
-                    vault = get_vault_v2()
+                    vault = get_vault()
                     for vk in manifest.vault_keys:
                         api_key = vault.get_secret(vk) or ""
                         if api_key:
@@ -2148,9 +2148,9 @@ class TelegramChannel:
         if not api_key:
             try:
                 from navig.providers.registry import get_provider as _get_prov
-                from navig.vault import get_vault_v2
+                from navig.vault import get_vault
 
-                vault = get_vault_v2()
+                vault = get_vault()
                 _manifest = _get_prov("anthropic")
                 for _vk in (
                     _manifest.vault_keys
@@ -2219,9 +2219,9 @@ class TelegramChannel:
         if not api_key:
             try:
                 from navig.providers.registry import get_provider as _get_prov
-                from navig.vault import get_vault_v2
+                from navig.vault import get_vault
 
-                vault = get_vault_v2()
+                vault = get_vault()
                 _manifest = _get_prov("google")
                 for _vk in (
                     _manifest.vault_keys
@@ -2300,7 +2300,7 @@ class TelegramChannel:
         dg_key = _os.environ.get("DEEPGRAM_KEY") or _os.environ.get("DEEPGRAM_API_KEY")
         if not dg_key:
             try:
-                from navig.vault import get_vault_v2 as _gv2
+                from navig.vault import get_vault as _gv2
 
                 dg_key = _gv2().get_secret("deepgram/api-key") or None
             except Exception:  # noqa: BLE001
@@ -2311,7 +2311,7 @@ class TelegramChannel:
         oai_key = _os.environ.get("OPENAI_API_KEY")
         if not oai_key:
             try:
-                from navig.vault import get_vault_v2 as _gv2
+                from navig.vault import get_vault as _gv2
 
                 oai_key = _gv2().get_secret("openai/api-key") or None
             except Exception:  # noqa: BLE001
@@ -2997,10 +2997,10 @@ class TelegramChannel:
             lines.append(f"navig: ❌ `{e}`")
         try:
             from navig.platform import paths as _paths
-            from navig.vault import get_vault_v2
+            from navig.vault import get_vault
 
             _vpath = str(_paths.vault_dir())
-            v = get_vault_v2()
+            v = get_vault()
             items = v.list() if hasattr(v, "list") else []
             count = len(items)
             lines.append(f"vault: 🟢 `{count} entries` ({_vpath})")
@@ -3028,9 +3028,9 @@ class TelegramChannel:
         if not dg:
             # Also check vault for deepgram key
             try:
-                from navig.vault import get_vault_v2
+                from navig.vault import get_vault
 
-                _v2 = get_vault_v2()
+                _v2 = get_vault()
                 if _v2 is not None:
                     _store = _v2.store()
                     for _lbl in ("deepgram", "DEEPGRAM_API_KEY", "DEEPGRAM_KEY"):
@@ -3270,9 +3270,9 @@ class TelegramChannel:
         vault_ok = False
         vault_msg = "unavailable"
         try:
-            from navig.vault import get_vault_v2
+            from navig.vault import get_vault
 
-            _v = get_vault_v2()
+            _v = get_vault()
             _items = _v.list() if hasattr(_v, "list") else []
             vault_ok = True
             vault_msg = f"{len(_items)} entries"
@@ -3623,9 +3623,9 @@ class TelegramChannel:
 
             # ── Vault ──
             try:
-                from navig.vault import get_vault_v2
+                from navig.vault import get_vault
 
-                v = get_vault_v2()
+                v = get_vault()
                 key_count = len(v.list()) if hasattr(v, "list") else "?"
                 lines.append(f"🔑 *Vault:* {key_count} keys stored")
             except Exception:  # noqa: BLE001

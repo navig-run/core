@@ -37,11 +37,11 @@ def export_bundle(
 
     # Encrypt with vault master key via CryptoEngine.seal()
     try:
-        from navig.vault.core_v2 import get_vault_v2
+        from navig.vault.core import get_vault
         from navig.vault.crypto import CryptoEngine
 
-        v2 = get_vault_v2()
-        master = v2.engine().derive_key()  # machine fingerprint
+        vault = get_vault()
+        master = vault.engine().derive_key()  # machine fingerprint
         raw = zip_path.read_bytes()
         sealed = CryptoEngine.seal(master, raw, b"navbox")
 

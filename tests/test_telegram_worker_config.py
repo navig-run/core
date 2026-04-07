@@ -123,3 +123,7 @@ class TestTransportForUrl:
         # URLs are lowercased internally
         assert self._fn()("HTTP://HOST/mcp") == "sse"
         assert self._fn()("WS://HOST/ws") == "websocket"
+
+    def test_leading_and_trailing_whitespace(self):
+        assert self._fn()("  ws://host/ws  ") == "websocket"
+        assert self._fn()("  https://host/mcp\n") == "sse"

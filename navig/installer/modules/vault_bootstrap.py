@@ -30,10 +30,10 @@ def plan(ctx: InstallerContext) -> list[Action]:
 
 def apply(action: Action, ctx: InstallerContext) -> Result:
     try:
-        from navig.vault.core_v2 import get_vault_v2  # type: ignore[import]
+        from navig.vault.core import get_vault  # type: ignore[import]
 
-        get_vault_v2()
-        # Calling get_vault_v2() is enough to trigger key-file creation
+        get_vault()
+        # Calling get_vault() is enough to trigger key-file creation
         return Result(
             action_id=action.id,
             state=ModuleState.APPLIED,

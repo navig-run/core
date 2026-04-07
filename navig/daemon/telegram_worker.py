@@ -194,7 +194,7 @@ def _transport_for_url(url: str) -> str:
     """
     import logging as _logging
 
-    lower = (url or "").lower()
+    lower = (url or "").strip().lower()
     if lower.startswith(("http://", "https://")):
         return "sse"
     if lower.startswith(("ws://", "wss://")):
@@ -229,7 +229,7 @@ async def _mcp_reconnect_loop(
 
             # Check if already connected
             client = mgr.clients.get(name)
-            if client and client.connected:
+            if client and getattr(client, "is_connected", False):
                 continue
 
             # Attempt (re)connect
@@ -244,7 +244,11 @@ async def _mcp_reconnect_loop(
                         transport=_transport_for_url(mcp_cfg["mcp_url"]),
                     )
                 )
-                logger.info("MCP reconnect: %s connected", name)
+                connected = await mgr.connect_client(name)
+                if connected:
+                    logger.info("MCP reconnect: %s connected", name)
+                else:
+                    logger.debug("MCP reconnect: %s still pending", name)
             except Exception as e:
                 logger.debug("MCP reconnect failed: %s", e)
         except asyncio.CancelledError:
@@ -337,7 +341,11 @@ async def _run(*, port: int | None = None, enable_gateway: bool = True) -> None:
                         transport=_transport_for_url(mcp_cfg["mcp_url"]),
                     )
                 )
-                logger.info("MCP Bridge client connected → %s", mcp_cfg["mcp_url"])
+                connected = await gateway.mcp_client_manager.connect_client("vscode-copilot")
+                if connected:
+                    logger.info("MCP Bridge client connected → %s", mcp_cfg["mcp_url"])
+                else:
+                    logger.info("MCP Bridge client pending → %s", mcp_cfg["mcp_url"])
             except Exception as e:
                 logger.info("MCP Bridge not yet available (will retry): %s", e)
         except ImportError as e:

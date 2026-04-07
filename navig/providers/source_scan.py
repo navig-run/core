@@ -90,9 +90,9 @@ def provider_has_config_key(provider_id: str, *, navig_dir: Path, cfg: dict[str,
 
 def provider_has_vault_key(provider_id: str) -> bool:
     try:
-        from navig.vault.core_v2 import get_vault_v2
+        from navig.vault.core import get_vault
 
-        vault = get_vault_v2()
+        vault = get_vault()
         if vault is None:
             return False
 

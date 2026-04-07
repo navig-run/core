@@ -158,7 +158,7 @@ class TestDetectProviderFromRegistry:
     def test_finds_xai_from_env(self, monkeypatch):
         monkeypatch.setenv("GROK_KEY", "grok-test-key")
         # Isolate from vault state: prevent real vault keys from interfering
-        monkeypatch.setattr("navig.vault.get_vault_v2", lambda: None, raising=False)
+        monkeypatch.setattr("navig.vault.get_vault", lambda: None, raising=False)
         _mock_vault = MagicMock()
         _mock_vault.get_api_key.return_value = None
         monkeypatch.setattr("navig.vault.get_vault", lambda: _mock_vault, raising=False)
@@ -192,11 +192,17 @@ class TestDetectProviderFromRegistry:
             "BLOCKRUN_WALLET_KEY",
         ):
             monkeypatch.delenv(var, raising=False)
-        # Isolate from both vault v2 and v1 so dev-machine credentials don't leak in.
-        monkeypatch.setattr("navig.vault.get_vault_v2", lambda: None, raising=False)
+        # Isolate from both vault label and legacy provider paths so dev-machine
+        # credentials don't leak in.
+        monkeypatch.setattr("navig.vault.get_vault", lambda: None, raising=False)
         _mock_vault = MagicMock()
         _mock_vault.get_api_key.return_value = None
         monkeypatch.setattr("navig.vault.get_vault", lambda: _mock_vault, raising=False)
+        monkeypatch.setattr(
+            "navig.agent.model_router._resolve_provider_api_key",
+            lambda _provider, global_cfg=None: "",
+            raising=False,
+        )
         from navig.agent.ai_client import AIClient
 
         client = AIClient.__new__(AIClient)
@@ -207,7 +213,7 @@ class TestDetectProviderFromRegistry:
     def test_skips_already_checked_providers(self, monkeypatch):
         """Should not return openrouter/ollama/etc — those are checked earlier."""
         monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
-        monkeypatch.setattr("navig.vault.get_vault_v2", lambda: None, raising=False)
+        monkeypatch.setattr("navig.vault.get_vault", lambda: None, raising=False)
         _mock_vault = MagicMock()
         _mock_vault.get_api_key.return_value = None
         monkeypatch.setattr("navig.vault.get_vault", lambda: _mock_vault, raising=False)
@@ -224,7 +230,7 @@ class TestDetectProviderFromRegistry:
         monkeypatch.setenv("GROK_KEY", "grok-test-key")
         monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-test-key")
         monkeypatch.setenv("MISTRAL_API_KEY", "mistral-test-key")
-        monkeypatch.setattr("navig.vault.get_vault_v2", lambda: None, raising=False)
+        monkeypatch.setattr("navig.vault.get_vault", lambda: None, raising=False)
         _mock_vault = MagicMock()
         _mock_vault.get_api_key.return_value = None
         monkeypatch.setattr("navig.vault.get_vault", lambda: _mock_vault, raising=False)
@@ -262,10 +268,15 @@ class TestDetectProviderFromRegistry:
         monkeypatch.setenv("GITHUB_COPILOT_TOKEN", "ghp-test")
         monkeypatch.setenv("KILOCODE_API_KEY", "kilo-test")
         monkeypatch.setenv("MISTRAL_API_KEY", "ms-test")
-        monkeypatch.setattr("navig.vault.get_vault_v2", lambda: None, raising=False)
+        monkeypatch.setattr("navig.vault.get_vault", lambda: None, raising=False)
         _mock_vault = MagicMock()
         _mock_vault.get_api_key.return_value = None
         monkeypatch.setattr("navig.vault.get_vault", lambda: _mock_vault, raising=False)
+        monkeypatch.setattr(
+            "navig.agent.model_router._resolve_provider_api_key",
+            lambda _provider, global_cfg=None: "",
+            raising=False,
+        )
         from navig.agent.ai_client import AIClient
 
         client = AIClient.__new__(AIClient)

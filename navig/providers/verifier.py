@@ -106,9 +106,9 @@ def _check_key(manifest: ProviderManifest) -> bool:
         if os.environ.get(var, "").strip():
             return True
     try:
-        from navig.vault import get_vault_v2
+        from navig.vault import get_vault
 
-        vault = get_vault_v2()
+        vault = get_vault()
         if vault is not None:
             for vk in manifest.vault_keys:
                 try:

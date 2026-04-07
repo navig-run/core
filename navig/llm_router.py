@@ -189,7 +189,7 @@ PROVIDER_BASE_URLS: dict[str, str] = {
 SUPPORTED_PROVIDERS = set(PROVIDER_BASE_URLS.keys())
 
 # ─────────────────────────────────────────────────────────────
-# Pydantic v2 Schemas
+# Pydantic Schemas
 # ─────────────────────────────────────────────────────────────
 
 if PYDANTIC_OK:
@@ -500,7 +500,7 @@ def _resolve_api_key(provider: str) -> str | None:
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
-    # Finally, best-effort lookup via vault v2 using provider manifest keys.
+    # Finally, best-effort lookup via vault labels using provider manifest keys.
     try:
         if manifest is None:
             from navig.providers.registry import get_provider
@@ -508,14 +508,14 @@ def _resolve_api_key(provider: str) -> str | None:
             manifest = get_provider(provider)
 
         if manifest and manifest.vault_keys:
-            from navig.vault.core_v2 import get_vault_v2
+            from navig.vault.core import get_vault
 
-            vault_v2 = get_vault_v2()
+            vault = get_vault()
             for path in manifest.vault_keys:
                 if not path:
                     continue
                 try:
-                    key = vault_v2.get_secret(path)
+                    key = vault.get_secret(path)
                 except Exception:  # noqa: BLE001
                     key = None
                 if key:

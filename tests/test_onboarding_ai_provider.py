@@ -104,7 +104,7 @@ def test_ai_provider_step_imports_env_key_to_vault_and_runs_light_verification(
 
     monkeypatch.setattr("navig.providers.registry.list_enabled_providers", lambda: [provider])
     monkeypatch.setattr("navig.providers.registry.get_provider", lambda _pid: manifest)
-    monkeypatch.setattr("navig.vault.core_v2.get_vault_v2", lambda: fake_vault)
+    monkeypatch.setattr("navig.vault.core.get_vault", lambda: fake_vault)
     monkeypatch.setattr("navig.onboarding.steps._prompt_masked", lambda *_a, **_k: "")
     monkeypatch.setattr("typer.prompt", lambda *_a, **_k: next(prompt_answers))
     monkeypatch.setattr("typer.confirm", lambda *_a, **_k: True)
