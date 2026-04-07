@@ -26,10 +26,13 @@ def _make_engine_state(interrupted_at=None):
 
 def test_banner_first_time_setup():
     """Banner says 'first-time setup' when force=False."""
+    import pathlib
+
     state = _make_engine_state()
     buf = io.StringIO()
 
     with (
+        patch.object(pathlib.Path, "exists", return_value=False),
         patch("navig.onboarding.runner.load_or_create") as mock_genesis,
         patch("navig.onboarding.runner.build_step_registry", return_value=[]),
         patch("navig.onboarding.runner.OnboardingEngine") as mock_engine_cls,

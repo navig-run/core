@@ -105,7 +105,7 @@ def run_engine_onboarding(
             # (only the target step plus its tail run). Use ordinal only.
             msg = f"  [step {started['n']}] · {title}..."
             if _con is not None:
-                _con.print(msg)
+                _con.print(msg, markup=False)  # markup=False prevents [step N] being treated as a tag
             else:
                 sys.stdout.write(msg + "\n")
                 sys.stdout.flush()
@@ -219,6 +219,15 @@ def _print_verification_dashboard(
         f"  recommended={tier_counts.get('recommended', 0)}"
         f"  optional={tier_counts.get('optional', 0)}"
     )
+
+    # Show recommended next command if any recommended steps are incomplete
+    recommended_unfinished = [
+        rec for rec in state.steps
+        if step_tiers.get(rec.id) == "recommended" and rec.status in ("skipped", "failed", "pending")
+    ]
+    if recommended_unfinished:
+        _out("  Recommended next command:")
+        _out("    navig init --reconfigure")
 
     deferred = _deferred_integration_commands(state, step_tiers)
     if deferred:

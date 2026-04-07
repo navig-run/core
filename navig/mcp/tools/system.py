@@ -138,6 +138,51 @@ def register(server: Any) -> None:
                     "required": ["url"],
                 },
             },
+            "firecrawl_crawl": {
+                "name": "firecrawl_crawl",
+                "description": "Crawl a site using Firecrawl and return crawl job metadata.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "HTTP or HTTPS URL to crawl",
+                        },
+                        "maxPages": {
+                            "type": "integer",
+                            "description": "Maximum pages to discover",
+                            "minimum": 1,
+                        },
+                    },
+                    "required": ["url"],
+                },
+            },
+            "firecrawl_search": {
+                "name": "firecrawl_search",
+                "description": "Search the web using Firecrawl with optional inline scrape.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query",
+                        },
+                        "count": {
+                            "type": "integer",
+                            "description": "Maximum results",
+                            "default": 5,
+                            "minimum": 1,
+                            "maximum": 20,
+                        },
+                        "scrapeInline": {
+                            "type": "boolean",
+                            "description": "Whether to include inline markdown scraping",
+                            "default": False,
+                        },
+                    },
+                    "required": ["query"],
+                },
+            },
         }
     )
 
@@ -150,6 +195,8 @@ def register(server: Any) -> None:
             "navig_web_search": _tool_web_search,
             "navig_search_docs": _tool_search_docs,
             "firecrawl_scrape": _tool_firecrawl_scrape,
+            "firecrawl_crawl": _tool_firecrawl_crawl,
+            "firecrawl_search": _tool_firecrawl_search,
         }
     )
 
@@ -360,10 +407,48 @@ def _tool_search_docs(server: Any, args: dict[str, Any]) -> dict[str, Any]:
         return {"error": f"Doc search failed: {str(e)}"}
 
 
+def _firecrawl_call_mcp_or_rest(
+    server: Any,
+    *,
+    rest_callable: str,
+    rest_kwargs: dict[str, Any],
+    mcp_tool: str,
+    mcp_args: dict[str, Any],
+    mode: str,
+) -> dict[str, Any]:
+    """Run Firecrawl via MCP client when available, else via local REST client."""
+    mcp_client = getattr(server, "_mcp_client", None)
+    if mcp_client is not None and hasattr(mcp_client, "call_tool"):
+        try:
+            result = mcp_client.call_tool(mcp_tool, mcp_args)
+            return {
+                "success": True,
+                "route": "mcp",
+                "mode": mode,
+                "result": result,
+            }
+        except Exception:
+            logger.info("[firecrawl] MCP unavailable, using REST")
+    else:
+        logger.info("[firecrawl] MCP unavailable, using REST")
+
+    from navig.integrations.firecrawl import get_firecrawl_client
+
+    client = get_firecrawl_client()
+    call = getattr(client, rest_callable)
+    result = call(**rest_kwargs)
+    return {
+        "success": True,
+        "route": "rest",
+        "mode": mode,
+        "result": result,
+    }
+
+
 def _tool_firecrawl_scrape(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Scrape or crawl a URL using Firecrawl with MCP-first fallback semantics."""
     try:
-        from navig.integrations.firecrawl import FirecrawlError, get_firecrawl_client
+        from navig.integrations.firecrawl import FirecrawlError
 
         url = str(args.get("url") or "").strip()
         if not url:
@@ -380,40 +465,111 @@ def _tool_firecrawl_scrape(server: Any, args: dict[str, Any]) -> dict[str, Any]:
             except (TypeError, ValueError):
                 return {"error": "maxPages must be an integer"}
 
-        mcp_client = getattr(server, "_mcp_client", None)
-        if mcp_client is not None and hasattr(mcp_client, "call_tool"):
-            try:
-                mcp_args: dict[str, Any] = {
-                    "url": url,
-                    "formats": ["markdown"],
-                    "onlyMainContent": True,
-                }
-                if mode == "crawl" and max_pages is not None:
-                    mcp_args["limit"] = max_pages
-
-                result = mcp_client.call_tool(
-                    "mcp_firecrawl_fir_firecrawl_scrape",
-                    mcp_args,
-                )
-                return {
-                    "success": True,
-                    "route": "mcp",
-                    "mode": mode,
-                    "result": result,
-                }
-            except Exception:
-                logger.info("[firecrawl] MCP unavailable, using REST")
-        else:
-            logger.info("[firecrawl] MCP unavailable, using REST")
-
-        client = get_firecrawl_client()
-        result = client.scrape(url=url, mode=mode, max_pages=max_pages)
-        return {
-            "success": True,
-            "route": "rest",
-            "mode": mode,
-            "result": result,
+        mcp_args: dict[str, Any] = {
+            "url": url,
+            "formats": ["markdown"],
+            "onlyMainContent": True,
         }
+        if mode == "crawl" and max_pages is not None:
+            mcp_args["limit"] = max_pages
+
+        return _firecrawl_call_mcp_or_rest(
+            server,
+            rest_callable="scrape",
+            rest_kwargs={"url": url, "mode": mode, "max_pages": max_pages},
+            mcp_tool="mcp_firecrawl_fir_firecrawl_scrape",
+            mcp_args=mcp_args,
+            mode=mode,
+        )
+
+    except FirecrawlError as e:
+        return {
+            "error": str(e),
+            "status_code": e.status_code,
+            "retryable": e.retryable,
+        }
+    except Exception as e:
+        return {"error": f"Firecrawl request failed: {str(e)}"}
+
+
+def _tool_firecrawl_crawl(server: Any, args: dict[str, Any]) -> dict[str, Any]:
+    """Crawl a URL using Firecrawl with MCP-first fallback semantics."""
+    try:
+        from navig.integrations.firecrawl import FirecrawlError
+
+        url = str(args.get("url") or "").strip()
+        if not url:
+            return {"error": "URL is required"}
+
+        max_pages = args.get("maxPages")
+        if max_pages is not None:
+            try:
+                max_pages = int(max_pages)
+            except (TypeError, ValueError):
+                return {"error": "maxPages must be an integer"}
+
+        mcp_args: dict[str, Any] = {
+            "url": url,
+            "limit": max_pages,
+            "scrapeOptions": {"formats": ["markdown"], "onlyMainContent": True},
+        }
+        if max_pages is None:
+            mcp_args.pop("limit", None)
+
+        return _firecrawl_call_mcp_or_rest(
+            server,
+            rest_callable="crawl",
+            rest_kwargs={"url": url, "max_pages": max_pages},
+            mcp_tool="mcp_firecrawl_fir_firecrawl_crawl",
+            mcp_args=mcp_args,
+            mode="crawl",
+        )
+
+    except FirecrawlError as e:
+        return {
+            "error": str(e),
+            "status_code": e.status_code,
+            "retryable": e.retryable,
+        }
+    except Exception as e:
+        return {"error": f"Firecrawl request failed: {str(e)}"}
+
+
+def _tool_firecrawl_search(server: Any, args: dict[str, Any]) -> dict[str, Any]:
+    """Search via Firecrawl with MCP-first fallback semantics."""
+    try:
+        from navig.integrations.firecrawl import FirecrawlError
+
+        query = str(args.get("query") or "").strip()
+        if not query:
+            return {"error": "Search query is required"}
+
+        count = args.get("count", 5)
+        try:
+            count = int(count)
+        except (TypeError, ValueError):
+            return {"error": "count must be an integer"}
+
+        scrape_inline = bool(args.get("scrapeInline", False))
+
+        mcp_args: dict[str, Any] = {
+            "query": query,
+            "limit": count,
+            "scrapeOptions": {"formats": ["markdown"], "onlyMainContent": True}
+            if scrape_inline
+            else None,
+        }
+        if not scrape_inline:
+            mcp_args.pop("scrapeOptions", None)
+
+        return _firecrawl_call_mcp_or_rest(
+            server,
+            rest_callable="search",
+            rest_kwargs={"query": query, "limit": count, "scrape_inline": scrape_inline},
+            mcp_tool="mcp_firecrawl_fir_firecrawl_search",
+            mcp_args=mcp_args,
+            mode="search",
+        )
 
     except FirecrawlError as e:
         return {

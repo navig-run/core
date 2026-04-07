@@ -22,6 +22,9 @@ def test_ask_ai_windows_tasklist_decode_fallback(monkeypatch):
         def get_active_server(self):
             return "local"
 
+        def host_exists(self, name):
+            return True
+
         def load_server_config(self, name):
             return {"host": "localhost", "is_local": True, "type": "local"}
 

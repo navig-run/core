@@ -77,6 +77,10 @@ def test_system_register_includes_firecrawl_tool():
     system_tools.register(server)
     assert "firecrawl_scrape" in server.tools
     assert "firecrawl_scrape" in server._tool_handlers
+    assert "firecrawl_crawl" in server.tools
+    assert "firecrawl_search" in server.tools
+    assert "firecrawl_crawl" in server._tool_handlers
+    assert "firecrawl_search" in server._tool_handlers
 
 
 def test_firecrawl_tool_uses_rest_fallback_when_no_mcp(monkeypatch):
@@ -126,3 +130,31 @@ def test_firecrawl_tool_prefers_mcp_when_client_available(monkeypatch):
     assert result["success"] is True
     assert result["route"] == "mcp"
     assert result["result"]["name"] == "mcp_firecrawl_fir_firecrawl_scrape"
+
+
+def test_firecrawl_search_and_crawl_use_rest_fallback(monkeypatch):
+    class _Client:
+        def search(self, *, query: str, limit: int = 5, scrape_inline: bool = False, sources=None):
+            return {"query": query, "limit": limit, "scrape_inline": scrape_inline}
+
+        def crawl(self, *, url: str, max_pages: int | None = None):
+            return {"url": url, "max_pages": max_pages}
+
+    class _Server:
+        pass
+
+    monkeypatch.setattr("navig.integrations.firecrawl.get_firecrawl_client", lambda: _Client())
+
+    crawl_result = system_tools._tool_firecrawl_crawl(
+        _Server(),
+        {"url": "https://example.com", "maxPages": 4},
+    )
+    assert crawl_result["success"] is True
+    assert crawl_result["route"] == "rest"
+
+    search_result = system_tools._tool_firecrawl_search(
+        _Server(),
+        {"query": "python", "count": 3, "scrapeInline": True},
+    )
+    assert search_result["success"] is True
+    assert search_result["route"] == "rest"

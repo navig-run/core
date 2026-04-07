@@ -288,9 +288,12 @@ def test_runner_progress_uses_fraction_when_no_jump() -> None:
         on_failure="skip",
     )
 
+    import pathlib
+
     buf = io.StringIO()
 
     with (
+        patch.object(pathlib.Path, "exists", return_value=False),
         patch("navig.onboarding.runner.load_or_create") as mock_genesis,
         patch("navig.onboarding.runner.build_step_registry", return_value=[fake_step] * 5),
         patch("navig.onboarding.runner.OnboardingEngine") as mock_engine_cls,

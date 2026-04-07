@@ -6578,7 +6578,7 @@ Search the web for information.
 |-----------|------|---------|-------------|
 | `query` | string | required | Search query |
 | `--limit`, `-l` | int | 10 | Maximum results |
-| `--provider`, `-p` | string | auto | Provider preference: auto, brave, duckduckgo, perplexity, gemini, grok, kimi |
+| `--provider`, `-p` | string | auto | Provider preference: auto (Firecrawl-first), firecrawl, brave, duckduckgo, tavily, perplexity, gemini, grok, kimi |
 | `--json` | flag | false | Output in JSON format |
 | `--plain` | flag | false | Plain text output |
 
@@ -6597,7 +6597,18 @@ navig search "kubernetes deployment" --json
 navig search "nginx configuration" --provider duckduckgo
 ```
 
-**Setup Brave Search (Recommended):**
+**Provider behavior (default):**
+
+- `auto` uses Firecrawl first.
+- If Firecrawl is unavailable/unconfigured at runtime, NAVIG gracefully falls back to legacy providers.
+
+**Optional Firecrawl key setup:**
+```bash
+# Free tier works without key; key unlocks higher quota
+navig cred add firecrawl --key fc-xxxxxxxx --label "Firecrawl API Key"
+```
+
+**Legacy provider setup (optional):**
 ```bash
 # 1. Get API key from https://brave.com/search/api/
 # 2. Set in environment or config

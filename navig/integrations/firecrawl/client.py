@@ -107,6 +107,31 @@ class FirecrawlClient:
 
         return self._request("POST", "/crawl", payload=crawl_payload)
 
+    def crawl(self, *, url: str, max_pages: int | None = None) -> dict[str, Any]:
+        """Run Firecrawl crawl API with markdown extraction."""
+        return self.scrape(url=url, mode="crawl", max_pages=max_pages)
+
+    def search(
+        self,
+        *,
+        query: str,
+        limit: int = 5,
+        scrape_inline: bool = False,
+        sources: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Run Firecrawl search API."""
+        payload: dict[str, Any] = {
+            "query": query,
+            "limit": max(1, min(int(limit), 20)),
+            "sources": sources or ["web"],
+        }
+        if scrape_inline:
+            payload["scrapeOptions"] = {
+                "formats": ["markdown"],
+                "onlyMainContent": True,
+            }
+        return self._request("POST", "/search", payload=payload)
+
     def validate_api_key(self, api_key: str) -> tuple[bool, str]:
         """Validate key against Firecrawl account endpoint."""
         probe = FirecrawlClient(api_key=api_key, base_url=self.base_url, timeout_seconds=self.timeout_seconds)

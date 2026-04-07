@@ -2,7 +2,7 @@
 
 Provides web content fetching and search capabilities:
 - web_fetch: HTTP GET + HTML→markdown/text extraction
-- web_search: Brave Search API or DuckDuckGo fallback
+- web_search: Firecrawl-first routing with Brave/Tavily/DuckDuckGo fallback
 
 Modeled after advanced web tools implementation.
 """
@@ -53,6 +53,8 @@ TAVILY_SEARCH_ENDPOINT = "https://api.tavily.com/search"
 _WEB_PROVIDER_ALIASES: dict[str, str] = {
     "": "auto",
     "auto": "auto",
+    "firecrawl": "firecrawl",
+    "fire-crawl": "firecrawl",
     "brave": "brave",
     "brave-search": "brave",
     "duckduckgo": "duckduckgo",
@@ -68,6 +70,7 @@ _WEB_PROVIDER_ALIASES: dict[str, str] = {
 }
 
 _WEB_PROVIDER_ENV_VARS: dict[str, tuple[str, ...]] = {
+    "firecrawl": ("FIRECRAWL_API_KEY",),
     "brave": ("BRAVE_API_KEY",),
     "perplexity": ("PERPLEXITY_API_KEY", "PPLX_API_KEY"),
     "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
@@ -77,6 +80,13 @@ _WEB_PROVIDER_ENV_VARS: dict[str, tuple[str, ...]] = {
 }
 
 _WEB_PROVIDER_VAULT_LABELS: dict[str, tuple[str, ...]] = {
+    "firecrawl": (
+        "FIRECRAWL_API_KEY",
+        "firecrawl/api_key",
+        "firecrawl/api-key",
+        "firecrawl_api_key",
+        "web/firecrawl_api_key",
+    ),
     "brave": ("web/brave_api_key", "brave/api_key", "brave_api_key"),
     "perplexity": ("web/perplexity_api_key", "perplexity/api_key", "pplx/api_key"),
     "gemini": ("web/gemini_api_key", "google/api_key", "google_api_key"),
@@ -697,6 +707,73 @@ def _search_tavily(
         )
 
 
+def _search_firecrawl(
+    query: str,
+    count: int = 5,
+) -> WebSearchResult:
+    """Search via Firecrawl with graceful error mapping.
+
+    Firecrawl is treated as the premium default; callers should decide fallback behavior.
+    """
+    try:
+        from navig.integrations.firecrawl import FirecrawlError, get_firecrawl_client
+
+        client = get_firecrawl_client()
+        data = client.search(query=query, limit=count, scrape_inline=False)
+
+        items: list[dict[str, Any]] = []
+        if isinstance(data, dict):
+            if isinstance(data.get("data"), dict):
+                nested = data.get("data") or {}
+                if isinstance(nested.get("web"), list):
+                    items = [i for i in nested.get("web", []) if isinstance(i, dict)]
+                elif isinstance(nested.get("results"), list):
+                    items = [i for i in nested.get("results", []) if isinstance(i, dict)]
+            elif isinstance(data.get("results"), list):
+                items = [i for i in data.get("results", []) if isinstance(i, dict)]
+
+        results = [
+            SearchResult(
+                title=str(item.get("title") or ""),
+                url=str(item.get("url") or ""),
+                snippet=str(
+                    item.get("description")
+                    or item.get("snippet")
+                    or item.get("content")
+                    or ""
+                ),
+                age=item.get("age") if isinstance(item.get("age"), str) else None,
+            )
+            for item in items[:count]
+            if item.get("url")
+        ]
+
+        if not results:
+            return WebSearchResult(
+                success=False,
+                query=query,
+                provider="firecrawl",
+                error="No Firecrawl search results returned.",
+            )
+
+        return WebSearchResult(success=True, results=results, query=query, provider="firecrawl")
+
+    except FirecrawlError as e:
+        return WebSearchResult(
+            success=False,
+            query=query,
+            provider="firecrawl",
+            error=str(e),
+        )
+    except Exception as e:
+        return WebSearchResult(
+            success=False,
+            query=query,
+            provider="firecrawl",
+            error=f"Firecrawl search failed: {str(e)}",
+        )
+
+
 def web_search(
     query: str,
     count: int = 5,
@@ -792,12 +869,12 @@ def web_search(
 
     selected_provider = config_provider if requested_provider == "auto" else requested_provider
     if selected_provider == "auto":
-        selected_provider = "duckduckgo"
+        selected_provider = "firecrawl"
 
     selected_key = _resolve_key(selected_provider, search_cfg)
 
-    # Runtime engine supports Brave, DuckDuckGo, and Tavily.
-    if selected_provider not in ("brave", "duckduckgo", "tavily"):
+    # Runtime engine supports Firecrawl, Brave, DuckDuckGo, and Tavily.
+    if selected_provider not in ("firecrawl", "brave", "duckduckgo", "tavily"):
         brave_key = _resolve_key("brave", search_cfg)
         if brave_key:
             selected_provider = "brave"
@@ -807,34 +884,27 @@ def web_search(
             selected_key = ""
 
     # Perform search
-    if selected_provider == "tavily":
+    if selected_provider == "firecrawl":
+        result = _search_firecrawl(query, count)
+        if not result.success:
+            tavily_key = _resolve_key("tavily", search_cfg)
+            brave_key = _resolve_key("brave", search_cfg)
+            if tavily_key:
+                result = _search_tavily(query, tavily_key, count, timeout_seconds)
+            elif brave_key:
+                result = _search_brave(query, brave_key, count, timeout_seconds)
+            else:
+                result = _search_duckduckgo(query, count, timeout_seconds)
+    elif selected_provider == "tavily":
         if not selected_key:
-            return WebSearchResult(
-                success=False,
-                query=query,
-                provider="tavily",
-                error=(
-                    "Tavily API key not configured.\n"
-                    "1. Get a free API key: https://app.tavily.com/\n"
-                    "2. Set it via: navig init (web search provider step)\n"
-                    "   Or set TAVILY_API_KEY environment variable"
-                ),
-            )
-        result = _search_tavily(query, selected_key, count, timeout_seconds)
+            result = _search_duckduckgo(query, count, timeout_seconds)
+        else:
+            result = _search_tavily(query, selected_key, count, timeout_seconds)
     elif selected_provider == "brave":
         if not selected_key:
-            return WebSearchResult(
-                success=False,
-                query=query,
-                provider="brave",
-                error=(
-                    "Brave Search API key not configured.\n"
-                    "1. Get a free API key: https://brave.com/search/api/\n"
-                    "2. Set it via: navig init (web search provider step)\n"
-                    "   Or set BRAVE_API_KEY environment variable"
-                ),
-            )
-        result = _search_brave(query, selected_key, count, timeout_seconds)
+            result = _search_duckduckgo(query, count, timeout_seconds)
+        else:
+            result = _search_brave(query, selected_key, count, timeout_seconds)
     else:
         result = _search_duckduckgo(query, count, timeout_seconds)
 
