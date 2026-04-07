@@ -182,7 +182,7 @@ class ConfigManager:
         """Helper to invoke platform accessibility check."""
         return paths.is_directory_accessible(directory)
 
-    def _get_config_directories(self) -> list[Path]:
+    def get_config_directories(self) -> list[Path]:
         """
         Get list of configuration directories in priority order.
 

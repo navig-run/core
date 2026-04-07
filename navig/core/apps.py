@@ -37,7 +37,7 @@ class ConfigProvider(Protocol):
     @property
     def verbose(self) -> bool: ...
 
-    def _get_config_directories(self) -> list[Path]: ...
+    def get_config_directories(self) -> list[Path]: ...
 
     def load_host_config(self, host_name: str, use_cache: bool = True) -> dict[str, Any]: ...
 
@@ -79,7 +79,7 @@ class AppManager:
             True if app exists on host, False otherwise
         """
         # 1. Check individual files (new format)
-        config_dirs = self._config._get_config_directories()
+        config_dirs = self._config.get_config_directories()
         for config_dir in config_dirs:
             try:
                 app_config = self.load_from_file(app_name, config_dir)
@@ -113,7 +113,7 @@ class AppManager:
         apps: set[str] = set()
 
         # 1. Get apps from individual files (new format)
-        config_dirs = self._config._get_config_directories()
+        config_dirs = self._config.get_config_directories()
         for config_dir in config_dirs:
             apps_dir = config_dir / "apps"
             if apps_dir.exists():
@@ -176,7 +176,7 @@ class AppManager:
             ValueError: If webserver.type is missing
         """
         # 1. Try loading from individual file (new format)
-        config_dirs = self._config._get_config_directories()
+        config_dirs = self._config.get_config_directories()
         for config_dir in config_dirs:
             app_config = self.load_from_file(app_name, config_dir)
             if app_config and app_config.get("host") == host_name:
@@ -230,7 +230,7 @@ class AppManager:
             app_config["host"] = host_name
             app_config["name"] = app_name
 
-            navig_dir = self._config.app_config_dir if self._config.app_config_dir else self._config.base_dir
+            navig_dir = self._get_default_navig_dir()
             self.save_to_file(app_name, app_config, navig_dir)
         else:
             host_config = self._config.load_host_config(host_name)
@@ -254,7 +254,7 @@ class AppManager:
         Returns:
             True if deleted, False if not found
         """
-        config_dirs = self._config._get_config_directories()
+        config_dirs = self._config.get_config_directories()
 
         # Try individual file first
         for config_dir in config_dirs:
@@ -295,6 +295,14 @@ class AppManager:
     # Individual App File Support
     # ================================================================
 
+    def _get_default_navig_dir(self) -> Path:
+        """
+        Return the default NAVIG directory to use for app configuration files.
+
+        Prefers the explicit ``app_config_dir`` if set, otherwise falls back to ``base_dir``.
+        """
+        return self._config.app_config_dir if self._config.app_config_dir else self._config.base_dir
+
     def get_file_path(self, app_name: str, navig_dir: Path | None = None) -> Path:
         """
         Get path to individual app file.
@@ -307,7 +315,7 @@ class AppManager:
             Path to app file
         """
         if navig_dir is None:
-            navig_dir = self._config.app_config_dir if self._config.app_config_dir else self._config.base_dir
+            navig_dir = self._get_default_navig_dir()
 
         return navig_dir / "apps" / f"{app_name}.yaml"
 
@@ -397,7 +405,7 @@ class AppManager:
             List of app names
         """
         if navig_dir is None:
-            navig_dir = self._config.app_config_dir if self._config.app_config_dir else self._config.base_dir
+            navig_dir = self._get_default_navig_dir()
 
         apps_dir = navig_dir / "apps"
 
@@ -435,7 +443,7 @@ class AppManager:
             Migration results dictionary
         """
         if navig_dir is None:
-            navig_dir = self._config.app_config_dir if self._config.app_config_dir else self._config.base_dir
+            navig_dir = self._get_default_navig_dir()
 
         results: dict[str, Any] = {"migrated": [], "skipped": [], "errors": {}}
 
