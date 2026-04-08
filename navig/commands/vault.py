@@ -584,7 +584,7 @@ def show_credential(
     credential_id: str = typer.Argument(..., help="Credential ID"),
     reveal: bool = typer.Option(False, "--reveal", help="Reveal secret values (DANGER!)"),
 ):
-    """Show details of a credential (legacy command)."""
+    """Show details of a credential (legacy — prefer `vault info` for the rich view)."""
     vault = _vault_mod.get_vault()
     cred = vault.get_by_id(credential_id)
 
@@ -614,6 +614,7 @@ def show_credential(
         masked = dict.fromkeys(cred.data.keys(), "***")
         _rprint(masked)
         _ch.info("Use --reveal to see secret values")
+    _ch.dim("Tip: `navig vault info` shows the full rich inspector panel.")
 
 
 @vault_app.command("edit")

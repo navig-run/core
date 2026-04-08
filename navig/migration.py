@@ -227,11 +227,9 @@ def save_config(config: dict[str, Any], path: Path) -> None:
         config: Configuration dictionary
         path: Path where to save configuration
     """
-    # Ensure parent directory exists
-    path.parent.mkdir(parents=True, exist_ok=True)
+    from navig.core.yaml_io import atomic_write_yaml
 
-    with open(path, "w", encoding="utf-8") as f:
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    atomic_write_yaml(config, path, allow_unicode=True)
 
 
 def migrate_all_configs(

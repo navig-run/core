@@ -24,6 +24,8 @@ from collections.abc import Callable
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any
 
+from navig.core.tokens import estimate_tokens as _estimate_tokens_core
+
 if TYPE_CHECKING:
     pass
 
@@ -32,9 +34,6 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────
 # Token estimation
 # ─────────────────────────────────────────────────────────────
-
-#: Rough chars-per-token ratio (conservative — most models are ~3.5-4).
-_CHARS_PER_TOKEN = 3.5
 
 #: Default context window sizes for common model families.
 _MODEL_CONTEXT_WINDOWS: dict[str, int] = {
@@ -61,8 +60,8 @@ _TRUNCATION_MARKER = "\n[...truncated...]\n"
 
 
 def _estimate_tokens(text: str) -> int:
-    """Rough token count from character length."""
-    return max(1, int(len(text) / _CHARS_PER_TOKEN))
+    """Rough token count from character length (conservative 3.5 chars/token)."""
+    return _estimate_tokens_core(text, chars_per_token=3.5)
 
 
 def _estimate_messages_tokens(messages: list[dict[str, Any]]) -> int:
@@ -98,6 +97,7 @@ def _get_context_window(model: str) -> int:
 # ─────────────────────────────────────────────────────────────
 # ContextCompressor
 # ─────────────────────────────────────────────────────────────
+
 
 class ContextCompressor:
     """Compress an agentic message history to stay within the context window.
@@ -212,11 +212,7 @@ class ContextCompressor:
             if role == "tool":
                 content = m.get("content", "")
                 if len(content) > (_BASH_HEAD + _BASH_TAIL + 200):
-                    m["content"] = (
-                        content[:_BASH_HEAD]
-                        + _TRUNCATION_MARKER
-                        + content[-_BASH_TAIL:]
-                    )
+                    m["content"] = content[:_BASH_HEAD] + _TRUNCATION_MARKER + content[-_BASH_TAIL:]
 
             result.append(m)
 
@@ -273,10 +269,7 @@ class ContextCompressor:
         # Build replacement message
         summary_msg: dict[str, Any] = {
             "role": "system",
-            "content": (
-                f"[Context Summary — {len(middle)} messages compressed]\n\n"
-                f"{summary_text}"
-            ),
+            "content": (f"[Context Summary — {len(middle)} messages compressed]\n\n{summary_text}"),
         }
 
         return head + [summary_msg] + tail
@@ -508,10 +501,7 @@ class ReactiveCompactor:
             elif role == "assistant":
                 tool_calls = m.get("tool_calls") or []
                 if tool_calls:
-                    names = [
-                        tc.get("function", {}).get("name", "?")
-                        for tc in tool_calls
-                    ]
+                    names = [tc.get("function", {}).get("name", "?") for tc in tool_calls]
                     lines.append(f"[assistant called: {', '.join(names)}]")
                 if content:
                     lines.append(f"[assistant]: {content}")
@@ -548,6 +538,7 @@ def _default_summarizer(digest: str) -> str:
 # ─────────────────────────────────────────────────────────────
 # Module helpers
 # ─────────────────────────────────────────────────────────────
+
 
 def get_context_compressor(**kwargs: Any) -> ContextCompressor:
     """Return a :class:`ContextCompressor` with config-driven defaults."""

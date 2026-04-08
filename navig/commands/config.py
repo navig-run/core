@@ -14,9 +14,9 @@ from rich.table import Table
 from navig import console_helper as ch
 from navig.cli._callbacks import show_subcommand_help
 from navig.config import get_config_manager
+from navig.core.yaml_io import load_yaml_with_lines
 from navig.migration import migrate_all_configs
 from navig.platform import paths
-from navig.yaml_utils import load_yaml_with_lines
 
 
 def _package_schema_dir() -> Path:
@@ -1324,8 +1324,9 @@ def config_migrate(
             ch.info("Dry run: Configuration would be updated.")
             ch.info(f"New version: {migrated.get('version')}")
         else:
-            with open(global_config_file, "w", encoding="utf-8") as file_handle:
-                yaml.dump(migrated, file_handle, default_flow_style=False, sort_keys=False)
+            from navig.core.yaml_io import atomic_write_yaml
+
+            atomic_write_yaml(migrated, global_config_file)
             ch.success(f"Configuration migrated to version {migrated.get('version')}")
 
     except Exception as e:
@@ -1422,8 +1423,9 @@ def config_set_legacy_raw(
 
         target[keys[-1]] = parsed_value
 
-        with open(global_config_file, "w", encoding="utf-8") as file_handle:
-            yaml.dump(config, file_handle, default_flow_style=False, sort_keys=False)
+        from navig.core.yaml_io import atomic_write_yaml
+
+        atomic_write_yaml(config, global_config_file)
 
         ch.success(f"Updated '{key}' to: {parsed_value}")
     except Exception as e:

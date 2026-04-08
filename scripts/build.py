@@ -171,9 +171,8 @@ def get_hidden_imports() -> List[str]:
         "navig.debug_logger",
         "navig.migration",
         "navig.discovery",
-        "navig.ssh_keys",
         "navig.template_manager",
-        "navig.yaml_utils",
+        "navig.core.yaml_io",
         # NAVIG commands
         "navig.commands",
         "navig.commands.host",

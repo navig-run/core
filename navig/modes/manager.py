@@ -154,8 +154,9 @@ def set_active_mode(name: str) -> None:
 
     data["active_mode"] = name
 
-    with open(cfg, "w", encoding="utf-8") as f:
-        yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+    from navig.core.yaml_io import atomic_write_yaml
+
+    atomic_write_yaml(data, cfg, allow_unicode=True)
 
 
 def _write_mode_key_fallback(cfg: Path, name: str) -> None:

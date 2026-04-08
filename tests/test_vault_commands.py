@@ -236,3 +236,125 @@ def test_vault_list_shows_short_id(vault):
     assert created.id not in list_result.output
 
     vault.delete(created.id)
+
+
+def test_vault_cli_edit(vault):
+    """vault edit updates the label of an existing credential."""
+    runner.invoke(
+        app,
+        [
+            "vault", "add", "openai", "--key", "sk-edit-me",
+            "--label", "Edit Before", "--profile", "edit-test", "--no-interactive",
+        ],
+    )
+    creds = vault.list_creds(provider="openai")
+    target = next((c for c in creds if c.profile_id == "edit-test"), None)
+    assert target is not None
+
+    result = runner.invoke(app, ["vault", "edit", target.id, "--label", "Edit After"])
+    assert result.exit_code == 0, result.output
+    assert "updated" in result.output.lower()
+
+    updated = vault.get_by_id(target.id)
+    assert updated is not None
+    assert updated.label == "Edit After"
+
+    vault.delete(target.id)
+
+
+def test_vault_cli_disable_enable(vault):
+    """disable/enable toggle the enabled flag on a credential."""
+    runner.invoke(
+        app,
+        [
+            "vault", "add", "openai", "--key", "sk-toggle",
+            "--profile", "toggle-test", "--no-interactive",
+        ],
+    )
+    creds = vault.list_creds(provider="openai")
+    target = next((c for c in creds if c.profile_id == "toggle-test"), None)
+    assert target is not None
+
+    result = runner.invoke(app, ["vault", "disable", target.id])
+    assert result.exit_code == 0, result.output
+    assert "disabled" in result.output.lower()
+    assert vault.get_by_id(target.id).enabled is False
+
+    result = runner.invoke(app, ["vault", "enable", target.id])
+    assert result.exit_code == 0, result.output
+    assert "enabled" in result.output.lower()
+    assert vault.get_by_id(target.id).enabled is True
+
+    vault.delete(target.id)
+
+
+def test_vault_cli_disable_nonexistent():
+    """disable on an unknown ID exits with an error."""
+    result = runner.invoke(app, ["vault", "disable", "00000000000000000000000000000000"])
+    assert result.exit_code != 0 or "not found" in result.output.lower()
+
+
+def test_vault_cli_remove(vault):
+    """vault remove deletes by provider path (not credential ID)."""
+    runner.invoke(
+        app,
+        [
+            "vault", "add", "openai", "--key", "sk-remove-path",
+            "--profile", "remove-test", "--no-interactive",
+        ],
+    )
+    creds = vault.list_creds(provider="openai")
+    target = next((c for c in creds if c.profile_id == "remove-test"), None)
+    assert target is not None
+
+    result = runner.invoke(
+        app, ["vault", "remove", "openai", "--profile", "remove-test", "--force"]
+    )
+    assert result.exit_code == 0, result.output
+    assert "deleted" in result.output.lower()
+    assert vault.get_by_id(target.id) is None
+
+
+def test_vault_cli_remove_nonexistent():
+    """vault remove on a missing provider/profile exits with error."""
+    result = runner.invoke(
+        app, ["vault", "remove", "openai", "--profile", "no-such-profile-xyz", "--force"]
+    )
+    assert result.exit_code != 0
+
+
+def test_vault_cli_providers():
+    """vault providers lists at least one known supported provider."""
+    result = runner.invoke(app, ["vault", "providers"])
+    assert result.exit_code == 0, result.output
+    assert len(result.output.strip()) > 0
+
+
+def test_vault_cli_show_legacy(vault):
+    """vault show (legacy) works and prints basic credential fields."""
+    runner.invoke(
+        app,
+        [
+            "vault", "add", "openai", "--key", "sk-show-legacy",
+            "--profile", "show-legacy-test", "--no-interactive",
+        ],
+    )
+    creds = vault.list_creds(provider="openai")
+    target = next((c for c in creds if c.profile_id == "show-legacy-test"), None)
+    assert target is not None
+
+    result = runner.invoke(app, ["vault", "show", target.id])
+    assert result.exit_code == 0, result.output
+    assert "openai" in result.output
+    assert "show-legacy-test" in result.output
+    assert "sk-show-legacy" not in result.output  # masked by default
+    assert "vault info" in result.output  # upgrade hint present
+
+    vault.delete(target.id)
+
+
+def test_vault_cli_show_legacy_nonexistent():
+    """vault show on an unknown ID exits with error."""
+    result = runner.invoke(app, ["vault", "show", "00000000000000000000000000000000"])
+    assert result.exit_code != 0
+    assert "not found" in result.output.lower()

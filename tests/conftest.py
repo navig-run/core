@@ -8,7 +8,9 @@ This module provides common fixtures used across all test files:
 - Sample data factories
 """
 
+import asyncio
 import os
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any, Dict
@@ -30,6 +32,93 @@ def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001
         except Exception:  # noqa: BLE001
             pass
         debug_log.removeHandler(h)
+
+
+def _drain_orphan_subprocesses() -> None:
+    """Best-effort cleanup of orphan child processes/subprocess handles."""
+    try:
+        subprocess._cleanup()
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        active = list(getattr(subprocess, "_active", []))
+    except Exception:  # noqa: BLE001
+        active = []
+
+    for proc in active:
+        try:
+            if proc.poll() is None:
+                proc.terminate()
+                proc.wait(timeout=1)
+        except Exception:  # noqa: BLE001
+            try:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait(timeout=1)
+            except Exception:  # noqa: BLE001
+                pass
+
+    try:
+        import psutil
+
+        parent = psutil.Process()
+        for child in parent.children(recursive=True):
+            try:
+                if child.is_running():
+                    child.terminate()
+            except Exception:  # noqa: BLE001
+                pass
+
+        _, alive = psutil.wait_procs(parent.children(recursive=True), timeout=1)
+        for child in alive:
+            try:
+                if child.is_running():
+                    child.kill()
+            except Exception:  # noqa: BLE001
+                pass
+    except Exception:  # noqa: BLE001
+        pass
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_orphan_subprocesses():
+    """Drain subprocess leftovers before and after each test.
+
+    Running pre-test cleanup avoids strict unraisable warnings leaking into the
+    next test's call phase when previous tests leave dangling subprocess objects.
+    """
+    _drain_orphan_subprocesses()
+    yield
+    _drain_orphan_subprocesses()
+
+
+@pytest.fixture(autouse=True)
+async def _cleanup_orphan_asyncio_tasks():
+    """Best-effort cleanup for leaked asyncio tasks between tests."""
+    yield
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+
+    current = asyncio.current_task(loop=loop)
+    pending = [
+        task
+        for task in asyncio.all_tasks(loop=loop)
+        if task is not current and not task.done()
+    ]
+    if not pending:
+        return
+
+    for task in pending:
+        task.cancel()
+
+    try:
+        await asyncio.gather(*pending, return_exceptions=True)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 @pytest.fixture
@@ -388,8 +477,28 @@ def _reset_navig_singletons():
     except Exception:  # noqa: BLE001 — never block test collection
         pass
     try:
-        import navig.vault as _v
-        _v._vault = None
+        from navig.storage import get_engine
+
+        get_engine().close_all()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import navig.vault.core as _vault_core
+
+        active_vault = getattr(_vault_core, "_vault", None)
+        if active_vault is not None and hasattr(active_vault, "_store"):
+            store = active_vault._store
+            if store is not None and hasattr(store, "close"):
+                store.close()
+        _vault_core._vault = None
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from navig.vault.storage import Storage
+
+        if hasattr(Storage, "_instance") and Storage._instance is not None:
+            Storage._instance._conn.close()
+            Storage._instance = None
     except Exception:  # noqa: BLE001
         pass
     try:
@@ -435,8 +544,28 @@ def _reset_navig_singletons():
     except Exception:  # noqa: BLE001
         pass
     try:
-        import navig.vault as _v
-        _v._vault = None
+        from navig.storage import get_engine
+
+        get_engine().close_all()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import navig.vault.core as _vault_core
+
+        active_vault = getattr(_vault_core, "_vault", None)
+        if active_vault is not None and hasattr(active_vault, "_store"):
+            store = active_vault._store
+            if store is not None and hasattr(store, "close"):
+                store.close()
+        _vault_core._vault = None
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from navig.vault.storage import Storage
+
+        if hasattr(Storage, "_instance") and Storage._instance is not None:
+            Storage._instance._conn.close()
+            Storage._instance = None
     except Exception:  # noqa: BLE001
         pass
     try:

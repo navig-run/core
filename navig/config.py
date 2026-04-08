@@ -1027,6 +1027,96 @@ Context provided with each query:
         """Migrate apps from host YAML to individual files. Delegates to AppManager."""
         return self._apps.migrate_from_host(host_name, navig_dir, remove_from_host)
 
+    # =========================================================================
+    # Plugin Configuration
+    # =========================================================================
+
+    @property
+    def plugins_dir(self) -> Path:
+        """Get user plugins directory (~/.navig/plugins/)."""
+        return self.global_config_dir / "plugins"
+
+    @property
+    def templates_dir(self) -> Path:
+        """Get templates directory (~/.navig/templates/)."""
+        return self.global_config_dir / "templates"
+
+    def get_plugin_config(
+        self, plugin_name: str, key: str | None = None, default: Any = None
+    ) -> Any:
+        """
+        Get plugin-specific configuration from global config.
+
+        Args:
+            plugin_name: Plugin name (e.g., 'brain')
+            key: Optional sub-key within plugin config
+            default: Default value if not found
+
+        Returns:
+            Plugin configuration value
+        """
+        plugins = self.global_config.get("plugins", {})
+        plugin_data = plugins.get(plugin_name, {})
+        if key:
+            return plugin_data.get(key, default) if isinstance(plugin_data, dict) else default
+        return plugin_data if plugin_data else (default or {})
+
+    def set_plugin_config(self, plugin_name: str, key: str, value: Any) -> None:
+        """
+        Set plugin-specific configuration and persist to disk.
+
+        Args:
+            plugin_name: Plugin name
+            key: Configuration key
+            value: Value to set
+        """
+        plugins = self.global_config.setdefault("plugins", {})
+        plugin_data = plugins.setdefault(plugin_name, {})
+        if not isinstance(plugin_data, dict):
+            plugins[plugin_name] = {}
+            plugin_data = plugins[plugin_name]
+        plugin_data[key] = value
+        self._save_global_config(self.global_config)
+
+    def is_plugin_disabled(self, plugin_name: str) -> bool:
+        """Check if a plugin is explicitly disabled."""
+        plugins = self.global_config.get("plugins", {})
+        disabled = plugins.get("disabled_plugins", [])
+        return plugin_name in disabled
+
+    def disable_plugin(self, plugin_name: str) -> None:
+        """Disable a plugin and persist to disk."""
+        plugins = self.global_config.setdefault("plugins", {})
+        disabled = plugins.setdefault("disabled_plugins", [])
+        if not isinstance(disabled, list):
+            disabled = []
+            plugins["disabled_plugins"] = disabled
+        if plugin_name not in disabled:
+            disabled.append(plugin_name)
+            self._save_global_config(self.global_config)
+
+    def enable_plugin(self, plugin_name: str) -> None:
+        """Enable a previously disabled plugin and persist to disk."""
+        plugins = self.global_config.get("plugins", {})
+        disabled = plugins.get("disabled_plugins", [])
+        if isinstance(disabled, list) and plugin_name in disabled:
+            disabled.remove(plugin_name)
+            self._save_global_config(self.global_config)
+
+    def save(self, scope: str = "global") -> None:
+        """
+        Persist global configuration to disk.
+
+        Provided for backward compatibility with code that calls ``config.save()``
+        after mutating plugin settings via :meth:`set_plugin_config`.
+
+        Args:
+            scope: Only ``'global'`` is supported.  Other values are accepted
+                   silently for API compatibility but have no effect.
+        """
+        if scope in ("global", "both"):
+            self._save_global_config(self.global_config)
+
 
 # =============================================================================
 # Singleton Pattern for Performance Optimization

@@ -120,7 +120,7 @@ class Profile:
         if not self.config_path.exists():
             return {}
         try:
-            from navig.yaml_utils import safe_load_yaml
+            from navig.core.yaml_io import safe_load_yaml
 
             data = safe_load_yaml(self.config_path)
             if isinstance(data, dict):
