@@ -1,16 +1,22 @@
 """Retry Logic and Auto-Recovery for Network Operations
 
 Implements exponential backoff, timeout handling, and graceful degradation.
+Provides both sync (``with_retry``) and async (``async_with_retry``) helpers.
 """
 
+from __future__ import annotations
+
+import asyncio
 import random
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from functools import wraps
-from typing import Any
+from typing import Any, TypeVar
 
 from navig import console_helper as ch
 from navig.ai_context import log_error
+
+T = TypeVar("T")
 
 
 class RetryConfig:
@@ -191,6 +197,43 @@ def with_retry(
         return wrapper
 
     return decorator
+
+
+async def async_with_retry(
+    coro_func: Callable[..., Awaitable[T]],
+    *args: Any,
+    max_retries: int = 2,
+    base_delay: float = 1.0,
+    **kwargs: Any,
+) -> T:
+    """Execute an async callable with retry on exception.
+
+    Simple linear-backoff helper for async code paths that don't need the
+    full ``RetryableOperation`` state machine.
+
+    Args:
+        coro_func: Async callable (awaited on each attempt).
+        *args: Positional arguments forwarded to *coro_func*.
+        max_retries: Number of retries **after** the first attempt (default 2).
+        base_delay: Delay multiplier — actual wait is ``base_delay * (attempt + 1)``
+                    seconds.
+        **kwargs: Extra keyword arguments forwarded to *coro_func*.
+
+    Returns:
+        The value returned by a successful call.
+
+    Raises:
+        Exception: The last exception if all attempts are exhausted.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(max_retries + 1):
+        try:
+            return await coro_func(*args, **kwargs)
+        except Exception as exc:
+            last_exc = exc
+            if attempt < max_retries:
+                await asyncio.sleep(base_delay * (attempt + 1))
+    raise last_exc  # type: ignore[misc]
 
 
 # Preset configurations for common scenarios

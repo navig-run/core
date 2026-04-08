@@ -18,8 +18,15 @@ _ch = lazy_import("navig.console_helper")
 _vault_mod = lazy_import("navig.vault")
 _validators_mod = lazy_import("navig.vault.validators")
 
-cred_app = typer.Typer(name="cred", help="Manage credentials in the vault")
 profile_app = typer.Typer(name="profile", help="Manage credential profiles")
+vault_app = typer.Typer(
+    name="vault",
+    help="Manage the NAVIG credentials vault (add, list, info, test, profile, set, get, validate)",
+    invoke_without_command=True,
+    no_args_is_help=True,
+)
+vault_app.add_typer(profile_app, name="profile")
+cred_app = vault_app
 
 
 def _resolve_test_target_mode(vault, target: str, provider: str | None, credential_id: str | None):
@@ -93,12 +100,12 @@ def _Table(*args, **kwargs):
 
 
 # ============================================================================
-# CREDENTIAL COMMANDS
+# VAULT COMMANDS
 # ============================================================================
 
 
-@cred_app.command("list")
-def list_credentials(
+@vault_app.command("list")
+def vault_list(
     provider: str | None = typer.Option(None, "--provider", "-p", help="Filter by provider"),
     profile: str | None = typer.Option(None, "--profile", "-P", help="Filter by profile ID"),
     show_disabled: bool = typer.Option(False, "--disabled", "-d", help="Show disabled credentials"),
@@ -122,7 +129,7 @@ def list_credentials(
             _ch.warning("No credentials found matching filters.")
         else:
             _ch.warning("Vault is empty.")
-            _ch.info("Use 'navig cred add' to add a credential.")
+            _ch.info("Use 'navig vault add' to add a credential.")
         return
 
     table = _Table(title="NAVIG Credentials Vault")
@@ -160,8 +167,65 @@ def list_credentials(
     active_profile = vault.get_active_profile()
     con.print(f"[dim]Active Profile: [bold]{active_profile}[/bold][/dim]")
 
+    # ── Detect provider keys that exist outside the vault ─────────────────
+    if not (provider or profile):
+        import os  # noqa: PLC0415
 
-@cred_app.command("add")
+        _EXTERNAL_SIGNALS: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
+            ("openrouter", ("OPENROUTER_API_KEY",), ("openrouter_api_key",)),
+            ("openai", ("OPENAI_API_KEY",), ("openai_api_key",)),
+            ("anthropic", ("ANTHROPIC_API_KEY", "CLAUDE_API_KEY"), ("anthropic_api_key",)),
+            ("groq", ("GROQ_API_KEY",), ("groq_api_key",)),
+            ("gemini", ("GEMINI_API_KEY", "GOOGLE_API_KEY"), ("google_api_key", "gemini_api_key")),
+            ("nvidia", ("NVIDIA_API_KEY", "NIM_API_KEY"), ("nvidia_api_key", "nim_api_key")),
+            ("xai", ("XAI_API_KEY", "GROK_KEY"), ("xai_api_key", "grok_key")),
+            ("mistral", ("MISTRAL_API_KEY",), ("mistral_api_key",)),
+            ("deepgram", ("DEEPGRAM_API_KEY", "DEEPGRAM_KEY"), ("deepgram_api_key",)),
+            ("elevenlabs", ("ELEVENLABS_API_KEY", "XI_API_KEY"), ("elevenlabs_api_key",)),
+        ]
+        vault_provider_ids = {
+            str(getattr(c, "provider", "") or "")
+            for c in creds
+            if str(getattr(c, "provider", "") or "")
+        }
+        vault_provider_ids.update(
+            {
+                str(getattr(item, "provider", "") or "")
+                for item in vault_items.values()
+                if str(getattr(item, "provider", "") or "")
+            }
+        )
+        try:
+            from navig.config import get_config_manager  # noqa: PLC0415
+
+            _gcfg = get_config_manager().global_config
+        except Exception:  # noqa: BLE001
+            _gcfg = {}
+
+        external: list[tuple[str, str]] = []
+        for prov_id, env_keys, cfg_keys in _EXTERNAL_SIGNALS:
+            if prov_id in vault_provider_ids:
+                continue
+            for env_key in env_keys:
+                if os.environ.get(env_key, "").strip():
+                    external.append((prov_id, f"env:{env_key}"))
+                    break
+            else:
+                for cfg_key in cfg_keys:
+                    if str(_gcfg.get(cfg_key) or "").strip():
+                        external.append((prov_id, f"config:{cfg_key}"))
+                        break
+
+        if external:
+            con.print("\n[dim]Credentials detected outside vault:[/dim]")
+            for prov_id, source in external:
+                con.print(
+                    f"  [yellow]•[/yellow] [cyan]{prov_id}[/cyan] [dim]({source})[/dim] — not synced to vault"
+                )
+            con.print("[dim]  → Sync with: navig vault set <provider> <value>[/dim]")
+
+
+@vault_app.command("add")
 def add_credential(
     provider: str = typer.Argument(
         ..., help="Provider name (openai, github_models, openrouter, etc.)"
@@ -298,45 +362,7 @@ def add_credential(
         raise typer.Exit(1) from e
 
 
-@cred_app.command("show")
-def show_credential(
-    credential_id: str = typer.Argument(..., help="Credential ID"),
-    reveal: bool = typer.Option(False, "--reveal", help="Reveal secret values (DANGER!)"),
-):
-    """Show details of a credential."""
-    vault = _vault_mod.get_vault()
-    cred = vault.get_by_id(credential_id)
-
-    if not cred:
-        _ch.error(f"Credential {credential_id} not found")
-        raise typer.Exit(1)
-
-    con = _console()
-    con.print(f"[bold cyan]Credential Details: {cred.id}[/bold cyan]")
-    con.print(f"Provider: [green]{cred.provider}[/green]")
-    con.print(f"Profile:  [magenta]{cred.profile_id}[/magenta]")
-    con.print(f"Type:     {cred.credential_type.value}")
-    con.print(f"Label:    {cred.label}")
-    con.print(f"Enabled:  {'✅' if cred.enabled else '❌'}")
-    con.print(f"Created:  {cred.created_at}")
-    con.print(f"Updated:  {cred.updated_at}")
-    con.print(f"Used:     {cred.last_used_at or 'Never'}")
-
-    con.print("\n[bold]Metadata:[/bold]")
-    _rprint(cred.metadata)
-
-    con.print("\n[bold]Data:[/bold]")
-    if reveal:
-        _ch.warning("Revealing secrets!")
-        _rprint(cred.data)
-    else:
-        # Show keys but mask values
-        masked = dict.fromkeys(cred.data.keys(), "***")
-        _rprint(masked)
-        _ch.info("Use --reveal to see secret values")
-
-
-@cred_app.command("info")
+@vault_app.command("info")
 def info_credential(
     credential_id: str = typer.Argument(..., help="Credential ID (or first 8 chars)"),
     test: bool = typer.Option(False, "--test/--no-test", help="Run a live connection test"),
@@ -354,9 +380,9 @@ def info_credential(
 
     \b
     Examples:
-      navig cred info d08ae821
-      navig cred info d08ae821 --test
-      navig cred info d08ae821 --test --reveal
+      navig vault info d08ae821
+      navig vault info d08ae821 --test
+      navig vault info d08ae821 --test --reveal
     """
     from rich.console import Group
     from rich.panel import Panel
@@ -553,7 +579,44 @@ def info_credential(
     )
 
 
-@cred_app.command("edit")
+@vault_app.command("show")
+def show_credential(
+    credential_id: str = typer.Argument(..., help="Credential ID"),
+    reveal: bool = typer.Option(False, "--reveal", help="Reveal secret values (DANGER!)"),
+):
+    """Show details of a credential (legacy command)."""
+    vault = _vault_mod.get_vault()
+    cred = vault.get_by_id(credential_id)
+
+    if not cred:
+        _ch.error(f"Credential {credential_id} not found")
+        raise typer.Exit(1)
+
+    con = _console()
+    con.print(f"[bold cyan]Credential Details: {cred.id}[/bold cyan]")
+    con.print(f"Provider: [green]{cred.provider}[/green]")
+    con.print(f"Profile:  [magenta]{cred.profile_id}[/magenta]")
+    con.print(f"Type:     {cred.credential_type.value}")
+    con.print(f"Label:    {cred.label}")
+    con.print(f"Enabled:  {'✅' if cred.enabled else '❌'}")
+    con.print(f"Created:  {cred.created_at}")
+    con.print(f"Updated:  {cred.updated_at}")
+    con.print(f"Used:     {cred.last_used_at or 'Never'}")
+
+    con.print("\n[bold]Metadata:[/bold]")
+    _rprint(cred.metadata)
+
+    con.print("\n[bold]Data:[/bold]")
+    if reveal:
+        _ch.warning("Revealing secrets!")
+        _rprint(cred.data)
+    else:
+        masked = dict.fromkeys(cred.data.keys(), "***")
+        _rprint(masked)
+        _ch.info("Use --reveal to see secret values")
+
+
+@vault_app.command("edit")
 def edit_credential(
     credential_id: str = typer.Argument(..., help="Credential ID"),
     label: str = typer.Option(None, "--label", "-l", help="New label"),
@@ -583,7 +646,7 @@ def edit_credential(
         raise typer.Exit(1)
 
 
-@cred_app.command("delete")
+@vault_app.command("delete")
 def delete_credential(
     credential_id: str = typer.Argument(..., help="Credential ID"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
@@ -606,7 +669,7 @@ def delete_credential(
         _ch.error("Failed to delete credential.")
 
 
-@cred_app.command("test")
+@vault_app.command("test")
 def test_credential(
     target: str | None = typer.Argument(None, help="Credential ID OR Provider Name"),
     profile: str | None = typer.Option(
@@ -681,7 +744,7 @@ def test_credential(
         raise typer.Exit(1)
 
 
-@cred_app.command("disable")
+@vault_app.command("disable")
 def disable_credential(credential_id: str = typer.Argument(..., help="Credential ID")):
     """Disable a credential."""
     vault = _vault_mod.get_vault()
@@ -691,7 +754,7 @@ def disable_credential(credential_id: str = typer.Argument(..., help="Credential
         _ch.error(f"Credential {credential_id} not found.")
 
 
-@cred_app.command("enable")
+@vault_app.command("enable")
 def enable_credential(credential_id: str = typer.Argument(..., help="Credential ID")):
     """Enable a credential."""
     vault = _vault_mod.get_vault()
@@ -701,7 +764,7 @@ def enable_credential(credential_id: str = typer.Argument(..., help="Credential 
         _ch.error(f"Credential {credential_id} not found.")
 
 
-@cred_app.command("clone")
+@vault_app.command("clone")
 def clone_credential(
     credential_id: str = typer.Argument(..., help="Source Credential ID"),
     profile: str = typer.Argument(..., help="Target Profile ID"),
@@ -717,7 +780,7 @@ def clone_credential(
         _ch.error(f"Source credential {credential_id} not found.")
 
 
-@cred_app.command("providers")
+@vault_app.command("providers")
 def list_providers():
     """List supported providers with built-in validation."""
     providers = _validators_mod.list_supported_validators()
@@ -727,7 +790,7 @@ def list_providers():
         con.print(f"  • {p}")
 
 
-@cred_app.command("audit")
+@vault_app.command("audit")
 def show_audit_log(
     credential_id: str | None = typer.Argument(None, help="Optional Credential ID"),
     limit: int = typer.Option(50, "--limit", "-n", help="Number of entries"),
@@ -765,7 +828,7 @@ def show_audit_log(
     _console().print(table)
 
 
-@cred_app.command("activate")
+@vault_app.command("activate")
 def activate_credential(
     credential_id: str = typer.Argument(
         ..., help="Credential ID (or first 8 chars) to mark as active"
@@ -806,7 +869,7 @@ def activate_credential(
     item = next((i for i in vault.list() if i.id == target_id), None)
     provider = item.provider if item else "?"
     _ch.success(f"[{provider}] Credential {target_id[:8]} is now active.")
-    _ch.dim("Use 'navig cred list' to confirm  ⭐")
+    _ch.dim("Use 'navig vault list' to confirm  ⭐")
 
 
 # ============================================================================
@@ -839,18 +902,6 @@ def use_profile(profile_id: str = typer.Argument(..., help="Profile ID to activa
     vault = _vault_mod.get_vault()
     vault.set_active_profile(profile_id)
     _ch.success(f"Active profile set to: {profile_id}")
-
-
-# ============================================================================
-# VAULT APP — top-level `navig vault` command group
-# ============================================================================
-
-vault_app = typer.Typer(
-    name="vault",
-    help="Manage the NAVIG credentials vault (set, get, list, validate)",
-    invoke_without_command=True,
-    no_args_is_help=True,
-)
 
 
 def _parse_vault_path(path: str) -> tuple[str, str]:
@@ -988,136 +1039,6 @@ def vault_get(
         )
 
 
-@vault_app.command("list")
-def vault_list(
-    provider: str = typer.Option(None, "--provider", "-p", help="Filter by provider"),
-    profile: str = typer.Option(None, "--profile", "-P", help="Filter by profile"),
-    json_output: bool = typer.Option(False, "--json", help="JSON output"),
-):
-    """List credentials stored in the vault."""
-    vault = _vault_mod.get_vault()
-    items = vault.list(provider=provider, profile_id=profile)
-
-    if json_output:
-        import dataclasses
-
-        _rprint(json.dumps([dataclasses.asdict(i) for i in items], default=str))
-        return
-
-    if not items:
-        _ch.warning(
-            "Vault is empty."
-            if not (provider or profile)
-            else "No credentials found matching filters."
-        )
-        _ch.info("Use 'navig vault set <path> <value>' to add a credential.")
-        return
-
-    table = _Table(title="NAVIG Vault")
-    table.add_column("ID", style="cyan", no_wrap=True)
-    table.add_column("Kind", style="yellow")
-    table.add_column("Provider", style="green")
-    table.add_column("Label")
-    table.add_column("Created", style="dim")
-    table.add_column("Last Used", style="dim")
-
-    for item in items:
-        short_id = item.id[:8]
-        created = item.created_at.strftime("%Y-%m-%d") if item.created_at else "-"
-        last_used = item.last_used_at.strftime("%Y-%m-%d %H:%M") if item.last_used_at else "-"
-        table.add_row(
-            short_id, item.kind.value, item.provider or "-", item.label, created, last_used
-        )
-
-    _console().print(table)
-
-    # ── Detect AI provider keys that exist outside the vault (#62) ────────────
-    if not (provider or profile):
-        import os  # noqa: PLC0415
-
-        _AI_SIGNALS: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
-            ("openrouter", ("OPENROUTER_API_KEY",), ("openrouter_api_key",)),
-            ("openai", ("OPENAI_API_KEY",), ("openai_api_key",)),
-            ("anthropic", ("ANTHROPIC_API_KEY", "CLAUDE_API_KEY"), ("anthropic_api_key",)),
-            ("groq", ("GROQ_API_KEY",), ("groq_api_key",)),
-            ("gemini", ("GEMINI_API_KEY", "GOOGLE_API_KEY"), ("google_api_key", "gemini_api_key")),
-            ("nvidia", ("NVIDIA_API_KEY", "NIM_API_KEY"), ("nvidia_api_key", "nim_api_key")),
-            ("xai", ("XAI_API_KEY", "GROK_KEY"), ("xai_api_key", "grok_key")),
-            ("mistral", ("MISTRAL_API_KEY",), ("mistral_api_key",)),
-        ]
-        vault_providers = {c.provider for c in items}
-        try:
-            from navig.config import get_config_manager  # noqa: PLC0415
-
-            _gcfg = get_config_manager().global_config
-        except Exception:  # noqa: BLE001
-            _gcfg = {}
-
-        external: list[tuple[str, str]] = []
-        for prov_id, env_keys, cfg_keys in _AI_SIGNALS:
-            if prov_id in vault_providers:
-                continue
-            for env_key in env_keys:
-                if os.environ.get(env_key, "").strip():
-                    external.append((prov_id, f"env:{env_key}"))
-                    break
-            else:
-                for cfg_key in cfg_keys:
-                    if str(_gcfg.get(cfg_key) or "").strip():
-                        external.append((prov_id, f"config:{cfg_key}"))
-                        break
-
-        if external:
-            con = _console()
-            con.print("\n[dim]Credentials detected outside vault:[/dim]")
-            for prov_id, source in external:
-                con.print(
-                    f"  [yellow]•[/yellow] [cyan]{prov_id}[/cyan] [dim]({source})[/dim] — not synced to vault"
-                )
-            con.print("[dim]  → Sync with: navig vault set <provider> <value>[/dim]")
-
-    # ── Detect voice provider keys outside vault ───────────────────────────
-    if not (provider or profile):
-        import os  # noqa: PLC0415
-
-        _VOICE_SIGNALS: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = [
-            ("deepgram", ("DEEPGRAM_API_KEY", "DEEPGRAM_KEY"), ("deepgram_api_key",)),
-            ("elevenlabs", ("ELEVENLABS_API_KEY", "XI_API_KEY"), ("elevenlabs_api_key",)),
-        ]
-        vault_providers_v = {c.provider for c in items}
-        try:
-            from navig.config import get_config_manager  # noqa: PLC0415
-
-            _gcfg_v = get_config_manager().global_config
-        except Exception:  # noqa: BLE001
-            _gcfg_v = {}
-
-        voice_external: list[tuple[str, str]] = []
-        for prov_id, env_keys, cfg_keys in _VOICE_SIGNALS:
-            if prov_id in vault_providers_v:
-                continue
-            for env_key in env_keys:
-                if os.environ.get(env_key, "").strip():
-                    voice_external.append((prov_id, f"env:{env_key}"))
-                    break
-            else:
-                for cfg_key in cfg_keys:
-                    if str(_gcfg_v.get(cfg_key) or "").strip():
-                        voice_external.append((prov_id, f"config:{cfg_key}"))
-                        break
-
-        if voice_external:
-            con = _console()
-            con.print("\n[dim]Voice credentials detected outside vault:[/dim]")
-            for prov_id, source in voice_external:
-                con.print(
-                    f"  [yellow]•[/yellow] [cyan]{prov_id}[/cyan] [dim]({source})[/dim] — not synced to vault"
-                )
-            con.print(
-                "[dim]  → Sync with: navig cred add deepgram  or  navig cred add elevenlabs[/dim]"
-            )
-
-
 @vault_app.command("validate")
 def vault_validate(
     provider: str = typer.Argument(..., help="Provider name (e.g. nvidia, openai)"),
@@ -1248,13 +1169,13 @@ def vault_check_all(
         con.print(f"[green]\u2705 All {total} credential(s) passed.[/green]")
 
 
-@vault_app.command("delete")
+@vault_app.command("remove")
 def vault_delete(
     path: str = typer.Argument(..., help="Provider name or provider/data_key"),
     profile: str = typer.Option("default", "--profile", "-P", help="Credential profile"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ):
-    """Delete a credential from the vault."""
+    """Delete a credential by provider path (`provider` or `provider/data_key`)."""
     vault = _vault_mod.get_vault()
     provider, _ = _parse_vault_path(path)
     cred = vault.get(provider, profile_id=profile, caller="vault.delete")

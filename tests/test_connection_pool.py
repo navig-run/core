@@ -8,7 +8,8 @@ requiring actual SSH connections.
 import time
 from unittest.mock import Mock, patch
 
-from navig.connection_pool import SSHConnection, SSHConnectionPool
+from navig.connection_pool import PooledSSHConnection as SSHConnection
+from navig.connection_pool import SSHConnectionPool
 
 
 class TestSSHConnection:

@@ -52,10 +52,10 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "store": ("navig.commands.store", "store_app"),
     "vault": ("navig.commands.vault", "vault_app"),
     "cred": ("navig.commands.vault", "cred_app"),
-    # Operating-mode profiles (node / builder / operator / architect)
-    "profile": ("navig.commands.profile", "profile_app"),
-    # Credential profiles (vault round-trip selection) — was the original "profile" entry
     "cred-profile": ("navig.commands.vault", "profile_app"),
+    # Operating-mode profiles (node / builder / operator / architect)
+    # Credential profiles are now `navig vault profile list/use`
+    "profile": ("navig.commands.profile", "profile_app"),
     "flux": ("navig.commands.flux", "flux_app"),
     "fx": ("navig.commands.flux", "flux_app"),
     # ── AI sub-app extraction ─────────────────────────────────────────────────
