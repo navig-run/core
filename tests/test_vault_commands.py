@@ -8,14 +8,35 @@ from typer.testing import CliRunner
 from navig.cli import _register_external_commands, app
 from navig.vault import get_vault
 
-# Register external commands (including cred/profile) for test discovery
-_register_external_commands(register_all=True)
-
 runner = CliRunner()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(autouse=True, scope="module")
+def _register_vault_commands():
+    """Register vault/cred commands before any test in this module runs.
+
+    We must NOT call _register_external_commands at module level because Python
+    imports this file during *collection*, and that call transitively imports
+    heavyweight async dependencies (aiohttp) that hang on Windows / Python 3.14.
+    A module-scoped fixture runs only during *execution*, so it is safe.
+    """
+    import sys as _sys
+
+    saved = list(_sys.argv)
+    for _cmd in ("vault", "cred", "cred-profile"):
+        _sys.argv = ["navig", _cmd]
+        _register_external_commands()
+    _sys.argv = saved
+
+
+@pytest.fixture()
 def vault():
+    """Return a freshly-initialised Vault for each test.
+
+    Function scope (not module) ensures the vault's SQLite store is never
+    closed by the autouse ``_reset_navig_singletons`` fixture before the
+    test has a chance to use it.
+    """
     return get_vault()
 
 
@@ -243,8 +264,16 @@ def test_vault_cli_edit(vault):
     runner.invoke(
         app,
         [
-            "vault", "add", "openai", "--key", "sk-edit-me",
-            "--label", "Edit Before", "--profile", "edit-test", "--no-interactive",
+            "vault",
+            "add",
+            "openai",
+            "--key",
+            "sk-edit-me",
+            "--label",
+            "Edit Before",
+            "--profile",
+            "edit-test",
+            "--no-interactive",
         ],
     )
     creds = vault.list_creds(provider="openai")
@@ -267,8 +296,14 @@ def test_vault_cli_disable_enable(vault):
     runner.invoke(
         app,
         [
-            "vault", "add", "openai", "--key", "sk-toggle",
-            "--profile", "toggle-test", "--no-interactive",
+            "vault",
+            "add",
+            "openai",
+            "--key",
+            "sk-toggle",
+            "--profile",
+            "toggle-test",
+            "--no-interactive",
         ],
     )
     creds = vault.list_creds(provider="openai")
@@ -299,8 +334,14 @@ def test_vault_cli_remove(vault):
     runner.invoke(
         app,
         [
-            "vault", "add", "openai", "--key", "sk-remove-path",
-            "--profile", "remove-test", "--no-interactive",
+            "vault",
+            "add",
+            "openai",
+            "--key",
+            "sk-remove-path",
+            "--profile",
+            "remove-test",
+            "--no-interactive",
         ],
     )
     creds = vault.list_creds(provider="openai")
@@ -335,8 +376,14 @@ def test_vault_cli_show_legacy(vault):
     runner.invoke(
         app,
         [
-            "vault", "add", "openai", "--key", "sk-show-legacy",
-            "--profile", "show-legacy-test", "--no-interactive",
+            "vault",
+            "add",
+            "openai",
+            "--key",
+            "sk-show-legacy",
+            "--profile",
+            "show-legacy-test",
+            "--no-interactive",
         ],
     )
     creds = vault.list_creds(provider="openai")

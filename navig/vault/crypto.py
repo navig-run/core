@@ -24,13 +24,12 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-try:
-    from argon2.low_level import Type as _A2Type
-    from argon2.low_level import hash_secret_raw  # type: ignore
-
-    _HAS_ARGON2 = True
-except ImportError:
-    _HAS_ARGON2 = False
+# argon2-cffi is probed lazily on the first KDF call rather than at module
+# import time.  On some platforms (Windows / Python 3.14) the argon2-cffi C
+# extension blocks indefinitely during DLL loading, which hangs the entire
+# navig.vault import chain and causes pytest collection to stall.
+_argon2_probed: bool = False
+_argon2_funcs: tuple | None = None  # (Type, hash_secret_raw) when argon2 is available
 
 __all__ = ["CryptoEngine", "CryptoError"]
 
@@ -117,7 +116,16 @@ class CryptoEngine:
         return self._kdf(material, salt)
 
     def _kdf(self, material: bytes, salt: bytes) -> bytes:
-        if _HAS_ARGON2:
+        global _argon2_probed, _argon2_funcs
+        if not _argon2_probed:
+            _argon2_probed = True
+            try:
+                from argon2.low_level import Type as _A2T, hash_secret_raw as _hsr  # noqa: PLC0415
+                _argon2_funcs = (_A2T, _hsr)
+            except Exception:  # noqa: BLE001  — catches ImportError and DLL load failures
+                _argon2_funcs = None
+        if _argon2_funcs is not None:
+            _A2Type, hash_secret_raw = _argon2_funcs
             # argon2 requires salt len ≥ 8 bytes; we pad to 16
             padded_salt = (salt + b"\x00" * _A2_SALT_PAD)[:_A2_SALT_PAD]
             return hash_secret_raw(
@@ -164,7 +172,7 @@ class CryptoEngine:
     @staticmethod
     def kdf_info() -> str:
         """Human-readable description of the active KDF (for navig vault doctor)."""
-        if _HAS_ARGON2:
+        if _argon2_funcs is not None:
             return (
                 f"Argon2id  m={_A2_MEMORY_COST // 1024}MiB  t={_A2_TIME_COST}  p={_A2_PARALLELISM}"
             )

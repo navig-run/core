@@ -10,6 +10,7 @@ This module provides common fixtures used across all test files:
 
 import asyncio
 import os
+import sqlite3
 import subprocess
 import tempfile
 from pathlib import Path
@@ -18,6 +19,34 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 import yaml
+
+# ── Vault crypto guard ─────────────────────────────────────────────────────
+# Two platform operations hang indefinitely in fresh subprocesses on this
+# Windows / Python 3.14 environment:
+#   1. argon2-cffi DLL load  (argon2.low_level) — fixed by pre-setting probe flag
+#   2. _machine_fingerprint  (platform.node / DNS) — fixed by patching derive_key
+#
+# Patch CryptoEngine.derive_key at conftest *import* time (before any test
+# module is loaded or any fixture runs) so that the vault always uses a fast,
+# deterministic test key — no KDF iteration, no platform calls.
+try:
+    import hashlib as _hashlib
+
+    import navig.vault.crypto as _vc  # noqa: PLC0415
+
+    # Disable argon2 probe (belt-and-suspenders — derive_key is patched anyway)
+    _vc._argon2_probed = True
+    _vc._argon2_funcs = None
+
+    def _test_derive_key(self, passphrase=None):  # noqa: ANN001
+        """Test-only key derivation: SHA-256, no KDF, no platform calls."""
+        material = passphrase if passphrase is not None else b"navig-test-machine"
+        return _hashlib.sha256(b"navig-test-vault-" + material).digest()
+
+    _vc.CryptoEngine.derive_key = _test_derive_key  # type: ignore[method-assign]
+    del _test_derive_key  # prevent it from leaking into fixture namespace
+except Exception:  # noqa: BLE001
+    pass  # best-effort; if crypto module can't be imported, tests will still collect
 
 
 def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001
@@ -32,6 +61,29 @@ def pytest_sessionfinish(session, exitstatus):  # noqa: ARG001
         except Exception:  # noqa: BLE001
             pass
         debug_log.removeHandler(h)
+
+
+def pytest_configure(config):  # noqa: ARG001
+    """Pre-disable the argon2-cffi probe in navig.vault.crypto.
+
+    On Windows / Python 3.14 the argon2-cffi C extension (argon2.low_level)
+    blocks indefinitely when the DLL is first loaded, which causes every test
+    that triggers key derivation (vault add/unlock) to hang.
+
+    Since navig.vault.crypto now probes argon2 lazily (on the first _kdf
+    call), we can pre-set the probe variables here — at pytest startup, before
+    any fixture or test runs — so that _kdf always uses the PBKDF2-HMAC-SHA256
+    fallback throughout the test session without ever touching the broken DLL.
+
+    This does NOT affect production behaviour; only the test session.
+    """
+    try:
+        import navig.vault.crypto as _vc  # noqa: PLC0415
+
+        _vc._argon2_probed = True
+        _vc._argon2_funcs = None
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; if the module can't be imported, skip silently
 
 
 def _drain_orphan_subprocesses() -> None:
@@ -103,11 +155,22 @@ async def _cleanup_orphan_asyncio_tasks():
     except RuntimeError:
         return
 
+    # Explicitly close loop-tracked subprocess transports (Windows proactor).
+    subprocesses = getattr(loop, "_subprocesses", None)
+    if isinstance(subprocesses, dict):
+        for transport in list(subprocesses.values()):
+            try:
+                transport.close()
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            subprocesses.clear()
+        except Exception:  # noqa: BLE001
+            pass
+
     current = asyncio.current_task(loop=loop)
     pending = [
-        task
-        for task in asyncio.all_tasks(loop=loop)
-        if task is not current and not task.done()
+        task for task in asyncio.all_tasks(loop=loop) if task is not current and not task.done()
     ]
     if not pending:
         return
@@ -119,6 +182,32 @@ async def _cleanup_orphan_asyncio_tasks():
         await asyncio.gather(*pending, return_exceptions=True)
     except Exception:  # noqa: BLE001
         pass
+
+    try:
+        await asyncio.sleep(0)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+@pytest.fixture(autouse=True)
+def _track_sqlite_connections(monkeypatch: pytest.MonkeyPatch):
+    """Track sqlite connections created during a test and close them on teardown."""
+    original_connect = sqlite3.connect
+    opened: list[sqlite3.Connection] = []
+
+    def _tracked_connect(*args, **kwargs):
+        conn = original_connect(*args, **kwargs)
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(sqlite3, "connect", _tracked_connect)
+    yield
+
+    for conn in opened:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 @pytest.fixture
@@ -372,6 +461,7 @@ def _isolate_navig_config_dir(tmp_path_factory):
     # On Windows, WAL mode keeps SQLite files locked; must close before rmtree.
     try:
         from navig.storage import get_engine
+
         get_engine().close_all()
     except Exception:  # noqa: BLE001 — best-effort cleanup
         pass
@@ -402,7 +492,11 @@ def _isolate_navig_config_dir(tmp_path_factory):
     try:
         for child in base_tmp.iterdir():
             if child.name.startswith("navig_cfg_isolated"):
-                shutil.rmtree(child, onexc=_onerror_ignore if sys.version_info >= (3, 12) else None, ignore_errors=True)
+                shutil.rmtree(
+                    child,
+                    onexc=_onerror_ignore if sys.version_info >= (3, 12) else None,
+                    ignore_errors=True,
+                )
     except PermissionError:
         pass  # Best-effort cleanup — proceed anyway
 
@@ -417,6 +511,7 @@ def _isolate_navig_config_dir(tmp_path_factory):
     # -- Cleanup: close Storage Engine connections (Windows file lock fix) --
     try:
         from navig.storage import get_engine
+
         get_engine().close_all()
     except Exception:  # noqa: BLE001 — best-effort cleanup
         pass
