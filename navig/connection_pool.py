@@ -102,6 +102,10 @@ class SSHConnection:
             pass  # best-effort; failure is non-critical
 
 
+# Backward-compatible alias used by older call sites/tests.
+PooledSSHConnection = SSHConnection
+
+
 class SSHConnectionPool:
     """
     Thread-safe SSH connection pool.
