@@ -49,6 +49,11 @@ class MemoryWatcher:
     # File extensions to watch
     WATCHED_EXTENSIONS = {".md", ".markdown", ".txt"}
 
+    @staticmethod
+    def _normalize_rel_path(path: str) -> str:
+        """Normalize relative paths to POSIX style for storage/index consistency."""
+        return path.replace("\\", "/")
+
     def __init__(
         self,
         manager: MemoryManager,
@@ -138,7 +143,9 @@ class MemoryWatcher:
         try:
             for path in self.manager.memory_dir.rglob("*"):
                 if path.is_file() and path.suffix.lower() in self.WATCHED_EXTENSIONS:
-                    rel_path = str(path.relative_to(self.manager.memory_dir))
+                    rel_path = self._normalize_rel_path(
+                        str(path.relative_to(self.manager.memory_dir))
+                    )
                     try:
                         mtimes[rel_path] = path.stat().st_mtime
                     except OSError:
@@ -193,8 +200,12 @@ class MemoryWatcher:
             return
 
         # Separate deletions from updates
-        deleted = {p.replace("deleted:", "") for p in changes if p.startswith("deleted:")}
-        updated = {p for p in changes if not p.startswith("deleted:")}
+        deleted = {
+            self._normalize_rel_path(p.replace("deleted:", ""))
+            for p in changes
+            if p.startswith("deleted:")
+        }
+        updated = {self._normalize_rel_path(p) for p in changes if not p.startswith("deleted:")}
 
         files_indexed = 0
         chunks_created = 0
@@ -375,7 +386,9 @@ class _WatchdogHandler:
             return
 
         with self._lock:
-            rel_path = str(path.relative_to(self.manager.memory_dir))
+            rel_path = MemoryWatcher._normalize_rel_path(
+                str(path.relative_to(self.manager.memory_dir))
+            )
             self._pending.add(rel_path)
             self._last_change = time.time()
 

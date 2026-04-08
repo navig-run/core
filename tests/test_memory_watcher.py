@@ -85,3 +85,44 @@ def test_process_pending_skipped_update_does_not_emit_callback(tmp_path: Path) -
 
     manager.index_file.assert_called_once_with(updated)
     callback.assert_not_called()
+
+
+def test_process_pending_normalizes_deleted_path_separators(tmp_path: Path) -> None:
+    manager = _make_manager(tmp_path)
+    watcher = MemoryWatcher(manager, debounce_seconds=0.0)
+
+    watcher._pending_changes = {"deleted:folder\\old.md"}
+    watcher._last_change_time = 0.0
+
+    watcher._process_pending()
+
+    manager.storage.delete_file.assert_called_once_with("folder/old.md")
+
+
+def test_process_pending_normalizes_updated_path_separators(tmp_path: Path) -> None:
+    manager = _make_manager(tmp_path)
+    watcher = MemoryWatcher(manager, debounce_seconds=0.0)
+
+    nested = tmp_path / "folder"
+    nested.mkdir(parents=True, exist_ok=True)
+    updated = nested / "note.md"
+    updated.write_text("# Note\n\nnormalized path\n", encoding="utf-8")
+
+    watcher._pending_changes = {"folder\\note.md"}
+    watcher._last_change_time = 0.0
+
+    watcher._process_pending()
+
+    manager.index_file.assert_called_once_with(updated)
+
+
+def test_scan_files_returns_posix_relative_paths(tmp_path: Path) -> None:
+    manager = _make_manager(tmp_path)
+    watcher = MemoryWatcher(manager, debounce_seconds=0.0)
+
+    nested = tmp_path / "sub" / "dir"
+    nested.mkdir(parents=True, exist_ok=True)
+    (nested / "doc.md").write_text("# Doc\n", encoding="utf-8")
+
+    mtimes = watcher._scan_files()
+    assert "sub/dir/doc.md" in mtimes
