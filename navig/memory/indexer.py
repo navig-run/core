@@ -153,7 +153,9 @@ class MemoryIndexer:
                     continue
 
                 # Index the file (parsing, sqlite storing chunks)
-                file_result = self._index_file(file_path, directory, file_hash, embed=False)
+                file_result = self._index_file(
+                    file_path, directory, file_hash, embed=False, force_reindex=force_reindex
+                )
 
                 result.files_processed += 1
                 result.chunks_created += file_result["chunks"]
@@ -262,9 +264,17 @@ class MemoryIndexer:
         file_path: Path,
         base_directory: Path | None = None,
         embed: bool = True,
+        force_reindex: bool = False,
     ) -> IndexResult:
         """
         Index a single file.
+
+        Args:
+            file_path: Path to the file to index.
+            base_directory: Root used for relative path storage.  Defaults to
+                the file's parent directory.
+            embed: Generate embeddings for the resulting chunks.
+            force_reindex: Re-index even if the file hash is unchanged.
         """
         import time
 
@@ -281,7 +291,14 @@ class MemoryIndexer:
 
         try:
             # Index without embedding first
-            file_result = self._index_file(file_path, base_dir, file_hash, embed=False)
+            file_result = self._index_file(
+                file_path, base_dir, file_hash, embed=False, force_reindex=force_reindex
+            )
+            if file_result.get("skipped", False):
+                # Unchanged file — nothing to do
+                result.files_skipped = 1
+                result.duration_seconds = time.time() - start_time
+                return result
             result.files_processed = 1
             result.chunks_created = file_result["chunks"]
             result.total_tokens = file_result["tokens"]
@@ -305,11 +322,21 @@ class MemoryIndexer:
         base_directory: Path,
         file_hash: str,
         embed: bool = True,
+        force_reindex: bool = False,
     ) -> dict:
-        """Internal file indexing implementation."""
+        """Internal file indexing implementation.
+
+        When *force_reindex* is ``False`` (the default) the method returns a
+        ``{"skipped": True}`` dict if the storage already holds an up-to-date
+        record for this file hash, making every call site idempotent.
+        """
         from navig.memory.storage import FileMetadata
 
         rel_path = file_path.relative_to(base_directory).as_posix()
+
+        # Guard: skip if unchanged and not forced
+        if not force_reindex and not self.storage.file_needs_reindex(rel_path, file_hash):
+            return {"chunks": 0, "tokens": 0, "embedded": 0, "chunks_obj": [], "skipped": True}
 
         # Read file content
         content = file_path.read_text(encoding="utf-8", errors="replace")
@@ -344,6 +371,7 @@ class MemoryIndexer:
             "tokens": total_tokens,
             "embedded": embedded_count,
             "chunks_obj": chunks,  # Return objects for batch processing
+            "skipped": False,
         }
 
     def _chunk_text(
