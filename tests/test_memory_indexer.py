@@ -10,10 +10,8 @@ Covers:
 """
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
-
-import pytest
+from unittest.mock import MagicMock
 
 from navig.memory.indexer import MemoryIndexer
 from navig.memory.storage import FileMetadata, MemoryChunk, MemoryStorage
@@ -222,3 +220,33 @@ def test_chunk_overlap_distinct_ids(tmp_path: Path) -> None:
 
     ids = [c.id for c in chunks]
     assert len(ids) == len(set(ids)), "Chunk IDs must be unique — no duplicates from overlap"
+
+
+def test_index_directory_honors_internal_skipped_result(tmp_path: Path) -> None:
+    """
+    If _index_file reports skipped=True (e.g. race between pre-check and index),
+    index_directory must count the file as skipped, not processed.
+    """
+    storage = _make_storage(tmp_path)
+    indexer = MemoryIndexer(storage, embedding_provider=None)
+
+    f = tmp_path / "race.md"
+    f.write_text("# Race\n\nbody text " * 20, encoding="utf-8")
+
+    # Outer pre-check says "needs indexing"...
+    storage.file_needs_reindex = MagicMock(return_value=True)  # type: ignore[method-assign]
+    # ...but internal call decides to skip.
+    indexer._index_file = MagicMock(  # type: ignore[method-assign]
+        return_value={
+            "chunks": 0,
+            "tokens": 0,
+            "embedded": 0,
+            "chunks_obj": [],
+            "skipped": True,
+        }
+    )
+
+    result = indexer.index_directory(tmp_path, force_reindex=False, embed=False)
+
+    assert result.files_processed == 0
+    assert result.files_skipped == 1

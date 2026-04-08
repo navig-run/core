@@ -157,6 +157,12 @@ class MemoryIndexer:
                     file_path, directory, file_hash, embed=False, force_reindex=force_reindex
                 )
 
+                if file_result.get("skipped", False):
+                    result.files_skipped += 1
+                    if progress_callback:
+                        progress_callback(rel_path, "skipped")
+                    continue
+
                 result.files_processed += 1
                 result.chunks_created += file_result["chunks"]
                 result.total_tokens += file_result["tokens"]

@@ -243,6 +243,7 @@ class MemoryManager:
         self,
         file_path: Path,
         embed: bool = True,
+        force_reindex: bool = False,
     ) -> IndexResult:
         """
         Index a single file.
@@ -250,6 +251,7 @@ class MemoryManager:
         Args:
             file_path: Path to the file
             embed: Generate embeddings
+            force_reindex: Re-index even if hash is unchanged
 
         Returns:
             IndexResult for this file
@@ -258,6 +260,7 @@ class MemoryManager:
             file_path,
             base_directory=self.memory_dir,
             embed=embed and self.use_embeddings,
+            force_reindex=force_reindex,
         )
 
     # ---------- Search Operations ----------
