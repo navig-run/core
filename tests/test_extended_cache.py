@@ -117,30 +117,21 @@ class TestBreakpointPlacerBasic:
         # System msg should be annotated
         sys_msg = result[0]
         assert isinstance(sys_msg["content"], list)
-        assert any(
-            isinstance(b, dict) and "cache_control" in b
-            for b in sys_msg["content"]
-        )
+        assert any(isinstance(b, dict) and "cache_control" in b for b in sys_msg["content"])
 
     def test_tool_definitions_get_breakpoint(self):
         msgs = [_system_msg(), _tool_def_msg(), _user_msg()]
         result = CacheBreakpointPlacer().annotate_messages(msgs)
         tool_msg = result[1]
         assert isinstance(tool_msg["content"], list)
-        assert any(
-            isinstance(b, dict) and "cache_control" in b
-            for b in tool_msg["content"]
-        )
+        assert any(isinstance(b, dict) and "cache_control" in b for b in tool_msg["content"])
 
     def test_skills_context_gets_breakpoint(self):
         msgs = [_system_msg(), _skills_msg(), _user_msg()]
         result = CacheBreakpointPlacer().annotate_messages(msgs)
         skills_msg = result[1]
         assert isinstance(skills_msg["content"], list)
-        assert any(
-            isinstance(b, dict) and "cache_control" in b
-            for b in skills_msg["content"]
-        )
+        assert any(isinstance(b, dict) and "cache_control" in b for b in skills_msg["content"])
 
     def test_no_mutation_of_originals(self):
         original_msgs = [_system_msg(), _user_msg()]
@@ -204,10 +195,7 @@ class TestBreakpointContentBlockFormat:
         msgs = [_system_msg()]
         result = CacheBreakpointPlacer().annotate_messages(msgs)
         sys_content = result[0]["content"]
-        cache_blocks = [
-            b for b in sys_content
-            if isinstance(b, dict) and "cache_control" in b
-        ]
+        cache_blocks = [b for b in sys_content if isinstance(b, dict) and "cache_control" in b]
         assert len(cache_blocks) >= 1
         cc = cache_blocks[0]["cache_control"]
         assert cc["type"] == "ephemeral"
@@ -218,7 +206,8 @@ class TestBreakpointContentBlockFormat:
         msgs[0]["role"] = "system"
         result = CacheBreakpointPlacer().annotate_messages(msgs)
         texts = [
-            b.get("text", "") for b in result[0]["content"]
+            b.get("text", "")
+            for b in result[0]["content"]
             if isinstance(b, dict) and b.get("type") == "text"
         ]
         assert any("System info" in t for t in texts)
@@ -276,11 +265,13 @@ class TestCacheStats:
 
     def test_record_single_response(self):
         stats = CacheStats()
-        stats.record_response({
-            "input_tokens": 1000,
-            "cache_creation_input_tokens": 800,
-            "cache_read_input_tokens": 200,
-        })
+        stats.record_response(
+            {
+                "input_tokens": 1000,
+                "cache_creation_input_tokens": 800,
+                "cache_read_input_tokens": 200,
+            }
+        )
         assert stats.api_calls == 1
         assert stats.total_input_tokens == 1000
         assert stats.cache_creation_tokens == 800
@@ -288,16 +279,20 @@ class TestCacheStats:
 
     def test_record_multiple_responses(self):
         stats = CacheStats()
-        stats.record_response({
-            "input_tokens": 500,
-            "cache_creation_input_tokens": 400,
-            "cache_read_input_tokens": 0,
-        })
-        stats.record_response({
-            "input_tokens": 500,
-            "cache_creation_input_tokens": 0,
-            "cache_read_input_tokens": 400,
-        })
+        stats.record_response(
+            {
+                "input_tokens": 500,
+                "cache_creation_input_tokens": 400,
+                "cache_read_input_tokens": 0,
+            }
+        )
+        stats.record_response(
+            {
+                "input_tokens": 500,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 400,
+            }
+        )
         assert stats.api_calls == 2
         assert stats.total_input_tokens == 1000
         assert stats.cache_creation_tokens == 400
@@ -305,18 +300,22 @@ class TestCacheStats:
 
     def test_hit_rate(self):
         stats = CacheStats()
-        stats.record_response({
-            "input_tokens": 1000,
-            "cache_read_input_tokens": 750,
-        })
+        stats.record_response(
+            {
+                "input_tokens": 1000,
+                "cache_read_input_tokens": 750,
+            }
+        )
         assert stats.hit_rate == pytest.approx(0.75)
 
     def test_savings_estimate(self):
         stats = CacheStats()
-        stats.record_response({
-            "input_tokens": 1_000_000,
-            "cache_read_input_tokens": 1_000_000,
-        })
+        stats.record_response(
+            {
+                "input_tokens": 1_000_000,
+                "cache_read_input_tokens": 1_000_000,
+            }
+        )
         # Normal = $3.00, cached = $0.30 → savings = $2.70
         assert stats.savings_estimate == pytest.approx(2.70, abs=0.01)
 
@@ -365,9 +364,7 @@ class TestHasCacheBreakpoint:
 
     def test_list_with_cache(self):
         msg = {
-            "content": [
-                {"type": "text", "text": "hello", "cache_control": {"type": "ephemeral"}}
-            ]
+            "content": [{"type": "text", "text": "hello", "cache_control": {"type": "ephemeral"}}]
         }
         assert has_cache_breakpoint(msg) is True
 

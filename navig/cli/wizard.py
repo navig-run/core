@@ -16,6 +16,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from navig.platform.paths import config_dir
+
 # Try questionary first, fall back to simple prompts
 try:
     import questionary
@@ -59,7 +61,7 @@ class SetupWizard:
     def __init__(self, reconfigure: bool = False):
         self.reconfigure = reconfigure
         self.config: dict[str, Any] = {}
-        self.navig_dir = Path.home() / ".navig"
+        self.navig_dir = config_dir()
         self.config_file = self.navig_dir / "config.yaml"
 
     def run(self) -> bool:

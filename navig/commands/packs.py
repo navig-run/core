@@ -827,7 +827,7 @@ def list_packs(
     from rich.console import Console
     from rich.table import Table
 
-    console = Console()
+    console = get_console()
     table = Table(title="Available Packs")
 
     table.add_column("Name", style="cyan")
@@ -882,7 +882,7 @@ def show_pack(name: str, plain: bool = False, json_out: bool = False):
     from rich.console import Console
     from rich.panel import Panel
 
-    console = Console()
+    console = get_console()
 
     # Header
     console.print(
@@ -1026,3 +1026,5 @@ def search_packs(query: str, plain: bool = False, json_out: bool = False):
 
 # Ensure import works
 import os
+
+from navig.console_helper import get_console

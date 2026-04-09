@@ -205,16 +205,12 @@ class TestActivationScoring:
         assert score == PATH_MATCH_SCORE
 
     def test_keyword_match(self):
-        skill = ContextSkill(
-            name="x", content="y", activation_keywords=["django"]
-        )
+        skill = ContextSkill(name="x", content="y", activation_keywords=["django"])
         score = _compute_activation_score(skill, [], "help with django models")
         assert score == KEYWORD_MATCH_SCORE
 
     def test_keyword_case_insensitive(self):
-        skill = ContextSkill(
-            name="x", content="y", activation_keywords=["Django"]
-        )
+        skill = ContextSkill(name="x", content="y", activation_keywords=["Django"])
         score = _compute_activation_score(skill, [], "using django orm")
         assert score == KEYWORD_MATCH_SCORE
 
@@ -241,22 +237,14 @@ class TestActivationScoring:
 
     def test_basename_matching(self):
         """Pattern 'models.py' should match 'src/app/models.py'."""
-        skill = ContextSkill(
-            name="x", content="y", activation_paths=["models.py"]
-        )
-        score = _compute_activation_score(
-            skill, ["src/app/models.py"], ""
-        )
+        skill = ContextSkill(name="x", content="y", activation_paths=["models.py"])
+        score = _compute_activation_score(skill, ["src/app/models.py"], "")
         assert score == PATH_MATCH_SCORE
 
     def test_multiple_files_one_pattern_scores_once(self):
         """A single pattern should score +10 even if it matches multiple files."""
-        skill = ContextSkill(
-            name="x", content="y", activation_paths=["*.py"]
-        )
-        score = _compute_activation_score(
-            skill, ["a.py", "b.py", "c.py"], ""
-        )
+        skill = ContextSkill(name="x", content="y", activation_paths=["*.py"])
+        score = _compute_activation_score(skill, ["a.py", "b.py", "c.py"], "")
         # One pattern → one match score
         assert score == PATH_MATCH_SCORE
 
@@ -753,9 +741,7 @@ class TestEdgeCases:
         assert len(active) == 1
 
     def test_unicode_content(self, tmp_path: Path):
-        p = _write_plain_skill(
-            tmp_path / "unicode.md", "# Übersicht\nÄpfel und Birnen 🍎"
-        )
+        p = _write_plain_skill(tmp_path / "unicode.md", "# Übersicht\nÄpfel und Birnen 🍎")
         skill = _parse_skill_file(p, source="project")
         assert skill is not None
         assert "Übersicht" in skill.content

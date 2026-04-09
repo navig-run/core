@@ -14,6 +14,7 @@ from pathlib import Path
 import typer
 
 from navig.lazy_loader import lazy_import
+from navig.platform.paths import config_dir
 
 ch = lazy_import("navig.console_helper")
 
@@ -26,7 +27,7 @@ tray_app = typer.Typer(
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 TRAY_SCRIPT = PROJECT_ROOT / "scripts" / "navig_tray.py"
 TRAY_PYW = PROJECT_ROOT / "scripts" / "navig_tray.pyw"
-LOCK_FILE = Path.home() / ".navig" / "tray.lock"
+LOCK_FILE = config_dir() / "tray.lock"
 INSTALL_SCRIPT = PROJECT_ROOT / "scripts" / "install-tray.ps1"
 
 
@@ -258,7 +259,7 @@ def tray_uninstall():
         ch.success("Desktop shortcut removed")
 
     # Remove settings file
-    settings_file = Path.home() / ".navig" / "tray_settings.json"
+    settings_file = config_dir() / "tray_settings.json"
     if settings_file.exists():
         settings_file.unlink()
         ch.info("Settings file removed")

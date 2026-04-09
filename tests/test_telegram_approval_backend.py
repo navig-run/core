@@ -457,9 +457,7 @@ class TestGateIntegration:
             gate = ApprovalGate(backend=backend)
 
             # Start gate check in a task
-            task = asyncio.create_task(
-                gate.check("bash_exec", "dangerous", {"command": "ls"})
-            )
+            task = asyncio.create_task(gate.check("bash_exec", "dangerous", {"command": "ls"}))
             await asyncio.sleep(0.05)
 
             # Approve via callback

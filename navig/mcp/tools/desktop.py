@@ -3,6 +3,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from navig.platform.paths import config_dir
+
 
 def register(server: Any) -> None:
     """Register desktop automation tools."""
@@ -144,7 +146,7 @@ def _desktop_audit_initialized() -> dict[str, Any] | None:
     """Return a structured error dict if the audit log path is not configured, else None."""
     audit_path = os.environ.get("NAVIG_DESKTOP_AUDIT_LOG", "")
     if not audit_path:
-        audit_path = str(Path.home() / ".navig" / "logs" / "desktop_audit.jsonl")
+        audit_path = str(config_dir() / "logs" / "desktop_audit.jsonl")
     # Probe: ensure the file can be opened for append.
     try:
         Path(audit_path).parent.mkdir(parents=True, exist_ok=True)

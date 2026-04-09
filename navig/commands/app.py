@@ -18,7 +18,7 @@ from navig import console_helper as ch
 from navig.config import get_config_manager
 
 config_manager = get_config_manager()
-console = Console()
+console = ch.get_console()
 
 
 def list_apps(options: dict[str, Any]) -> None:
@@ -1107,6 +1107,7 @@ from typing import Any
 import typer
 
 from navig.cli import show_subcommand_help
+from navig.console_helper import get_console
 from navig.deprecation import deprecation_warning
 
 app_app = typer.Typer(

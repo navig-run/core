@@ -157,7 +157,9 @@ class TestPrintVerificationDashboard:
         assert "matrix" in lines_by_cmd, "navig matrix setup not found in output"
         assert "email" in lines_by_cmd, "navig email setup not found in output"
         # Descriptions must appear on the same line as their commands
-        assert "matrix" in lines_by_cmd["matrix"].lower() or len(lines_by_cmd["matrix"].strip()) > len("- navig matrix setup")
+        assert "matrix" in lines_by_cmd["matrix"].lower() or len(
+            lines_by_cmd["matrix"].strip()
+        ) > len("- navig matrix setup")
         assert "smtp" in lines_by_cmd["email"].lower() or "email" in lines_by_cmd["email"].lower()
 
     def test_no_deferred_section_when_all_completed(self) -> None:

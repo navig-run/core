@@ -38,19 +38,25 @@ def test_gateway_telegram_imports_stay_within_boundary() -> None:
                         violations.append(f"{rel}:{node.lineno} import {alias.name}")
 
             elif isinstance(node, ast.ImportFrom):
-                module = (node.module or "")
+                module = node.module or ""
                 module_segments = module.split(".") if module else []
                 is_internal_telegram_module = module.startswith("navig.gateway.channels.telegram")
-                if module_segments and module_segments[0] in {"telegram", "telegram_bot"} and not is_internal_telegram_module:
+                if (
+                    module_segments
+                    and module_segments[0] in {"telegram", "telegram_bot"}
+                    and not is_internal_telegram_module
+                ):
                     rel = py_file.relative_to(repo_root).as_posix()
                     violations.append(f"{rel}:{node.lineno} from {module}")
                     continue
 
                 for alias in node.names:
-                    is_gateway_scope = module.startswith("navig.gateway.routes") or module.startswith(
-                        "navig.gateway.channels"
-                    )
-                    if is_gateway_scope and (alias.name == "telegram" or alias.name.startswith("telegram_")):
+                    is_gateway_scope = module.startswith(
+                        "navig.gateway.routes"
+                    ) or module.startswith("navig.gateway.channels")
+                    if is_gateway_scope and (
+                        alias.name == "telegram" or alias.name.startswith("telegram_")
+                    ):
                         rel = py_file.relative_to(repo_root).as_posix()
                         scope = module or "."
                         violations.append(f"{rel}:{node.lineno} from {scope} import {alias.name}")

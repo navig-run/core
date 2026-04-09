@@ -11,6 +11,7 @@ import sys
 
 import typer
 
+from navig.console_helper import get_console
 from navig.lazy_loader import lazy_import
 
 # Lazy imports – heavy deps (rich, cryptography) deferred until command runs
@@ -82,7 +83,7 @@ def _console():
     """Return a Rich Console instance (created on first call)."""
     from rich.console import Console
 
-    return Console()
+    return get_console()
 
 
 def _rprint(*args, **kwargs):

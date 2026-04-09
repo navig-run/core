@@ -8,8 +8,10 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from navig.console_helper import get_console
+
 app = typer.Typer(help="Manage crash reports and logs")
-console = Console()
+console = get_console()
 
 
 @app.command("export")

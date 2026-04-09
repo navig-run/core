@@ -43,7 +43,7 @@ def _agent_callback(ctx: typer.Context) -> None:
 
 def _get_agent_config_dir() -> Path:
     """Get agent configuration directory."""
-    return Path.home() / ".navig" / "agent"
+    return config_dir() / "agent"
 
 
 def _get_config_path() -> Path:
@@ -1370,7 +1370,7 @@ def agent_learn(
         from datetime import datetime
         from pathlib import Path
 
-        log_dir = Path.home() / ".navig" / "logs"
+        log_dir = config_dir() / "logs"
         debug_log = log_dir / "debug.log"
         remediation_log = log_dir / "remediation.log"
 
@@ -1442,7 +1442,7 @@ def agent_learn(
 
         # Export if requested
         if export:
-            output_path = Path.home() / ".navig" / "workspace" / "error-patterns.json"
+            output_path = config_dir() / "workspace" / "error-patterns.json"
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
             export_data = {
@@ -1710,7 +1710,7 @@ def agent_soul(
     """
 
     # SOUL.md paths
-    user_soul = Path.home() / ".navig" / "workspace" / "SOUL.md"
+    user_soul = config_dir() / "workspace" / "SOUL.md"
     default_soul = Path(__file__).parent.parent / "resources" / "SOUL.default.md"
 
     if action == "show":
@@ -1966,6 +1966,8 @@ def agent_transcribe(
 # Each wrapper calls the underlying Typer command with appropriate defaults.
 
 from typing import Any
+
+from navig.platform.paths import config_dir
 
 
 def status_cmd(ctx: dict[str, Any]) -> None:

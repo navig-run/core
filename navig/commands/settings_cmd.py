@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from navig.console_helper import get_console
+
 if TYPE_CHECKING:
     from navig.settings.resolver import SettingsResolver
 
@@ -125,7 +127,7 @@ def run_settings(
         _coerced = _coerce(value, DEFAULTS.get(key, value))  # type: ignore[arg-type]
         resolver.set(key, _coerced, layer=layer)  # type: ignore[arg-type]
         if RICH:
-            console = Console()
+            console = get_console()
             console.print(
                 f"[bold green]✓[/bold green] Set [cyan]{key}[/cyan] = "
                 f"[white]{_mask(key, _coerced)}[/white]  "
@@ -142,7 +144,7 @@ def run_settings(
             return
         _reset_key(key, layer, resolver)
         if RICH:
-            console = Console()
+            console = get_console()
             console.print(
                 f"[bold yellow]↺[/bold yellow] Reset [cyan]{key}[/cyan] in layer ({_badge(layer)})"
             )
@@ -161,7 +163,7 @@ def run_settings(
         src = _source_layer_for(key, resolver)
         default = DEFAULTS.get(key, "—")
         if RICH:
-            console = Console()
+            console = get_console()
             tbl = Table(show_header=False, box=None, padding=(0, 1))
             tbl.add_column("label", style="dim")
             tbl.add_column("val")
@@ -195,7 +197,7 @@ def _display_rich(
     from rich.rule import Rule
     from rich.table import Table
 
-    console = Console()
+    console = get_console()
 
     # Header: layer source map
     if show_sources:
@@ -304,6 +306,6 @@ def _err(msg: str, rich_available: bool) -> None:
     if rich_available:
         from rich.console import Console
 
-        Console().print(f"[red]Error:[/red] {msg}")
+        get_console().print(f"[red]Error:[/red] {msg}")
     else:
         print(f"Error: {msg}")

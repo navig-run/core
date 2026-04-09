@@ -22,6 +22,7 @@ from rich.table import Table
 
 from navig import console_helper as ch
 from navig.config import get_config_manager
+from navig.console_helper import get_console
 from navig.spaces.kickoff import build_space_kickoff
 
 # ── Typer app ─────────────────────────────────────────────────────────────────
@@ -33,7 +34,7 @@ space_app = typer.Typer(
     no_args_is_help=False,
 )
 
-_console = Console()
+_console = get_console()
 
 # Slug: lowercase letters/digits/hyphens, must start with letter or digit
 _SLUG_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,28}[a-z0-9])?$")

@@ -296,7 +296,7 @@ class MCPProtocolHandler:
                 indent=2,
             )
         elif uri in ("navig://agent/learning", "agent://learning/patterns"):
-            report_path = Path.home() / ".navig" / "workspace" / "error-patterns.json"
+            report_path = config_dir() / "workspace" / "error-patterns.json"
             if report_path.exists():
                 return report_path.read_text(encoding="utf-8", errors="replace")
             return json.dumps(
@@ -924,6 +924,7 @@ def generate_perplexity_mcp_config(
 # =============================================================================
 
 from navig.memory.paths import KEY_FACTS_DB_PATH as _KEY_FACTS_DB_PATH
+from navig.platform.paths import config_dir
 
 
 def _memory_store():

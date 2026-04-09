@@ -107,7 +107,7 @@ def show_history(
     from rich.console import Console
     from rich.table import Table
 
-    console = Console()
+    console = get_console()
 
     table = Table(show_header=True, header_style="bold cyan", box=None)
     table.add_column("ID", style="dim", width=24)
@@ -187,7 +187,7 @@ def show_operation_details(op_id: str, opts: dict[str, Any] = None) -> None:
     from rich.console import Console
     from rich.panel import Panel
 
-    console = Console()
+    console = get_console()
 
     # Status with color
     if op.status == OperationStatus.SUCCESS:
@@ -464,7 +464,7 @@ def history_stats(opts: dict[str, Any] = None) -> None:
     from rich.console import Console
     from rich.table import Table
 
-    console = Console()
+    console = get_console()
 
     # Summary
     success_rate = (success_count / total_count * 100) if total_count > 0 else 0
@@ -599,6 +599,7 @@ def _undo_host_switch(op: OperationRecord) -> None:
 import typer  # noqa: E402
 
 from navig.cli._callbacks import show_subcommand_help  # noqa: E402
+from navig.console_helper import get_console
 
 history_app = typer.Typer(
     help="Command history, replay, and audit trail",

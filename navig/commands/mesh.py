@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import typer
 
+from navig.console_helper import get_console
+
 mesh_app = typer.Typer(help="Mesh topology management")
 
 
@@ -20,7 +22,7 @@ def status() -> None:
 
     from rich.console import Console
 
-    con = Console()
+    con = get_console()
 
     if not peers:
         con.print("[dim]Mesh: no peers discovered yet.[/dim]")

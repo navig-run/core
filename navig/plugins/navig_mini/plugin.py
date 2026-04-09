@@ -27,15 +27,16 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 import typer
-from rich.console import Console
 from rich.table import Table
+
+from navig.console_helper import get_console
 
 # ── Plugin metadata (read by PluginManager) ────────────────────────────────────
 name = "mini"
 version = "1.1.0"
 description = "Control remote NAVIG Mini agent daemons on low-power devices"
 
-console = Console()
+console = get_console()
 
 
 # ── Config helpers ──────────────────────────────────────────────────────────────

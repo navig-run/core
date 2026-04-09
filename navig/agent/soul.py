@@ -32,6 +32,7 @@ from navig.agent.component import Component
 from navig.agent.config import PersonalityConfig
 from navig.agent.nervous_system import Event, EventType, NervousSystem
 from navig.debug_logger import get_debug_logger
+from navig.platform.paths import config_dir
 
 # Initialize logger
 logger = get_debug_logger()
@@ -248,7 +249,7 @@ class Soul(Component):
     """
 
     # Default SOUL.md location
-    SOUL_FILE = Path.home() / ".navig" / "workspace" / "SOUL.md"
+    SOUL_FILE = config_dir() / "workspace" / "SOUL.md"
     SOUL_DEFAULT = Path(__file__).parent.parent / "resources" / "SOUL.default.md"
 
     def __init__(
@@ -382,7 +383,7 @@ I am your autonomous operations companion. I help manage both your computer syst
             return BUILTIN_PROFILES[profile_name]
 
         # Try to load from file
-        profiles_dir = Path.home() / ".navig" / "agent" / "personalities"
+        profiles_dir = config_dir() / "agent" / "personalities"
         profile_path = profiles_dir / f"{profile_name}.yaml"
 
         if profile_path.exists():
@@ -595,7 +596,7 @@ Conversational responses:
         profiles = list(BUILTIN_PROFILES.keys())
 
         # Add user profiles
-        user_dir = Path.home() / ".navig" / "agent" / "personalities"
+        user_dir = config_dir() / "agent" / "personalities"
         if user_dir.exists():
             for f in user_dir.glob("*.yaml"):
                 name = f.stem

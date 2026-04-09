@@ -21,6 +21,7 @@ import json
 
 import typer
 
+from navig.console_helper import get_console
 from navig.lazy_loader import lazy_import
 
 _ch = lazy_import("navig.console_helper")
@@ -42,7 +43,7 @@ def _Table(*args, **kwargs):
 def _console():
     from rich.console import Console
 
-    return Console()
+    return get_console()
 
 
 def _rprint(*args, **kwargs):

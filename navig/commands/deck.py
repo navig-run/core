@@ -2,8 +2,10 @@
 import typer
 from rich.console import Console
 
+from navig.console_helper import get_console
+
 deck_app = typer.Typer(help="Manage presentation decks and slide materials", no_args_is_help=True)
-console = Console()
+console = get_console()
 
 
 @deck_app.command("list")

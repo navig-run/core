@@ -19,6 +19,7 @@ except ImportError:
 
 from navig.console_helper import error, info, warning
 from navig.core.safe_eval import safe_eval
+from navig.platform.paths import config_dir
 
 
 @dataclass
@@ -91,7 +92,7 @@ class WorkflowEngine:
         possible_paths = [
             self._workflows_dir / f"{name}.yaml",
             self._workflows_dir / f"{name}.yml",
-            Path.home() / ".navig" / "workflows" / f"{name}.yaml",
+            config_dir() / "workflows" / f"{name}.yaml",
         ]
 
         target_path = None

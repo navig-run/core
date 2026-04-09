@@ -137,6 +137,7 @@ def test_no_uid_returns_none(monkeypatch):
     monkeypatch.delenv("NAVIG_TELEGRAM_UID", raising=False)
     # Stub config manager so no disk read / real config bleeds in
     from types import SimpleNamespace
+
     monkeypatch.setattr(
         "navig.config.get_config_manager",
         lambda: SimpleNamespace(global_config={}),
@@ -159,6 +160,7 @@ def test_ensure_uid_headless_no_env_raises(monkeypatch):
     monkeypatch.setenv("CI", "true")
 
     import pytest
+
     with pytest.raises(RuntimeError, match="NAVIG_TELEGRAM_UID"):
         mod.ensure_telegram_uid(raw_config={})
 
@@ -200,6 +202,7 @@ def test_ensure_uid_interactive_saves_to_vault(monkeypatch):
     assert uid == "987654321"
     assert stored.get("label") == "telegram/user_id"
     import json
+
     assert json.loads(stored["data"])["value"] == "987654321"
 
 
@@ -226,6 +229,7 @@ def test_ensure_uid_vault_failure_raises(monkeypatch):
     monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
 
     import pytest
+
     with pytest.raises(RuntimeError, match="vault"):
         mod.ensure_telegram_uid(vault=_BrokenV2(), raw_config={})
 

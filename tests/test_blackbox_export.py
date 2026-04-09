@@ -27,6 +27,46 @@ def dummy_bundle():
     )
 
 
+@pytest.fixture(autouse=True)
+def _cleanup_subprocess_transports():
+    import asyncio
+    import gc
+    import subprocess
+
+    subprocess._cleanup()
+    gc.collect()
+
+    try:
+        loop = asyncio.get_event_loop_policy().get_event_loop()
+    except Exception:
+        loop = None
+
+    if loop is not None:
+        transports = getattr(loop, "_subprocesses", None)
+        if isinstance(transports, dict):
+            for transport in list(transports.values()):
+                try:
+                    transport.close()
+                except Exception:
+                    pass
+            transports.clear()
+
+    yield
+
+    subprocess._cleanup()
+    gc.collect()
+
+    if loop is not None:
+        transports = getattr(loop, "_subprocesses", None)
+        if isinstance(transports, dict):
+            for transport in list(transports.values()):
+                try:
+                    transport.close()
+                except Exception:
+                    pass
+            transports.clear()
+
+
 def test_export_bundle_unencrypted(tmp_dir, dummy_bundle):
     out = tmp_dir / "out"
     with patch("navig.blackbox.export.write_bundle", return_value=(tmp_dir / "out.navbox")):

@@ -2,8 +2,10 @@
 import typer
 from rich.console import Console
 
+from navig.console_helper import get_console
+
 telemetry_app = typer.Typer(help="Manage NAVIG telemetry / analytics opt-in", no_args_is_help=False)
-console = Console()
+console = get_console()
 
 
 @telemetry_app.callback(invoke_without_command=True)

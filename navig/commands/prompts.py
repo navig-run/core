@@ -6,10 +6,13 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
-prompts_app = typer.Typer(help="Manage agent system prompts", no_args_is_help=True)
-console = Console()
+from navig.console_helper import get_console
+from navig.platform.paths import config_dir
 
-_PROMPTS_DIR = Path.home() / ".navig" / "store" / "prompts"
+prompts_app = typer.Typer(help="Manage agent system prompts", no_args_is_help=True)
+console = get_console()
+
+_PROMPTS_DIR = config_dir() / "store" / "prompts"
 
 
 @prompts_app.command("list")

@@ -32,7 +32,9 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-console = Console()
+from navig.console_helper import get_console
+
+console = get_console()
 
 # ═══════════════════════════════════════════════════════════════
 # Kraken Theming
@@ -106,7 +108,9 @@ TENTACLE_TIPS = [
 # State File Paths
 # ═══════════════════════════════════════════════════════════════
 
-NAVIG_HOME = Path.home() / ".navig"
+from navig.platform.paths import config_dir as _config_dir
+
+NAVIG_HOME = _config_dir()
 DAEMON_PID_FILE = NAVIG_HOME / "daemon" / "supervisor.pid"
 DAEMON_STATE_FILE = NAVIG_HOME / "daemon" / "state.json"
 TUNNELS_FILE = NAVIG_HOME / "cache" / "tunnels.json"

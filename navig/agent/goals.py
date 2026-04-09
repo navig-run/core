@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from navig.debug_logger import DebugLogger
+from navig.platform.paths import config_dir
 
 
 class GoalState(Enum):
@@ -152,7 +153,7 @@ class GoalPlanner:
     """
 
     def __init__(self, storage_dir: Path | None = None):
-        self.storage_dir = storage_dir or Path.home() / ".navig" / "workspace"
+        self.storage_dir = storage_dir or config_dir() / "workspace"
         self.goals_file = self.storage_dir / "goals.json"
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 

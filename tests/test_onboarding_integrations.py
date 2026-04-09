@@ -126,9 +126,7 @@ def test_web_search_provider_step_accepts_env_duckduckgo(monkeypatch, tmp_path: 
     assert config["web"]["search"]["provider"] == "duckduckgo"
 
 
-def test_web_search_provider_empty_enter_skips_on_fresh_init(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_web_search_provider_empty_enter_skips_on_fresh_init(monkeypatch, tmp_path: Path) -> None:
     """Pressing Enter (default 's') on fresh init should skip and write 'auto'."""
     step = next(step for step in _registry(tmp_path) if step.id == "web-search-provider")
 
@@ -150,9 +148,7 @@ def test_web_search_provider_empty_enter_preserves_existing_on_reconfigure(
     """Pressing Enter in reconfigure mode should preserve the existing provider."""
     # Pre-write an existing provider config
     config_path = tmp_path / "config.yaml"
-    config_path.write_text(
-        yaml.dump({"web": {"search": {"provider": "brave"}}}), encoding="utf-8"
-    )
+    config_path.write_text(yaml.dump({"web": {"search": {"provider": "brave"}}}), encoding="utf-8")
 
     step = next(step for step in _registry(tmp_path) if step.id == "web-search-provider")
 
@@ -169,9 +165,7 @@ def test_web_search_provider_empty_enter_preserves_existing_on_reconfigure(
     assert config_after["web"]["search"]["provider"] == "brave"
 
 
-def test_ai_provider_empty_enter_skips_on_fresh_init(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_ai_provider_empty_enter_skips_on_fresh_init(monkeypatch, tmp_path: Path) -> None:
     """Pressing Enter (default 's') on AI provider prompt should skip the step."""
     step = next(step for step in _registry(tmp_path) if step.id == "ai-provider")
 
@@ -191,9 +185,7 @@ def test_ai_provider_empty_enter_skips_on_fresh_init(
     assert not (tmp_path / ".ai_provider_configured").exists()
 
 
-def test_ai_provider_empty_enter_skips_on_reconfigure(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_ai_provider_empty_enter_skips_on_reconfigure(monkeypatch, tmp_path: Path) -> None:
     """Pressing Enter in reconfigure mode preserves the existing AI provider."""
     marker = tmp_path / ".ai_provider_configured"
     marker.write_text("anthropic", encoding="utf-8")
@@ -520,9 +512,7 @@ def test_matrix_step_reconfigure_with_skipped_marker_re_prompts(
     assert result.output["reason"] == "no homeserver URL provided"
 
 
-def test_email_step_reconfigure_with_skipped_marker_re_prompts(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_email_step_reconfigure_with_skipped_marker_re_prompts(monkeypatch, tmp_path: Path) -> None:
     """On --reconfigure, a previously-skipped email step must re-prompt, not return completed."""
     marker = tmp_path / ".email_configured"
     marker.write_text("skipped", encoding="utf-8")
@@ -558,9 +548,7 @@ def test_social_networks_step_reconfigure_with_skipped_marker_re_prompts(
     assert result.output["reason"] == "user declined"
 
 
-def test_web_search_provider_empty_api_key_returns_skipped(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_web_search_provider_empty_api_key_returns_skipped(monkeypatch, tmp_path: Path) -> None:
     """Selecting a catalog provider but leaving the API key blank must return skipped."""
     step = next(step for step in _registry(tmp_path) if step.id == "web-search-provider")
 
@@ -582,9 +570,7 @@ def test_web_search_provider_empty_api_key_returns_skipped(
     assert result.output.get("provider") == "perplexity"
 
 
-def test_web_search_provider_with_api_key_returns_completed(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_web_search_provider_with_api_key_returns_completed(monkeypatch, tmp_path: Path) -> None:
     """Selecting a catalog provider and supplying a valid API key must return completed."""
     step = next(step for step in _registry(tmp_path) if step.id == "web-search-provider")
 
@@ -600,4 +586,3 @@ def test_web_search_provider_with_api_key_returns_completed(
 
     assert result.status == "completed"
     assert result.output.get("provider") == "brave"
-

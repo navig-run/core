@@ -5,6 +5,7 @@ import os
 from typing import Any
 
 from navig import console_helper as ch
+from navig.platform.paths import config_dir
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,7 @@ def _resolve_telegram_token_from_env_file() -> str:
     """
     from pathlib import Path
 
-    env_file = Path.home() / ".navig" / ".env"
+    env_file = config_dir() / ".env"
     if not env_file.exists():
         return ""
     try:
@@ -217,7 +218,7 @@ def _resolve_telegram_uid_from_env_file() -> str | None:
     """Read NAVIG_TELEGRAM_UID from ~/.navig/.env (may not be in os.environ at CLI startup)."""
     from pathlib import Path
 
-    env_file = Path.home() / ".navig" / ".env"
+    env_file = config_dir() / ".env"
     if not env_file.exists():
         return None
     try:
@@ -353,7 +354,7 @@ def ensure_telegram_uid(
     try:
         from pathlib import Path as _Path
 
-        env_file = _Path.home() / ".navig" / ".env"
+        env_file = _config_dir() / ".env"
         existing = env_file.read_text(encoding="utf-8") if env_file.exists() else ""
         lines = [ln for ln in existing.splitlines() if not ln.startswith("NAVIG_TELEGRAM_UID=")]
         lines.append(f"NAVIG_TELEGRAM_UID={uid}")

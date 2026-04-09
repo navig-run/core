@@ -14,23 +14,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from navig.memory._util import _debug_log
 from navig.store.base import BaseStore
-
-
-def _debug_log(message: str) -> None:
-    """Simple debug logging wrapper."""
-    try:
-        from navig.debug_logger import DebugLogger
-
-        logger = DebugLogger()
-        logger.log_operation("memory", {"message": message})
-    except Exception as _e:  # noqa: BLE001
-        import sys
-
-        print(
-            f"[navig/memory/conversation] logger init failed ({type(_e).__name__}): {_e}",
-            file=sys.stderr,
-        )
 
 
 @dataclass
@@ -188,9 +173,7 @@ class ConversationStore(BaseStore):
         """
         )
 
-    def _migrate(
-        self, conn: sqlite3.Connection, from_version: int, to_version: int
-    ) -> None:
+    def _migrate(self, conn: sqlite3.Connection, from_version: int, to_version: int) -> None:
         """Run schema migrations."""
         _debug_log(f"Migrating ConversationStore from v{from_version} to v{to_version}")
 
@@ -199,9 +182,7 @@ class ConversationStore(BaseStore):
             self._create_fts5_table(conn)
 
             # Backfill existing messages into FTS index
-            cursor = conn.execute(
-                "SELECT id, content, session_key, role FROM messages"
-            )
+            cursor = conn.execute("SELECT id, content, session_key, role FROM messages")
             rows = cursor.fetchall()
             if rows:
                 conn.executemany(
@@ -603,11 +584,13 @@ class ConversationStore(BaseStore):
             results = []
             for row in cursor.fetchall():
                 row_dict = dict(row)
-                results.append({
-                    "message": Message.from_dict(row_dict),
-                    "score": row_dict.get("score", 0),
-                    "snippet": row_dict.get("snippet", ""),
-                })
+                results.append(
+                    {
+                        "message": Message.from_dict(row_dict),
+                        "score": row_dict.get("score", 0),
+                        "snippet": row_dict.get("snippet", ""),
+                    }
+                )
             return results
 
         except sqlite3.OperationalError as e:

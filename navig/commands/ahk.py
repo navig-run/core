@@ -19,7 +19,9 @@ from pathlib import Path
 
 import typer
 
+from navig.console_helper import get_console
 from navig.lazy_loader import lazy_import
+from navig.platform.paths import config_dir
 
 ch = lazy_import("navig.console_helper")
 
@@ -70,7 +72,7 @@ def ahk_install(
     from rich.console import Console
     from rich.panel import Panel
 
-    console = Console()
+    console = get_console()
 
     if sys.platform != "win32":
         ch.error("AutoHotkey is only available on Windows")
@@ -121,7 +123,7 @@ def ahk_status(
     from rich.panel import Panel
     from rich.table import Table
 
-    console = Console()
+    console = get_console()
 
     if sys.platform != "win32":
         ch.error("AutoHotkey is only available on Windows")
@@ -200,7 +202,7 @@ def ahk_doctor():
     from rich.console import Console
     from rich.table import Table
 
-    console = Console()
+    console = get_console()
 
     if sys.platform != "win32":
         ch.error("AutoHotkey is only available on Windows")
@@ -288,7 +290,7 @@ def ahk_run(
     """
     from rich.console import Console
 
-    console = Console()
+    console = get_console()
 
     adapter = _get_adapter()
     if adapter is None or not adapter.is_available():
@@ -331,7 +333,7 @@ def ahk_exec(
     """
     from rich.console import Console
 
-    console = Console()
+    console = get_console()
 
     adapter = _get_adapter()
     if adapter is None or not adapter.is_available():
@@ -696,7 +698,7 @@ def ahk_windows(
     from rich.console import Console
     from rich.table import Table
 
-    console = Console()
+    console = get_console()
 
     adapter = _get_adapter()
     if adapter is None or not adapter.is_available():
@@ -771,7 +773,7 @@ def ahk_clipboard(
     """
     from rich.console import Console
 
-    console = Console()
+    console = get_console()
 
     adapter = _get_adapter()
     if adapter is None or not adapter.is_available():
@@ -821,7 +823,7 @@ def ahk_automate(
     from rich.console import Console
     from rich.panel import Panel
 
-    console = Console()
+    console = get_console()
 
     adapter = _get_adapter()
     if adapter is None or not adapter.is_available():
@@ -983,7 +985,7 @@ def layout_list():
 
     from navig.core.window_manager import WindowManager
 
-    console = Console()
+    console = get_console()
     adapter = _get_adapter()
     if not adapter:
         return
@@ -1009,7 +1011,7 @@ def library_list(
 
     from navig.adapters.automation.evolution.library import ScriptLibrary
 
-    console = Console()
+    console = get_console()
     library = ScriptLibrary()
     scripts = library.list_scripts()
 
@@ -1048,7 +1050,7 @@ def library_show(
 
     from navig.adapters.automation.evolution.library import ScriptLibrary
 
-    console = Console()
+    console = get_console()
     library = ScriptLibrary()
 
     # Try exact ID match
@@ -1095,7 +1097,7 @@ def ahk_dashboard(
 
     from navig.core.window_manager import WindowManager
 
-    console = Console()
+    console = get_console()
     adapter = _get_adapter()
     if not adapter or not adapter.is_available():
         ch.error("AutoHotkey not available")
@@ -1267,7 +1269,7 @@ def ahk_listen(
     Register a global hotkey to run a command.
     Appends to ~/.navig/scripts/listener.ahk.
     """
-    script_dir = Path.home() / ".navig" / "scripts"
+    script_dir = config_dir() / "scripts"
     script_dir.mkdir(parents=True, exist_ok=True)
     listener_path = script_dir / "listener.ahk"
 
@@ -1300,7 +1302,7 @@ def ahk_listen(
 @ahk_app.command("listener-start")
 def ahk_listener_start():
     """Start or restart the persistent listener script."""
-    script_dir = Path.home() / ".navig" / "scripts"
+    script_dir = config_dir() / "scripts"
     listener_path = script_dir / "listener.ahk"
 
     if not listener_path.exists():
@@ -1322,7 +1324,7 @@ def ahk_listener_start():
 @ahk_app.command("listener-edit")
 def ahk_listener_edit():
     """Open listener script in default editor."""
-    script_dir = Path.home() / ".navig" / "scripts"
+    script_dir = config_dir() / "scripts"
     listener_path = script_dir / "listener.ahk"
     if not listener_path.exists():
         script_dir.mkdir(parents=True, exist_ok=True)
@@ -1362,7 +1364,7 @@ def ahk_generate(
 
     from navig.adapters.automation.ahk_ai import AHKAIGenerator, GenerationContext
 
-    console = Console()
+    console = get_console()
     adapter = _get_adapter()
     if not adapter or not adapter.is_available():
         ch.error("AutoHotkey is not available")
@@ -1441,7 +1443,7 @@ def ahk_evolve(  # noqa: F811
 
     from navig.adapters.automation.evolution.evolver import Evolver
 
-    console = Console()
+    console = get_console()
 
     if not _get_adapter() or not _get_adapter().is_available():
         ch.error("AutoHotkey is not available")
@@ -1508,7 +1510,7 @@ def ahk_processes(
         print(json.dumps(processes, indent=2))
         return
 
-    console = Console()
+    console = get_console()
     table = Table(title="Running Processes")
     table.add_column("PID", style="cyan")
     table.add_column("Name", style="green")
@@ -1585,7 +1587,7 @@ def ahk_monitors(
         print(json.dumps(monitors, indent=2))
         return
 
-    console = Console()
+    console = get_console()
     table = Table(title="Connected Monitors")
     table.add_column("#", style="cyan")
     table.add_column("Resolution", style="green")
@@ -1662,7 +1664,7 @@ def ahk_window_state(
         print(json.dumps(state, indent=2))
         return
 
-    console = Console()
+    console = get_console()
 
     if not state.get("exists"):
         ch.error(f"Window not found: {window}")
@@ -1702,7 +1704,7 @@ def ahk_active_window(
         print(json.dumps(window.to_dict(), indent=2))
         return
 
-    console = Console()
+    console = get_console()
     info = f"""Title: {window.title}
 Class: {window.class_name}
 PID: {window.pid}
@@ -1735,7 +1737,7 @@ def ahk_find(
         print(json.dumps([w.to_dict() for w in windows], indent=2))
         return
 
-    console = Console()
+    console = get_console()
 
     if not windows:
         ch.warning("No windows found")
@@ -1883,11 +1885,11 @@ def workflow_list():
 
     from navig.core.automation_engine import WorkflowEngine
 
-    console = Console()
+    console = get_console()
     engine = WorkflowEngine()
 
     workflows_dir = engine._workflows_dir
-    possible_paths = [workflows_dir, Path.home() / ".navig" / "workflows"]
+    possible_paths = [workflows_dir, config_dir() / "workflows"]
 
     table = Table(title="📜 Automation Workflows")
     table.add_column("Name", style="cyan")

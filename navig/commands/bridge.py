@@ -10,6 +10,7 @@ import secrets
 import typer
 
 from navig.lazy_loader import lazy_import
+from navig.platform.paths import config_dir
 
 ch = lazy_import("navig.console_helper")
 
@@ -51,7 +52,7 @@ def bridge_connect(
 
     import yaml
 
-    config_path = Path.home() / ".navig" / "config.yaml"
+    config_path = config_dir() / "config.yaml"
 
     # Load or create config
     if config_path.exists():
@@ -76,7 +77,9 @@ def bridge_connect(
     gw.setdefault("auth", {})["token"] = token
 
     # Write config
-    config_path.write_text(yaml.dump(cfg, default_flow_style=False))
+    from navig.core.yaml_io import atomic_write_yaml
+
+    atomic_write_yaml(cfg, config_path)
 
     if json_output:
         import json
@@ -132,7 +135,7 @@ def bridge_status(
 
     import yaml
 
-    config_path = Path.home() / ".navig" / "config.yaml"
+    config_path = config_dir() / "config.yaml"
 
     if not config_path.exists():
         ch.warning("No NAVIG config found. Run 'navig bridge connect' first.")
@@ -192,7 +195,7 @@ def bridge_rotate_token(
 
     import yaml
 
-    config_path = Path.home() / ".navig" / "config.yaml"
+    config_path = config_dir() / "config.yaml"
 
     if not config_path.exists():
         ch.error("No NAVIG config found. Run 'navig bridge connect' first.")
@@ -203,7 +206,9 @@ def bridge_rotate_token(
     new_token = secrets.token_urlsafe(32)
     cfg.setdefault("gateway", {}).setdefault("auth", {})["token"] = new_token
 
-    config_path.write_text(yaml.dump(cfg, default_flow_style=False))
+    from navig.core.yaml_io import atomic_write_yaml
+
+    atomic_write_yaml(cfg, config_path)
 
     if json_output:
         import json

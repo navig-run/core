@@ -39,6 +39,7 @@ from enum import Enum
 from pathlib import Path
 
 from navig.llm_router import PROVIDER_RESOURCE_URLS as _PRUL  # noqa: F401
+from navig.platform.paths import config_dir
 
 # =============================================================================
 # Types
@@ -127,7 +128,7 @@ class TTSConfig:
         if self.cache_dir:
             cache = self.cache_dir
         else:
-            cache = Path.home() / ".navig" / "cache" / "tts"
+            cache = config_dir() / "cache" / "tts"
         cache.mkdir(parents=True, exist_ok=True)
         return cache
 

@@ -148,6 +148,8 @@ def _redact_secrets_in_dir(dir_path: Path):
     """Redact sensitive data in all YAML files in a directory."""
     import yaml
 
+    from navig.core.security import redact_dict
+
     sensitive_keys = ["password", "api_key", "openrouter_api_key", "secret", "token"]
 
     for yaml_file in dir_path.rglob("*.yaml"):
@@ -155,25 +157,13 @@ def _redact_secrets_in_dir(dir_path: Path):
             with open(yaml_file) as f:
                 data = yaml.safe_load(f)
 
-            if data:
-                _redact_dict(data, sensitive_keys)
+            if data and isinstance(data, dict):
+                redacted = redact_dict(data, sensitive_keys=sensitive_keys)
 
                 with open(yaml_file, "w", encoding="utf-8") as f:
-                    yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+                    yaml.dump(redacted, f, default_flow_style=False, sort_keys=False)
         except Exception:
             pass  # Skip files that can't be processed
-
-
-def _redact_dict(d: dict, sensitive_keys: list[str]):
-    """Recursively redact sensitive keys in a dictionary."""
-    if not isinstance(d, dict):
-        return
-
-    for key, value in d.items():
-        if any(sk in key.lower() for sk in sensitive_keys):
-            d[key] = "[REDACTED]"
-        elif isinstance(value, dict):
-            _redact_dict(value, sensitive_keys)
 
 
 def _encrypt_file(file_path: Path, password: str) -> Path:

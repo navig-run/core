@@ -31,19 +31,16 @@ from typing import Any
 
 import yaml
 
+from navig.platform.paths import config_dir
+
 # =============================================================================
 # Paths
 # =============================================================================
 
 
-def get_navig_dir() -> Path:
-    """Get NAVIG config directory."""
-    return Path.home() / ".navig"
-
-
 def get_context_dir() -> Path:
     """Get user context directory (same as workspace for consistency)."""
-    return get_navig_dir() / "workspace"
+    return config_dir() / "workspace"
 
 
 def get_bundled_templates_dir() -> Path:

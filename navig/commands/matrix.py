@@ -29,9 +29,10 @@ from navig.comms.matrix_features import (
     require_feature,
     require_matrix,
 )
+from navig.console_helper import get_console
 
 logger = logging.getLogger(__name__)
-console = Console()
+console = get_console()
 
 # ============================================================================
 # App scaffold

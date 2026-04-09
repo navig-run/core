@@ -2,8 +2,10 @@
 import typer
 from rich.console import Console
 
+from navig.console_helper import get_console
+
 portable_app = typer.Typer(help="Manage portable NAVIG installations (USB / offline)", no_args_is_help=True)
-console = Console()
+console = get_console()
 
 
 @portable_app.command("create")

@@ -235,10 +235,11 @@ class TestFullPipeline:
         mock_meta.return_value = {"active_host": "prod"}
 
         # We need to mock the provider call since we have no real API keys.
-        # Patch _call_provider to capture its arguments and return fake content.
+        # Patch _call_provider_rich (used by run_llm) to capture args and
+        # avoid constructing real provider clients/sockets.
         captured_calls: List[Dict[str, Any]] = []
 
-        def fake_call_provider(
+        def fake_call_provider_rich(
             provider,
             model,
             messages,
@@ -246,6 +247,7 @@ class TestFullPipeline:
             max_tokens=4096,
             timeout=120.0,
             base_url=None,
+            thinking_params=None,
         ):
             captured_calls.append(
                 {
@@ -255,9 +257,9 @@ class TestFullPipeline:
                     "temperature": temperature,
                 }
             )
-            return "Mocked LLM response"
+            return "Mocked LLM response", 0, 0, {}
 
-        with patch("navig.llm_generate._call_provider", side_effect=fake_call_provider):
+        with patch("navig.llm_generate._call_provider_rich", side_effect=fake_call_provider_rich):
             # Also need llm_modes config to be present for the router path
             with patch("navig.llm_generate._has_llm_modes_config", return_value=True):
                 # Mock resolve_llm to return a valid config

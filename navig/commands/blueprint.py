@@ -2,8 +2,10 @@
 import typer
 from rich.console import Console
 
+from navig.console_helper import get_console
+
 blueprint_app = typer.Typer(help="Manage project blueprints and templates", no_args_is_help=True)
-console = Console()
+console = get_console()
 
 
 @blueprint_app.command("list")

@@ -12,12 +12,13 @@ Log Format:
 """
 
 import logging
-import re
 import sys
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
+
+from navig.core.security import redact_sensitive_text
 
 
 class DebugLogger:
@@ -32,89 +33,8 @@ class DebugLogger:
     - Performance-optimized with buffered I/O
     """
 
-    # Patterns for sensitive data redaction
-    # Extended with patterns from navig.core.security module (Agent-inspired)
-    SENSITIVE_PATTERNS = [
-        # Original patterns (backward compatibility)
-        (
-            re.compile(r'(password["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', re.IGNORECASE),
-            r"\1***REDACTED***",
-        ),
-        (
-            re.compile(r'(ssh_password["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', re.IGNORECASE),
-            r"\1***REDACTED***",
-        ),
-        (
-            re.compile(r'(api_key["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', re.IGNORECASE),
-            r"\1***REDACTED***",
-        ),
-        (
-            re.compile(r'(token["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', re.IGNORECASE),
-            r"\1***REDACTED***",
-        ),
-        (
-            re.compile(r'(secret["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', re.IGNORECASE),
-            r"\1***REDACTED***",
-        ),
-        (
-            re.compile(r'(auth["\']?\s*[:=]\s*["\']?)[^"\'\s,}]+', re.IGNORECASE),
-            r"\1***REDACTED***",
-        ),
-        (
-            re.compile(r"(-p\s+)[^\s]+", re.IGNORECASE),
-            r"\1***REDACTED***",
-        ),  # MySQL -p password
-        (re.compile(r"(MYSQL_PWD=)[^\s]+", re.IGNORECASE), r"\1***REDACTED***"),
-        (
-            re.compile(r"(-----BEGIN[^-]+-----)[^-]+(-----END)", re.DOTALL),
-            r"\1***REDACTED***\2",
-        ),  # SSH keys
-        (
-            re.compile(r"(Authorization:\s*Bearer\s+)[^\s]+", re.IGNORECASE),
-            r"\1***REDACTED***",
-        ),  # Bearer tokens
-        (
-            re.compile(r"(Authorization:\s*Basic\s+)[^\s]+", re.IGNORECASE),
-            r"\1***REDACTED***",
-        ),  # Basic auth
-        # Agent-inspired patterns for provider API keys
-        (re.compile(r"\b(sk-[A-Za-z0-9_-]{8,})\b"), r"sk-***REDACTED***"),  # OpenAI
-        (
-            re.compile(r"\b(sk-proj-[A-Za-z0-9_-]{8,})\b"),
-            r"sk-proj-***REDACTED***",
-        ),  # OpenAI project
-        (
-            re.compile(r"\b(sk-ant-[A-Za-z0-9_-]{8,})\b"),
-            r"sk-ant-***REDACTED***",
-        ),  # Anthropic
-        (
-            re.compile(r"\b(ghp_[A-Za-z0-9]{20,})\b"),
-            r"ghp_***REDACTED***",
-        ),  # GitHub PAT
-        (
-            re.compile(r"\b(github_pat_[A-Za-z0-9_]{20,})\b"),
-            r"github_pat_***REDACTED***",
-        ),  # GitHub fine-grained
-        (
-            re.compile(r"\b(xox[baprs]-[A-Za-z0-9-]{10,})\b"),
-            r"xox*-***REDACTED***",
-        ),  # Slack
-        (re.compile(r"\b(gsk_[A-Za-z0-9_-]{10,})\b"), r"gsk_***REDACTED***"),  # Groq
-        (re.compile(r"\b(AIza[0-9A-Za-z\-_]{20,})\b"), r"AIza***REDACTED***"),  # Google
-        (
-            re.compile(r"\b(pplx-[A-Za-z0-9_-]{10,})\b"),
-            r"pplx-***REDACTED***",
-        ),  # Perplexity
-        # Connection strings
-        (
-            re.compile(r"(mysql://[^:]+:)([^@]+)(@)", re.IGNORECASE),
-            r"\1***REDACTED***\3",
-        ),
-        (
-            re.compile(r"(postgres://[^:]+:)([^@]+)(@)", re.IGNORECASE),
-            r"\1***REDACTED***\3",
-        ),
-    ]
+    # Redaction is delegated to navig.core.security.redact_sensitive_text
+    # (single source of truth for all sensitive-data patterns).
 
     SEPARATOR = "=" * 80
 
@@ -210,11 +130,7 @@ class DebugLogger:
         """Redact sensitive information from text."""
         if not text:
             return text
-
-        result = text
-        for pattern, replacement in self.SENSITIVE_PATTERNS:
-            result = pattern.sub(replacement, result)
-        return result
+        return redact_sensitive_text(text)
 
     def _truncate_output(self, output: str) -> str:
         """Truncate output if it exceeds the configured limit."""

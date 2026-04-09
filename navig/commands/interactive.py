@@ -36,9 +36,10 @@ from navig.commands import (
 
 # NAVIG components
 from navig.config import ConfigManager, get_config_manager
+from navig.console_helper import get_console
 
 # Initialize console with Mr. Robot theme
-console = Console()
+console = get_console()
 
 # Mr. Robot color scheme
 COLORS = {

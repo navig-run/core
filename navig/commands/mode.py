@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import typer
 
+from navig.console_helper import get_console
+
 mode_app = typer.Typer(
     help="LLM mode routing — view, configure, and test multi-mode AI routing",
     invoke_without_command=True,
@@ -65,7 +67,7 @@ def _show_modes():
 
     from navig.llm_router import CANONICAL_MODES, _has_api_key, get_llm_router
 
-    console = Console()
+    console = get_console()
     router = get_llm_router()
 
     table = Table(
@@ -144,7 +146,7 @@ def mode_set(
 
     from navig.llm_router import get_llm_router
 
-    console = Console()
+    console = get_console()
     router = get_llm_router()
 
     canonical = router.resolve_mode(mode)
@@ -282,7 +284,7 @@ def mode_route_show(
     from rich.console import Console
     from rich.table import Table
 
-    console = Console()
+    console = get_console()
     table = Table(title="Hybrid Routing Slots", border_style="dim")
     table.add_column("Tier", style="cyan", min_width=10)
     table.add_column("Provider", min_width=14)
@@ -319,7 +321,7 @@ def mode_route_set(
 
     from rich.console import Console
 
-    console = Console()
+    console = get_console()
     tier_label = {"small": "Small", "big": "Big", "coder_big": "Code"}[normalized_tier]
     console.print(
         f"[green]✓[/green] Updated [cyan]{tier_label}[/cyan] slot: "
@@ -344,7 +346,7 @@ def mode_list(
 
     from navig.llm_router import get_llm_router
 
-    console = Console()
+    console = get_console()
     router = get_llm_router()
 
     uncensored_info = router.list_uncensored_models()
@@ -406,7 +408,7 @@ def mode_detect(
 
     from navig.llm_router import get_llm_router
 
-    console = Console()
+    console = get_console()
     router = get_llm_router()
 
     mode = router.detect_mode(text)

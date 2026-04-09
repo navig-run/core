@@ -150,7 +150,9 @@ def test_plans_update_writes_frontmatter_completion(tmp_path, monkeypatch):
     plans_dir = repo / ".navig" / "plans"
     plans_dir.mkdir(parents=True, exist_ok=True)
     target = plans_dir / "CURRENT_PHASE.md"
-    target.write_text("# Current Phase\n\n- [x] Task A\n- [ ] Task B\n- [x] Task C\n", encoding="utf-8")
+    target.write_text(
+        "# Current Phase\n\n- [x] Task A\n- [ ] Task B\n- [x] Task C\n", encoding="utf-8"
+    )
 
     result = runner.invoke(plans_app, ["update", "CURRENT_PHASE.md", "--path", str(repo)])
     assert result.exit_code == 0
@@ -267,4 +269,3 @@ def test_plans_summary_all_spaces_table(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "alpha" in result.stdout
     assert "beta" in result.stdout
-

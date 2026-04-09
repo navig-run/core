@@ -272,9 +272,7 @@ class TestInboxRouterAgentHeuristic:
         inbox = tmp_path / ".navig" / "plans" / "inbox"
         inbox.mkdir(parents=True)
         f = inbox / "roadmap-draft.md"
-        f.write_text(
-            "---\nspace: career\n---\n\n# Migration Roadmap\n\nPhase 1: milestone setup"
-        )
+        f.write_text("---\nspace: career\n---\n\n# Migration Roadmap\n\nPhase 1: milestone setup")
 
         agent = InboxRouterAgent(tmp_path, use_llm=False)
         plan = agent.process_single(f, manual_space="health")

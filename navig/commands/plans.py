@@ -8,6 +8,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from navig.console_helper import get_console
 from navig.spaces import get_default_space, normalize_space_name
 from navig.spaces.briefing import build_spaces_briefing_lines
 from navig.spaces.next_action import get_space_next_action, select_best_next_action
@@ -20,7 +21,7 @@ plans_app = typer.Typer(
     no_args_is_help=False,
 )
 
-_console = Console()
+_console = get_console()
 _FRONTMATTER_RE = re.compile(r"^---\n([\s\S]*?)\n---\n?", re.MULTILINE)
 _CHECKBOX_RE = re.compile(r"^\s*-\s*\[([ xX])\]", re.MULTILINE)
 

@@ -13,7 +13,7 @@ NERD_FONT_AVAILABLE is True when:
   Set NAVIG_NERD_FONT=0 to forcibly disable (e.g. for screenshots).
 
 Import `console` and style constants from here — never create
-a new Console() in command modules.
+a new get_console() in command modules.
 """
 
 from __future__ import annotations
@@ -23,6 +23,8 @@ import sys
 from pathlib import Path
 
 from rich.console import Console
+
+from navig.console_helper import get_console
 
 
 # ── SAFE MODE detection ───────────────────────────────────────────────────
@@ -61,9 +63,10 @@ def _detect_nerd_font() -> bool:
 
     # Read cached result from terminal.json
     try:
+        from navig.platform.paths import config_dir
         from navig.ui._capabilities import read_terminal_json
 
-        navig_dir = Path(os.getenv("NAVIG_HOME", str(Path.home() / ".navig")))
+        navig_dir = config_dir()
         data = read_terminal_json(navig_dir)
         if "nerd_font" in data:
             return bool(data["nerd_font"])

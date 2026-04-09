@@ -37,6 +37,7 @@ from navig.installer.contracts import InstallerContext, ModuleState, Result
 from navig.installer.planner import plan
 from navig.installer.profiles import DEFAULT_PROFILE, VALID_PROFILES
 from navig.installer.runner import apply
+from navig.platform.paths import config_dir as _default_config_dir
 
 
 def run_install(
@@ -77,7 +78,7 @@ def run_install(
         profile=profile,
         dry_run=dry_run,
         quiet=quiet,
-        config_dir=config_dir or Path.home() / ".navig",
+        config_dir=config_dir or _default_config_dir(),
         extra=extra or {},
     )
 

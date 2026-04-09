@@ -29,6 +29,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from navig.platform.paths import config_dir
+
 logger = logging.getLogger(__name__)
 
 
@@ -369,7 +371,7 @@ class PlanExecuteAgent:
     def _save_trace(self, plan: ExecutionPlan) -> None:
         """Save the execution trace to ``.navig/plans/runs/{timestamp}.json``."""
         try:
-            runs_dir = Path.home() / ".navig" / "plans" / "runs"
+            runs_dir = config_dir() / "plans" / "runs"
             runs_dir.mkdir(parents=True, exist_ok=True)
 
             ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")

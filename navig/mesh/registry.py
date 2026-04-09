@@ -27,6 +27,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from navig.debug_logger import get_debug_logger
+from navig.platform.paths import config_dir
 
 logger = get_debug_logger()
 
@@ -529,6 +530,6 @@ def get_registry(storage_dir: Path | None = None) -> NodeRegistry:
     global _registry_instance
     if _registry_instance is None:
         if storage_dir is None:
-            storage_dir = Path.home() / ".navig"
+            storage_dir = config_dir()
         _registry_instance = NodeRegistry(storage_dir)
     return _registry_instance

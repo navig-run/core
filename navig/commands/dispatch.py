@@ -11,6 +11,8 @@ from pathlib import Path
 
 import typer
 
+from navig.console_helper import get_console
+
 dispatch_app = typer.Typer(help="Multi-network message dispatch", no_args_is_help=True)
 contacts_app = typer.Typer(help="Manage contacts and address book", no_args_is_help=True)
 
@@ -106,7 +108,7 @@ def dispatch_status(
     rows = tracker.recent(limit=limit)
 
     if not rows:
-        Console().print("[dim]No deliveries recorded.[/dim]")
+        get_console().print("[dim]No deliveries recorded.[/dim]")
         return
 
     table = Table(title="Recent Deliveries")
@@ -125,7 +127,7 @@ def dispatch_status(
             r.get("status", ""),
             r.get("created_at", ""),
         )
-    Console().print(table)
+    get_console().print(table)
 
 
 # ── dispatch threads ──────────────────────────────────────────
@@ -144,7 +146,7 @@ def dispatch_threads(
 
     threads = get_thread_store().list_threads(adapter=adapter, limit=limit)
     if not threads:
-        Console().print("[dim]No threads.[/dim]")
+        get_console().print("[dim]No threads.[/dim]")
         return
 
     table = Table(title="Threads")
@@ -163,7 +165,7 @@ def dispatch_threads(
             t.status,
             str(t.last_active),
         )
-    Console().print(table)
+    get_console().print(table)
 
 
 # ── contacts list ─────────────────────────────────────────────
@@ -207,7 +209,7 @@ def contacts_list(
             c.default_network or "auto",
             nets,
         )
-    Console().print(table)
+    get_console().print(table)
 
 
 # ── contacts add ──────────────────────────────────────────────

@@ -390,7 +390,9 @@ class FactRetriever:
             lines.append(f"- {rf.fact.content}{tag_str}")
 
         text = "\n".join(lines)
-        tokens = max(1, len(text) // 4)
+        from navig.core.tokens import estimate_tokens
+
+        tokens = estimate_tokens(text)
         return text, tokens
 
     @staticmethod

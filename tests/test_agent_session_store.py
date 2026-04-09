@@ -185,6 +185,7 @@ class TestSessionIdGeneration:
 
     def test_format_pattern(self):
         import re
+
         sid = _generate_session_id()
         assert re.match(r"^\d{8}_\d{6}_[0-9a-f]{4}$", sid)
 
@@ -195,6 +196,7 @@ class TestSessionIdGeneration:
     def test_sortable_across_seconds(self):
         """IDs generated in different seconds sort chronologically."""
         import re
+
         id1 = _generate_session_id()
         # Patch time to be 2 seconds later
         with patch("navig.agent.session_store.time") as mock_time:
@@ -219,6 +221,7 @@ class TestSessionStoreInit:
 
     def test_auto_generated_id(self, session_dir: Path):
         import re
+
         store = SessionStore(base_dir=session_dir)
         assert re.match(r"^\d{8}_\d{6}_[0-9a-f]{4}$", store.session_id)
 
@@ -450,7 +453,11 @@ class TestListSessions:
     """Session listing and search."""
 
     def _create_session(
-        self, session_dir: Path, sid: str, workspace: str = "", last_active: float = 0.0,
+        self,
+        session_dir: Path,
+        sid: str,
+        workspace: str = "",
+        last_active: float = 0.0,
     ) -> SessionStore:
         store = SessionStore(session_id=sid, base_dir=session_dir, workspace=workspace)
         store.append(SessionEntry(role="user", content="hi"))
@@ -490,7 +497,11 @@ class TestFindByWorkspace:
     """Workspace filtering."""
 
     def _create_session(
-        self, session_dir: Path, sid: str, workspace: str = "", last_active: float = 0.0,
+        self,
+        session_dir: Path,
+        sid: str,
+        workspace: str = "",
+        last_active: float = 0.0,
     ) -> SessionStore:
         store = SessionStore(session_id=sid, base_dir=session_dir, workspace=workspace)
         store.append(SessionEntry(role="user", content="hi"))

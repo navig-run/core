@@ -216,6 +216,7 @@ class TestCleanupSpillover:
             old_file.write_text("old content")
             old_time = time.time() - SPILLOVER_TTL - 100
             import os
+
             os.utime(old_file, (old_time, old_time))
 
             removed = cleanup_spillover()
@@ -236,6 +237,7 @@ class TestCleanupSpillover:
 
     def test_mixed_old_and_new(self, tmp_path):
         import os
+
         with patch("navig.agent.tool_caps.SPILLOVER_DIR", tmp_path):
             old_file = tmp_path / "old.txt"
             old_file.write_text("old")
@@ -262,11 +264,13 @@ class TestRegistryIntegration:
     def test_registry_imports_cap_result(self):
         """The import should not fail."""
         from navig.agent.agent_tool_registry import cap_result as imported_fn  # noqa: F401
+
         assert callable(imported_fn)
 
     def test_registry_no_legacy_max_output_chars(self):
         """The old _MAX_OUTPUT_CHARS constant should be gone."""
         import navig.agent.agent_tool_registry as mod
+
         assert not hasattr(mod, "_MAX_OUTPUT_CHARS")
 
 

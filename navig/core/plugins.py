@@ -48,6 +48,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from navig.platform.paths import config_dir
+
 # =============================================================================
 # Types
 # =============================================================================
@@ -327,7 +329,7 @@ class PluginRegistry:
 
             navig_home = _paths.config_dir()
         except Exception:
-            navig_home = Path.home() / ".navig"
+            navig_home = config_dir()
 
         # Default plugin directories
         self._plugin_dirs = [

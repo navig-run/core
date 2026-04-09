@@ -14,6 +14,7 @@ from __future__ import annotations
 import typer
 
 from navig import console_helper as ch
+from navig.console_helper import get_console
 
 migrate_app = typer.Typer(
     name="migrate",
@@ -226,4 +227,4 @@ def migrate_status_cmd() -> None:
         mark = "[green]✓[/green]" if name in done else "[yellow]○[/yellow]"
         from rich.console import Console  # noqa: PLC0415
 
-        Console().print(f"  {mark} {name:<16} {description}")
+        get_console().print(f"  {mark} {name:<16} {description}")

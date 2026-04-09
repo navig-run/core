@@ -29,6 +29,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from navig.platform.paths import config_dir
 from navig.workspace_ownership import (
     USER_WORKSPACE_DIR,
     detect_project_workspace_duplicates,
@@ -91,7 +92,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Default paths
 # ---------------------------------------------------------------------------
-DEFAULT_NAVIG_DIR = Path.home() / ".navig"
+DEFAULT_NAVIG_DIR = config_dir()
 DEFAULT_WORKSPACE_DIR = USER_WORKSPACE_DIR
 DEFAULT_CONFIG_FILE = DEFAULT_NAVIG_DIR / "navig.json"
 
@@ -408,6 +409,12 @@ def _store_in_vault(
 
 def get_console() -> ConsoleType:
     """Get rich console or fall back to basic print."""
+    try:
+        from navig.console_helper import get_console as _ch_get_console
+
+        return _ch_get_console()
+    except Exception:
+        pass
     if RICH_AVAILABLE and Console:
         return Console()
     return None
@@ -2067,7 +2074,7 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
         try:
             from navig.commands.init import _prompt_local_discovery
 
-            _prompt_local_discovery(Path.home() / ".navig")
+            _prompt_local_discovery(config_dir())
         except Exception:  # noqa: BLE001
             pass
 

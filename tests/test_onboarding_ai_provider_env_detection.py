@@ -3,6 +3,7 @@
 Verifies that OPENAI_API_KEY (and other provider keys) are detected and
 used at step 8 (ai-provider), not delayed until step 16 (runtime-secrets).
 """
+
 from __future__ import annotations
 
 import json
@@ -130,9 +131,7 @@ def test_ai_provider_step_no_env_key_prompts_user(monkeypatch, tmp_path: Path) -
 
     monkeypatch.setattr("typer.prompt", _mock_prompt)
     # _prompt_masked needs to return a non-empty key to avoid "no key entered" skip.
-    monkeypatch.setattr(
-        "navig.onboarding.steps._prompt_masked", lambda *a, **kw: "interactive-key"
-    )
+    monkeypatch.setattr("navig.onboarding.steps._prompt_masked", lambda *a, **kw: "interactive-key")
 
     result = step.run()
 
@@ -155,4 +154,3 @@ def test_ai_provider_step_env_key_not_reimported_at_runtime_secrets(
         "ANTHROPIC_API_KEY should be handled at the ai-provider step (step 8), "
         "not re-offered at the runtime-secrets step (step 16)."
     )
-

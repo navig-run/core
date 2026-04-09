@@ -13,6 +13,14 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Tavily search provider** (#42): Added Tavily to the web-search-provider onboarding catalog (`_WEB_SEARCH_PROVIDER_CATALOG`) and `provider_aliases` normalization map in `navig/onboarding/steps.py`.
 - **Onboarding step labels** (#45): Added missing human-readable labels for `sigil-genesis`, `core-navig`, `web-search-provider`, `matrix-bot`, `email-smtp`, `social-link`, and `import-secrets` in `navig/onboarding/renderer.py` so the setup summary displays friendly names instead of raw step IDs.
 
+### Refactored
+- **Full Overlap & Redundancy Audit** — codebase-wide consolidation of duplicate, overlapping, and dead code across 4 phases (~140 files touched):
+  - **Phase A — Dead code removal**: Deleted `mask_token()` + 3 constants from `security.py`; removed non-functional `commands/logs.py` (162 lines), zero-caller `retry.py` (413 lines), stale `vault/core_v2.py`; removed orphan `"logs"` registration entry; added deprecation docstring to `detect_mode()`.
+  - **Phase B — Duplicate consolidation**: Extracted shared `_retry.py` async retry helper (audio.py + image.py); extracted `core/protocols.py` shared Protocol definitions (hosts.py + apps.py); replaced inline `_substitute_env_vars` in `agent/config.py` with canonical `security.substitute_env_vars`; unified `get_console()` fallback in onboard.py + runner.py to prefer `console_helper` singleton.
+  - **Phase C — Redaction pattern unification**: Replaced 80-line `SENSITIVE_PATTERNS` in `debug_logger.py` and 5 compiled patterns in `console_helper.py` with delegation to canonical `security.redact_sensitive_text()`.
+  - **Phase D1 — Console singleton migration**: Automated migration of ~75 files (~138 replacements) replacing bare `Console()` with `get_console()` from `console_helper`, ensuring consistent Rich console lifecycle.
+  - **Phase D2 — config_dir migration**: Automated migration of 68 files (124 replacements) replacing `Path.home() / ".navig"` with `config_dir()` from `navig.platform.paths`, centralizing the `NAVIG_CONFIG_DIR` / `NAVIG_HOME` env var logic.
+
 ### Fixed
 - **Vault test hang on Windows / Python 3.14** (`fix(vault): lazy argon2 + derive_key patch`): Three cascading hangs eliminated.
   (1) `argon2-cffi` DLL (`argon2.low_level`) blocks indefinitely when first imported on Windows/Python 3.14 — moved from module-level import to lazy probe globals (`_argon2_probed` / `_argon2_funcs`) in `navig/vault/crypto.py`; import chain drops from >65 s hang to 0.058 s.

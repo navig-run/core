@@ -2,8 +2,10 @@
 import typer
 from rich.console import Console
 
+from navig.console_helper import get_console
+
 spaces_context_app = typer.Typer(help="Switch between personal, workspace, and studio contexts", no_args_is_help=False)
-console = Console()
+console = get_console()
 
 _VALID_SPACES = ("personal", "workspace", "studio", "focus")
 

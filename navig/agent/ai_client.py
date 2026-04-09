@@ -185,10 +185,9 @@ class AIClient:
                 )
                 host = parsed.hostname or "127.0.0.1"
                 port = parsed.port or _BDP
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(1.0)
-                result = sock.connect_ex((host, port))
-                sock.close()
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                    sock.settimeout(1.0)
+                    result = sock.connect_ex((host, port))
                 if result == 0:
                     return "mcp_bridge"
             except Exception:  # noqa: BLE001
@@ -217,9 +216,8 @@ class AIClient:
         try:
             import socket
 
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            result = sock.connect_ex(("localhost", 11434))
-            sock.close()
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                result = sock.connect_ex(("localhost", 11434))
             if result == 0:
                 return "local"
         except Exception:  # noqa: BLE001

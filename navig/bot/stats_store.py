@@ -23,6 +23,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from navig.platform.paths import config_dir
+
 
 def _utc_now() -> datetime:
     """Get current UTC time."""
@@ -31,7 +33,7 @@ def _utc_now() -> datetime:
 
 def _bot_db_path() -> Path:
     """Get path to bot database."""
-    db_dir = Path.home() / ".navig" / "bot"
+    db_dir = config_dir() / "bot"
     db_dir.mkdir(parents=True, exist_ok=True)
     return db_dir / "bot_data.db"
 

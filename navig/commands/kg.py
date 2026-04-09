@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import typer
 
+from navig.console_helper import get_console
 from navig.lazy_loader import lazy_import
 
 _ch = lazy_import("navig.console_helper")
@@ -103,7 +104,7 @@ def kg_recall(
     table.add_column("Source", style="dim")
     for f in facts:
         table.add_row(f.id, f.predicate, f.object, f"{f.confidence:.0%}", f.source)
-    Console().print(table)
+    get_console().print(table)
 
 
 @kg_app.command("search")
@@ -127,7 +128,7 @@ def kg_search(
         return
     from rich.console import Console
 
-    con = Console()
+    con = get_console()
     con.print(f'[bold]Found {len(facts)} fact(s) for[/bold] "{query}":\n')
     for f in facts:
         con.print(
@@ -182,7 +183,7 @@ def kg_routines(
     for r in routines:
         last = r.last_run.strftime("%Y-%m-%d %H:%M") if r.last_run else "—"
         table.add_row(r.id, r.name, r.schedule, r.description or "—", last)
-    Console().print(table)
+    get_console().print(table)
 
 
 @kg_app.command("status")
@@ -194,7 +195,7 @@ def kg_status():
     routine_count = con.execute("SELECT COUNT(*) FROM routines").fetchone()[0]
     from rich.console import Console
 
-    Console().print(
+    get_console().print(
         f"[bold]Knowledge Graph Status[/bold]\n"
         f"  Facts:    [cyan]{fact_count}[/cyan]\n"
         f"  Routines: [cyan]{routine_count}[/cyan]\n"

@@ -24,6 +24,7 @@ import yaml
 
 from navig import console_helper as ch
 from navig.config import ConfigManager
+from navig.platform.paths import config_dir
 
 # Wiki folder structure
 WIKI_STRUCTURE = {
@@ -131,7 +132,7 @@ def get_wiki_path(config: ConfigManager) -> Path:
 
 def get_global_wiki_path() -> Path:
     """Get the global wiki directory path."""
-    return Path.home() / ".navig" / "wiki"
+    return config_dir() / "wiki"
 
 
 def ensure_wiki_initialized(wiki_path: Path) -> bool:

@@ -18,6 +18,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from navig.platform.paths import config_dir
+
 # Environment variable to force debug mode
 ENV_DEBUG_VAR = "NAVIG_DEBUG"
 
@@ -49,7 +51,7 @@ class CrashHandler:
             log_dir = cm.base_dir / "logs"
         except Exception:
             # Fallback to local .navig/logs or user home
-            log_dir = Path.home() / ".navig" / "logs"
+            log_dir = config_dir() / "logs"
             if Path(".navig").exists():
                 log_dir = Path(".navig") / "logs"
 

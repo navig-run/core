@@ -10,30 +10,14 @@ Manages agent mode configuration with support for:
 
 from __future__ import annotations
 
-import os
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-
-def _substitute_env_vars(value: Any) -> Any:
-    """Substitute ${VAR} patterns with environment variables."""
-    if isinstance(value, str):
-        pattern = r"\$\{([^}]+)\}"
-
-        def replacer(match):
-            var_name = match.group(1)
-            return os.environ.get(var_name, match.group(0))
-
-        return re.sub(pattern, replacer, value)
-    elif isinstance(value, dict):
-        return {k: _substitute_env_vars(v) for k, v in value.items()}
-    elif isinstance(value, list):
-        return [_substitute_env_vars(item) for item in value]
-    return value
+from navig.core.security import substitute_env_vars as _substitute_env_vars_impl
+from navig.platform.paths import config_dir
 
 
 @dataclass
@@ -276,7 +260,7 @@ class MemoryConfig:
     """Memory configuration."""
 
     storage_path: Path = field(
-        default_factory=lambda: Path.home() / ".navig" / "agent" / "memory.db"
+        default_factory=lambda: config_dir() / "agent" / "memory.db"
     )
     max_history_messages: int = 1000
     context_window: int = 50
@@ -348,7 +332,7 @@ class AgentConfig:
 
     enabled: bool = True
     mode: str = "autonomous"  # autonomous, supervised, observe-only
-    workspace: Path = field(default_factory=lambda: Path.home() / ".navig" / "agent" / "workspace")
+    workspace: Path = field(default_factory=lambda: config_dir() / "agent" / "workspace")
 
     brain: BrainConfig = field(default_factory=BrainConfig)
     eyes: EyesConfig = field(default_factory=EyesConfig)
@@ -365,7 +349,7 @@ class AgentConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AgentConfig:
         """Create config from dictionary (with env var substitution)."""
-        data = _substitute_env_vars(data)
+        data = _substitute_env_vars_impl(data, strict=False)
         agent_data = data.get("agent", data)
 
         workspace = agent_data.get("workspace", str(cls().workspace))

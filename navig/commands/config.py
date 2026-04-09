@@ -14,6 +14,7 @@ from rich.table import Table
 from navig import console_helper as ch
 from navig.cli._callbacks import show_subcommand_help
 from navig.config import get_config_manager
+from navig.console_helper import get_console
 from navig.core.yaml_io import load_yaml_with_lines
 from navig.migration import migrate_all_configs
 from navig.platform import paths
@@ -209,7 +210,7 @@ def migrate(
         # Perform migration without backups
         navig config migrate --no-backup
     """
-    console = Console()
+    console = get_console()
 
     # Get configuration directories
     old_dir = paths.config_dir() / "apps"
@@ -755,7 +756,7 @@ def show_settings():
         navig config settings --json
     """
     config_manager = get_config_manager()
-    console = Console()
+    console = get_console()
 
     # Get all settings
     global_config = config_manager.get_global_config()

@@ -13,7 +13,9 @@ import pytest
         (False, False),
     ],
 )
-def test_smart_launch_non_tty_exits_with_hint(monkeypatch, capsys, stdin_tty: bool, stdout_tty: bool):
+def test_smart_launch_non_tty_exits_with_hint(
+    monkeypatch, capsys, stdin_tty: bool, stdout_tty: bool
+):
     """smart_launch must short-circuit in any non-TTY environment."""
     from navig.cli import launcher as launcher_mod
 

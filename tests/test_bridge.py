@@ -5,9 +5,51 @@ and Telegram webhook support.
 Run: pytest tests/test_bridge.py -v
 """
 
+import asyncio
+import subprocess
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_subprocess_transports():
+    """Drain inherited subprocess leftovers around each bridge test."""
+    try:
+        subprocess._cleanup()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        loop = asyncio.get_event_loop_policy().get_event_loop()
+        subprocesses = getattr(loop, "_subprocesses", None)
+        if isinstance(subprocesses, dict):
+            for transport in list(subprocesses.values()):
+                try:
+                    transport.close()
+                except Exception:  # noqa: BLE001
+                    pass
+            subprocesses.clear()
+    except Exception:  # noqa: BLE001
+        pass
+
+    yield
+
+    try:
+        subprocess._cleanup()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        loop = asyncio.get_event_loop_policy().get_event_loop()
+        subprocesses = getattr(loop, "_subprocesses", None)
+        if isinstance(subprocesses, dict):
+            for transport in list(subprocesses.values()):
+                try:
+                    transport.close()
+                except Exception:  # noqa: BLE001
+                    pass
+            subprocesses.clear()
+    except Exception:  # noqa: BLE001
+        pass
 
 # ── Fixtures ────────────────────────────────────────────────────────
 

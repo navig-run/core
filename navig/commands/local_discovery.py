@@ -14,6 +14,7 @@ from typing import Any
 
 from navig import console_helper as ch
 from navig.config import get_config_manager
+from navig.console_helper import get_console
 
 
 def _decode_subprocess_output(data: bytes) -> str:
@@ -607,7 +608,7 @@ def discover_local_host(
     from rich.prompt import Confirm
     from rich.table import Table
 
-    console = Console()
+    console = get_console()
     config_manager = get_config_manager()
 
     # Best-effort cache for the expensive discovery phase.

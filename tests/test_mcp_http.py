@@ -120,6 +120,7 @@ _web_stub.Request = MagicMock  # used only as a type annotation in mcp_server.py
 _aio_stub = MagicMock(name="aiohttp")
 _aio_stub.web = _web_stub
 
+
 @pytest.fixture(autouse=True)
 def _isolate_aiohttp_stub(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure aiohttp stubs are scoped to this module's tests only."""
@@ -155,6 +156,7 @@ class _PayloadWriter:
 
     async def drain(self) -> None:
         return None
+
 
 # ---------------------------------------------------------------------------
 # Test helpers

@@ -16,6 +16,8 @@ import typer
 
 from navig import console_helper as ch
 from navig.cli._callbacks import show_subcommand_help
+from navig.console_helper import get_console
+from navig.platform.paths import config_dir
 
 logger = logging.getLogger(__name__)
 
@@ -420,7 +422,7 @@ def ai_models(
     from rich.console import Console
     from rich.table import Table
 
-    console = Console()
+    console = get_console()
 
     try:
         from navig.providers import BUILTIN_PROVIDERS
@@ -494,7 +496,7 @@ def ai_providers(
     from rich.console import Console
     from rich.table import Table
 
-    console = Console()
+    console = get_console()
 
     try:
         from navig.providers import BUILTIN_PROVIDERS, AuthProfileManager
@@ -652,7 +654,7 @@ def ai_airllm(
     from rich.panel import Panel
     from rich.table import Table
 
-    console = Console()
+    console = get_console()
 
     # Check if AirLLM is installed
     try:
@@ -831,7 +833,7 @@ def ai_login(
     """Login to an AI provider using OAuth (e.g., OpenAI Codex)."""
     from rich.console import Console
 
-    console = Console()
+    console = get_console()
 
     try:
         from navig.providers import (
@@ -938,7 +940,7 @@ def ai_logout(
     """Remove OAuth credentials for a provider."""
     from rich.console import Console
 
-    console = Console()
+    console = get_console()
 
     try:
         from navig.providers import AuthProfileManager
@@ -991,7 +993,7 @@ def _memory_show():
     """Display current user profile."""
     from rich.console import Console
 
-    console = Console()
+    console = get_console()
     try:
         from navig.memory.user_profile import get_profile
 
@@ -1017,9 +1019,9 @@ def memory_edit():
 
     from rich.console import Console
 
-    console = Console()
+    console = get_console()
 
-    profile_path = Path.home() / ".navig" / "memory" / "user_profile.json"
+    profile_path = config_dir() / "memory" / "user_profile.json"
 
     if not profile_path.exists():
         # Create empty profile first
@@ -1060,7 +1062,7 @@ def memory_add(
     """Add a note to NAVIG's memory about you."""
     from rich.console import Console
 
-    console = Console()
+    console = get_console()
     try:
         from navig.memory.user_profile import get_profile
 
@@ -1083,7 +1085,7 @@ def memory_search(
     """Search NAVIG's memory about you."""
     from rich.console import Console
 
-    console = Console()
+    console = get_console()
     try:
         from navig.memory.user_profile import get_profile
 
@@ -1109,7 +1111,7 @@ def memory_clear(
     """Clear all memory (requires --confirm)."""
     from rich.console import Console
 
-    console = Console()
+    console = get_console()
     if not confirm:
         console.print("[yellow]⚠️  This will delete all stored user profile data.[/yellow]")
         console.print("[dim]Run with --confirm to proceed.[/dim]")
@@ -1140,7 +1142,7 @@ def memory_set(
     """Set a specific profile field."""
     from rich.console import Console
 
-    console = Console()
+    console = get_console()
     try:
         from navig.memory.user_profile import get_profile
 

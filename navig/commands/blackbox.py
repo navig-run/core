@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 import typer
 
+from navig.console_helper import get_console
 from navig.lazy_loader import lazy_import
 
 _ch = lazy_import("navig.console_helper")
@@ -53,7 +54,7 @@ def blackbox_status():
     from navig.blackbox.seal import is_sealed
     from navig.platform.paths import blackbox_dir
 
-    con = Console()
+    con = get_console()
     rec = _recorder()
     bdir = blackbox_dir()
 
@@ -274,7 +275,7 @@ def bundle_inspect(
         _ch.error(f"File not found: {path}")
         raise typer.Exit(1)
 
-    con = Console()
+    con = get_console()
     bundle = inspect_bundle(path)
 
     con.print(
@@ -336,7 +337,7 @@ def blackbox_crashes(
 
     from navig.blackbox.crash import list_crashes
 
-    con = Console()
+    con = get_console()
     crashes = list_crashes()[:limit]
 
     if not crashes:

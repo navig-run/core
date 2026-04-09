@@ -24,6 +24,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from navig.console_helper import get_console
+
 # ---------------------------------------------------------------------------
 # Typer app
 # ---------------------------------------------------------------------------
@@ -34,7 +36,7 @@ contribute_app = typer.Typer(
     no_args_is_help=True,
 )
 
-_console = Console()
+_console = get_console()
 
 
 # ---------------------------------------------------------------------------

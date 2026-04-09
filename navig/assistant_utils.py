@@ -4,7 +4,6 @@ Proactive Assistant Utilities
 Cross-platform directory management and helper functions for the AI assistant system.
 """
 
-import functools
 import json
 import os
 import sys
@@ -12,31 +11,7 @@ from pathlib import Path
 
 from navig import console_helper as ch
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Delegate to the canonical platform path module (paths.config_dir).
-# Historical note: this module previously returned ~/Documents/.navig/ on
-# Windows, differing from the ~/.navig/ that navig.platform.paths and
-# navig.config use. The mismatch meant assistant state was written to a
-# directory that the main config system never read. Fixed by delegating to
-# the single source of truth.
-# ─────────────────────────────────────────────────────────────────────────────
 _IS_WINDOWS: bool = sys.platform == "win32"
-
-
-@functools.lru_cache(maxsize=1)
-def get_navig_directory() -> Path:
-    """
-    Get the NAVIG configuration directory based on platform.
-
-    Delegates to :func:`navig.platform.paths.config_dir` which is the
-    single source of truth for the NAVIG config root across all modules.
-
-    Returns:
-        Path to .navig directory (e.g. ~/.navig/ on all platforms).
-    """
-    from navig.platform import paths as _paths
-
-    return _paths.config_dir()
 
 
 def ensure_navig_directory() -> Path:
@@ -51,7 +26,9 @@ def ensure_navig_directory() -> Path:
     Returns:
         Path to .navig directory
     """
-    navig_dir = get_navig_directory()
+    from navig.platform.paths import config_dir
+
+    navig_dir = config_dir()
 
     # Create main directory
     try:

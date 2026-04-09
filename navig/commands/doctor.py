@@ -17,6 +17,9 @@ from typing import Any
 
 import typer
 
+from navig.console_helper import get_console
+from navig.platform.paths import config_dir
+
 logger = logging.getLogger(__name__)
 
 doctor_app = typer.Typer(
@@ -92,8 +95,8 @@ def _find_browser_agent() -> Path | None:
         Path(sys.prefix) / "bin" / "navig-browser-agent",
         Path(sys.prefix) / "Scripts" / "navig-browser-agent.exe",
         Path(sys.prefix) / "Scripts" / "navig-browser-agent",
-        Path.home() / ".navig" / "bin" / "navig-browser-agent",
-        Path.home() / ".navig" / "bin" / "navig-browser-agent.exe",
+        config_dir() / "bin" / "navig-browser-agent",
+        config_dir() / "bin" / "navig-browser-agent.exe",
     ]
     for c in candidates:
         if c.exists():
@@ -113,7 +116,7 @@ def _find_browser_agent() -> Path | None:
 def check_config() -> list[tuple[str, bool, str]]:
     """Check global config.yaml."""
     results = []
-    config_path = Path.home() / ".navig" / "config.yaml"
+    config_path = config_dir() / "config.yaml"
 
     if not config_path.exists():
         results.append(_check("Config file", False, f"{config_path} not found"))
@@ -135,7 +138,7 @@ def check_config() -> list[tuple[str, bool, str]]:
 def check_cache_dir() -> list[tuple[str, bool, str]]:
     """Check cache directory is writable."""
     results = []
-    cache_dir = Path.home() / ".navig" / "cache"
+    cache_dir = config_dir() / "cache"
 
     if not cache_dir.exists():
         results.append(_check("Cache dir", False, f"{cache_dir} does not exist", warn=True))
@@ -158,7 +161,7 @@ def check_storage() -> list[tuple[str, bool, str]]:
 
     results = []
 
-    navig_dir = Path.home() / ".navig"
+    navig_dir = config_dir()
     navig_dir.mkdir(exist_ok=True, parents=True)
 
     try:
@@ -229,7 +232,7 @@ def check_sockets(target_port: int = 8789) -> list[tuple[str, bool, str]]:
 def check_formations() -> list[tuple[str, bool, str]]:
     """Check formations dir: count + parse errors."""
     results = []
-    formations_dir = Path.home() / ".navig" / "formations"
+    formations_dir = config_dir() / "formations"
     total, errors = _count_yaml_files(formations_dir)
 
     if total == 0:
@@ -285,7 +288,7 @@ def check_gateway(port: int = 8789) -> list[tuple[str, bool, str]]:
     try:
         import yaml
 
-        cfg_path = Path.home() / ".navig" / "config.yaml"
+        cfg_path = config_dir() / "config.yaml"
         if cfg_path.exists():
             cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8", errors="replace")) or {}
             port = cfg.get("gateway", {}).get("port", port)
@@ -317,7 +320,7 @@ def check_env_keys() -> list[tuple[str, bool, str]]:
     try:
         import yaml
 
-        cfg_path = Path.home() / ".navig" / "config.yaml"
+        cfg_path = config_dir() / "config.yaml"
         if cfg_path.exists():
             cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8", errors="replace")) or {}
     except Exception:  # noqa: BLE001
@@ -337,7 +340,7 @@ def check_env_keys() -> list[tuple[str, bool, str]]:
             results.append(_check(env_var, False, impact, warn=True))
 
     # Mesh token
-    mesh_token_path = Path.home() / ".navig" / "cache" / "mesh_token"
+    mesh_token_path = config_dir() / "cache" / "mesh_token"
     has_token = mesh_token_path.exists() and mesh_token_path.stat().st_size > 0
     if has_token:
         results.append(_check("MESH_TOKEN", True, f"present ({mesh_token_path})"))
@@ -410,7 +413,7 @@ def doctor(
         from rich.console import Console
         from rich.table import Table  # noqa: F401
 
-        console = Console()
+        console = get_console()
         _has_rich = True
     except ImportError:
         _has_rich = False

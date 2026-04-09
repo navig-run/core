@@ -41,10 +41,7 @@ def _ts() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _estimate_tokens(text: str) -> int:
-    """Rough token estimate: ~4 chars per token for English."""
-    return max(1, len(text) // 4)
-
+from navig.core.tokens import estimate_tokens as _estimate_tokens
 
 # ── Data Model ────────────────────────────────────────────────
 

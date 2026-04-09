@@ -57,7 +57,15 @@ def test_show_init_status_returns_expected_payload(tmp_path: Path, monkeypatch, 
     assert payload["integrations"]["telegram"] is True
     assert payload["integrations"]["matrix"] is True
     assert payload["integrations"]["email"] is False
-    assert payload["web_search"]["provider"] in {"auto", "brave", "duckduckgo", "perplexity", "gemini", "grok", "kimi"}
+    assert payload["web_search"]["provider"] in {
+        "auto",
+        "brave",
+        "duckduckgo",
+        "perplexity",
+        "gemini",
+        "grok",
+        "kimi",
+    }
     assert isinstance(payload["web_search"]["ready"], bool)
     assert payload.get("readiness", {}).get("state") in {"ready", "needs-attention"}
     assert isinstance(payload.get("readiness", {}).get("score"), int)
@@ -68,9 +76,10 @@ def test_show_init_status_returns_expected_payload(tmp_path: Path, monkeypatch, 
 
 
 def test_init_status_flag_calls_show_init_status(monkeypatch):
-    with patch("navig.commands.init.show_init_status", MagicMock()) as show_status, patch(
-        "navig.onboarding.runner.run_engine_onboarding", MagicMock()
-    ) as run_engine:
+    with (
+        patch("navig.commands.init.show_init_status", MagicMock()) as show_status,
+        patch("navig.onboarding.runner.run_engine_onboarding", MagicMock()) as run_engine,
+    ):
         result = runner.invoke(app, ["init", "--status"])
 
     assert result.exit_code == 0, result.output
@@ -79,12 +88,14 @@ def test_init_status_flag_calls_show_init_status(monkeypatch):
 
 
 def test_init_already_configured_also_shows_init_status(monkeypatch):
-    with patch("navig.commands.init.show_init_status", MagicMock()) as show_status, patch(
-        "navig.commands.init._maybe_send_first_run_ping",
-        MagicMock(),
-        create=True,
-    ), patch(
-        "navig.onboarding.runner.run_engine_onboarding", MagicMock(return_value=None)
+    with (
+        patch("navig.commands.init.show_init_status", MagicMock()) as show_status,
+        patch(
+            "navig.commands.init._maybe_send_first_run_ping",
+            MagicMock(),
+            create=True,
+        ),
+        patch("navig.onboarding.runner.run_engine_onboarding", MagicMock(return_value=None)),
     ):
         result = runner.invoke(app, ["init"])
 
@@ -109,11 +120,12 @@ def test_init_status_flag_json_outputs_payload(monkeypatch):
         },
         "next_actions": ["navig init --provider"],
     }
-    with patch(
-        "navig.commands.init.show_init_status", MagicMock(return_value=fake_payload)
-    ) as show_status, patch(
-        "navig.onboarding.runner.run_engine_onboarding", MagicMock()
-    ) as run_engine:
+    with (
+        patch(
+            "navig.commands.init.show_init_status", MagicMock(return_value=fake_payload)
+        ) as show_status,
+        patch("navig.onboarding.runner.run_engine_onboarding", MagicMock()) as run_engine,
+    ):
         result = runner.invoke(app, ["--json", "init", "--status"])
 
     assert result.exit_code == 0, result.output
@@ -131,14 +143,16 @@ def test_init_json_when_already_configured_returns_machine_payload(monkeypatch):
         "readiness": {"state": "ready", "score": 100, "issues": []},
         "next_actions": [],
     }
-    with patch(
-        "navig.commands.init.show_init_status", MagicMock(return_value=fake_payload)
-    ) as show_status, patch(
-        "navig.commands.init._maybe_send_first_run_ping",
-        MagicMock(),
-        create=True,
-    ), patch(
-        "navig.onboarding.runner.run_engine_onboarding", MagicMock(return_value=None)
+    with (
+        patch(
+            "navig.commands.init.show_init_status", MagicMock(return_value=fake_payload)
+        ) as show_status,
+        patch(
+            "navig.commands.init._maybe_send_first_run_ping",
+            MagicMock(),
+            create=True,
+        ),
+        patch("navig.onboarding.runner.run_engine_onboarding", MagicMock(return_value=None)),
     ):
         result = runner.invoke(app, ["--json", "init"])
 
@@ -150,9 +164,10 @@ def test_init_json_when_already_configured_returns_machine_payload(monkeypatch):
 
 
 def test_init_profile_quickstart_maps_to_operator_and_runs_chat_handoff(monkeypatch):
-    with patch("navig.installer.run_install", MagicMock()) as run_install, patch(
-        "navig.commands.init.run_chat_first_handoff", MagicMock()
-    ) as run_handoff:
+    with (
+        patch("navig.installer.run_install", MagicMock()) as run_install,
+        patch("navig.commands.init.run_chat_first_handoff", MagicMock()) as run_handoff,
+    ):
         result = runner.invoke(app, ["init", "--profile", "quickstart"])
 
     assert result.exit_code == 0, result.output

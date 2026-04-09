@@ -41,7 +41,7 @@ def ahk_processes(
         print(json.dumps(processes, indent=2))
         return
 
-    console = Console()
+    console = get_console()
     table = Table(title="Running Processes")
     table.add_column("PID", style="cyan")
     table.add_column("Name", style="green")
@@ -120,7 +120,7 @@ def ahk_monitors(
         print(json.dumps(monitors, indent=2))
         return
 
-    console = Console()
+    console = get_console()
     table = Table(title="Connected Monitors")
     table.add_column("#", style="cyan")
     table.add_column("Resolution", style="green")
@@ -197,7 +197,7 @@ def ahk_window_state(
         print(json.dumps(state, indent=2))
         return
 
-    console = Console()
+    console = get_console()
 
     if not state.get("exists"):
         ch.error(f"Window not found: {window}")
@@ -237,7 +237,7 @@ def ahk_active_window(
         print(json.dumps(window.to_dict(), indent=2))
         return
 
-    console = Console()
+    console = get_console()
     info = f"""Title: {window.title}
 Class: {window.class_name}
 PID: {window.pid}
@@ -270,7 +270,7 @@ def ahk_find(
         print(json.dumps([w.to_dict() for w in windows], indent=2))
         return
 
-    console = Console()
+    console = get_console()
 
     if not windows:
         ch.warning("No windows found")

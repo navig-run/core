@@ -60,7 +60,7 @@ def _registry_path() -> Path:
 
         return navig_config_dir() / "registry" / "drives.json"
     except Exception:
-        return Path.home() / ".navig" / "registry" / "drives.json"
+        return config_dir() / "registry" / "drives.json"
 
 
 def _scripts_dir() -> Path:
@@ -69,7 +69,7 @@ def _scripts_dir() -> Path:
 
         return navig_config_dir() / "scripts"
     except Exception:
-        return Path.home() / ".navig" / "scripts"
+        return config_dir() / "scripts"
 
 
 def _helper_script() -> Path:

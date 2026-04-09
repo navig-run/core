@@ -9,6 +9,7 @@ This module provides common fixtures used across all test files:
 """
 
 import asyncio
+import gc
 import os
 import sqlite3
 import subprocess
@@ -94,6 +95,32 @@ def _drain_orphan_subprocesses() -> None:
         pass
 
     try:
+        loop = asyncio.get_event_loop_policy().get_event_loop()
+    except Exception:  # noqa: BLE001
+        loop = None
+
+    if loop is not None:
+        subprocesses = getattr(loop, "_subprocesses", None)
+        if isinstance(subprocesses, dict):
+            for transport in list(subprocesses.values()):
+                try:
+                    transport.close()
+                except Exception:  # noqa: BLE001
+                    pass
+            try:
+                subprocesses.clear()
+            except Exception:  # noqa: BLE001
+                pass
+
+    gc.collect()
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_setup(item):  # noqa: ARG001
+    """Run cleanup before pytest's unraisable-collection setup hooks."""
+    _drain_orphan_subprocesses()
+
+    try:
         active = list(getattr(subprocess, "_active", []))
     except Exception:  # noqa: BLE001
         active = []
@@ -146,13 +173,13 @@ def _cleanup_orphan_subprocesses():
 
 
 @pytest.fixture(autouse=True)
-async def _cleanup_orphan_asyncio_tasks():
-    """Best-effort cleanup for leaked asyncio tasks between tests."""
+def _cleanup_orphan_asyncio_tasks():
+    """Best-effort cleanup for leaked asyncio tasks/transports between tests."""
     yield
 
     try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
+        loop = asyncio.get_event_loop_policy().get_event_loop()
+    except Exception:  # noqa: BLE001
         return
 
     # Explicitly close loop-tracked subprocess transports (Windows proactor).
@@ -168,25 +195,24 @@ async def _cleanup_orphan_asyncio_tasks():
         except Exception:  # noqa: BLE001
             pass
 
-    current = asyncio.current_task(loop=loop)
-    pending = [
-        task for task in asyncio.all_tasks(loop=loop) if task is not current and not task.done()
-    ]
-    if not pending:
-        return
+    # Cancel pending tasks when possible. In running loops (pytest-asyncio),
+    # cancellation is still useful even if we cannot synchronously await here.
+    try:
+        pending = [task for task in asyncio.all_tasks(loop=loop) if not task.done()]
+    except Exception:  # noqa: BLE001
+        pending = []
 
     for task in pending:
-        task.cancel()
+        try:
+            task.cancel()
+        except Exception:  # noqa: BLE001
+            pass
 
-    try:
-        await asyncio.gather(*pending, return_exceptions=True)
-    except Exception:  # noqa: BLE001
-        pass
-
-    try:
-        await asyncio.sleep(0)
-    except Exception:  # noqa: BLE001
-        pass
+    if pending and not loop.is_running():
+        try:
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        except Exception:  # noqa: BLE001
+            pass
 
 
 @pytest.fixture(autouse=True)

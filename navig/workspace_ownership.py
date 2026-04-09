@@ -13,8 +13,10 @@ import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
+from navig.platform.paths import config_dir
+
 # User-level canonical locations
-USER_NAVIG_DIR = Path.home() / ".navig"
+USER_NAVIG_DIR = config_dir()
 USER_WORKSPACE_DIR = USER_NAVIG_DIR / "workspace"
 
 # Project-level workspace location (legacy / discouraged for personal files)

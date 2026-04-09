@@ -16,8 +16,9 @@ from typing import Any
 
 from rich.console import Console
 from rich.table import Table
+from navig.console_helper import get_console
 
-console = Console()
+console = get_console()
 
 
 # Common command patterns by context
@@ -559,6 +560,7 @@ def show_quick_actions(plain: bool = False, json_out: bool = False) -> None:
 import typer  # noqa: E402
 
 from navig import console_helper as ch  # noqa: E402
+from navig.console_helper import get_console
 
 quick_app = typer.Typer(
     help="Quick action shortcuts for frequent operations",

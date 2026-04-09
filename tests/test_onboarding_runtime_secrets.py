@@ -131,9 +131,7 @@ def test_runtime_secrets_emits_retroactive_update_for_anthropic_key(
     assert (tmp_path / ".ai_provider_configured").read_text(encoding="utf-8") == "anthropic"
 
 
-def test_runtime_secrets_no_retroactive_update_for_non_ai_keys(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_runtime_secrets_no_retroactive_update_for_non_ai_keys(monkeypatch, tmp_path: Path) -> None:
     """Importing SerpAPI or Deepgram keys should NOT emit an ai-provider retroactive update."""
     fake_vault = _FakeVault()
     step = _runtime_step(tmp_path)

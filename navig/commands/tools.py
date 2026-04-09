@@ -19,6 +19,8 @@ import json
 
 import typer
 
+from navig.console_helper import get_console
+
 tools_app = typer.Typer(
     name="tools",
     help="Inspect registered tools.",
@@ -94,7 +96,7 @@ def tools_list(
         from rich.console import Console
         from rich.table import Table
 
-        console = Console()
+        console = get_console()
         title = f"Tools ({len(tools)})"
         if domain:
             title += f" — domain: {domain}"
@@ -173,7 +175,7 @@ def tools_show(
         from rich.console import Console
         from rich.panel import Panel
 
-        console = Console()
+        console = get_console()
         lines = [
             f"[bold]{meta.name}[/bold]",
             f"Domain:  {meta.domain.value}",

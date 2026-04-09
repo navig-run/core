@@ -11,36 +11,14 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any
 
 import yaml
 
+from navig.core.protocols import HostConfigProvider as ConfigProvider
 from navig.core.yaml_io import atomic_write_yaml
 
-if TYPE_CHECKING:
-    pass
-
 logger = logging.getLogger(__name__)
-
-
-class ConfigProvider(Protocol):
-    """Protocol for config provider dependency injection."""
-
-    @property
-    def app_config_dir(self) -> Path | None: ...
-
-    @property
-    def global_config_dir(self) -> Path: ...
-
-    @property
-    def base_dir(self) -> Path: ...
-
-    @property
-    def verbose(self) -> bool: ...
-
-    def get_config_directories(self) -> list[Path]: ...
-
-    def _is_directory_accessible(self, directory: Path) -> bool: ...
 
 
 class HostManager:

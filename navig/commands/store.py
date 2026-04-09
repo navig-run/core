@@ -19,7 +19,10 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-console = Console()
+from navig.console_helper import get_console
+from navig.platform.paths import config_dir
+
+console = get_console()
 
 store_app = typer.Typer(
     name="store",
@@ -30,7 +33,7 @@ store_app = typer.Typer(
 
 def _navig_dir() -> Path:
     """Return the active NAVIG data directory."""
-    return Path.home() / ".navig"
+    return config_dir()
 
 
 # ── Status ────────────────────────────────────────────────────

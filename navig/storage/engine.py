@@ -30,6 +30,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from navig.platform.paths import config_dir
 from navig.storage.pragma_profiles import PragmaProfile, profile_for_db
 from navig.storage.query_timer import QueryTimer, get_query_timer
 from navig.storage.write_batcher import WriteBatcher
@@ -127,7 +128,7 @@ class Engine:
     Usage::
 
         engine = Engine()
-        conn = engine.connect(Path.home() / ".navig" / "audit.db")
+        conn = engine.connect(config_dir() / "audit.db")
         # conn has correct PRAGMAs, custom functions, and stmt cache
 
         # Access per-db write batcher

@@ -13,6 +13,7 @@ import typer
 
 from navig import console_helper as ch
 from navig.cli._callbacks import show_subcommand_help
+from navig.console_helper import get_console
 
 # Lazy imports for heavy modules
 _local_ops = None
@@ -36,7 +37,7 @@ def _ensure_rich():
         from rich.syntax import Syntax
         from rich.table import Table
 
-        return Console(), Table, Panel, Syntax
+        return get_console(), Table, Panel, Syntax
     except ImportError:
         ch.error("Rich library required for this command")
         raise

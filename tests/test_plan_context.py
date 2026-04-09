@@ -104,10 +104,20 @@ class TestPlanContextGather:
         ctx = PlanContext(cwd=tmp_path / "repo")
         snapshot = ctx.gather("default")
 
-        for key in ("current_phase", "dev_plan", "wiki", "docs", "inbox_unread", "mcp_resources", "errors"):
+        for key in (
+            "current_phase",
+            "dev_plan",
+            "wiki",
+            "docs",
+            "inbox_unread",
+            "mcp_resources",
+            "errors",
+        ):
             assert key in snapshot, f"Missing key: {key}"
 
-    def test_gather_reads_current_phase(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_gather_reads_current_phase(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         home = tmp_path / "home"
         _set_test_home(monkeypatch, home)
 
@@ -164,7 +174,9 @@ class TestPlanContextGather:
         snapshot = ctx.gather("default")
         assert snapshot["inbox_unread"] == 2
 
-    def test_gather_no_space_returns_errors(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_gather_no_space_returns_errors(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When space resolution fails, gather returns gracefully with errors."""
         home = tmp_path / "home"
         _set_test_home(monkeypatch, home)
@@ -191,7 +203,9 @@ class TestPlanContextGather:
         assert "README.md" in "\n".join(docs)
         assert "ROADMAP.md" in "\n".join(docs)
 
-    def test_gather_mcp_resources_empty_by_default(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_gather_mcp_resources_empty_by_default(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """MCP resources should return empty list when no pool is available."""
         home = tmp_path / "home"
         _set_test_home(monkeypatch, home)
@@ -201,7 +215,9 @@ class TestPlanContextGather:
         snapshot = ctx.gather("default")
         assert snapshot["mcp_resources"] is None
 
-    def test_mcp_not_called_when_disabled(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_mcp_not_called_when_disabled(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When mcp_enabled=False, gather must not invoke MCP resource lookup."""
         home = tmp_path / "home"
         _set_test_home(monkeypatch, home)
@@ -348,7 +364,9 @@ class TestFormatForPrompt:
 
 
 class TestPlanContextEdgeCases:
-    def test_current_phase_fallback_to_plans_dir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_current_phase_fallback_to_plans_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """When CURRENT_PHASE.md is not in space root, falls back to .navig/plans/phases/."""
         home = tmp_path / "home"
         _set_test_home(monkeypatch, home)
@@ -368,7 +386,9 @@ class TestPlanContextEdgeCases:
         assert phase is not None
         assert "title: Fallback Phase" in phase
 
-    def test_no_dev_plan_returns_none(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_no_dev_plan_returns_none(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         home = tmp_path / "home"
         _set_test_home(monkeypatch, home)
         _make_space(tmp_path)
@@ -377,7 +397,9 @@ class TestPlanContextEdgeCases:
         snapshot = ctx.gather("default")
         assert snapshot["dev_plan"] is None
 
-    def test_completion_pct_non_numeric(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_completion_pct_non_numeric(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Non-numeric completion_pct should default to 0.0."""
         home = tmp_path / "home"
         _set_test_home(monkeypatch, home)

@@ -19,13 +19,15 @@ from typing import Any
 
 import yaml
 
+from navig.platform.paths import config_dir
+
 logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Shadow Execution Logging
 # ─────────────────────────────────────────────────────────────────────────────
 
-_PERF_DIR = Path.home() / ".navig" / "perf"
+_PERF_DIR = config_dir() / "perf"
 
 
 def log_shadow_anomaly(log_name: str, event: str, data: dict) -> None:

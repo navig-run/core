@@ -55,9 +55,9 @@ def _make_llm_response(facts: list[dict]) -> str:
 
 async def _fake_llm(prompt: str, **kwargs) -> str:
     """Default fake LLM that returns a single fact."""
-    return json.dumps([
-        {"fact": "User prefers dark themes", "category": "preferences", "confidence": 0.85}
-    ])
+    return json.dumps(
+        [{"fact": "User prefers dark themes", "category": "preferences", "confidence": 0.85}]
+    )
 
 
 async def _fake_llm_empty(prompt: str, **kwargs) -> str:
@@ -101,7 +101,6 @@ class FailingStore:
 
 
 class TestExtractedFact:
-
     def test_defaults(self):
         f = ExtractedFact(fact="hello")
         assert f.category == "environment"
@@ -123,7 +122,6 @@ class TestExtractedFact:
 
 
 class TestExtractionConfig:
-
     def test_defaults(self):
         cfg = ExtractionConfig()
         assert cfg.interval == MEMORY_EXTRACTION_INTERVAL
@@ -141,13 +139,15 @@ class TestExtractionConfig:
         assert cfg.interval == MEMORY_EXTRACTION_INTERVAL
 
     def test_from_dict_custom(self):
-        cfg = ExtractionConfig.from_dict({
-            "extraction_interval": 3,
-            "max_facts_per_extraction": 5,
-            "min_confidence": 0.8,
-            "extraction_model": "groq/llama-3.3-70b",
-            "enabled": False,
-        })
+        cfg = ExtractionConfig.from_dict(
+            {
+                "extraction_interval": 3,
+                "max_facts_per_extraction": 5,
+                "min_confidence": 0.8,
+                "extraction_model": "groq/llama-3.3-70b",
+                "enabled": False,
+            }
+        )
         assert cfg.interval == 3
         assert cfg.max_facts == 5
         assert cfg.min_confidence == 0.8
@@ -164,7 +164,6 @@ class TestExtractionConfig:
 
 
 class TestConstants:
-
     def test_interval_positive(self):
         assert MEMORY_EXTRACTION_INTERVAL > 0
 
@@ -189,7 +188,6 @@ class TestConstants:
 
 
 class TestTurnRecording:
-
     def test_record_user_turn(self):
         ext = MemoryAutoExtractor()
         ext.record_turn("user", "hello")
@@ -251,11 +249,10 @@ class TestTurnRecording:
 
 
 class TestParseExtractionResponse:
-
     def test_clean_json(self):
-        text = json.dumps([
-            {"fact": "User likes Python", "category": "preferences", "confidence": 0.9}
-        ])
+        text = json.dumps(
+            [{"fact": "User likes Python", "category": "preferences", "confidence": 0.9}]
+        )
         facts = parse_extraction_response(text)
         assert len(facts) == 1
         assert facts[0].fact == "User likes Python"
@@ -263,17 +260,21 @@ class TestParseExtractionResponse:
         assert facts[0].confidence == 0.9
 
     def test_markdown_fenced_json(self):
-        text = "```json\n" + json.dumps([
-            {"fact": "Port is 5433", "category": "environment", "confidence": 0.8}
-        ]) + "\n```"
+        text = (
+            "```json\n"
+            + json.dumps([{"fact": "Port is 5433", "category": "environment", "confidence": 0.8}])
+            + "\n```"
+        )
         facts = parse_extraction_response(text)
         assert len(facts) == 1
         assert facts[0].fact == "Port is 5433"
 
     def test_markdown_fenced_no_lang(self):
-        text = "```\n" + json.dumps([
-            {"fact": "Uses Docker", "category": "project", "confidence": 0.7}
-        ]) + "\n```"
+        text = (
+            "```\n"
+            + json.dumps([{"fact": "Uses Docker", "category": "project", "confidence": 0.7}])
+            + "\n```"
+        )
         facts = parse_extraction_response(text)
         assert len(facts) == 1
 
@@ -290,18 +291,18 @@ class TestParseExtractionResponse:
         assert facts == []
 
     def test_multiple_facts(self):
-        text = json.dumps([
-            {"fact": "Fact A", "category": "preferences", "confidence": 0.9},
-            {"fact": "Fact B", "category": "environment", "confidence": 0.7},
-            {"fact": "Fact C", "category": "project", "confidence": 0.5},
-        ])
+        text = json.dumps(
+            [
+                {"fact": "Fact A", "category": "preferences", "confidence": 0.9},
+                {"fact": "Fact B", "category": "environment", "confidence": 0.7},
+                {"fact": "Fact C", "category": "project", "confidence": 0.5},
+            ]
+        )
         facts = parse_extraction_response(text)
         assert len(facts) == 3
 
     def test_invalid_category_defaults(self):
-        text = json.dumps([
-            {"fact": "Something", "category": "unknown_cat", "confidence": 0.8}
-        ])
+        text = json.dumps([{"fact": "Something", "category": "unknown_cat", "confidence": 0.8}])
         facts = parse_extraction_response(text)
         assert len(facts) == 1
         assert facts[0].category == "environment"
@@ -313,29 +314,35 @@ class TestParseExtractionResponse:
         assert facts[0].confidence == 0.7
 
     def test_confidence_clamped(self):
-        text = json.dumps([
-            {"fact": "Over one", "confidence": 1.5},
-            {"fact": "Under zero", "confidence": -0.3},
-        ])
+        text = json.dumps(
+            [
+                {"fact": "Over one", "confidence": 1.5},
+                {"fact": "Under zero", "confidence": -0.3},
+            ]
+        )
         facts = parse_extraction_response(text)
         assert facts[0].confidence == 1.0
         assert facts[1].confidence == 0.0
 
     def test_short_fact_skipped(self):
-        text = json.dumps([
-            {"fact": "hi", "confidence": 0.9},  # too short
-            {"fact": "A valid longer fact", "confidence": 0.9},
-        ])
+        text = json.dumps(
+            [
+                {"fact": "hi", "confidence": 0.9},  # too short
+                {"fact": "A valid longer fact", "confidence": 0.9},
+            ]
+        )
         facts = parse_extraction_response(text)
         assert len(facts) == 1
         assert facts[0].fact == "A valid longer fact"
 
     def test_non_dict_items_skipped(self):
-        text = json.dumps([
-            "just a string",
-            {"fact": "Valid one", "confidence": 0.8},
-            42,
-        ])
+        text = json.dumps(
+            [
+                "just a string",
+                {"fact": "Valid one", "confidence": 0.8},
+                42,
+            ]
+        )
         facts = parse_extraction_response(text)
         assert len(facts) == 1
 
@@ -362,7 +369,6 @@ class TestParseExtractionResponse:
 
 
 class TestFactKey:
-
     def test_basic_key(self):
         key = fact_key("Production DB is on port 5433", "environment")
         assert key == "environment/production_db_is_on"
@@ -395,7 +401,6 @@ class TestFactKey:
 
 
 class TestMaybeExtractInterval:
-
     def test_no_extraction_before_interval(self):
         ext = MemoryAutoExtractor(llm_call=_fake_llm, config={"extraction_interval": 5})
         for _ in range(4):
@@ -408,7 +413,9 @@ class TestMaybeExtractInterval:
 
     def test_extraction_at_interval(self):
         store = FakeStore()
-        ext = MemoryAutoExtractor(store=store, llm_call=_fake_llm, config={"extraction_interval": 2})
+        ext = MemoryAutoExtractor(
+            store=store, llm_call=_fake_llm, config={"extraction_interval": 2}
+        )
         ext.record_turn("user", "msg1")
         ext.record_turn("assistant", "reply1")
         ext.record_turn("user", "msg2")
@@ -450,7 +457,6 @@ class TestMaybeExtractInterval:
 
 
 class TestMaybeExtractLLM:
-
     def test_no_llm_returns_empty(self):
         ext = MemoryAutoExtractor(llm_call=None, config={"extraction_interval": 1})
         ext.record_turn("user", "msg")
@@ -510,12 +516,9 @@ class TestMaybeExtractLLM:
 
 
 class TestConfidenceFiltering:
-
     def test_high_confidence_kept(self):
         async def llm(prompt, **kw):
-            return json.dumps([
-                {"fact": "High conf", "category": "preferences", "confidence": 0.9}
-            ])
+            return json.dumps([{"fact": "High conf", "category": "preferences", "confidence": 0.9}])
 
         ext = MemoryAutoExtractor(llm_call=llm, config={"extraction_interval": 1})
         ext.record_turn("user", "test")
@@ -525,9 +528,7 @@ class TestConfidenceFiltering:
 
     def test_low_confidence_filtered(self):
         async def llm(prompt, **kw):
-            return json.dumps([
-                {"fact": "Low conf", "category": "preferences", "confidence": 0.3}
-            ])
+            return json.dumps([{"fact": "Low conf", "category": "preferences", "confidence": 0.3}])
 
         ext = MemoryAutoExtractor(
             llm_call=llm, config={"extraction_interval": 1, "min_confidence": 0.6}
@@ -539,10 +540,11 @@ class TestConfidenceFiltering:
 
     def test_borderline_confidence(self):
         """Fact at exactly min_confidence should be included."""
+
         async def llm(prompt, **kw):
-            return json.dumps([
-                {"fact": "Borderline", "category": "preferences", "confidence": 0.6}
-            ])
+            return json.dumps(
+                [{"fact": "Borderline", "category": "preferences", "confidence": 0.6}]
+            )
 
         ext = MemoryAutoExtractor(
             llm_call=llm, config={"extraction_interval": 1, "min_confidence": 0.6}
@@ -554,10 +556,12 @@ class TestConfidenceFiltering:
 
     def test_max_facts_limit(self):
         async def llm(prompt, **kw):
-            return json.dumps([
-                {"fact": f"Fact {i}", "category": "preferences", "confidence": 0.9}
-                for i in range(10)
-            ])
+            return json.dumps(
+                [
+                    {"fact": f"Fact {i}", "category": "preferences", "confidence": 0.9}
+                    for i in range(10)
+                ]
+            )
 
         ext = MemoryAutoExtractor(
             llm_call=llm,
@@ -573,7 +577,6 @@ class TestConfidenceFiltering:
 
 
 class TestStoreIntegration:
-
     def test_put_store(self):
         store = FakeStore()
         ext = MemoryAutoExtractor(
@@ -601,9 +604,7 @@ class TestStoreIntegration:
         assert len(store.upserts) == 1
 
     def test_no_store_still_returns_facts(self):
-        ext = MemoryAutoExtractor(
-            store=None, llm_call=_fake_llm, config={"extraction_interval": 1}
-        )
+        ext = MemoryAutoExtractor(store=None, llm_call=_fake_llm, config={"extraction_interval": 1})
         ext.record_turn("user", "test")
         ext.record_turn("assistant", "ok")
         facts = _run(ext.maybe_extract())
@@ -637,11 +638,8 @@ class TestStoreIntegration:
 
 
 class TestForceExtract:
-
     def test_extracts_without_interval(self):
-        ext = MemoryAutoExtractor(
-            llm_call=_fake_llm, config={"extraction_interval": 100}
-        )
+        ext = MemoryAutoExtractor(llm_call=_fake_llm, config={"extraction_interval": 100})
         ext.record_turn("user", "remember this")
         ext.record_turn("assistant", "ok")
         # turn_count is 1, interval is 100 — but force ignores it
@@ -649,9 +647,7 @@ class TestForceExtract:
         assert len(facts) == 1
 
     def test_resets_after_force(self):
-        ext = MemoryAutoExtractor(
-            llm_call=_fake_llm, config={"extraction_interval": 100}
-        )
+        ext = MemoryAutoExtractor(llm_call=_fake_llm, config={"extraction_interval": 100})
         ext.record_turn("user", "msg")
         ext.record_turn("assistant", "reply")
         _run(ext.force_extract())
@@ -676,11 +672,8 @@ class TestForceExtract:
 
 
 class TestSilentFailure:
-
     def test_llm_exception_handled(self):
-        ext = MemoryAutoExtractor(
-            llm_call=_fail_llm, config={"extraction_interval": 1}
-        )
+        ext = MemoryAutoExtractor(llm_call=_fail_llm, config={"extraction_interval": 1})
         ext.record_turn("user", "msg")
         ext.record_turn("assistant", "reply")
         # Should NOT raise
@@ -688,9 +681,7 @@ class TestSilentFailure:
         assert facts == []
 
     def test_counter_resets_on_failure(self):
-        ext = MemoryAutoExtractor(
-            llm_call=_fail_llm, config={"extraction_interval": 1}
-        )
+        ext = MemoryAutoExtractor(llm_call=_fail_llm, config={"extraction_interval": 1})
         ext.record_turn("user", "msg")
         ext.record_turn("assistant", "reply")
         _run(ext.maybe_extract())
@@ -701,9 +692,7 @@ class TestSilentFailure:
         async def none_llm(prompt, **kw):
             return None
 
-        ext = MemoryAutoExtractor(
-            llm_call=none_llm, config={"extraction_interval": 1}
-        )
+        ext = MemoryAutoExtractor(llm_call=none_llm, config={"extraction_interval": 1})
         ext.record_turn("user", "msg")
         ext.record_turn("assistant", "reply")
         facts = _run(ext.maybe_extract())
@@ -714,7 +703,6 @@ class TestSilentFailure:
 
 
 class TestProperties:
-
     def test_config_property(self):
         cfg = ExtractionConfig(interval=7)
         ext = MemoryAutoExtractor(config=cfg)
@@ -745,21 +733,16 @@ class TestProperties:
 
 
 class TestEdgeCases:
-
     def test_interval_one(self):
         """With interval=1, extraction triggers on every assistant turn."""
-        ext = MemoryAutoExtractor(
-            llm_call=_fake_llm, config={"extraction_interval": 1}
-        )
+        ext = MemoryAutoExtractor(llm_call=_fake_llm, config={"extraction_interval": 1})
         ext.record_turn("user", "msg")
         ext.record_turn("assistant", "reply")
         facts = _run(ext.maybe_extract())
         assert len(facts) == 1
 
     def test_consecutive_extractions(self):
-        ext = MemoryAutoExtractor(
-            llm_call=_fake_llm, config={"extraction_interval": 1}
-        )
+        ext = MemoryAutoExtractor(llm_call=_fake_llm, config={"extraction_interval": 1})
         for _ in range(3):
             ext.record_turn("user", "msg")
             ext.record_turn("assistant", "reply")
@@ -767,9 +750,7 @@ class TestEdgeCases:
             assert len(facts) == 1
 
     def test_only_user_turns_no_trigger(self):
-        ext = MemoryAutoExtractor(
-            llm_call=_fake_llm, config={"extraction_interval": 1}
-        )
+        ext = MemoryAutoExtractor(llm_call=_fake_llm, config={"extraction_interval": 1})
         for _ in range(10):
             ext.record_turn("user", "msg")
         facts = _run(ext.maybe_extract())
@@ -802,19 +783,19 @@ class TestEdgeCases:
 
     def test_empty_pending_at_interval_returns_empty(self):
         """If somehow turn_count >= interval but no turns buffered, return empty."""
-        ext = MemoryAutoExtractor(
-            llm_call=_fake_llm, config={"extraction_interval": 1}
-        )
+        ext = MemoryAutoExtractor(llm_call=_fake_llm, config={"extraction_interval": 1})
         ext._turn_count = 5  # Manually set
         facts = _run(ext.maybe_extract())
         assert facts == []
 
     def test_multiple_facts_from_llm(self):
         async def multi_llm(prompt, **kw):
-            return json.dumps([
-                {"fact": "Fact A", "category": "preferences", "confidence": 0.9},
-                {"fact": "Fact B", "category": "environment", "confidence": 0.8},
-            ])
+            return json.dumps(
+                [
+                    {"fact": "Fact A", "category": "preferences", "confidence": 0.9},
+                    {"fact": "Fact B", "category": "environment", "confidence": 0.8},
+                ]
+            )
 
         store = FakeStore()
         ext = MemoryAutoExtractor(

@@ -603,11 +603,11 @@ def ui_cmd(
     if not files:
         # Also check global inbox
         try:
-            from navig.platform.paths import navig_data_dir
+            from navig.platform.paths import config_dir, navig_data_dir
 
             global_inbox = navig_data_dir() / "inbox"
         except Exception:
-            global_inbox = Path.home() / ".navig" / "inbox"
+            global_inbox = config_dir() / "inbox"
         if global_inbox.is_dir():
             files += [
                 f for f in global_inbox.iterdir() if f.is_file() and not f.name.startswith(".")

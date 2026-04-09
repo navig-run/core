@@ -26,7 +26,9 @@ def _cli_env(tmp_path: Path) -> dict[str, str]:
     return env
 
 
-def _run_cli(args: list[str], *, tmp_path: Path, timeout: int = 30) -> subprocess.CompletedProcess[str]:
+def _run_cli(
+    args: list[str], *, tmp_path: Path, timeout: int = 30
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "navig", *args],
         cwd=ROOT,

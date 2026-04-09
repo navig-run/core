@@ -54,9 +54,7 @@ def test_resolve_telegram_token_uses_vault_provider_scan(monkeypatch):
     assert mod.resolve_telegram_bot_token({}) == "vault-token"
 
 
-def test_resolve_telegram_token_from_config_yaml_emits_deprecation_warning(
-    monkeypatch, caplog
-):
+def test_resolve_telegram_token_from_config_yaml_emits_deprecation_warning(monkeypatch, caplog):
     """Verify a deprecation warning is logged when bot_token is read from config."""
     mod = importlib.import_module("navig.messaging.secrets")
 
@@ -69,6 +67,7 @@ def test_resolve_telegram_token_from_config_yaml_emits_deprecation_warning(
     raw_config = {"telegram": {"bot_token": "plaintext-token"}}
     # Use root-level capture + direct handler attachment to bypass propagation quirks
     import logging as _std_logging
+
     _secrets_logger = _std_logging.getLogger("navig.messaging.secrets")
     _secrets_logger.addHandler(caplog.handler)
     _secrets_logger.setLevel(logging.WARNING)

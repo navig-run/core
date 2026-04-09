@@ -7,8 +7,11 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from navig.console_helper import get_console
+from navig.platform.paths import config_dir
+
 system_app = typer.Typer(help="System information and maintenance", no_args_is_help=False)
-console = Console()
+console = get_console()
 
 
 @system_app.callback(invoke_without_command=True)
@@ -50,8 +53,8 @@ def system_clean(
     from pathlib import Path
 
     targets = [
-        Path.home() / ".navig" / "cache",
-        Path.home() / ".navig" / "__pycache__",
+        config_dir() / "cache",
+        config_dir() / "__pycache__",
     ]
     if not yes:
         for t in targets:

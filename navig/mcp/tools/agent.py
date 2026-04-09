@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from navig.platform.paths import config_dir
+
 
 def register(server: Any) -> None:
     """Register agent monitoring and control tools."""
@@ -197,8 +199,8 @@ def register(server: Any) -> None:
 
 def _tool_agent_status_get(server: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Return agent install/runtime status for control plane clients."""
-    config_path = Path.home() / ".navig" / "agent" / "config.yaml"
-    pid_path = Path.home() / ".navig" / "agent" / "agent.pid"
+    config_path = config_dir() / "agent" / "config.yaml"
+    pid_path = config_dir() / "agent" / "agent.pid"
     installed = config_path.exists()
     running = False
     pid: int | None = None
@@ -266,16 +268,16 @@ def _resolve_goal_storage_dir() -> Path:
     try:
         from navig.agent.config import AgentConfig
 
-        cfg_path = Path.home() / ".navig" / "agent" / "config.yaml"
+        cfg_path = config_dir() / "agent" / "config.yaml"
         if cfg_path.exists():
             cfg = AgentConfig.load(cfg_path)
             candidates.append(cfg.workspace)
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
 
-    candidates.append(Path.home() / ".navig" / "workspace")
+    candidates.append(config_dir() / "workspace")
     if not candidates:
-        return Path.home() / ".navig" / "workspace"
+        return config_dir() / "workspace"
 
     for candidate in candidates:
         if (candidate / "goals.json").exists():
@@ -379,7 +381,7 @@ def _tool_agent_goal_cancel(server: Any, args: dict[str, Any]) -> dict[str, Any]
 
 def _read_recent_remediation_log(limit: int = 100) -> list[dict[str, Any]]:
     """Parse recent remediation log lines into structured entries."""
-    log_path = Path.home() / ".navig" / "logs" / "remediation.log"
+    log_path = config_dir() / "logs" / "remediation.log"
     if not log_path.exists():
         return []
 
@@ -435,7 +437,7 @@ def _tool_agent_learning_run(server: Any, args: dict[str, Any]) -> dict[str, Any
     days = max(1, int(args.get("days", 7)))
     export = bool(args.get("export", False))
     cutoff = datetime.now() - timedelta(days=days)
-    log_dir = Path.home() / ".navig" / "logs"
+    log_dir = config_dir() / "logs"
     debug_log = log_dir / "debug.log"
     remediation_log = log_dir / "remediation.log"
 
@@ -497,7 +499,7 @@ def _tool_agent_learning_run(server: Any, args: dict[str, Any]) -> dict[str, Any
     }
 
     if export:
-        output_path = Path.home() / ".navig" / "workspace" / "error-patterns.json"
+        output_path = config_dir() / "workspace" / "error-patterns.json"
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
         result["exported_to"] = str(output_path)

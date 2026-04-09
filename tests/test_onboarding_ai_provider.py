@@ -4,7 +4,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 
-def test_ai_provider_step_allows_enter_to_keep_existing_env_key(monkeypatch, tmp_path: Path, capsys):
+def test_ai_provider_step_allows_enter_to_keep_existing_env_key(
+    monkeypatch, tmp_path: Path, capsys
+):
     navig_dir = tmp_path / ".navig"
     navig_dir.mkdir(parents=True, exist_ok=True)
 

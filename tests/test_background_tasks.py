@@ -151,7 +151,9 @@ class TestManagerStart:
 
     @pytest.mark.asyncio
     async def test_start_default_label_from_command(self, manager):
-        task = await manager.start("echo some-very-long-command-that-exceeds-forty-characters-limit-for-the-label")
+        task = await manager.start(
+            "echo some-very-long-command-that-exceeds-forty-characters-limit-for-the-label"
+        )
         assert len(task.label) <= 40
 
     @pytest.mark.asyncio
@@ -276,7 +278,7 @@ class TestManagerGetOutput:
     async def test_output_tail_limits_lines(self, manager):
         # Generate multi-line output
         if os.name == "nt":
-            cmd = "cmd /c \"for /L %i in (1,1,100) do @echo line%i\""
+            cmd = 'cmd /c "for /L %i in (1,1,100) do @echo line%i"'
         else:
             cmd = "for i in $(seq 1 100); do echo line$i; done"
 
@@ -468,15 +470,19 @@ class TestStartTool:
         from navig.agent.tools.background_task_tools import BackgroundTaskStartTool
 
         tool = BackgroundTaskStartTool()
+        mgr = BackgroundTaskManager(output_dir=tmp_output_dir)
 
-        with patch(
-            "navig.agent.tools.background_task_tools._get_manager",
-            return_value=BackgroundTaskManager(output_dir=tmp_output_dir),
-        ):
-            result = await tool.run({"command": "echo hi", "label": "test"})
-        assert result.success is True
-        assert "Started background task #1" in result.output
-        assert "test" in result.output
+        try:
+            with patch(
+                "navig.agent.tools.background_task_tools._get_manager",
+                return_value=mgr,
+            ):
+                result = await tool.run({"command": "echo hi", "label": "test"})
+            assert result.success is True
+            assert "Started background task #1" in result.output
+            assert "test" in result.output
+        finally:
+            await mgr.shutdown()
 
     @pytest.mark.asyncio
     async def test_start_tool_empty_command(self):
@@ -541,8 +547,12 @@ class TestStatusTool:
 
         # Manually add a completed task
         task = BackgroundTask(
-            task_id=1, label="test", command="echo", exit_code=0,
-            completed_at=time.time(), output_file=str(tmp_output_dir / "task_1.log"),
+            task_id=1,
+            label="test",
+            command="echo",
+            exit_code=0,
+            completed_at=time.time(),
+            output_file=str(tmp_output_dir / "task_1.log"),
         )
         mgr._tasks[1] = task
         # Create the output file
@@ -582,8 +592,11 @@ class TestStatusTool:
         # Add two completed tasks
         for i in (1, 2):
             task = BackgroundTask(
-                task_id=i, label=f"t{i}", command=f"echo {i}",
-                exit_code=0, completed_at=time.time(),
+                task_id=i,
+                label=f"t{i}",
+                command=f"echo {i}",
+                exit_code=0,
+                completed_at=time.time(),
                 output_file=str(tmp_output_dir / f"task_{i}.log"),
             )
             mgr._tasks[i] = task
@@ -634,8 +647,12 @@ class TestOutputTool:
         log_file = tmp_output_dir / "task_1.log"
         log_file.write_text("line1\nline2\nline3\n", encoding="utf-8")
         task = BackgroundTask(
-            task_id=1, label="test", command="echo", exit_code=0,
-            completed_at=time.time(), output_file=str(log_file),
+            task_id=1,
+            label="test",
+            command="echo",
+            exit_code=0,
+            completed_at=time.time(),
+            output_file=str(log_file),
         )
         mgr._tasks[1] = task
 
@@ -835,8 +852,11 @@ class TestEdgeCases:
         """Output file with non-UTF8 bytes is handled gracefully."""
         # Create a task with manual output file
         task = BackgroundTask(
-            task_id=99, label="enc", command="echo",
-            exit_code=0, completed_at=time.time(),
+            task_id=99,
+            label="enc",
+            command="echo",
+            exit_code=0,
+            completed_at=time.time(),
             output_file=str(tmp_output_dir / "task_99.log"),
         )
         manager._tasks[99] = task
@@ -849,8 +869,11 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_status_includes_output_line_count(self, manager, tmp_output_dir):
         task = BackgroundTask(
-            task_id=1, label="x", command="x",
-            exit_code=0, completed_at=time.time(),
+            task_id=1,
+            label="x",
+            command="x",
+            exit_code=0,
+            completed_at=time.time(),
             output_file=str(tmp_output_dir / "task_1.log"),
         )
         manager._tasks[1] = task
@@ -860,7 +883,9 @@ class TestEdgeCases:
 
     def test_count_output_lines_missing_file(self, manager):
         task = BackgroundTask(
-            task_id=1, label="x", command="x",
+            task_id=1,
+            label="x",
+            command="x",
             output_file="/nonexistent/path/file.log",
         )
         assert manager._count_output_lines(task) == 0
@@ -868,7 +893,9 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_get_output_missing_file(self, manager):
         task = BackgroundTask(
-            task_id=1, label="x", command="x",
+            task_id=1,
+            label="x",
+            command="x",
             output_file="/nonexistent/path/file.log",
         )
         manager._tasks[1] = task
@@ -880,8 +907,11 @@ class TestEdgeCases:
         log_file = tmp_output_dir / "task_1.log"
         log_file.write_text("", encoding="utf-8")
         task = BackgroundTask(
-            task_id=1, label="x", command="x",
-            exit_code=0, completed_at=time.time(),
+            task_id=1,
+            label="x",
+            command="x",
+            exit_code=0,
+            completed_at=time.time(),
             output_file=str(log_file),
         )
         manager._tasks[1] = task

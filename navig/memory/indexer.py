@@ -22,15 +22,7 @@ if TYPE_CHECKING:
     from navig.memory.storage import MemoryChunk, MemoryStorage
 
 
-def _debug_log(message: str) -> None:
-    """Simple debug logging wrapper."""
-    try:
-        from navig.debug_logger import DebugLogger
-
-        logger = DebugLogger()
-        logger.log_operation("memory", {"message": message})
-    except Exception:  # noqa: BLE001
-        pass  # best-effort; failure is non-critical
+from navig.memory._util import _debug_log
 
 
 @dataclass
@@ -572,7 +564,9 @@ class MemoryIndexer:
 
     def _estimate_tokens(self, text: str) -> int:
         """Estimate token count from text."""
-        return max(1, int(len(text) / self.config.chars_per_token))
+        from navig.core.tokens import estimate_tokens
+
+        return estimate_tokens(text, chars_per_token=self.config.chars_per_token)
 
     def _compute_file_hash(self, file_path: Path) -> str:
         """Compute SHA256 hash of file content."""

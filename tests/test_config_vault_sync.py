@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_vault_mock(existing=None):
     """Return a mock CredentialsVault."""
     vault = MagicMock()
@@ -21,6 +22,7 @@ def _make_vault_mock(existing=None):
 # ---------------------------------------------------------------------------
 # 3a: set_config vault write-through
 # ---------------------------------------------------------------------------
+
 
 class TestSetConfigVaultWriteThrough:
     """set_config() should forward known sensitive keys to the vault."""
@@ -41,6 +43,18 @@ class TestSetConfigVaultWriteThrough:
             from navig.commands.config import set_config
 
             set_config(key, value)
+
+        try:
+            import navig.vault.core as _vault_core
+
+            active_vault = getattr(_vault_core, "_vault", None)
+            if active_vault is not None and hasattr(active_vault, "_store"):
+                store = active_vault._store
+                if store is not None and hasattr(store, "close"):
+                    store.close()
+            _vault_core._vault = None
+        except Exception:  # noqa: BLE001
+            pass
 
     def test_sensitive_key_calls_vault_add_when_no_existing(self):
         """Config set with a new sensitive key should call vault.add()."""
@@ -118,6 +132,7 @@ class TestSetConfigVaultWriteThrough:
 # ---------------------------------------------------------------------------
 # 3b: vault list external credential detection
 # ---------------------------------------------------------------------------
+
 
 def _make_dummy_cred(provider: str = "github_models") -> MagicMock:
     """Return a minimal mock credential that passes vault_list's .enabled filter."""

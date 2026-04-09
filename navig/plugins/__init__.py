@@ -21,9 +21,9 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any
 
-from rich.console import Console
+from navig.console_helper import get_console
 
-console = Console()
+console = get_console()
 
 
 @dataclass

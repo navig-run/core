@@ -287,6 +287,7 @@ class MockLLMServer:
     def stop(self) -> None:
         if self._server is not None:
             self._server.shutdown()
+            self._server.server_close()
             self._server = None
         if self._thread is not None:
             self._thread.join(timeout=2)

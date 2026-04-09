@@ -17,9 +17,9 @@ def _check_token() -> str | None:
     """Look for TELEGRAM_BOT_TOKEN in the NAVIG vault or env."""
     # 1. NAVIG vault (primary, secure)
     try:
-        from navig.vault.core_v2 import get_vault_v2  # type: ignore[import]
+        from navig.vault.core import get_vault  # type: ignore[import]
 
-        vault = get_vault_v2()
+        vault = get_vault()
         if vault is not None:
             import json
 

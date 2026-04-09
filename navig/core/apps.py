@@ -10,40 +10,14 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import Any
 
 import yaml
 
+from navig.core.protocols import AppConfigProvider as ConfigProvider
 from navig.core.yaml_io import atomic_write_yaml
 
-if TYPE_CHECKING:
-    pass
-
 logger = logging.getLogger(__name__)
-
-
-class ConfigProvider(Protocol):
-    """Protocol for config provider dependency injection."""
-
-    @property
-    def app_config_dir(self) -> Path | None: ...
-
-    @property
-    def global_config_dir(self) -> Path: ...
-
-    @property
-    def base_dir(self) -> Path: ...
-
-    @property
-    def verbose(self) -> bool: ...
-
-    def get_config_directories(self) -> list[Path]: ...
-
-    def load_host_config(self, host_name: str, use_cache: bool = True) -> dict[str, Any]: ...
-
-    def save_host_config(self, host_name: str, config: dict[str, Any]) -> None: ...
-
-    def list_hosts(self) -> list[str]: ...
 
 
 class AppManager:
@@ -268,8 +242,14 @@ class AppManager:
                         if self._config.verbose:
                             from navig import console_helper as ch
 
-                            location = "app" if config_dir == self._config.app_config_dir else "global"
-                            ch.dim(f"✓ Deleted app '{app_name}' from {location} config (individual file)")
+                            location = (
+                                "app"
+                                if config_dir == self._config.app_config_dir
+                                else "global"
+                            )
+                            ch.dim(
+                                f"✓ Deleted app '{app_name}' from {location} config (individual file)"
+                            )
                         return True
                 except Exception:
                     pass

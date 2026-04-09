@@ -29,6 +29,7 @@ from navig.agent.context_compressor import (
 # Helpers
 # ─────────────────────────────────────────────────────────────
 
+
 def _make_msg(role: str, content: str, **extra) -> dict:
     """Build a minimal message dict."""
     msg = {"role": role, "content": content}
@@ -68,6 +69,7 @@ def _make_cached_msg(role: str, content: str) -> dict:
 # TestReactiveCompactorInit
 # ─────────────────────────────────────────────────────────────
 
+
 class TestReactiveCompactorInit:
     """Constructor and basic attributes."""
 
@@ -94,6 +96,7 @@ class TestReactiveCompactorInit:
 # ─────────────────────────────────────────────────────────────
 # TestShouldCompact
 # ─────────────────────────────────────────────────────────────
+
 
 class TestShouldCompact:
     """Threshold-based trigger detection."""
@@ -128,6 +131,7 @@ class TestShouldCompact:
 # TestComputeTarget
 # ─────────────────────────────────────────────────────────────
 
+
 class TestComputeTarget:
     """Target fill computation."""
 
@@ -147,6 +151,7 @@ class TestComputeTarget:
 # ─────────────────────────────────────────────────────────────
 # TestCompactBasic
 # ─────────────────────────────────────────────────────────────
+
 
 class TestCompactBasic:
     """Core compaction behavior with injected summarizer."""
@@ -210,6 +215,7 @@ class TestCompactBasic:
 # TestCompactCacheAware
 # ─────────────────────────────────────────────────────────────
 
+
 class TestCompactCacheAware:
     """Cache breakpoint preservation."""
 
@@ -271,6 +277,7 @@ class TestCompactCacheAware:
 # TestBuildDigest
 # ─────────────────────────────────────────────────────────────
 
+
 class TestBuildDigest:
     """Digest formatting for summarisation."""
 
@@ -329,6 +336,7 @@ class TestBuildDigest:
 # TestStats
 # ─────────────────────────────────────────────────────────────
 
+
 class TestStats:
     """Cumulative statistics tracking."""
 
@@ -377,6 +385,7 @@ class TestStats:
 # TestSummarizerFallback
 # ─────────────────────────────────────────────────────────────
 
+
 class TestSummarizerFallback:
     """Summarizer injection and fallback behavior."""
 
@@ -391,10 +400,14 @@ class TestSummarizerFallback:
         msgs = _make_conversation(12)
         asyncio.run(rc.compact(msgs))
         assert len(calls) == 1
-        assert "TRACKED" in [
-            m["content"] for m in asyncio.run(rc.compact(msgs))[0]
-            if "[Conversation Summary" in m.get("content", "")
-        ][-1]
+        assert (
+            "TRACKED"
+            in [
+                m["content"]
+                for m in asyncio.run(rc.compact(msgs))[0]
+                if "[Conversation Summary" in m.get("content", "")
+            ][-1]
+        )
 
     def test_summarizer_exception_returns_original(self):
         def failing_summarizer(digest: str) -> str:
@@ -449,6 +462,7 @@ class TestSummarizerFallback:
 # TestMultipleCompactions
 # ─────────────────────────────────────────────────────────────
 
+
 class TestMultipleCompactions:
     """Repeated compaction on expanding conversations."""
 
@@ -489,6 +503,7 @@ class TestMultipleCompactions:
 # TestEdgeCases
 # ─────────────────────────────────────────────────────────────
 
+
 class TestEdgeCases:
     """Edge cases and boundary conditions."""
 
@@ -528,6 +543,7 @@ class TestEdgeCases:
 # TestFindSafeStart
 # ─────────────────────────────────────────────────────────────
 
+
 class TestFindSafeStart:
     """Internal _find_safe_start method."""
 
@@ -563,6 +579,7 @@ class TestFindSafeStart:
 # TestFactory
 # ─────────────────────────────────────────────────────────────
 
+
 class TestFactory:
     """get_reactive_compactor factory function."""
 
@@ -583,6 +600,7 @@ class TestFactory:
 # ─────────────────────────────────────────────────────────────
 # TestTokenEstimationReuse
 # ─────────────────────────────────────────────────────────────
+
 
 class TestTokenEstimationReuse:
     """Ensure ReactiveCompactor reuses module-level token estimators."""

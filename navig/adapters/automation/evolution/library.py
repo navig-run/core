@@ -7,6 +7,8 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
+from navig.platform.paths import config_dir
+
 
 @dataclass
 class ScriptEntry:
@@ -26,7 +28,7 @@ class ScriptLibrary:
     def __init__(self, storage_dir: Path | None = None):
         if storage_dir is None:
             # Default to ~/.navig/ahk_library
-            self.storage_dir = Path.home() / ".navig" / "ahk_library"
+            self.storage_dir = config_dir() / "ahk_library"
         else:
             self.storage_dir = storage_dir
 

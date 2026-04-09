@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from navig.debug_logger import get_debug_logger
+from navig.platform.paths import config_dir
 
 logger = get_debug_logger()
 
@@ -114,7 +115,7 @@ class UserStateTracker:
     JUST_ARRIVED_THRESHOLD_HOURS: int = 2
 
     def __init__(self, state_dir: Path | None = None):
-        self.state_dir = state_dir or Path.home() / ".navig" / "engagement"
+        self.state_dir = state_dir or config_dir() / "engagement"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         # In-memory state

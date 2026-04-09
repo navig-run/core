@@ -16,7 +16,9 @@ class _VaultWithBraveKey:
         return ""
 
 
-def _ok_brave(query: str, api_key: str, count: int = 5, timeout_seconds: int = 30) -> WebSearchResult:
+def _ok_brave(
+    query: str, api_key: str, count: int = 5, timeout_seconds: int = 30
+) -> WebSearchResult:
     return WebSearchResult(
         success=True,
         query=query,
@@ -114,7 +116,9 @@ def test_cli_search_forwards_provider_option(monkeypatch):
     assert seen == {"query": "hello world", "count": 3, "provider": "brave"}
 
 
-def _ok_tavily(query: str, api_key: str, count: int = 5, timeout_seconds: int = 30) -> WebSearchResult:
+def _ok_tavily(
+    query: str, api_key: str, count: int = 5, timeout_seconds: int = 30
+) -> WebSearchResult:
     return WebSearchResult(
         success=True,
         query=query,

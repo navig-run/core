@@ -2,8 +2,10 @@
 import typer
 from rich.console import Console
 
+from navig.console_helper import get_console
+
 app = typer.Typer(help="Replay recorded NAVIG command sessions", no_args_is_help=True)
-console = Console()
+console = get_console()
 
 
 @app.command("list")

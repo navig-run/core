@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from navig.platform.paths import config_dir
 from navig.store.base import BaseStore
 
 logger = logging.getLogger(__name__)
@@ -145,7 +146,7 @@ class MatrixStore(BaseStore):
 
     Usage::
 
-        store = MatrixStore(Path.home() / ".navig" / "matrix.db")
+        store = MatrixStore(config_dir() / "matrix.db")
         store.upsert_room(MatrixRoom(room_id="!abc:server", name="General"))
         rooms = store.list_rooms()
         store.add_event(MatrixEvent(event_id="$1", room_id="!abc:server", ...))
@@ -156,7 +157,7 @@ class MatrixStore(BaseStore):
 
     def __init__(self, db_path: Path | None = None):
         if db_path is None:
-            db_path = Path.home() / ".navig" / "matrix.db"
+            db_path = config_dir() / "matrix.db"
         super().__init__(Path(db_path))
 
     def _create_schema(self, conn: sqlite3.Connection) -> None:

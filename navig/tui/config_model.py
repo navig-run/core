@@ -17,12 +17,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from navig.platform.paths import config_dir
 from navig.workspace_ownership import USER_WORKSPACE_DIR
 
 # ---------------------------------------------------------------------------
 # Default paths
 # ---------------------------------------------------------------------------
-DEFAULT_NAVIG_DIR: Path = Path.home() / ".navig"
+DEFAULT_NAVIG_DIR: Path = config_dir()
 DEFAULT_WORKSPACE_DIR: Path = USER_WORKSPACE_DIR
 DEFAULT_CONFIG_FILE: Path = DEFAULT_NAVIG_DIR / "navig.json"
 

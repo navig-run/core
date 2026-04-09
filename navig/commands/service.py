@@ -23,6 +23,7 @@ from pathlib import Path
 import typer
 
 from navig.lazy_loader import lazy_import
+from navig.platform.paths import config_dir
 
 ch = lazy_import("navig.console_helper")
 
@@ -347,7 +348,7 @@ def service_logs(
         navig service logs -n 100
         navig service logs --child children
     """
-    log_dir = Path.home() / ".navig" / "logs"
+    log_dir = config_dir() / "logs"
 
     if child:
         log_file = log_dir / f"{child}.log"

@@ -21,13 +21,11 @@ def corpus_tree(tmp_path: Path) -> Path:
 
     # Two tasks with similar titles (should be duplicate)
     (active / "setup_auth.md").write_text(
-        "---\ntitle: Setup authentication\n---\n\n"
-        "Add auth module to the application.\n",
+        "---\ntitle: Setup authentication\n---\n\nAdd auth module to the application.\n",
         encoding="utf-8",
     )
     (active / "auth_setup.md").write_text(
-        "---\ntitle: Setup authentication module\n---\n\n"
-        "Authenticate users via OAuth.\n",
+        "---\ntitle: Setup authentication module\n---\n\nAuthenticate users via OAuth.\n",
         encoding="utf-8",
     )
 

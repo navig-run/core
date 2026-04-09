@@ -379,8 +379,9 @@ def classify_request(
     user_text = " ".join(user_parts)
     full_text = f"{system_text} {user_text}"
 
-    # Token estimate: ~4 chars per token
-    estimated_tokens = max(1, len(full_text) // 4)
+    from navig.core.tokens import estimate_tokens
+
+    estimated_tokens = estimate_tokens(full_text)
 
     # --- Early exit: large context always COMPLEX ---
     if estimated_tokens > max_tokens_force_complex:

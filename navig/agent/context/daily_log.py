@@ -38,6 +38,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from navig.platform.paths import config_dir
+
 # =============================================================================
 # Configuration
 # =============================================================================
@@ -59,7 +61,7 @@ def get_daily_log_path() -> Path:
 
         navig_dir = _paths.config_dir()
     except Exception:
-        navig_dir = Path.home() / ".navig"
+        navig_dir = config_dir()
     navig_dir.mkdir(parents=True, exist_ok=True)
     return navig_dir / "daily_log.db"
 

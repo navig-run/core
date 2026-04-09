@@ -17,6 +17,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from navig.platform.paths import config_dir
+
 logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────
@@ -24,7 +26,7 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────
 
 MAX_CONCURRENT = 10
-OUTPUT_DIR = Path.home() / ".navig" / "bg_tasks"
+OUTPUT_DIR = config_dir() / "bg_tasks"
 
 
 # ─────────────────────────────────────────────────────────────

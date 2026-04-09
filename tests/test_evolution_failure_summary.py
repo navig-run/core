@@ -28,8 +28,7 @@ def test_fix_evolver_includes_failure_summary_on_check_failure(tmp_path: Path, m
     class _Result:
         returncode = 1
         stdout = (
-            "FAILED tests/test_math.py::test_add - AssertionError: expected 2\n"
-            "1 failed in 0.08s\n"
+            "FAILED tests/test_math.py::test_add - AssertionError: expected 2\n1 failed in 0.08s\n"
         )
         stderr = "E   AssertionError: expected 2"
 

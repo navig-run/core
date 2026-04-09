@@ -67,9 +67,7 @@ def _write_artifact(tmp_path: Path, completed_ids: list[str]) -> None:
         "engine_version": "2.0.0",
         "steps": records,
     }
-    (tmp_path / "onboarding.json").write_text(
-        json.dumps(artifact), encoding="utf-8"
-    )
+    (tmp_path / "onboarding.json").write_text(json.dumps(artifact), encoding="utf-8")
 
 
 # ── 1. Jump target is re-run even when artifact marks it completed ─────────────
@@ -130,6 +128,7 @@ def test_steps_before_jump_target_are_skipped(tmp_path: Path) -> None:
         def _run() -> StepResult:
             ran.append(sid)
             return StepResult(status="completed", output={})
+
         return _run
 
     steps = [
@@ -163,6 +162,7 @@ def test_full_run_skips_already_completed_steps(tmp_path: Path) -> None:
         def _run() -> StepResult:
             ran.append(sid)
             return StepResult(status="completed", output={})
+
         return _run
 
     steps = [
@@ -318,6 +318,4 @@ def test_runner_progress_uses_fraction_when_no_jump() -> None:
     assert "/5" in output, (
         f"Expected '/5' fraction in progress output for normal run.\nGot: {output!r}"
     )
-    assert "%" in output, (
-        f"Expected '%' in progress output for normal run.\nGot: {output!r}"
-    )
+    assert "%" in output, f"Expected '%' in progress output for normal run.\nGot: {output!r}"

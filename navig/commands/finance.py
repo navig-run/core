@@ -6,8 +6,10 @@ Install the optional finance extra to unlock full functionality:
 import typer
 from rich.console import Console
 
+from navig.console_helper import get_console
+
 finance_app = typer.Typer(help="Beancount / double-entry accounting tools", no_args_is_help=True)
-console = Console()
+console = get_console()
 
 
 @finance_app.command("status")

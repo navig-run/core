@@ -7,8 +7,10 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from navig.console_helper import get_console
+
 paths_app = typer.Typer(help="Inspect NAVIG system paths and MCP server registration", no_args_is_help=False)
-console = Console()
+console = get_console()
 
 
 @paths_app.callback(invoke_without_command=True)

@@ -337,6 +337,9 @@ class NavigGateway:
         rate_mw, self._auth_attempts = make_rate_limit_middleware(window=60, max_failures=5)
         cors_mw = make_cors_middleware()
         self._app = web.Application(middlewares=[rate_mw, cors_mw])
+        gateway_key = web.AppKey("gateway", object)
+        self._app[gateway_key] = self
+        self._app._state["gateway"] = self
 
         # ── Route registration (extracted to navig.gateway.routes) ──
         from navig.gateway.routes import register_all_routes
@@ -362,16 +365,18 @@ class NavigGateway:
             deck_cfg = raw_cfg.get("deck", {}) if isinstance(raw_cfg, dict) else {}
 
             telegram_channel = self.channels.get("telegram")
-            provider_ready = bool(telegram_channel) or is_provider_enabled("telegram", raw_cfg)
             bot_token = (
                 getattr(telegram_channel, "bot_token", "")
                 or resolve_telegram_bot_token(raw_cfg)
                 or tg_cfg.get("bot_token", "")
             )
+            provider_ready = (
+                bool(telegram_channel)
+                or is_provider_enabled("telegram", raw_cfg)
+                or bool(bot_token)
+            )
 
             if provider_ready and bot_token and deck_cfg.get("enabled", True):
-                # Store gateway reference so Deck API handlers can access channels
-                self._app["gateway"] = self
                 register_deck_routes(
                     self._app,
                     bot_token=bot_token,

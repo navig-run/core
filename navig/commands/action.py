@@ -22,6 +22,7 @@ from typing import Any
 import typer
 
 from navig import console_helper as ch
+from navig.console_helper import get_console
 
 action_app = typer.Typer(
     name="action",
@@ -139,7 +140,7 @@ def action_list(
     from rich.console import Console
     from rich.table import Table
 
-    console = Console()
+    console = get_console()
     table = Table(show_header=True, header_style="bold cyan")
     table.add_column("Name", style="cyan", no_wrap=True)
     table.add_column("Command")

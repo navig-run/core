@@ -16,9 +16,10 @@ runner = CliRunner()
 
 
 def test_init_profile_quickstart_maps_to_operator_and_runs_chat_handoff() -> None:
-    with patch("navig.installer.run_install", MagicMock()) as run_install, patch(
-        "navig.commands.init.run_chat_first_handoff", MagicMock()
-    ) as run_handoff:
+    with (
+        patch("navig.installer.run_install", MagicMock()) as run_install,
+        patch("navig.commands.init.run_chat_first_handoff", MagicMock()) as run_handoff,
+    ):
         result = runner.invoke(app, ["init", "--profile", "quickstart"])
 
     assert result.exit_code == 0, result.output

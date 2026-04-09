@@ -2,8 +2,10 @@
 import typer
 from rich.console import Console
 
+from navig.console_helper import get_console
+
 node_app = typer.Typer(help="Manage compute nodes in the NAVIG formation", no_args_is_help=True)
-console = Console()
+console = get_console()
 
 
 @node_app.command("list")

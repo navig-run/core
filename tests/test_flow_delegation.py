@@ -4,13 +4,15 @@ Tests for flow command delegation.
 Verifies that `navig flow` properly delegates to the workflow command group.
 """
 
+import typer
 from typer.testing import CliRunner
 
-from navig.cli import _register_external_commands, app
-
-_register_external_commands(register_all=True, target_app=app)
+from navig.commands.workflow import task_app
 
 runner = CliRunner()
+
+app = typer.Typer()
+app.add_typer(task_app, name="flow")
 
 
 class TestFlowDelegation:
@@ -20,7 +22,7 @@ class TestFlowDelegation:
         """navig flow --help should exit 0."""
         result = runner.invoke(app, ["flow", "--help"])
         assert result.exit_code == 0
-        assert "Manage and execute reusable command flows" in result.output
+        assert "Task/workflow management" in result.output
 
     def test_flow_list_exits_zero(self):
         """navig flow list should exit 0."""
@@ -30,10 +32,10 @@ class TestFlowDelegation:
         assert "Name" in result.output or "No flows" in result.output.lower()
 
     def test_flow_has_expected_subcommands(self):
-        """navig flow should expose list, show, run, test, add, template."""
+        """navig flow should expose core workflow subcommands."""
         result = runner.invoke(app, ["flow", "--help"])
         assert result.exit_code == 0
-        for cmd in ["list", "show", "run", "test", "add", "template"]:
+        for cmd in ["list", "show", "run", "test", "add", "remove", "edit", "complete"]:
             assert cmd in result.output, f"Missing subcommand: {cmd}"
 
     def test_flow_run_missing_name_errors(self):
@@ -47,8 +49,8 @@ class TestFlowDelegation:
         result = runner.invoke(app, ["flow", "show"])
         assert result.exit_code != 0
 
-    def test_flow_template_help(self):
-        """navig flow template --help should work."""
-        result = runner.invoke(app, ["flow", "template", "--help"])
+    def test_flow_add_help(self):
+        """navig flow add --help should work."""
+        result = runner.invoke(app, ["flow", "add", "--help"])
         assert result.exit_code == 0
-        assert "template" in result.output.lower()
+        assert "create a new task" in result.output.lower()

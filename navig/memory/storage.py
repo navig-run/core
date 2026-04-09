@@ -24,15 +24,7 @@ if TYPE_CHECKING:
     from navig.memory.vector import VectorIndex
 
 
-def _debug_log(message: str) -> None:
-    """Simple debug logging wrapper."""
-    try:
-        from navig.debug_logger import DebugLogger
-
-        logger = DebugLogger()
-        logger.log_operation("memory", {"message": message})
-    except Exception:  # noqa: BLE001
-        pass  # best-effort; failure is non-critical
+from navig.memory._util import _debug_log
 
 
 @dataclass

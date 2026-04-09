@@ -2,8 +2,10 @@
 import typer
 from rich.console import Console
 
+from navig.console_helper import get_console
+
 boot_app = typer.Typer(help="Configure NAVIG boot sequence and startup hooks", no_args_is_help=True)
-console = Console()
+console = get_console()
 
 
 @boot_app.command("show")

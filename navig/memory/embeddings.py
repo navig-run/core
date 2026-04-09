@@ -23,20 +23,7 @@ except ImportError:
     HAS_NUMPY = False
 
 
-def _debug_log(message: str) -> None:
-    """Simple debug logging wrapper."""
-    try:
-        from navig.debug_logger import DebugLogger
-
-        logger = DebugLogger()
-        logger.log_operation("memory", {"message": message})
-    except Exception as _e:  # noqa: BLE001
-        import sys
-
-        print(
-            f"[navig/memory/embeddings] logger init failed ({type(_e).__name__}): {_e}",
-            file=sys.stderr,
-        )
+from navig.memory._util import _debug_log
 
 
 @dataclass

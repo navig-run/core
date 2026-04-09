@@ -21,9 +21,10 @@ from rich.progress import Progress
 from rich.table import Table
 
 from navig.config import get_config_manager
+from navig.console_helper import get_console
 from navig.remote import RemoteOperations
 
-console = Console()
+console = get_console()
 
 
 def _validate_firewall_rule_params(port, protocol):

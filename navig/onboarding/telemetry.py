@@ -38,12 +38,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+from navig.platform.paths import config_dir
+
 # Public endpoint — can be overridden for self-hosted deployments
 TELEMETRY_URL: str = os.environ.get(
     "NAVIG_TELEMETRY_URL",
     "https://telemetry.navig.run",
 )
-_NAVIG_DIR: Path = Path.home() / ".navig"
+_NAVIG_DIR: Path = config_dir()
 _PINGED_MARKER: Path = _NAVIG_DIR / ".pinged"
 _OPT_OUT_VAR = "NAVIG_NO_TELEMETRY"
 

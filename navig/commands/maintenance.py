@@ -12,9 +12,10 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from navig.config import get_config_manager
+from navig.console_helper import get_console
 from navig.remote import RemoteOperations
 
-console = Console()
+console = get_console()
 
 
 def update_packages(options: dict) -> None:

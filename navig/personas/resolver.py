@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from navig.platform.paths import config_dir
+
 
 def _find_project_navig_root(cwd: Path) -> Path | None:
     for parent in [cwd, *cwd.parents]:
@@ -34,7 +36,7 @@ def resolve_persona(name: str, cwd: Path | None = None) -> Path | None:
             return candidate
 
     # 2. User home
-    user_candidate = Path.home() / ".navig" / "personas" / slug
+    user_candidate = config_dir() / "personas" / slug
     if user_candidate.is_dir():
         return user_candidate
 
@@ -62,7 +64,7 @@ def discover_persona_paths(cwd: Path | None = None) -> dict[str, Path]:
                 discovered[entry.name] = entry
 
     # User home overrides package
-    user_root = Path.home() / ".navig" / "personas"
+    user_root = config_dir() / "personas"
     if user_root.exists():
         for entry in sorted(user_root.iterdir()):
             if entry.is_dir():

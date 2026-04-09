@@ -22,7 +22,9 @@ import yaml
 from rich.console import Console
 from rich.table import Table
 
-console = Console()
+from navig.console_helper import get_console
+
+console = get_console()
 
 # ============================================================================
 # Typer app

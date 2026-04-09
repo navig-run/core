@@ -18,6 +18,7 @@ from typing import Annotated
 import typer
 
 from navig.lazy_loader import lazy_import
+from navig.platform.paths import config_dir
 
 ch = lazy_import("navig.console_helper")
 
@@ -63,7 +64,7 @@ def _resolve_github_token() -> str | None:
     try:
         import yaml  # type: ignore
 
-        cfg_path = Path.home() / ".navig" / "config.yaml"
+        cfg_path = config_dir() / "config.yaml"
         if cfg_path.exists():
             cfg = yaml.safe_load(cfg_path.read_text()) or {}
             token = cfg.get("github", {}).get("token", "").strip()
@@ -347,12 +348,14 @@ def token_set(
     try:
         import yaml  # type: ignore
 
-        cfg_path = Path.home() / ".navig" / "config.yaml"
+        cfg_path = config_dir() / "config.yaml"
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
         cfg = yaml.safe_load(cfg_path.read_text()) if cfg_path.exists() else {}
         cfg = cfg or {}
         cfg.setdefault("github", {})["token"] = value
-        cfg_path.write_text(yaml.dump(cfg, default_flow_style=False))
+        from navig.core.yaml_io import atomic_write_yaml
+
+        atomic_write_yaml(cfg, cfg_path)
         ch.success(f"GitHub token saved to {cfg_path}")
     except Exception as exc:
         ch.error(f"Failed to save token: {exc}")
@@ -421,12 +424,14 @@ def token_remove():
     try:
         import yaml  # type: ignore
 
-        cfg_path = Path.home() / ".navig" / "config.yaml"
+        cfg_path = config_dir() / "config.yaml"
         if cfg_path.exists():
             cfg = yaml.safe_load(cfg_path.read_text()) or {}
             if cfg.get("github", {}).get("token"):
                 cfg["github"].pop("token")
-                cfg_path.write_text(yaml.dump(cfg, default_flow_style=False))
+                from navig.core.yaml_io import atomic_write_yaml
+
+                atomic_write_yaml(cfg, cfg_path)
                 ch.success(f"GitHub token removed from {cfg_path}")
                 removed = True
     except Exception:  # noqa: BLE001

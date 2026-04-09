@@ -20,6 +20,7 @@ from pathlib import Path
 import typer
 
 from navig import console_helper as ch
+from navig.console_helper import get_console
 from navig.platform.paths import config_dir
 
 # Module-level set: tracks which packs have been successfully loaded in this process.
@@ -537,7 +538,7 @@ def package_list(
     from rich.console import Console
     from rich.table import Table
 
-    _con = Console()
+    _con = get_console()
     table = Table(show_header=True, header_style="bold cyan")
     table.add_column("ID", style="cyan", no_wrap=True)
     table.add_column("Type", style="dim", no_wrap=True)
@@ -873,7 +874,7 @@ def _invoke_handler(pkg_id: str, path: Path, lifecycle_fn: str) -> bool:
 
             store_dir = _config_dir() / "store" / pkg_id
         except Exception:
-            store_dir = Path.home() / ".navig" / "store" / pkg_id
+            store_dir = config_dir() / "store" / pkg_id
 
         store_dir.mkdir(parents=True, exist_ok=True)
 

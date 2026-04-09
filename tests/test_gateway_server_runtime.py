@@ -55,6 +55,7 @@ def gateway(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         global_config={
             "gateway": {"enabled": True, "port": 8789, "host": "127.0.0.1"},
             "heartbeat": {},
+            "mesh": {"enabled": False},
             "agents": {},
             "cron": {},
         },

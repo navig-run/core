@@ -11,6 +11,8 @@ prompts the user to run `navig onboard` first.
 
 from __future__ import annotations
 
+from navig.console_helper import get_console
+
 
 def run_whoami() -> None:
     from navig.identity.entity import derive_entity
@@ -22,7 +24,7 @@ def run_whoami() -> None:
         try:
             from rich.console import Console
 
-            Console().print(
+            get_console().print(
                 "\n[bold yellow]No entity found.[/bold yellow]  "
                 "Run [bold cyan]navig onboard[/bold cyan] to generate your identity sigil.\n"
             )

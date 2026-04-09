@@ -18,6 +18,8 @@ import logging
 import time
 from pathlib import Path
 
+from navig.platform.paths import config_dir
+
 logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────
@@ -28,7 +30,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_RESULT_CHARS: int = 30_000
 
 #: Directory for spillover files (full results that exceeded the cap).
-SPILLOVER_DIR: Path = Path.home() / ".navig" / "tmp" / "tool_spillover"
+SPILLOVER_DIR: Path = config_dir() / "tmp" / "tool_spillover"
 
 #: Time-to-live for spillover files, in seconds (default 1 hour).
 SPILLOVER_TTL: int = 3600

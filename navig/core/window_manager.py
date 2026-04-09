@@ -9,12 +9,13 @@ from dataclasses import asdict
 from pathlib import Path
 
 from navig.console_helper import error, info, warning
+from navig.platform.paths import config_dir
 
 
 class WindowManager:
     def __init__(self, ahk_adapter):
         self.ahk = ahk_adapter
-        self.layout_dir = Path.home() / ".navig" / "layouts"
+        self.layout_dir = config_dir() / "layouts"
         self.layout_dir.mkdir(parents=True, exist_ok=True)
 
     def get_windows(self):

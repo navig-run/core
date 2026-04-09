@@ -10,7 +10,9 @@ def test_write_autoload_preserves_insertion_order(tmp_path: Path, monkeypatch):
     autoload_file = tmp_path / "packages_autoload.json"
     monkeypatch.setattr(package_cmd, "_autoload_path", lambda: autoload_file)
 
-    package_cmd._write_autoload(["navig-telegram", "navig-commands", "navig-telegram", "navig-memory"])
+    package_cmd._write_autoload(
+        ["navig-telegram", "navig-commands", "navig-telegram", "navig-memory"]
+    )
 
     data = json.loads(autoload_file.read_text(encoding="utf-8"))
     assert data == ["navig-telegram", "navig-commands", "navig-memory"]

@@ -1,4 +1,5 @@
 """Tests for navig.ui._capabilities and terminal-setup onboarding step."""
+
 from __future__ import annotations
 
 import importlib
@@ -12,9 +13,11 @@ import pytest
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 def _reload_theme():
     """Reload theme module to re-evaluate NERD_FONT_AVAILABLE."""
     import navig.ui.theme as mod
+
     importlib.reload(mod)
     return mod
 
@@ -66,6 +69,7 @@ class TestProbeNerdFont:
             patch.dict("sys.modules", {"winreg": MagicMock()}),
         ):
             import winreg as wr  # type: ignore[import]
+
             wr.OpenKey.return_value.__enter__ = lambda s: s
             wr.OpenKey.return_value.__exit__ = MagicMock(return_value=False)
             wr.QueryInfoKey.return_value = (1, 0, 0)
@@ -185,6 +189,7 @@ class TestNfIconFallback:
 class TestTerminalSetupStep:
     def _make_step(self, tmp_path):
         from navig.onboarding.steps import _step_terminal_setup
+
         return _step_terminal_setup(tmp_path)
 
     def test_step_id_and_phase(self, tmp_path):

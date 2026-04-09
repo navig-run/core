@@ -3,6 +3,7 @@
 Ensures that non-UTF-8 bytes in tasklist output (e.g. OEM code page cp850/cp1252
 on Windows) do not crash the subprocess readerthread with UnicodeDecodeError.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -89,4 +90,3 @@ def test_ask_ai_non_utf8_tasklist_bytes_decoded_gracefully():
             ai_mod.ask_ai("what processes are running?", None, {"yes": True})
         except SystemExit:
             pass
-

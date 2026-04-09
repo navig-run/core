@@ -29,6 +29,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from navig.platform.paths import config_dir
+
 # Must match PRIMARY_TTL_MS in navig-bridge extension.ts (15 000 ms)
 PRIMARY_TTL_SECONDS: float = 15.0
 
@@ -38,7 +40,7 @@ BRIDGE_DEFAULT_PORT: int = 42070
 # Debounce: don't hammer the filesystem from hot paths
 _PROBE_INTERVAL: float = 5.0
 
-_bridge_grid_path: Path = Path.home() / ".navig" / "bridge-grid.json"
+_bridge_grid_path: Path = config_dir() / "bridge-grid.json"
 _last_read_ts: float = 0.0
 _cached_result: dict | None = None
 

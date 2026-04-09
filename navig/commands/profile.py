@@ -19,6 +19,7 @@ from __future__ import annotations
 import typer
 
 from navig.lazy_loader import lazy_import
+from navig.platform.paths import config_dir
 
 ch = lazy_import("navig.console_helper")
 
@@ -203,7 +204,7 @@ def profile_pin_clear(
             ch.error("Cancelled — PIN NOT removed.")
             raise typer.Exit(1)
 
-    pin_path = Path.home() / ".navig" / ".mode_pin"
+    pin_path = config_dir() / ".mode_pin"
     pin_path.unlink(missing_ok=True)
     ch.success("PIN removed. All profiles are now accessible without PIN.")
     ch.dim("Re-enable with: navig profile pin-set")

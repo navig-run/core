@@ -247,6 +247,8 @@ class CommandQueue:
         task_id:  custom task ID; auto-generated UUID4 if not supplied
         """
         if self._shutdown:
+            if hasattr(coro, "close"):
+                coro.close()
             raise QueueShutdownError("CommandQueue has been shut down")
 
         effective_timeout = timeout if timeout is not None else self._default_timeout

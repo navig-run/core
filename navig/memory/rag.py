@@ -12,19 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-
-def _debug_log(message: str) -> None:
-    """Simple debug logging wrapper."""
-    try:
-        from navig.debug_logger import DebugLogger
-
-        logger = DebugLogger()
-        logger.log_operation("memory", {"message": message})
-    except Exception as _e:  # noqa: BLE001
-        import sys
-
-        print(f"[navig/memory/rag] logger init failed ({type(_e).__name__}): {_e}", file=sys.stderr)
-
+from navig.memory._util import _debug_log
 
 if TYPE_CHECKING:
     from navig.memory.conversation import ConversationStore, Message
@@ -319,10 +307,12 @@ class RAGPipeline:
             return text
         return text[: max_chars - 3] + "..."
 
-    def _estimate_tokens(self, text: str) -> int:
+    @staticmethod
+    def _estimate_tokens(text: str) -> int:
         """Estimate token count (rough approximation)."""
-        # Rough estimate: ~4 chars per token for English
-        return len(text) // 4
+        from navig.core.tokens import estimate_tokens
+
+        return estimate_tokens(text)
 
     def build_prompt(
         self,

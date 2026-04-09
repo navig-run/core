@@ -2,8 +2,10 @@
 import typer
 from rich.console import Console
 
+from navig.console_helper import get_console
+
 app = typer.Typer(help="Create and restore NAVIG configuration snapshots", no_args_is_help=True)
-console = Console()
+console = get_console()
 
 
 @app.command("create")

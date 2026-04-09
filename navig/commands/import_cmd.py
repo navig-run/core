@@ -4,6 +4,7 @@ from pathlib import Path
 
 import typer
 
+from navig.console_helper import get_console
 from navig.importers.core import UniversalImporter
 from navig.lazy_loader import lazy_import
 
@@ -22,7 +23,7 @@ def _table() -> object:
 def _console() -> object:
     from rich.console import Console
 
-    return Console()
+    return get_console()
 
 
 def _flatten(results: dict[str, list]) -> list[dict]:

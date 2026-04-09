@@ -8,6 +8,8 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
+from navig.console_helper import get_console
+
 from .types import BlackboxEvent, EventType
 
 __all__ = ["render_timeline", "format_event_summary"]
@@ -37,7 +39,7 @@ def render_timeline(
     console : Rich console to render to.  ``None`` → default stdout console.
     """
     if console is None:
-        console = Console()
+        console = get_console()
 
     display = events[:limit] if len(events) > limit else events
 

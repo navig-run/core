@@ -18,6 +18,8 @@ from pathlib import Path
 
 import typer
 
+from navig.platform.paths import config_dir
+
 # ---------------------------------------------------------------------------
 # Root app
 # ---------------------------------------------------------------------------
@@ -58,7 +60,7 @@ def _prompt_dirs() -> list[Path]:
             break
 
     # Always include the global dir (may or may not exist yet)
-    global_dir = Path.home() / ".navig" / "brain" / "prompts"
+    global_dir = config_dir() / "brain" / "prompts"
     if global_dir not in dirs:
         dirs.append(global_dir)
 
@@ -165,7 +167,7 @@ def prompts_set(
         content = sys.stdin.read()
 
     if global_scope:
-        target_dir = Path.home() / ".navig" / "brain" / "prompts"
+        target_dir = config_dir() / "brain" / "prompts"
     else:
         # Find project root or fall back to cwd
         cwd = Path.cwd()

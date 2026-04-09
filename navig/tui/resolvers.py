@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from navig.platform.paths import config_dir
+
 # ---------------------------------------------------------------------------
 # StatusBadge
 # ---------------------------------------------------------------------------
@@ -128,7 +130,7 @@ def resolve_telegram() -> StatusBadge:
 def resolve_ssh() -> StatusBadge:
     """Check whether any SSH hosts are configured."""
     try:
-        cfg_path = Path.home() / ".navig" / "config.yaml"
+        cfg_path = config_dir() / "config.yaml"
         if cfg_path.is_file():
             import yaml  # type: ignore[import]
 
@@ -149,7 +151,7 @@ def resolve_ssh() -> StatusBadge:
 def resolve_daemon() -> StatusBadge:
     """Check whether the NAVIG daemon process is running."""
     try:
-        pid_file = Path.home() / ".navig" / "daemon" / "supervisor.pid"
+        pid_file = config_dir() / "daemon" / "supervisor.pid"
         if pid_file.is_file():
             pid = int(pid_file.read_text(encoding="utf-8").strip())
             os.kill(pid, 0)
@@ -200,7 +202,7 @@ def resolve_agent() -> StatusBadge:
             # Check soul.json as secondary signal
             soul_path = Path("store/agents/navig/soul.json")
             soul_ok = (
-                soul_path.is_file() or (Path.home() / ".navig/agents/navig/soul.json").is_file()
+                soul_path.is_file() or (config_dir() / "agents/navig/soul.json").is_file()
             )
             soul_indicator = " soul.json ✓" if soul_ok else ""
             return StatusBadge(
@@ -308,7 +310,7 @@ def resolve_scheduler() -> StatusBadge:
 
         from navig.scheduler.cron_service import CronService  # type: ignore[import]
 
-        svc = CronService(gateway=None, storage_path=Path.home() / ".navig")
+        svc = CronService(gateway=None, storage_path=config_dir())
         jobs = svc.list_jobs() if hasattr(svc, "list_jobs") else []
         count = len(jobs) if jobs else 0
 

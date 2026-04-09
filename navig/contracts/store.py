@@ -18,10 +18,11 @@ from navig.contracts.execution_receipt import ExecutionReceipt, ReceiptOutcome
 from navig.contracts.mission import Mission, MissionStatus
 from navig.contracts.node import Node, NodeStatus
 from navig.debug_logger import get_debug_logger
+from navig.platform.paths import config_dir
 
 logger = get_debug_logger()
 
-_DEFAULT_STORE_DIR = Path.home() / ".navig" / "runtime"
+_DEFAULT_STORE_DIR = config_dir() / "runtime"
 
 
 class RuntimeStore:

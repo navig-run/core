@@ -120,7 +120,8 @@ class CryptoEngine:
         if not _argon2_probed:
             _argon2_probed = True
             try:
-                from argon2.low_level import Type as _A2T, hash_secret_raw as _hsr  # noqa: PLC0415
+                from argon2.low_level import Type as _A2T  # noqa: PLC0415
+                from argon2.low_level import hash_secret_raw as _hsr
                 _argon2_funcs = (_A2T, _hsr)
             except Exception:  # noqa: BLE001  — catches ImportError and DLL load failures
                 _argon2_funcs = None

@@ -16,6 +16,8 @@ from __future__ import annotations
 import logging
 import re
 
+from navig.console_helper import get_console
+
 logger = logging.getLogger("navig.safety_guard")
 
 # ─────────────────────────────────────────────────────────────
@@ -204,7 +206,7 @@ def _prompt_confirmation(action: str, pattern: str) -> bool:
         from rich.console import Console
         from rich.panel import Panel
 
-        console = Console()
+        console = get_console()
 
         console.print(
             Panel(

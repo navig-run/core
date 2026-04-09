@@ -452,10 +452,9 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             cfg.setdefault("llm_router", {}).setdefault("provider_base_urls", {})[provider_id] = (
                 base_url
             )
-            config_path.write_text(
-                yaml.dump(cfg, allow_unicode=True, sort_keys=False),
-                encoding="utf-8",
-            )
+            from navig.core.yaml_io import atomic_write_yaml
+
+            atomic_write_yaml(cfg, config_path, allow_unicode=True)
             return True
         except Exception:  # noqa: BLE001
             return False
@@ -476,16 +475,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         try:
             from navig.vault.core import get_vault
 
-            vault = get_vault()
-            if vault is not None:
-                return vault
-        except Exception:  # noqa: BLE001
-            pass
-
-        try:
-            from navig.vault.core_v2 import get_vault_v2
-
-            return get_vault_v2()
+            return get_vault()
         except Exception:  # noqa: BLE001
             return None
 
@@ -818,7 +808,9 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
                 modes = cfg["routing"].setdefault("llm_modes", {})
                 for tier in ("small_talk", "big_tasks", "coding", "summarize", "research"):
                     modes.setdefault(tier, {})["fallback_provider"] = fallback_pid
-                config_path.write_text(yaml.dump(cfg, allow_unicode=True), encoding="utf-8")
+                from navig.core.yaml_io import atomic_write_yaml
+
+                atomic_write_yaml(cfg, config_path, allow_unicode=True)
             except Exception:  # noqa: BLE001
                 pass  # best-effort; never block onboarding
 
@@ -1276,10 +1268,9 @@ def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
             if config_path.exists():
                 cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
             cfg.setdefault("web", {}).setdefault("search", {})["provider"] = preferred_provider
-            config_path.write_text(
-                yaml.dump(cfg, allow_unicode=True, sort_keys=False),
-                encoding="utf-8",
-            )
+            from navig.core.yaml_io import atomic_write_yaml
+
+            atomic_write_yaml(cfg, config_path, allow_unicode=True)
             return True
         except Exception:  # noqa: BLE001
             return False
@@ -1311,10 +1302,9 @@ def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
             api_keys[preferred_provider] = api_key
             if preferred_provider == "brave":
                 search_cfg["api_key"] = api_key
-            config_path.write_text(
-                yaml.dump(cfg, allow_unicode=True, sort_keys=False),
-                encoding="utf-8",
-            )
+            from navig.core.yaml_io import atomic_write_yaml
+
+            atomic_write_yaml(cfg, config_path, allow_unicode=True)
             return "config"
         except Exception:  # noqa: BLE001
             return "none"
@@ -1704,7 +1694,9 @@ def _step_skills_activation(navig_dir: Path) -> OnboardingStep:
             if config_path.exists():
                 cfg2 = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
             cfg2.setdefault("skills", {})["active_packs"] = chosen
-            config_path.write_text(yaml.dump(cfg2, allow_unicode=True), encoding="utf-8")
+            from navig.core.yaml_io import atomic_write_yaml
+
+            atomic_write_yaml(cfg2, config_path, allow_unicode=True)
         except Exception:  # noqa: BLE001
             pass
 
@@ -1887,7 +1879,9 @@ def _step_matrix(navig_dir: Path) -> OnboardingStep:
                 cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
             cfg.setdefault("matrix", {})["homeserver_url"] = homeserver_url
             cfg["matrix"]["default_room_id"] = default_room_id
-            config_path.write_text(yaml.dump(cfg, allow_unicode=True), encoding="utf-8")
+            from navig.core.yaml_io import atomic_write_yaml
+
+            atomic_write_yaml(cfg, config_path, allow_unicode=True)
         except Exception:  # noqa: BLE001
             pass
 
@@ -1960,7 +1954,9 @@ def _step_email(navig_dir: Path) -> OnboardingStep:
                 cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
             cfg.setdefault("email", {})["smtp_host"] = smtp_host
             cfg["email"]["smtp_port"] = smtp_port
-            config_path.write_text(yaml.dump(cfg, allow_unicode=True), encoding="utf-8")
+            from navig.core.yaml_io import atomic_write_yaml
+
+            atomic_write_yaml(cfg, config_path, allow_unicode=True)
         except Exception:  # noqa: BLE001
             pass
 
@@ -2067,13 +2063,6 @@ def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
             vault = get_vault()
         except Exception:  # noqa: BLE001
             vault = None
-        if vault is None:
-            try:
-                from navig.vault.core_v2 import get_vault_v2  # type: ignore[import]
-
-                vault = get_vault_v2()
-            except Exception:  # noqa: BLE001
-                vault = None
 
         imported: list[str] = []
         # Tracks the first AI-provider key imported so we can retroactively

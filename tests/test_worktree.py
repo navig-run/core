@@ -34,7 +34,9 @@ from navig.agent.worktree import (
 # ─────────────────────────────────────────────────────────────
 
 
-def _completed(returncode: int = 0, stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess:
+def _completed(
+    returncode: int = 0, stdout: str = "", stderr: str = ""
+) -> subprocess.CompletedProcess:
     """Build a fake CompletedProcess for mocking _run_git."""
     return subprocess.CompletedProcess(
         args="git ...",
@@ -145,7 +147,7 @@ class TestWorktreeManagerCreate:
         with patch.object(mgr, "_run_git", new_callable=AsyncMock) as mock_git:
             mock_git.side_effect = [
                 _completed(0, "true"),  # rev-parse check
-                _completed(0),          # worktree add
+                _completed(0),  # worktree add
             ]
             wt = await mgr.create("worker-a")
 
@@ -206,7 +208,7 @@ class TestWorktreeManagerCreate:
         mgr = _make_manager(tmp_path)
         with patch.object(mgr, "_run_git", new_callable=AsyncMock) as mock_git:
             mock_git.side_effect = [
-                _completed(0, "true"),   # is-inside-work-tree OK
+                _completed(0, "true"),  # is-inside-work-tree OK
                 _completed(128, stderr="branch already exists"),  # worktree add fails
             ]
             with pytest.raises(RuntimeError, match="Failed to create worktree"):
@@ -234,9 +236,11 @@ class TestWorktreeManagerCreate:
     async def test_create_custom_base_branch(self, tmp_path):
         mgr = _make_manager(tmp_path)
         captured = []
+
         async def fake_git(cmd: str):
             captured.append(cmd)
             return _completed(0, "true")
+
         with patch.object(mgr, "_run_git", side_effect=fake_git):
             await mgr.create("worker-c", base_branch="develop")
         # The worktree add command should reference develop
@@ -265,7 +269,7 @@ class TestWorktreeManagerMergeBack:
         with patch.object(mgr, "_run_git", new_callable=AsyncMock) as mock_git:
             mock_git.side_effect = [
                 _completed(0, "main"),  # rev-parse HEAD
-                _completed(0, ""),      # git log (empty = nothing to merge)
+                _completed(0, ""),  # git log (empty = nothing to merge)
             ]
             result = await mgr.merge_back("w")
         assert result is True
@@ -278,9 +282,9 @@ class TestWorktreeManagerMergeBack:
         mgr._worktrees["w"] = wt
         with patch.object(mgr, "_run_git", new_callable=AsyncMock) as mock_git:
             mock_git.side_effect = [
-                _completed(0, "main"),         # rev-parse HEAD
-                _completed(0, "abc123 commit"), # git log (has commits)
-                _completed(0),                  # git merge
+                _completed(0, "main"),  # rev-parse HEAD
+                _completed(0, "abc123 commit"),  # git log (has commits)
+                _completed(0),  # git merge
             ]
             result = await mgr.merge_back("w")
         assert result is True
@@ -293,10 +297,10 @@ class TestWorktreeManagerMergeBack:
         mgr._worktrees["w"] = wt
         with patch.object(mgr, "_run_git", new_callable=AsyncMock) as mock_git:
             mock_git.side_effect = [
-                _completed(0, "main"),          # rev-parse HEAD
-                _completed(0, "abc123 commit"), # git log
-                _completed(1, stderr="CONFLICT"), # git merge fails
-                _completed(0),                    # git merge --abort
+                _completed(0, "main"),  # rev-parse HEAD
+                _completed(0, "abc123 commit"),  # git log
+                _completed(1, stderr="CONFLICT"),  # git merge fails
+                _completed(0),  # git merge --abort
             ]
             result = await mgr.merge_back("w")
         assert result is False
@@ -318,9 +322,11 @@ class TestWorktreeManagerMergeBack:
         wt = Worktree(name="w", path=tmp_path / "w", branch="navig/w")
         mgr._worktrees["w"] = wt
         captured = []
+
         async def fake_git(cmd: str):
             captured.append(cmd)
             return _completed(0, "")
+
         with patch.object(mgr, "_run_git", side_effect=fake_git):
             result = await mgr.merge_back("w", target_branch="feature-x")
         assert result is True
@@ -370,9 +376,11 @@ class TestWorktreeManagerRemove:
         wt = Worktree(name="w", path=tmp_path / "w", branch="navig/w")
         mgr._worktrees["w"] = wt
         captured = []
+
         async def fake_git(cmd: str):
             captured.append(cmd)
             return _completed(0)
+
         with patch.object(mgr, "_run_git", side_effect=fake_git):
             with patch("os.name", "posix"):
                 await mgr.remove("w", force=True)
@@ -385,9 +393,11 @@ class TestWorktreeManagerRemove:
         wt = Worktree(name="w", path=tmp_path / "w", branch="navig/w")
         mgr._worktrees["w"] = wt
         captured = []
+
         async def fake_git(cmd: str):
             captured.append(cmd)
             return _completed(0)
+
         with patch.object(mgr, "_run_git", side_effect=fake_git):
             with patch("os.name", "posix"):
                 await mgr.remove("w", force=False)
@@ -451,9 +461,11 @@ class TestWorktreeManagerCleanupAll:
     async def test_cleanup_prunes_git_worktrees(self, tmp_path):
         mgr = _make_manager(tmp_path)
         captured = []
+
         async def fake_git(cmd: str):
             captured.append(cmd)
             return _completed(0)
+
         with patch.object(mgr, "_run_git", side_effect=fake_git):
             await mgr.cleanup_all()
         assert any("worktree prune" in c for c in captured)
@@ -506,7 +518,9 @@ class TestWorktreeManagerList:
     def test_active_count_excludes_deleted(self, tmp_path):
         mgr = _make_manager(tmp_path)
         mgr._worktrees["a"] = Worktree(name="a", path=tmp_path / "a", branch="navig/a")
-        mgr._worktrees["b"] = Worktree(name="b", path=tmp_path / "b", branch="navig/b", deleted=True)
+        mgr._worktrees["b"] = Worktree(
+            name="b", path=tmp_path / "b", branch="navig/b", deleted=True
+        )
         assert mgr.active_count == 1
 
 
@@ -583,6 +597,7 @@ class TestWorktreeCreateTool:
     @pytest.fixture
     def tool(self):
         from navig.agent.tools.worktree_tools import WorktreeCreateTool
+
         return WorktreeCreateTool()
 
     @pytest.fixture
@@ -658,6 +673,7 @@ class TestWorktreeListTool:
     @pytest.fixture
     def tool(self):
         from navig.agent.tools.worktree_tools import WorktreeListTool
+
         return WorktreeListTool()
 
     @pytest.mark.asyncio
@@ -672,8 +688,14 @@ class TestWorktreeListTool:
     @pytest.mark.asyncio
     async def test_list_returns_json(self, tool, tmp_path):
         items = [
-            {"name": "w1", "path": str(tmp_path), "branch": "navig/w1",
-             "age": "5s", "merged": False, "deleted": False},
+            {
+                "name": "w1",
+                "path": str(tmp_path),
+                "branch": "navig/w1",
+                "age": "5s",
+                "merged": False,
+                "deleted": False,
+            },
         ]
         mock_manager = MagicMock()
         mock_manager.list_worktrees.return_value = items
@@ -709,6 +731,7 @@ class TestWorktreeMergeTool:
     @pytest.fixture
     def tool(self):
         from navig.agent.tools.worktree_tools import WorktreeMergeTool
+
         return WorktreeMergeTool()
 
     @pytest.mark.asyncio
@@ -767,6 +790,7 @@ class TestWorktreeRemoveTool:
     @pytest.fixture
     def tool(self):
         from navig.agent.tools.worktree_tools import WorktreeRemoveTool
+
         return WorktreeRemoveTool()
 
     @pytest.mark.asyncio
@@ -819,6 +843,7 @@ class TestToolRegistration:
 
     def test_register_worktree_tools_registers_four_tools(self):
         from navig.agent.agent_tool_registry import AgentToolRegistry
+
         reg = AgentToolRegistry()
         from navig.agent.tools.worktree_tools import (
             WorktreeCreateTool,
@@ -826,6 +851,7 @@ class TestToolRegistration:
             WorktreeMergeTool,
             WorktreeRemoveTool,
         )
+
         reg.register(WorktreeCreateTool(), toolset="worktree")
         reg.register(WorktreeListTool(), toolset="worktree")
         reg.register(WorktreeMergeTool(), toolset="worktree")
@@ -839,6 +865,7 @@ class TestToolRegistration:
     def test_register_worktree_tools_function(self):
         from navig.agent.agent_tool_registry import _AGENT_REGISTRY
         from navig.agent.tools import register_worktree_tools
+
         # Save existing names
         before = set(_AGENT_REGISTRY.available_names())
         register_worktree_tools()
@@ -852,6 +879,7 @@ class TestToolRegistration:
     def test_tools_have_get_entry(self):
         from navig.agent.agent_tool_registry import AgentToolRegistry
         from navig.agent.tools.worktree_tools import WorktreeCreateTool
+
         reg = AgentToolRegistry()
         reg.register(WorktreeCreateTool(), toolset="worktree")
         entry = reg.get_entry("worktree_create")
@@ -864,6 +892,7 @@ class TestToolRegistration:
             WorktreeCreateTool,
             WorktreeListTool,
         )
+
         reg = AgentToolRegistry()
         reg.register(WorktreeCreateTool(), toolset="worktree")
         reg.register(WorktreeListTool(), toolset="worktree")
@@ -893,12 +922,14 @@ class TestEdgeCases:
         wt = Worktree(name="w", path=tmp_path / "w", branch="navig/w")
         mgr._worktrees["w"] = wt
         abort_called = []
+
         async def fake_git(cmd: str):
             if "merge --abort" in cmd:
                 abort_called.append(True)
             if "merge navig/" in cmd:
                 return _completed(1, stderr="CONFLICT")
             return _completed(0, "abc")
+
         with patch.object(mgr, "_run_git", side_effect=fake_git):
             await mgr.merge_back("w", target_branch="main")
         assert abort_called
@@ -909,10 +940,12 @@ class TestEdgeCases:
         wt = Worktree(name="w", path=tmp_path / "w", branch="navig/w")
         mgr._worktrees["w"] = wt
         branch_delete_called = []
+
         async def fake_git(cmd: str):
             if "branch -D" in cmd:
                 branch_delete_called.append(cmd)
             return _completed(0)
+
         with patch.object(mgr, "_run_git", side_effect=fake_git):
             with patch("os.name", "posix"):
                 await mgr.remove("w")

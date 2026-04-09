@@ -15,12 +15,13 @@ from navig.memory.conversation import ConversationStore, Message, SessionInfo
 @pytest.fixture(autouse=True)
 def _cleanup_storage_engine():
     """Clean up storage engine connections after each test.
-    
+
     This is necessary on Windows where WAL mode keeps files locked.
     """
     yield
     try:
         from navig.storage import get_engine
+
         get_engine().close_all()
     except Exception:  # noqa: BLE001
         pass
@@ -100,9 +101,7 @@ class TestFTS5Search:
         store = self._make_store(tmp_path)
         conn = store._get_conn()
 
-        triggers = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='trigger'"
-        ).fetchall()
+        triggers = conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'").fetchall()
         trigger_names = [t[0] for t in triggers]
 
         assert "messages_fts_insert" in trigger_names
@@ -116,21 +115,27 @@ class TestFTS5Search:
         session_key = "search-session"
 
         # Add messages with different content
-        store.add_message(Message(
-            session_key=session_key,
-            role="user",
-            content="How do I handle Python exceptions?",
-        ))
-        store.add_message(Message(
-            session_key=session_key,
-            role="assistant",
-            content="Use try/except blocks for exception handling in Python.",
-        ))
-        store.add_message(Message(
-            session_key=session_key,
-            role="user",
-            content="What about JavaScript errors?",
-        ))
+        store.add_message(
+            Message(
+                session_key=session_key,
+                role="user",
+                content="How do I handle Python exceptions?",
+            )
+        )
+        store.add_message(
+            Message(
+                session_key=session_key,
+                role="assistant",
+                content="Use try/except blocks for exception handling in Python.",
+            )
+        )
+        store.add_message(
+            Message(
+                session_key=session_key,
+                role="user",
+                content="What about JavaScript errors?",
+            )
+        )
 
         # Search for "exception"
         results = store.search_content("exception")
@@ -147,16 +152,20 @@ class TestFTS5Search:
         store = self._make_store(tmp_path)
 
         # Add messages to different sessions
-        store.add_message(Message(
-            session_key="session-1",
-            role="user",
-            content="Error handling in Python",
-        ))
-        store.add_message(Message(
-            session_key="session-2",
-            role="user",
-            content="Error handling in JavaScript",
-        ))
+        store.add_message(
+            Message(
+                session_key="session-1",
+                role="user",
+                content="Error handling in Python",
+            )
+        )
+        store.add_message(
+            Message(
+                session_key="session-2",
+                role="user",
+                content="Error handling in JavaScript",
+            )
+        )
 
         # Search with session filter
         results = store.search_content("error", session_key="session-1")
@@ -171,21 +180,27 @@ class TestFTS5Search:
         session_key = "ranked-session"
 
         # Add messages with varying relevance
-        store.add_message(Message(
-            session_key=session_key,
-            role="user",
-            content="I need help with database queries.",
-        ))
-        store.add_message(Message(
-            session_key=session_key,
-            role="assistant",
-            content="Database queries can be optimized. SQL database performance matters.",
-        ))
-        store.add_message(Message(
-            session_key=session_key,
-            role="user",
-            content="Thanks!",
-        ))
+        store.add_message(
+            Message(
+                session_key=session_key,
+                role="user",
+                content="I need help with database queries.",
+            )
+        )
+        store.add_message(
+            Message(
+                session_key=session_key,
+                role="assistant",
+                content="Database queries can be optimized. SQL database performance matters.",
+            )
+        )
+        store.add_message(
+            Message(
+                session_key=session_key,
+                role="user",
+                content="Thanks!",
+            )
+        )
 
         # Search for "database"
         results = store.fts_search("database")
@@ -203,16 +218,20 @@ class TestFTS5Search:
         store = self._make_store(tmp_path)
         session_key = "role-session"
 
-        store.add_message(Message(
-            session_key=session_key,
-            role="user",
-            content="How do I use async await?",
-        ))
-        store.add_message(Message(
-            session_key=session_key,
-            role="assistant",
-            content="Async await is for asynchronous operations.",
-        ))
+        store.add_message(
+            Message(
+                session_key=session_key,
+                role="user",
+                content="How do I use async await?",
+            )
+        )
+        store.add_message(
+            Message(
+                session_key=session_key,
+                role="assistant",
+                content="Async await is for asynchronous operations.",
+            )
+        )
 
         # Search only assistant messages
         results = store.fts_search("async", role="assistant")
@@ -226,21 +245,27 @@ class TestFTS5Search:
         store = self._make_store(tmp_path)
         session_key = "syntax-session"
 
-        store.add_message(Message(
-            session_key=session_key,
-            role="user",
-            content="Python error handling guide",
-        ))
-        store.add_message(Message(
-            session_key=session_key,
-            role="user",
-            content="JavaScript async programming",
-        ))
-        store.add_message(Message(
-            session_key=session_key,
-            role="user",
-            content="Python async await tutorial",
-        ))
+        store.add_message(
+            Message(
+                session_key=session_key,
+                role="user",
+                content="Python error handling guide",
+            )
+        )
+        store.add_message(
+            Message(
+                session_key=session_key,
+                role="user",
+                content="JavaScript async programming",
+            )
+        )
+        store.add_message(
+            Message(
+                session_key=session_key,
+                role="user",
+                content="Python async await tutorial",
+            )
+        )
 
         # Test phrase search with quotes
         results = store.search_content('"error handling"')
@@ -337,11 +362,13 @@ class TestSearchEdgeCases:
     def test_search_empty_results(self, tmp_path):
         """Test search with no matches."""
         store = self._make_store(tmp_path)
-        store.add_message(Message(
-            session_key="empty-session",
-            role="user",
-            content="Hello world",
-        ))
+        store.add_message(
+            Message(
+                session_key="empty-session",
+                role="user",
+                content="Hello world",
+            )
+        )
 
         results = store.search_content("nonexistent")
         assert len(results) == 0
@@ -350,11 +377,13 @@ class TestSearchEdgeCases:
     def test_search_special_characters(self, tmp_path):
         """Test search with special characters."""
         store = self._make_store(tmp_path)
-        store.add_message(Message(
-            session_key="special-session",
-            role="user",
-            content="What is C++ vs C#?",
-        ))
+        store.add_message(
+            Message(
+                session_key="special-session",
+                role="user",
+                content="What is C++ vs C#?",
+            )
+        )
 
         # Should not crash on special chars
         results = store.search_content("C++")
@@ -364,11 +393,13 @@ class TestSearchEdgeCases:
     def test_search_unicode(self, tmp_path):
         """Test search with unicode content."""
         store = self._make_store(tmp_path)
-        store.add_message(Message(
-            session_key="unicode-session",
-            role="user",
-            content="日本語テスト message with Japanese",
-        ))
+        store.add_message(
+            Message(
+                session_key="unicode-session",
+                role="user",
+                content="日本語テスト message with Japanese",
+            )
+        )
 
         results = store.search_content("Japanese")
         assert len(results) == 1

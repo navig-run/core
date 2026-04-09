@@ -20,7 +20,9 @@ def _patch_common_ping() -> patch:
 def test_init_default_uses_engine_runner() -> None:
     with (
         _patch_common_ping(),
-        patch("navig.onboarding.runner.run_engine_onboarding", MagicMock(return_value=object())) as run_engine,
+        patch(
+            "navig.onboarding.runner.run_engine_onboarding", MagicMock(return_value=object())
+        ) as run_engine,
         patch("navig.commands.onboard.run_onboard", MagicMock()) as run_onboard,
     ):
         result = runner.invoke(app, ["init"])
@@ -49,7 +51,9 @@ def test_init_tui_falls_back_to_engine_when_not_tty(monkeypatch) -> None:
         _patch_common_ping(),
         patch("navig.cli._init_tui_capable", return_value=False),
         patch("navig.commands.onboard.run_onboard", MagicMock()) as run_onboard,
-        patch("navig.onboarding.runner.run_engine_onboarding", MagicMock(return_value=object())) as run_engine,
+        patch(
+            "navig.onboarding.runner.run_engine_onboarding", MagicMock(return_value=object())
+        ) as run_engine,
     ):
         result = runner.invoke(app, ["init", "--tui"])
 
@@ -81,7 +85,9 @@ def test_init_env_cli_forces_engine_even_with_tui_flag(monkeypatch) -> None:
         _patch_common_ping(),
         patch("navig.cli._init_tui_capable", return_value=True),
         patch("navig.commands.onboard.run_onboard", MagicMock()) as run_onboard,
-        patch("navig.onboarding.runner.run_engine_onboarding", MagicMock(return_value=object())) as run_engine,
+        patch(
+            "navig.onboarding.runner.run_engine_onboarding", MagicMock(return_value=object())
+        ) as run_engine,
     ):
         result = runner.invoke(app, ["init", "--tui"])
 

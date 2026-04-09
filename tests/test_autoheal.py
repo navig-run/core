@@ -1,4 +1,4 @@
-﻿"""
+"""
 Tests for the NAVIG self-healing diagnostic pipeline.
 
 Covers:

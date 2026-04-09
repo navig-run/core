@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from navig.console_helper import get_console
+
 from .bundle import write_bundle
 from .types import Bundle
 
@@ -55,7 +57,7 @@ def export_bundle(
         # with a warning — never silently lose the data
         from rich.console import Console
 
-        Console().print(
+        get_console().print(
             f"[yellow]Warning:[/yellow] Encryption failed ({exc}). "
             "Bundle saved as unencrypted .navbox."
         )

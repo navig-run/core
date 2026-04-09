@@ -15,9 +15,22 @@ Search order:
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def _navig_dir() -> Path:
+    home_cfg = Path.home() / ".navig"
+    if home_cfg.exists():
+        return home_cfg
+
+    env = os.environ.get("NAVIG_CONFIG_DIR", "").strip()
+    if env:
+        return Path(env)
+
+    return home_cfg
 
 
 def _try_read(path: Path) -> str | None:
@@ -67,7 +80,7 @@ def load_soul(
 
     # 2. Active space SOUL.md
     if active_space:
-        space_soul = _try_read(Path.home() / ".navig" / "spaces" / active_space / "SOUL.md")
+        space_soul = _try_read(_navig_dir() / "spaces" / active_space / "SOUL.md")
         if space_soul:
             return space_soul
 
@@ -75,12 +88,12 @@ def load_soul(
     #    Checked before the legacy SOUL.md to allow file-driven identity without
     #    replacing the full SOUL.md monolith. Fully additive: existing SOUL.md
     #    users are not affected.
-    identity_md = _try_read(Path.home() / ".navig" / "workspace" / "IDENTITY.md")
+    identity_md = _try_read(_navig_dir() / "workspace" / "IDENTITY.md")
     if identity_md:
         return identity_md
 
     # 4. Legacy workspace SOUL.md (kept for backward compatibility)
-    legacy = _try_read(Path.home() / ".navig" / "workspace" / "SOUL.md")
+    legacy = _try_read(_navig_dir() / "workspace" / "SOUL.md")
     if legacy:
         return legacy
 

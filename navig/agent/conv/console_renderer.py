@@ -22,13 +22,14 @@ if TYPE_CHECKING:
     from navig.agent.conv.agent import ConversationalAgent
 
 from navig.agent.conv.status_event import StatusEvent
+from navig.console_helper import get_console
 
 
 class ConsoleStatusRenderer:
     """Renders StatusEvent lifecycle events from ConversationalAgent to the terminal using rich."""
 
     def __init__(self, agent: ConversationalAgent) -> None:
-        self._console = Console()
+        self._console = get_console()
         self._progress: Progress | None = None
         self._progress_task_id: TaskID | None = None
         self._task_start_time: datetime | None = None

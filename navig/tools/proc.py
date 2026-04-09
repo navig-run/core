@@ -24,6 +24,7 @@ Design goals
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import sys
@@ -324,16 +325,15 @@ async def run_process(
                     pass  # process already gone; expected
                 return
 
+    communicate_task = asyncio.create_task(_communicate())
+    watchdog_task = asyncio.create_task(_no_output_watchdog())
+
     try:
-        communicate_task = asyncio.create_task(_communicate())
-        watchdog_task = asyncio.create_task(_no_output_watchdog())
 
         await asyncio.wait_for(communicate_task, timeout=opts.timeout_s)
-        watchdog_task.cancel()
 
     except asyncio.TimeoutError:
         timed_out = True
-        watchdog_task.cancel()
         try:
             proc.kill()
         except ProcessLookupError:
@@ -343,6 +343,32 @@ async def run_process(
             await asyncio.wait_for(asyncio.shield(communicate_task), timeout=2.0)
         except (asyncio.TimeoutError, asyncio.CancelledError):
             pass  # output drain timed out or cancelled; expected
+    finally:
+        if not watchdog_task.done():
+            watchdog_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await watchdog_task
+
+        if not communicate_task.done():
+            communicate_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await communicate_task
+
+        if proc.returncode is None:
+            with contextlib.suppress(ProcessLookupError, Exception):
+                proc.kill()
+            with contextlib.suppress(asyncio.TimeoutError, Exception):
+                await asyncio.wait_for(proc.wait(), timeout=2.0)
+
+        if proc.stdin and not proc.stdin.is_closing():
+            with contextlib.suppress(Exception):
+                proc.stdin.close()
+
+        for stream in (proc.stdout, proc.stderr):
+            transport = getattr(stream, "_transport", None)
+            if transport is not None:
+                with contextlib.suppress(Exception):
+                    transport.close()
 
     elapsed_ms = (time.monotonic() - t0) * 1000.0
 

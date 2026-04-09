@@ -27,6 +27,7 @@ from navig.formations.schema import (
     validate_profile_data,
 )
 from navig.formations.types import AgentSpec, Formation, ProfileConfig
+from navig.platform.paths import config_dir
 
 logger = get_debug_logger()
 
@@ -60,7 +61,7 @@ def _get_formations_roots() -> list[Path]:
         roots.append(legacy_formations)
 
     # User-level formations (community-installed)
-    user_formations = Path.home() / ".navig" / "formations"
+    user_formations = config_dir() / "formations"
     if user_formations.is_dir():
         roots.append(user_formations)
 

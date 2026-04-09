@@ -3,6 +3,7 @@
 import asyncio
 from typing import TYPE_CHECKING, Any
 
+from navig.console_helper import get_console
 from navig.debug_logger import get_debug_logger
 
 from .manager import ApprovalRequest
@@ -109,7 +110,7 @@ class CLIApprovalHandler:
         from rich.console import Console
         from rich.prompt import Confirm
 
-        console = Console()
+        console = get_console()
 
         level_emoji = {"confirm": "⚠️", "dangerous": "🚨"}.get(request.level.value, "❓")
 

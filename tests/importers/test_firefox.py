@@ -10,9 +10,15 @@ def test_firefox_places_parse(tmp_path) -> None:
     con.execute(
         "CREATE TABLE moz_bookmarks (id INTEGER PRIMARY KEY, fk INTEGER, type INTEGER, parent INTEGER, title TEXT)"
     )
-    con.execute("INSERT INTO moz_places(id, url, title) VALUES (1, 'https://example.com', 'Example')")
-    con.execute("INSERT INTO moz_bookmarks(id, fk, type, parent, title) VALUES (2, NULL, 2, 0, 'toolbar')")
-    con.execute("INSERT INTO moz_bookmarks(id, fk, type, parent, title) VALUES (3, 1, 1, 2, 'Example')")
+    con.execute(
+        "INSERT INTO moz_places(id, url, title) VALUES (1, 'https://example.com', 'Example')"
+    )
+    con.execute(
+        "INSERT INTO moz_bookmarks(id, fk, type, parent, title) VALUES (2, NULL, 2, 0, 'toolbar')"
+    )
+    con.execute(
+        "INSERT INTO moz_bookmarks(id, fk, type, parent, title) VALUES (3, 1, 1, 2, 'Example')"
+    )
     con.commit()
     con.close()
 

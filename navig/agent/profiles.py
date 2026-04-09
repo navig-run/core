@@ -60,7 +60,9 @@ _PROFILES_DIR = "profiles"
 
 def _navig_home() -> Path:
     """Return ``~/.navig/``."""
-    return Path(os.environ.get("NAVIG_HOME", Path.home() / ".navig"))
+    from navig.platform.paths import config_dir
+
+    return config_dir()
 
 
 # ─────────────────────────────────────────────────────────────

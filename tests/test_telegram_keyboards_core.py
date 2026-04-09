@@ -222,7 +222,10 @@ class TestCallbackStore:
         store = CallbackStore(max_entries=10, ttl_seconds=10)
         # Create an entry with a timestamp from 20 seconds ago (expired)
         old_entry = CallbackEntry(
-            action="old", user_message="", ai_response="", category="",
+            action="old",
+            user_message="",
+            ai_response="",
+            category="",
             created_at=time.time() - 20,
         )
         store._store["old_key"] = old_entry  # Bypass put() to avoid expire_old
@@ -230,7 +233,10 @@ class TestCallbackStore:
 
         # Fresh entry should be retrievable
         fresh_entry = CallbackEntry(
-            action="fresh", user_message="", ai_response="", category="",
+            action="fresh",
+            user_message="",
+            ai_response="",
+            category="",
             created_at=time.time(),
         )
         store.put("fresh_key", fresh_entry)

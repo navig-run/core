@@ -22,6 +22,8 @@ from typing import Any
 
 import yaml
 
+from navig.platform.paths import config_dir
+
 
 class ConfigSingleton:
     """
@@ -53,7 +55,7 @@ class ConfigSingleton:
         with self._lock:
             if not getattr(self, "_initialized", False):
                 # Global config path
-                self.global_config_dir = Path.home() / ".navig"
+                self.global_config_dir = config_dir()
                 self.global_config_path = self.global_config_dir / "config.yaml"
 
                 # Cache directory

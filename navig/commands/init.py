@@ -15,7 +15,7 @@ from typing import Any
 import yaml
 
 from navig import console_helper as ch
-from navig.platform.paths import onboarding_json_path
+from navig.platform.paths import config_dir, onboarding_json_path
 
 _CHAT_ONBOARDING_CANONICAL_STEPS: tuple[tuple[str, str, str], ...] = (
     ("ai-provider", "Choose AI provider", "Open Providers and choose your AI brain"),
@@ -283,7 +283,7 @@ def _count_global_configs() -> tuple[int, int]:
     Returns:
         Tuple of (host_count, app_count)
     """
-    global_config_dir = Path.home() / ".navig"
+    global_config_dir = config_dir()
     host_count = 0
     app_count = 0
 
@@ -323,7 +323,7 @@ def _copy_global_configs(navig_dir: Path, quiet: bool = False) -> None:
         navig_dir: Path to app .navig/ directory
         quiet: Suppress output if True
     """
-    global_config_dir = Path.home() / ".navig"
+    global_config_dir = config_dir()
 
     if not global_config_dir.exists():
         if not quiet:
@@ -445,7 +445,7 @@ def _prompt_local_discovery(navig_dir: Path) -> None:
 # Global directory migration helpers
 # =============================================================================
 
-_DEFAULT_NAVIG_DIR: Path = Path.home() / ".navig"
+_DEFAULT_NAVIG_DIR: Path = config_dir()
 
 
 def _legacy_documents_config_dir() -> Path:
@@ -460,7 +460,7 @@ def _local_log_dir() -> Path:
 
         return Path(platformdirs.user_log_dir("navig", "navig"))
     except ImportError:
-        return Path.home() / ".navig" / "logs"
+        return config_dir() / "logs"
 
 
 def _local_state_dir() -> Path:
@@ -470,7 +470,7 @@ def _local_state_dir() -> Path:
 
         return Path(platformdirs.user_state_dir("navig", "navig"))
     except ImportError:
-        return Path.home() / ".navig" / "state"
+        return config_dir() / "state"
 
 
 def _cache_dir() -> Path:
@@ -480,7 +480,7 @@ def _cache_dir() -> Path:
 
         return Path(platformdirs.user_cache_dir("navig", "navig"))
     except ImportError:
-        return Path.home() / ".navig" / "cache"
+        return config_dir() / "cache"
 
 
 def _legacy_windows_platformdirs_root() -> Path:
@@ -627,20 +627,23 @@ def _read_marker_text(path: Path) -> str:
 def show_init_status(*, render: bool = True) -> dict[str, Any]:
     """Display a compact `navig init` status summary and return payload."""
     from navig import __version__ as navig_version
-    from navig.config import get_config_manager
+    from navig.config import ConfigManager
 
     env_cfg_dir = os.environ.get("NAVIG_CONFIG_DIR", "").strip()
-    home_navig_dir = Path.home() / ".navig"
-    if home_navig_dir.exists() or not env_cfg_dir:
-        navig_dir = home_navig_dir
-    else:
+    home_navig_dir = config_dir()
+    project_navig_dir = Path.cwd() / ".navig"
+    if project_navig_dir.exists():
+        navig_dir = project_navig_dir
+    elif env_cfg_dir:
         navig_dir = Path(env_cfg_dir)
+    else:
+        navig_dir = home_navig_dir
 
     provider_marker = _read_marker_text(navig_dir / ".ai_provider_configured")
     env_provider = os.environ.get("NAVIG_LLM_PROVIDER", "").strip()
     active_provider = env_provider or provider_marker or "not configured"
 
-    cfg = get_config_manager(config_dir=navig_dir)
+    cfg = ConfigManager(config_dir=navig_dir)
     hosts_count = len(cfg.list_hosts())
 
     vault_status = "empty"
@@ -883,7 +886,7 @@ def get_init_status_payload() -> dict[str, Any]:
 
 
 def _chat_onboarding_handoff_file(navig_dir: Path | None = None) -> Path:
-    base = navig_dir or (Path.home() / ".navig")
+    base = navig_dir or (config_dir())
     return base / "state" / "chat_onboarding_handoff.json"
 
 
@@ -894,7 +897,7 @@ def _onboarding_artifact_file(navig_dir: Path | None = None) -> Path:
         if not state_candidate.exists() and legacy_candidate.exists():
             return legacy_candidate
         return state_candidate
-    home_navig_dir = Path.home() / ".navig"
+    home_navig_dir = config_dir()
     home_state_candidate = home_navig_dir / "state" / "onboarding.json"
     home_legacy_candidate = home_navig_dir / "onboarding.json"
     if not home_state_candidate.exists() and home_legacy_candidate.exists():
@@ -1027,7 +1030,7 @@ def _persist_telegram_bootstrap_token(token: str, navig_dir: Path | None = None)
     if not token:
         return False
 
-    base = navig_dir or (Path.home() / ".navig")
+    base = navig_dir or (config_dir())
     base.mkdir(parents=True, exist_ok=True)
     wrote = False
 
@@ -1319,7 +1322,7 @@ def run_init_rollback(
     except Exception:
         import pathlib
 
-        config_dir = pathlib.Path.home() / ".navig"
+        config_dir = pathlib.config_dir()
 
     records = load_last(config_dir=config_dir, profile=profile or None)
     if not records:

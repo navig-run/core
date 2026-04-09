@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from navig.console_helper import get_console
+
 from .core import UniversalImporter
 
 
@@ -62,7 +64,7 @@ def run_import(source: str, path: str | None, output: str | None) -> int:
                 str(row.get("label", "")),
                 str(row.get("value", "")),
             )
-        Console().print(table)
+        get_console().print(table)
     except Exception:
         _print_plain_table(rows)
 

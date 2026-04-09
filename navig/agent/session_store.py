@@ -44,13 +44,15 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from navig.platform.paths import config_dir
+
 logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────
 # Default base directory
 # ─────────────────────────────────────────────────────────────
 
-_DEFAULT_BASE_DIR = Path.home() / ".navig" / "sessions"
+_DEFAULT_BASE_DIR = config_dir() / "sessions"
 
 # ─────────────────────────────────────────────────────────────
 # Data models

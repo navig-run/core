@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from navig.store.base import BaseStore, _utcnow
+from navig.platform.paths import config_dir
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ _DEFAULT_PATH: Path | None = None
 
 def _audit_db_path() -> Path:
     """Default audit.db location."""
-    return Path.home() / ".navig" / "audit.db"
+    return config_dir() / "audit.db"
 
 class AuditStore(BaseStore):
     """

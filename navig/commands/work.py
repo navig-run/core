@@ -59,7 +59,9 @@ _STAGE_ORDER = {s: i for i, s in enumerate(VALID_STAGES)}
 
 # Root of NAVIG data directory. Overridable in tests via monkeypatch.
 # Respects NAVIG_CONFIG_DIR env var for non-default install paths.
-_NAVIG_ROOT: Path = Path(_os.environ.get("NAVIG_CONFIG_DIR") or str(Path.home() / ".navig"))
+from navig.platform.paths import config_dir as _config_dir
+
+_NAVIG_ROOT: Path = _config_dir()
 
 
 # ── DB helpers ───────────────────────────────────────────────────────────────

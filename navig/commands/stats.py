@@ -21,6 +21,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from navig.console_helper import get_console
+
 stats_app = typer.Typer(
     name="stats",
     help="Show anonymous NAVIG install statistics.",
@@ -28,7 +30,7 @@ stats_app = typer.Typer(
 )
 
 _DEFAULT_URL = os.environ.get("NAVIG_TELEMETRY_URL", "https://telemetry.navig.run")
-_console = Console()
+_console = get_console()
 
 
 def _fetch_stats(url: str, timeout: float = 6.0) -> dict:

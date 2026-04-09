@@ -40,7 +40,9 @@ def test_space_create_switch_current_list_and_delete(tmp_path, monkeypatch):
 
     current_after = runner.invoke(space_app, ["current"])
     assert current_after.exit_code == 0
-    assert "default" in current_after.stdout  # displayed as "My Space (default)" or "Active space: default"
+    assert (
+        "default" in current_after.stdout
+    )  # displayed as "My Space (default)" or "Active space: default"
 
 
 def test_space_create_invalid_slug_shows_builtin_hint(tmp_path, monkeypatch):

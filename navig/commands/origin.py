@@ -2,8 +2,10 @@
 import typer
 from rich.console import Console
 
+from navig.console_helper import get_console
+
 origin_app = typer.Typer(help="Show installation origin and formation lineage", no_args_is_help=False)
-console = Console()
+console = get_console()
 
 
 @origin_app.callback(invoke_without_command=True)

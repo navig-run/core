@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import typer
 
+from navig.console_helper import get_console
 from navig.lazy_loader import lazy_import
 
 _ch = lazy_import("navig.console_helper")
@@ -68,7 +69,7 @@ def webhook_list(json_output: bool = typer.Option(False, "--json")):
         _ch.warning("No webhooks registered.")
         return
 
-    con = Console()
+    con = get_console()
 
     if inbound:
         t = Table(title="Inbound Webhooks", show_lines=False)
@@ -133,7 +134,7 @@ def webhook_add_inbound(
     wh = result.get("webhook", result)
     from rich.console import Console
 
-    Console().print(
+    get_console().print(
         f"\n[bold green]✅ Inbound webhook created[/bold green]\n"
         f"  ID:     [cyan]{wh.get('id')}[/cyan]\n"
         f"  Name:   {wh.get('name')}\n"
@@ -179,7 +180,7 @@ def webhook_add_outbound(
     wh = result.get("webhook", result)
     from rich.console import Console
 
-    Console().print(
+    get_console().print(
         f"\n[bold green]✅ Outbound webhook registered[/bold green]\n"
         f"  ID:     [cyan]{wh.get('id')}[/cyan]\n"
         f"  Name:   {wh.get('name')}\n"

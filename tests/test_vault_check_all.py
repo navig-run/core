@@ -208,9 +208,7 @@ def test_check_all_all_pass():
 def test_check_all_one_fails_exits_1():
     """check-all with one failing cred: exit 1."""
     creds = [_make_cred("openai"), _make_cred("groq")]
-    vault_mod, validators_mod = _mock_vault_for_check_all(
-        creds, {"openai": True, "groq": False}
-    )
+    vault_mod, validators_mod = _mock_vault_for_check_all(creds, {"openai": True, "groq": False})
 
     with (
         patch("navig.commands.vault._vault_mod", vault_mod),
@@ -380,8 +378,6 @@ def test_settings_settings_nav_has_voice_provider():
     # the source text rather than calling the method.
     import pathlib
 
-    src = pathlib.Path(
-        "navig/gateway/channels/telegram_keyboards.py"
-    ).read_text(encoding="utf-8")
+    src = pathlib.Path("navig/gateway/channels/telegram_keyboards.py").read_text(encoding="utf-8")
     assert "st_goto_voice_provider" in src
     assert "_handle_provider_voice" in src

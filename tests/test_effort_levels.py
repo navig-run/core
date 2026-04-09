@@ -125,9 +125,18 @@ class TestBudgetMaps:
         assert OPENAI_REASONING_EFFORT[EffortLevel.ULTRATHINK] == "high"
 
     def test_budgets_monotonically_increasing(self):
-        order = [EffortLevel.LOW, EffortLevel.MEDIUM, EffortLevel.HIGH,
-                 EffortLevel.MAXIMUM, EffortLevel.ULTRATHINK]
-        for budget_map in (ANTHROPIC_THINKING_BUDGET, GOOGLE_THINKING_BUDGET, DEEPSEEK_THINKING_BUDGET):
+        order = [
+            EffortLevel.LOW,
+            EffortLevel.MEDIUM,
+            EffortLevel.HIGH,
+            EffortLevel.MAXIMUM,
+            EffortLevel.ULTRATHINK,
+        ]
+        for budget_map in (
+            ANTHROPIC_THINKING_BUDGET,
+            GOOGLE_THINKING_BUDGET,
+            DEEPSEEK_THINKING_BUDGET,
+        ):
             values = [budget_map[lvl] for lvl in order]
             assert values == sorted(values), f"Budget map not monotonic: {values}"
 
@@ -187,7 +196,6 @@ class TestGetThinkingParams:
 
 
 class TestSupportsThinking:
-
     def test_supported_providers(self):
         for p in ("anthropic", "openai", "google", "deepseek"):
             assert supports_thinking(p) is True
@@ -205,7 +213,6 @@ class TestSupportsThinking:
 
 
 class TestAutoDetectEffort:
-
     def test_empty_returns_medium(self):
         assert auto_detect_effort("") is EffortLevel.MEDIUM
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from navig.console_helper import get_console
+
 
 def run_docs(
     ctx: Any,
@@ -141,7 +143,7 @@ def run_fetch(
 
     from navig import console_helper as ch
 
-    console = Console()
+    console = get_console()
     want_json = bool(json_output or (ctx.obj and ctx.obj.get("json")))
     want_plain = plain or (ctx.obj and ctx.obj.get("raw"))
 
@@ -215,7 +217,7 @@ def run_search(
 
     from navig import console_helper as ch
 
-    console = Console()
+    console = get_console()
     want_json = bool(json_output or (ctx.obj and ctx.obj.get("json")))
     want_plain = plain or (ctx.obj and ctx.obj.get("raw"))
 

@@ -80,18 +80,7 @@ async def _fetch_json(
         return None
 
 
-async def _with_retry(coro_func, retries: int = _RETRIES):
-    """Retry async callable up to *retries* times on exception."""
-    last_exc: Exception | None = None
-    for attempt in range(retries + 1):
-        try:
-            return await coro_func()
-        except Exception as exc:
-            last_exc = exc
-            if attempt < retries:
-                await asyncio.sleep(1.0 * (attempt + 1))
-    raise last_exc  # type: ignore[misc]
-
+from navig.gateway.channels.media_engine._retry import with_retry as _with_retry
 
 # ── Stage implementations ─────────────────────────────────────────────────────
 

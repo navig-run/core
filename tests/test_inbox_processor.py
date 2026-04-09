@@ -21,6 +21,7 @@ from navig.plans.inbox_reader import InboxItem, InboxReader
 
 # ── Helpers ───────────────────────────────────────────────────
 
+
 def _make_item(
     tmp_path: Path,
     name: str,
@@ -55,6 +56,7 @@ def _make_item(
 
 # ── ContentNormaliser ─────────────────────────────────────────
 
+
 def test_normaliser_strips_trailing_ws() -> None:
     result = ContentNormaliser.normalise("hello   \nworld  \n")
     assert result == "hello\nworld\n"
@@ -66,6 +68,7 @@ def test_normaliser_converts_crlf() -> None:
 
 
 # ── StalenessDetector ─────────────────────────────────────────
+
 
 def test_staleness_fresh(tmp_path: Path) -> None:
     today = date.today().isoformat()
@@ -90,6 +93,7 @@ def test_staleness_no_date(tmp_path: Path) -> None:
 
 
 # ── DuplicateScanner ──────────────────────────────────────────
+
 
 def test_duplicate_substring_match(tmp_path: Path) -> None:
     a = _make_item(tmp_path, "setup_api.md", title="Setup API gateway")
@@ -120,14 +124,19 @@ def test_no_duplicate(tmp_path: Path) -> None:
 
 # ── ConflictDetector ──────────────────────────────────────────
 
+
 def test_conflict_negation(tmp_path: Path) -> None:
     a = _make_item(
-        tmp_path, "use_redis.md", title="Use Redis",
-        body="We should use redis for caching in production."
+        tmp_path,
+        "use_redis.md",
+        title="Use Redis",
+        body="We should use redis for caching in production.",
     )
     b = _make_item(
-        tmp_path, "no_redis.md", title="No Redis",
-        body="Not use redis for caching in production. Use memcached instead."
+        tmp_path,
+        "no_redis.md",
+        title="No Redis",
+        body="Not use redis for caching in production. Use memcached instead.",
     )
     detector = ConflictDetector([a, b])
     conflict = detector.find_conflict(a)
@@ -142,6 +151,7 @@ def test_no_conflict(tmp_path: Path) -> None:
 
 
 # ── Router ────────────────────────────────────────────────────
+
 
 def test_router_task_keyword(tmp_path: Path) -> None:
     item = _make_item(tmp_path, "t.md", title="Task: fix login")
@@ -162,6 +172,7 @@ def test_router_fallback(tmp_path: Path) -> None:
 
 
 # ── InboxProcessor (integration) ─────────────────────────────
+
 
 @pytest.fixture()
 def processor_tree(tmp_path: Path) -> Path:

@@ -18,9 +18,10 @@ from rich.table import Table
 from navig import console_helper as ch
 from navig.cli._callbacks import show_subcommand_help
 from navig.config import get_config_manager
+from navig.console_helper import get_console
 from navig.remote import RemoteOperations
 
-console = Console()
+console = get_console()
 
 
 def list_vhosts(options: dict[str, Any]) -> None:

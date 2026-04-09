@@ -934,7 +934,12 @@ MODE_TOOLSET_HINTS: dict[str, list[str]] = {
 
 
 def detect_mode(user_input: str) -> str:
-    """Backward-compatible mode detector returning the canonical mode string."""
+    """Backward-compatible mode detector returning the canonical mode string.
+
+    DEPRECATION: This shim adds a "research" regex that is not in routing/detect.py.
+    Merge that pattern into routing/detect.py, then delete this function and
+    update all callers to use ``from navig.routing.detect import detect_mode``.
+    """
     text = (user_input or "").strip()
     lower = text.lower()
     if lower and re.search(

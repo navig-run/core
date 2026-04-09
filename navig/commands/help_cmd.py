@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from navig.console_helper import get_console
+
 
 def run_help(
     ctx: Any,
@@ -29,7 +31,7 @@ def run_help(
         typer.echo(jsonlib.dumps(_get_schema(), indent=2))
         raise typer.Exit()
 
-    console = Console()
+    console = get_console()
     help_dir = Path(__file__).resolve().parent.parent / "help"
     schema = _get_schema()
     schema_commands = [

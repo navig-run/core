@@ -9,6 +9,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 
+from navig.console_helper import get_console
 from navig.memory.project_indexer import ProjectIndexer
 
 index_app = typer.Typer(
@@ -40,7 +41,7 @@ def index_scan(
         navig index scan
         navig index scan /path/to/project --full
     """
-    console = Console()
+    console = get_console()
 
     project_root = Path(root) if root else Path.cwd()
     if not project_root.is_dir():
@@ -73,7 +74,7 @@ def index_search(
         navig index search "authentication middleware"
         navig index search "database connection" --top 5
     """
-    console = Console()
+    console = get_console()
 
     project_root = Path(root) if root else Path.cwd()
     with ProjectIndexer(project_root) as indexer:
@@ -115,7 +116,7 @@ def index_stats(
     """
     import json
 
-    console = Console()
+    console = get_console()
 
     project_root = Path(root) if root else Path.cwd()
     with ProjectIndexer(project_root) as indexer:
@@ -141,7 +142,7 @@ def index_drop(
         navig index drop
         navig index drop --yes
     """
-    console = Console()
+    console = get_console()
 
     project_root = Path(root) if root else Path.cwd()
 

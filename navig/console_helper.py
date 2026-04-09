@@ -8,7 +8,6 @@ Performance note: ALL Rich imports are deferred until actually needed
 to improve CLI startup time (~120 ms saved).
 """
 
-import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -114,6 +113,12 @@ class _LazyConsole:
         if real is None:
             real = self._load()
         setattr(real, name, value)
+
+    def __delattr__(self, name):
+        real = object.__getattribute__(self, "_real")
+        if real is None:
+            real = self._load()
+        delattr(real, name)
 
 
 # ============================================================================
@@ -264,22 +269,11 @@ def dim(message: str):
     console.print(f"[{Colors.DIM}]{message}[/{Colors.DIM}]")
 
 
-# Redact structured key=value sensitive patterns from raw output to prevent
-# accidental exposure of passwords, API keys, and tokens (CWE-312 / CWE-532).
-_RAW_REDACT_PATTERNS: list[tuple] = [
-    (re.compile(r'(?i)(pass(?:word)?["\']?\s*[:=]\s*["\']?)\S+'), r"\1***"),
-    (re.compile(r'(?i)(secret["\']?\s*[:=]\s*["\']?)\S+'), r"\1***"),
-    (re.compile(r'(?i)(token["\']?\s*[:=]\s*["\']?)\S+'), r"\1***"),
-    (re.compile(r'(?i)(api[_\-]?key["\']?\s*[:=]\s*["\']?)\S+'), r"\1***"),
-    (re.compile(r"\b(sk-(?:ant-|proj-)?[A-Za-z0-9_\-]{8,})\b"), r"sk-***"),
-]
-
-
 def _redact_raw_output(text: str) -> str:
     """Redact sensitive key=value patterns from text before raw output."""
-    for pattern, replacement in _RAW_REDACT_PATTERNS:
-        text = pattern.sub(replacement, text)
-    return text
+    from navig.core.security import redact_sensitive_text
+
+    return redact_sensitive_text(text)
 
 
 def raw_print(message: str):
@@ -752,6 +746,7 @@ def confirm_operation(
 
     # Choose icon and color based on operation type
     from navig.ui.icons import icon as _ni  # lazy: avoids startup Rich import
+
     if operation_type == "critical":
         op_icon = _ni("warn")
         title_color = Colors.ERROR

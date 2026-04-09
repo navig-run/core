@@ -111,31 +111,6 @@ DEFAULT_REDACT_PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"MYSQL_PWD=([^\s]+)", re.IGNORECASE), r"MYSQL_PWD=***REDACTED***"),
 ]
 
-# Minimum length for token masking (shorter tokens are fully redacted)
-MIN_MASK_LENGTH = 18
-KEEP_START = 6
-KEEP_END = 4
-
-
-def mask_token(token: str) -> str:
-    """
-    Mask a token while preserving prefix/suffix for debugging.
-
-    Example: "sk-abc123def456xyz789" -> "sk-abc...789"
-
-    Args:
-        token: The token to mask
-
-    Returns:
-        Masked token preserving some context
-    """
-    if len(token) < MIN_MASK_LENGTH:
-        return "***"
-
-    start = token[:KEEP_START]
-    end = token[-KEEP_END:]
-    return f"{start}…{end}"
-
 
 def redact_sensitive_text(
     text: str,

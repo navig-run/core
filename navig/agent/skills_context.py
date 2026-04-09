@@ -37,6 +37,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from navig.platform.paths import config_dir
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -46,7 +48,7 @@ logger = logging.getLogger(__name__)
 MAX_ACTIVE_SKILLS = 3
 MAX_SKILL_CHARS = 8000  # per skill character budget (~2K tokens)
 PROJECT_SKILLS_DIR = ".navig/skills"
-GLOBAL_SKILLS_DIR = Path.home() / ".navig" / "skills"
+GLOBAL_SKILLS_DIR = config_dir() / "skills"
 
 # Scoring weights
 PATH_MATCH_SCORE = 10

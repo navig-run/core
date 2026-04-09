@@ -146,6 +146,9 @@ async def test_no_llm_provider_error_uses_simple_response(monkeypatch):
         return "SIMPLE-FALLBACK"
 
     monkeypatch.setattr(agent, "_simple_response", _simple)
-    monkeypatch.setattr("navig.routing.router.get_router", lambda: (_ for _ in ()).throw(RuntimeError("router down")))
+    monkeypatch.setattr(
+        "navig.routing.router.get_router",
+        lambda: (_ for _ in ()).throw(RuntimeError("router down")),
+    )
     result = await agent._get_ai_response("hello")
     assert result == "SIMPLE-FALLBACK"

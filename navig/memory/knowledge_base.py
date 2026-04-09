@@ -18,23 +18,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from navig.memory._util import _debug_log
 from navig.memory.embeddings import EmbeddingProvider
-
-
-def _debug_log(message: str) -> None:
-    """Simple debug logging wrapper."""
-    try:
-        from navig.debug_logger import DebugLogger
-
-        logger = DebugLogger()
-        logger.log_operation("memory", {"message": message})
-    except Exception as _e:  # noqa: BLE001
-        import sys
-
-        print(
-            f"[navig/memory/knowledge_base] logger init failed ({type(_e).__name__}): {_e}",
-            file=sys.stderr,
-        )
 
 
 @dataclass

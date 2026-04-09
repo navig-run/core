@@ -18,6 +18,7 @@ from navig.personas.soul_loader import load_soul
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _write(path: Path, content: str) -> Path:
     """Create a file with the given content, creating parents as needed."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -28,6 +29,7 @@ def _write(path: Path, content: str) -> Path:
 # ---------------------------------------------------------------------------
 # Tests: IDENTITY.md (RFC #37 Phase 1 — step 3)
 # ---------------------------------------------------------------------------
+
 
 class TestIdentityMdPriority:
     """IDENTITY.md at ~/.navig/workspace/IDENTITY.md must take priority over SOUL.md."""
@@ -86,6 +88,7 @@ class TestIdentityMdPriority:
 # Tests: active space SOUL.md beats workspace IDENTITY.md (step 2 > step 3)
 # ---------------------------------------------------------------------------
 
+
 class TestSpaceSoulBeatsIdentityMd:
     """Active space SOUL.md (step 2) has higher priority than workspace IDENTITY.md (step 3)."""
 
@@ -112,6 +115,7 @@ class TestSpaceSoulBeatsIdentityMd:
 # ---------------------------------------------------------------------------
 # Tests: fallback chain when no workspace files are present
 # ---------------------------------------------------------------------------
+
 
 class TestFallbackChain:
     """Package default and context fallback are used when no user files exist."""

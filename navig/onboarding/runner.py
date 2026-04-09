@@ -7,6 +7,8 @@ from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
 
+from navig.platform.paths import config_dir
+
 from .engine import EngineConfig, EngineState, OnboardingEngine
 from .genesis import load_or_create
 from .steps import build_step_registry
@@ -22,10 +24,16 @@ def _get_console() -> RichConsole | None:
     """Return a Rich Console writing to stdout, or None if Rich is unavailable."""
     try:
         from rich.console import Console
-
-        return Console()
     except ImportError:
         return None
+
+    try:
+        from navig.console_helper import get_console as _ch_get_console
+
+        return _ch_get_console()
+    except Exception:
+        pass
+    return Console()
 
 
 def should_auto_run_onboarding(argv: Sequence[str] | None = None) -> bool:
@@ -41,7 +49,7 @@ def should_auto_run_onboarding(argv: Sequence[str] | None = None) -> bool:
     if any(v in os.environ for v in ("_NAVIG_COMPLETE", "COMP_WORDS", "_TYPER_COMPLETE")):
         return False
 
-    navig_dir = Path.home() / ".navig"
+    navig_dir = config_dir()
     if (navig_dir / "onboarding.json").exists():
         return False
 
@@ -68,7 +76,7 @@ def run_engine_onboarding(
     if respect_skip_env and os.getenv("NAVIG_SKIP_ONBOARDING") == "1":
         return None
 
-    navig_dir = Path.home() / ".navig"
+    navig_dir = config_dir()
     if not force and (navig_dir / "onboarding.json").exists() and not jump_to_step:
         return None
 

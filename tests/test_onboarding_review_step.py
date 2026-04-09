@@ -138,9 +138,7 @@ def test_no_artifact_skips_summary(mock_stdin, tmp_path: Path) -> None:
 
 
 @patch("sys.stdin")
-def test_phase_grouped_summary_shows_all_phases(
-    mock_stdin, tmp_path: Path, capsys
-) -> None:
+def test_phase_grouped_summary_shows_all_phases(mock_stdin, tmp_path: Path, capsys) -> None:
     """Summary displays bootstrap, configuration, and integration phases."""
     _write_artifact(
         tmp_path,

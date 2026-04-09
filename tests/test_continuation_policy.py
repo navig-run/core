@@ -26,17 +26,23 @@ def test_policy_roundtrip_and_defaults():
 
 
 def test_should_auto_continue_enforces_limits_and_decision_point():
-    policy = ContinuationPolicy(enabled=True, paused=False, skip_next=False, cooldown_seconds=0, max_turns=2, turns_used=0)
+    policy = ContinuationPolicy(
+        enabled=True, paused=False, skip_next=False, cooldown_seconds=0, max_turns=2, turns_used=0
+    )
     ok, reason = should_auto_continue("Should I continue with deployment?", policy)
     assert ok is True
     assert reason == "ok"
 
-    capped = ContinuationPolicy(enabled=True, paused=False, skip_next=False, cooldown_seconds=0, max_turns=1, turns_used=1)
+    capped = ContinuationPolicy(
+        enabled=True, paused=False, skip_next=False, cooldown_seconds=0, max_turns=1, turns_used=1
+    )
     ok2, reason2 = should_auto_continue("Should I continue?", capped)
     assert ok2 is False
     assert reason2 == "max_turns"
 
-    no_decision = ContinuationPolicy(enabled=True, paused=False, skip_next=False, cooldown_seconds=0, max_turns=2, turns_used=0)
+    no_decision = ContinuationPolicy(
+        enabled=True, paused=False, skip_next=False, cooldown_seconds=0, max_turns=2, turns_used=0
+    )
     ok3, reason3 = should_auto_continue("Deployment finished successfully.", no_decision)
     assert ok3 is False
     assert reason3 == "no_decision_point"

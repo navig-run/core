@@ -20,6 +20,8 @@ import random
 import shutil
 from typing import TYPE_CHECKING
 
+from navig.console_helper import get_console
+
 if TYPE_CHECKING:
     from navig.identity.entity import NaviEntity
 
@@ -76,7 +78,7 @@ async def _act_noise() -> None:
 
     width = min(shutil.get_terminal_size(fallback=(80, 24)).columns - 4, 76)
     NOISE = list("░▒▓⣿⣶⣤⣀⠿⠶ ")
-    console = Console()
+    console = get_console()
     rng = random.Random()  # noise phase is intentionally non-deterministic
 
     with Live(console=console, refresh_per_second=24, transient=True) as live:
@@ -111,7 +113,7 @@ async def _act_sigil_assembly(entity: NaviEntity, primary: str, accent: str) -> 
         return
 
     matrix = entity.sigil_matrix if sigil_fits(entity.sigil_matrix) else entity.sigil_compact
-    console = Console()
+    console = get_console()
 
     with Live(console=console, refresh_per_second=14, transient=True) as live:
         for reveal in range(1, len(matrix) + 1):

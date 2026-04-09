@@ -13,6 +13,9 @@ Covers:
 from __future__ import annotations
 
 import json
+import gc
+import subprocess
+import warnings
 from pathlib import Path
 
 import pytest
@@ -45,7 +48,7 @@ def _invoke_cli(args: list[str], capsys) -> tuple[int, str, str]:
 
 @pytest.fixture(autouse=True)
 def _register_commands(tmp_path: Path, monkeypatch):
-    """Minimal isolation: fresh HOME + all external CLI commands registered."""
+    """Minimal isolation: fresh HOME + clean CLI config manager state."""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.chdir(tmp_path)
@@ -58,9 +61,24 @@ def _register_commands(tmp_path: Path, monkeypatch):
 
     cli_mod._config_manager = None
     cli_mod._NO_CACHE = False
-    cli_mod._register_external_commands(register_all=True)
+
+    try:
+        subprocess._cleanup()
+    except Exception:  # noqa: BLE001
+        pass
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", ResourceWarning)
+        gc.collect()
 
     yield
+
+    try:
+        subprocess._cleanup()
+    except Exception:  # noqa: BLE001
+        pass
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", ResourceWarning)
+        gc.collect()
 
 
 # ---------------------------------------------------------------------------

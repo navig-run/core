@@ -15,6 +15,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+from navig.platform.paths import config_dir
+
 
 class ModuleState(Enum):
     PENDING = "pending"
@@ -58,7 +60,7 @@ class InstallerContext:
     profile: str
     dry_run: bool = False
     quiet: bool = False
-    config_dir: Path = field(default_factory=lambda: Path.home() / ".navig")
+    config_dir: Path = field(default_factory=lambda: config_dir())
     extra: dict[str, Any] = field(default_factory=dict)
 
 

@@ -29,11 +29,12 @@ from pathlib import Path
 from typing import Any
 
 from navig.store.base import BaseStore, _utcnow
+from navig.platform.paths import config_dir
 
 logger = logging.getLogger(__name__)
 
 def _runtime_db_path() -> Path:
-    return Path.home() / ".navig" / "runtime.db"
+    return config_dir() / "runtime.db"
 
 def _utc_now_dt() -> datetime:
     return datetime.now(timezone.utc)
