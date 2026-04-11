@@ -97,12 +97,28 @@ class ModelSlot:
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> ModelSlot:
         defaults = d.get("defaults", {})
+        
+        try:
+            max_tokens = int(defaults.get("max_tokens", d.get("max_tokens", 512)))
+        except (ValueError, TypeError):
+            max_tokens = 512
+            
+        try:
+            temperature = float(defaults.get("temperature", d.get("temperature", 0.7)))
+        except (ValueError, TypeError):
+            temperature = 0.7
+            
+        try:
+            num_ctx = int(defaults.get("num_ctx", d.get("num_ctx", 4096)))
+        except (ValueError, TypeError):
+            num_ctx = 4096
+            
         return cls(
             provider=d.get("provider", ""),
             model=d.get("model", ""),
-            max_tokens=int(defaults.get("max_tokens", d.get("max_tokens", 512))),
-            temperature=float(defaults.get("temperature", d.get("temperature", 0.7))),
-            num_ctx=int(defaults.get("num_ctx", d.get("num_ctx", 4096))),
+            max_tokens=max_tokens,
+            temperature=temperature,
+            num_ctx=num_ctx,
             base_url=d.get("base_url", ""),
             api_key=d.get("api_key", ""),
         )
@@ -124,7 +140,7 @@ class RoutingConfig:
     # When empty, falls back to the small model slot.
     router_model: str = ""
 
-    # Legacy compat: flat accessors
+    # Backward-compat: flat accessors
     @property
     def small_model(self) -> str:
         return self.small.model
@@ -142,13 +158,13 @@ class RoutingConfig:
     ) -> RoutingConfig:
         """
         Build from config dict.  Accepts both the new ``models`` schema
-        and the legacy flat ``ai.routing`` keys.
+        and the deprecated flat ``ai.routing`` keys.
         """
         global_cfg = global_cfg or {}
         cfg = cls()
 
         # ── Resolve enabled state ──
-        # Legacy: mode != "single" implies enabled
+        # Compat: mode != "single" implies enabled
         # New: explicit "enabled" key
         raw_mode = str(data.get("mode", "single")).lower()
         cfg.enabled = bool(data.get("enabled", raw_mode not in ("single", "")))
@@ -169,7 +185,7 @@ class RoutingConfig:
             cb = models_block.get("coder_big", models_block.get("coder", {}))
             cfg.coder_big = ModelSlot.from_dict(cb)
         else:
-            # ── Legacy flat keys (backward compat) ──
+            # ── Flat keys (backward compat) ──
             cfg.small = ModelSlot(
                 provider=data.get("small_provider", "ollama"),
                 model=data.get("small_model", ""),
@@ -184,7 +200,7 @@ class RoutingConfig:
                 temperature=float(data.get("big_temperature", 0.7)),
                 num_ctx=int(data.get("big_ctx", 4096)),
             )
-            # Legacy had no coder_big — alias to big
+            # Flat config had no coder_big — alias to big
             cfg.coder_big = ModelSlot(
                 provider=cfg.big.provider,
                 model=cfg.big.model,
@@ -237,7 +253,7 @@ class RoutingConfig:
 
 
 def _normalize_mode(raw: str) -> str:
-    """Map legacy mode names to new canonical names."""
+    """Map deprecated mode names to canonical names."""
     mapping = {
         "heuristic": "rules_then_fallback",
         "router": "router_llm_json",
@@ -332,6 +348,22 @@ def _resolve_provider_api_key(
                 return token
         except (AttributeError, TypeError, ValueError) as exc:
             logger.debug("github_models token lookup failed: %s", exc)
+
+    # Config-path fallback: key stored under ai.providers.<id>.api_key
+    # (e.g. written by `navig init` or `navig config set`)
+    try:
+        cfg_key = (
+            (global_cfg.get("ai") or {})
+            .get("providers", {})
+            .get(provider_id, {})
+            .get("api_key", "")
+        )
+        if cfg_key and isinstance(cfg_key, str):
+            cfg_key = cfg_key.strip()
+            if cfg_key:
+                return cfg_key
+    except (AttributeError, TypeError, ValueError) as exc:
+        logger.debug("Config-path api_key lookup failed for %s: %s", provider_id, exc)
 
     return ""
 
@@ -743,7 +775,7 @@ class HybridRouter:
             reason=f"fallback_from_{original.tier}",
         )
 
-    # Legacy compat
+    # Backward compat
     def big_decision(self) -> RoutingDecision:
         """Force a big-model decision (used for fallback retry)."""
         slot = self.cfg.big

@@ -3,7 +3,7 @@ navig.agent.prompt_caching — Anthropic prompt cache injection.
 
 Implements two strategies:
 
-1. **system_and_3** (legacy): marks the system prompt and the first three user
+1. **system_and_3** (classic): marks the system prompt and the first three user
    messages with ``"cache_control": {"type": "ephemeral"}``.
 2. **strategic** (new): uses :class:`CacheBreakpointPlacer` to place up to 4
    breakpoints on the system prompt, tool definitions, skills/context blocks,
@@ -23,7 +23,7 @@ Usage::
         ExtendedCacheConfig,
     )
 
-    # Legacy strategy
+    # Classic strategy
     messages = apply_anthropic_cache_control(messages, strategy="system_and_3")
 
     # Strategic breakpoint placement (preferred)
@@ -425,9 +425,21 @@ class CacheStats:
         - ``cache_read_input_tokens``
         """
         self.api_calls += 1
-        self.total_input_tokens += int(usage.get("input_tokens", 0))
-        self.cache_creation_tokens += int(usage.get("cache_creation_input_tokens", 0))
-        self.cache_read_tokens += int(usage.get("cache_read_input_tokens", 0))
+        
+        try:
+            self.total_input_tokens += int(usage.get("input_tokens", 0))
+        except (ValueError, TypeError):
+            pass
+            
+        try:
+            self.cache_creation_tokens += int(usage.get("cache_creation_input_tokens", 0))
+        except (ValueError, TypeError):
+            pass
+            
+        try:
+            self.cache_read_tokens += int(usage.get("cache_read_input_tokens", 0))
+        except (ValueError, TypeError):
+            pass
 
     def reset(self) -> None:
         """Reset all counters to zero."""
