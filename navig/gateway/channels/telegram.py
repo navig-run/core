@@ -640,7 +640,10 @@ class TelegramChannel:
                     pass
                 handler_fn = None
                 try:
+                    import functools
+
                     from navig.gateway.channels.telegram_commands import (
+                        TelegramCommandsMixin,
                         _SLASH_REGISTRY as _sr,
                     )
 
@@ -648,7 +651,13 @@ class TelegramChannel:
                         (e for e in _sr if e.command == cmd_name and e.handler), None
                     )
                     if _entry:
+                        # Try self first (in case the method was mixed in at runtime)
                         handler_fn = getattr(self, _entry.handler, None)
+                        # Fall back to the mixin (TelegramChannel doesn't inherit it)
+                        if handler_fn is None:
+                            mixin_fn = getattr(TelegramCommandsMixin, _entry.handler, None)
+                            if mixin_fn is not None:
+                                handler_fn = functools.partial(mixin_fn, self)
                 except Exception:
                     pass
                 if handler_fn:
@@ -1935,8 +1944,7 @@ class TelegramChannel:
                     conclusion["Top result"] = results[0].get("title", "")[:60]
                     conclusion["URL"] = results[0].get("url", "")[:60]
 
-        if llm_response:
-            conclusion["Analysis"] = self._trim_preview(llm_response, max_chars=520)
+        # Analysis is sent as a formatted follow-up message after the card (see Step 4)
 
         if tool_errors:
             conclusion["Skipped"] = ", ".join(tool_errors)
@@ -1962,6 +1970,10 @@ class TelegramChannel:
                     logger.warning("Failed to send screenshot artifact: %s", _ep)
 
         if llm_response:
+            # Send full analysis as a properly-formatted HTML message
+            await self.send_message(
+                chat_id, TelegramChannel._md_to_html(llm_response), parse_mode="HTML"
+            )
             self._record_assistant_msg(
                 session, session_manager, chat_id, user_id, llm_response, is_group
             )
@@ -2086,6 +2098,55 @@ class TelegramChannel:
         if split_at >= int(max_chars * 0.6):
             trimmed = trimmed[:split_at].rstrip()
         return f"{trimmed}…"
+
+    @staticmethod
+    def _md_to_html(text: str) -> str:
+        """Convert lightweight LLM markdown to Telegram HTML (parse_mode='HTML').
+
+        Handles: **bold**, *italic*, # headings, * / - / + bullet lists.
+        Unrecognised patterns are left as plain text.
+        """
+        import html as _html
+
+        # 1. Escape HTML special chars so we can safely inject tags
+        escaped = _html.escape(str(text or ""), quote=False)
+
+        lines_out: list[str] = []
+        for line in escaped.split("\n"):
+            stripped = line.lstrip()
+
+            # ATX headings  # / ## / ###
+            heading_m = re.match(r"^(#{1,3})\s+(.*)", stripped)
+            if heading_m:
+                lines_out.append(f"<b>{heading_m.group(2).strip()}</b>")
+                continue
+
+            # Bullet lines  * text  /  - text
+            if re.match(r"^[*\-]\s+", stripped):
+                lines_out.append(f"\u2022 {stripped[2:].strip()}")
+                continue
+
+            # Sub-bullet lines  + text  (LLM often uses + for nested items)
+            if re.match(r"^\+\s+", stripped):
+                lines_out.append(f"  \u25e6 {stripped[2:].strip()}")
+                continue
+
+            lines_out.append(line)
+
+        result = "\n".join(lines_out)
+
+        # Inline **bold** → <b>bold</b>  (non-greedy, no newlines inside)
+        result = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", result)
+        # Inline *italic* (after bold consumed, so single * remaining)
+        result = re.sub(r"(?<!\*)\*([^*\n]+?)\*(?!\*)", r"<i>\1</i>", result)
+        # Inline __bold__ alternative
+        result = re.sub(r"__(.+?)__", r"<b>\1</b>", result)
+
+        # Collapse 3+ blank lines → 2
+        result = re.sub(r"\n{3,}", "\n\n", result)
+
+        # Strip only leading/trailing newlines — preserve sub-bullet indentation
+        return result.strip("\n")
 
     # ── Shared helpers ──────────────────────────────────────────────────────
 
@@ -4584,6 +4645,46 @@ class TelegramChannel:
         if keyboard is not None:
             payload["reply_markup"] = {"inline_keyboard": keyboard}
         return await self._api_call("editMessageText", payload)
+
+    # -- Monitoring helpers (mirrors TelegramCommandsMixin; needed when handlers
+    # are dispatched as functools.partial and self is TelegramChannel) ----------
+
+    @staticmethod
+    def _mon_bar(pct: float, width: int = 14) -> str:
+        """Unicode progress bar."""
+        filled = int(round(pct / 100 * width))
+        return "█" * filled + "░" * (width - filled)
+
+    @staticmethod
+    def _mon_status_icon(pct: float, high: int = 80, med: int = 60) -> str:
+        if pct >= high:
+            return "🔴"
+        if pct >= med:
+            return "🟡"
+        return "🟢"
+
+    @staticmethod
+    def _mon_header(icon: str, title: str, subtitle: str = "") -> str:
+        import html as _html
+
+        line = "━" * 26
+        sub = f"\n<i>{_html.escape(subtitle)}</i>" if subtitle else ""
+        return f"{line}\n{icon}  <b>{_html.escape(title)}</b>{sub}\n{line}"
+
+    @staticmethod
+    def _mon_host_ctx() -> tuple:
+        """Return (host_name, server_config_dict, is_local)."""
+        try:
+            from navig.config import get_config_manager
+            from navig.remote import is_local_host
+
+            cfg = get_config_manager()
+            host_name = cfg.get_active_host() or "localhost"
+            server_config = cfg.load_server_config(host_name)
+            is_local = is_local_host(server_config)
+            return host_name, server_config, is_local
+        except Exception:
+            return "localhost", {"is_local": True}, True
 
     @staticmethod
     def _strip_internal_tags(text: str) -> str:

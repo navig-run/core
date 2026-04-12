@@ -181,3 +181,64 @@ def test_card_nav_keyboard_last_card_has_accept():
     assert any("Refine" in t for t in flat_buttons), (
         f"Refine button missing from last card keyboard: {flat_buttons}"
     )
+
+
+class TestMdToHtml:
+    """Unit tests for TelegramChannel._md_to_html()."""
+
+    def setup_method(self):
+        from navig.gateway.channels.telegram import TelegramChannel
+
+        self.convert = TelegramChannel._md_to_html
+
+    def test_bold(self):
+        assert self.convert("**hello world**") == "<b>hello world</b>"
+
+    def test_italic(self):
+        assert self.convert("*emphasis*") == "<i>emphasis</i>"
+
+    def test_bold_not_confused_with_italic(self):
+        result = self.convert("**bold** and *italic*")
+        assert "<b>bold</b>" in result
+        assert "<i>italic</i>" in result
+
+    def test_heading(self):
+        result = self.convert("# Website Analysis")
+        assert result == "<b>Website Analysis</b>"
+
+    def test_bullet_star(self):
+        result = self.convert("* Portfolio section")
+        assert result == "• Portfolio section"
+
+    def test_bullet_dash(self):
+        result = self.convert("- About page")
+        assert result == "• About page"
+
+    def test_sub_bullet_plus(self):
+        result = self.convert("+ nested item")
+        assert result == "  ◦ nested item"
+
+    def test_html_escape(self):
+        result = self.convert("Score < 100 & latency > 200ms")
+        assert "&lt;" in result
+        assert "&gt;" in result
+        assert "&amp;" in result
+
+    def test_full_llm_response(self):
+        raw = (
+            "**Website Analysis:**\n"
+            "* **Website:** Cybesis\n"
+            "* **What it does:** Digital studio\n"
+            "+ Portfolio work\n"
+            "+ About section\n"
+        )
+        result = self.convert(raw)
+        assert "<b>Website Analysis:</b>" in result
+        assert "• " in result
+        assert "  ◦ " in result
+        # No raw asterisks left as bullets
+        assert result.count("* ") == 0
+
+    def test_collapses_excess_blank_lines(self):
+        result = self.convert("line1\n\n\n\n\nline2")
+        assert "\n\n\n" not in result

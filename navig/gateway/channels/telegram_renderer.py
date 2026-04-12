@@ -189,9 +189,9 @@ def _format_conclusion(
     title: str,
     footer: str,
 ) -> str:
-    """Render key-value conclusion block."""
-    line = "━" * 26
+    """Render key-value conclusion block (compact metadata only, no analysis blob)."""
+    divider = "\u2500" * 22  # ─────────────────────── (thinner line)
     rows = "\n".join(
-        f"{str(k).ljust(14)}: {v}" for k, v in data.items() if v is not None and v != ""
+        f"{str(k).ljust(12)}: {v}" for k, v in data.items() if v is not None and v != ""
     )
-    return f"📋 {title}\n{line}\n{rows}\n{line}\n{footer}"
+    return f"📋 {title}\n{divider}\n{rows}\n{divider}\n{footer}"
