@@ -11,9 +11,14 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to publish (e.g. v2.7.0). Required for manual backfills."
+        required: true
+        type: string
 
 concurrency:
-  group: pypi-publish-${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
+  group: pypi-publish-${{ github.event.inputs.release_tag || (github.event_name == 'release' && github.event.release.tag_name || github.ref_name) }}
   cancel-in-progress: true
 
 permissions:
@@ -22,11 +27,15 @@ permissions:
 
 jobs:
   build:
-    if: ${{ startsWith(github.event_name == 'release' && github.event.release.tag_name || github.ref_name, 'v') && !(github.event_name == 'release' && github.event.release.prerelease) && !(github.event_name == 'release' && github.event.release.draft) }}
+    if: ${{ startsWith(github.event.inputs.release_tag || (github.event_name == 'release' && github.event.release.tag_name || github.ref_name), 'v') && !(github.event_name == 'release' && github.event.release.prerelease) && !(github.event_name == 'release' && github.event.release.draft) }}
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.release_tag || (github.event_name == 'release' && github.event.release.tag_name || github.ref_name) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -39,7 +48,7 @@ jobs:
 
       - name: Validate tag matches pyproject version
         run: |
-          TAG="${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}"
+          TAG="${RELEASE_TAG}"
           TAG_VERSION="${TAG#v}"
           PYPROJECT_VERSION=$(python - <<'PY'
           import re
@@ -74,7 +83,7 @@ jobs:
           path: dist/
 
   publish-pypi:
-    if: ${{ startsWith(github.event_name == 'release' && github.event.release.tag_name || github.ref_name, 'v') && !(github.event_name == 'release' && github.event.release.prerelease) && !(github.event_name == 'release' && github.event.release.draft) }}
+    if: ${{ startsWith(github.event.inputs.release_tag || (github.event_name == 'release' && github.event.release.tag_name || github.ref_name), 'v') && !(github.event_name == 'release' && github.event.release.prerelease) && !(github.event_name == 'release' && github.event.release.draft) }}
     needs: build
     runs-on: ubuntu-latest
     environment:
@@ -93,7 +102,7 @@ jobs:
           skip-existing: true
 
   annotate-release:
-    if: ${{ startsWith(github.event_name == 'release' && github.event.release.tag_name || github.ref_name, 'v') && !(github.event_name == 'release' && github.event.release.prerelease) && !(github.event_name == 'release' && github.event.release.draft) }}
+    if: ${{ startsWith(github.event.inputs.release_tag || (github.event_name == 'release' && github.event.release.tag_name || github.ref_name), 'v') && !(github.event_name == 'release' && github.event.release.prerelease) && !(github.event_name == 'release' && github.event.release.draft) }}
     needs: publish-pypi
     runs-on: ubuntu-latest
     steps:
@@ -101,9 +110,11 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const tag = (context.eventName === 'release'
+            const tag = (context.payload?.inputs?.release_tag
+              ? context.payload.inputs.release_tag
+              : (context.eventName === 'release'
               ? context.payload.release?.tag_name
-              : context.ref.replace('refs/tags/', '')) || '';
+              : context.ref.replace('refs/tags/', ''))) || '';
             const version = tag.startsWith('v') ? tag.slice(1) : tag;
             const pypiUrl = `https://pypi.org/project/navig/${version}/`;
 
