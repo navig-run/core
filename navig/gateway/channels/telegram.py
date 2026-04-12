@@ -85,6 +85,7 @@ try:
         _has_mid_sentence_cap,
         _has_script_mixing,
         _is_non_latin_dominant,
+        _match_system_intent,
         classify_mode,
         extract_url,
         mode_to_llm_tier,
@@ -1004,8 +1005,9 @@ class TelegramChannel:
                 if cmd == "/start":
                     await self._handle_start(chat_id, username, user_id=user_id)
                     return
-                if cmd == "/help":
-                    await self._handle_help(chat_id)
+                if cmd == "/help" or cmd.startswith("/help "):
+                    _help_topic = cmd[len("/help "):].strip() if cmd.startswith("/help ") else None
+                    await self._handle_help(chat_id, topic=_help_topic)
                     return
                 if cmd.startswith("/mode"):
                     await self._handle_mode(chat_id, text=cmd, user_id=user_id)
@@ -1302,6 +1304,33 @@ class TelegramChannel:
         is_group: bool,
     ) -> None:
         """Classify intent mode and route to the appropriate handler."""
+        # System-monitoring intent shortcut: catch free-text queries like
+        # "run disk check" or "show memory usage" and route them directly to
+        # the dedicated handler, bypassing the LLM pipeline entirely.  This
+        # prevents the ACT → search → empty-results → hallucination path.
+        if HAS_CLASSIFIER:
+            _sys_cmd = _match_system_intent(clean_text)
+            if _sys_cmd is not None:
+                handler = getattr(self, f"_handle_{_sys_cmd}_cmd", None)
+                if handler is not None:
+                    import inspect
+
+                    sig = inspect.signature(handler)
+                    kwargs: dict = {"chat_id": chat_id}
+                    if "user_id" in sig.parameters:
+                        kwargs["user_id"] = user_id
+                    if "metadata" in sig.parameters:
+                        kwargs["metadata"] = metadata
+                    if "text" in sig.parameters:
+                        kwargs["text"] = clean_text
+                    await handler(**kwargs)
+                    return
+                # Fallback: CLI template via registry
+                _cli = self._match_cli_command(f"/{_sys_cmd}")
+                if _cli:
+                    await self._handle_cli_command(chat_id, user_id, metadata, _cli)
+                    return
+
         if HAS_CLASSIFIER:
             mode = classify_mode(clean_text)
         else:
@@ -2839,6 +2868,8 @@ class TelegramChannel:
         """Send a response with template limits, optional keyboard, and voice reply."""
         # Strip internal LLM reasoning tags before any further processing
         response = self._strip_internal_tags(response)
+        # Convert standard Markdown (**bold**, ## heading) to Telegram V1 syntax
+        response = self._normalize_md(response)
         parts = None
         if HAS_TEMPLATES:
             try:
@@ -2870,24 +2901,22 @@ class TelegramChannel:
         if parts and len(parts) > 1:
             for i, part in enumerate(parts):
                 is_last = i == len(parts) - 1
-                await self.send_message(
+                await self._send_md_with_fallback(
                     chat_id,
                     part,
-                    parse_mode=None,
                     keyboard=keyboard if is_last else None,
                 )
         elif len(response) > 4000:
             chunks = [response[i : i + 4000] for i in range(0, len(response), 4000)]
             for i, chunk in enumerate(chunks):
                 is_last = i == len(chunks) - 1
-                await self.send_message(
+                await self._send_md_with_fallback(
                     chat_id,
                     chunk,
-                    parse_mode=None,
                     keyboard=keyboard if is_last else None,
                 )
         else:
-            await self.send_message(chat_id, response, parse_mode=None, keyboard=keyboard)
+            await self._send_md_with_fallback(chat_id, response, keyboard=keyboard)
 
         # Voice reply — non-fatal; user already has the text
         await self._maybe_send_voice(chat_id, user_id, is_group, response)
@@ -4025,11 +4054,11 @@ class TelegramChannel:
             user_id=user_id,
         )
 
-    async def _handle_help(self, chat_id: int):
-        """Command reference (/help) from the slash registry."""
+    async def _handle_help(self, chat_id: int, topic: str | None = None):
+        """Command reference (/help [topic]) from the slash registry."""
         from .telegram_commands import TelegramCommandsMixin
 
-        await TelegramCommandsMixin._handle_help(self, chat_id)
+        await TelegramCommandsMixin._handle_help(self, chat_id, topic=topic)
 
     async def _handle_help_callback(self, cb_data: str, chat_id: int, message_id: int) -> None:
         """Delegate help encyclopedia callback routing to the mixin."""
@@ -4577,6 +4606,47 @@ class TelegramChannel:
         # Collapse multiple blank lines introduced by removal
         text = _re.sub(r"\n{3,}", "\n\n", text)
         return text.strip()
+
+    @staticmethod
+    def _normalize_md(text: str) -> str:
+        """Convert standard Markdown to Telegram Markdown V1 compatible format.
+
+        Delegates to ``MarkdownFormatter`` (telegram_formatter module) which
+        handles headings → Unicode symbol decorations, **bold** → *bold*,
+        bullet/numbered lists, blockquotes, and code-block passthrough.
+
+        Falls back to a minimal inline conversion if the formatter module is
+        unavailable, so this method is always safe to call.
+        """
+        try:
+            from navig.gateway.channels.telegram_formatter import (
+                FormatterPrefs,
+                MarkdownFormatter,
+            )
+
+            return MarkdownFormatter().convert(text, FormatterPrefs())
+        except Exception:
+            # Minimal fallback: just convert **bold** → *bold* and headings
+            import re as _re
+
+            text = _re.sub(r"\*\*(.+?)\*\*", r"*\1*", text, flags=_re.DOTALL)
+            text = _re.sub(r"^#{1,6}[ \t]+(.+)$", r"*\1*", text, flags=_re.MULTILINE)
+            return text
+
+    async def _send_md_with_fallback(
+        self,
+        chat_id: int,
+        text: str,
+        keyboard: dict | None = None,
+    ) -> None:
+        """Send *text* with Markdown V1 formatting, falling back to plain text on parse errors."""
+        result = await self.send_message(
+            chat_id, text, parse_mode="Markdown", keyboard=keyboard
+        )
+        if result is None:
+            # Telegram rejected the parse — retry as plain text so the user
+            # always receives the content even if formatting can't be applied.
+            await self.send_message(chat_id, text, parse_mode=None, keyboard=keyboard)
 
     async def delete_message(self, chat_id: int, message_id: int) -> bool:
         """Delete a message."""

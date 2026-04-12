@@ -1716,13 +1716,33 @@ class TelegramCommandsMixin:
         text, keyboard = result
         await self.edit_message(chat_id, message_id, text, parse_mode="Markdown", keyboard=keyboard)
 
-    async def _handle_help(self, chat_id: int, message_id: int | None = None) -> None:
-        """Interactive help encyclopedia (/help, /helpme).
+    async def _handle_help(
+        self,
+        chat_id: int,
+        message_id: int | None = None,
+        topic: str | None = None,
+    ) -> None:
+        """Interactive help encyclopedia (/help [topic], /helpme).
 
-        Sends the category home screen. Subsequent navigation happens
-        via ``help:*`` callbacks that edit the message in-place.
+        When *topic* matches a ``_HELP_CATEGORIES`` key (e.g. ``/help docker``),
+        opens that category screen directly instead of the home screen.
+        Subsequent navigation happens via ``help:*`` callbacks that edit the
+        message in-place.
         """
-        text, keyboard = TelegramCommandsMixin._build_help_home()
+        result = None
+        if topic:
+            result = TelegramCommandsMixin._build_help_category(topic.lower())
+            if result is None:
+                # Unknown topic — try matching by label (case-insensitive)
+                result = next(
+                    (
+                        TelegramCommandsMixin._build_help_category(cat.key)
+                        for cat in _HELP_CATEGORIES
+                        if cat.label.lower() == topic.lower()
+                    ),
+                    None,
+                )
+        text, keyboard = result if result is not None else TelegramCommandsMixin._build_help_home()
         sent = await self.send_message(chat_id, text, parse_mode="Markdown", keyboard=keyboard)
         # Track the message so future nav: callbacks can edit it
         if sent and isinstance(sent, dict):
@@ -6834,6 +6854,7 @@ class TelegramCommandsMixin:
             # Fallback for Windows (no `uptime` command)
             try:
                 import platform as _pf
+
                 import psutil as _psutil
 
                 _bt = _psutil.boot_time()
@@ -6867,6 +6888,7 @@ class TelegramCommandsMixin:
             # Fallback for Windows (no `df` command)
             try:
                 import platform as _pf
+
                 import psutil as _psutil
 
                 _root = "C:\\" if _pf.system() == "Windows" else "/"

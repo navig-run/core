@@ -61,9 +61,12 @@ async def test_send_response_strips_search_tags_before_building_keyboard(
     await channel._send_response(123, raw, "latest cnn news", user_id=99, is_group=False)
 
     sent_text = channel.send_message.await_args.args[1]
+    sent_kwargs = channel.send_message.await_args.kwargs
     assert "searchqualityreflection" not in sent_text
     assert "searchqualityscore" not in sent_text
     assert "<search>" not in sent_text
+    # Responses now use Markdown V1 formatting (with plain-text fallback on error)
+    assert sent_kwargs.get("parse_mode") == "Markdown"
 
     built_text = builder.build.call_args.kwargs["ai_response"]
     assert "searchqualityreflection" not in built_text

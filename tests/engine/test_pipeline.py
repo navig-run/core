@@ -230,6 +230,37 @@ class TestModeClassifier:
         # "implement" + "check" — CODE wins
         assert self._classify("implement a check function in Python") == "CODE"
 
+    # ── Language-agnostic structural signal tests ──────────────────────────
+
+    def test_guillemet_quoted_text_is_reason(self):
+        # The signal is the «» delimiters, not the Cyrillic text around them
+        assert self._classify("смотрю фильм «Проект Аве Мария»") == "REASON"
+
+    def test_curly_quoted_title_is_reason(self):
+        assert self._classify("watching \u201cThe Great Movie\u201d tonight") == "REASON"
+
+    def test_straight_quoted_movie_is_reason(self):
+        assert self._classify('is "Inception" a good film') == "REASON"
+
+    def test_non_latin_three_words_is_reason(self):
+        # 4 Cyrillic words, no markers — non-Latin dominant path
+        assert self._classify("смотрю фильм Проект Мария") == "REASON"
+
+    def test_title_cased_sequence_is_reason(self):
+        assert self._classify("have you seen The Dark Knight Rises") == "REASON"
+
+    def test_mid_sentence_cap_is_reason(self):
+        # Single capital proper noun mid-sentence; no guillemets
+        assert self._classify("j'ai vu le film Inception hier") == "REASON"
+
+    def test_script_mixing_is_reason(self):
+        # Cyrillic sentence with a Latin proper noun — two script buckets
+        assert self._classify("смотрю Inception сейчас") == "REASON"
+
+    def test_lowercase_latin_five_words_is_reason(self):
+        # All lowercase, no markers, 5 words — falls through to the ≥5 threshold
+        assert self._classify("i'm watching ave maria project") == "REASON"
+
 
 # ─── select_tools_for_text tests ──────────────────────────────────────────────
 
@@ -259,6 +290,24 @@ class TestSelectTools:
         tools = self._select("run this: `print('hello')`")
         assert "code_exec_sandbox" in tools
 
+    def test_guillemet_entity_adds_search(self):
+        # «» signal works regardless of surrounding language
+        tools = self._select("расскажи про «Проект Аве Мария»")
+        assert "search" in tools
+
+    def test_title_cased_entity_adds_search(self):
+        tools = self._select("tell me about The Dark Knight")
+        assert "search" in tools
+
+    def test_mid_sentence_cap_adds_search(self):
+        tools = self._select("have you seen Inception the film")
+        assert "search" in tools
+
+    def test_script_mixing_adds_search(self):
+        # Script-mixed message: Cyrillic base + Latin proper noun
+        tools = self._select("смотрю Inception сейчас")
+        assert "search" in tools
+
     def test_fallback_gives_search(self):
         tools = self._select("what is the weather in Paris")
         assert "search" in tools
@@ -266,6 +315,47 @@ class TestSelectTools:
     def test_no_duplicates(self):
         tools = self._select("search google.com for python docs")
         assert len(tools) == len(set(tools))
+
+
+# ─── _match_system_intent tests ───────────────────────────────────────────────
+
+
+class TestSystemIntent:
+    def _match(self, text: str):
+        from navig.gateway.channels.telegram_mode_classifier import _match_system_intent
+
+        return _match_system_intent(text)
+
+    def test_disk_check_variants(self):
+        assert self._match("run disk check") == "disk"
+        assert self._match("check disk") == "disk"
+        assert self._match("disk usage") == "disk"
+        assert self._match("show disk space") == "disk"
+
+    def test_memory_variants(self):
+        assert self._match("check memory") == "memory"
+        assert self._match("show memory usage") == "memory"
+        assert self._match("ram usage") == "memory"
+
+    def test_cpu_variants(self):
+        assert self._match("check cpu") == "cpu"
+        assert self._match("cpu usage") == "cpu"
+        assert self._match("processor load") == "cpu"
+
+    def test_services_variants(self):
+        assert self._match("list services") == "services"
+        assert self._match("running services") == "services"
+        assert self._match("show services") == "services"
+
+    def test_ports_variants(self):
+        assert self._match("list ports") == "ports"
+        assert self._match("open ports") == "ports"
+        assert self._match("check ports") == "ports"
+
+    def test_unrelated_returns_none(self):
+        assert self._match("what time is it") is None
+        assert self._match("hello there") is None
+        assert self._match("check this out") is None
 
 
 # ─── extract_url tests ────────────────────────────────────────────────────────
@@ -491,3 +581,109 @@ class TestTelegramActToolArgs:
             ("site_check", {"url": "https://example.com"}),
             ("browser_fetch", {"url": "https://example.com"}),
         ]
+
+    def test_browser_fetch_progress_summary_omits_raw_content(self):
+        from navig.gateway.channels.telegram import TelegramChannel
+        from navig.tools.registry import ToolResult
+
+        channel = TelegramChannel(bot_token="123:FAKE", on_message=AsyncMock(return_value="analysis"))
+        result = ToolResult(
+            name="browser_fetch",
+            success=True,
+            output={
+                "url": "https://cybesis.com",
+                "content": "Cybesis Studio 10110101 $ npm run dev </> fullstack tools",
+                "method": "httpx",
+                "chars": 812,
+            },
+        )
+
+        summary = channel._summarize_tool_result(result)
+        assert "method: httpx" in summary
+        assert "chars: 812" in summary
+        assert "content" not in summary.lower()
+        assert "npm run dev" not in summary
+
+    async def test_act_uses_structured_tool_context_without_raw_content_field(self, monkeypatch):
+        from navig.gateway.channels.telegram import TelegramChannel
+        from navig.tools.registry import ToolResult
+
+        class _FakeRegistry:
+            async def run_tool(self, tool_name, args, on_status=None):
+                if on_status is not None:
+                    await on_status("running", detail=tool_name, progress=50)
+                if tool_name == "site_check":
+                    return ToolResult(
+                        name="site_check",
+                        success=True,
+                        output={
+                            "url": "https://cybesis.com",
+                            "status_code": 200,
+                            "latency_ms": 1064.6,
+                            "online": True,
+                        },
+                    )
+                return ToolResult(
+                    name="browser_fetch",
+                    success=True,
+                    output={
+                        "url": "https://cybesis.com",
+                        "content": "Cybesis Studio platform for AI services and delivery.",
+                        "method": "httpx",
+                        "chars": 67619,
+                    },
+                )
+
+        class _FakeRenderer:
+            def __init__(self, *_args, **_kwargs):
+                self.updates = []
+
+            async def update(self, *args, **kwargs):
+                self.updates.append((args, kwargs))
+                return None
+
+            async def warn(self, *_args, **_kwargs):
+                return None
+
+            async def finalize(self, *_args, **_kwargs):
+                return None
+
+        async def _keep_typing(_chat_id):
+            await asyncio.sleep(999)
+
+        on_message = AsyncMock(return_value="• Website: Cybesis\n• What it does: Studio")
+        channel = TelegramChannel(
+            bot_token="123:FAKE",
+            on_message=on_message,
+            require_auth=False,
+        )
+
+        monkeypatch.setattr("navig.gateway.channels.telegram.StatusRenderer", _FakeRenderer)
+        monkeypatch.setattr(
+            "navig.gateway.channels.telegram.select_tools_for_text",
+            lambda _text: ["site_check", "browser_fetch"],
+        )
+        monkeypatch.setattr(
+            "navig.gateway.channels.telegram.extract_url",
+            lambda _text: "https://cybesis.com",
+        )
+        monkeypatch.setattr("navig.tools.get_pipeline_registry", lambda: _FakeRegistry())
+        monkeypatch.setattr(channel, "send_message", AsyncMock(return_value={"message_id": 7}))
+        monkeypatch.setattr(channel, "_keep_typing", _keep_typing)
+        monkeypatch.setattr(channel, "_persist_updated_language", lambda *_a, **_k: None)
+        monkeypatch.setattr(channel, "_resolve_model_name", lambda _metadata: "test-model")
+
+        await channel._handle_act(
+            text="check https://cybesis.com",
+            chat_id=101,
+            user_id=202,
+            metadata={},
+            session=None,
+            session_manager=None,
+            is_group=False,
+        )
+
+        augmented = on_message.await_args.kwargs["message"]
+        assert "[Website analysis instructions]" in augmented
+        assert "browser_fetch.content_snippet=" in augmented
+        assert "browser_fetch.content=" not in augmented
