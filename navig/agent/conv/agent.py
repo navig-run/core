@@ -233,8 +233,6 @@ class ConversationalAgent:
         previous = (last_detected_language or "").strip().lower()
         if previous:
             self._session_fallback_language = previous
-            if not self._has_text_detected:
-                self._last_detected_language = previous
 
     def set_focus_mode(self, mode: str) -> None:
         """Switch the agent's mood/focus profile by name (e.g. ``'deep'``, ``'flow'``).
@@ -286,7 +284,7 @@ class ConversationalAgent:
         session_fallback = self._normalize_supported_lang_code(self._session_fallback_language)
         last_detected = self._normalize_supported_lang_code(self._last_detected_language)
 
-        for candidate in (hint, session_fallback, detected, last_detected, "en"):
+        for candidate in (hint, detected, last_detected, session_fallback, "en"):
             if candidate:
                 return candidate
         return "en"
@@ -314,7 +312,6 @@ class ConversationalAgent:
         LLM tier (e.g. ``'large'``).
         """
         self._last_user_message, self._tier_override = message, tier_override
-        lang = self._lang.detect(message)
         self._history.add("user", message)
         response = await self._get_ai_response(message)
         try:
@@ -328,10 +325,6 @@ class ConversationalAgent:
         except Exception:
             # Soul shaping is best-effort; the raw response is still valid output.
             pass
-        if lang == "ru":
-            from navig.agent.conv.history import _strip_cjk
-
-            response = _strip_cjk(response)
         plan = self._plan_extractor.extract(response)
         if plan:
             result = await self._executor.execute_plan(plan)

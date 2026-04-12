@@ -255,22 +255,22 @@ async def test_on_status_update_syncs_to_executor() -> None:
 def test_language_instruction_russian_is_not_english() -> None:
     detector = LanguageDetector()
     instruction = detector.build_instruction("ru")
-    assert "Reply in Russian only" in instruction
-    assert "Reply in English only" not in instruction
+    assert "Prefer replying in Russian" in instruction
+    assert "current user message" in instruction
 
 
 def test_build_system_prompt_prefers_detected_language_hint() -> None:
     agent = _make_agent()
     agent.set_language_preferences(detected_language="ru")
     prompt = agent._build_system_prompt("hello there")
-    assert "Reply in Russian only" in prompt
+    assert "Prefer replying in Russian" in prompt
 
 
 def test_build_system_prompt_uses_session_fallback_when_hint_missing() -> None:
     agent = _make_agent()
     agent.set_language_preferences(last_detected_language="ru")
     prompt = agent._build_system_prompt("hello there")
-    assert "Reply in Russian only" in prompt
+    assert "Prefer replying in English" in prompt
 
 
 # ---------------------------------------------------------------------------

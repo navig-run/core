@@ -75,90 +75,31 @@ class LanguageResult:
 
 
 # ---------------------------------------------------------------------------
-# Pre-built enforcement blocks keyed by language code.
+# Language labels and generic instruction templates.
 # ---------------------------------------------------------------------------
 
-_INSTRUCTIONS: dict[str, str] = {
-    "ru": (
-        "### LANGUAGE RULE ###\n"
-        "Reply in Russian only. Do not mix in other languages or scripts.\n"
-        "### END LANGUAGE RULE ###"
-    ),
-    "zh": (
-        "### ABSOLUTE LANGUAGE RULE — HIGHEST PRIORITY ###\n"
-        "You MUST reply ONLY in Simplified Chinese (简体中文).\n"
-        "NEVER output Cyrillic, Latin, Arabic, or any non-CJK script.\n"
-        "NEVER mix languages. Every single word of your reply must be Chinese.\n"
-        "If you are unsure of a term, render it in Chinese characters or pinyin.\n"
-        "Violation of this rule makes the entire response invalid.\n"
-        "### END LANGUAGE RULE ###"
-    ),
-    "es": (
-        "### ABSOLUTE LANGUAGE RULE — HIGHEST PRIORITY ###\n"
-        "You MUST reply ONLY in Spanish (español) using the Latin script.\n"
-        "NEVER output Cyrillic, Arabic, CJK, or any non-Latin script.\n"
-        "NEVER mix languages. Every single word of your reply must be Spanish.\n"
-        "If you are unsure of a term, transliterate it into Spanish orthography.\n"
-        "Violation of this rule makes the entire response invalid.\n"
-        "### END LANGUAGE RULE ###"
-    ),
-    "de": (
-        "### ABSOLUTE LANGUAGE RULE — HIGHEST PRIORITY ###\n"
-        "You MUST reply ONLY in German (Deutsch) using the Latin script.\n"
-        "NEVER output Cyrillic, Arabic, CJK, or any non-Latin script.\n"
-        "NEVER mix languages. Every single word of your reply must be German.\n"
-        "If you are unsure of a term, transliterate it into German orthography.\n"
-        "Violation of this rule makes the entire response invalid.\n"
-        "### END LANGUAGE RULE ###"
-    ),
-    "it": (
-        "### ABSOLUTE LANGUAGE RULE — HIGHEST PRIORITY ###\n"
-        "You MUST reply ONLY in Italian (italiano) using the Latin script.\n"
-        "NEVER output Cyrillic, Arabic, CJK, or any non-Latin script.\n"
-        "NEVER mix languages. Every single word of your reply must be Italian.\n"
-        "If you are unsure of a term, transliterate it into Italian orthography.\n"
-        "Violation of this rule makes the entire response invalid.\n"
-        "### END LANGUAGE RULE ###"
-    ),
-    "pt": (
-        "### ABSOLUTE LANGUAGE RULE — HIGHEST PRIORITY ###\n"
-        "You MUST reply ONLY in Portuguese (português) using the Latin script.\n"
-        "NEVER output Cyrillic, Arabic, CJK, or any non-Latin script.\n"
-        "NEVER mix languages. Every single word of your reply must be Portuguese.\n"
-        "If you are unsure of a term, transliterate it into Portuguese orthography.\n"
-        "Violation of this rule makes the entire response invalid.\n"
-        "### END LANGUAGE RULE ###"
-    ),
-    "ar": (
-        "### ABSOLUTE LANGUAGE RULE — HIGHEST PRIORITY ###\n"
-        "You MUST reply ONLY in Arabic (العربية) using the Arabic script.\n"
-        "NEVER output Latin characters, Cyrillic, CJK, or any non-Arabic script.\n"
-        "NEVER mix languages. Every single word of your reply must be Arabic.\n"
-        "If you are unsure of a term, render it in Arabic script.\n"
-        "Violation of this rule makes the entire response invalid.\n"
-        "### END LANGUAGE RULE ###"
-    ),
-    "en": (
-        "### LANGUAGE RULE ###\n"
-        "Reply in English only. Do not mix in other languages or scripts.\n"
-        "### END LANGUAGE RULE ###"
-    ),
-    "fr": (
-        "### ABSOLUTE LANGUAGE RULE — HIGHEST PRIORITY ###\n"
-        "You MUST reply ONLY in French (français) using the Latin script.\n"
-        "NEVER output Cyrillic, Arabic, CJK, or any non-Latin script.\n"
-        "NEVER reply in English, Spanish, or any other language.\n"
-        "NEVER mix languages. Every single word of your reply must be French.\n"
-        "Violation of this rule makes the entire response invalid.\n"
-        "### END LANGUAGE RULE ###"
-    ),
-    "mixed": (
-        "### LANGUAGE RULE ###\n"
-        "Reply in the same language as the user's message.\n"
-        "Do not mix multiple languages or scripts in your reply.\n"
-        "### END LANGUAGE RULE ###"
-    ),
+_LANGUAGE_LABELS: dict[str, str] = {
+    "en": "English",
+    "fr": "French",
+    "ru": "Russian",
+    "zh": "Simplified Chinese",
+    "es": "Spanish",
+    "de": "German",
+    "it": "Italian",
+    "pt": "Portuguese",
+    "ar": "Arabic",
+    "ja": "Japanese",
+    "ko": "Korean",
 }
+
+_GENERIC_INSTRUCTION = (
+    "### LANGUAGE CONTEXT ###\n"
+    "Reply in the same language as the user's current message.\n"
+    "If the user switches language, follow the new language immediately.\n"
+    "Do not lock to a previous session language when the current message indicates another language.\n"
+    "Avoid unnecessary language mixing unless the user explicitly asks for bilingual output.\n"
+    "### END LANGUAGE CONTEXT ###"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -274,8 +215,18 @@ def _cached_detect(message: str) -> LanguageResult:
 
 
 def _build_language_instruction(code: str) -> str:
-    """Return the pre-built language-enforcement block for *code*."""
-    return _INSTRUCTIONS.get(code, _INSTRUCTIONS["mixed"])
+    """Return generic multilingual guidance with optional language hint."""
+    normalized = (code or "").strip().lower()
+    if normalized in _LANGUAGE_LABELS:
+        label = _LANGUAGE_LABELS[normalized]
+        return (
+            "### LANGUAGE CONTEXT ###\n"
+            f"Prefer replying in {label} when it matches the user's current message.\n"
+            "If the current user message is in a different language, follow the current message language.\n"
+            "Avoid unnecessary language mixing unless the user explicitly asks for bilingual output.\n"
+            "### END LANGUAGE CONTEXT ###"
+        )
+    return _GENERIC_INSTRUCTION
 
 
 # ---------------------------------------------------------------------------

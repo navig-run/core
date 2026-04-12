@@ -34,7 +34,7 @@ def test_mixed_language_falls_back_to_session_language():
     instruction = agent._build_language_instruction("hello مرحبا")
 
     # Mixed Latin + Arabic → "mixed" → falls back to session language (fr)
-    assert "ABSOLUTE LANGUAGE RULE" in instruction
+    assert "LANGUAGE CONTEXT" in instruction
     assert "French" in instruction
 
 
@@ -53,7 +53,7 @@ async def test_explicit_override_persists_after_session_reset(tmp_path, monkeypa
         assert agent2._get_pinned_language_override() == "fr"
         instruction = agent2._build_language_instruction("hello")
         # Pinned override forces French regardless of text language
-        assert "ABSOLUTE LANGUAGE RULE" in instruction
+        assert "LANGUAGE CONTEXT" in instruction
         assert "French" in instruction
     finally:
         store.close()

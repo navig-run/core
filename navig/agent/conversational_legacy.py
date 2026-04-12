@@ -737,12 +737,6 @@ class ConversationalAgent:
         ):
             lang = text_lang
         self._last_detected_language = lang
-        if lang == "ru":
-            self.conversation_history = [
-                m
-                for m in self.conversation_history
-                if not (m["role"] == "assistant" and self._has_cjk(m["content"]))
-            ]
 
         # Add to conversation history
         self.conversation_history.append({"role": "user", "content": message})
@@ -754,10 +748,6 @@ class ConversationalAgent:
 
         # Get AI response
         response = await self._get_ai_response(message)
-
-        # Post-process: strip any CJK leakage for Russian users
-        if lang == "ru":
-            response = self._strip_cjk(response)
 
         # Check if response contains a plan
         plan_data = self._extract_plan(response)
@@ -1521,11 +1511,11 @@ class ConversationalAgent:
 
     def _build_language_instruction(self, message: str) -> str:
         """
-        Build an aggressive language-enforcement block.
+        Build a generic multilingual guidance block.
 
-        This is placed FIRST in the system prompt so the model sees it
-        before any identity or capability text.  Every detected language
-        gets the same ABSOLUTE enforcement — not just Russian/Chinese.
+        This block avoids hardcoded script/language bans and focuses on
+        following the user's current message language, while still allowing
+        pinned overrides when explicitly requested by the user.
         """
         # Always detect the actual message language (not pinned override)
         # so we can detect language switches.
@@ -1564,78 +1554,15 @@ class ConversationalAgent:
                 f"You MUST follow the switch and reply in {language_label} now.\n"
             )
 
-        # Script-specific bans for models with strong training bias
-        script_ban = ""
-        if language_code == "ru":
-            script_ban = (
-                "NEVER output Chinese, Japanese, or CJK characters.\n"
-                "Every character must be Cyrillic or standard punctuation.\n"
-            )
-        elif language_code == "zh":
-            script_ban = (
-                "NEVER output Cyrillic, Arabic, or non-CJK scripts.\n"
-                "Every character must be CJK or standard punctuation.\n"
-            )
-        elif language_code == "en":
-            script_ban = (
-                "NEVER reply in French, Spanish, Russian, Chinese, or any other language.\n"
-                "Even if earlier messages in the conversation were in another language, "
-                "the user is NOW writing in English. Match their current language.\n"
-            )
-        elif language_code == "fr":
-            script_ban = (
-                "NEVER reply in English, Spanish, or any other language.\n"
-                "The user is writing in French. Reply in French only.\n"
-            )
-        elif language_code == "es":
-            script_ban = (
-                "NEVER reply in English, French, or any other language.\n"
-                "The user is writing in Spanish. Reply in Spanish only.\n"
-            )
-        elif language_code == "ar":
-            script_ban = (
-                "NEVER output Latin, Cyrillic, CJK, or Devanagari characters.\n"
-                "Every character must be Arabic script or standard punctuation.\n"
-                "The user is writing in Arabic. Reply in Arabic only.\n"
-            )
-        elif language_code == "hi":
-            script_ban = (
-                "NEVER output Latin, Cyrillic, CJK, or Arabic characters.\n"
-                "Every character must be Devanagari script or standard punctuation.\n"
-                "The user is writing in Hindi. Reply in Hindi only.\n"
-            )
-        elif language_code == "ja":
-            script_ban = (
-                "NEVER output Cyrillic, Arabic, or Devanagari characters.\n"
-                "Every character must be Japanese (Hiragana, Katakana, Kanji) or standard punctuation.\n"
-                "The user is writing in Japanese. Reply in Japanese only.\n"
-            )
-        elif language_code == "ko":
-            script_ban = (
-                "NEVER output Cyrillic, Arabic, CJK (Chinese), or Devanagari characters.\n"
-                "Every character must be Korean (Hangul) or standard punctuation.\n"
-                "The user is writing in Korean. Reply in Korean only.\n"
-            )
-        elif language_code == "de":
-            script_ban = (
-                "NEVER reply in English, French, or any other language.\n"
-                "The user is writing in German. Reply in German only.\n"
-            )
-        elif language_code == "pt":
-            script_ban = (
-                "NEVER reply in English, Spanish, or any other language.\n"
-                "The user is writing in Portuguese. Reply in Portuguese only.\n"
-            )
-
         return (
-            "### ABSOLUTE LANGUAGE RULE — HIGHEST PRIORITY ###\n"
+            "### LANGUAGE CONTEXT ###\n"
             f"{switch_notice}"
-            f"You MUST reply ONLY in {language_label}.\n"
-            f"{script_ban}"
-            "NEVER mix languages or scripts in your reply.\n"
-            "Never ask the user what language they prefer.\n"
+            f"Prefer replying in {language_label} when it matches the user's current message.\n"
+            "If the current user message is in a different language, follow the current message language.\n"
+            "Do not lock to a previous session language when current input indicates another one.\n"
+            "Avoid unnecessary language mixing unless the user explicitly asks for bilingual output.\n"
             f"{self._MEMORY_LANGUAGE_RULE}\n"
-            "### END LANGUAGE RULE ###"
+            "### END LANGUAGE CONTEXT ###"
         )
 
     def _detect_language_code(self, message: str) -> str:
