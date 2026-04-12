@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 pytestmark = pytest.mark.integration
@@ -423,3 +424,70 @@ class TestPipelineRegistry:
         from navig.tools import get_pipeline_registry
 
         assert get_pipeline_registry() is get_pipeline_registry()
+
+
+class TestTelegramActToolArgs:
+    async def test_act_passes_url_to_site_check_and_browser_fetch(self, monkeypatch):
+        from navig.gateway.channels.telegram import TelegramChannel
+        from navig.tools.registry import ToolResult
+
+        calls: list[tuple[str, dict]] = []
+
+        class _FakeRegistry:
+            async def run_tool(self, tool_name, args, on_status=None):
+                calls.append((tool_name, dict(args)))
+                if on_status is not None:
+                    await on_status("running", detail=tool_name, progress=50)
+                return ToolResult(name=tool_name, success=True, output={"ok": True})
+
+        class _FakeRenderer:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            async def update(self, *_args, **_kwargs):
+                return None
+
+            async def warn(self, *_args, **_kwargs):
+                return None
+
+            async def finalize(self, *_args, **_kwargs):
+                return None
+
+        async def _keep_typing(_chat_id):
+            await asyncio.sleep(999)
+
+        channel = TelegramChannel(
+            bot_token="123:FAKE",
+            on_message=AsyncMock(return_value="analysis"),
+            require_auth=False,
+        )
+
+        monkeypatch.setattr("navig.gateway.channels.telegram.StatusRenderer", _FakeRenderer)
+        monkeypatch.setattr(
+            "navig.gateway.channels.telegram.select_tools_for_text",
+            lambda _text: ["site_check", "browser_fetch"],
+        )
+        monkeypatch.setattr(
+            "navig.gateway.channels.telegram.extract_url",
+            lambda _text: "https://example.com",
+        )
+        monkeypatch.setattr("navig.tools.get_pipeline_registry", lambda: _FakeRegistry())
+        monkeypatch.setattr(channel, "send_message", AsyncMock(return_value={"message_id": 42}))
+        monkeypatch.setattr(channel, "_keep_typing", _keep_typing)
+        monkeypatch.setattr(channel, "_persist_updated_language", lambda *_a, **_k: None)
+        monkeypatch.setattr(channel, "_resolve_model_name", lambda _metadata: "test-model")
+
+        await channel._handle_act(
+            text="check https://example.com",
+            chat_id=123,
+            user_id=456,
+            metadata={},
+            session=None,
+            session_manager=None,
+            is_group=False,
+        )
+
+        assert calls == [
+            ("site_check", {"url": "https://example.com"}),
+            ("browser_fetch", {"url": "https://example.com"}),
+        ]

@@ -12,6 +12,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [2.7.0] - 2026-04-12
 
 ### Changed
+- **Telegram ACT URL Propagation**: Fixed ACT tool-argument wiring so URL-bearing prompts pass `url` to both `site_check` and `browser_fetch` (in addition to legacy `web_fetch` compatibility), preventing `browser_fetch` skips with `url arg required`.
 - **Robustness (Configuration Type Coercion)**: Audited navig agent config loaders using AST static analysis for raw `int()` / `float()` type conversions mapping dictionary `get()` results without error catching. Replaced risky type-casts with safe `try...except (ValueError, TypeError)` blocks returning defaults across `auth_profiles.py`, `coordinator.py`, `speculative.py`, `remediation.py`, `memory_auto_extractor.py`, `model_router.py`, and `prompt_caching.py` to prevent fatal startup crashes when YAML/JSON structures carry malformed types (e.g. `timeout: "unlimited"`). Included new regression coverage `tests/agent/test_configuration_coercion.py`.
 - **Test Suite Hygiene — Workstreams A + B + G** (315 test files):
   - **Workstream G (artifact cleanup)**: Deleted 120 accumulated `.pytest_tmp_*` directories from `.local/` (43) and `.dev/` (77); root `.gitignore` already has `*/.pytest_tmp_*/` patterns covering future runs.

@@ -1716,7 +1716,7 @@ class TelegramChannel:
             for idx, tool_name in enumerate(tools_to_call):
                 # Build args per tool
                 args: dict = {}
-                if tool_name in ("site_check", "web_fetch"):
+                if tool_name in ("site_check", "web_fetch", "browser_fetch"):
                     if url:
                         args["url"] = url
                     else:
