@@ -181,7 +181,7 @@ navig run "echo hello from NAVIG && uname -a"
 navig file list ~ --tree --depth 2
 
 # Ask the AI operator layer something
-navig ai ask "what process is using the most CPU right now?"
+navig ask "what process is using the most CPU right now?"
 ```
 
 That's a complete first run — no remote server required.
@@ -207,7 +207,7 @@ navig host use <name>
 navig run "uname -a"
 
 # 6. Ask the AI operator layer something about it
-navig ai ask "what is consuming the most memory on this host?"
+navig ask "what is consuming the most memory on this host?"
 ```
 
 That's it. Everything else builds from here.
@@ -220,8 +220,8 @@ That's it. Everything else builds from here.
 | `navig vault set KEY=value` | Store secrets encrypted |
 | `navig db query "SELECT 1"` | Connect to a remote database |
 | `navig tunnel 5432` | Open an SSH tunnel to a port |
-| `navig workflow run deploy.yaml` | Run a multi-step workflow |
-| `navig ai ask "..."` | Ask the AI operator layer anything |
+| `navig flow run deploy.yaml` | Run a multi-step workflow |
+| `navig ask "..."` | Ask the AI operator layer anything |
 
 ---
 
@@ -250,7 +250,7 @@ navig <resource> <action> [options]
 
 | Command | What it does |
 |---|---|
-| `navig ai ask` | AI-assisted troubleshooting and command guidance |
+| `navig ask` | AI-assisted troubleshooting and command guidance |
 | `navig flow` | Multi-step automation workflows |
 | `navig mcp` | MCP server for AI editor and tool integration |
 | `navig gateway` | Start and manage chat gateway (Telegram, Matrix) |
@@ -261,7 +261,7 @@ navig <resource> <action> [options]
 |---|---|
 | `navig config` | View, validate, and manage configuration |
 | `navig vault` | Encrypted credential storage |
-| `navig workspace` | Multi-context operator workspace |
+| `navig space` | Multi-context operator environments |
 | `navig mesh` | LAN peer discovery and command delegation |
 
 Run `navig help` or `navig help <topic>` for detailed usage. Every command also supports `--help`.
@@ -272,13 +272,13 @@ Run `navig help` or `navig help <topic>` for detailed usage. Every command also 
 
 NAVIG can expose its operator layer through:
 
-- CLI (`navig ai ask`)
+- CLI (`navig ask`)
 - Telegram (via `navig gateway`)
 - Matrix
 - Any MCP-compatible editor (Cursor, Claude Desktop, VS Code)
 
 ```bash
-navig ai ask "Why does this container keep restarting?"
+navig ask "Why does this container keep restarting?"
 ```
 
 The AI layer assists with reasoning, context, and workflow execution. It does not replace direct operator control — the operator stays responsible, the operator stays in command.

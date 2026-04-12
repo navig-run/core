@@ -160,9 +160,16 @@ class CryptoEngine:
             try:
                 import winreg  # noqa: PLC0415
 
+                # Use KEY_WOW64_64KEY so that 32-bit Python processes bypass
+                # WOW64 registry redirection and read the same MachineGuid as
+                # 64-bit Python.  Without this flag, 32-bit processes on 64-bit
+                # Windows silently redirect to WOW6432Node, which may not have
+                # the Cryptography key, producing a different fingerprint.
                 key = winreg.OpenKey(
                     winreg.HKEY_LOCAL_MACHINE,
                     r"SOFTWARE\Microsoft\Cryptography",
+                    0,
+                    winreg.KEY_READ | winreg.KEY_WOW64_64KEY,
                 )
                 guid, _ = winreg.QueryValueEx(key, "MachineGuid")
                 parts.append(str(guid))
