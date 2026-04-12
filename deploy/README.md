@@ -15,7 +15,7 @@ curl -fsSL https://navig.run/install.sh | bash
 **Windows (PowerShell):**
 
 ```powershell
-& ([scriptblock]::Create((irm https://navig.run/install.ps1)))
+iwr -useb https://navig.run/install.ps1 | iex
 ```
 
 ### Server Bootstrap (Full Stack)
