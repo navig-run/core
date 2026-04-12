@@ -14,6 +14,7 @@ import asyncio
 import html
 import logging
 import random
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -80,6 +81,10 @@ except ImportError:
 # Mode classifier
 try:
     from navig.gateway.channels.telegram_mode_classifier import (  # noqa: F401
+        _contains_title_marker,
+        _has_mid_sentence_cap,
+        _has_script_mixing,
+        _is_non_latin_dominant,
         classify_mode,
         extract_url,
         mode_to_llm_tier,
@@ -612,18 +617,54 @@ class TelegramChannel:
         """Process a single update from Telegram."""
         # ── Handle callback queries (inline button presses) ──
         callback_query = update.get("callback_query")
-        if callback_query and self._cb_handler:
+        if callback_query:
             cb_user = callback_query.get("from", {})
             cb_user_id = cb_user.get("id")
             cb_chat = (callback_query.get("message") or {}).get("chat", {})
             cb_is_group = cb_chat.get("type") in ("group", "supergroup")
-            if not self._is_user_authorized(cb_user_id, cb_chat.get("id", 0), cb_is_group):
+            cb_chat_id_cq = cb_chat.get("id", 0)
+            if not self._is_user_authorized(cb_user_id, cb_chat_id_cq, cb_is_group):
                 logger.warning("Unauthorized callback: user_id=%s", cb_user_id)
                 return
-            try:
-                await self._cb_handler.handle(callback_query)
-            except Exception as e:
-                logger.error("Callback handler error: %s", e)
+            # ── slash: monitoring refresh/nav buttons ──────────────────────
+            cb_data = callback_query.get("data", "")
+            if cb_data.startswith("slash:"):
+                cmd_name = cb_data[6:]  # e.g. "disk", "memory"
+                try:
+                    await self._api_call(
+                        "answerCallbackQuery",
+                        {"callback_query_id": callback_query["id"]},
+                    )
+                except Exception:
+                    pass
+                handler_fn = None
+                try:
+                    from navig.gateway.channels.telegram_commands import (
+                        _SLASH_REGISTRY as _sr,
+                    )
+
+                    _entry = next(
+                        (e for e in _sr if e.command == cmd_name and e.handler), None
+                    )
+                    if _entry:
+                        handler_fn = getattr(self, _entry.handler, None)
+                except Exception:
+                    pass
+                if handler_fn:
+                    try:
+                        await handler_fn(
+                            chat_id=cb_chat_id_cq,
+                            user_id=cb_user_id,
+                            metadata={},
+                        )
+                    except Exception as exc:
+                        logger.error("slash: callback handler %r error: %s", cmd_name, exc)
+                return
+            if self._cb_handler:
+                try:
+                    await self._cb_handler.handle(callback_query)
+                except Exception as e:
+                    logger.error("Callback handler error: %s", e)
             return
 
         message = update.get("message", {})
@@ -1287,6 +1328,25 @@ class TelegramChannel:
                 is_group,
             )
         elif mode == "REASON":
+            # When a quoted entity or non-Latin statement is detected, inject a
+            # language-agnostic grounding hint so the LLM acknowledges uncertainty
+            # rather than confabulating. The hint is script-neutral — the model
+            # will compose its response in whatever language the user wrote.
+            if HAS_CLASSIFIER and (
+                _contains_title_marker(clean_text)
+                or _has_mid_sentence_cap(clean_text)
+                or _has_script_mixing(clean_text)
+                or _is_non_latin_dominant(clean_text)
+            ):
+                metadata = {
+                    **metadata,
+                    "llm_hint": (
+                        "If the user's message references a title, person, event, "
+                        "or named entity that you cannot verify with certainty "
+                        "from your training data, say so honestly rather than "
+                        "inventing details."
+                    ),
+                }
             await self._handle_reason(
                 clean_text,
                 chat_id,
@@ -1351,6 +1411,24 @@ class TelegramChannel:
         is_group: bool,
     ) -> None:
         """TALK mode — direct reply, no decorations, ≤3 lines, ≤2s."""
+        # Universal safety net: even short messages that slipped past the
+        # classifier may reference a named entity.  Inject an honesty hint
+        # so the LLM never invents details it cannot verify.
+        if HAS_CLASSIFIER and (
+            _contains_title_marker(text)
+            or _has_mid_sentence_cap(text)
+            or _has_script_mixing(text)
+            or _is_non_latin_dominant(text)
+        ):
+            metadata = {
+                **metadata,
+                "llm_hint": (
+                    "If the user's message references a title, person, event, "
+                    "or named entity that you cannot verify with certainty "
+                    "from your training data, say so honestly rather than "
+                    "inventing details."
+                ),
+            }
         typing_task = asyncio.create_task(self._keep_typing(chat_id))
         try:
             response = await self.on_message(
@@ -1601,7 +1679,13 @@ class TelegramChannel:
 
         if placeholder_id:
             try:
-                await self.edit_message(chat_id, placeholder_id, final_text, keyboard=keyboard)
+                await self.edit_message(
+                    chat_id,
+                    placeholder_id,
+                    final_text,
+                    parse_mode=None,
+                    keyboard=keyboard,
+                )
                 return
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
@@ -1658,7 +1742,7 @@ class TelegramChannel:
 
         if intro_id:
             try:
-                await self.edit_message(chat_id, intro_id, final_text)
+                await self.edit_message(chat_id, intro_id, final_text, parse_mode=None)
                 return
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
@@ -1751,7 +1835,7 @@ class TelegramChannel:
                     tool_results.append(result)
                     await renderer.update(
                         f"{tool_name} complete",
-                        detail=result.summary()[:80],
+                        detail=self._summarize_tool_result(result),
                         progress=progress_val,
                         icon="✅",
                     )
@@ -1766,20 +1850,23 @@ class TelegramChannel:
         # ── Step 2: call LLM with tool context ──
         await renderer.update("Analyzing results...", progress=8, icon="🧠")
 
-        tool_context = ""
-        for r in tool_results:
-            if isinstance(r.output, dict):
-                for k, v in r.output.items():
-                    if k.startswith("_"):
-                        continue
-                    # WebFetchTool natively trims output to 5000 chars, safe to include.
-                    tool_context += f"{r.name}.{k}={v}\n"
-            else:
-                tool_context += f"{r.name}: {r.output}\n"
+        tool_context = self._build_act_tool_context(tool_results)
 
         augmented_message = text
         if tool_context:
-            augmented_message = f"{text}\n\n[Tool results]\n{tool_context.strip()}"
+            augmented_message = (
+                f"{text}\n\n"
+                "[Website analysis instructions]\n"
+                "Use the tool outputs to provide concrete website intelligence, not generic uptime text.\n"
+                "Return concise bullets with these headings in this order:\n"
+                "- Website\n"
+                "- What it does\n"
+                "- Key sections and features\n"
+                "- Technical signals (status, latency, TLS, rendering clues)\n"
+                "- Notable issues or unknowns\n"
+                "If a field is missing, explicitly say 'Not detected'.\n\n"
+                f"[Tool results]\n{tool_context.strip()}"
+            )
 
         typing_task = asyncio.create_task(self._keep_typing(chat_id))
         try:
@@ -1820,7 +1907,7 @@ class TelegramChannel:
                     conclusion["URL"] = results[0].get("url", "")[:60]
 
         if llm_response:
-            conclusion["Analysis"] = llm_response[:200]
+            conclusion["Analysis"] = self._trim_preview(llm_response, max_chars=520)
 
         if tool_errors:
             conclusion["Skipped"] = ", ".join(tool_errors)
@@ -1849,6 +1936,127 @@ class TelegramChannel:
             self._record_assistant_msg(
                 session, session_manager, chat_id, user_id, llm_response, is_group
             )
+
+    def _summarize_tool_result(self, result) -> str:
+        """Compact, tool-specific summary for ACT step progress lines."""
+        if not result.success:
+            return f"⚠️ {result.error or 'unknown error'}"
+
+        output = result.output
+        if isinstance(output, dict):
+            if result.name == "site_check":
+                status = output.get("status_code")
+                latency = output.get("latency_ms")
+                redirects = output.get("redirects")
+                url = str(output.get("final_url") or output.get("url") or "")
+                parts = [
+                    f"url: {url[:48]}" if url else "",
+                    f"status: {status}" if status is not None else "",
+                    f"latency: {latency}ms" if latency is not None else "",
+                    f"redirects: {redirects}" if redirects is not None else "",
+                ]
+                return " · ".join(p for p in parts if p)[:120]
+
+            if result.name in {"browser_fetch", "web_fetch"}:
+                url = str(output.get("url") or "")
+                method = output.get("method")
+                chars = output.get("chars")
+                status = output.get("status_code")
+                parts = [
+                    f"url: {url[:48]}" if url else "",
+                    f"method: {method}" if method else "",
+                    f"status: {status}" if status is not None else "",
+                    f"chars: {chars}" if chars is not None else "",
+                ]
+                return " · ".join(p for p in parts if p)[:120]
+
+            if result.name == "search":
+                results = output.get("results") if isinstance(output.get("results"), list) else []
+                top = ""
+                if results and isinstance(results[0], dict):
+                    top = str(results[0].get("title") or "")
+                summary = f"results: {len(results)}"
+                if top:
+                    summary += f" · top: {top[:56]}"
+                return summary[:120]
+
+        return result.summary()[:120]
+
+    def _build_act_tool_context(self, tool_results: list) -> str:
+        """Build focused ACT context for LLM synthesis without noisy raw blobs."""
+        lines: list[str] = []
+        for result in tool_results:
+            output = result.output
+            if not isinstance(output, dict):
+                lines.append(f"{result.name}.output={str(output)[:200]}")
+                continue
+
+            if result.name == "site_check":
+                keys = [
+                    "url",
+                    "final_url",
+                    "status_code",
+                    "online",
+                    "latency_ms",
+                    "redirects",
+                    "cert_expiry",
+                ]
+                for key in keys:
+                    value = output.get(key)
+                    if value not in (None, ""):
+                        lines.append(f"site_check.{key}={value}")
+                continue
+
+            if result.name in {"browser_fetch", "web_fetch"}:
+                keys = ["url", "method", "status_code", "elapsed_ms", "chars", "cached"]
+                for key in keys:
+                    value = output.get(key)
+                    if value not in (None, ""):
+                        lines.append(f"{result.name}.{key}={value}")
+
+                content = str(output.get("content") or "").strip()
+                if content:
+                    compact = re.sub(r"\s+", " ", content)
+                    snippet = self._trim_preview(compact, max_chars=900)
+                    lines.append(f"{result.name}.content_snippet={snippet}")
+                continue
+
+            if result.name == "search":
+                results = output.get("results") if isinstance(output.get("results"), list) else []
+                lines.append(f"search.count={len(results)}")
+                for index, item in enumerate(results[:3], start=1):
+                    if not isinstance(item, dict):
+                        continue
+                    title = self._trim_preview(str(item.get("title") or ""), max_chars=120)
+                    url = self._trim_preview(str(item.get("url") or ""), max_chars=180)
+                    snippet = self._trim_preview(str(item.get("snippet") or ""), max_chars=220)
+                    if title:
+                        lines.append(f"search.{index}.title={title}")
+                    if url:
+                        lines.append(f"search.{index}.url={url}")
+                    if snippet:
+                        lines.append(f"search.{index}.snippet={snippet}")
+                continue
+
+            for key, value in output.items():
+                if str(key).startswith("_") or value in (None, ""):
+                    continue
+                lines.append(f"{result.name}.{key}={self._trim_preview(str(value), max_chars=220)}")
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _trim_preview(text: str, max_chars: int = 520) -> str:
+        """Trim text on word boundary and add ellipsis when needed."""
+        cleaned = re.sub(r"\s+", " ", str(text or "")).strip()
+        if len(cleaned) <= max_chars:
+            return cleaned
+
+        trimmed = cleaned[:max_chars].rstrip()
+        split_at = trimmed.rfind(" ")
+        if split_at >= int(max_chars * 0.6):
+            trimmed = trimmed[:split_at].rstrip()
+        return f"{trimmed}…"
 
     # ── Shared helpers ──────────────────────────────────────────────────────
 
@@ -2662,14 +2870,24 @@ class TelegramChannel:
         if parts and len(parts) > 1:
             for i, part in enumerate(parts):
                 is_last = i == len(parts) - 1
-                await self.send_message(chat_id, part, keyboard=keyboard if is_last else None)
+                await self.send_message(
+                    chat_id,
+                    part,
+                    parse_mode=None,
+                    keyboard=keyboard if is_last else None,
+                )
         elif len(response) > 4000:
             chunks = [response[i : i + 4000] for i in range(0, len(response), 4000)]
             for i, chunk in enumerate(chunks):
                 is_last = i == len(chunks) - 1
-                await self.send_message(chat_id, chunk, keyboard=keyboard if is_last else None)
+                await self.send_message(
+                    chat_id,
+                    chunk,
+                    parse_mode=None,
+                    keyboard=keyboard if is_last else None,
+                )
         else:
-            await self.send_message(chat_id, response, keyboard=keyboard)
+            await self.send_message(chat_id, response, parse_mode=None, keyboard=keyboard)
 
         # Voice reply — non-fatal; user already has the text
         await self._maybe_send_voice(chat_id, user_id, is_group, response)

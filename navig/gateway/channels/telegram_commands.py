@@ -185,38 +185,51 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     # --- Monitoring ----------------------------------------------------------
     SlashCommandEntry(
         "disk",
-        "Disk usage",
-        cli_template="host monitor show --disk",
+        "💽 Disk usage",
+        handler="_handle_disk_cmd",
         category="monitoring",
     ),
-    SlashCommandEntry("memory", "RAM status", cli_template='run "free -h"', category="monitoring"),
-    SlashCommandEntry("cpu", "Load / CPU info", cli_template='run "uptime"', category="monitoring"),
     SlashCommandEntry(
-        "uptime", "Server uptime", cli_template='run "uptime -p"', category="monitoring"
+        "memory",
+        "🧠 RAM status",
+        handler="_handle_memory_cmd",
+        category="monitoring",
+    ),
+    SlashCommandEntry(
+        "cpu",
+        "⚡ CPU & load",
+        handler="_handle_cpu_cmd",
+        category="monitoring",
+    ),
+    SlashCommandEntry(
+        "uptime",
+        "🕐 Server uptime",
+        handler="_handle_uptime_cmd",
+        category="monitoring",
     ),
     SlashCommandEntry(
         "services",
-        "Running services",
-        cli_template='run "systemctl list-units --type=service --state=running --no-pager | head -40"',
+        "⚙️ Running services",
+        handler="_handle_services_cmd",
         category="monitoring",
     ),
     SlashCommandEntry(
         "ports",
-        "Open ports",
-        cli_template='run "ss -tlnp | head -30"',
+        "🔌 Open ports",
+        handler="_handle_ports_cmd",
         category="monitoring",
     ),
     SlashCommandEntry(
         "top",
-        "Process list",
-        cli_template='run "top -bn1 | head -20"',
+        "📊 Process list",
+        handler="_handle_cpu_cmd",
         visible=False,
         category="monitoring",
     ),
     SlashCommandEntry(
         "df",
-        "Disk usage (df)",
-        cli_template='run "df -h"',
+        "💽 Disk usage (df)",
+        handler="_handle_disk_cmd",
         visible=False,
         category="monitoring",
     ),
@@ -1579,18 +1592,23 @@ class TelegramCommandsMixin:
             return None
 
         idx = _ensure_help_cmd_index()
+        # Escape underscores: Telegram Markdown V1 treats _ as italic delimiters,
+        # so command names like auto_start / explain_ai break entity parsing.
+        def _md(s: str) -> str:
+            return s.replace("_", "\\_")
+
         lines = [
-            f"{sub.emoji}  *{sub.label}*",
-            f"_{cat.emoji} {cat.label}_",
+            f"{sub.emoji}  *{_md(sub.label)}*",
+            f"_{cat.emoji} {_md(cat.label)}_",
             "",
         ]
         for cmd_name in sub.commands:
             entry = idx.get(cmd_name)
             if entry:
-                desc = entry.description or "No description"
-                lines.append(f"• /{cmd_name} — {desc}")
+                desc = _md(entry.description or "No description")
+                lines.append(f"• /{_md(cmd_name)} — {desc}")
             else:
-                lines.append(f"• /{cmd_name}")
+                lines.append(f"• /{_md(cmd_name)}")
         text = "\n".join(lines)
 
         rows: list[list[dict[str, str]]] = []
@@ -1628,9 +1646,12 @@ class TelegramCommandsMixin:
         if entry is None:
             return None
 
-        desc = entry.description or "No description"
+        def _md(s: str) -> str:
+            return s.replace("_", "\\_")
+
+        desc = _md(entry.description or "No description")
         lines = [
-            f"*/{entry.command}*",
+            f"*/{_md(entry.command)}*",
             "",
             f"📄 {desc}",
         ]
@@ -1638,7 +1659,7 @@ class TelegramCommandsMixin:
             lines.append(f"\n💡 *Usage:*  `{entry.usage}`")
         if entry.cli_template:
             lines.append(f"🔗 *CLI:*  `{entry.cli_template}`")
-        lines.append(f"\n📁 *Category:*  {entry.category}")
+        lines.append(f"\n📁 *Category:*  {_md(entry.category)}")
 
         text = "\n".join(lines)
 
@@ -6242,6 +6263,486 @@ class TelegramCommandsMixin:
 
         await self._handle_cli_command(chat_id, user_id, metadata or {}, cli_cmd)
 
+    # -- Monitoring helpers ----------------------------------------------------
+
+    @staticmethod
+    def _mon_bar(pct: float, width: int = 14) -> str:
+        """Unicode progress bar, e.g. ████░░░░░░░░░░ for 28 %."""
+        filled = int(round(pct / 100 * width))
+        return "█" * filled + "░" * (width - filled)
+
+    @staticmethod
+    def _mon_status_icon(pct: float, high: int = 80, med: int = 60) -> str:
+        if pct >= high:
+            return "🔴"
+        if pct >= med:
+            return "🟡"
+        return "🟢"
+
+    @staticmethod
+    def _mon_header(icon: str, title: str, subtitle: str = "") -> str:
+        line = "━" * 26
+        sub = f"\n<i>{html.escape(subtitle)}</i>" if subtitle else ""
+        return f"{line}\n{icon}  <b>{html.escape(title)}</b>{sub}\n{line}"
+
+    def _mon_host_ctx(self) -> tuple:
+        """Return (host_name, server_config_dict, is_local)."""
+        try:
+            from navig.config import get_config_manager
+            from navig.remote import is_local_host
+
+            cfg = get_config_manager()
+            host_name = cfg.get_active_host() or "localhost"
+            server_config = cfg.load_server_config(host_name)
+            is_local = is_local_host(server_config)
+            return host_name, server_config, is_local
+        except Exception:
+            return "localhost", {"is_local": True}, True
+
+    # -- Monitoring command handlers -------------------------------------------
+
+    @rate_limited
+    @error_handled
+    @typing_context
+    async def _handle_disk_cmd(
+        self, chat_id: int, user_id: int, metadata: MessageMetadata
+    ) -> None:
+        """Rich disk usage card (/disk /df)."""
+        host_name, _server_config, is_local = self._mon_host_ctx()
+        lines: list = [self._mon_header("💽", "Disk Usage", host_name)]
+
+        if is_local:
+            try:
+                import psutil
+
+                partitions = psutil.disk_partitions(all=False)
+                shown = 0
+                for part in partitions:
+                    if shown >= 6:
+                        break
+                    try:
+                        usage = psutil.disk_usage(part.mountpoint)
+                        pct = usage.percent
+                        icon = self._mon_status_icon(pct)
+                        bar = self._mon_bar(pct)
+                        used_gb = usage.used / (1024 ** 3)
+                        total_gb = usage.total / (1024 ** 3)
+                        lines.append(
+                            f"\n{icon} <b>{html.escape(part.mountpoint)}</b>  {pct:.0f}%\n"
+                            f"<code>{bar}</code>\n"
+                            f"  {used_gb:.1f} GB used / {total_gb:.1f} GB total"
+                        )
+                        shown += 1
+                    except (PermissionError, OSError):
+                        pass
+                if not shown:
+                    lines.append("<i>No accessible partitions found</i>")
+            except ImportError:
+                lines.append("<i>psutil not available — install it with: pip install psutil</i>")
+            except Exception as exc:
+                lines.append(f"<i>Disk info error: {html.escape(str(exc))}</i>")
+        else:
+            await self._handle_cli_command(
+                chat_id, user_id, metadata or {}, "host monitor show --disk"
+            )
+            return
+
+        now_str = datetime.now(timezone.utc).strftime("%H:%M UTC")
+        lines.append(f"\n<i>─ Updated {now_str} ─</i>")
+        keyboard = [
+            [
+                {"text": "🔄 Refresh", "callback_data": "slash:disk"},
+                {"text": "🧠 Memory", "callback_data": "slash:memory"},
+            ],
+            [
+                {"text": "⚡ CPU", "callback_data": "slash:cpu"},
+                {"text": "🔌 Ports", "callback_data": "slash:ports"},
+            ],
+        ]
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+
+    @rate_limited
+    @error_handled
+    @typing_context
+    async def _handle_memory_cmd(
+        self, chat_id: int, user_id: int, metadata: MessageMetadata
+    ) -> None:
+        """Rich memory usage card (/memory)."""
+        host_name, _server_config, is_local = self._mon_host_ctx()
+        lines: list = [self._mon_header("🧠", "Memory Status", host_name)]
+
+        if is_local:
+            try:
+                import psutil
+
+                vm = psutil.virtual_memory()
+                sw = psutil.swap_memory()
+
+                ram_pct = vm.percent
+                ram_icon = self._mon_status_icon(ram_pct)
+                ram_bar = self._mon_bar(ram_pct)
+                ram_used = vm.used / (1024 ** 3)
+                ram_total = vm.total / (1024 ** 3)
+                ram_avail = vm.available / (1024 ** 3)
+
+                lines.append(
+                    f"\n{ram_icon} <b>RAM</b>  {ram_pct:.0f}%\n"
+                    f"<code>{ram_bar}</code>\n"
+                    f"  Used: {ram_used:.1f} GB  /  Total: {ram_total:.1f} GB\n"
+                    f"  Available: {ram_avail:.1f} GB"
+                )
+
+                if sw.total > 0:
+                    sw_pct = sw.percent
+                    sw_icon = self._mon_status_icon(sw_pct)
+                    sw_bar = self._mon_bar(sw_pct)
+                    sw_used = sw.used / (1024 ** 3)
+                    sw_total = sw.total / (1024 ** 3)
+                    lines.append(
+                        f"\n{sw_icon} <b>Swap</b>  {sw_pct:.0f}%\n"
+                        f"<code>{sw_bar}</code>\n"
+                        f"  Used: {sw_used:.1f} GB  /  Total: {sw_total:.1f} GB"
+                    )
+                else:
+                    lines.append("\n<i>Swap: not configured</i>")
+            except ImportError:
+                lines.append("<i>psutil not available — install it with: pip install psutil</i>")
+            except Exception as exc:
+                lines.append(f"<i>Memory info error: {html.escape(str(exc))}</i>")
+        else:
+            await self._handle_cli_command(
+                chat_id, user_id, metadata or {}, 'run "free -h"'
+            )
+            return
+
+        now_str = datetime.now(timezone.utc).strftime("%H:%M UTC")
+        lines.append(f"\n<i>─ Updated {now_str} ─</i>")
+        keyboard = [
+            [
+                {"text": "🔄 Refresh", "callback_data": "slash:memory"},
+                {"text": "💽 Disk", "callback_data": "slash:disk"},
+            ],
+            [
+                {"text": "⚡ CPU", "callback_data": "slash:cpu"},
+                {"text": "🕐 Uptime", "callback_data": "slash:uptime"},
+            ],
+        ]
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+
+    @rate_limited
+    @error_handled
+    @typing_context
+    async def _handle_cpu_cmd(
+        self, chat_id: int, user_id: int, metadata: MessageMetadata
+    ) -> None:
+        """Rich CPU & load card (/cpu /top)."""
+        import platform as _pf
+
+        host_name, _server_config, is_local = self._mon_host_ctx()
+        lines: list = [self._mon_header("⚡", "CPU & Load", host_name)]
+
+        if is_local:
+            try:
+                import psutil
+
+                cpu_pct = psutil.cpu_percent(interval=0.5)
+                cpu_icon = self._mon_status_icon(cpu_pct)
+                cpu_bar = self._mon_bar(cpu_pct)
+                cpu_count = psutil.cpu_count(logical=True)
+                cpu_phys = psutil.cpu_count(logical=False)
+
+                lines.append(
+                    f"\n{cpu_icon} <b>CPU</b>  {cpu_pct:.0f}%\n"
+                    f"<code>{cpu_bar}</code>\n"
+                    f"  {cpu_phys} physical / {cpu_count} logical cores"
+                )
+
+                # Per-core (up to 8)
+                per_core = psutil.cpu_percent(percpu=True)
+                if per_core and len(per_core) > 1:
+                    core_strs = []
+                    for i, pct in enumerate(per_core[:8]):
+                        c_icon = "🔴" if pct >= 80 else ("🟡" if pct >= 50 else "🟢")
+                        core_strs.append(f"[{i}{c_icon}{pct:.0f}%]")
+                    lines.append(f"\n<b>Cores:</b> {'  '.join(core_strs)}")
+
+                # CPU frequency
+                try:
+                    freq = psutil.cpu_freq()
+                    if freq:
+                        lines.append(
+                            f"\n<b>Freq:</b> {freq.current:.0f} MHz"
+                            + (f"  (max {freq.max:.0f} MHz)" if freq.max else "")
+                        )
+                except Exception:
+                    pass
+
+                # Load average (not on Windows)
+                if _pf.system() != "Windows":
+                    try:
+                        load = psutil.getloadavg()
+                        lines.append(
+                            f"\n<b>Load avg:</b> <code>{load[0]:.2f}  {load[1]:.2f}  {load[2]:.2f}</code>  (1m 5m 15m)"
+                        )
+                    except Exception:
+                        pass
+
+                # Top 5 CPU-hungry processes
+                try:
+                    procs = sorted(
+                        psutil.process_iter(["pid", "name", "cpu_percent"]),
+                        key=lambda p: p.info.get("cpu_percent") or 0,
+                        reverse=True,
+                    )[:5]
+                    if procs:
+                        lines.append("\n<b>Top processes:</b>")
+                        for p in procs:
+                            pname = html.escape((p.info.get("name") or "?")[:20])
+                            ppct = p.info.get("cpu_percent") or 0.0
+                            lines.append(f"  <code>{p.info['pid']:>6}  {pname:<20}  {ppct:.1f}%</code>")
+                except Exception:
+                    pass
+
+            except ImportError:
+                lines.append("<i>psutil not available — install it with: pip install psutil</i>")
+            except Exception as exc:
+                lines.append(f"<i>CPU info error: {html.escape(str(exc))}</i>")
+        else:
+            await self._handle_cli_command(
+                chat_id, user_id, metadata or {}, 'run "uptime"'
+            )
+            return
+
+        now_str = datetime.now(timezone.utc).strftime("%H:%M UTC")
+        lines.append(f"\n<i>─ Updated {now_str} ─</i>")
+        keyboard = [
+            [
+                {"text": "🔄 Refresh", "callback_data": "slash:cpu"},
+                {"text": "🧠 Memory", "callback_data": "slash:memory"},
+            ],
+            [
+                {"text": "💽 Disk", "callback_data": "slash:disk"},
+                {"text": "⚙️ Services", "callback_data": "slash:services"},
+            ],
+        ]
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+
+    @rate_limited
+    @error_handled
+    @typing_context
+    async def _handle_uptime_cmd(
+        self, chat_id: int, user_id: int, metadata: MessageMetadata
+    ) -> None:
+        """Server uptime card (/uptime)."""
+        host_name, _server_config, is_local = self._mon_host_ctx()
+        lines: list = [self._mon_header("🕐", "Server Uptime", host_name)]
+
+        if is_local:
+            try:
+                import psutil
+
+                boot_ts = psutil.boot_time()
+                boot_dt = datetime.fromtimestamp(boot_ts, tz=timezone.utc)
+                now_dt = datetime.now(timezone.utc)
+                delta = now_dt - boot_dt
+
+                days = delta.days
+                hours, rem = divmod(delta.seconds, 3600)
+                minutes, _ = divmod(rem, 60)
+
+                if days > 0:
+                    uptime_str = f"{days}d {hours}h {minutes}m"
+                elif hours > 0:
+                    uptime_str = f"{hours}h {minutes}m"
+                else:
+                    uptime_str = f"{minutes}m"
+
+                lines.append(
+                    f"\n🟢 <b>Up for:</b> {uptime_str}\n"
+                    f"  <b>Since:</b> <code>{boot_dt.strftime('%Y-%m-%d %H:%M UTC')}</code>"
+                )
+
+                # Logged-in users
+                try:
+                    users = psutil.users()
+                    if users:
+                        lines.append(f"\n<b>Logged in users:</b> {len(users)}")
+                        for u in users[:3]:
+                            lines.append(
+                                f"  {html.escape(u.name)} @ {html.escape(u.terminal or '?')}"
+                            )
+                except Exception:
+                    pass
+
+            except ImportError:
+                lines.append("<i>psutil not available — install it with: pip install psutil</i>")
+            except Exception as exc:
+                lines.append(f"<i>Uptime error: {html.escape(str(exc))}</i>")
+        else:
+            await self._handle_cli_command(
+                chat_id, user_id, metadata or {}, 'run "uptime -p"'
+            )
+            return
+
+        now_str = datetime.now(timezone.utc).strftime("%H:%M UTC")
+        lines.append(f"\n<i>─ Updated {now_str} ─</i>")
+        keyboard = [
+            [
+                {"text": "🔄 Refresh", "callback_data": "slash:uptime"},
+                {"text": "⚡ CPU", "callback_data": "slash:cpu"},
+            ],
+            [
+                {"text": "🧠 Memory", "callback_data": "slash:memory"},
+                {"text": "💽 Disk", "callback_data": "slash:disk"},
+            ],
+        ]
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+
+    @rate_limited
+    @error_handled
+    @typing_context
+    async def _handle_services_cmd(
+        self, chat_id: int, user_id: int, metadata: MessageMetadata
+    ) -> None:
+        """Running services card (/services)."""
+        import platform as _pf
+        import subprocess
+
+        host_name, _server_config, is_local = self._mon_host_ctx()
+        lines: list = [self._mon_header("⚙️", "Running Services", host_name)]
+
+        if is_local:
+            if _pf.system() == "Windows":
+                try:
+                    import psutil
+
+                    svcs = [s for s in psutil.win_service_iter() if s.status() == "running"]
+                    svcs_sorted = sorted(svcs, key=lambda s: s.name())[:20]
+                    lines.append(f"\n🟢 <b>{len(svcs)} running services</b> (showing up to 20)\n")
+                    for svc in svcs_sorted:
+                        try:
+                            lines.append(f"  • {html.escape(svc.display_name()[:44])}")
+                        except Exception:
+                            pass
+                except ImportError:
+                    lines.append("<i>psutil not available — install it with: pip install psutil</i>")
+                except Exception as exc:
+                    lines.append(f"<i>Service list error: {html.escape(str(exc))}</i>")
+            else:
+                # Local Linux: systemctl
+                try:
+                    result = subprocess.run(
+                        [
+                            "systemctl",
+                            "list-units",
+                            "--type=service",
+                            "--state=running",
+                            "--no-pager",
+                            "--no-legend",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    svc_lines = [
+                        ln.split()[0]
+                        for ln in result.stdout.strip().splitlines()
+                        if ln.strip()
+                    ][:20]
+                    lines.append(f"\n🟢 <b>{len(svc_lines)} running services</b>\n")
+                    for svc in svc_lines:
+                        lines.append(f"  • {html.escape(svc)}")
+                except Exception as exc:
+                    lines.append(f"<i>Service list error: {html.escape(str(exc))}</i>")
+        else:
+            await self._handle_cli_command(
+                chat_id,
+                user_id,
+                metadata or {},
+                'run "systemctl list-units --type=service --state=running --no-pager | head -40"',
+            )
+            return
+
+        now_str = datetime.now(timezone.utc).strftime("%H:%M UTC")
+        lines.append(f"\n<i>─ Updated {now_str} ─</i>")
+        keyboard = [
+            [
+                {"text": "🔄 Refresh", "callback_data": "slash:services"},
+                {"text": "🔌 Ports", "callback_data": "slash:ports"},
+            ],
+            [
+                {"text": "⚡ CPU", "callback_data": "slash:cpu"},
+                {"text": "💽 Disk", "callback_data": "slash:disk"},
+            ],
+        ]
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+
+    @rate_limited
+    @error_handled
+    @typing_context
+    async def _handle_ports_cmd(
+        self, chat_id: int, user_id: int, metadata: MessageMetadata
+    ) -> None:
+        """Listening ports card (/ports)."""
+        host_name, _server_config, is_local = self._mon_host_ctx()
+        lines: list = [self._mon_header("🔌", "Listening Ports", host_name)]
+
+        if is_local:
+            try:
+                import psutil
+
+                conns = [c for c in psutil.net_connections(kind="inet") if c.status == "LISTEN"]
+                conns_sorted = sorted(
+                    conns, key=lambda c: c.laddr.port if c.laddr else 0
+                )[:20]
+
+                if not conns_sorted:
+                    lines.append("\n<i>No listening ports found</i>")
+                else:
+                    lines.append(f"\n🟢 <b>{len(conns)} listening ports</b> (showing up to 20)\n")
+                    lines.append("<code>PORT      ADDR               PID   PROCESS</code>")
+                    lines.append("<code>──────────────────────────────────────────</code>")
+                    for c in conns_sorted:
+                        try:
+                            port = c.laddr.port if c.laddr else "?"
+                            addr = c.laddr.ip if c.laddr else "?"
+                            pid = c.pid or "?"
+                            pname = ""
+                            if c.pid:
+                                try:
+                                    pname = psutil.Process(c.pid).name()[:14]
+                                except Exception:
+                                    pass
+                            addr_str = addr if addr and addr not in ("0.0.0.0", "::") else "*"
+                            lines.append(
+                                f"<code>{str(port):<9} {addr_str:<18} {str(pid):<5}</code> {html.escape(pname)}"
+                            )
+                        except Exception:
+                            pass
+            except ImportError:
+                lines.append("<i>psutil not available — install it with: pip install psutil</i>")
+            except Exception as exc:
+                lines.append(f"<i>Ports error: {html.escape(str(exc))}</i>")
+        else:
+            await self._handle_cli_command(
+                chat_id, user_id, metadata or {}, 'run "ss -tlnp | head -30"'
+            )
+            return
+
+        now_str = datetime.now(timezone.utc).strftime("%H:%M UTC")
+        lines.append(f"\n<i>─ Updated {now_str} ─</i>")
+        keyboard = [
+            [
+                {"text": "🔄 Refresh", "callback_data": "slash:ports"},
+                {"text": "⚙️ Services", "callback_data": "slash:services"},
+            ],
+            [
+                {"text": "⚡ CPU", "callback_data": "slash:cpu"},
+                {"text": "🧠 Memory", "callback_data": "slash:memory"},
+            ],
+        ]
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+
     # -- Briefing / deck -------------------------------------------------------
 
     @rate_limited
@@ -6330,7 +6831,19 @@ class TelegramCommandsMixin:
             stdout, _ = await p.communicate()
             lines.append(f"- *Server:* {stdout.decode().strip()}")
         except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
+            # Fallback for Windows (no `uptime` command)
+            try:
+                import platform as _pf
+                import psutil as _psutil
+
+                _bt = _psutil.boot_time()
+                _delta = datetime.now(timezone.utc) - datetime.fromtimestamp(_bt, tz=timezone.utc)
+                _d, _r = divmod(int(_delta.total_seconds()), 86400)
+                _h, _r = divmod(_r, 3600)
+                _m = _r // 60
+                lines.append(f"- *Server:* up {_d}d {_h}h {_m}m ({_pf.system()})")
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         try:
             p = await asyncio.wait_for(
@@ -6351,7 +6864,20 @@ class TelegramCommandsMixin:
                 if len(parts) >= 3:
                     lines.append(f"- *Disk:* {parts[0]} used, {parts[1]} free ({parts[2]})")
         except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
+            # Fallback for Windows (no `df` command)
+            try:
+                import platform as _pf
+                import psutil as _psutil
+
+                _root = "C:\\" if _pf.system() == "Windows" else "/"
+                _du = _psutil.disk_usage(_root)
+                _used_gb = _du.used / (1024 ** 3)
+                _free_gb = _du.free / (1024 ** 3)
+                lines.append(
+                    f"- *Disk:* {_used_gb:.1f} GB used, {_free_gb:.1f} GB free ({_du.percent:.0f}%)"
+                )
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         lines.append("-" * 22)
 
