@@ -1233,10 +1233,10 @@ class TelegramCommandsMixin:
             )
             if target_message_id:
                 if await self.edit_message(
-                    chat_id, target_message_id, text, parse_mode="Markdown", keyboard=keyboard
+                    chat_id, target_message_id, text, parse_mode="HTML", keyboard=keyboard
                 ) is not None:
                     return
-            sent = await self.send_message(chat_id, text, parse_mode="Markdown", keyboard=keyboard)
+            sent = await self.send_message(chat_id, text, parse_mode="HTML", keyboard=keyboard)
             if sent and isinstance(sent, dict):
                 state["message_id"] = sent.get("message_id")
             return
@@ -1347,7 +1347,9 @@ class TelegramCommandsMixin:
 
     @staticmethod
     def _generate_help_text(deck_enabled: bool = False) -> str:
-        """Generate deterministic MarkdownV2 /help output."""
+        """Generate deterministic HTML /help output."""
+        import html as _html
+
         category_titles = {
             "core": "🚀 Core",
             "ai": f"{_ni('brain')} AI and Models",
@@ -1365,22 +1367,22 @@ class TelegramCommandsMixin:
             grouped.setdefault(entry.category, []).append(entry)
 
         lines: list[str] = [
-            "📋 *NAVIG Command Center*",
+            "📋 <b>NAVIG Command Center</b>",
             "",
-            r"Use a command below or type naturally\.",
+            "Use a command below or type naturally.",
             "",
         ]
 
         for category, commands in grouped.items():
             heading = category_titles.get(category, f"📌 {category.replace('_', ' ').title()}")
-            lines.append(f"*{heading}*")
+            lines.append(f"<b>{heading}</b>")
             for entry in commands:
                 cmd = f"/{entry.command}"
-                desc = (entry.description or "").strip() or "No description"
-                lines.append(f"• {cmd} — {_escape_markdown_v2(desc)}")
+                desc = _html.escape((entry.description or "").strip() or "No description", quote=False)
+                lines.append(f"• {cmd} — {desc}")
             lines.append("")
 
-        lines.append(r"💬 Natural language also works: show status, restart daemon, check docker\.")
+        lines.append("💬 Natural language also works: show status, restart daemon, check docker.")
         return "\n".join(lines).rstrip()
 
     # -- Core slash handlers ---------------------------------------------------
@@ -1407,19 +1409,19 @@ class TelegramCommandsMixin:
         )
         text = "\n".join(
             [
-                f"{_ni('robot')} *NAVIG is ready*",
+                f"{_ni('robot')} <b>NAVIG is ready</b>",
                 "",
                 reminder_line,
-                f"{_ni('brain')} Model: `{tier}`",
+                f"{_ni('brain')} Model: <code>{tier}</code>",
                 "",
                 "Type naturally or use a command:",
-                "`/remindme` · `/myreminders` · `/status` · `/briefing`",
+                "<code>/remindme</code> · <code>/myreminders</code> · <code>/status</code> · <code>/briefing</code>",
                 "",
                 "Need more? → /helpme",
             ]
         )
         keyboard = [[{"text": "📋 What can I do?", "callback_data": "helpme"}]]
-        await self.send_message(chat_id, text, parse_mode="Markdown", keyboard=keyboard)
+        await self.send_message(chat_id, text, parse_mode="HTML", keyboard=keyboard)
 
         # Onboarding handoff progress block (text only, no navigation buttons)
         try:
@@ -1454,10 +1456,10 @@ class TelegramCommandsMixin:
 
         onboarding_text = "\n".join(
             [
-                "✨ *Welcome to NAVIG setup*",
-                f"Profile: `{profile}`",
+                "✨ <b>Welcome to NAVIG setup</b>",
+                f"Profile: <code>{profile}</code>",
                 "",
-                f"Onboarding progress: `{completed_count}/{len(steps)}`",
+                f"Onboarding progress: <code>{completed_count}/{len(steps)}</code>",
                 *checklist_lines,
                 "",
                 "Next steps:",
@@ -1466,7 +1468,7 @@ class TelegramCommandsMixin:
                 "• Check status: `/status`",
             ]
         )
-        await self.send_message(chat_id, onboarding_text, parse_mode="Markdown")
+        await self.send_message(chat_id, onboarding_text, parse_mode="HTML")
 
     # -- Help Encyclopedia (interactive, in-place editing) -------------------
 
@@ -1477,7 +1479,7 @@ class TelegramCommandsMixin:
         Returns (text, keyboard) for send_message / edit_message.
         """
         lines = [
-            "📋  *NAVIG Command Center*",
+            "📋  <b>NAVIG Command Center</b>",
             "",
             "Tap a category to explore commands.",
             "Type naturally any time — no commands needed.",
@@ -1518,7 +1520,7 @@ class TelegramCommandsMixin:
         # -- Category with subcategories → show sub-buttons ----------------
         if cat.subcategories:
             lines = [
-                f"{cat.emoji}  *{cat.label}*",
+                f"{cat.emoji}  <b>{cat.label}</b>",
                 "",
                 "Choose a section:",
             ]
@@ -1543,7 +1545,7 @@ class TelegramCommandsMixin:
         # -- Category with direct commands ---------------------------------
         cmds = cat.commands or []
         lines = [
-            f"{cat.emoji}  *{cat.label}*",
+            f"{cat.emoji}  <b>{cat.label}</b>",
             "",
         ]
         for cmd_name in cmds:
@@ -1592,23 +1594,21 @@ class TelegramCommandsMixin:
             return None
 
         idx = _ensure_help_cmd_index()
-        # Escape underscores: Telegram Markdown V1 treats _ as italic delimiters,
-        # so command names like auto_start / explain_ai break entity parsing.
-        def _md(s: str) -> str:
-            return s.replace("_", "\\_")
+        # HTML: no escape needed — use element tags instead
 
         lines = [
-            f"{sub.emoji}  *{_md(sub.label)}*",
-            f"_{cat.emoji} {_md(cat.label)}_",
+            f"{sub.emoji}  <b>{sub.label}</b>",
+            f"<i>{cat.emoji} {cat.label}</i>",
             "",
         ]
         for cmd_name in sub.commands:
             entry = idx.get(cmd_name)
             if entry:
-                desc = _md(entry.description or "No description")
-                lines.append(f"• /{_md(cmd_name)} — {desc}")
+                import html as _html
+                desc = _html.escape(entry.description or "No description", quote=False)
+                lines.append(f"• /{cmd_name} — {desc}")
             else:
-                lines.append(f"• /{_md(cmd_name)}")
+                lines.append(f"• /{cmd_name}")
         text = "\n".join(lines)
 
         rows: list[list[dict[str, str]]] = []
@@ -1646,20 +1646,18 @@ class TelegramCommandsMixin:
         if entry is None:
             return None
 
-        def _md(s: str) -> str:
-            return s.replace("_", "\\_")
-
-        desc = _md(entry.description or "No description")
+        import html as _html
+        desc = _html.escape(entry.description or "No description", quote=False)
         lines = [
-            f"*/{_md(entry.command)}*",
+            f"<b>/{entry.command}</b>",
             "",
             f"📄 {desc}",
         ]
         if entry.usage:
-            lines.append(f"\n💡 *Usage:*  `{entry.usage}`")
+            lines.append(f"\n💡 <b>Usage:</b>  <code>{entry.usage}</code>")
         if entry.cli_template:
-            lines.append(f"🔗 *CLI:*  `{entry.cli_template}`")
-        lines.append(f"\n📁 *Category:*  {_md(entry.category)}")
+            lines.append(f"🔗 <b>CLI:</b>  <code>{entry.cli_template}</code>")
+        lines.append(f"\n📁 <b>Category:</b>  {entry.category}")
 
         text = "\n".join(lines)
 
@@ -1714,7 +1712,7 @@ class TelegramCommandsMixin:
             result = TelegramCommandsMixin._build_help_home()
 
         text, keyboard = result
-        await self.edit_message(chat_id, message_id, text, parse_mode="Markdown", keyboard=keyboard)
+        await self.edit_message(chat_id, message_id, text, parse_mode="HTML", keyboard=keyboard)
 
     async def _handle_help(
         self,
@@ -1743,7 +1741,7 @@ class TelegramCommandsMixin:
                     None,
                 )
         text, keyboard = result if result is not None else TelegramCommandsMixin._build_help_home()
-        sent = await self.send_message(chat_id, text, parse_mode="Markdown", keyboard=keyboard)
+        sent = await self.send_message(chat_id, text, parse_mode="HTML", keyboard=keyboard)
         # Track the message so future nav: callbacks can edit it
         if sent and isinstance(sent, dict):
             state = self._get_navigation_state(chat_id)
@@ -1753,7 +1751,7 @@ class TelegramCommandsMixin:
         """Live heartbeat card — version, host, space, tier, reminders, bridge (/ping)."""
         import asyncio as _asyncio
 
-        lines = ["🏓 *pong* — NAVIG is live", ""]
+        lines = ["🏓 <b>pong</b> — NAVIG is live", ""]
 
         # Version
         try:
@@ -1762,7 +1760,7 @@ class TelegramCommandsMixin:
             ver = getattr(_navig_pkg, "__version__", "unknown")
         except Exception:
             ver = "unknown"
-        lines.append(f"Version: `{ver}`")
+        lines.append(f"Version: <code>{ver}</code>")
 
         # Active host
         try:
@@ -1772,7 +1770,7 @@ class TelegramCommandsMixin:
             active_host = (cfg.get("active_host") or "—") if cfg else "—"
         except Exception:
             active_host = "—"
-        lines.append(f"Host: `{active_host}`")
+        lines.append(f"Host: <code>{active_host}</code>")
 
         # Active space
         try:
@@ -1781,19 +1779,19 @@ class TelegramCommandsMixin:
             space = get_active_space() or "—"
         except Exception:
             space = "—"
-        lines.append(f"Space: `{space}`")
+        lines.append(f"Space: <code>{space}</code>")
 
         # Model tier
         tier_raw = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
         tier = str(tier_raw).capitalize() if tier_raw else "Auto"
-        lines.append(f"Model: `{tier}`")
+        lines.append(f"Model: <code>{tier}</code>")
 
         # Active reminders
         try:
             from navig.store.runtime import get_runtime_store
 
             active_count = len(get_runtime_store().get_user_reminders(user_id) or [])
-            lines.append(f"Reminders: `{active_count} active`")
+            lines.append(f"Reminders: <code>{active_count} active</code>")
         except Exception:
             pass  # best-effort: reminder count is non-critical for /status display
 
@@ -1805,7 +1803,7 @@ class TelegramCommandsMixin:
             bridge_status = "❔ unknown"
         lines.append(f"Bridge: {bridge_status}")
 
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
 
     async def _handle_status(
         self,
@@ -1877,46 +1875,46 @@ class TelegramCommandsMixin:
 
         # ── Assemble message ────────────────────────────────────────────────────
         readiness_icon = "✅" if readiness_state == "ready" else "⚠️"
-        reminder_str = f"`{reminder_count} active`" if reminder_count is not None else "`—`"
+        reminder_str = f"<code>{reminder_count} active</code>" if reminder_count is not None else "<code>—</code>"
 
         lines: list[str] = [
-            "🧭 *NAVIG Status*",
+            "🧭 <b>NAVIG Status</b>",
             "",
-            "🖥  *Infrastructure*",
-            f"Host      `{active_host}`",
-            f"Space     `{selected_space}`",
+            "🖥  <b>Infrastructure</b>",
+            f"Host      <code>{active_host}</code>",
+            f"Space     <code>{selected_space}</code>",
             "",
-            "🤖  *AI Session*",
-            f"Model     `{model_label}`",
-            f"Persona   `{persona}`",
+            "🤖  <b>AI Session</b>",
+            f"Model     <code>{model_label}</code>",
+            f"Persona   <code>{persona}</code>",
             "",
-            f"⏰  *Reminders*   {reminder_str}",
+            f"⏰  <b>Reminders</b>   {reminder_str}",
             "",
-            f"{readiness_icon}  *Setup*   `{readiness_state}` ({readiness_score}%)",
+            f"{readiness_icon}  <b>Setup</b>   <code>{readiness_state}</code> ({readiness_score}%)",
         ]
 
         # Setup fix hints (max 2)
         if status_fix_issues:
             lines.append("")
-            lines.append("*Pending fixes:*")
+            lines.append("<b>Pending fixes:</b>")
             for issue in status_fix_issues[:2]:
                 if not isinstance(issue, dict):
                     continue
                 summary = str(issue.get("summary") or "").strip()
                 command = str(issue.get("command") or "").strip()
                 if summary and command:
-                    lines.append(f"  • {summary} → `{command}`")
+                    lines.append(f"  • {summary} → <code>{command}</code>")
             remaining = len(status_fix_issues) - 2
             if remaining > 0:
-                lines.append(f"  • +{remaining} more — run `navig init --status`")
+                lines.append(f"  • +{remaining} more — run <code>navig init --status</code>")
 
         # Progression
         lines.append("")
-        lines.append("📈  *Progression*")
+        lines.append("📈  <b>Progression</b>")
         if rows:
             lines.extend(format_spaces_progress_lines(rows, max_items=5))
         else:
-            lines.append("   _No spaces discovered yet._")
+            lines.append("   <i>No spaces discovered yet.</i>")
 
         # ── Build fix buttons (shared between both send paths) ────────────────
         fix_buttons: list[list[dict[str, str]]] = []
@@ -1944,7 +1942,7 @@ class TelegramCommandsMixin:
                 chat_id,
                 message_id,
                 text,
-                parse_mode="Markdown",
+                parse_mode="HTML",
                 keyboard=keyboard,
             )
             return
@@ -1952,7 +1950,7 @@ class TelegramCommandsMixin:
         await self.send_message(
             chat_id,
             text,
-            parse_mode="Markdown",
+            parse_mode="HTML",
             keyboard=fix_buttons or None,
         )
 
@@ -2152,13 +2150,13 @@ class TelegramCommandsMixin:
         from navig.spaces.contracts import CANONICAL_SPACES
 
         active = get_active_space()
-        lines = ["*Spaces*", f"Active: `{active}`", "", "Available:"]
+        lines = ["<b>Spaces</b>", f"Active: <code>{active}</code>", "", "Available:"]
         for name in CANONICAL_SPACES:
             marker = "•"
             if name == active:
                 marker = "▸"
-            lines.append(f"{marker} `{name}`")
-        lines.append("\nUse `/space <name>` or choose below.")
+            lines.append(f"{marker} <code>{name}</code>")
+        lines.append("\nUse <code>/space &lt;name&gt;</code> or choose below.")
         keyboard = [[{"text": "🧭 Start Intake", "callback_data": "nav:open:intake"}]]
         if message_id:
             keyboard.insert(
@@ -2173,11 +2171,11 @@ class TelegramCommandsMixin:
                 chat_id,
                 message_id,
                 "\n".join(lines),
-                parse_mode="Markdown",
+                parse_mode="HTML",
                 keyboard=keyboard,
             )
             return
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown", keyboard=keyboard)
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
 
     async def _handle_space(self, chat_id: int, user_id: int, text: str = "") -> None:
         from navig.commands.space import _set_active_space, _spaces_dir
@@ -2193,8 +2191,8 @@ class TelegramCommandsMixin:
         if not validate_space_name(arg):
             await self.send_message(
                 chat_id,
-                "Unknown space. Use `/spaces` to see valid names.",
-                parse_mode="Markdown",
+                "Unknown space. Use <code>/spaces</code> to see valid names.",
+                parse_mode="HTML",
             )
             return
 
@@ -2204,14 +2202,14 @@ class TelegramCommandsMixin:
         _set_active_space(selected)
 
         kickoff = build_space_kickoff(selected, space_path, cwd=Path.cwd(), max_items=3)
-        lines = [f"✅ Active space: `{selected}`", f"Goal: {kickoff.goal}"]
+        lines = [f"✅ Active space: <code>{selected}</code>", f"Goal: {kickoff.goal}"]
         if kickoff.actions:
             lines.append("Top next actions:")
             for index, action in enumerate(kickoff.actions, start=1):
                 lines.append(f"{index}. {action}")
         else:
             lines.append("No next actions found yet.")
-            lines.append("Run `/intake` to build Vision/Roadmap/Current Phase quickly.")
+            lines.append("Run <code>/intake</code> to build Vision/Roadmap/Current Phase quickly.")
 
         from navig.store.runtime import get_runtime_store
 
@@ -2317,7 +2315,7 @@ class TelegramCommandsMixin:
         if arg:
             if not validate_space_name(arg):
                 await self.send_message(
-                    chat_id, "Unknown space for intake. Use `/spaces` first.", parse_mode="Markdown"
+                    chat_id, "Unknown space for intake. Use <code>/spaces</code> first.", parse_mode="HTML"
                 )
                 return
             selected_space = normalize_space_name(arg)
@@ -2335,7 +2333,7 @@ class TelegramCommandsMixin:
         self._runtime_state_with_context(user_id, chat_id, context)
 
         first_question = self._INTAKE_QUESTIONS[0][1]
-        text_payload = f"🧭 Intake started for `{selected_space}`.\n{first_question}"
+        text_payload = f"🧭 Intake started for <code>{selected_space}</code>.\n{first_question}"
         keyboard = [
             [
                 {"text": "🔙 Back", "callback_data": "nav:back"},
@@ -2344,11 +2342,11 @@ class TelegramCommandsMixin:
         ]
         if message_id:
             if await self.edit_message(
-                chat_id, message_id, text_payload, parse_mode="Markdown", keyboard=keyboard
+                chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
             ) is not None:
                 return
         sent = await self.send_message(
-            chat_id, text_payload, parse_mode="Markdown", keyboard=keyboard
+            chat_id, text_payload, parse_mode="HTML", keyboard=keyboard
         )
         if sent and isinstance(sent, dict):
             self._get_navigation_state(chat_id)["message_id"] = sent.get("message_id")
@@ -2632,10 +2630,10 @@ class TelegramCommandsMixin:
             chat_id,
             (
                 "⚠️ Risky action detected from natural language.\n"
-                f"Planned command: `{preview}`\n"
-                "Reply `yes` to run now or `cancel` to stop."
+                f"Planned command: <code>{preview}</code>\n"
+                "Reply <code>yes</code> to run now or <code>cancel</code> to stop."
             ),
-            parse_mode="Markdown",
+            parse_mode="HTML",
             keyboard=[
                 [
                     {"text": "✅ Yes now", "callback_data": "nl_yes"},
@@ -2660,8 +2658,8 @@ class TelegramCommandsMixin:
         if cmd in self._NL_REQUIRED_ARGS_COMMANDS:
             await self.send_message(
                 chat_id,
-                f"This command needs arguments.\nUsage: `{usage}`",
-                parse_mode="Markdown",
+                f"This command needs arguments.\nUsage: <code>{usage}</code>",
+                parse_mode="HTML",
             )
             return "ℹ️ Needs arguments"
 
@@ -2753,8 +2751,8 @@ class TelegramCommandsMixin:
 
         await self.send_message(
             chat_id,
-            f"This command is not executable via natural language yet: `/{cmd}`",
-            parse_mode="Markdown",
+            f"This command is not executable via natural language yet: <code>/{cmd}</code>",
+            parse_mode="HTML",
         )
 
     async def _handle_natural_language_request(
@@ -2786,10 +2784,10 @@ class TelegramCommandsMixin:
             await self.send_message(
                 chat_id,
                 (
-                    f"🧭 Detected `{intent}` for `{space}`. "
-                    "Auto-starting in 3s. Reply `cancel` to stop or `yes` to run now."
+                    f"🧭 Detected <code>{intent}</code> for <code>{space}</code>. "
+                    "Auto-starting in 3s. Reply <code>cancel</code> to stop or <code>yes</code> to run now."
                 ),
-                parse_mode="Markdown",
+                parse_mode="HTML",
                 keyboard=[
                     [
                         {"text": "✅ Yes now", "callback_data": "nl_yes"},
@@ -2823,11 +2821,11 @@ class TelegramCommandsMixin:
                         "Try:",
                     ]
                     for item in suggestions:
-                        lines.append(f"• `{item['usage']}`")
+                        lines.append(f"• <code>{item['usage']}</code>")
                     await self.send_message(
                         chat_id,
                         "\n".join(lines),
-                        parse_mode="Markdown",
+                        parse_mode="HTML",
                         keyboard=self._nl_command_keyboard(suggestions, limit=3),
                     )
                     return True
@@ -2844,11 +2842,11 @@ class TelegramCommandsMixin:
                 ]
                 for candidate in candidates:
                     usage = str(candidate.get("usage") or f"/{candidate.get('command')}")
-                    lines.append(f"• `{usage}`")
+                    lines.append(f"• <code>{usage}</code>")
                 await self.send_message(
                     chat_id,
                     "\n".join(lines),
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                     keyboard=self._nl_command_keyboard(candidates, limit=3),
                 )
                 return True
@@ -2861,8 +2859,8 @@ class TelegramCommandsMixin:
         if resolved.get("missing_args"):
             await self.send_message(
                 chat_id,
-                f"I can run this as `/{command}`, but it needs arguments.\nUsage: `{usage}`",
-                parse_mode="Markdown",
+                f"I can run this as <code>/{command}</code>, but it needs arguments.\nUsage: <code>{usage}</code>",
+                parse_mode="HTML",
             )
             return True
 
@@ -3002,15 +3000,15 @@ class TelegramCommandsMixin:
                 prov_name_disp = manifest.display_name if manifest else provider_id
                 await self.send_message(
                     chat_id,
-                    f"✅ API key for *{prov_name_disp}* saved. Use /provider to activate it.",
-                    parse_mode="Markdown",
+                    f"✅ API key for <b>{prov_name_disp}</b> saved. Use /provider to activate it.",
+                    parse_mode="HTML",
                 )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Post-key-entry activation failed for %s: %s", provider_id, exc)
             await self.send_message(
                 chat_id,
-                f"✅ API key saved. Use /provider to activate *{provider_id}*.",
-                parse_mode="Markdown",
+                f"✅ API key saved. Use /provider to activate <b>{provider_id}</b>.",
+                parse_mode="HTML",
             )
 
         return True
@@ -3056,8 +3054,8 @@ class TelegramCommandsMixin:
 
         await self.send_message(
             chat_id,
-            "Pending natural-language action. Reply `yes` to run now or `cancel` to stop.",
-            parse_mode="Markdown",
+            "Pending natural-language action. Reply <code>yes</code> to run now or <code>cancel</code> to stop.",
+            parse_mode="HTML",
         )
         return True
 
@@ -3142,13 +3140,13 @@ class TelegramCommandsMixin:
         is_group = chat_id != user_id
 
         # ── Identity ──────────────────────────────────────────────────────
-        header = "👤 *User Profile*"
+        header = "👤 <b>User Profile</b>"
         if username:
             header += f" — @{username}"
         lines: list[str] = [header, ""]
-        lines.append(f"🆔 User ID: `{user_id}`")
+        lines.append(f"🆔 User ID: <code>{user_id}</code>")
         if is_group:
-            lines.append(f"💬 Chat ID: `{chat_id}` _(group)_")
+            lines.append(f"💬 Chat ID: <code>{chat_id}</code> <i>(group)</i>")
 
         # ── Auth ──────────────────────────────────────────────────────────
         if getattr(self, "allowed_users", None):
@@ -3160,14 +3158,14 @@ class TelegramCommandsMixin:
 
         # ── AI settings ───────────────────────────────────────────────────
         lines.append("")
-        lines.append("*AI Settings*")
+        lines.append("<b>AI Settings</b>")
 
         # Model tier preference
         if hasattr(self, "_get_user_tier_pref"):
             tier = self._get_user_tier_pref(chat_id, user_id)
         else:
             tier = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
-        lines.append(f"{_ni('brain')} Model tier: `{tier or 'auto'}`")
+        lines.append(f"{_ni('brain')} Model tier: <code>{tier or 'auto'}</code>")
 
         # Active provider from LLM router
         active_prov = ""
@@ -3181,7 +3179,7 @@ class TelegramCommandsMixin:
                     active_prov = _m.provider
         except Exception:  # noqa: BLE001
             pass
-        lines.append(f"🤖 Provider: `{active_prov or 'not set'}`")
+        lines.append(f"🤖 Provider: <code>{active_prov or 'not set'}</code>")
 
         # ── Preferences (from session metadata) ───────────────────────────
         if _HAS_SESSIONS:
@@ -3196,9 +3194,9 @@ class TelegramCommandsMixin:
                 )
                 msg_count = getattr(session, "message_count", 0)
                 lines.append("")
-                lines.append("*Preferences*")
+                lines.append("<b>Preferences</b>")
                 lines.append(f"{_ni('voice')} Voice replies: {'🔊 on' if voice_on else '🔇 off'}")
-                lines.append(f"{_ni('focus')} Focus mode: `{focus}`")
+                lines.append(f"{_ni('focus')} Focus mode: <code>{focus}</code>")
                 if msg_count:
                     lines.append(f"{_ni('note')} Messages in session: {msg_count}")
             except Exception as _e:  # noqa: BLE001
@@ -3222,7 +3220,7 @@ class TelegramCommandsMixin:
             ],
             [{"text": "✖ Close", "callback_data": "prov_close"}],
         ]
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown", keyboard=keyboard)
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
 
     async def _handle_mode(self, chat_id: int, text: str = "", user_id: int = 0) -> None:
         """Set focus/behavior mode. Uses MOOD_REGISTRY with fuzzy matching."""
@@ -3321,8 +3319,8 @@ class TelegramCommandsMixin:
         if cmd not in {"/big", "/small", "/coder", "/auto"}:
             await self.send_message(
                 chat_id,
-                "Use `/big`, `/small`, `/coder`, or `/auto`.",
-                parse_mode="Markdown",
+                "Use <code>/big</code>, <code>/small</code>, <code>/coder</code>, or <code>/auto</code>.",
+                parse_mode="HTML",
             )
             return
         if not hasattr(self, "_handle_tier_command"):
@@ -3403,17 +3401,17 @@ class TelegramCommandsMixin:
             self._debug_users.add(user_id)
             await self.send_message(
                 chat_id,
-                "🔍 Debug mode *ON* — model names will appear in every response.\n"
-                "Run `/trace debug off` to disable.",
-                parse_mode="Markdown",
+                "🔍 Debug mode <b>ON</b> — model names will appear in every response.\n"
+                "Run <code>/trace debug off</code> to disable.",
+                parse_mode="HTML",
             )
             return
         if trace_arg == "debug off":
             self._debug_users.discard(user_id)
             await self.send_message(
                 chat_id,
-                "🔍 Debug mode *OFF* — model footers hidden.",
-                parse_mode="Markdown",
+                "🔍 Debug mode <b>OFF</b> — model footers hidden.",
+                parse_mode="HTML",
             )
             return
         await self._handle_trace(chat_id, user_id)
@@ -3607,14 +3605,14 @@ class TelegramCommandsMixin:
                     chat_id,
                     message_id,
                     text_payload,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                     keyboard=keyboard_rows,
                 )
                 return
             except Exception:  # noqa: BLE001
                 pass
         await self.send_message(
-            chat_id, text_payload, parse_mode="Markdown", keyboard=keyboard_rows
+            chat_id, text_payload, parse_mode="HTML", keyboard=keyboard_rows
         )
 
     async def _show_models_tier_summary(
@@ -3655,11 +3653,11 @@ class TelegramCommandsMixin:
             logger.debug("Failed to read LLM mode router for tier summary", exc_info=True)
 
         lines = [
-            f"📝 *Models — {emoji} {name}*",
+            f"📝 <b>Models — {emoji} {name}</b>",
             "",
-            f"⚡ Small: `{current['small']}`",
-            f"🧠 Big: `{current['big']}`",
-            f"💻 Code: `{current['coder_big']}`",
+            f"⚡ Small: <code>{current['small']}</code>",
+            f"🧠 Big: <code>{current['big']}</code>",
+            f"💻 Code: <code>{current['coder_big']}</code>",
             "",
             "Tap a tier to change its model:",
         ]
@@ -3684,13 +3682,13 @@ class TelegramCommandsMixin:
                     chat_id,
                     message_id,
                     text_payload,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                     keyboard=keyboard,
                 )
                 return
             except Exception:  # noqa: BLE001
                 pass
-        await self.send_message(chat_id, text_payload, parse_mode="Markdown", keyboard=keyboard)
+        await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
 
     async def _show_models_model_list(
         self,
@@ -3739,7 +3737,7 @@ class TelegramCommandsMixin:
 
         if not models:
             lines = [
-                f"📝 *{tier_label} — {emoji} {name}*",
+                f"📝 <b>{tier_label} — {emoji} {name}</b>",
                 "",
                 (
                     "⚠️ Could not load models for this provider right now."
@@ -3758,13 +3756,13 @@ class TelegramCommandsMixin:
                         chat_id,
                         message_id,
                         text_payload,
-                        parse_mode="Markdown",
+                        parse_mode="HTML",
                         keyboard=keyboard,
                     )
                     return
                 except Exception:  # noqa: BLE001
                     pass
-            await self.send_message(chat_id, text_payload, parse_mode="Markdown", keyboard=keyboard)
+            await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
             return
 
         # Detect current model for this tier
@@ -3789,7 +3787,7 @@ class TelegramCommandsMixin:
         page_models = models[start : start + PAGE_SIZE]
 
         lines = [
-            f"📝 *{tier_label} — {emoji} {name}*",
+            f"📝 <b>{tier_label} — {emoji} {name}</b>",
             "",
             f"Page {page + 1}/{total_pages} · {len(models)} models",
             "",
@@ -3834,13 +3832,13 @@ class TelegramCommandsMixin:
                     chat_id,
                     message_id,
                     text_payload,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                     keyboard=keyboard,
                 )
                 return
             except Exception:  # noqa: BLE001
                 pass
-        await self.send_message(chat_id, text_payload, parse_mode="Markdown", keyboard=keyboard)
+        await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
 
     async def _handle_ai_command(
         self,
@@ -3871,7 +3869,7 @@ class TelegramCommandsMixin:
                 if big and getattr(big, "model", None):
                     short = (big.model or "").split("/")[-1].split(":")[-1]
                     prov = getattr(big, "provider", "") or ""
-                    model_summary = f"\nActive: `{prov}:{short}`"
+                    model_summary = f"\nActive: <code>{prov}:{short}</code>"
         except Exception:  # noqa: BLE001
             pass
 
@@ -3884,9 +3882,9 @@ class TelegramCommandsMixin:
         }.get(current_tier, current_tier)
 
         lines = [
-            "🤖 *AI Tier*",
+            "🤖 <b>AI Tier</b>",
             "",
-            f"Current: `{tier_label}`{model_summary}",
+            f"Current: <code>{tier_label}</code>{model_summary}",
             "",
             "Tap to switch:",
         ]
@@ -3932,11 +3930,11 @@ class TelegramCommandsMixin:
                 chat_id,
                 message_id,
                 payload,
-                parse_mode="Markdown",
+                parse_mode="HTML",
                 keyboard=tier_rows,
             )
         else:
-            await self.send_message(chat_id, payload, parse_mode="Markdown", keyboard=tier_rows)
+            await self.send_message(chat_id, payload, parse_mode="HTML", keyboard=tier_rows)
 
     async def _handle_providers(
         self,
@@ -4239,13 +4237,13 @@ class TelegramCommandsMixin:
             return m.split("/")[-1].split(":")[-1] if m else "—"
 
         lines = [
-            f"✅ *{emoji} {name} activated!*",
+            f"✅ <b>{emoji} {name} activated!</b>",
             "",
-            f"⚡ Small: `{_short(defaults.get('small', ''))}`",
-            f"🧠 Big: `{_short(defaults.get('big', ''))}`",
-            f"💻 Code: `{_short(defaults.get('coder_big', ''))}`",
+            f"⚡ Small: <code>{_short(defaults.get('small', ''))}</code>",
+            f"🧠 Big: <code>{_short(defaults.get('big', ''))}</code>",
+            f"💻 Code: <code>{_short(defaults.get('coder_big', ''))}</code>",
             "",
-            "_Saved to config. Use /models to customise per tier._",
+            "<i>Saved to config. Use /models to customise per tier.</i>",
         ]
 
         keyboard = [
@@ -4263,13 +4261,13 @@ class TelegramCommandsMixin:
                     chat_id,
                     message_id,
                     text_payload,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                     keyboard=keyboard,
                 )
                 return
             except Exception:  # noqa: BLE001
                 pass  # fall through to send_message
-        await self.send_message(chat_id, text_payload, parse_mode="Markdown", keyboard=keyboard)
+        await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
 
     # ── Dependency seams ── override in a subclass to inject test doubles ──────
 
@@ -5502,22 +5500,22 @@ class TelegramCommandsMixin:
         """Show daemon debug info (/debug)."""
         import sys
 
-        lines = ["- *Debug*\n"]
-        lines.append(f"Python: `{sys.version.split()[0]}`")
+        lines = ["<b>Debug</b>\n"]
+        lines.append(f"Python: <code>{sys.version.split()[0]}</code>")
         try:
             import navig as _navig_pkg
 
-            lines.append(f"navig pkg: `{getattr(_navig_pkg, '__file__', 'unknown')}`")
-            lines.append(f"version: `{getattr(_navig_pkg, '__version__', 'unknown')}`")
+            lines.append(f"navig pkg: <code>{getattr(_navig_pkg, '__file__', 'unknown')}</code>")
+            lines.append(f"version: <code>{getattr(_navig_pkg, '__version__', 'unknown')}</code>")
         except Exception as e:
-            lines.append(f"navig: - `{e}`")
+            lines.append(f"navig: - <code>{e}</code>")
         try:
             from navig.platform import paths as _paths
             from navig.vault import get_vault
 
             v = get_vault()
             count = len(v.list()) if hasattr(v, "list") else "?"
-            lines.append(f"vault: - `{count} entries` ({_paths.vault_dir()})")
+            lines.append(f"vault: - <code>{count} entries</code> ({_paths.vault_dir()})")
         except Exception as e:
             try:
                 from navig.platform import paths as _paths
@@ -5525,24 +5523,24 @@ class TelegramCommandsMixin:
                 vpath = str(_paths.vault_dir())
             except Exception:
                 vpath = "?"
-            lines.append(f"vault: - `{e}` - path: `{vpath}`")
+            lines.append(f"vault: - <code>{e}</code> - path: <code>{vpath}</code>")
         if _HAS_SESSIONS:
             try:
                 sm = get_session_manager()
                 s_list = sm.list_sessions() if hasattr(sm, "list_sessions") else []
-                lines.append(f"sessions: `{len(s_list)} loaded`")
+                lines.append(f"sessions: <code>{len(s_list)} loaded</code>")
             except Exception:
                 lines.append("sessions: -")
         try:
             from navig.gateway.channels.telegram_voice import _HAS_VOICE as _hv
 
-            lines.append(f"HAS\\_VOICE: `{_hv}`")
+            lines.append(f"HAS_VOICE: <code>{_hv}</code>")
         except Exception:
-            lines.append("HAS\\_VOICE: `unknown`")
-        lines.append(f"HAS\\_KEYBOARDS: `{_HAS_KEYBOARDS}`")
-        lines.append(f"HAS\\_SESSIONS: `{_HAS_SESSIONS}`")
-        pp = os.environ.get("PYTHONPATH", "_(not set)_")
-        lines.append(f"PYTHONPATH: `{pp}`")
+            lines.append("HAS_VOICE: <code>unknown</code>")
+        lines.append(f"HAS_KEYBOARDS: <code>{_HAS_KEYBOARDS}</code>")
+        lines.append(f"HAS_SESSIONS: <code>{_HAS_SESSIONS}</code>")
+        pp = os.environ.get("PYTHONPATH", "(not set)")
+        lines.append(f"PYTHONPATH: <code>{pp}</code>")
         try:
             from navig.vault.resolver import resolve_secret
 
@@ -5552,7 +5550,7 @@ class TelegramCommandsMixin:
             )
         except Exception:
             dg = os.environ.get("DEEPGRAM_KEY") or os.environ.get("DEEPGRAM_API_KEY")
-        lines.append(f"DEEPGRAM\\_KEY: `{'- set' if dg else '- missing'}`")
+        lines.append(f"DEEPGRAM_KEY: <code>{'set' if dg else 'missing'}</code>")
         await self.send_message(chat_id, "\n".join(lines))
 
     @rate_limited
@@ -5564,12 +5562,12 @@ class TelegramCommandsMixin:
         """
         SEP = "-"
         now_utc = datetime.now(timezone.utc).strftime("%H:%M UTC")
-        lines: list = [f"- *Recent Trace* - {now_utc}", SEP]
+        lines: list = [f"<b>Recent Trace</b> - {now_utc}", ""]
 
         _bridge_online, _bridge_url = await self._probe_bridge_grid()
-        lines.append("- *Routing*")
+        lines.append("<b>Routing</b>")
         lines.append(
-            f"  - Bridge Grid `{_bridge_url}` - *online*"
+            f"  - Bridge Grid <code>{_bridge_url}</code> - <b>online</b>"
             if _bridge_online
             else "  - Bridge Grid - offline (using model router)"
         )
@@ -5590,10 +5588,10 @@ class TelegramCommandsMixin:
                         if not mc:
                             continue
                         lines.append(
-                            f"  {icon} {label} -> `{getattr(mc, 'provider', '?')}:{getattr(mc, 'model', '?')}`"
+                            f"  {icon} {label} -> <code>{getattr(mc, 'provider', '?')}:{getattr(mc, 'model', '?')}</code>"
                         )
             except Exception:
-                lines.append("  _(model router unavailable)_")
+                lines.append("  <i>(model router unavailable)</i>")
 
         lines.append(SEP)
 
@@ -5607,10 +5605,10 @@ class TelegramCommandsMixin:
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
-        lines.append(f"- *Memory* - {len(session_messages)} msgs - {all_sessions_count} session(s)")
+        lines.append(f"<b>Memory</b> - {len(session_messages)} msgs - {all_sessions_count} session(s)")
         lines.append(SEP)
 
-        lines.append("- *Recent*")
+        lines.append("<b>Recent</b>")
         recent = session_messages[-8:]
         if recent:
             for msg in recent:
@@ -5638,7 +5636,7 @@ class TelegramCommandsMixin:
                         pass  # best-effort; failure is non-critical
                 lines.append(f"  {ts_prefix}{arrow} {actor}: {preview}")
         else:
-            lines.append("  _(no recent activity)_")
+            lines.append("  <i>(no recent activity)</i>")
 
         lines.append(SEP)
 
@@ -5672,7 +5670,7 @@ class TelegramCommandsMixin:
                 pass  # best-effort; failure is non-critical
 
         lines.append(
-            f"-  *Session* - tier: `{tier_label}` - host: `{active_host}` - voice: `{voice_label}`"
+            f"<b>Session</b> - tier: <code>{tier_label}</code> - host: <code>{active_host}</code> - voice: <code>{voice_label}</code>"
         )
         lines.append(SEP)
 
@@ -5710,12 +5708,12 @@ class TelegramCommandsMixin:
                 pass  # best-effort cleanup
 
         if daemon_issues:
-            lines.append("- *Daemon Warnings*")
+            lines.append("<b>Daemon Warnings</b>")
             for issue in daemon_issues[-5:]:
                 display = issue if len(issue) <= 100 else issue[:97] + "-"
-                lines.append(f"  -  `{display}`")
+                lines.append(f"  -  <code>{display}</code>")
         else:
-            lines.append("- *Daemon* - - no warnings")
+            lines.append("<b>Daemon</b> - no warnings")
 
         try:
             from navig.vault import get_vault
@@ -5725,7 +5723,7 @@ class TelegramCommandsMixin:
             vault_msg = f"- {len(_items)} entries"
         except Exception as _ve:
             vault_msg = f"- {str(_ve)[:60]}"
-        lines.append(f"- *Vault* - {vault_msg}")
+        lines.append(f"<b>Vault</b> - {vault_msg}")
         lines.append(SEP)
 
         trace_keyboard = [
@@ -5931,7 +5929,7 @@ class TelegramCommandsMixin:
                 chat_id,
                 message_id,
                 _audio_header_text(session),
-                parse_mode="Markdown",
+                parse_mode="HTML",
                 keyboard=keyboard_rows,
             )
             return
@@ -5962,7 +5960,7 @@ class TelegramCommandsMixin:
                         chat_id,
                         message_id,
                         _audio_screen_a_text(cfg),
-                        parse_mode="Markdown",
+                        parse_mode="HTML",
                         keyboard=keyboard,
                     )
                 else:
@@ -6038,12 +6036,12 @@ class TelegramCommandsMixin:
         for prov in _VOICE_PROVIDERS:
             has = _has_key(prov)
             status = "\u2705" if has else "\U0001f512"
-            lines.append(f"{status} *{prov['label']}* \u2014 `{prov['role']}`")
+            lines.append(f"{status} <b>{prov['label']}</b> \u2014 <code>{prov['role']}</code>")
             if not has:
                 lines.append("  _No key found — tap to add_")
                 cb = f"voice_prov_add:{prov['id']}"
             else:
-                lines.append("  _Key stored in vault_")
+                lines.append("  <i>Key stored in vault</i>")
                 cb = f"voice_prov_check:{prov['id']}"
             keyboard_rows.append(
                 [
@@ -6055,7 +6053,7 @@ class TelegramCommandsMixin:
             )
 
         lines.append("")
-        lines.append("_Tap a provider to add or validate its key._")
+        lines.append("<i>Tap a provider to add or validate its key.</i>")
 
         keyboard_rows.append(
             [
@@ -6067,7 +6065,7 @@ class TelegramCommandsMixin:
         text = "\n".join(lines)
         if message_id:
             await self.edit_message(
-                chat_id, message_id, text, parse_mode="Markdown", keyboard=keyboard_rows
+                chat_id, message_id, text, parse_mode="HTML", keyboard=keyboard_rows
             )
         else:
             sent = await self.send_message(chat_id, text, keyboard=keyboard_rows)
@@ -6105,7 +6103,7 @@ class TelegramCommandsMixin:
                 chat_id,
                 message_id,
                 _settings_hub_text(session),
-                parse_mode="Markdown",
+                parse_mode="HTML",
                 keyboard=keyboard_rows,
             )
             return
@@ -6145,8 +6143,8 @@ class TelegramCommandsMixin:
             keyboard = build_formatter_settings_keyboard(prefs)
             await self.send_message(
                 chat_id,
-                "*Markdown Formatter Settings*\n\nSend `/format <text>` to convert, or adjust preferences below.",
-                parse_mode="Markdown",
+                "<b>Markdown Formatter Settings</b>\n\nSend <code>/format &lt;text&gt;</code> to convert, or adjust preferences below.",
+                parse_mode="HTML",
                 keyboard=keyboard,
             )
             return
@@ -6167,8 +6165,8 @@ class TelegramCommandsMixin:
         if not topic:
             await self.send_message(
                 chat_id,
-                "Usage: `/think <your topic or question>`\n\nI'll reason through it step by step, delivered as swipeable cards.",
-                parse_mode="Markdown",
+                "Usage: <code>/think &lt;your topic or question&gt;</code>\n\nI'll reason through it step by step, delivered as swipeable cards.",
+                parse_mode="HTML",
             )
             return
 
@@ -6212,8 +6210,8 @@ class TelegramCommandsMixin:
         if not topic:
             await self.send_message(
                 chat_id,
-                "Usage: `/refine <your text or idea>`\n\nI'll ask 3 clarifying questions, then produce a refined version.",
-                parse_mode="Markdown",
+                "Usage: <code>/refine &lt;your text or idea&gt;</code>\n\nI'll ask 3 clarifying questions, then produce a refined version.",
+                parse_mode="HTML",
             )
             return
 
@@ -6305,7 +6303,8 @@ class TelegramCommandsMixin:
         sub = f"\n<i>{html.escape(subtitle)}</i>" if subtitle else ""
         return f"{line}\n{icon}  <b>{html.escape(title)}</b>{sub}\n{line}"
 
-    def _mon_host_ctx(self) -> tuple:
+    @staticmethod
+    def _mon_host_ctx() -> tuple:
         """Return (host_name, server_config_dict, is_local)."""
         try:
             from navig.config import get_config_manager
@@ -6772,7 +6771,7 @@ class TelegramCommandsMixin:
         """Real-data system briefing - no AI, no invented content (/briefing)."""
         now = datetime.now(timezone.utc)
         lines: list = [
-            f"- *System Briefing* - {now.strftime('%H:%M UTC, %d %b')}",
+            f"<b>System Briefing</b> - {now.strftime('%H:%M UTC, %d %b')}",
             "-" * 22,
         ]
 
@@ -6798,9 +6797,9 @@ class TelegramCommandsMixin:
                     if raw and raw != "n/a":
                         since = f" - since {raw.split()[-2]}"
             icon = "✅" if state == "active" else "❌"
-            lines.append(f"{icon} *Daemon:* {state}{since}")
+            lines.append(f"{icon} <b>Daemon:</b> {state}{since}")
         except Exception:
-            lines.append("- *Daemon:* status unavailable")
+            lines.append("- <b>Daemon:</b> status unavailable")
 
         try:
             from navig.providers.bridge_grid_reader import (
@@ -6820,21 +6819,21 @@ class TelegramCommandsMixin:
             _s.close()
         except Exception:
             bridge_ok = False
-        lines.append(f"- *LLM Bridge:* {'online (bridge_copilot)' if bridge_ok else 'offline'}")
+        lines.append(f"- <b>LLM Bridge:</b> {'online (bridge_copilot)' if bridge_ok else 'offline'}")
 
         try:
             from navig.vault import get_vault
 
             v = get_vault()
             key_count = len(v.list()) if hasattr(v, "list") else "?"
-            lines.append(f"- *Vault:* {key_count} keys stored")
+            lines.append(f"- <b>Vault:</b> {key_count} keys stored")
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
         if _HAS_SESSIONS:
             try:
                 sm = get_session_manager()
-                lines.append(f"- *Sessions:* {len(sm.sessions)} active")
+                lines.append(f"- <b>Sessions:</b> {len(sm.sessions)} active")
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -6849,7 +6848,7 @@ class TelegramCommandsMixin:
                 timeout=2.0,
             )
             stdout, _ = await p.communicate()
-            lines.append(f"- *Server:* {stdout.decode().strip()}")
+            lines.append(f"- <b>Server:</b> {stdout.decode().strip()}")
         except Exception:  # noqa: BLE001
             # Fallback for Windows (no `uptime` command)
             try:
@@ -6862,7 +6861,7 @@ class TelegramCommandsMixin:
                 _d, _r = divmod(int(_delta.total_seconds()), 86400)
                 _h, _r = divmod(_r, 3600)
                 _m = _r // 60
-                lines.append(f"- *Server:* up {_d}d {_h}h {_m}m ({_pf.system()})")
+                lines.append(f"- <b>Server:</b> up {_d}d {_h}h {_m}m ({_pf.system()})")
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -6883,7 +6882,7 @@ class TelegramCommandsMixin:
             if len(dfl) >= 2:
                 parts = dfl[1].split()
                 if len(parts) >= 3:
-                    lines.append(f"- *Disk:* {parts[0]} used, {parts[1]} free ({parts[2]})")
+                    lines.append(f"- <b>Disk:</b> {parts[0]} used, {parts[1]} free ({parts[2]})")
         except Exception:  # noqa: BLE001
             # Fallback for Windows (no `df` command)
             try:
@@ -6896,7 +6895,7 @@ class TelegramCommandsMixin:
                 _used_gb = _du.used / (1024 ** 3)
                 _free_gb = _du.free / (1024 ** 3)
                 lines.append(
-                    f"- *Disk:* {_used_gb:.1f} GB used, {_free_gb:.1f} GB free ({_du.percent:.0f}%)"
+                    f"- <b>Disk:</b> {_used_gb:.1f} GB used, {_free_gb:.1f} GB free ({_du.percent:.0f}%)"
                 )
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
@@ -6914,17 +6913,17 @@ class TelegramCommandsMixin:
                             role = e.get("role") or e.get("type", "")
                             content = str(e.get("content") or e.get("text") or "")[:60]
                             if role in ("user", "human") and content.startswith("/"):
-                                recent.append(f"  - `{content}`")
+                                recent.append(f"  - <code>{content}</code>")
                         except Exception:  # noqa: BLE001
                             pass  # best-effort; failure is non-critical
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
         if recent:
-            lines.append("*Recent commands:*")
+            lines.append("<b>Recent commands:</b>")
             lines.extend(recent[-5:])
         else:
-            lines.append("_No recent command history._")
+            lines.append("<i>No recent command history.</i>")
 
         try:
             from navig.spaces.briefing import build_spaces_briefing_lines
@@ -7052,14 +7051,14 @@ class TelegramCommandsMixin:
         for skill in sorted(skills, key=lambda s: (s.category, s.id)):
             by_cat.setdefault(skill.category, []).append(skill)
 
-        lines: list[str] = ["- **Available Skills**\n"]
+        lines: list[str] = ["<b>Available Skills</b>\n"]
         for cat, cat_skills in sorted(by_cat.items()):
-            lines.append(f"\n**{cat.title()}**")
+            lines.append(f"\n<b>{cat.title()}</b>")
             for s in cat_skills:
                 safety_icon = {"safe": "-", "elevated": "-", "destructive": "-"}.get(s.safety, "-")
-                lines.append(f"  {safety_icon} `{s.id}` - {s.name}")
+                lines.append(f"  {safety_icon} <code>{s.id}</code> - {s.name}")
 
-        lines.append("\n\nUsage: `/skill <id>` for info - `/skill <id> <command>` to run")
+        lines.append("\n\nUsage: <code>/skill &lt;id&gt;</code> for info - <code>/skill &lt;id&gt; &lt;command&gt;</code> to run")
         await self.send_message(chat_id, "\n".join(lines))
 
     # -- CLI command dispatch --------------------------------------------------
@@ -7322,8 +7321,8 @@ class TelegramCommandsMixin:
 
             await self.send_message(
                 chat_id,
-                f"✅ Auto-replies *ACTIVATED* with persona: `{role}`\n"
-                f"_Tip: use `/persona {role}` to switch personas without enabling auto-reply._",
+                f"✅ Auto-replies <b>ACTIVATED</b> with persona: <code>{role}</code>\n"
+                f"<i>Tip: use <code>/persona {role}</code> to switch personas without enabling auto-reply.</i>",
             )
         except Exception as e:
             logger.error("Failed to start auto-reply state: %s", e)
@@ -7379,11 +7378,11 @@ class TelegramCommandsMixin:
             if last_skip_reason:
                 cont += f", last_skip={last_skip_reason}"
             await self.send_message(
-                chat_id, f"✅ AI is currently *ACTIVE* in `{role}` mode.\nContinuation: `{cont}`"
+                chat_id, f"✅ AI is currently <b>ACTIVE</b> in <code>{role}</code> mode.\nContinuation: <code>{cont}</code>"
             )
             return
 
-        await self.send_message(chat_id, "🛑 AI auto-reply is currently *INACTIVE*.")
+        await self.send_message(chat_id, "🛑 AI auto-reply is currently <b>INACTIVE</b>.")
 
     async def _handle_continue(self, chat_id: int, user_id: int, text: str = "") -> None:
         """Enable continuation policy with optional profile and space focus.
@@ -7547,7 +7546,7 @@ class TelegramCommandsMixin:
                 roles = "• `default`\n• `assistant`\n• `tyler`\n• `storyteller`\n• `philosopher`\n• `teacher`"
             await self.send_message(
                 chat_id,
-                f"🎭 *Available AI Personas:*\n\n{roles}\n\nUse `/persona <name>` to switch.",
+                f"🎭 <b>Available AI Personas:</b>\n\n{roles}\n\nUse <code>/persona &lt;name&gt;</code> to switch.",
             )
 
     async def _handle_persona_switch(self, chat_id: int, user_id: int, name: str) -> None:
@@ -7570,8 +7569,8 @@ class TelegramCommandsMixin:
             logger.error("Failed to switch persona to %r: %s", name, e)
             await self.send_message(
                 chat_id,
-                f"❌ Could not switch to persona *{name}*: {e}",
-                parse_mode="Markdown",
+                f"❌ Could not switch to persona <b>{name}</b>: {e}",
+                parse_mode="HTML",
             )
 
     async def _handle_persona_info(self, chat_id: int, user_id: int) -> None:
@@ -7635,8 +7634,8 @@ class TelegramCommandsMixin:
     async def _handle_music(self, chat_id: int) -> None:
         await self.send_message(
             chat_id,
-            "🎵 *Music Conversion*\n\nIntegration with Spotify/Apple Music APIs pending migration.",
-            parse_mode="Markdown",
+            "🎵 <b>Music Conversion</b>\n\nIntegration with Spotify/Apple Music APIs pending migration.",
+            parse_mode="HTML",
         )
 
     async def _handle_imagegen(self, chat_id: int, text: str) -> None:
@@ -7645,7 +7644,7 @@ class TelegramCommandsMixin:
             await self.send_message(
                 chat_id,
                 "Please provide a prompt. Example: `/imagegen cybernetic city sunset`",
-                parse_mode="Markdown",
+                parse_mode="HTML",
             )
             return
         await self.send_typing(chat_id)
@@ -7676,8 +7675,8 @@ class TelegramCommandsMixin:
     async def _handle_crypto_list(self, chat_id: int) -> None:
         await self.send_message(
             chat_id,
-            "🪙 *Crypto Reference:*\n• BTC - Bitcoin\n• ETH - Ethereum\n• SOL - Solana\n\n(Price feed offline)",
-            parse_mode="Markdown",
+            "🪙 <b>Crypto Reference:</b>\n• BTC - Bitcoin\n• ETH - Ethereum\n• SOL - Solana\n\n(Price feed offline)",
+            parse_mode="HTML",
         )
 
     def _parse_remindme_request(self, text: str) -> tuple[datetime | None, str, str | None]:
@@ -7687,7 +7686,7 @@ class TelegramCommandsMixin:
             return (
                 None,
                 "",
-                "Usage: `/remindme in 30 minutes check logs` or `/remindme at 21:30 deploy review`",
+                "Usage: <code>/remindme in 30 minutes check logs</code> or <code>/remindme at 21:30 deploy review</code>",
             )
 
         rel_match = re.match(
@@ -7716,7 +7715,7 @@ class TelegramCommandsMixin:
             minute = int(abs_match.group(2))
             msg = abs_match.group(3).strip()
             if hour > 23 or minute > 59:
-                return None, "", "Time must be in 24h format, e.g. `at 21:30`."
+                return None, "", "Time must be in 24h format, e.g. <code>at 21:30</code>."
             if not msg:
                 return None, "", "Reminder message cannot be empty."
             now = datetime.now(timezone.utc)
@@ -7728,7 +7727,7 @@ class TelegramCommandsMixin:
         return (
             None,
             "",
-            "Could not parse reminder. Use `/remindme in 10 minutes <message>` or `/remindme at 18:45 <message>`.",
+            "Could not parse reminder. Use <code>/remindme in 10 minutes &lt;message&gt;</code> or <code>/remindme at 18:45 &lt;message&gt;</code>.",
         )
 
     async def _handle_remindme(self, chat_id: int, user_id: int, text: str) -> None:
@@ -7749,13 +7748,13 @@ class TelegramCommandsMixin:
         utc_note = ""
         if re.match(r"^\s*/?remindme\s+at\s+", text, flags=re.IGNORECASE):
             utc_note = (
-                "\nℹ️ `at HH:MM` uses server UTC. "
-                "Use `/remindme in <duration> ...` for relative/local timing."
+                "\nℹ️ <code>at HH:MM</code> uses server UTC. "
+                "Use <code>/remindme in &lt;duration&gt; ...</code> for relative/local timing."
             )
         await self.send_message(
             chat_id,
             (
-                f"⏰ Reminder set.\nID: `{reminder_id}`\nWhen: `{when}`\n"
+                f"⏰ Reminder set.\nID: <code>{reminder_id}</code>\nWhen: <code>{when}</code>\n"
                 f"Message: {message}{utc_note}"
             ),
         )
@@ -7768,13 +7767,13 @@ class TelegramCommandsMixin:
             await self.send_message(chat_id, "📭 You have no active reminders.")
             return
 
-        lines = ["⏰ *Your Active Reminders*", ""]
+        lines = ["⏰ <b>Your Active Reminders</b>", ""]
         for row in reminders:
             rid = row.get("id")
             remind_at = str(row.get("remind_at") or "").replace("T", " ")[:16]
             msg = str(row.get("message") or "").strip()
-            lines.append(f"`#{rid}` at `{remind_at} UTC` — {msg}")
-        lines.append("\nUse `/cancelreminder <id>` to remove one.")
+            lines.append(f"<code>#{rid}</code> at <code>{remind_at} UTC</code> — {msg}")
+        lines.append("\nUse <code>/cancelreminder &lt;id&gt;</code> to remove one.")
         await self.send_message(chat_id, "\n".join(lines))
 
     async def _handle_cancelreminder(self, chat_id: int, user_id: int, text: str) -> None:
@@ -7783,7 +7782,7 @@ class TelegramCommandsMixin:
             await self.send_message(
                 chat_id,
                 "Usage: `/cancelreminder <id>` or `/cancelreminder all`",
-                parse_mode="Markdown",
+                parse_mode="HTML",
             )
             return
 
@@ -7811,18 +7810,18 @@ class TelegramCommandsMixin:
             await self.send_message(
                 chat_id,
                 "Usage: `/cancelreminder <id>` or `/cancelreminder all`",
-                parse_mode="Markdown",
+                parse_mode="HTML",
             )
             return
 
         reminder_id = int(arg)
         deleted = store.cancel_reminder(reminder_id, user_id)
         if deleted:
-            await self.send_message(chat_id, f"✅ Reminder `{reminder_id}` cancelled.")
+            await self.send_message(chat_id, f"✅ Reminder <code>{reminder_id}</code> cancelled.")
         else:
             await self.send_message(
                 chat_id,
-                f"❌ No active reminder found for id `{reminder_id}`.",
+                f"❌ No active reminder found for id <code>{reminder_id}</code>.",
                 parse_mode=None,
             )
 
@@ -7835,7 +7834,7 @@ class TelegramCommandsMixin:
             await self.send_message(
                 chat_id,
                 "Usage: `/choice pizza or burger`  — also accepts `,` or `|` as separators.",
-                parse_mode="Markdown",
+                parse_mode="HTML",
             )
             return
         import re
@@ -7849,17 +7848,17 @@ class TelegramCommandsMixin:
             await self.send_message(
                 chat_id,
                 "Please give me at least two options. Example: `/choice tea or coffee`",
-                parse_mode="Markdown",
+                parse_mode="HTML",
             )
             return
-        await self.send_message(chat_id, f"🎲 I choose: *{random.choice(choices)}*")
+        await self.send_message(chat_id, f"🎲 I choose: <b>{random.choice(choices)}</b>")
 
     async def _handle_kick(self, chat_id: int, text: str) -> None:
         target = text[len("/kick") :].strip()
         await self.send_message(
             chat_id,
             f"👢 Core restriction: Bot requires channel Admin rights to ban `{target}`.",
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
 
     async def _handle_mute(self, chat_id: int, text: str) -> None:
@@ -7867,7 +7866,7 @@ class TelegramCommandsMixin:
         await self.send_message(
             chat_id,
             f"🔇 Core restriction: Bot requires channel Admin rights to restrict `{target}`.",
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
 
     async def _handle_unmute(self, chat_id: int, text: str) -> None:
@@ -7875,9 +7874,9 @@ class TelegramCommandsMixin:
         await self.send_message(
             chat_id,
             f"🔊 Core restriction: Bot requires channel Admin rights to pardon `{target}`.",
-            parse_mode="Markdown",
+            parse_mode="HTML",
         )
 
     async def _handle_search(self, chat_id: int, text: str) -> None:
         query = text[len("/search") :].strip()
-        await self.send_message(chat_id, f"🔍 User search proxy offline for query: `{query}`")
+        await self.send_message(chat_id, f"🔍 User search proxy offline for query: <code>{query}</code>")

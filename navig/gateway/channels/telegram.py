@@ -528,8 +528,8 @@ class TelegramChannel:
 
                     sent = await self.send_message(
                         int(chat_id),
-                        f"⏰ *Reminder*\n{msg}",
-                        parse_mode="Markdown",
+                        f"⏰ <b>Reminder</b>\n{msg}",
+                        parse_mode="HTML",
                     )
                     if sent:
                         if reminder_id:
@@ -1186,8 +1186,8 @@ class TelegramChannel:
 
                     await self.send_message(
                         chat_id,
-                        "⚙️ No-AI mode expects a command. Use `/help` for shortcuts, or send `navig <command>`.",
-                        parse_mode="Markdown",
+                        "⚙️ No-AI mode expects a command. Use /help for shortcuts, or send <code>navig &lt;command&gt;</code>.",
+                        parse_mode="HTML",
                     )
                     return
 
@@ -2210,8 +2210,8 @@ class TelegramChannel:
             await self.send_message(
                 chat_id,
                 "👁 No vision model available. "
-                "Use /provider\\_vision to pick one, or connect a vision-capable provider.",
-                parse_mode="Markdown",
+                "Use /provider_vision to pick one, or connect a vision-capable provider.",
+                parse_mode="HTML",
             )
             return
 
@@ -2686,12 +2686,12 @@ class TelegramChannel:
         if stt_provider is None:
             await self.send_message(
                 chat_id,
-                "🎙️ *Voice transcription not configured.*\n\n"
-                "Add any of the following to `~/.navig/.env` and restart:\n"
-                "• `DEEPGRAM_KEY=<key>` — blazing fast, recommended\n"
-                "• `OPENAI_API_KEY=<key>` — Whisper API fallback\n"
-                "• `pip install openai-whisper` — offline, no key needed",
-                parse_mode="Markdown",
+                "🎙️ <b>Voice transcription not configured.</b>\n\n"
+                "Add any of the following to <code>~/.navig/.env</code> and restart:\n"
+                "• <code>DEEPGRAM_KEY=&lt;key&gt;</code> — blazing fast, recommended\n"
+                "• <code>OPENAI_API_KEY=&lt;key&gt;</code> — Whisper API fallback\n"
+                "• <code>pip install openai-whisper</code> — offline, no key needed",
+                parse_mode="HTML",
             )
             return None, ""
 
@@ -2788,8 +2788,8 @@ class TelegramChannel:
                 ]
             await self.send_message(
                 chat_id,
-                f"🎙️ *Heard:* _{transcript}_",
-                parse_mode="Markdown",
+                f"🎙️ <b>Heard:</b> <i>{transcript}</i>",
+                parse_mode="HTML",
                 keyboard=heard_kb,
             )
             detected_lang = (result.language or "") if hasattr(result, "language") else ""
@@ -2929,8 +2929,8 @@ class TelegramChannel:
         """Send a response with template limits, optional keyboard, and voice reply."""
         # Strip internal LLM reasoning tags before any further processing
         response = self._strip_internal_tags(response)
-        # Convert standard Markdown (**bold**, ## heading) to Telegram V1 syntax
-        response = self._normalize_md(response)
+        # Convert standard Markdown (**bold**, ## heading) to Telegram HTML
+        response = TelegramChannel._md_to_html(response)
         parts = None
         if HAS_TEMPLATES:
             try:
@@ -2962,7 +2962,7 @@ class TelegramChannel:
         if parts and len(parts) > 1:
             for i, part in enumerate(parts):
                 is_last = i == len(parts) - 1
-                await self._send_md_with_fallback(
+                await self._send_html_with_fallback(
                     chat_id,
                     part,
                     keyboard=keyboard if is_last else None,
@@ -2971,13 +2971,13 @@ class TelegramChannel:
             chunks = [response[i : i + 4000] for i in range(0, len(response), 4000)]
             for i, chunk in enumerate(chunks):
                 is_last = i == len(chunks) - 1
-                await self._send_md_with_fallback(
+                await self._send_html_with_fallback(
                     chat_id,
                     chunk,
                     keyboard=keyboard if is_last else None,
                 )
         else:
-            await self._send_md_with_fallback(chat_id, response, keyboard=keyboard)
+            await self._send_html_with_fallback(chat_id, response, keyboard=keyboard)
 
         # Voice reply — non-fatal; user already has the text
         await self._maybe_send_voice(chat_id, user_id, is_group, response)
@@ -4598,7 +4598,7 @@ class TelegramChannel:
         self,
         chat_id: int,
         text: str,
-        parse_mode: str | None = "Markdown",
+        parse_mode: str | None = "HTML",
         reply_to_message_id: int | None = None,
         keyboard: list[list[dict]] | None = None,
     ) -> dict | None:
@@ -4631,7 +4631,7 @@ class TelegramChannel:
         chat_id: int,
         message_id: int,
         text: str,
-        parse_mode: str = "Markdown",
+        parse_mode: str = "HTML",
         keyboard: list | None = None,
     ) -> dict | None:
         """Edit an existing message."""
@@ -4734,20 +4734,29 @@ class TelegramChannel:
             text = _re.sub(r"^#{1,6}[ \t]+(.+)$", r"*\1*", text, flags=_re.MULTILINE)
             return text
 
+    async def _send_html_with_fallback(
+        self,
+        chat_id: int,
+        text: str,
+        keyboard: dict | None = None,
+    ) -> None:
+        """Send *text* with HTML formatting, falling back to plain text on parse errors."""
+        result = await self.send_message(
+            chat_id, text, parse_mode="HTML", keyboard=keyboard
+        )
+        if result is None:
+            # Telegram rejected the parse — retry as plain text so the user
+            # always receives the content even if formatting can't be applied.
+            await self.send_message(chat_id, text, parse_mode=None, keyboard=keyboard)
+
     async def _send_md_with_fallback(
         self,
         chat_id: int,
         text: str,
         keyboard: dict | None = None,
     ) -> None:
-        """Send *text* with Markdown V1 formatting, falling back to plain text on parse errors."""
-        result = await self.send_message(
-            chat_id, text, parse_mode="Markdown", keyboard=keyboard
-        )
-        if result is None:
-            # Telegram rejected the parse — retry as plain text so the user
-            # always receives the content even if formatting can't be applied.
-            await self.send_message(chat_id, text, parse_mode=None, keyboard=keyboard)
+        """Deprecated: use ``_send_html_with_fallback`` instead."""
+        await self._send_html_with_fallback(chat_id, text, keyboard=keyboard)
 
     async def delete_message(self, chat_id: int, message_id: int) -> bool:
         """Delete a message."""
@@ -4825,6 +4834,211 @@ class TelegramChannel:
         except Exception as e:
             logger.warning("send_photo failed: %s", e)
             return None
+
+    async def send_document(
+        self,
+        chat_id: int,
+        document_data: bytes,
+        filename: str = "file",
+        caption: str | None = None,
+        parse_mode: str | None = "HTML",
+        reply_to_message_id: int | None = None,
+    ) -> dict | None:
+        """Send a document/file to a chat (sendDocument Bot API)."""
+        if not self._session or not aiohttp:
+            return None
+        url = f"{self.base_url}/sendDocument"
+        try:
+            form = aiohttp.FormData()
+            form.add_field("chat_id", str(chat_id))
+            form.add_field(
+                "document",
+                document_data,
+                filename=filename,
+                content_type="application/octet-stream",
+            )
+            if caption:
+                form.add_field("caption", caption)
+            if parse_mode:
+                form.add_field("parse_mode", parse_mode)
+            if reply_to_message_id:
+                form.add_field("reply_to_message_id", str(reply_to_message_id))
+            async with self._session.post(url, data=form) as resp:
+                result = await resp.json()
+                if result.get("ok"):
+                    return result.get("result")
+                logger.warning("sendDocument API error: %s", result.get("description"))
+                return None
+        except Exception as e:
+            logger.warning("send_document failed: %s", e)
+            return None
+
+    async def send_video(
+        self,
+        chat_id: int,
+        video_data: bytes,
+        caption: str | None = None,
+        parse_mode: str | None = "HTML",
+        duration: int | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        reply_to_message_id: int | None = None,
+    ) -> dict | None:
+        """Send a video to a chat (sendVideo Bot API)."""
+        if not self._session or not aiohttp:
+            return None
+        url = f"{self.base_url}/sendVideo"
+        try:
+            form = aiohttp.FormData()
+            form.add_field("chat_id", str(chat_id))
+            form.add_field("video", video_data, filename="video.mp4", content_type="video/mp4")
+            if caption:
+                form.add_field("caption", caption)
+            if parse_mode:
+                form.add_field("parse_mode", parse_mode)
+            if duration is not None:
+                form.add_field("duration", str(duration))
+            if width is not None:
+                form.add_field("width", str(width))
+            if height is not None:
+                form.add_field("height", str(height))
+            if reply_to_message_id:
+                form.add_field("reply_to_message_id", str(reply_to_message_id))
+            async with self._session.post(url, data=form) as resp:
+                result = await resp.json()
+                if result.get("ok"):
+                    return result.get("result")
+                logger.warning("sendVideo API error: %s", result.get("description"))
+                return None
+        except Exception as e:
+            logger.warning("send_video failed: %s", e)
+            return None
+
+    async def send_animation(
+        self,
+        chat_id: int,
+        animation_data: bytes,
+        caption: str | None = None,
+        parse_mode: str | None = "HTML",
+        reply_to_message_id: int | None = None,
+    ) -> dict | None:
+        """Send an animation (GIF or H.264/MPEG-4 AVC) to a chat (sendAnimation Bot API)."""
+        if not self._session or not aiohttp:
+            return None
+        url = f"{self.base_url}/sendAnimation"
+        try:
+            form = aiohttp.FormData()
+            form.add_field("chat_id", str(chat_id))
+            form.add_field(
+                "animation",
+                animation_data,
+                filename="animation.gif",
+                content_type="image/gif",
+            )
+            if caption:
+                form.add_field("caption", caption)
+            if parse_mode:
+                form.add_field("parse_mode", parse_mode)
+            if reply_to_message_id:
+                form.add_field("reply_to_message_id", str(reply_to_message_id))
+            async with self._session.post(url, data=form) as resp:
+                result = await resp.json()
+                if result.get("ok"):
+                    return result.get("result")
+                logger.warning("sendAnimation API error: %s", result.get("description"))
+                return None
+        except Exception as e:
+            logger.warning("send_animation failed: %s", e)
+            return None
+
+    async def send_sticker(
+        self,
+        chat_id: int,
+        sticker: str,
+        reply_to_message_id: int | None = None,
+    ) -> dict | None:
+        """Send a sticker to a chat.  *sticker* is a file_id or URL (sendSticker Bot API)."""
+        data: dict = {"chat_id": chat_id, "sticker": sticker}
+        if reply_to_message_id:
+            data["reply_to_message_id"] = reply_to_message_id
+        return await self._api_call("sendSticker", data)
+
+    async def send_poll(
+        self,
+        chat_id: int,
+        question: str,
+        options: list[str],
+        *,
+        is_anonymous: bool = True,
+        poll_type: str = "regular",
+        allows_multiple_answers: bool = False,
+        correct_option_id: int | None = None,
+        explanation: str | None = None,
+        explanation_parse_mode: str | None = "HTML",
+        is_closed: bool = False,
+        reply_to_message_id: int | None = None,
+    ) -> dict | None:
+        """Send a native Telegram poll (sendPoll Bot API)."""
+        import json as _json
+
+        data: dict = {
+            "chat_id": chat_id,
+            "question": question,
+            "options": _json.dumps(options),
+            "is_anonymous": is_anonymous,
+            "type": poll_type,
+            "allows_multiple_answers": allows_multiple_answers,
+            "is_closed": is_closed,
+        }
+        if correct_option_id is not None:
+            data["correct_option_id"] = correct_option_id
+        if explanation:
+            data["explanation"] = explanation
+            if explanation_parse_mode:
+                data["explanation_parse_mode"] = explanation_parse_mode
+        if reply_to_message_id:
+            data["reply_to_message_id"] = reply_to_message_id
+        return await self._api_call("sendPoll", data)
+
+    async def pin_message(
+        self,
+        chat_id: int,
+        message_id: int,
+        disable_notification: bool = False,
+    ) -> bool:
+        """Pin a message in a chat (pinChatMessage Bot API).  Returns True on success."""
+        result = await self._api_call(
+            "pinChatMessage",
+            {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "disable_notification": disable_notification,
+            },
+        )
+        return result is not None
+
+    async def set_reaction(
+        self,
+        chat_id: int,
+        message_id: int,
+        emoji: str = "👍",
+        is_big: bool = False,
+    ) -> bool:
+        """Set a reaction emoji on a message (setMessageReaction Bot API).
+
+        Available from Bot API 7.0.  Falls back gracefully on older API versions.
+        Returns True if the reaction was accepted.
+        """
+        result = await self._api_call(
+            "setMessageReaction",
+            {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "reaction": [{"type": "emoji", "emoji": emoji}],
+                "is_big": is_big,
+            },
+        )
+        return result is not None
 
 
 def create_telegram_channel(gateway, config: dict[str, Any]) -> TelegramChannel | None:
