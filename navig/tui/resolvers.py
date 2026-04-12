@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from navig.core.yaml_io import safe_load_yaml
 from navig.platform.paths import config_dir
 
 # ---------------------------------------------------------------------------
@@ -55,19 +56,7 @@ class StatusBadge:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-
-def _load_navig_json() -> dict[str, Any] | None:
-    from navig.tui.config_model import DEFAULT_CONFIG_FILE
-
-    try:
-        if DEFAULT_CONFIG_FILE.is_file():
-            import json
-
-            return json.loads(DEFAULT_CONFIG_FILE.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
-        pass
-    return None
-
+from navig.tui.config_model import load_navig_json as _load_navig_json  # noqa: PLC0415
 
 # ---------------------------------------------------------------------------
 # Resolvers
@@ -132,9 +121,7 @@ def resolve_ssh() -> StatusBadge:
     try:
         cfg_path = config_dir() / "config.yaml"
         if cfg_path.is_file():
-            import yaml  # type: ignore[import]
-
-            data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+            data = safe_load_yaml(cfg_path) or {}
             hosts = data.get("hosts", {})
             if hosts:
                 count = len(hosts)

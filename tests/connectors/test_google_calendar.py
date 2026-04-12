@@ -9,6 +9,8 @@ import pytest
 from navig.connectors.google_calendar.mappers import calendar_event_to_resource
 from navig.connectors.types import ResourceType
 
+pytestmark = pytest.mark.integration
+
 # ── Mapper tests ─────────────────────────────────────────────────────────
 
 

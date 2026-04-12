@@ -25,9 +25,10 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from navig.plans.frontmatter import parse_frontmatter as _parse_frontmatter
+
 logger = logging.getLogger(__name__)
 
-_FRONTMATTER_RE = re.compile(r"^---\n([\s\S]*?)\n---\n?", re.MULTILINE)
 _CHECKBOX_DONE_RE = re.compile(r"^\s*[-*]\s*\[(?:x|X)\]", re.MULTILINE)
 _CHECKBOX_TODO_RE = re.compile(r"^\s*[-*]\s*\[\s\]", re.MULTILINE)
 
@@ -63,20 +64,6 @@ class MilestoneState:
         if self.total_count == 0:
             return 0.0
         return round((self.done_count / self.total_count) * 100, 1)
-
-
-def _parse_frontmatter(text: str) -> dict[str, str]:
-    """Return a dict of key→value from ``---``-delimited frontmatter."""
-    match = _FRONTMATTER_RE.match(text)
-    if not match:
-        return {}
-    values: dict[str, str] = {}
-    for line in match.group(1).splitlines():
-        if ":" not in line:
-            continue
-        key, val = line.split(":", 1)
-        values[key.strip()] = val.strip()
-    return values
 
 
 def _count_checkboxes(text: str) -> tuple[int, int]:

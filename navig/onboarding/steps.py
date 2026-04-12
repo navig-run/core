@@ -1,4 +1,4 @@
-"""
+﻿"""
 Step registry — two-phase onboarding.
 
 Phase 1 — bootstrap (non-interactive, idempotent, safe in CI/automation):
@@ -18,12 +18,18 @@ Design rules:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import socket
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
+
+_log = logging.getLogger(__name__)
+
+from navig.core.yaml_io import safe_load_yaml
 
 from .engine import EngineConfig, OnboardingStep, StepResult
 from .genesis import GenesisData
@@ -397,7 +403,18 @@ def _step_config_file(
                 output={"configPath": str(config_path)},
             )
         # First run or reset: write fresh config with current node id/name
-        config_path.write_text(config_content, encoding="utf-8")
+        # Atomic write: crash mid-write leaves previous config intact.
+        tmp_path: Path | None = None
+        try:
+            fd, tmp = tempfile.mkstemp(dir=config_path.parent, suffix=".tmp")
+            tmp_path = Path(tmp)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(config_content)
+            os.replace(tmp_path, config_path)
+            tmp_path = None
+        finally:
+            if tmp_path is not None:
+                tmp_path.unlink(missing_ok=True)
         return StepResult(
             status="completed",
             output={"configPath": str(config_path)},
@@ -443,12 +460,10 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         if not base_url:
             return False
         try:
-            import yaml  # type: ignore[import]
-
             config_path = navig_dir / "config.yaml"
             cfg: dict[str, Any] = {}
             if config_path.exists():
-                cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+                cfg = safe_load_yaml(config_path) or {}
             cfg.setdefault("llm_router", {}).setdefault("provider_base_urls", {})[provider_id] = (
                 base_url
             )
@@ -462,7 +477,8 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
     def _has_vault_key(provider_id: str) -> bool:
         """Return True when a provider API key already exists in vault."""
         try:
-            vault = _get_vault_for_onboarding()
+            from navig.vault.core import get_vault  # noqa: PLC0415
+            vault = get_vault()
             if vault is None:
                 return False
             value = vault.get(f"{provider_id}/api_key")
@@ -470,14 +486,6 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         except Exception:  # noqa: BLE001
             return False
 
-    def _get_vault_for_onboarding():
-        """Return vault handle with legacy core_v2 fallback compatibility."""
-        try:
-            from navig.vault.core import get_vault
-
-            return get_vault()
-        except Exception:  # noqa: BLE001
-            return None
 
     def _load_providers():
         """Load provider list dynamically from the registry at runtime."""
@@ -516,17 +524,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             ]
 
     # Common env var map shared by both helpers below
-    _PROVIDER_ENV_VARS: dict[str, list[str]] = {
-        "openai": ["OPENAI_API_KEY"],
-        "anthropic": ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
-        "openrouter": ["OPENROUTER_API_KEY"],
-        "groq": ["GROQ_API_KEY"],
-        "google": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-        "nvidia": ["NVIDIA_API_KEY", "NIM_API_KEY"],
-        "xai": ["XAI_API_KEY", "GROK_KEY"],
-        "github_models": ["GITHUB_TOKEN", "GH_TOKEN"],
-        "mistral": ["MISTRAL_API_KEY"],
-    }
+    from navig.providers.types import PROVIDER_ENV_VARS as _PROVIDER_ENV_VARS  # noqa: PLC0415
 
     def _detect_provider_key(provider_id: str) -> tuple[str, str]:
         """Return *(env_var_name, key_value)* for *provider_id*, or ('', '')."""
@@ -693,7 +691,8 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
                 import_env_choice = "y"
             if import_env_choice in ("", "y", "yes"):
                 try:
-                    vault = _get_vault_for_onboarding()
+                    from navig.vault.core import get_vault  # noqa: PLC0415
+                    vault = get_vault()
                     if vault is not None and env_detected_key:
                         vault.put(
                             f"{pid}/api_key",
@@ -745,7 +744,8 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
 
         # Persist in vault if available, else fall back to marker file
         try:
-            vault = _get_vault_for_onboarding()
+            from navig.vault.core import get_vault  # noqa: PLC0415
+            vault = get_vault()
             if vault is not None and not keep_existing_key:
                 vault.put(
                     f"{pid}/api_key",
@@ -780,7 +780,8 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
                             ).strip()
                             if fb_key:
                                 try:
-                                    vfb = _get_vault_for_onboarding()
+                                    from navig.vault.core import get_vault  # noqa: PLC0415
+                                    vfb = get_vault()
                                     if vfb is not None:
                                         vfb.put(
                                             f"{fallback_pid}/api_key",
@@ -798,12 +799,10 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         # Write routing block to config.yaml when a fallback was chosen
         if fallback_pid:
             try:
-                import yaml  # type: ignore[import]
-
                 config_path = navig_dir / "config.yaml"
                 cfg: dict = {}
                 if config_path.exists():
-                    cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+                    cfg = safe_load_yaml(config_path) or {}
                 cfg.setdefault("routing", {})["enabled"] = True
                 modes = cfg["routing"].setdefault("llm_modes", {})
                 for tier in ("small_talk", "big_tasks", "coding", "summarize", "research"):
@@ -1261,12 +1260,10 @@ def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
 
     def _persist_provider(preferred_provider: str) -> bool:
         try:
-            import yaml  # type: ignore[import]
-
             config_path = navig_dir / "config.yaml"
             cfg: dict[str, Any] = {}
             if config_path.exists():
-                cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+                cfg = safe_load_yaml(config_path) or {}
             cfg.setdefault("web", {}).setdefault("search", {})["provider"] = preferred_provider
             from navig.core.yaml_io import atomic_write_yaml
 
@@ -1291,12 +1288,10 @@ def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
             pass
 
         try:
-            import yaml  # type: ignore[import]
-
             config_path = navig_dir / "config.yaml"
             cfg: dict[str, Any] = {}
             if config_path.exists():
-                cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+                cfg = safe_load_yaml(config_path) or {}
             search_cfg = cfg.setdefault("web", {}).setdefault("search", {})
             api_keys = search_cfg.setdefault("api_keys", {})
             api_keys[preferred_provider] = api_key
@@ -1364,16 +1359,14 @@ def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
         # Read existing configured provider (if any) to show in reconfigure mode.
         current_search_provider = ""
         try:
-            import yaml  # type: ignore[import]
-
             _cfg_path = navig_dir / "config.yaml"
             if _cfg_path.exists():
-                _cfg = yaml.safe_load(_cfg_path.read_text(encoding="utf-8")) or {}
+                _cfg = safe_load_yaml(_cfg_path) or {}
                 current_search_provider = str(
                     ((_cfg.get("web") or {}).get("search") or {}).get("provider") or ""
                 ).strip()
-        except (OSError, yaml.YAMLError):
-            pass
+        except Exception as _e:
+            _log.debug("web-search-provider step: could not read existing config.yaml: %s", _e)
 
         ch.info("Search provider")
         for idx, (pid, label, _) in enumerate(_WEB_SEARCH_PROVIDER_CATALOG, start=1):
@@ -1451,12 +1444,10 @@ def _step_web_search_provider(navig_dir: Path) -> OnboardingStep:
 
     def verify() -> bool:
         try:
-            import yaml  # type: ignore[import]
-
             config_path = navig_dir / "config.yaml"
             if not config_path.exists():
                 return False
-            cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+            cfg = safe_load_yaml(config_path) or {}
             provider = str(
                 ((cfg.get("web") or {}).get("search") or {}).get("provider") or ""
             ).strip()
@@ -1644,11 +1635,9 @@ def _step_skills_activation(navig_dir: Path) -> OnboardingStep:
         # Read available packs from config
         available: list[str] = []
         try:
-            import yaml  # type: ignore[import]
-
             cfg: dict[str, Any] = {}
             if config_path.exists():
-                cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+                cfg = safe_load_yaml(config_path) or {}
             available = cfg.get("skills", {}).get("available_packs", [])
         except Exception:  # noqa: BLE001
             pass
@@ -1688,11 +1677,9 @@ def _step_skills_activation(navig_dir: Path) -> OnboardingStep:
                     pass  # malformed value; skip
 
         try:
-            import yaml  # type: ignore[import]
-
             cfg2: dict[str, Any] = {}
             if config_path.exists():
-                cfg2 = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+                cfg2 = safe_load_yaml(config_path) or {}
             cfg2.setdefault("skills", {})["active_packs"] = chosen
             from navig.core.yaml_io import atomic_write_yaml
 
@@ -1872,11 +1859,9 @@ def _step_matrix(navig_dir: Path) -> OnboardingStep:
 
         # Persist config
         try:
-            import yaml  # type: ignore[import]
-
             cfg: dict[str, Any] = {}
             if config_path.exists():
-                cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+                cfg = safe_load_yaml(config_path) or {}
             cfg.setdefault("matrix", {})["homeserver_url"] = homeserver_url
             cfg["matrix"]["default_room_id"] = default_room_id
             from navig.core.yaml_io import atomic_write_yaml
@@ -1947,11 +1932,9 @@ def _step_email(navig_dir: Path) -> OnboardingStep:
             return StepResult(status="skipped", output={"reason": msgs})
 
         try:
-            import yaml  # type: ignore[import]
-
             cfg: dict[str, Any] = {}
             if config_path.exists():
-                cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+                cfg = safe_load_yaml(config_path) or {}
             cfg.setdefault("email", {})["smtp_host"] = smtp_host
             cfg["email"]["smtp_port"] = smtp_port
             from navig.core.yaml_io import atomic_write_yaml

@@ -507,6 +507,12 @@ def run_oauth_flow_interactive(
         error = result.get("error") if result else "No callback received"
         return OAuthFlowResult(success=False, error=str(error))
 
+    # Verify state from automatic callback matches the locally generated state
+    # (guards against CSRF via a forged request to the local callback server).
+    recv_state = result.get("state")
+    if recv_state and recv_state != state:
+        return OAuthFlowResult(success=False, error="State mismatch (possible CSRF)")
+
     code = result.get("code")
     if not code:
         return OAuthFlowResult(success=False, error="No authorization code received")

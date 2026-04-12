@@ -308,13 +308,8 @@ def use_app(options: dict[str, Any]) -> None:
         return
 
     # Get active host
-    host_name = config_manager.get_active_host()
-    if not host_name:
-        ch.error(
-            "No active host configured",
-            "Use 'navig host use <name>' to set active host first.",
-        )
-        return
+    from navig.cli.recovery import require_active_host  # noqa: PLC0415
+    host_name = require_active_host(options, config_manager)
 
     # Verify app exists on active host
     if not config_manager.app_exists(host_name, app_name):
@@ -393,14 +388,8 @@ def add_app(options: dict[str, Any]) -> None:
 
     # Get active host if not specified
     if not host_name:
-        host_name = config_manager.get_active_host()
-
-    if not host_name:
-        ch.error(
-            "No active host configured",
-            "Use 'navig host use <name>' or specify --host flag.",
-        )
-        return
+        from navig.cli.recovery import require_active_host  # noqa: PLC0415
+        host_name = require_active_host(options, config_manager)
 
     # Verify host exists
     if not config_manager.host_exists(host_name):
@@ -594,14 +583,8 @@ def show_app(options: dict[str, Any]) -> None:
 
     # Get active host if not specified
     if not host_name:
-        host_name = config_manager.get_active_host()
-
-    if not host_name:
-        ch.error(
-            "No active host configured",
-            "Use 'navig host use <name>' or specify --host flag.",
-        )
-        return
+        from navig.cli.recovery import require_active_host  # noqa: PLC0415
+        host_name = require_active_host(options, config_manager)
 
     # Load app configuration
     try:
@@ -652,14 +635,8 @@ def edit_app(options: dict[str, Any]) -> None:
 
     # Get active host if not specified
     if not host_name:
-        host_name = config_manager.get_active_host()
-
-    if not host_name:
-        ch.error(
-            "No active host configured",
-            "Use 'navig host use <name>' or specify --host flag.",
-        )
-        return
+        from navig.cli.recovery import require_active_host  # noqa: PLC0415
+        host_name = require_active_host(options, config_manager)
 
     # Verify app exists
     if not config_manager.app_exists(host_name, app_name):
@@ -737,14 +714,8 @@ def clone_app(options: dict[str, Any]) -> None:
 
     # Get active host if not specified
     if not host_name:
-        host_name = config_manager.get_active_host()
-
-    if not host_name:
-        ch.error(
-            "No active host configured",
-            "Use 'navig host use <name>' or specify --host flag.",
-        )
-        return
+        from navig.cli.recovery import require_active_host  # noqa: PLC0415
+        host_name = require_active_host(options, config_manager)
 
     # Verify source exists
     if not config_manager.app_exists(host_name, source_name):
@@ -826,14 +797,8 @@ def info_app(options: dict[str, Any]) -> None:
 
     # Get active host if not specified
     if not host_name:
-        host_name = config_manager.get_active_host()
-
-    if not host_name:
-        ch.error(
-            "No active host configured",
-            "Use 'navig host use <name>' or specify --host flag.",
-        )
-        return
+        from navig.cli.recovery import require_active_host  # noqa: PLC0415
+        host_name = require_active_host(options, config_manager)
 
     # Verify app exists
     if not config_manager.app_exists(host_name, app_name):
@@ -1008,14 +973,8 @@ def migrate_apps(options: dict[str, Any]) -> None:
 
     # Get active host if not specified
     if not host_name:
-        host_name = config_manager.get_active_host()
-
-    if not host_name:
-        ch.error(
-            "No active host configured",
-            "Use 'navig host use <name>' or specify --host flag.",
-        )
-        return
+        from navig.cli.recovery import require_active_host  # noqa: PLC0415
+        host_name = require_active_host(options, config_manager)
 
     # Verify host exists
     if not config_manager.host_exists(host_name):

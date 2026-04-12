@@ -12,6 +12,7 @@ import asyncio
 import inspect
 import json
 import os
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -149,7 +150,18 @@ class SystemEventQueue:
             "pending": [e.to_dict() for e in self._pending.values()],
         }
 
-        self._get_events_path().write_text(json.dumps(data, indent=2))
+        _events_file = self._get_events_path()
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=_events_file.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                _fh.write(json.dumps(data, indent=2))
+            os.replace(_tmp_path, _events_file)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
 
     def _generate_id(self) -> str:
         """Generate unique event ID."""

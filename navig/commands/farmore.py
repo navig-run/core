@@ -17,6 +17,7 @@ from typing import Annotated
 
 import typer
 
+from navig.core.yaml_io import safe_load_yaml
 from navig.lazy_loader import lazy_import
 from navig.platform.paths import config_dir
 
@@ -62,14 +63,11 @@ def _resolve_github_token() -> str | None:
 
     # 3 — ~/.navig/config.yaml
     try:
-        import yaml  # type: ignore
-
         cfg_path = config_dir() / "config.yaml"
-        if cfg_path.exists():
-            cfg = yaml.safe_load(cfg_path.read_text()) or {}
-            token = cfg.get("github", {}).get("token", "").strip()
-            if token:
-                return token
+        cfg = safe_load_yaml(cfg_path) or {}
+        token = cfg.get("github", {}).get("token", "").strip()
+        if token:
+            return token
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
 
@@ -346,12 +344,9 @@ def token_set(
 
     # Fallback: write to ~/.navig/config.yaml
     try:
-        import yaml  # type: ignore
-
         cfg_path = config_dir() / "config.yaml"
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
-        cfg = yaml.safe_load(cfg_path.read_text()) if cfg_path.exists() else {}
-        cfg = cfg or {}
+        cfg = safe_load_yaml(cfg_path) or {}
         cfg.setdefault("github", {})["token"] = value
         from navig.core.yaml_io import atomic_write_yaml
 
@@ -422,11 +417,9 @@ def token_remove():
 
     # Config file
     try:
-        import yaml  # type: ignore
-
         cfg_path = config_dir() / "config.yaml"
         if cfg_path.exists():
-            cfg = yaml.safe_load(cfg_path.read_text()) or {}
+            cfg = safe_load_yaml(cfg_path) or {}
             if cfg.get("github", {}).get("token"):
                 cfg["github"].pop("token")
                 from navig.core.yaml_io import atomic_write_yaml

@@ -7,7 +7,9 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 <!-- Add entries here until the next release, then move them under a new version heading. -->
-<!-- Run: git log v2.4.20..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+<!-- Run: git log v2.7.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+
+## [2.7.0] - 2026-04-12
 
 ### Changed
 - **Robustness (Configuration Type Coercion)**: Audited navig agent config loaders using AST static analysis for raw `int()` / `float()` type conversions mapping dictionary `get()` results without error catching. Replaced risky type-casts with safe `try...except (ValueError, TypeError)` blocks returning defaults across `auth_profiles.py`, `coordinator.py`, `speculative.py`, `remediation.py`, `memory_auto_extractor.py`, `model_router.py`, and `prompt_caching.py` to prevent fatal startup crashes when YAML/JSON structures carry malformed types (e.g. `timeout: "unlimited"`). Included new regression coverage `tests/agent/test_configuration_coercion.py`.
@@ -17,6 +19,53 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - **Workstream B (systematic markers)**: Injected module-level `pytestmark = pytest.mark.<marker>` into all 315 test files (previously only 1 file had any marker applied). Classification: 279 `integration`, 29 `unit`, 7 `slow`. Enables `pytest -m unit` (400 tests, runs in ~3s), `pytest -m "not slow"` (excludes benchmarks/e2e/network), `pytest -m slow` (7 files). Added `import pytest` to files that lacked it. Injection script saved to `.dev/inject_markers.py`.
   - **Workstream B (asyncio mark cleanup)**: Removed 660 redundant `@pytest.mark.asyncio` decorators from 72 test files. All are no-ops under `asyncio_mode = auto` in `pytest.ini`; removal reduces visual noise without changing behaviour. No `import pytest` lines were orphaned. Removal script saved to `.dev/remove_asyncio_marks.py`.
   - Baseline 172-test suite: 172 passed ✓
+
+- **Test Suite Restructure — Subsystem Directory Migration batch 5** (36 files across 9 new + 1 extended subdirectories):
+  - `tests/routing/` ← test_channel_router_auto_persona.py, test_model_router.py, test_routing_perf_paths.py, test_runtime_routes.py, test_unified_router.py
+  - `tests/wave/` ← test_wave7_paths.py, test_wave8_paths.py, test_wave9_paths.py, test_wave10_paths.py
+  - `tests/commands/` (extended) ← test_backup_command_core.py, test_command_registry_export.py, test_db_command_core.py, test_import_command.py, test_mount_commands.py, test_menu_command_removal.py
+  - `tests/storage/` ← test_storage_engine.py, test_extended_cache.py, test_conversation_store.py, test_session_store.py
+  - `tests/integration/` ← test_integration.py, test_comms_integration.py, test_user_preferences_integration.py, test_firecrawl_integration.py
+  - `tests/engine/` ← test_cortex_engine.py, test_engine_queue.py, test_filtering_engine.py, test_pipeline.py
+  - `tests/migration/` ← test_core_migrations.py, test_migration.py
+  - `tests/policy/` ← test_continuation_policy.py, test_policy_gate.py
+  - `tests/tasks/` ← test_background_tasks.py, test_tasks.py
+  - `tests/knowledge/` ← test_corpus_scanner.py, test_knowledge_graph.py, test_language_enforcement.py
+  - Also removed 7 spurious flat-file duplicates (git-restored copies from batch 4 session with incorrect path depths; subdir copies are canonical).
+  - Fixed `__file__`-relative paths post-move: `tests/commands/test_command_registry_export.py` (`.parents[1]` → `.parents[2]`), `tests/commands/test_menu_command_removal.py` (`.parent.parent` → `.parent.parent.parent`), `tests/engine/test_cortex_engine.py` (`.parent.parent` → `.parent.parent.parent` for EXAMPLE_APP_YAML and GENERIC_YAML constants).
+  - 690 passed, 4 skipped ✓. ~76 flat test files remain.
+
+- **Test Suite Restructure — Subsystem Directory Migration batch 6** (41 files across 4 new + 5 extended subdirectories):
+  - `tests/security/` (extended) ← test_decoy_guard.py, test_trust_boundary.py, test_skill_security.py, test_sprint4_safety.py
+  - `tests/agent/` (extended) ← test_autonomous_agent.py, test_proactive_assistant.py, test_autoheal.py, test_auto_evolve.py, test_goal_orchestration.py, test_coordinator.py
+  - `tests/web/` (new) ← test_webserver_autodetect.py, test_webhooks.py, test_web_search_resolution.py
+  - `tests/ops/` (new) ← test_monitoring_unicode.py, test_telemetry.py, test_operation_recorder_core.py, test_middleware_op_recorder.py
+  - `tests/git/` (new) ← test_git_agent_tools.py, test_worktree.py, test_project_indexer.py
+  - `tests/llm/` (extended) ← test_mock_llm_server.py, test_speculative.py, test_intent_parser.py, test_context_builder.py
+  - `tests/planning/` (extended) ← test_workflow.py, test_flow_delegation.py, test_milestone_progress.py, test_effort_levels.py
+  - `tests/core/` (new) ← test_all_modules.py, test_backward_compat.py, test_contracts.py, test_api_snapshot.py, test_soul_loader.py, test_deferred_integration_guidance.py
+  - `tests/cli/` (extended) ← test_fast_help_output.py, test_help_system.py, test_plugin_cli.py, test_first_run.py, test_phase_f_debug_logging.py, test_execution_modes.py, test_mode_route_commands.py
+  - Fixed `__file__`-relative paths post-move: `tests/agent/test_auto_evolve.py` (`.parent.parent` → `.parent.parent.parent`), `tests/core/test_all_modules.py` (`.parent.parent` → `.parent.parent.parent`), `tests/cli/test_help_system.py` (`.parent.parent` → `.parent.parent.parent`, 3 occurrences), `tests/cli/test_plugin_cli.py` (`.parent.parent` → `.parent.parent.parent`).
+  - 1480 passed, 7 skipped ✓. 35 flat test files remain.
+
+- **Test Suite Restructure — Subsystem Directory Migration batch 7 (FINAL)** (35 files across 1 new + 13 extended subdirectories — 0 flat files remaining):
+  - `tests/voice/` (extended) ← test_audio_handler.py, test_streaming_stt.py, test_wake_word_engine.py
+  - `tests/security/` (extended) ← test_keys.py
+  - `tests/config/` (extended) ← test_hierarchical_config.py, test_auth_profiles.py
+  - `tests/db/` (new) ← test_database_advanced_core.py
+  - `tests/memory/` (extended) ← test_memory.py
+  - `tests/ops/` (extended) ← test_daemon.py, test_navig_backup.py, test_os_adapters.py, test_proc.py, test_recovery_local_bootstrap.py
+  - `tests/planning/` (extended) ← test_current_phase_manager.py, test_review_queue.py, test_todo_tracker.py
+  - `tests/providers/` (extended) ← test_providers.py
+  - `tests/service/` (extended) ← test_server_template_manager.py, test_template_manager.py
+  - `tests/tunnel/` (new) ← test_tunnel_manager.py
+  - `tests/knowledge/` (extended) ← test_key_facts.py
+  - `tests/mesh/` (extended) ← test_formations.py
+  - `tests/cli/` (extended) ← test_exec_pack.py, test_slash_registry.py, test_terminal_capabilities.py, test_selector.py
+  - `tests/core/` (extended) ← test_debug_logger.py, test_event_bridge.py, test_evolution_failure_summary.py, test_hooks.py, test_lsp.py, test_matrix.py, test_output_validator.py, test_package_runtime.py, test_reactive_compact.py
+  - Fixed `__file__`-relative paths pre-move: `test_os_adapters.py` (`.parent.parent` → `.parent.parent.parent`), `test_hierarchical_config.py` (`.parent` → `.parent.parent`), `test_formations.py` (`.parent.parent` → `.parent.parent.parent`, 3 occurrences).
+  - Also removed 3 spurious flat duplicates (git-restored copies of pre-move-fixed files: test_formations.py, test_hierarchical_config.py, test_os_adapters.py); subdir copies with corrected path depths are canonical.
+  - 2129 passed, 3 skipped ✓. **Migration complete — 0 flat test files remain.**
 
 - **Test Suite Restructure — Subsystem Directory Migration batch 4** (39 files across 18 new subdirectories):
   - `tests/ahk/` ← test_ahk_adapter.py, test_ahk_evolver.py

@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -33,6 +34,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from navig.tools.api_schema import ApiToolResult
 
+from navig.memory._util import _atomic_write_text
 from navig.platform import paths
 
 logger = logging.getLogger("navig.memory.snapshot")
@@ -120,7 +122,8 @@ def _load_policies_from_yaml() -> dict[str, Any]:
         # Also try raw dict access
         raw = cfg if isinstance(cfg, dict) else getattr(cfg, "__dict__", {})
         return raw.get("memory", {}).get("api_snapshot_policies", {})
-    except Exception:
+    except Exception as exc:
+        logger.debug("Snapshot policy config load failed, using defaults: %s", exc)
         return {}
 
 
@@ -436,8 +439,7 @@ def prune_snapshots(
 
         kept.append(entry.to_line())
 
-    # Rewrite file
-    file_path.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+    _atomic_write_text(file_path, "\n".join(kept) + ("\n" if kept else ""))
     if pruned:
         logger.info("Pruned %d expired snapshots from %s", pruned, file_path.name)
     return pruned
@@ -507,7 +509,7 @@ def clear_snapshots(
         else:
             kept.append(entry.to_line())
 
-    file_path.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+    _atomic_write_text(file_path, "\n".join(kept) + ("\n" if kept else ""))
     return removed
 
 
@@ -516,17 +518,21 @@ def clear_snapshots(
 # ─────────────────────────────────────────────────────────────
 
 _writer: SnapshotWriter | None = None
+_writer_lock = threading.Lock()
 
 
 def get_snapshot_writer() -> SnapshotWriter:
     """Get or create the module-level SnapshotWriter singleton."""
     global _writer
     if _writer is None:
-        _writer = SnapshotWriter()
+        with _writer_lock:
+            if _writer is None:
+                _writer = SnapshotWriter()
     return _writer
 
 
 def reset_snapshot_writer() -> None:
     """Reset singleton (for testing)."""
     global _writer
-    _writer = None
+    with _writer_lock:
+        _writer = None

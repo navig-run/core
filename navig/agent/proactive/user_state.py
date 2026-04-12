@@ -12,6 +12,9 @@ operator health monitoring, adapted for NAVIG's persistent daemon model.
 """
 
 import json
+import os
+import tempfile
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -390,10 +393,17 @@ class UserStateTracker:
         """Write only last_seen to a lightweight sidecar for restart resilience (BUG-5)."""
         sidecar = self.state_dir / "last_seen.json"
         try:
-            sidecar.write_text(
-                json.dumps({"last_seen": self.stats.last_seen}),
-                encoding="utf-8",
-            )
+            _tmp_path: Path | None = None
+            try:
+                _fd, _tmp = tempfile.mkstemp(dir=sidecar.parent, suffix=".tmp")
+                _tmp_path = Path(_tmp)
+                with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                    _fh.write(json.dumps({"last_seen": self.stats.last_seen}))
+                os.replace(_tmp_path, sidecar)
+                _tmp_path = None
+            finally:
+                if _tmp_path is not None:
+                    _tmp_path.unlink(missing_ok=True)
         except Exception as e:
             logger.debug("Failed to flush last_seen sidecar: %s", e)
 
@@ -501,7 +511,17 @@ class UserStateTracker:
                 },
                 "updated_at": datetime.now().isoformat(),
             }
-            state_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            _tmp_path: Path | None = None
+            try:
+                _fd, _tmp = tempfile.mkstemp(dir=state_file.parent, suffix=".tmp")
+                _tmp_path = Path(_tmp)
+                with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                    _fh.write(json.dumps(data, indent=2))
+                os.replace(_tmp_path, state_file)
+                _tmp_path = None
+            finally:
+                if _tmp_path is not None:
+                    _tmp_path.unlink(missing_ok=True)
         except Exception as e:
             logger.warning("Failed to save user state: %s", e)
 
@@ -509,11 +529,14 @@ class UserStateTracker:
 # ── Singleton accessor ────────────────────────────────────────
 
 _tracker_instance: UserStateTracker | None = None
+_tracker_lock = threading.Lock()
 
 
 def get_user_state_tracker() -> UserStateTracker:
     """Get the global UserStateTracker singleton."""
     global _tracker_instance
     if _tracker_instance is None:
-        _tracker_instance = UserStateTracker()
+        with _tracker_lock:
+            if _tracker_instance is None:
+                _tracker_instance = UserStateTracker()
     return _tracker_instance

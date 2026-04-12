@@ -17,9 +17,18 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from navig.plans.frontmatter import (
+    FRONTMATTER_RE as _FRONTMATTER_RE,
+)
+from navig.plans.frontmatter import (
+    parse_frontmatter as _parse_frontmatter,
+)
+from navig.plans.frontmatter import (
+    render_frontmatter as _render_frontmatter,
+)
+
 logger = logging.getLogger(__name__)
 
-_FRONTMATTER_RE = re.compile(r"^---\n([\s\S]*?)\n---\n?", re.MULTILINE)
 _ACTIVE_TASKS_RE = re.compile(
     r"^## Active Tasks\s*\n([\s\S]*?)(?=\n## |\Z)",
     re.MULTILINE,
@@ -56,29 +65,6 @@ class PhaseState:
 
     source_path: Path
     """Absolute path to the source file."""
-
-
-def _parse_frontmatter(text: str) -> dict[str, str]:
-    """Return a dict of key→value from ``---``-delimited frontmatter."""
-    match = _FRONTMATTER_RE.match(text)
-    if not match:
-        return {}
-    values: dict[str, str] = {}
-    for line in match.group(1).splitlines():
-        if ":" not in line:
-            continue
-        key, val = line.split(":", 1)
-        values[key.strip()] = val.strip()
-    return values
-
-
-def _render_frontmatter(fm: dict[str, str]) -> str:
-    """Render a frontmatter block from a dict."""
-    lines = ["---"]
-    for key, val in fm.items():
-        lines.append(f"{key}: {val}")
-    lines.append("---\n")
-    return "\n".join(lines)
 
 
 def _parse_active_tasks(text: str) -> list[str]:

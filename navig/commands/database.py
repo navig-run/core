@@ -3,38 +3,12 @@
 import json
 import os
 import subprocess
-import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from navig import console_helper as ch
-
-
-def _create_mysql_config_file(user: str, password: str) -> str:
-    """
-    Create temporary MySQL config file with credentials.
-    Returns path to config file.
-    SECURITY: Prevents password from appearing in process listings.
-    """
-    fd, config_path = tempfile.mkstemp(suffix=".cnf", text=True)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write("[client]\n")
-            f.write(f"user={user}\n")
-            f.write(f"password={password}\n")
-        # Set restrictive permissions (owner read/write only)
-        try:
-            os.chmod(config_path, 0o600)
-        except (OSError, PermissionError):
-            pass  # best-effort: skip on access/IO error
-        return config_path
-    except Exception:
-        try:
-            os.unlink(config_path)
-        except OSError:
-            pass  # best-effort cleanup
-        raise
+from navig.commands._db_utils import calculate_file_checksum, create_mysql_config_file
 
 
 def execute_sql(query: str, options: dict[str, Any]):
@@ -82,7 +56,7 @@ def execute_sql(query: str, options: dict[str, Any]):
     db = server_config["database"]
 
     # Create secure config file (prevents password in process listings)
-    config_file = _create_mysql_config_file(db["user"], db["password"])
+    config_file = create_mysql_config_file(db["user"], db["password"])
 
     try:
         # Execute via mysql client
@@ -187,7 +161,7 @@ def backup_database(path: Path | None, options: dict[str, Any]):
         ch.info(f"Creating backup: {path}")
 
     # Create secure config file (prevents password in process listings)
-    config_file = _create_mysql_config_file(db["user"], db["password"])
+    config_file = create_mysql_config_file(db["user"], db["password"])
 
     try:
         mysqldump_cmd = [
@@ -292,7 +266,7 @@ def restore_database(file: Path, options: dict[str, Any]):
                 for db_info in metadata.get("databases", []):
                     if db_info.get("file") == file.name and "checksum" in db_info:
                         ch.info("Verifying backup integrity...")
-                        actual_checksum = _calculate_file_checksum(file)
+                        actual_checksum = calculate_file_checksum(file)
                         if actual_checksum != db_info["checksum"]:
                             ch.error("Backup file corrupted! Checksum mismatch.")
                             ch.error(f"Expected: {db_info['checksum'][:16]}...")
@@ -340,7 +314,7 @@ def restore_database(file: Path, options: dict[str, Any]):
     ch.info("Restoring database...")
 
     # Create secure config file
-    config_file = _create_mysql_config_file(db["user"], db["password"])
+    config_file = create_mysql_config_file(db["user"], db["password"])
 
     try:
         # Restore with error handling
@@ -395,12 +369,3 @@ def restore_database(file: Path, options: dict[str, Any]):
             pass  # best-effort cleanup
 
 
-def _calculate_file_checksum(file_path: Path, algorithm: str = "sha256") -> str:
-    """Calculate checksum for file integrity verification."""
-    import hashlib
-
-    hash_obj = hashlib.new(algorithm)
-    with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            hash_obj.update(chunk)
-    return hash_obj.hexdigest()

@@ -21,14 +21,7 @@ def _get_llm_router():
         return None
 
 
-def _get_vault():
-    try:
-        from navig.vault import get_vault
-
-        return get_vault()
-    except Exception as e:
-        logger.debug("Vault not available: %s", e)
-        return None
+from navig.gateway.deck.routes._utils import _get_vault
 
 
 def _get_provider_key_status() -> dict:

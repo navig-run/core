@@ -5,6 +5,8 @@ Manage profile-based agent formations.
 """
 
 import json as json_module
+import os
+import tempfile
 from pathlib import Path
 
 import typer
@@ -205,7 +207,17 @@ def formation_init(
     profile_path = navig_dir / "profile.json"
     profile_data = {"version": 1, "profile": profile}
 
-    profile_path.write_text(json_module.dumps(profile_data, indent=2), encoding="utf-8")
+    _tmp_path: Path | None = None
+    try:
+        _fd, _tmp = tempfile.mkstemp(dir=profile_path.parent, suffix=".tmp")
+        _tmp_path = Path(_tmp)
+        with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+            _fh.write(json_module.dumps(profile_data, indent=2))
+        os.replace(_tmp_path, profile_path)
+        _tmp_path = None
+    finally:
+        if _tmp_path is not None:
+            _tmp_path.unlink(missing_ok=True)
     ch.success(f"Profile set to '{profile}'")
     ch.info(f"  Written to: {profile_path}")
 

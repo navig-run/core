@@ -16,8 +16,10 @@ Color policy: encodes state ONLY, never decoration.
 from __future__ import annotations
 
 import os
-import re
 import sys
+
+from navig.console_helper import strip_ansi as _strip_ansi  # noqa: F401
+from navig.platform.paths import config_dir
 
 from .engine import StepRecord
 
@@ -112,16 +114,6 @@ else:
     _SEP_THIN = "-"
 
 
-def _strip_ansi(s: str) -> str:
-    return re.sub(r"\x1b\[[^m]*m", "", s)
-
-
-def _pad_to(content: str, width: int, fill: str = " ") -> str:
-    """Pad `content` to visual `width`, accounting for ANSI escape codes."""
-    visual_len = len(_strip_ansi(content))
-    return content + fill * max(0, width - visual_len)
-
-
 # ── Step label & detail helpers ────────────────────────────────────────────
 
 _STEP_LABELS: dict[str, str] = {
@@ -179,7 +171,7 @@ def _format_detail(step_id: str, output: dict, error: str | None = None) -> str:
         p = output.get("configPath", "")
         if not p:
             # Step was soft-skipped but path is deterministic; show it anyway
-            p = str(_P.home() / ".navig" / "config.yaml")
+            p = str(config_dir() / "config.yaml")
         return _sh(p)
 
     if step_id == "configure-ssh":

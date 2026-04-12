@@ -14,6 +14,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from navig.debug_logger import DebugLogger
@@ -125,7 +126,17 @@ class ServiceInstaller:
 
         try:
             # Write service file
-            service_path.write_text(unit_content)
+            _tmp_svc: Path | None = None
+            try:
+                _fd_s, _tmp_s = tempfile.mkstemp(dir=service_path.parent, suffix=".tmp")
+                _tmp_svc = Path(_tmp_s)
+                with os.fdopen(_fd_s, "w", encoding="utf-8") as _fh_s:
+                    _fh_s.write(unit_content)
+                os.replace(_tmp_svc, service_path)
+                _tmp_svc = None
+            finally:
+                if _tmp_svc is not None:
+                    _tmp_svc.unlink(missing_ok=True)
             self.logger.log_operation(
                 "service",
                 {"action": "install", "platform": "systemd", "path": str(service_path)},
@@ -271,7 +282,17 @@ WantedBy=default.target
 
         try:
             # Write plist file
-            plist_path.write_text(plist_content)
+            _tmp_plist: Path | None = None
+            try:
+                _fd_p, _tmp_p = tempfile.mkstemp(dir=plist_path.parent, suffix=".tmp")
+                _tmp_plist = Path(_tmp_p)
+                with os.fdopen(_fd_p, "w", encoding="utf-8") as _fh_p:
+                    _fh_p.write(plist_content)
+                os.replace(_tmp_plist, plist_path)
+                _tmp_plist = None
+            finally:
+                if _tmp_plist is not None:
+                    _tmp_plist.unlink(missing_ok=True)
             self.logger.log_operation(
                 "service",
                 {"action": "install", "platform": "launchd", "path": str(plist_path)},

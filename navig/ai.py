@@ -514,58 +514,14 @@ def ask_ai_with_context(
     Returns:
         AI response text
     """
-    from navig.config import get_config_manager
+    from navig.llm_generate import llm_generate  # noqa: PLC0415
 
-    config_mgr = get_config_manager()
-    ai_key = _resolve_openrouter_api_key(config_mgr.global_config)
-
-    if not ai_key:
-        return (
-            "Error: OpenRouter API key not configured. "
-            "Checked OPENROUTER_API_KEY env, ai.api_key, openrouter_api_key."
-        )
-
-    # Build messages
-    messages = []
-
+    # Build messages list
+    messages: list[dict[str, str]] = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
-
-    # Add history
     if history:
         messages.extend(history)
-
-    # Add current prompt
     messages.append({"role": "user", "content": prompt})
 
-    # Determine model
-    if not model:
-        models = _get_model_preference(config_mgr.global_config)
-        model = models[0] if models else "google/gemini-2.5-flash"
-
-    # Call OpenRouter API
-    try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {ai_key}",
-                "HTTP-Referer": "https://github.com/navig-run/core",
-                "X-Title": "NAVIG Autonomous Agent",
-            },
-            json={
-                "model": model,
-                "messages": messages,
-                "temperature": 0.7,
-                "max_tokens": 4096,
-            },
-            timeout=120,
-        )
-        response.raise_for_status()
-
-        data = response.json()
-        return data["choices"][0]["message"]["content"]
-
-    except requests.exceptions.RequestException as e:
-        return f"Error calling AI API: {e}"
-    except (KeyError, IndexError) as e:
-        return f"Error parsing AI response: {e}"
+    return llm_generate(messages=messages, model_override=model)

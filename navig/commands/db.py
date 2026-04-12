@@ -291,16 +291,31 @@ def _resolve_host_discovery(
     from navig.discovery import ServerDiscovery
 
     config_manager = get_config_manager()
-    host_name = require_active_host(options, config_manager)
+    try:
+        host_name = require_active_host(options, config_manager)
+    except (FileNotFoundError, ValueError) as exc:
+        ch.error(str(exc))
+        return None
 
-    host_config = config_manager.load_host_config(host_name)
+    try:
+        host_config = config_manager.load_host_config(host_name)
+    except FileNotFoundError:
+        ch.error(f"Host not found: {host_name}")
+        return None
     if not host_config:
         ch.error(f"Host not found: {host_name}")
         return None
 
     debug_logger = options.get("debug_logger")
+    ssh_host = host_config.get("host", host_config.get("hostname"))
+    if not ssh_host:
+        ch.error(
+            f"Host '{host_name}' configuration is missing required 'host' or 'hostname'."
+        )
+        return None
+
     ssh_config = {
-        "host": host_config.get("host", host_config.get("hostname")),
+        "host": ssh_host,
         "user": host_config.get("user", "root"),
         "port": host_config.get("port", 22),
         "ssh_key": host_config.get("ssh_key"),
@@ -793,17 +808,10 @@ def db_dump_cmd(
     """
     from datetime import datetime
 
-    from navig.cli.recovery import require_active_host
-    from navig.config import get_config_manager
-    from navig.discovery import ServerDiscovery
-
-    config_manager = get_config_manager()
-    host_name = require_active_host(options, config_manager)
-
-    host_config = config_manager.load_host_config(host_name)
-    if not host_config:
-        ch.error(f"Host not found: {host_name}")
+    result = _resolve_host_discovery(options)
+    if result is None:
         return
+    host_name, config_manager, discovery = result
 
     # Resolve database credentials from config if not provided
     resolved_user, resolved_password, resolved_db_type = (
@@ -811,17 +819,6 @@ def db_dump_cmd(
             config_manager, host_name, user, password, db_type
         )
     )
-
-    debug_logger = options.get("debug_logger")
-
-    ssh_config = {
-        "host": host_config.get("host", host_config.get("hostname")),
-        "user": host_config.get("user", "root"),
-        "port": host_config.get("port", 22),
-        "ssh_key": host_config.get("ssh_key"),
-        "ssh_password": host_config.get("ssh_password"),
-    }
-    discovery = ServerDiscovery(ssh_config, debug_logger=debug_logger)
 
     if not resolved_db_type:
         with ch.create_spinner("Detecting database type..."):
@@ -870,7 +867,7 @@ def db_dump_cmd(
     if success and stdout:
         # Save to local file
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(stdout)
+        output.write_text(stdout, encoding="utf-8")
         size_kb = output.stat().st_size / 1024
         ch.success(f"✓ Backup saved: {output}")
         ch.dim(f"  Size: {size_kb:.1f} KB")
@@ -953,23 +950,9 @@ def db_shell_cmd(
         db_cmd = f"docker exec -it {_escape_for_shell(container)} sh -c {_escape_for_shell(db_cmd)}"
 
     # Build SSH command for interactive session — resolve full path for 32-bit Python on Windows
-    import pathlib as _pl
-    import shutil as _shutil
+    from navig.core.connection import _resolve_ssh_bin  # noqa: PLC0415
 
-    def _find_ssh_db():
-        b = _shutil.which("ssh") or _shutil.which("ssh.exe")
-        if b:
-            return b
-        _sr = __import__("os").environ.get("SystemRoot", "C:/Windows")
-        for _c in [
-            _pl.Path(_sr) / "SysNative" / "OpenSSH" / "ssh.exe",
-            _pl.Path(_sr) / "System32" / "OpenSSH" / "ssh.exe",
-        ]:
-            if _c.exists():
-                return str(_c)
-        raise FileNotFoundError("ssh.exe not found")
-
-    ssh_cmd = [_find_ssh_db(), "-t", "-p", str(ssh_port)]
+    ssh_cmd = [_resolve_ssh_bin(), "-t", "-p", str(ssh_port)]
     if ssh_key:
         ssh_cmd.extend(["-i", str(Path(ssh_key).expanduser())])
     ssh_cmd.append(f"{ssh_user}@{ssh_host}")
@@ -1001,6 +984,7 @@ db_app = typer.Typer(
 @db_app.callback()
 def db_callback(ctx: typer.Context):
     """Database management - run without subcommand for help."""
+    ctx.ensure_object(dict)
     if ctx.invoked_subcommand is None:
         import os as _os  # noqa: PLC0415
 

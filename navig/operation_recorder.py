@@ -12,11 +12,17 @@ Storage: ~/.navig/history/operations.jsonl (JSON Lines format)
 
 import hashlib
 import json
+import logging
+import os
+import tempfile
+import threading
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class OperationType(str, Enum):
@@ -220,10 +226,10 @@ class OperationRecorder:
             with open(self.history_file, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record.to_dict()) + "\n")
 
-            # Update index
+            # Rebuild index from file so operation_id -> file line mapping stays
+            # correct even when history includes blank/malformed lines.
+            self._index_loaded = False
             self._load_index()
-            self._operation_ids.append(record.id)
-            self._operations_by_id[record.id] = len(self._operation_ids) - 1
 
             # Check for rotation
             if len(self._operation_ids) > self.max_entries:
@@ -321,8 +327,8 @@ class OperationRecorder:
                 status="success" if success else "failed",
                 duration_ms=int(duration_ms) if duration_ms else None,
             )
-        except Exception:
-            pass  # Never let audit failure block operation recording
+        except Exception as _exc:
+            logger.debug("audit log skipped: %s", _exc)  # Never let audit failure block recording
 
         return self.record(record)
 
@@ -352,9 +358,18 @@ class OperationRecorder:
             backup_file = self.history_file.with_suffix(".jsonl.bak")
             self.history_file.rename(backup_file)
 
-            with open(self.history_file, "w", encoding="utf-8") as f:
-                for entry in recent_entries:
-                    f.write(json.dumps(entry.to_dict()) + "\n")
+            _tmp_path: Path | None = None
+            try:
+                _fd, _tmp = tempfile.mkstemp(dir=self.history_file.parent, suffix=".tmp")
+                _tmp_path = Path(_tmp)
+                with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                    for entry in recent_entries:
+                        _fh.write(json.dumps(entry.to_dict()) + "\n")
+                os.replace(_tmp_path, self.history_file)
+                _tmp_path = None
+            finally:
+                if _tmp_path is not None:
+                    _tmp_path.unlink(missing_ok=True)
 
             # Update index
             self._index_loaded = False
@@ -552,13 +567,16 @@ class OperationRecorder:
 
 # Singleton instance
 _recorder: OperationRecorder | None = None
+_recorder_lock = threading.Lock()
 
 
 def get_operation_recorder() -> OperationRecorder:
     """Get the global operation recorder instance."""
     global _recorder
     if _recorder is None:
-        _recorder = OperationRecorder()
+        with _recorder_lock:
+            if _recorder is None:
+                _recorder = OperationRecorder()
     return _recorder
 
 

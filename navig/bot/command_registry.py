@@ -51,6 +51,7 @@ Querying the registry::
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -174,6 +175,7 @@ class CommandRegistry:
 # ---------------------------------------------------------------------------
 
 _registry: CommandRegistry | None = None
+_registry_lock = threading.Lock()
 
 
 def get_command_registry() -> CommandRegistry:
@@ -184,9 +186,11 @@ def get_command_registry() -> CommandRegistry:
     """
     global _registry
     if _registry is None:
-        _registry = CommandRegistry()
-        # Lazy-populate from existing COMMAND_TOOLS list
-        _populate_from_command_tools(_registry)
+        with _registry_lock:
+            if _registry is None:
+                _registry = CommandRegistry()
+                # Lazy-populate from existing COMMAND_TOOLS list
+                _populate_from_command_tools(_registry)
     return _registry
 
 

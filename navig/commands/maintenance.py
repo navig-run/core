@@ -11,6 +11,7 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
+from navig.cli.recovery import require_active_server
 from navig.config import get_config_manager
 from navig.console_helper import get_console
 from navig.remote import RemoteOperations
@@ -32,11 +33,7 @@ def update_packages(options: dict) -> None:
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    # Get active server configuration
-    active_server = config_manager.get_active_server()
-    if not active_server:
-        console.print("[red]✗ No active server configured[/red]")
-        return
+    active_server = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(active_server)
 
@@ -180,11 +177,7 @@ def clean_packages(options: dict) -> None:
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    # Get active server configuration
-    active_server = config_manager.get_active_server()
-    if not active_server:
-        console.print("[red]✗ No active server configured[/red]")
-        return
+    active_server = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(active_server)
 
@@ -268,11 +261,7 @@ def rotate_logs(options: dict) -> None:
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    # Get active server configuration
-    active_server = config_manager.get_active_server()
-    if not active_server:
-        console.print("[red]✗ No active server configured[/red]")
-        return
+    active_server = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(active_server)
 
@@ -337,11 +326,7 @@ def cleanup_temp(options: dict) -> None:
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    # Get active server configuration
-    active_server = config_manager.get_active_server()
-    if not active_server:
-        console.print("[red]✗ No active server configured[/red]")
-        return
+    active_server = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(active_server)
 
@@ -418,11 +403,7 @@ def check_filesystem(options: dict) -> None:
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    # Get active server configuration
-    active_server = config_manager.get_active_server()
-    if not active_server:
-        console.print("[red]✗ No active server configured[/red]")
-        return
+    active_server = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(active_server)
 
@@ -600,11 +581,7 @@ def system_info(options: dict) -> None:
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    # Get active server configuration
-    active_server = config_manager.get_active_server()
-    if not active_server:
-        console.print("[red]✗ No active server configured[/red]")
-        return
+    active_server = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(active_server)
     json_output = options.get("json", False)

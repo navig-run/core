@@ -37,7 +37,7 @@ class FirecrawlClient:
     def _request(self, method: str, path: str, *, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         if not self.api_key:
             raise FirecrawlError(
-                "FIRECRAWL_API_KEY is required. Set it via env or `navig cred add firecrawl --key ...`.",
+                "FIRECRAWL_API_KEY is required. Set it via env or `navig vault add firecrawl --key ...`.",
                 status_code=401,
                 retryable=False,
             )
@@ -167,7 +167,7 @@ def get_firecrawl_client() -> FirecrawlClient:
     )
     if not api_key:
         raise FirecrawlError(
-            "FIRECRAWL_API_KEY is required. Set it via env or `navig cred add firecrawl --key ...`.",
+            "FIRECRAWL_API_KEY is required. Set it via env or `navig vault add firecrawl --key ...`.",
             status_code=401,
             retryable=False,
         )

@@ -7,6 +7,8 @@ try:
 except ImportError:
     web = None
 
+from navig.vault.secret_str import mask_secret
+
 logger = logging.getLogger(__name__)
 
 _VAULT_ALLOWED_PROVIDERS = {
@@ -31,20 +33,7 @@ _VAULT_ALLOWED_PROVIDERS = {
 }
 
 
-def _mask_key(key: str) -> str:
-    if not key or len(key) < 12:
-        return "••••••••"
-    return f"{key[:6]}••••{key[-4:]}"
-
-
-def _get_vault():
-    try:
-        from navig.vault import get_vault
-
-        return get_vault()
-    except Exception as e:
-        logger.debug("Vault not available: %s", e)
-        return None
+from navig.gateway.deck.routes._utils import _get_vault
 
 
 async def handle_deck_vault_list(request: "web.Request") -> "web.Response":
@@ -78,7 +67,7 @@ async def handle_deck_vault_list(request: "web.Request") -> "web.Response":
                 full_cred = vault.get_by_id(c.id, caller="deck_vault_list")
                 if full_cred and full_cred.data:
                     key_val = full_cred.data.get("api_key", "") or full_cred.data.get("token", "")
-                    items[-1]["key_preview"] = _mask_key(key_val)
+                    items[-1]["key_preview"] = mask_secret(key_val, show_prefix=6)
                 else:
                     items[-1]["key_preview"] = "••••••••"
             except Exception:

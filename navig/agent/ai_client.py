@@ -610,9 +610,9 @@ class AIClient:
             resp = await router.call(messages, decision)
             return resp.content
         except Exception as e:
-            logger.debug("HybridRouter.call failed (%s), trying legacy path", e)
+            logger.debug("HybridRouter.call failed (%s), trying direct-provider path", e)
 
-        # Legacy fallback: route to appropriate provider-specific method
+        # Direct-provider fallback: route to appropriate provider-specific method
         provider = decision.provider or self.provider
         if provider == "github_models":
             return await self._chat_github_models(

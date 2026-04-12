@@ -839,17 +839,6 @@ COMMAND_TOOLS: list[dict[str, Any]] = [
 ]
 
 
-# ============================================================================
-# COMMAND HANDLER MAPPING
-# Maps AI function calls to actual slash commands
-# ============================================================================
-
-
-def _build_command_string(cmd: str, args: dict[str, Any]) -> str:
-    """Build a command string from function name and arguments."""
-    return cmd
-
-
 COMMAND_HANDLER_MAP: dict[str, str | Callable[[dict[str, Any]], str]] = {
     # Core
     "start": "/start",

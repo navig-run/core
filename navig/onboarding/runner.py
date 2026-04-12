@@ -23,22 +23,24 @@ _MAX_REVISIT_DEPTH = 20
 def _get_console() -> RichConsole | None:
     """Return a Rich Console writing to stdout, or None if Rich is unavailable."""
     try:
-        from rich.console import Console
-    except ImportError:
+        from rich.console import Console as _RichConsole  # noqa: PLC0415
+    except Exception:
         return None
 
     try:
         from navig.console_helper import get_console as _ch_get_console
 
-        return _ch_get_console()
+        console = _ch_get_console()
+        return console if console is not None else _RichConsole()
     except Exception:
-        pass
-    return Console()
+        return _RichConsole()
 
 
 def should_auto_run_onboarding(argv: Sequence[str] | None = None) -> bool:
     """Return True when first-run onboarding should execute for this invocation."""
-    args = list(argv or sys.argv)
+    # Distinguish None (use sys.argv) from [] (explicitly empty — no argv in context).
+    args = list(sys.argv if argv is None else argv)
+    raw_args = args[1:]
 
     if os.getenv("NAVIG_SKIP_ONBOARDING") == "1":
         return False
@@ -53,12 +55,17 @@ def should_auto_run_onboarding(argv: Sequence[str] | None = None) -> bool:
     if (navig_dir / "onboarding.json").exists():
         return False
 
-    skip_flags = {"-v", "--version", "-h", "--help"}
-    if args[1:2] and args[1] in skip_flags:
+    if any(flag in raw_args for flag in ("-v", "--version", "-h", "--help")):
         return False
 
-    skip_cmds = {"onboard", "quickstart", "service", "update", "version"}
-    if any(cmd in args[1:2] for cmd in skip_cmds):
+    from navig.cli.registration import extract_non_global_tokens
+
+    command_tokens = extract_non_global_tokens(raw_args)
+    if not command_tokens:
+        return False
+
+    skip_cmds = {"help", "onboard", "quickstart", "service", "update", "version"}
+    if command_tokens[0] in skip_cmds:
         return False
 
     return True

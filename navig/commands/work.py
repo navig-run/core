@@ -22,8 +22,10 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import os as _os
 import re
+import tempfile
 import textwrap
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +33,8 @@ from pathlib import Path
 import typer
 
 from navig import console_helper as ch
+
+_log = logging.getLogger(__name__)
 
 
 def _print_json(data) -> None:
@@ -456,9 +460,19 @@ def _update_wiki_stage(notes_path: str, new_stage: str) -> None:
             return
         content = full_path.read_text(encoding="utf-8")
         updated = re.sub(r"(?m)^stage:\s*\S+", f"stage: {new_stage}", content, count=1)
-        full_path.write_text(updated, encoding="utf-8")
-    except Exception:  # noqa: BLE001
-        pass
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=full_path.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with _os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                _fh.write(updated)
+            _os.replace(_tmp_path, full_path)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
+    except Exception as _exc:  # noqa: BLE001
+        _log.debug("wiki stage update skipped: %s", _exc)
 
 
 @work_app.command("update")

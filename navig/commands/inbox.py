@@ -18,6 +18,8 @@ from pathlib import Path
 
 import typer
 
+from navig.commands.plans import _find_project_root
+
 logger = logging.getLogger("navig.commands.inbox")
 
 inbox_app = typer.Typer(
@@ -39,16 +41,6 @@ def _inbox_callback(ctx: typer.Context) -> None:
         from navig.cli.launcher import smart_launch  # noqa: PLC0415
 
         smart_launch("inbox", inbox_app)
-
-
-def _find_project_root() -> Path:
-    """Walk up from cwd to find a directory containing .navig/."""
-    cwd = Path.cwd()
-    for parent in [cwd, *cwd.parents]:
-        if (parent / ".navig").is_dir():
-            return parent
-    # Fallback to cwd
-    return cwd
 
 
 def _print_plan(plan: dict, verbose: bool = False) -> None:
@@ -696,3 +688,270 @@ def ui_cmd(
         typer.echo("")
 
     typer.secho(f"Done. {routed} routed, {skipped} kept.", fg=typer.colors.CYAN)
+
+
+@inbox_app.command("reroute")
+def reroute_cmd(
+    space: str | None = typer.Option(
+        None,
+        "--space",
+        "-s",
+        help=(
+            "Path to a space root containing .navig/inbox/ "
+            "(default: auto-detect from cwd by walking up until .navig/ found)"
+        ),
+    ),
+    confirm: bool = typer.Option(
+        False,
+        "--confirm",
+        help="Execute redirects. Without this flag the command is always a dry-run.",
+    ),
+    log_file: str | None = typer.Option(
+        None,
+        "--log",
+        help="Write per-file JSON-lines results to this file (appended).",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print results as JSON to stdout."),
+    mode: str = typer.Option("move", "--mode", "-m", help="Dispatch mode: move | copy | link"),
+) -> None:
+    """Re-evaluate routes.yaml exclude rules and redirect misplaced inbox files.
+
+    Reads the ``exclude:`` block from the space's routes.yaml, scores every
+    file in the inbox against it, and for each match finds the best sibling
+    space (scored against each sibling's channel keywords).
+
+    Dry-run by default — pass --confirm to execute actual moves/copies.
+
+    \b
+    Examples:
+      navig inbox reroute --space D:/spaces/human --confirm
+      navig inbox reroute                          # dry-run from cwd
+      navig inbox reroute --mode copy --log out.jsonl
+    """
+    import json as _json  # noqa: PLC0415
+
+    from navig.inbox.router import ConflictStrategy, InboxRouter, RouteMode  # noqa: PLC0415
+    from navig.inbox.routes_loader import load  # noqa: PLC0415
+    from navig.inbox.space_scorer import (  # noqa: PLC0415
+        check_exclude_rules,
+        extract_terms,
+        find_best_destination,
+    )
+
+    # ── Resolve space root ────────────────────────────────────
+    if space:
+        space_root = Path(space).resolve()
+    else:
+        # Walk up from cwd until we find a directory that contains .navig/
+        cwd = Path.cwd()
+        candidate = cwd
+        while True:
+            if (candidate / ".navig").is_dir():
+                space_root = candidate
+                break
+            parent = candidate.parent
+            if parent == candidate:
+                typer.secho(
+                    "Could not find a .navig/ directory in cwd or any parent. "
+                    "Use --space to specify the space root explicitly.",
+                    fg=typer.colors.RED,
+                )
+                raise typer.Exit(1)
+            candidate = parent
+
+    inbox_dir = space_root / ".navig" / "inbox"
+    if not inbox_dir.is_dir():
+        typer.secho(f"No .navig/inbox/ found at {space_root}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    config = load(space_root)
+    if config is None or not config.exclude:
+        typer.secho(
+            f"No routes.yaml with exclude rules found for space at {space_root}.",
+            fg=typer.colors.YELLOW,
+        )
+        raise typer.Exit(0)
+
+    spaces_root = config.spaces_root or space_root.parent
+    is_dry = not confirm
+
+    try:
+        route_mode = RouteMode(mode)
+    except ValueError:
+        typer.secho(f"Invalid mode '{mode}'. Choose: move, copy, link", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    router = InboxRouter(project_root=space_root, mode=route_mode)
+
+    # ── Scan inbox files ──────────────────────────────────────
+    inbox_files: list[Path] = []
+    for item in sorted(inbox_dir.rglob("*")):
+        if item.is_file() and item.suffix not in {".redirected", ".bak"}:
+            # Skip the routes.yaml itself and README files
+            if item.name in {"routes.yaml", "README.md"}:
+                continue
+            inbox_files.append(item)
+
+    if not inbox_files:
+        typer.secho("Inbox is empty — nothing to reroute.", fg=typer.colors.CYAN)
+        raise typer.Exit(0)
+
+    typer.echo(
+        f"Space: {space_root}\n"
+        f"Inbox: {inbox_dir}\n"
+        f"Files: {len(inbox_files)}\n"
+        f"Mode:  {'DRY-RUN (pass --confirm to execute)' if is_dry else 'EXECUTE'}\n"
+    )
+
+    # ── Process each file ─────────────────────────────────────
+    results: list[dict] = []
+    redirected = skipped = errors = 0
+
+    log_handle = None
+    if log_file:
+        try:
+            log_handle = open(log_file, "a", encoding="utf-8")  # noqa: SIM115
+        except OSError as exc:
+            typer.secho(f"Cannot open log file {log_file}: {exc}", fg=typer.colors.YELLOW)
+
+    for f in inbox_files:
+        entry: dict = {"file": str(f), "status": "ok"}
+        try:
+            raw_text = f.read_text(encoding="utf-8", errors="replace")
+        except Exception as exc:
+            entry["status"] = "error"
+            entry["error"] = f"read error: {exc}"
+            errors += 1
+            _emit(entry, log_handle, json_output)
+            results.append(entry)
+            continue
+
+        terms = extract_terms(raw_text)
+        rule = check_exclude_rules(terms, config) if terms else None
+
+        if rule is None:
+            entry["status"] = "kept"
+            entry["reason"] = "no exclude rule matched"
+            _emit(entry, log_handle, json_output)
+            results.append(entry)
+            continue
+
+        dest_inbox = find_best_destination(terms, space_root, spaces_root)
+        if dest_inbox is None:
+            entry["status"] = "no_destination"
+            entry["reason"] = "exclude rule matched but no suitable sibling space found"
+            entry["rule_keywords"] = rule.keywords[:6]
+            typer.secho(
+                f"  [NO DEST] {f.name} — exclude rule matched but no sibling scored high enough",
+                fg=typer.colors.YELLOW,
+            )
+            _emit(entry, log_handle, json_output)
+            results.append(entry)
+            continue
+
+        dest_file = dest_inbox / f.name
+        entry["would_redirect_to"] = str(dest_file)
+        entry["rule_keywords"] = rule.keywords[:6]
+        entry["terms_sample"] = terms[:10]
+
+        if is_dry:
+            entry["status"] = "redirect_dry_run"
+            typer.secho(
+                f"  [DRY-RUN] {f.name}",
+                fg=typer.colors.YELLOW,
+                nl=False,
+            )
+            typer.echo(f" → {dest_inbox.parent.name}/{dest_inbox.name}/{f.name}")
+            redirected += 1
+        else:
+            # Execute redirect
+            if dest_file.exists():
+                if rule.on_conflict == "skip":
+                    entry["status"] = "skipped"
+                    entry["reason"] = "destination exists and on_conflict=skip"
+                    skipped += 1
+                    typer.secho(f"  [SKIP] {f.name} — destination exists", fg=typer.colors.WHITE)
+                    _emit(entry, log_handle, json_output)
+                    results.append(entry)
+                    continue
+                elif rule.on_conflict == "rename":
+                    from navig.inbox.router import _unique_path  # noqa: PLC0415
+                    dest_file = _unique_path(dest_file)
+                # "overwrite" falls through
+
+            try:
+                dest_inbox.mkdir(parents=True, exist_ok=True)
+                if route_mode == RouteMode.COPY:
+                    import shutil as _shutil  # noqa: PLC0415
+                    _shutil.copy2(str(f), str(dest_file))
+                elif route_mode == RouteMode.MOVE:
+                    import shutil as _shutil  # noqa: PLC0415
+                    _shutil.move(str(f), str(dest_file))
+                elif route_mode == RouteMode.LINK:
+                    if dest_file.exists() or dest_file.is_symlink():
+                        dest_file.unlink()
+                    try:
+                        dest_file.symlink_to(f.resolve())
+                    except (NotImplementedError, OSError):
+                        import shutil as _shutil  # noqa: PLC0415
+                        _shutil.copy2(str(f), str(dest_file))
+
+                # Write traceability sidecar
+                sidecar = dest_file.with_suffix(dest_file.suffix + ".redirected")
+                sidecar.write_text(
+                    f"redirected_from: {f}\nrule_keywords: {rule.keywords[:6]}\n",
+                    encoding="utf-8",
+                )
+
+                entry["status"] = "redirected"
+                entry["result_path"] = str(dest_file)
+                typer.secho(
+                    f"  [MOVED] {f.name} → {dest_file}",
+                    fg=typer.colors.GREEN,
+                )
+                redirected += 1
+            except Exception as exc:
+                entry["status"] = "error"
+                entry["error"] = str(exc)
+                errors += 1
+                typer.secho(
+                    f"  [ERROR] {f.name}: {exc}",
+                    fg=typer.colors.RED,
+                )
+
+        _emit(entry, log_handle, json_output)
+        results.append(entry)
+
+    if log_handle:
+        log_handle.close()
+
+    # ── Summary ───────────────────────────────────────────────
+    kept = sum(1 for r in results if r["status"] == "kept")
+    typer.echo(
+        f"\n{'─' * 50}\n"
+        f"  {'Would redirect' if is_dry else 'Redirected'}: {redirected}\n"
+        f"  Kept in space:  {kept}\n"
+        f"  Skipped:        {skipped}\n"
+        f"  Errors:         {errors}\n"
+        f"{'─' * 50}"
+    )
+    if is_dry and redirected:
+        typer.secho(
+            "\nRe-run with --confirm to execute the redirects.",
+            fg=typer.colors.YELLOW,
+        )
+
+    if json_output:
+        typer.echo(_json.dumps(results, indent=2, default=str))
+
+
+def _emit(entry: dict, log_handle, json_output: bool) -> None:
+    """Write a result entry to the log file if provided. Stdout JSON is handled separately."""
+    import json as _json  # noqa: PLC0415
+
+    if log_handle:
+        try:
+            log_handle.write(_json.dumps(entry, default=str) + "\n")
+            log_handle.flush()
+        except Exception:
+            pass

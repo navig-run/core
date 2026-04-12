@@ -9,8 +9,11 @@ Background monitoring system that detects issues before they become critical:
 """
 
 import json
+import os
 import re
+import tempfile
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from navig import console_helper as ch
@@ -87,8 +90,17 @@ class AutoDetection:
                 history = history[-max_entries:]
 
             # Save
-            with open(history_file, "w", encoding="utf-8") as f:
-                json.dump(history, f, indent=2)
+            _tmp_path: Path | None = None
+            try:
+                _fd, _tmp = tempfile.mkstemp(dir=history_file.parent, suffix=".tmp")
+                _tmp_path = Path(_tmp)
+                with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                    json.dump(history, _fh, indent=2)
+                os.replace(_tmp_path, history_file)
+                _tmp_path = None
+            finally:
+                if _tmp_path is not None:
+                    _tmp_path.unlink(missing_ok=True)
 
             # Trigger analysis if command failed
             if exit_code != 0 and self.assistant.should_auto_analyze():
@@ -172,7 +184,7 @@ class AutoDetection:
                 with open(patterns_file) as f:
                     return json.load(f)
         except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
+            ch.dim("auto_detection: failed to load error_patterns.json")  # best-effort; failure is non-critical
 
         return []
 
@@ -209,8 +221,17 @@ class AutoDetection:
             issues.append(issue)
 
             # Save
-            with open(issues_file, "w", encoding="utf-8") as f:
-                json.dump(issues, f, indent=2)
+            _tmp_path2: Path | None = None
+            try:
+                _fd2, _tmp2 = tempfile.mkstemp(dir=issues_file.parent, suffix=".tmp")
+                _tmp_path2 = Path(_tmp2)
+                with os.fdopen(_fd2, "w", encoding="utf-8") as _fh2:
+                    json.dump(issues, _fh2, indent=2)
+                os.replace(_tmp_path2, issues_file)
+                _tmp_path2 = None
+            finally:
+                if _tmp_path2 is not None:
+                    _tmp_path2.unlink(missing_ok=True)
 
         except Exception as e:
             ch.dim(f"Could not log detected issue: {e}")
@@ -332,8 +353,17 @@ class AutoDetection:
             baseline["averages"] = self._calculate_averages(baseline["metrics_history"])
 
             # Save
-            with open(baseline_file, "w", encoding="utf-8") as f:
-                json.dump(baseline, f, indent=2)
+            _tmp_path3: Path | None = None
+            try:
+                _fd3, _tmp3 = tempfile.mkstemp(dir=baseline_file.parent, suffix=".tmp")
+                _tmp_path3 = Path(_tmp3)
+                with os.fdopen(_fd3, "w", encoding="utf-8") as _fh3:
+                    json.dump(baseline, _fh3, indent=2)
+                os.replace(_tmp_path3, baseline_file)
+                _tmp_path3 = None
+            finally:
+                if _tmp_path3 is not None:
+                    _tmp_path3.unlink(missing_ok=True)
 
         except Exception as e:
             ch.dim(f"Could not update performance baseline: {e}")

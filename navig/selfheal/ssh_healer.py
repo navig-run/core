@@ -96,7 +96,7 @@ class SSHHealer:
         # Ensure ~/.ssh/ directory exists (first-run safety)
         _KNOWN_HOSTS_PATH.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
 
-        logger.info("ssh_healer: keyscan %s", host)
+        logger.info("ssh_healer: keyscan {}", host)
         try:
             # Write scanned keys to a temp file first so we can inspect
             # before appending — avoids corrupting known_hosts on error.
@@ -118,7 +118,7 @@ class SSHHealer:
 
             if proc.returncode != 0 or not stdout.strip():
                 detail = stderr.decode(errors="replace").strip()
-                logger.warning("ssh_healer: keyscan failed for %s: %s", host, detail)
+                logger.warning("ssh_healer: keyscan failed for {}: {}", host, detail)
                 return HealResult(
                     status="failed",
                     message=(
@@ -132,7 +132,7 @@ class SSHHealer:
             with open(_KNOWN_HOSTS_PATH, "ab") as kh:
                 kh.write(stdout)
 
-            logger.info("ssh_healer: added host key for %s", host)
+            logger.info("ssh_healer: added host key for {}", host)
             return HealResult(
                 status="resolved",
                 message=f"✅ SSH host key for `{host}` added to `known_hosts`.",
@@ -269,7 +269,7 @@ class SSHHealer:
         Returns:
             HealResult with diagnostic output in ``message``.
         """
-        logger.info("ssh_healer: probing %s:%d", host, port)
+        logger.info("ssh_healer: probing {}:{}", host, port)
 
         # ── Step 1: TCP probe ──────────────────────────────────────────────
         reachable = await self._tcp_probe(host, port)

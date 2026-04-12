@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from navig import console_helper as ch
+from navig.safety_guard import is_destructive
 
 
 class ProactiveDisplay:
@@ -79,15 +80,14 @@ class ProactiveDisplay:
             "chown",
         ]
 
-        # Check command name
         if any(cmd in command.lower() for cmd in destructive_commands):
             return True
 
-        # Check for SQL destructive operations
+        # Delegate SQL destructive-keyword detection to the canonical safety guard.
+        # Also catch ALTER (not in DESTRUCTIVE_PATTERNS but still schema-modifying).
         if command == "sql":
-            query = args.get("query", "").upper()
-            if any(op in query for op in ["DROP", "DELETE", "TRUNCATE", "ALTER"]):
-                return True
+            query = args.get("query", "")
+            return is_destructive(query) or "ALTER" in query.upper()
 
         return False
 

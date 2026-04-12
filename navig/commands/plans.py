@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import re
+import os
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -9,10 +10,12 @@ from rich.console import Console
 from rich.table import Table
 
 from navig.console_helper import get_console
+from navig.plans.frontmatter import parse_frontmatter_with_body as _split_frontmatter
+from navig.plans.frontmatter import render_frontmatter
 from navig.spaces import get_default_space, normalize_space_name
 from navig.spaces.briefing import build_spaces_briefing_lines
 from navig.spaces.next_action import get_space_next_action, select_best_next_action
-from navig.spaces.progress import collect_spaces_progress
+from navig.spaces.progress import _CHECKBOX_RE, _completion_from_markdown, collect_spaces_progress
 
 plans_app = typer.Typer(
     name="plans",
@@ -22,8 +25,6 @@ plans_app = typer.Typer(
 )
 
 _console = get_console()
-_FRONTMATTER_RE = re.compile(r"^---\n([\s\S]*?)\n---\n?", re.MULTILINE)
-_CHECKBOX_RE = re.compile(r"^\s*-\s*\[([ xX])\]", re.MULTILINE)
 
 
 def _find_project_root(start: Path | None = None) -> Path:
@@ -88,37 +89,6 @@ def _insert_under_section(content: str, section: str, line: str) -> str:
 
     lines.insert(insert_at, line)
     return "\n".join(lines).rstrip() + "\n"
-
-
-def _split_frontmatter(text: str) -> tuple[dict[str, str], str]:
-    match = _FRONTMATTER_RE.match(text)
-    if not match:
-        return {}, text
-
-    values: dict[str, str] = {}
-    for raw in match.group(1).splitlines():
-        if ":" not in raw:
-            continue
-        key, value = raw.split(":", 1)
-        values[key.strip()] = value.strip()
-
-    return values, text[match.end() :]
-
-
-def _render_frontmatter(values: dict[str, str]) -> str:
-    lines = ["---"]
-    for key, value in values.items():
-        lines.append(f"{key}: {value}")
-    lines.append("---")
-    return "\n".join(lines) + "\n\n"
-
-
-def _completion_from_markdown(text: str) -> float:
-    checks = _CHECKBOX_RE.findall(text)
-    if not checks:
-        return 0.0
-    done = sum(1 for item in checks if item.lower() == "x")
-    return round((done / len(checks)) * 100.0, 1)
 
 
 @plans_app.callback()
@@ -199,7 +169,17 @@ def plans_add(
         raise typer.Exit(0)
 
     updated = _insert_under_section(text, "## Added Goals", entry)
-    target_file.write_text(updated, encoding="utf-8")
+    _tmp_path: Path | None = None
+    try:
+        _fd, _tmp = tempfile.mkstemp(dir=target_file.parent, suffix=".tmp")
+        _tmp_path = Path(_tmp)
+        with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+            _fh.write(updated)
+        os.replace(_tmp_path, target_file)
+        _tmp_path = None
+    finally:
+        if _tmp_path is not None:
+            _tmp_path.unlink(missing_ok=True)
     typer.secho(f"Added goal to {target_file}", fg=typer.colors.GREEN)
 
 
@@ -374,8 +354,18 @@ def plans_update(
     frontmatter["completion_pct"] = f"{completion_pct:.1f}"
     frontmatter["last_updated"] = datetime.now().strftime("%Y-%m-%d")
 
-    updated = _render_frontmatter(frontmatter) + content.lstrip("\n")
-    target.write_text(updated, encoding="utf-8")
+    updated = render_frontmatter(frontmatter) + "\n" + content.lstrip("\n")
+    _tmp_path: Path | None = None
+    try:
+        _fd, _tmp = tempfile.mkstemp(dir=target.parent, suffix=".tmp")
+        _tmp_path = Path(_tmp)
+        with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+            _fh.write(updated)
+        os.replace(_tmp_path, target)
+        _tmp_path = None
+    finally:
+        if _tmp_path is not None:
+            _tmp_path.unlink(missing_ok=True)
     typer.secho(
         f"Updated {target.name}: completion_pct={completion_pct:.1f}%",
         fg=typer.colors.GREEN,

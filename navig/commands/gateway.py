@@ -65,7 +65,7 @@ def gateway_start(
     host: str | None = typer.Option(
         None,
         "--host",
-        help="Host to bind to (default: gateway.host from config, fallback 0.0.0.0)",
+        help="Host to bind to (default: gateway.host from config, fallback 127.0.0.1)",
     ),
     background: bool = typer.Option(False, "--background", "-b", help="Run in background"),
 ):
@@ -87,18 +87,11 @@ def gateway_start(
     import asyncio
 
     # Fill port/host from config if not explicitly passed
-    try:
-        from navig.config import get_config_manager
-
-        _raw = get_config_manager()._load_global_config()
-    except Exception as _e:
-        _logger.debug("Could not load gateway start config: %s", _e)
-        _raw = {}
-    _gw_cfg = _raw.get("gateway") or {}
+    default_port, default_host = _load_gateway_cli_defaults()
     if port is None:
-        port = int(_gw_cfg.get("port") or 8789)
+        port = default_port
     if host is None:
-        host = str(_gw_cfg.get("host") or "0.0.0.0")
+        host = default_host
 
     ch.info(f"Starting NAVIG Gateway on {host}:{port}...")
 
@@ -434,7 +427,12 @@ def gateway_test(
         navig gateway test all      --target @username
     """
 
-    channels_to_test = ["telegram", "matrix"] if channel == "all" else [channel.lower()]
+    selected_channel = channel.lower()
+    channels_to_test = (
+        ["telegram", "matrix", "discord", "email"]
+        if selected_channel == "all"
+        else [selected_channel]
+    )
 
     results: list[dict] = []
 
@@ -465,10 +463,10 @@ def gateway_test(
                 results.append({"channel": "telegram", "ok": False, "reason": str(exc)})
 
         elif ch_name == "matrix":
-            from navig.commands.bridge import matrix_bridge_test_alert as _mx_test
+            from navig.commands.matrix import send as _mx_send
 
             try:
-                _mx_test(message=message)
+                _mx_send(room=target, message=message, stdin=False, format="text")
                 results.append({"channel": "matrix", "ok": True})
             except Exception as exc:
                 if not json_output:

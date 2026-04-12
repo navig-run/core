@@ -15,6 +15,8 @@ from navig.selfheal.git_manager import (
     sync_fork,
 )
 
+pytestmark = pytest.mark.slow
+
 
 class TestSyncForkCreatesRemote:
     """sync_fork() must add the upstream remote before fetching."""

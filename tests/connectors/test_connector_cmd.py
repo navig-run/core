@@ -21,6 +21,8 @@ from navig.connectors.types import (
     ResourceType,
 )
 
+pytestmark = pytest.mark.integration
+
 runner = CliRunner()
 
 

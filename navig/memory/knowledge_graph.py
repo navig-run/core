@@ -28,11 +28,15 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger("navig.memory.knowledge_graph")
 
 # ─────────────────────────── schema ──────────────────────────────────────────
 
@@ -357,13 +361,19 @@ class KnowledgeGraph:
 
         try:
             raw = llm_fn(prompt)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("KnowledgeGraph learn_from_task_result LLM call failed: %s", exc)
+            return []
+
+        try:
             import re
 
             match = re.search(r"\[.*\]", raw, re.DOTALL)
             if not match:
                 return []
             triples = json.loads(match.group(0))
-        except Exception:
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            logger.debug("KnowledgeGraph learn_from_task_result parsing failed: %s", exc)
             return []
 
         stored = []
@@ -385,15 +395,27 @@ class KnowledgeGraph:
 # ─────────────────────────── singleton ───────────────────────────────────────
 
 _kg_instance: KnowledgeGraph | None = None
+_kg_lock = threading.Lock()
 
 
 def get_knowledge_graph() -> KnowledgeGraph:
     """Return the singleton KnowledgeGraph, initialised from the NAVIG data directory."""
     global _kg_instance
     if _kg_instance is None:
-        from navig.config import get_config
+        with _kg_lock:
+            if _kg_instance is None:
+                from navig.config import get_config
 
-        cfg = get_config()
-        db_path = Path(cfg.data_dir) / "knowledge_graph.db"
-        _kg_instance = KnowledgeGraph(db_path)
+                cfg = get_config()
+                db_path = Path(cfg.data_dir) / "knowledge_graph.db"
+                _kg_instance = KnowledgeGraph(db_path)
     return _kg_instance
+
+
+def reset_knowledge_graph() -> None:
+    """Reset singleton (for testing)."""
+    global _kg_instance
+    with _kg_lock:
+        if _kg_instance is not None:
+            _kg_instance.close()
+        _kg_instance = None

@@ -14,13 +14,16 @@ Conflict resolution strategies:
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
 from navig.inbox.classifier import ClassifyResult
+
+logger = logging.getLogger("navig.inbox.router")
 
 # ── Category → default destination mapping ───────────────────
 
@@ -57,11 +60,13 @@ class RouteResult:
     source: str
     destination: str | None
     mode: str
-    status: str  # "routed" | "skipped" | "ignored" | "error"
+    status: str  # "routed" | "skipped" | "ignored" | "error" | "redirected" | "redirect_dry_run"
     result_path: str | None = None
     error: str | None = None
     category: str = ""
     confidence: float = 0.0
+    redirect_destination: str | None = None   # set when a cross-space redirect fires
+    redirect_reason: str = ""                 # which exclude rule triggered the redirect
 
 
 # ── Router ────────────────────────────────────────────────────
@@ -106,14 +111,32 @@ class InboxRouter:
         source_path: Path,
         classify_result: ClassifyResult,
         dry_run: bool = False,
+        space_root: Path | None = None,
     ) -> RouteResult:
         """
         Route a file based on its classification result.
 
         Returns a RouteResult describing what happened (or would happen
         in dry_run mode without touching the filesystem).
+
+        If the source space has an ``exclude:`` block in its routes.yaml and
+        the file's content matches a rule, this method will attempt to find
+        the best sibling space and redirect (or dry-run-report) accordingly.
         """
         category = classify_result.category
+        effective_space_root = (space_root or self.project_root).resolve()
+
+        # ── Cross-space exclude check ────────────────────────────────────────
+        # Must run BEFORE ignore/confidence checks so even low-confidence items
+        # that clearly belong elsewhere are redirected rather than dropped.
+        redirect_result = self._check_and_redirect(
+            source_path=source_path,
+            space_root=effective_space_root,
+            dry_run=dry_run,
+        )
+        if redirect_result is not None:
+            return redirect_result
+        # ── End exclude check ────────────────────────────────────────────────
 
         # Ignored category or very low confidence → skip
         if category == "ignore" or classify_result.confidence < self.min_confidence:
@@ -210,6 +233,124 @@ class InboxRouter:
             except (NotImplementedError, OSError):
                 # Symlinks may require elevated privileges on Windows
                 shutil.copy2(str(source), str(dest))
+
+    def _check_and_redirect(
+        self,
+        source_path: Path,
+        space_root: Path,
+        dry_run: bool,
+    ) -> RouteResult | None:
+        """
+        Check whether the file matches an exclude rule in the space's routes.yaml.
+        If it does, find the best sibling space and return a redirect RouteResult.
+        Returns None when no redirect is needed (normal routing continues).
+        """
+        from navig.inbox.routes_loader import load  # noqa: PLC0415
+        from navig.inbox.space_scorer import (  # noqa: PLC0415
+            check_exclude_rules,
+            extract_terms,
+            find_best_destination,
+        )
+
+        config = load(space_root)
+        if config is None or not config.exclude:
+            return None
+
+        # Read file content for term extraction (safe — never raises)
+        try:
+            raw_text = source_path.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            raw_text = str(source_path.name)
+
+        terms = extract_terms(raw_text)
+        if not terms:
+            return None
+
+        rule = check_exclude_rules(terms, config)
+        if rule is None:
+            return None
+
+        # Rule fired — find the best sibling space
+        spaces_root = config.spaces_root or space_root.parent
+        dest_inbox = find_best_destination(terms, space_root, spaces_root)
+
+        is_dry = dry_run or rule.dry_run
+        reason = f"exclude rule matched {rule.min_hits}+ keywords from {rule.keywords[:4]}"
+
+        if dest_inbox is None:
+            logger.warning(
+                "Exclude rule fired for %s but no suitable sibling space found "
+                "(spaces_root=%s). File stays in current inbox.",
+                source_path.name,
+                spaces_root,
+            )
+            return None
+
+        if is_dry:
+            logger.info(
+                "[DRY-RUN] Would redirect %s → %s (%s)",
+                source_path.name,
+                dest_inbox,
+                reason,
+            )
+            return RouteResult(
+                source=str(source_path),
+                destination=str(dest_inbox / source_path.name),
+                mode=self.mode.value,
+                status="redirect_dry_run",
+                redirect_destination=str(dest_inbox),
+                redirect_reason=reason,
+            )
+
+        # Execute the redirect
+        dest_file = dest_inbox / source_path.name
+        if dest_file.exists():
+            if rule.on_conflict == "skip":
+                return RouteResult(
+                    source=str(source_path),
+                    destination=str(dest_file),
+                    mode=self.mode.value,
+                    status="skipped",
+                    redirect_destination=str(dest_inbox),
+                    redirect_reason=reason,
+                )
+            elif rule.on_conflict == "rename":
+                dest_file = _unique_path(dest_file)
+            # "overwrite" falls through
+
+        try:
+            dest_inbox.mkdir(parents=True, exist_ok=True)
+            self._dispatch(source_path, dest_file)
+            # Write a small .redirected sidecar note so the origin is traceable
+            sidecar = dest_file.with_suffix(dest_file.suffix + ".redirected")
+            sidecar.write_text(
+                f"redirected_from: {source_path}\nreason: {reason}\n",
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            if rule.on_error == "log_and_skip":
+                logger.error("Redirect failed for %s: %s", source_path.name, exc)
+                return RouteResult(
+                    source=str(source_path),
+                    destination=str(dest_file),
+                    mode=self.mode.value,
+                    status="error",
+                    error=str(exc),
+                    redirect_destination=str(dest_inbox),
+                    redirect_reason=reason,
+                )
+            raise
+
+        logger.info("Redirected %s → %s", source_path.name, dest_file)
+        return RouteResult(
+            source=str(source_path),
+            destination=str(dest_file),
+            mode=self.mode.value,
+            status="redirected",
+            result_path=str(dest_file),
+            redirect_destination=str(dest_inbox),
+            redirect_reason=reason,
+        )
 
     def route_url(
         self,

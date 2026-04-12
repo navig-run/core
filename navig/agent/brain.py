@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -25,6 +26,8 @@ from typing import TYPE_CHECKING, Any
 from navig.agent.component import Component
 from navig.agent.config import AgentConfig, BrainConfig
 from navig.agent.nervous_system import Event, EventType, NervousSystem
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from navig.agent.soul import Soul
@@ -373,7 +376,8 @@ Guidelines:
                 temperature=self.config.temperature,
             )
             return response
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("brain: AI query failed: %s", exc)
             return None
 
     def _build_context(self, prompt: str, context: dict[str, Any]) -> str:

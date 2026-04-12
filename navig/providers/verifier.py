@@ -28,6 +28,16 @@ from loguru import logger
 
 from .registry import ALL_PROVIDERS, ProviderManifest
 
+_SOFT_ISSUE_PREFIXES = (
+    "no api key found",
+    "local service unreachable at",
+)
+
+
+def _is_soft_issue(issue: str) -> bool:
+    normalized_issue = issue.strip().lower()
+    return any(normalized_issue.startswith(prefix) for prefix in _SOFT_ISSUE_PREFIXES)
+
 
 @dataclass
 class ProviderVerificationResult:
@@ -110,25 +120,70 @@ def _check_key(manifest: ProviderManifest) -> bool:
 
         vault = get_vault()
         if vault is not None:
+            # 1. Try canonical label (e.g. "openai" — set by _cred_label)
+            try:
+                key = vault.get_api_key(manifest.id)
+                if key:
+                    return True
+            except Exception as exc:  # noqa: BLE001
+                logger.debug(
+                    "Provider '{}': vault.get_api_key failed during key check: {}",
+                    manifest.id,
+                    exc,
+                )
+            # 2. Try manifest-declared vault_keys (e.g. "openai/api-key")
             for vk in manifest.vault_keys:
                 try:
                     raw = vault.get_secret(vk)
                     if raw:
                         return True
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug(
+                        "Provider '{}': vault.get_secret('{}') failed during key check: {}",
+                        manifest.id,
+                        vk,
+                        exc,
+                    )
+            # 3. Try env_var names as vault labels (covers legacy/alternative storage:
+            #    e.g. GITHUB_TOKEN stored as 'github_token', OPENAI_API_KEY as 'openai_api_key')
+            for var in manifest.env_vars:
+                var_lower = var.lower()
+                if var_lower in (manifest.id, *manifest.vault_keys):
+                    continue  # already tried above
+                try:
+                    key = vault.get_api_key(var_lower)
+                    if key:
+                        return True
                 except Exception:  # noqa: BLE001
-                    pass  # best-effort; failure is non-critical
-    except Exception:  # noqa: BLE001
-        pass  # best-effort; failure is non-critical
-
-    try:
-        from navig.vault import get_vault
-
-        legacy_vault = get_vault()
-        infos = legacy_vault.list(provider=manifest.id)
-        if infos:
-            return True
-    except Exception:  # noqa: BLE001
-        pass  # best-effort; failure is non-critical
+                    pass
+                try:
+                    raw = vault.get_secret(var_lower)
+                    if raw:
+                        return True
+                except Exception:  # noqa: BLE001
+                    pass
+            # 4. Presence-only check via vault.list() — no decryption required.
+            # Catches all cases where CryptoEngine fails but the item IS stored
+            # (e.g. daemon process without a loaded master key).
+            try:
+                _pres_labels: set[str] = {
+                    manifest.id,
+                    *manifest.vault_keys,
+                    *(v.lower() for v in manifest.env_vars),
+                }
+                for _item in vault.list():
+                    if getattr(_item, "label", "") in _pres_labels:
+                        return True
+                    if getattr(_item, "provider", "") == manifest.id:
+                        return True
+            except Exception:  # noqa: BLE001
+                pass
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "Provider '{}': vault access unavailable during key check: {}",
+            manifest.id,
+            exc,
+        )
 
     return False
 
@@ -138,12 +193,12 @@ def _check_probe(probe: str) -> bool:
     try:
         host, port_str = probe.rsplit(":", 1)
         port = int(port_str)
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(0.5)
-        reachable = sock.connect_ex((host, port)) == 0
-        sock.close()
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.5)
+            reachable = sock.connect_ex((host, port)) == 0
         return reachable
-    except Exception:
+    except (ValueError, OSError) as exc:
+        logger.debug("Provider probe check failed for '{}': {}", probe, exc)
         return False
 
 
@@ -177,10 +232,15 @@ def verify_provider(manifest: ProviderManifest) -> ProviderVerificationResult:
     config_ok = True
     if manifest.tier == "cloud":
         config_ok = _check_config(manifest.id)
-        if not config_ok:
+        if not config_ok and manifest.enabled:
             issues.append(
                 f"no ProviderConfig entry in BUILTIN_PROVIDERS — "
                 f"add '{manifest.id}' to navig/providers/types.py::BUILTIN_PROVIDERS"
+            )
+        elif not config_ok and not manifest.enabled:
+            logger.debug(
+                "Provider '{}' has no ProviderConfig and is disabled (expected)",
+                manifest.id,
             )
 
     # 4. Key detection (skip for local/proxy or requires_key=False providers)
@@ -217,7 +277,10 @@ def verify_provider(manifest: ProviderManifest) -> ProviderVerificationResult:
 
     if issues:
         for issue in issues:
-            logger.warning("Provider '{}': {}", manifest.id, issue)
+            if _is_soft_issue(issue):
+                logger.debug("Provider '{}': {}", manifest.id, issue)
+            else:
+                logger.warning("Provider '{}': {}", manifest.id, issue)
 
     return result
 
@@ -255,12 +318,23 @@ def verify_all_providers(
 
     failures = [r for r in results if not r.ok]
     if failures:
-        logger.warning(
-            "{} of {} providers have issues: {}",
-            len(failures),
-            len(results),
-            ", ".join(r.id for r in failures),
+        has_hard_failures = any(
+            any(not _is_soft_issue(issue) for issue in r.issues) for r in failures
         )
+        if has_hard_failures:
+            logger.warning(
+                "{} of {} providers have issues: {}",
+                len(failures),
+                len(results),
+                ", ".join(r.id for r in failures),
+            )
+        else:
+            logger.debug(
+                "{} of {} providers have soft issues: {}",
+                len(failures),
+                len(results),
+                ", ".join(r.id for r in failures),
+            )
     else:
         logger.debug("All {} verified providers passed.", len(results))
 

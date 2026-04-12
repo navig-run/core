@@ -124,6 +124,7 @@ def setup_email(
     import yaml
 
     from navig.config import get_config_manager
+    from navig.core.yaml_io import atomic_write_yaml
 
     cm = get_config_manager()
     global_config_file = cm.global_config_dir / "config.yaml"
@@ -153,8 +154,7 @@ def setup_email(
         email_cfg["imap_host"] = imap_host
         email_cfg["smtp_host"] = smtp_host
 
-    with open(global_config_file, "w", encoding="utf-8") as f:
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+    atomic_write_yaml(config, global_config_file)
 
     ch.success("✓ Email configured!")
     ch.warning("Set your password: export EMAIL_PASSWORD='your-password'")

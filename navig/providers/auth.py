@@ -6,9 +6,13 @@ Based on multi-provider client architecture.
 """
 
 import json
+import logging
 import os
+import tempfile
 import time
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from navig.platform import paths
 
@@ -96,7 +100,7 @@ class AuthProfileManager:
                 usage_stats=usage_stats,
             )
         except Exception as e:
-            print(f"⚠️  Failed to load auth profiles: {e}")
+            logger.warning("auth_profiles: failed to load auth profiles: %s", e)
             return AuthProfileStore()
 
     def _parse_credential(self, data: dict) -> AuthProfileCredential | None:
@@ -181,19 +185,34 @@ class AuthProfileManager:
             },
         }
 
-        # Write with restrictive permissions
+        # Write atomically: temp file in same dir then os.replace() to avoid
+        # partial-write corruption if the process is interrupted mid-save.
         self.store_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.store_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=self.store_path.parent,
+                suffix=".tmp",
+                delete=False,
+            ) as tmp:
+                json.dump(data, tmp, indent=2)
+                tmp_path = Path(tmp.name)
+            os.replace(tmp_path, self.store_path)
+            tmp_path = None  # successfully renamed — don't delete in finally
+        finally:
+            if tmp_path is not None and tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
 
         # Set file permissions (Unix only)
         try:
-            try:
-                os.chmod(self.store_path, 0o600)
-            except (OSError, PermissionError):
-                pass  # best-effort: skip on access/IO error
+            os.chmod(self.store_path, 0o600)
         except OSError:
-            pass  # Windows doesn't support chmod the same way
+            pass  # best-effort; Windows does not support chmod
 
     def add_api_key(
         self,
@@ -290,7 +309,7 @@ class AuthProfileManager:
         # Try specific profile
         if profile_id:
             cred = self.store.profiles.get(profile_id)
-            if cred:
+            if cred and cred.provider == provider:
                 return self._extract_key(cred)
 
         # Try profiles for this provider

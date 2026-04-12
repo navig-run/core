@@ -1,4 +1,4 @@
-"""
+﻿"""
 NAVIG Daemon Supervisor
 
 A lightweight process supervisor that keeps NAVIG subsystems alive:
@@ -24,6 +24,7 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
@@ -195,7 +196,7 @@ class ChildProcess:
         return rc
 
     def drain_output(self, logger: logging.Logger, child_logger: logging.Logger) -> None:
-        """No-op — child output goes directly to log files now."""
+        """No-op - child output goes directly to log files now."""
         pass
 
     def _close_log(self) -> None:
@@ -409,7 +410,17 @@ class NavigDaemon:
             "children": [c.to_dict() for c in self.children],
         }
         try:
-            STATE_FILE.write_text(json.dumps(state, indent=2))
+            _tmp_path: Path | None = None
+            try:
+                _fd, _tmp = tempfile.mkstemp(dir=STATE_FILE.parent, suffix=".tmp")
+                _tmp_path = Path(_tmp)
+                with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                    _fh.write(json.dumps(state, indent=2))
+                os.replace(_tmp_path, STATE_FILE)
+                _tmp_path = None
+            finally:
+                if _tmp_path is not None:
+                    _tmp_path.unlink(missing_ok=True)
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
@@ -451,7 +462,7 @@ class NavigDaemon:
     # -- main loop ---------------------------------------------------------
 
     def run(self) -> None:
-        """Blocking entry-point — runs the supervisor until shutdown."""
+        """Blocking entry-point - runs the supervisor until shutdown."""
         if self.is_running():
             pid = self.read_pid()
             # Double-check: verify the PID is actually a navig daemon, not a stale PID
@@ -465,7 +476,7 @@ class NavigDaemon:
                 )
                 return
             else:
-                self.logger.warning("Stale PID file (pid=%s) — removing and starting fresh", pid)
+                self.logger.warning("Stale PID file (pid=%s) - removing and starting fresh", pid)
                 self._remove_pid()
 
         self._running = True
@@ -486,51 +497,55 @@ class NavigDaemon:
             self._shutdown()
 
     def _signal_handler(self, signum, frame):
-        self.logger.info("Received signal %s — shutting down", signum)
+        self.logger.info("Received signal %s - shutting down", signum)
         self._running = False
 
     async def _supervisor_loop(self) -> None:
         """Core supervision loop."""
-        # Start health server
         await self._start_health_server()
 
-        # Initial start of all enabled children
-        for child in self.children:
-            if child.enabled:
-                child.start(self.logger)
-        self._write_state()
-
-        while self._running:
+        try:
+            # Initial start of all enabled children
             for child in self.children:
-                if not child.enabled or child._stopped:
-                    continue
-
-                # Drain output
-                child.drain_output(self.logger, self.child_logger)
-
-                # Check if dead
-                rc = child.poll()
-                if rc is not None:
-                    self.logger.warning(
-                        "%s exited with code %d — restarting in %.0fs",
-                        child.name,
-                        rc,
-                        child.next_restart_delay,
-                    )
-                    # Wait back-off then restart
-                    delay = child._backoff  # peek without consuming
-                    await asyncio.sleep(min(delay, 2))  # short sleep, real delay below
-                    if not self._running:
-                        break
-
-                    # If process ran for > 60s, reset back-off (healthy run)
-                    if child.last_start and (time.monotonic() - child.last_start) > 60:
-                        child.reset_backoff()
-
+                if child.enabled:
                     child.start(self.logger)
-                    self._write_state()
+            self._write_state()
 
-            await asyncio.sleep(2)  # poll interval
+            while self._running:
+                for child in self.children:
+                    if not child.enabled or child._stopped:
+                        continue
+
+                    # Drain output
+                    child.drain_output(self.logger, self.child_logger)
+
+                    # Check if dead
+                    rc = child.poll()
+                    if rc is not None:
+                        # If process ran for > 60s, reset back-off (healthy run)
+                        if child.last_start and (time.monotonic() - child.last_start) > 60:
+                            child.reset_backoff()
+
+                        delay = child.next_restart_delay
+                        self.logger.warning(
+                            "%s exited with code %d - restarting in %.0fs",
+                            child.name,
+                            rc,
+                            delay,
+                        )
+                        await asyncio.sleep(delay)
+                        if not self._running:
+                            break
+
+                        child.start(self.logger)
+                        self._write_state()
+
+                await asyncio.sleep(2)  # poll interval
+        finally:
+            if self._health_server is not None:
+                self._health_server.close()
+                await self._health_server.wait_closed()
+                self._health_server = None
 
     def _shutdown(self) -> None:
         """Stop all children and clean up."""
@@ -563,18 +578,34 @@ class NavigDaemon:
             for _ in range(20):
                 time.sleep(0.5)
                 if not NavigDaemon.is_running():
+                    if PID_FILE.exists():
+                        PID_FILE.unlink(missing_ok=True)
                     return True
             # Force kill
             if sys.platform == "win32":
                 subprocess.run(["taskkill", "/F", "/PID", str(pid), "/T"], capture_output=True)
             else:
-                os.kill(pid, signal.SIGKILL)
-            # Clean up PID file
-            if PID_FILE.exists():
-                PID_FILE.unlink(missing_ok=True)
-            return True
-        except (OSError, ProcessLookupError):
+                force_signal = getattr(signal, "SIGKILL", signal.SIGTERM)
+                os.kill(pid, force_signal)
+            # Wait briefly after force-kill and only then report success.
+            for _ in range(10):
+                time.sleep(0.2)
+                if not NavigDaemon.is_running():
+                    if PID_FILE.exists():
+                        PID_FILE.unlink(missing_ok=True)
+                    return True
+            return False
+        except ProcessLookupError:
             # Process already gone
             if PID_FILE.exists():
                 PID_FILE.unlink(missing_ok=True)
             return True
+        except PermissionError:
+            return False
+        except OSError:
+            if not NavigDaemon.is_running():
+                if PID_FILE.exists():
+                    PID_FILE.unlink(missing_ok=True)
+                return True
+            return False
+

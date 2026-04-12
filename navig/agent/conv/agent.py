@@ -75,43 +75,87 @@ class ConversationalAgent:
             # with the condensed text (override sets _raw = condensed, not raw).
             self._soul_loader._sync_load()
         self._user_identity: dict[str, str] = {}
+        self._active_persona: str = ""
+        self._runtime_persona: str = ""
+        self._detected_language_hint: str = ""
+        self._last_detected_language: str = "en"
+        self._session_fallback_language: str = ""
+        self._has_text_detected: bool = False
         self._focus_mode = self._last_user_message = self._tier_override = ""
         self._entrypoint, self.context = "channel", {}
         self._plan_context_loaded = False
 
     @property
+    def ai_client(self):
+        """Backward-compatible alias for ``_ai_client``."""
+        return self._ai_client
+
+    @ai_client.setter
+    def ai_client(self, value) -> None:
+        self._ai_client = value
+
+    @property
+    def conversation_history(self) -> list[dict[str, str]]:
+        """Backward-compatible list view of the underlying conversation history."""
+        return self._history.get_messages()
+
+    @conversation_history.setter
+    def conversation_history(self, value: list[dict[str, str]]) -> None:
+        """Replace in-memory history from a plain message list (compat API)."""
+        if not isinstance(value, list):
+            return
+        normalized: list[dict[str, str]] = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role", ""))
+            content = str(item.get("content", ""))
+            if role and content:
+                normalized.append({"role": role, "content": content})
+        self._history._messages = normalized
+
+    @property
+    def current_task(self):
+        """Backward-compatible alias for ``self._executor.current_task``."""
+        return self._executor.current_task
+
+    @current_task.setter
+    def current_task(self, value) -> None:
+        self._executor.current_task = value
+
+    @property
     def on_status_update(self) -> Callable[[StatusEvent], Awaitable[None]] | None:
-        """Current StatusEvent callback (may be a shim-wrapped legacy callable)."""
+        """Current StatusEvent callback (may be a shim-wrapped compat callable)."""
         return self._on_status_update
 
     @on_status_update.setter
     def on_status_update(self, cb: Callable | None) -> None:
-        """Set callback, applying legacy-shim if *cb* accepts a plain ``str``."""
+        """Set callback, applying compat shim if *cb* accepts a plain ``str``."""
         if cb is not None:
             try:
                 sig = inspect.signature(cb)
                 params = list(sig.parameters.values())
                 if params:
                     ann = params[0].annotation
-                    # Legacy detection: annotation is str type or the string 'str'
+                    # Compatibility detection: annotation is str type or the string 'str'
                     # (from __future__ import annotations makes annotations strings at runtime)
-                    is_legacy = (
+                    is_compat = (
                         ann is str
                         or ann == "str"
                         or (ann is inspect.Parameter.empty and len(params) == 1)
                     )
-                    if is_legacy:
-                        _legacy = cb
-                        if inspect.iscoroutinefunction(_legacy) or inspect.iscoroutinefunction(
-                            getattr(_legacy, "__call__", None)  # noqa: B004
+                    if is_compat:
+                        _compat = cb
+                        if inspect.iscoroutinefunction(_compat) or inspect.iscoroutinefunction(
+                            getattr(_compat, "__call__", None)  # noqa: B004
                         ):
 
-                            async def cb(event: StatusEvent, _cb: Callable = _legacy) -> None:  # noqa: E731
+                            async def cb(event: StatusEvent, _cb: Callable = _compat) -> None:  # noqa: E731
                                 await _cb(event.message)
 
                         else:
 
-                            def cb(event: StatusEvent, _cb: Callable = _legacy) -> None:  # noqa: E731
+                            def cb(event: StatusEvent, _cb: Callable = _compat) -> None:  # noqa: E731
                                 _cb(event.message)
 
             except (ValueError, TypeError):
@@ -164,6 +208,34 @@ class ConversationalAgent:
         """
         self._user_identity = {"user_id": user_id, "username": username}
 
+    def set_active_persona(self, config_or_name=None, soul_content: str | None = None) -> None:
+        """Compatibility persona setter kept for older callers."""
+        name = ""
+        if isinstance(config_or_name, str):
+            name = config_or_name.strip()
+        elif config_or_name is not None:
+            name = str(getattr(config_or_name, "name", "") or "").strip()
+        self._active_persona = name
+        self._runtime_persona = name
+        if soul_content:
+            self._soul_loader.override(soul_content)
+
+    def set_language_preferences(
+        self,
+        detected_language: str = "",
+        last_detected_language: str = "",
+    ) -> None:
+        """Compatibility language-hint setter for channel/session metadata injection."""
+        hint = (detected_language or "").strip().lower()
+        if hint:
+            self._detected_language_hint = hint
+
+        previous = (last_detected_language or "").strip().lower()
+        if previous:
+            self._session_fallback_language = previous
+            if not self._has_text_detected:
+                self._last_detected_language = previous
+
     def set_focus_mode(self, mode: str) -> None:
         """Switch the agent's mood/focus profile by name (e.g. ``'deep'``, ``'flow'``).
 
@@ -194,8 +266,33 @@ class ConversationalAgent:
             parts.append(f"User ID: {uid}.")
         return "\n".join(parts)
 
+    def _normalize_supported_lang_code(self, code: str) -> str:
+        normalized = (code or "").strip().lower()
+        if not normalized:
+            return ""
+        mixed_instruction = self._lang.build_instruction("mixed")
+        candidate_instruction = self._lang.build_instruction(normalized)
+        if normalized != "mixed" and candidate_instruction == mixed_instruction:
+            return ""
+        return normalized
+
+    def _resolve_prompt_language(self, user_message: str) -> str:
+        detected = self._normalize_supported_lang_code(self._lang.detect(user_message))
+        if detected and detected != "mixed":
+            self._has_text_detected = True
+            self._last_detected_language = detected
+
+        hint = self._normalize_supported_lang_code(self._detected_language_hint)
+        session_fallback = self._normalize_supported_lang_code(self._session_fallback_language)
+        last_detected = self._normalize_supported_lang_code(self._last_detected_language)
+
+        for candidate in (hint, session_fallback, detected, last_detected, "en"):
+            if candidate:
+                return candidate
+        return "en"
+
     def _build_system_prompt(self, user_message: str) -> str:
-        code = self._lang.detect(user_message)
+        code = self._resolve_prompt_language(user_message)
         return self._soul_loader.build_system_prompt(
             soul=self._soul_loader.cached_content or "",
             lang_instruction=self._lang.build_instruction(code),
@@ -243,6 +340,418 @@ class ConversationalAgent:
         self._history.add("assistant", response)
         return response
 
+    async def run_agentic(
+        self,
+        message: str,
+        max_iterations: int = 90,
+        toolset: str | list[str] = "core",
+        cost_tracker=None,
+        approval_policy=None,
+    ) -> str:
+        """Native ReAct multi-step tool-calling loop.
+
+        This is the canonical agentic path for ``conv`` callers and mirrors the
+        established behavior while using this class' state model.
+        """
+        from navig.agent.agent_tool_registry import _AGENT_REGISTRY
+        from navig.agent.tools import register_all_tools
+        from navig.agent.usage_tracker import CostTracker, IterationBudget, UsageEvent
+        from navig.providers import CompletionRequest, Message, create_client, get_builtin_provider
+        from navig.providers.auth import AuthProfileManager
+        from navig.providers.clients import ToolDefinition
+
+        if not getattr(self, "_agentic_tools_registered", False):
+            try:
+                register_all_tools()
+                self._agentic_tools_registered = True
+            except Exception as exc:
+                logger.warning("run_agentic: tool registration failed: %s", exc)
+
+        budget = IterationBudget(max_iterations=max_iterations)
+        if (
+            cost_tracker is not None
+            and hasattr(cost_tracker, "record")
+            and hasattr(cost_tracker, "session_cost")
+        ):
+            tracker = cost_tracker
+        else:
+            tracker = CostTracker()
+
+        if approval_policy is not None:
+            try:
+                from navig.tools.approval import set_approval_policy
+
+                set_approval_policy(approval_policy)
+            except Exception as exc:
+                logger.debug("Exception suppressed: %s", exc)
+
+        explicit_toolsets = [toolset] if isinstance(toolset, str) else list(toolset)
+        try:
+            from navig.llm_router import suggest_toolsets
+
+            suggested = suggest_toolsets(user_input=message)
+            merged = list(explicit_toolsets)
+            for suggested_toolset in suggested:
+                if suggested_toolset not in merged:
+                    merged.append(suggested_toolset)
+            toolsets = merged
+            logger.debug(
+                "F-20 semantic routing: explicit=%s suggested=%s → merged=%s",
+                explicit_toolsets,
+                suggested,
+                toolsets,
+            )
+        except Exception:
+            toolsets = explicit_toolsets
+
+        raw_schemas = _AGENT_REGISTRY.get_openai_schemas(toolsets=toolsets)
+        tool_defs: list[ToolDefinition] = [
+            ToolDefinition(
+                name=schema["function"]["name"],
+                description=schema["function"].get("description", ""),
+                parameters=schema["function"].get(
+                    "parameters", {"type": "object", "properties": {}}
+                ),
+            )
+            for schema in raw_schemas
+        ]
+
+        provider_name = "openrouter"
+        model_name = "openai/gpt-4o"
+        temperature = 0.7
+        max_tokens = 4096
+        base_url: str | None = None
+        try:
+            from navig.llm_router import resolve_llm
+
+            resolved = resolve_llm(mode="coding")
+            provider_name = resolved.provider
+            model_name = resolved.model
+            temperature = resolved.temperature
+            max_tokens = resolved.max_tokens
+            base_url = resolved.base_url
+        except Exception as exc:
+            logger.debug("Exception suppressed: %s", exc)
+
+        try:
+            provider_cfg = get_builtin_provider(provider_name)
+            if provider_cfg is None:
+                from navig.llm_router import PROVIDER_BASE_URLS
+                from navig.providers.types import ModelApi, ProviderConfig
+
+                url = base_url or PROVIDER_BASE_URLS.get(provider_name, "https://openrouter.ai/api/v1")
+                provider_cfg = ProviderConfig(
+                    name=provider_name,
+                    base_url=url,
+                    api=ModelApi.OPENAI_COMPLETIONS,
+                )
+            auth_mgr = AuthProfileManager()
+            api_key, _ = auth_mgr.resolve_auth(provider_name)
+            client = create_client(provider_cfg, api_key=api_key, timeout=120.0)
+        except Exception as exc:
+            logger.error("run_agentic: could not create LLM client: %s", exc)
+            return "Sorry, I couldn't initialise the LLM client for agentic mode."
+
+        self._last_user_message = message
+        system_prompt = self._build_system_prompt(message)
+
+        try:
+            from navig.plans.context import PlanContext
+            from navig.spaces.resolver import get_default_space
+
+            space_name = get_default_space()
+            plan_context = PlanContext()
+            snapshot = plan_context.gather(space_name)
+            plan_block = plan_context.format_for_prompt(snapshot)
+            if plan_block:
+                system_prompt += "\n\n" + plan_block
+            non_null = sum(1 for key, value in snapshot.items() if key != "errors" and value is not None)
+            logger.info("plan_context_loaded space=%s non_null_keys=%d", space_name, non_null)
+        except Exception as plan_exc:
+            logger.debug("plan context injection skipped (agentic): %s", plan_exc)
+
+        toolset_names = _AGENT_REGISTRY.available_names(toolsets=toolsets)
+        if toolset_names:
+            displayed = ", ".join(f"`{name}`" for name in toolset_names[:20])
+            system_prompt += (
+                "\n\n## Agentic Mode\n"
+                f"You have access to the following tools: {displayed}.\n"
+                "Use them step-by-step to fulfill the user's request, then give a final reply."
+            )
+
+        history_messages = list(self.conversation_history)
+        working_messages: list[Message] = [
+            Message(role="system", content=system_prompt),
+            *[
+                Message(
+                    role=history_message["role"],
+                    content=history_message.get("content", ""),
+                    tool_call_id=history_message.get("tool_call_id"),
+                    tool_calls=history_message.get("tool_calls"),
+                )
+                for history_message in history_messages
+            ],
+            Message(role="user", content=message),
+        ]
+
+        final_response = ""
+        turn = 0
+        past_tool_calls_this_turn: list[list[tuple[str, str]]] = []
+
+        compressor = None
+        try:
+            from navig.agent.context_compressor import ContextCompressor
+
+            compressor = ContextCompressor()
+        except Exception as exc:
+            logger.debug("Exception suppressed: %s", exc)
+
+        while not budget.is_exhausted():
+            turn += 1
+            budget.consume(1)
+
+            if compressor is not None and turn > 3:
+                try:
+                    msg_dicts = [
+                        {
+                            "role": msg.role,
+                            "content": msg.content or "",
+                            "tool_call_id": getattr(msg, "tool_call_id", None),
+                            "tool_calls": getattr(msg, "tool_calls", None),
+                        }
+                        for msg in working_messages
+                    ]
+                    compressed = compressor.maybe_compress(msg_dicts, model=model_name)
+                    if compressed is not msg_dicts:
+                        working_messages = [
+                            Message(
+                                role=msg_dict["role"],
+                                content=msg_dict.get("content", ""),
+                                tool_call_id=msg_dict.get("tool_call_id"),
+                                tool_calls=msg_dict.get("tool_calls"),
+                            )
+                            for msg_dict in compressed
+                        ]
+                except Exception as exc:
+                    logger.debug("Context compression skipped: %s", exc)
+
+            pct = budget.budget_used_pct()
+            tool_choice: str | None = "auto"
+            if pct >= 0.90:
+                tool_choice = "none"
+            elif pct >= 0.70:
+                working_messages.append(
+                    Message(
+                        role="system",
+                        content=(
+                            "[Budget warning: >70% of iteration budget used. "
+                            "Please finalise your response now.]"
+                        ),
+                    )
+                )
+
+            request = CompletionRequest(
+                messages=working_messages,
+                model=model_name,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                tools=tool_defs if (tool_choice != "none" and tool_defs) else None,
+                tool_choice=tool_choice if tool_choice != "none" else None,
+            )
+
+            try:
+                response = await client.complete(request)
+            except Exception as exc:
+                logger.error("run_agentic: LLM call failed on turn %d: %s", turn, exc)
+                final_response = f"Error during agentic execution: {exc}"
+                break
+
+            usage = response.usage or {}
+            try:
+                tracker.record(
+                    UsageEvent(
+                        turn=turn,
+                        model=model_name,
+                        provider=provider_name,
+                        prompt_tokens=usage.get("prompt_tokens", 0),
+                        completion_tokens=usage.get("completion_tokens", 0),
+                        cache_read_tokens=usage.get("cache_read_input_tokens", 0),
+                        cache_write_tokens=usage.get("cache_creation_input_tokens", 0),
+                    )
+                )
+            except Exception as exc:
+                logger.debug("Exception suppressed: %s", exc)
+
+            if not response.tool_calls:
+                final_response = response.content or ""
+                working_messages.append(Message(role="assistant", content=final_response))
+                break
+
+            current_calls = [(tool_call.name, tool_call.arguments) for tool_call in response.tool_calls]
+            if current_calls in past_tool_calls_this_turn:
+                logger.warning(
+                    "Duplicate tool calls detected in recent history. Breaking to prevent infinite loop."
+                )
+                final_response = response.content or "[Agent halted to prevent duplicate tool call loop]"
+                break
+            past_tool_calls_this_turn.append(current_calls)
+
+            assistant_tool_calls_raw = [
+                {
+                    "id": tool_call.id,
+                    "type": "function",
+                    "function": {"name": tool_call.name, "arguments": tool_call.arguments},
+                }
+                for tool_call in (response.tool_calls or [])
+            ]
+            working_messages.append(
+                Message(
+                    role="assistant",
+                    content=response.content or "",
+                    tool_calls=assistant_tool_calls_raw,
+                )
+            )
+
+            from navig.agent.toolsets import is_parallel_safe
+
+            pending_calls = response.tool_calls or []
+
+            async def _dispatch_single(tool_call_item):
+                try:
+                    args = (
+                        json.loads(tool_call_item.arguments)
+                        if isinstance(tool_call_item.arguments, str)
+                        else (tool_call_item.arguments or {})
+                    )
+                except json.JSONDecodeError:
+                    args = {}
+
+                try:
+                    from navig.tools.approval import (
+                        ApprovalDecision,
+                        get_approval_gate,
+                        needs_approval,
+                    )
+
+                    if needs_approval(tool_call_item.name):
+                        gate = get_approval_gate()
+                        decision = await gate.check(
+                            tool_name=tool_call_item.name,
+                            safety_level="moderate",
+                            reason="agentic",
+                        )
+                        if decision == ApprovalDecision.DENIED:
+                            return (
+                                tool_call_item.id,
+                                f"[Denied: operator did not approve '{tool_call_item.name}']",
+                            )
+                except Exception as exc:
+                    logger.debug("Exception suppressed: %s", exc)
+
+                try:
+                    from navig.agent.speculative import get_speculative_executor
+
+                    spec = get_speculative_executor()
+                    if spec is not None:
+                        result_str = spec.execute(tool_call_item.name, args)
+                    else:
+                        result_str = _AGENT_REGISTRY.dispatch(tool_call_item.name, args)
+                except Exception as exc:
+                    result_str = f"[Tool error: {exc}]"
+                return (tool_call_item.id, result_str)
+
+            parallel_batch = []
+            sequential_batch = []
+            for tool_call in pending_calls:
+                if is_parallel_safe(tool_call.name) and len(pending_calls) > 1:
+                    parallel_batch.append(tool_call)
+                else:
+                    sequential_batch.append(tool_call)
+
+            collected_results: list[tuple[str, str]] = []
+
+            if parallel_batch:
+                max_parallel = 8
+                sem = asyncio.Semaphore(max_parallel)
+
+                async def _sem_dispatch(tool_call_item, _sem=sem):
+                    async with _sem:
+                        return await _dispatch_single(tool_call_item)
+
+                par_results = await asyncio.gather(
+                    *[_sem_dispatch(tool_call_item) for tool_call_item in parallel_batch],
+                    return_exceptions=True,
+                )
+                for idx, result in enumerate(par_results):
+                    if isinstance(result, BaseException):
+                        collected_results.append((parallel_batch[idx].id, f"[Tool error: {result}]"))
+                    else:
+                        collected_results.append(result)
+
+            for tool_call in sequential_batch:
+                collected_results.append(await _dispatch_single(tool_call))
+
+            id_to_result = dict(collected_results)
+            for tool_call in pending_calls:
+                working_messages.append(
+                    Message(
+                        role="tool",
+                        content=id_to_result.get(tool_call.id, "[Tool error: result missing]"),
+                        tool_call_id=tool_call.id,
+                    )
+                )
+
+        if not final_response:
+            final_response = "Agent iteration budget exhausted without producing a final response."
+
+        history_messages.append({"role": "user", "content": message})
+        history_messages.append({"role": "assistant", "content": final_response})
+        self.conversation_history = self._truncate_history(history_messages, max_messages=20)
+
+        try:
+            from navig.agent.speculative import get_speculative_executor, reset_speculative_executor
+
+            spec = get_speculative_executor()
+            if spec is not None:
+                await spec.cancel_speculations()
+                stats = spec.stats
+                cache_stats = stats.get("cache") or {}
+                if cache_stats.get("hits", 0) > 0:
+                    logger.info(
+                        "speculative cache stats: hits=%d misses=%d hit_rate=%.1f%%",
+                        cache_stats.get("hits", 0),
+                        cache_stats.get("misses", 0),
+                        float(cache_stats.get("hit_rate", 0.0)) * 100,
+                    )
+                reset_speculative_executor()
+        except Exception as exc:
+            logger.debug("Exception suppressed during speculative cache integration reset: %s", exc)
+
+        cost = tracker.session_cost()
+        logger.info("run_agentic completed: %s", cost.summary_str())
+        return final_response
+
+    @staticmethod
+    def _truncate_history(
+        history: list[dict[str, str]], max_messages: int = 20
+    ) -> list[dict[str, str]]:
+        """Safely truncate conversation history preserving tool-call boundaries."""
+        if len(history) <= max_messages:
+            return history
+
+        idx = len(history) - max_messages
+        while idx < len(history):
+            if history[idx].get("role") == "user":
+                if (
+                    idx == 0
+                    or history[idx - 1].get("role") != "assistant"
+                    or not history[idx - 1].get("tool_calls")
+                ):
+                    return history[idx:]
+            idx += 1
+
+        return history[len(history) - max_messages :]
+
     async def confirm(self, confirmed: bool) -> str:
         """Accept or reject the pending task that was left in ``PLANNING`` state.
 
@@ -280,10 +789,18 @@ class ConversationalAgent:
             result = self._planner.plan(message)
             return json.dumps(result) if result else "I'm ready to help."
 
+        # Track whether the *legacy* ai_client has a detected provider.
+        # When False we skip chat_stream / chat_routed / chat (which rely on
+        # the legacy client's provider), but we **still try the UnifiedRouter**
+        # which discovers providers directly from config (including the user's
+        # Telegram /models selection written to llm_router.llm_modes) and has
+        # its own per-provider availability checks.  Previously this was an
+        # early-return gate that blocked NVIDIA (and any other provider
+        # configured via Telegram) from ever being reached.
+        ai_available: bool = True
         try:
             if hasattr(self._ai_client, "is_available") and not self._ai_client.is_available():
-                result = self._planner.plan(message)
-                return json.dumps(result) if result else "I'm ready to help."
+                ai_available = False
         except Exception:
             pass  # best-effort; failure is non-critical
 
@@ -341,24 +858,53 @@ class ConversationalAgent:
                 timestamp=datetime.now(),
             )
         )
-        # Optional streaming path — only activates if ai_client exposes chat_stream
-        if hasattr(self._ai_client, "chat_stream"):
-            tokens: list[str] = []
-            async for token in self._ai_client.chat_stream(
-                msgs, user_message=message, tier_override=tier
-            ):  # type: ignore[union-attr]
-                tokens.append(token)
-                await self._emit_event(
-                    StatusEvent(
-                        type="streaming_token",
-                        task_id=self._session_id,
-                        message="",
-                        timestamp=datetime.now(),
-                        metadata={"token": token},
+        # Optional streaming path — only safe when the legacy AIClient's detected
+        # provider matches the user's config-active provider.
+        # If the user activated NVIDIA via /models but GITHUB_TOKEN is in env,
+        # ai_client.provider becomes "github_models" while ai.default_provider is
+        # "nvidia" — skip chat_stream so the UnifiedRouter can reach NVIDIA.
+        _config_default_provider = ""
+        try:
+            from navig.config import get_config_manager as _gcm
+
+            _config_default_provider = (
+                (_gcm().global_config or {}).get("ai") or {}
+            ).get("default_provider", "")
+        except Exception:  # noqa: BLE001
+            pass
+
+        _legacy_provider = getattr(self._ai_client, "provider", "")
+        _skip_stream = bool(
+            _config_default_provider
+            and _legacy_provider
+            and _config_default_provider != _legacy_provider
+        )
+
+        if ai_available and not _skip_stream and hasattr(self._ai_client, "chat_stream"):
+            try:
+                tokens: list[str] = []
+                async for token in self._ai_client.chat_stream(
+                    msgs, user_message=message, tier_override=tier
+                ):  # type: ignore[union-attr]
+                    tokens.append(token)
+                    await self._emit_event(
+                        StatusEvent(
+                            type="streaming_token",
+                            task_id=self._session_id,
+                            message="",
+                            timestamp=datetime.now(),
+                            metadata={"token": token},
+                        )
                     )
-                )
-            if tokens:
-                return "".join(tokens)
+                if tokens:
+                    return "".join(tokens)
+            except Exception as exc:
+                logger.warning("chat_stream failed, falling through to UnifiedRouter: %s", exc)
+
+        # Unified Router — always tried regardless of legacy client state.
+        # _discover_user_providers() reads config["llm_router"]["llm_modes"] and
+        # config["ai"]["default_provider"] (both written by Telegram /models), so
+        # user's provider selection is respected even when ai_client.provider=="none".
         try:
             from navig.routing.router import RouteRequest, get_router
 
@@ -381,8 +927,16 @@ class ConversationalAgent:
             if text:
                 return text
         except Exception as exc:
+            exc_msg = str(exc)
+            if "no provider available" in exc_msg.lower() or "no ai provider" in exc_msg.lower():
+                logger.warning("Unified router: all providers failed: %s", exc_msg)
+                return (
+                    "\u26a0\ufe0f I couldn't reach any AI provider right now.\n"
+                    "Check /provider to confirm your selection and verify the API key "
+                    "is stored correctly (vault or env var)."
+                )
             logger.warning("Unified router failed: %s", exc)
-        if hasattr(self._ai_client, "chat_routed"):
+        if ai_available and hasattr(self._ai_client, "chat_routed"):
             try:
                 return await self._ai_client.chat_routed(
                     msgs, user_message=message, tier_override=tier
@@ -392,10 +946,12 @@ class ConversationalAgent:
                 if "no ai provider available" in msg or "no provider available" in msg:
                     return _deterministic_fallback()
                 raise
-        try:
-            return await self._ai_client.chat(msgs)
-        except Exception as exc:
-            msg = str(exc).lower()
-            if "no ai provider available" in msg or "no provider available" in msg:
-                return _deterministic_fallback()
-            raise
+        if ai_available:
+            try:
+                return await self._ai_client.chat(msgs)
+            except Exception as exc:
+                msg = str(exc).lower()
+                if "no ai provider available" in msg or "no provider available" in msg:
+                    return _deterministic_fallback()
+                raise
+        return _deterministic_fallback()

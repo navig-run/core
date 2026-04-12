@@ -9,8 +9,11 @@ AI-powered error analysis and solution suggestions:
 """
 
 import json
+import os
 import re
+import tempfile
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from navig import console_helper as ch
@@ -168,8 +171,17 @@ class ErrorResolution:
                 error_log = error_log[-1000:]
 
             # Save
-            with open(error_log_file, "w", encoding="utf-8") as f:
-                json.dump(error_log, f, indent=2)
+            _tmp_path: Path | None = None
+            try:
+                _fd, _tmp = tempfile.mkstemp(dir=error_log_file.parent, suffix=".tmp")
+                _tmp_path = Path(_tmp)
+                with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                    json.dump(error_log, _fh, indent=2)
+                os.replace(_tmp_path, error_log_file)
+                _tmp_path = None
+            finally:
+                if _tmp_path is not None:
+                    _tmp_path.unlink(missing_ok=True)
 
         except Exception as e:
             ch.dim(f"Could not log error: {e}")
@@ -281,8 +293,17 @@ class ErrorResolution:
                 solutions_db.append(new_entry)
 
             # Save
-            with open(solutions_file, "w", encoding="utf-8") as f:
-                json.dump(solutions_db, f, indent=2)
+            _tmp_path2: Path | None = None
+            try:
+                _fd2, _tmp2 = tempfile.mkstemp(dir=solutions_file.parent, suffix=".tmp")
+                _tmp_path2 = Path(_tmp2)
+                with os.fdopen(_fd2, "w", encoding="utf-8") as _fh2:
+                    json.dump(solutions_db, _fh2, indent=2)
+                os.replace(_tmp_path2, solutions_file)
+                _tmp_path2 = None
+            finally:
+                if _tmp_path2 is not None:
+                    _tmp_path2.unlink(missing_ok=True)
 
             # Log audit
             self.assistant.log_audit(

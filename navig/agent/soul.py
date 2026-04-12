@@ -19,7 +19,9 @@ SOUL.md Integration:
 
 from __future__ import annotations
 
+import os
 import random
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
@@ -337,7 +339,17 @@ class Soul(Component):
         else:
             content = self._generate_default_soul()
 
-        self.SOUL_FILE.write_text(content, encoding="utf-8")
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=self.SOUL_FILE.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                _fh.write(content)
+            os.replace(_tmp_path, self.SOUL_FILE)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
         logger.info("Soul: Created user SOUL.md at %s", self.SOUL_FILE)
 
         # Reload

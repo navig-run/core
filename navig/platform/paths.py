@@ -291,8 +291,12 @@ def is_directory_accessible(directory: Path) -> bool:
         if directory.is_dir():
             list(directory.iterdir())
             return True
-    except (PermissionError, OSError):
-        pass  # best-effort cleanup; ignore access/IO errors
+    except (PermissionError, OSError) as _e:
+        import logging as _logging
+
+        _logging.getLogger(__name__).debug(
+            "is_directory_accessible(%s) failed: %s", directory, _e
+        )
     return False
 
 

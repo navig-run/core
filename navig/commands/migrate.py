@@ -11,6 +11,10 @@ all        Run all steps in dependency order (idempotent)
 
 from __future__ import annotations
 
+import os
+import tempfile
+from pathlib import Path
+
 import typer
 
 from navig import console_helper as ch
@@ -56,7 +60,19 @@ def _mark_done(name: str) -> None:
     path = _done_file()
     done = set(path.read_text(encoding="utf-8").splitlines()) if path.exists() else set()
     done.add(name)
-    path.write_text("\n".join(sorted(done)) + "\n", encoding="utf-8")
+    content = "\n".join(sorted(done)) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _tmp_path: Path | None = None
+    try:
+        _fd, _tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        _tmp_path = Path(_tmp)
+        with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+            _fh.write(content)
+        os.replace(_tmp_path, path)
+        _tmp_path = None
+    finally:
+        if _tmp_path is not None:
+            _tmp_path.unlink(missing_ok=True)
 
 
 def _is_done(name: str) -> bool:

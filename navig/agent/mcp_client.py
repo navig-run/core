@@ -35,6 +35,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -817,13 +818,16 @@ class _ToolResultCompat:
 # ─────────────────────────────────────────────────────────────
 
 _pool: MCPClientPool | None = None
+_pool_lock = threading.Lock()
 
 
 def get_mcp_pool() -> MCPClientPool:
     """Return the module-level :class:`MCPClientPool` singleton."""
     global _pool
     if _pool is None:
-        _pool = MCPClientPool()
+        with _pool_lock:
+            if _pool is None:
+                _pool = MCPClientPool()
     return _pool
 
 

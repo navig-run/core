@@ -193,6 +193,33 @@ _MODE_TO_TIER: dict[str, str] = {
     "research": "big",
 }
 
+# Emergency fallback models used when no model is resolved from config or from the
+# static MODE_MODEL_PREFERENCE table.  The "_default" key is the catch-all for any
+# mode not explicitly listed.  These are conservative, widely-available choices and
+# will only fire if a provider was activated without any model being stored.
+_PROVIDER_DEFAULT_MODELS: dict[str, dict[str, str]] = {
+    "nvidia": {
+        "small_talk": "meta/llama-3.1-8b-instruct",
+        "big_tasks": "meta/llama-3.1-70b-instruct",
+        "coding": "meta/llama-3.1-70b-instruct",
+        "summarize": "meta/llama-3.1-70b-instruct",
+        "research": "meta/llama-3.1-70b-instruct",
+        "_default": "meta/llama-3.1-8b-instruct",
+    },
+    "xai": {"_default": "grok-2-latest"},
+    "anthropic": {"_default": "claude-3-5-haiku-20241022"},
+    "google": {"_default": "gemini-1.5-flash"},
+    "groq": {"_default": "llama-3.1-70b-versatile"},
+    "mistral": {"_default": "mistral-small-latest"},
+    "cerebras": {"_default": "llama3.1-8b"},
+    "openai": {
+        "small_talk": "gpt-4o-mini",
+        "big_tasks": "gpt-4o",
+        "coding": "gpt-4o",
+        "_default": "gpt-4o-mini",
+    },
+}
+
 
 class UnifiedRouter:
     """
@@ -324,12 +351,52 @@ class UnifiedRouter:
                 else:
                     provider_chain = [_prov] + provider_chain
 
+        # 1c. Apply durable llm_modes config (written by Telegram /models activation).
+        #     When the user activates a provider in the Telegram UI, it stores
+        #     provider+model in config["llm_router"]["llm_modes"][mode_name].
+        #     Without this step the generic provider path in _execute() raises
+        #     "No model configured for nvidia/small_talk" because the static
+        #     MODE_MODEL_PREFERENCE table only knows the built-in providers.
+        #     The provider is promoted to front-of-chain even when the stored
+        #     model is empty — _execute() has a per-provider emergency default
+        #     table that covers that case.
+        if not decision.model:
+            try:
+                _modes_cfg = (self._config.get("llm_router") or {}).get("llm_modes") or {}
+                _mode_data = _modes_cfg.get(decision.mode) or {}
+                if isinstance(_mode_data, dict):
+                    _cfg_model = _mode_data.get("model", "")
+                    _cfg_provider = _mode_data.get("provider", "")
+                    if _cfg_provider:
+                        # Always promote the provider — even when model is empty.
+                        # _execute() will resolve a default model for the provider.
+                        if _cfg_provider in provider_chain:
+                            provider_chain = [_cfg_provider] + [
+                                p for p in provider_chain if p != _cfg_provider
+                            ]
+                        else:
+                            provider_chain = [_cfg_provider] + provider_chain
+                        decision.provider = _cfg_provider
+                        if _cfg_model:
+                            decision.model = _cfg_model
+                        decision.reasons.append(f"llm_modes_config:{decision.mode}")
+                        logger.info(
+                            "llm_modes_config applied: mode=%s provider=%s model=%s",
+                            decision.mode,
+                            _cfg_provider,
+                            _cfg_model or "(provider-default)",
+                        )
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; never block routing
+
         response_text = ""
         last_error = ""
 
         for provider_name in provider_chain:
             provider = self._get_provider_instance(provider_name)
             if provider is None:
+                trace.fallbacks_tried.append(provider_name)
+                logger.debug("Provider %s: no instance (key missing or config error)", provider_name)
                 continue
 
             # Health check
@@ -498,6 +565,24 @@ class UnifiedRouter:
         except Exception:  # noqa: BLE001
             pass  # best-effort
 
+        # 4. Vault-discovered AI providers — any provider that has a vault entry is treated
+        #    as available so that `navig vault add xai --key ...` is sufficient to activate
+        #    it without also requiring `navig config set ai.default_provider xai`.
+        try:
+            from navig.vault import get_vault  # noqa: PLC0415
+
+            _ROUTABLE_PROVIDERS = {
+                "xai", "openai", "anthropic", "groq", "nvidia",
+                "mistral", "cerebras", "google", "openrouter",
+                "github_models", "deepseek", "cohere",
+            }
+            for cred_info in get_vault().list_creds():
+                prov = (cred_info.provider or "").strip().lower()
+                if prov in _ROUTABLE_PROVIDERS:
+                    _add(prov)
+        except Exception:  # noqa: BLE001
+            pass  # vault unavailable at startup is non-fatal
+
         return providers
 
     def _get_provider_instance(self, name: str):
@@ -546,14 +631,11 @@ class UnifiedRouter:
                 "OPENROUTER_API_KEY", ""
             )
             if not api_key:
-                # Try vault
+                # Try vault — get_api_key() is the correct single-arg API
                 try:
                     from navig.vault import get_vault
 
-                    vault = get_vault()
-                    secret = vault.get_secret("openrouter", "api_key", caller="unified_router")
-                    if secret:
-                        api_key = secret.reveal().strip()
+                    api_key = get_vault().get_api_key("openrouter") or ""
                 except Exception:  # noqa: BLE001
                     pass  # best-effort; failure is non-critical
             if not api_key:
@@ -589,7 +671,12 @@ class UnifiedRouter:
 
             api_key = _resolve_provider_api_key(name, self._config)
             if not api_key:
-                logger.debug("No API key found for generic provider %s", name)
+                logger.warning(
+                    "No API key found for provider '%s' — check vault or env var "
+                    "(e.g. %s_API_KEY)",
+                    name,
+                    name.upper().replace("-", "_"),
+                )
                 return None
             return create_provider(name, api_key=api_key)
         except Exception:  # noqa: BLE001
@@ -624,9 +711,38 @@ class UnifiedRouter:
 
         # Fallback providers: select model by mode preference
         model = decision.model
+
+        # If executing a fallback provider (not the intended primary), the model
+        # in decision.model was chosen for the primary provider (e.g.
+        # "meta/llama-3.1-8b-instruct" for NVIDIA). Passing that provider-specific
+        # model ID to github_models/openrouter/etc causes 400/404, breaking every
+        # fallback. Resolve the correct model for the actual provider being called.
+        _primary_prov = decision.provider or ""
+        if model and _primary_prov and provider_name != _primary_prov:
+            _prefs = MODE_MODEL_PREFERENCE.get(decision.mode, {})
+            _fallback_model = _prefs.get(provider_name, "")
+            if _fallback_model:
+                model = _fallback_model
+            else:
+                _fb_default = (
+                    _PROVIDER_DEFAULT_MODELS.get(provider_name, {}).get(decision.mode, "")
+                    or _PROVIDER_DEFAULT_MODELS.get(provider_name, {}).get("_default", "")
+                )
+                if _fb_default:
+                    model = _fb_default
+                # else keep decision.model — call will likely fail but
+                # the exception is caught by the surrounding loop.
+
         if not model:
             prefs = MODE_MODEL_PREFERENCE.get(decision.mode, {})
             model = prefs.get(provider_name, "")
+
+        # Emergency fallback: use per-provider hardcoded default when no model
+        # was resolved from config (e.g. NVIDIA activated with empty model list).
+        if not model:
+            model = _PROVIDER_DEFAULT_MODELS.get(provider_name, {}).get(
+                decision.mode, ""
+            ) or _PROVIDER_DEFAULT_MODELS.get(provider_name, {}).get("_default", "")
 
         if not model:
             raise RuntimeError(f"No model configured for {provider_name}/{decision.mode}")

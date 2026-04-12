@@ -5,8 +5,10 @@ Keep this module import-light — it is imported from database.py,
 database_advanced.py, and backup.py at command-dispatch time.
 """
 
+import hashlib
 import os
 import tempfile
+from pathlib import Path
 
 
 def create_mysql_config_file(user: str, password: str) -> str:
@@ -50,3 +52,20 @@ def create_mysql_config_file(user: str, password: str) -> str:
         except OSError:
             pass  # best-effort cleanup
         raise RuntimeError(f"Failed to create secure MySQL config file: {exc}") from exc
+
+
+def calculate_file_checksum(file_path: Path, algorithm: str = "sha256") -> str:
+    """Calculate checksum for file integrity verification.
+
+    Args:
+        file_path: Path to file.
+        algorithm: Hash algorithm (sha256, md5, sha1 …).
+
+    Returns:
+        Hex digest string.
+    """
+    hash_obj = hashlib.new(algorithm)
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            hash_obj.update(chunk)
+    return hash_obj.hexdigest()

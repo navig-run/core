@@ -48,6 +48,7 @@ import threading
 from typing import Any
 
 from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
+from navig.providers.source_scan import PROVIDER_ENV_KEYS
 
 try:
     from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -143,27 +144,6 @@ PROVIDER_RESOURCE_URLS: dict[str, dict[str, str]] = {
     "serpapi": {
         "search": "https://serpapi.com/search",
     },
-}
-
-# Provider → env var(s) for API key resolution
-PROVIDER_ENV_KEYS: dict[str, list[str]] = {
-    "openai": ["OPENAI_API_KEY"],
-    "anthropic": ["ANTHROPIC_API_KEY", "CLAUDE_API_KEY"],
-    "deepseek": ["DEEPSEEK_API_KEY"],
-    "grok": ["GROK_API_KEY", "XAI_API_KEY", "GROK_KEY"],
-    "xai": ["XAI_API_KEY", "GROK_API_KEY", "GROK_KEY"],
-    "openrouter": ["OPENROUTER_API_KEY"],
-    "groq": ["GROQ_API_KEY"],
-    "google": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-    "siliconflow": ["SILICONFLOW_API_KEY"],
-    "mistral": ["MISTRAL_API_KEY"],
-    "cohere": ["COHERE_API_KEY"],
-    "together": ["TOGETHER_API_KEY"],
-    "github_models": ["GITHUB_TOKEN"],  # free via GitHub PAT
-    "ollama": [],  # local, no key needed
-    "llamacpp": [],  # local, no key needed
-    "airllm": [],  # local, no key needed
-    "mcp_bridge": [],  # VS Code Copilot via MCP WebSocket (no key, uses tunnel)
 }
 
 # Provider → base URL
@@ -520,6 +500,30 @@ def _resolve_api_key(provider: str) -> str | None:
                     key = None
                 if key:
                     return key
+        # Env-var names as vault labels (covers keys stored as e.g. 'github_token',
+        # 'openai_api_key', or any casing the user chose when running navig vault set)
+        if manifest and manifest.env_vars:
+            from navig.vault.core import get_vault
+
+            vault = get_vault()
+            _tried: set[str] = {provider} | set(manifest.vault_keys or [])
+            for var in manifest.env_vars:
+                var_lower = var.lower()
+                if var_lower in _tried:
+                    continue
+                _tried.add(var_lower)
+                try:
+                    key = vault.get_api_key(var_lower)
+                    if key:
+                        return key
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    key = vault.get_secret(var_lower)
+                    if key:
+                        return key
+                except (KeyError, AttributeError, TypeError, ValueError):
+                    pass
     except (ImportError, AttributeError, RuntimeError) as exc:
         logger.debug("Vault label lookup failed for %s: %s", provider, exc)
 

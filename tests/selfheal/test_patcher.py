@@ -7,6 +7,9 @@ from unittest.mock import patch
 
 from navig.selfheal.patcher import build_patch
 from navig.selfheal.scanner import ScanFinding
+import pytest
+
+pytestmark = pytest.mark.slow
 
 # ---------------------------------------------------------------------------
 # Helpers

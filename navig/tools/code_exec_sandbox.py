@@ -27,6 +27,7 @@ class CodeExecSandboxTool(BaseTool):
     description = (
         "Execute a Python code snippet safely. Returns stdout, stderr, exit code. 10s timeout."
     )
+    owner_only = True  # arbitrary code execution — restrict to owner like bash_exec
     parameters = [
         {
             "name": "code",

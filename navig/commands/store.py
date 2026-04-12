@@ -31,11 +31,6 @@ store_app = typer.Typer(
 )
 
 
-def _navig_dir() -> Path:
-    """Return the active NAVIG data directory."""
-    return config_dir()
-
-
 # ── Status ────────────────────────────────────────────────────
 
 
@@ -44,7 +39,7 @@ def store_status(
     json_output: bool = typer.Option(False, "--json", help="JSON output"),
 ):
     """Show health status of all local SQLite stores."""
-    navig = _navig_dir()
+    navig = config_dir()
     db_files = sorted(navig.rglob("*.db"))
     if not db_files:
         console.print("[yellow]No SQLite databases found in ~/.navig/[/yellow]")
@@ -124,7 +119,7 @@ def store_maintenance(
     }
 
     # Also try ConversationStore and MatrixStore if their DBs exist
-    navig = _navig_dir()
+    navig = config_dir()
     if (navig / "memory.db").exists():
         try:
             from navig.memory.conversation import ConversationStore
@@ -187,7 +182,7 @@ def store_backup(
     timestamp = time.strftime("%Y%m%d_%H%M%S")
 
     results = {}
-    navig = _navig_dir()
+    navig = config_dir()
 
     stores_to_backup = {}
 
@@ -251,7 +246,7 @@ def store_migrate(
     json_output: bool = typer.Option(False, "--json", help="JSON output"),
 ):
     """Run pending data migrations (legacy bot_data.db, daily_log.db → runtime.db)."""
-    navig = _navig_dir()
+    navig = config_dir()
     results = {}
 
     # 1. RuntimeStore auto-migration handles bot_data.db + daily_log.db
@@ -332,7 +327,7 @@ def store_cleanup(
     json_output: bool = typer.Option(False, "--json", help="JSON output"),
 ):
     """Remove deprecated .db.migrated files and empty legacy directories."""
-    navig = _navig_dir()
+    navig = config_dir()
     targets = list(navig.rglob("*.db.migrated"))
 
     if not targets:

@@ -167,7 +167,7 @@ def check_disk_space(min_mb: int = 100) -> bool:
 def check_config_dir_writable() -> bool:
     """~/.navig is writable (create-on-demand)."""
     try:
-        navig_dir = Path("~/.navig").expanduser()
+        navig_dir = config_dir()
         navig_dir.mkdir(parents=True, exist_ok=True)
         probe = navig_dir / ".write_probe"
         probe.write_text("ok", encoding="utf-8")
@@ -188,19 +188,4 @@ def check_ollama_reachable(host: str = "http://localhost:11434") -> bool:
         return False
 
 
-def check_api_key_in_env(provider: str) -> bool:
-    """Check whether provider API key exists in environment or navig.config."""
-    key_map = {
-        "openai": "OPENAI_API_KEY",
-        "anthropic": "ANTHROPIC_API_KEY",
-        "openrouter": "OPENROUTER_API_KEY",
-    }
-    env_var = key_map.get(provider.lower())
-    if not env_var:
-        return False
-    try:
-        from navig.config import get as _cfg_get  # lazy
-
-        return bool(_cfg_get(env_var, ""))
-    except Exception:  # noqa: BLE001
-        return bool(os.environ.get(env_var))
+from navig.providers.source_scan import check_api_key_in_env  # noqa: PLC0415

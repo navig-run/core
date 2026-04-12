@@ -9,6 +9,7 @@ import secrets
 
 import typer
 
+from navig.core.yaml_io import safe_load_yaml
 from navig.lazy_loader import lazy_import
 from navig.platform.paths import config_dir
 
@@ -50,13 +51,11 @@ def bridge_connect(
     """
     from pathlib import Path
 
-    import yaml
-
     config_path = config_dir() / "config.yaml"
 
     # Load or create config
     if config_path.exists():
-        cfg = yaml.safe_load(config_path.read_text()) or {}
+        cfg = safe_load_yaml(config_path) or {}
     else:
         config_path.parent.mkdir(parents=True, exist_ok=True)
         cfg = {}
@@ -133,15 +132,13 @@ def bridge_status(
     """
     from pathlib import Path
 
-    import yaml
-
     config_path = config_dir() / "config.yaml"
 
     if not config_path.exists():
         ch.warning("No NAVIG config found. Run 'navig bridge connect' first.")
         return
 
-    cfg = yaml.safe_load(config_path.read_text()) or {}
+    cfg = safe_load_yaml(config_path) or {}
     gw = cfg.get("gateway", {})
 
     enabled = gw.get("enabled", False)
@@ -193,15 +190,13 @@ def bridge_rotate_token(
     """
     from pathlib import Path
 
-    import yaml
-
     config_path = config_dir() / "config.yaml"
 
     if not config_path.exists():
         ch.error("No NAVIG config found. Run 'navig bridge connect' first.")
         raise typer.Exit(1)
 
-    cfg = yaml.safe_load(config_path.read_text()) or {}
+    cfg = safe_load_yaml(config_path) or {}
 
     new_token = secrets.token_urlsafe(32)
     cfg.setdefault("gateway", {}).setdefault("auth", {})["token"] = new_token

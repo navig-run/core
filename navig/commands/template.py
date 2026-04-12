@@ -546,11 +546,8 @@ def edit_template_cmd(name: str, options: dict[str, Any]):
     skeleton if it doesn't exist.
     """
     config_manager = get_config_manager()
-    server = options.get("server") or config_manager.get_active_server()
-
-    if not server:
-        ch.error("No active server. Specify with --server or use 'navig server use <name>'")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server = require_active_server(options, config_manager)
 
     # Check if repo template exists
     template_manager = TemplateManager()

@@ -32,6 +32,7 @@ Usage:
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -588,14 +589,17 @@ class ChannelRegistry:
 # =============================================================================
 
 _registry: ChannelRegistry | None = None
+_registry_lock = threading.Lock()
 
 
 def get_channel_registry() -> ChannelRegistry:
     """Get the global channel registry instance."""
     global _registry
     if _registry is None:
-        _registry = ChannelRegistry()
-        _registry.initialize()
+        with _registry_lock:
+            if _registry is None:
+                _registry = ChannelRegistry()
+                _registry.initialize()
     return _registry
 
 

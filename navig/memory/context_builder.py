@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -656,7 +657,8 @@ class ContextBuilder:
             cm = get_config_manager()
             raw = cm.global_config or {}
             return raw.get("context_builder", {})
-        except Exception:
+        except Exception as exc:
+            logger.debug("ContextBuilder config load failed, using defaults: %s", exc)
             return {}
 
 
@@ -665,6 +667,7 @@ class ContextBuilder:
 # ---------------------------------------------------------------------------
 
 _builder_instance: ContextBuilder | None = None
+_builder_lock = threading.Lock()
 
 
 def get_context_builder(
@@ -674,8 +677,17 @@ def get_context_builder(
     """Get or create the module-level ContextBuilder singleton."""
     global _builder_instance
     if _builder_instance is None:
-        _builder_instance = ContextBuilder(config=config, project_root=project_root)
+        with _builder_lock:
+            if _builder_instance is None:
+                _builder_instance = ContextBuilder(config=config, project_root=project_root)
     return _builder_instance
+
+
+def reset_context_builder() -> None:
+    """Reset singleton (for testing)."""
+    global _builder_instance
+    with _builder_lock:
+        _builder_instance = None
 
 
 def build_context(

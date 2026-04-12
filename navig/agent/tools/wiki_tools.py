@@ -20,7 +20,15 @@ from navig.tools.registry import BaseTool, StatusCallback, ToolResult
 logger = logging.getLogger(__name__)
 
 _MAX_PAGE_CHARS = 3_000
-_WIKI_INBOX_DIR = Path(".navig/wiki/inbox")
+
+
+def _resolve_wiki_root() -> Path:
+    try:
+        from navig.wiki_rag import get_wiki_rag
+
+        return get_wiki_rag().wiki_path
+    except Exception:
+        return Path(".navig/wiki")
 
 
 def search(query: str, space: str | None = None, limit: int = 5) -> list[dict[str, str]]:
@@ -166,7 +174,7 @@ class WikiReadTool(BaseTool):
 
         # Resolve path against known wiki roots
         candidates: list[Path] = []
-        for base in [Path(".navig/wiki"), Path("~/.navig/wiki").expanduser()]:
+        for base in [_resolve_wiki_root(), Path("~/.navig/wiki").expanduser()]:
             p = base / page
             if not p.suffix:
                 p = p.with_suffix(".md")
@@ -258,7 +266,7 @@ class WikiWriteTool(BaseTool):
         slug = re.sub(r"[\s_-]+", "-", slug).strip("-")[:80]
         filename = f"{slug}.md"
 
-        inbox = _WIKI_INBOX_DIR
+        inbox = _resolve_wiki_root() / "inbox"
         inbox.mkdir(parents=True, exist_ok=True)
 
         # Add folder hint as frontmatter comment if provided

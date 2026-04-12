@@ -16,11 +16,8 @@ template_manager = ServerTemplateManager(config_manager)
 
 def list_server_templates_cmd(options: dict[str, Any]):
     """List template configurations for a server."""
-    server = options.get("server") or config_manager.get_active_server()
-
-    if not server:
-        ch.error("No active server. Specify with --server or use 'navig server use <name>'")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server = require_active_server(options, config_manager)
 
     enabled_only = options.get("enabled_only", False)
     templates = template_manager.list_server_templates(server, enabled_only=enabled_only)
@@ -71,11 +68,8 @@ def list_server_templates_cmd(options: dict[str, Any]):
 
 def show_template_config_cmd(template_name: str, options: dict[str, Any]):
     """Show merged configuration for a server template."""
-    server = options.get("server") or config_manager.get_active_server()
-
-    if not server:
-        ch.error("No active server. Specify with --server or use 'navig server use <name>'")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server = require_active_server(options, config_manager)
 
     config = template_manager.get_template_config(server, template_name, include_template=True)
 
@@ -125,11 +119,8 @@ def show_template_config_cmd(template_name: str, options: dict[str, Any]):
 
 def enable_server_template_cmd(template_name: str, options: dict[str, Any]):
     """Enable an template for a server."""
-    server = options.get("server") or config_manager.get_active_server()
-
-    if not server:
-        ch.error("No active server. Specify with --server or use 'navig server use <name>'")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server = require_active_server(options, config_manager)
 
     if options.get("dry_run"):
         ch.dim(f"Would enable template '{template_name}' for server '{server}'")
@@ -142,11 +133,8 @@ def enable_server_template_cmd(template_name: str, options: dict[str, Any]):
 
 def disable_server_template_cmd(template_name: str, options: dict[str, Any]):
     """Disable an template for a server."""
-    server = options.get("server") or config_manager.get_active_server()
-
-    if not server:
-        ch.error("No active server. Specify with --server or use 'navig server use <name>'")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server = require_active_server(options, config_manager)
 
     if options.get("dry_run"):
         ch.dim(f"Would disable template '{template_name}' for server '{server}'")
@@ -157,11 +145,8 @@ def disable_server_template_cmd(template_name: str, options: dict[str, Any]):
 
 def set_template_value_cmd(template_name: str, key_path: str, value: str, options: dict[str, Any]):
     """Set a custom value for a server template configuration."""
-    server = options.get("server") or config_manager.get_active_server()
-
-    if not server:
-        ch.error("No active server. Specify with --server or use 'navig server use <name>'")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server = require_active_server(options, config_manager)
 
     if options.get("dry_run"):
         ch.dim(
@@ -190,11 +175,8 @@ def set_template_value_cmd(template_name: str, key_path: str, value: str, option
 
 def sync_template_cmd(template_name: str, options: dict[str, Any]):
     """Sync template configuration from template."""
-    server = options.get("server") or config_manager.get_active_server()
-
-    if not server:
-        ch.error("No active server. Specify with --server or use 'navig server use <name>'")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server = require_active_server(options, config_manager)
 
     preserve_custom = not options.get("force", False)
 
@@ -224,11 +206,8 @@ def sync_template_cmd(template_name: str, options: dict[str, Any]):
 
 def init_template_cmd(template_name: str, options: dict[str, Any]):
     """Manually initialize an template for a server."""
-    server = options.get("server") or config_manager.get_active_server()
-
-    if not server:
-        ch.error("No active server. Specify with --server or use 'navig server use <name>'")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server = require_active_server(options, config_manager)
 
     enabled = options.get("enable", False)
 

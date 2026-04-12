@@ -19,12 +19,17 @@ Trigger Types:
 
 import hashlib
 import json
+import logging
+import os
 import re
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 import yaml
 
@@ -336,10 +341,22 @@ class TriggerManager:
             "version": 1,
             "triggers": [t.to_dict() for t in self._triggers.values()],
         }
-
         try:
-            with open(self.triggers_file, "w", encoding="utf-8") as f:
-                yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+            # Atomic write: use a sibling temp file + rename so a crash
+            # during the write never corrupts the active triggers config.
+            tmp_path: Path | None = None
+            try:
+                fd, tmp = tempfile.mkstemp(
+                    dir=self.triggers_dir, suffix=".tmp"
+                )
+                tmp_path = Path(tmp)
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+                os.replace(tmp_path, self.triggers_file)
+                tmp_path = None
+            finally:
+                if tmp_path is not None and tmp_path.exists():
+                    tmp_path.unlink(missing_ok=True)
         except Exception as e:
             ch.error(f"Failed to save triggers: {e}")
 
@@ -362,8 +379,8 @@ class TriggerManager:
                     )
                     + "\n"
                 )
-        except Exception:
-            pass  # Don't fail on history logging errors
+        except Exception as _exc:
+            logger.debug("history log skipped: %s", _exc)
 
     # ========================================================================
     # CRUD OPERATIONS
@@ -824,8 +841,17 @@ class TriggerManager:
                     else:
                         kept.append(line)
 
-        with open(self.history_file, "w", encoding="utf-8") as f:
-            f.writelines(kept)
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=self.history_file.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                _fh.writelines(kept)
+            os.replace(_tmp_path, self.history_file)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
 
         return removed
 

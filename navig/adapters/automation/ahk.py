@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from navig.adapters.automation.types import ExecutionResult, WindowInfo
+
 
 @dataclass
 class AHKStatus:
@@ -27,49 +29,6 @@ class AHKStatus:
             "executable_path": (str(self.executable_path) if self.executable_path else None),
             "detection_method": self.detection_method,
         }
-
-
-@dataclass
-class WindowInfo:
-    title: str
-    id: str  # HWND
-    pid: int
-    class_name: str
-    x: int
-    y: int
-    width: int
-    height: int
-    process_name: str | None = None
-    is_minimized: bool = False
-    is_maximized: bool = False
-
-    def to_dict(self):
-        return {
-            "title": self.title,
-            "id": self.id,
-            "pid": self.pid,
-            "class_name": self.class_name,
-            "x": self.x,
-            "y": self.y,
-            "width": self.width,
-            "height": self.height,
-            "process_name": self.process_name,
-            "state": (
-                "minimized"
-                if self.is_minimized
-                else ("maximized" if self.is_maximized else "normal")
-            ),
-        }
-
-
-@dataclass
-class ExecutionResult:
-    success: bool
-    stdout: str = ""
-    stderr: str = ""
-    exit_code: int = 0
-    duration_seconds: float = 0.0
-    status: str = "COMPLETED"
 
 
 class AHKAdapter:

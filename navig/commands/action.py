@@ -14,7 +14,9 @@ New actions are written to ~/.navig/store/actions/user.yaml.
 
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -23,6 +25,7 @@ import typer
 
 from navig import console_helper as ch
 from navig.console_helper import get_console
+from navig.core.yaml_io import safe_load_yaml
 
 action_app = typer.Typer(
     name="action",
@@ -50,8 +53,6 @@ def _get_user_actions_file() -> Path:
 
 def _load_all_actions() -> list[dict[str, Any]]:
     """Aggregate actions from all sources; deduplicated by name (first wins)."""
-    import yaml
-
     results: list[dict[str, Any]] = []
     seen: set[str] = set()
 
@@ -59,7 +60,7 @@ def _load_all_actions() -> list[dict[str, Any]]:
         if not yaml_file.exists():
             return
         try:
-            data = yaml.safe_load(yaml_file.read_text(encoding="utf-8")) or {}
+            data = safe_load_yaml(yaml_file) or {}
         except Exception:
             return
         if isinstance(data, dict):
@@ -190,13 +191,7 @@ def action_add(
             raise typer.Exit(1)
 
     user_file = _get_user_actions_file()
-    if user_file.exists():
-        try:
-            data: dict = yaml.safe_load(user_file.read_text(encoding="utf-8")) or {}
-        except Exception:
-            data = {}
-    else:
-        data = {}
+    data: dict = safe_load_yaml(user_file) or {}
 
     data[name] = {
         "command": command,
@@ -204,10 +199,17 @@ def action_add(
         "created": datetime.now().isoformat(timespec="seconds"),
     }
 
-    user_file.write_text(
-        yaml.safe_dump(data, default_flow_style=False, allow_unicode=True),
-        encoding="utf-8",
-    )
+    _tmp_path: Path | None = None
+    try:
+        _fd, _tmp = tempfile.mkstemp(dir=user_file.parent, suffix=".tmp")
+        _tmp_path = Path(_tmp)
+        with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+            _fh.write(yaml.safe_dump(data, default_flow_style=False, allow_unicode=True))
+        os.replace(_tmp_path, user_file)
+        _tmp_path = None
+    finally:
+        if _tmp_path is not None:
+            _tmp_path.unlink(missing_ok=True)
     ch.success(f"Action '{name}' added → {user_file}")
 
 
@@ -224,10 +226,7 @@ def action_remove(
         ch.error(f"Action '{name}' not found in user actions.")
         raise typer.Exit(1)
 
-    try:
-        data: dict = yaml.safe_load(user_file.read_text(encoding="utf-8")) or {}
-    except Exception:
-        data = {}
+    data: dict = safe_load_yaml(user_file) or {}
 
     if name not in data:
         ch.error(f"Action '{name}' not found in {user_file}.")
@@ -240,10 +239,17 @@ def action_remove(
             raise typer.Abort()
 
     del data[name]
-    user_file.write_text(
-        yaml.safe_dump(data, default_flow_style=False, allow_unicode=True),
-        encoding="utf-8",
-    )
+    _tmp_path: Path | None = None
+    try:
+        _fd, _tmp = tempfile.mkstemp(dir=user_file.parent, suffix=".tmp")
+        _tmp_path = Path(_tmp)
+        with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+            _fh.write(yaml.safe_dump(data, default_flow_style=False, allow_unicode=True))
+        os.replace(_tmp_path, user_file)
+        _tmp_path = None
+    finally:
+        if _tmp_path is not None:
+            _tmp_path.unlink(missing_ok=True)
     ch.success(f"Action '{name}' removed.")
 
 

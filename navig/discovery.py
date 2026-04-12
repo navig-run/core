@@ -12,23 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from navig import console_helper as ch
-
-# Lazy paramiko import - deferred until SSH operations are actually needed
-_paramiko = None
-
-
-def _get_paramiko():
-    """Lazy import paramiko only when SSH operations are needed."""
-    global _paramiko
-    if _paramiko is None:
-        try:
-            import paramiko
-
-            _paramiko = paramiko
-        except ImportError:
-            _paramiko = False
-    return _paramiko
-
+from navig.connection_pool import _get_paramiko
+from navig.core.connection import _resolve_ssh_bin
 
 # For backward compatibility
 HAS_PARAMIKO = True  # Will be checked at runtime
@@ -55,18 +40,21 @@ class ServerDiscovery:
             ssh_config: Dict with keys: host, port, user, ssh_key or ssh_password
             debug_logger: Optional DebugLogger instance for logging SSH operations
         """
-        self.host = ssh_config["host"]
+        self.host = str(ssh_config.get("host", "")).strip()
         self.port = ssh_config.get("port", 22)
-        self.user = ssh_config["user"]
+        self.user = str(ssh_config.get("user", "")).strip()
         self.ssh_key = ssh_config.get("ssh_key")
         self.ssh_password = ssh_config.get("ssh_password")
         self.debug_logger = debug_logger
+
+        if not self.host or not self.user:
+            raise ValueError("ssh_config must include non-empty 'host' and 'user'.")
 
         self.discovered_data = {}
 
     def _build_ssh_command(self, remote_command: str) -> list[str]:
         """Build SSH command with proper authentication."""
-        cmd = ["ssh", "-p", str(self.port)]
+        cmd = [_resolve_ssh_bin(), "-p", str(self.port)]
 
         # accept-new: accept first-time host keys, reject mismatches for known hosts.
         # This prevents MITM attacks on hosts we've connected to before while still
@@ -91,10 +79,16 @@ class ServerDiscovery:
             Tuple of (success: bool, stdout: str, stderr: str)
         """
         # Use paramiko if password authentication and available
-        if self.ssh_password and HAS_PARAMIKO:
+        if self.ssh_password:
+            if not _get_paramiko():
+                return (
+                    False,
+                    "",
+                    "Password authentication requires paramiko; install paramiko or configure ssh_key.",
+                )
             return self._execute_ssh_paramiko(command)
-        else:
-            return self._execute_ssh_subprocess(command)
+
+        return self._execute_ssh_subprocess(command)
 
     def _execute_ssh_paramiko(self, command: str) -> tuple[bool, str, str]:
         """Execute SSH command using paramiko with connection pooling."""

@@ -20,12 +20,6 @@ def _table() -> object:
     return Table(title="Import Results")
 
 
-def _console() -> object:
-    from rich.console import Console
-
-    return get_console()
-
-
 def _flatten(results: dict[str, list]) -> list[dict]:
     rows: list[dict] = []
     for source_items in results.values():
@@ -149,7 +143,7 @@ def _run_import(
                 str(row.get("value", "")),
             )
 
-        _console().print(table)
+        get_console().print(table)
     except Exception:
         for row in rows:
             print(

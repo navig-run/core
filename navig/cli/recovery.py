@@ -229,7 +229,9 @@ def require_active_server(
 
         server_name = require_active_server(options, config_manager)
     """
-    server_name: str | None = options.get("app") or options.get("host") or cfg.get_active_server()
+    server_name: str | None = (
+        options.get("app") or options.get("host") or options.get("server") or cfg.get_active_server()
+    )
     if server_name:
         return server_name
 
@@ -278,4 +280,67 @@ def require_active_server(
     elif hasattr(cfg, "set_active_host"):
         cfg.set_active_host(chosen)
         ch.success(f"Active host set to '{chosen}'")
+    return chosen
+
+
+# ── require_active_app ───────────────────────────────────────────────────────
+
+
+def require_active_app(
+    options: dict,
+    cfg: ConfigManager,
+) -> str:  # type: ignore[return]
+    """Return the active app name, or prompt / exit gracefully.
+
+    Used by commands that call ``config_manager.get_active_app()``
+    (webserver, deploy, etc.).
+
+    Replace patterns like::
+
+        if not app_name:
+            app_name = config_manager.get_active_app()
+        if not app_name:
+            console.print("[red]✗ No active app configured[/red]")
+            return
+
+    with::
+
+        app_name = require_active_app(options, config_manager)
+    """
+    app_name: str | None = options.get("app") or cfg.get_active_app()
+    if app_name:
+        return app_name
+
+    apps: list[str] = []
+    if hasattr(cfg, "list_apps"):
+        apps = cfg.list_apps()
+
+    if not apps:
+        empty_list_recovery("app", "app list")
+        raise typer.Exit(0)
+
+    if not _is_tty():
+        ch.warning(
+            "No active app configured.",
+            "Use 'navig app use <name>' to set one.",
+        )
+        raise typer.Exit(0)
+
+    try:
+        from navig.cli.selector import CommandEntry, fzf_or_fallback  # noqa: PLC0415
+    except ImportError:
+        ch.warning("No active app configured. Use 'navig app use <name>'.")
+        raise typer.Exit(0) from None
+
+    entries = [CommandEntry(name=a, description="", domain="") for a in apps]
+    ch.info("No active app. Pick one:")
+    choice = fzf_or_fallback(entries, prompt="Select app")
+
+    if choice is None:
+        raise typer.Exit(0)
+
+    chosen = choice.name
+    if hasattr(cfg, "set_active_app"):
+        cfg.set_active_app(chosen)
+        ch.success(f"Active app set to '{chosen}'")
     return chosen

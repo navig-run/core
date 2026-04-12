@@ -392,18 +392,24 @@ class SSHConnectionPool:
             return len(self._connections)
 
     def get_connection_info(self) -> list[dict[str, Any]]:
-        """Get info about all active connections."""
+        """Get info about all active connections.
+
+        Snapshot the connection list under the lock, then probe liveness
+        *outside* the lock so blocking socket I/O does not stall threads
+        that are trying to borrow connections concurrently.
+        """
         with self._lock:
-            return [
-                {
-                    "key": conn.key,
-                    "age_seconds": round(conn.age_seconds, 1),
-                    "idle_seconds": round(conn.idle_seconds, 1),
-                    "use_count": conn.use_count,
-                    "alive": conn.is_alive(),
-                }
-                for conn in self._connections.values()
-            ]
+            conns = list(self._connections.values())
+        return [
+            {
+                "key": conn.key,
+                "age_seconds": round(conn.age_seconds, 1),
+                "idle_seconds": round(conn.idle_seconds, 1),
+                "use_count": conn.use_count,
+                "alive": conn.is_alive(),
+            }
+            for conn in conns
+        ]
 
 
 # Convenience function for one-off commands using the pool

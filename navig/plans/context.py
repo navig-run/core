@@ -24,46 +24,21 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from navig.plans.frontmatter import (
+    FRONTMATTER_RE as _FRONTMATTER_RE,
+)
+from navig.plans.frontmatter import (
+    _safe_read,
+)
+from navig.plans.frontmatter import (
+    first_h1 as _first_h1,
+)
+from navig.plans.frontmatter import (
+    parse_frontmatter as _parse_frontmatter,
+)
 from navig.platform import paths
 
 logger = logging.getLogger(__name__)
-
-_FRONTMATTER_RE = re.compile(r"^---\n([\s\S]*?)\n---\n?", re.MULTILINE)
-
-
-# ─────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────
-
-def _safe_read(path: Path) -> str:
-    """Read a file as UTF-8, returning empty string on failure."""
-    try:
-        return path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return ""
-
-
-def _parse_frontmatter(text: str) -> dict[str, str]:
-    """Return a dict of key→value from ``---``-delimited frontmatter."""
-    match = _FRONTMATTER_RE.match(text)
-    if not match:
-        return {}
-    values: dict[str, str] = {}
-    for line in match.group(1).splitlines():
-        if ":" not in line:
-            continue
-        key, val = line.split(":", 1)
-        values[key.strip()] = val.strip()
-    return values
-
-
-def _first_h1(text: str) -> str:
-    """Extract the first ``# Heading`` from Markdown text."""
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("# "):
-            return stripped[2:].strip()
-    return ""
 
 
 # ─────────────────────────────────────────────────────────────

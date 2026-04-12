@@ -8,7 +8,9 @@ Analyzes:
 - Project type detection
 """
 
+import os
 import re
+import tempfile
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +18,7 @@ from typing import Any
 
 from rich.console import Console
 from rich.table import Table
+
 from navig.console_helper import get_console
 
 console = get_console()
@@ -433,8 +436,17 @@ def add_quick_action(name: str, command: str, description: str = "") -> bool:
     # Save
     import yaml
 
-    with open(quick_file, "w", encoding="utf-8") as f:
-        yaml.safe_dump(actions, f, default_flow_style=False)
+    _tmp_path: Path | None = None
+    try:
+        _fd, _tmp = tempfile.mkstemp(dir=quick_file.parent, suffix=".tmp")
+        _tmp_path = Path(_tmp)
+        with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+            yaml.safe_dump(actions, _fh, default_flow_style=False)
+        os.replace(_tmp_path, quick_file)
+        _tmp_path = None
+    finally:
+        if _tmp_path is not None:
+            _tmp_path.unlink(missing_ok=True)
 
     console.print(f"[green]Added quick action:[/green] {name} -> {command}")
     return True
@@ -654,7 +666,16 @@ def quick_remove(
 
     del actions[name]
 
-    with open(quick_file, "w", encoding="utf-8") as f:
-        yaml.safe_dump(actions, f, default_flow_style=False)
+    _tmp_path: Path | None = None
+    try:
+        _fd, _tmp = tempfile.mkstemp(dir=quick_file.parent, suffix=".tmp")
+        _tmp_path = Path(_tmp)
+        with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+            yaml.safe_dump(actions, _fh, default_flow_style=False)
+        os.replace(_tmp_path, quick_file)
+        _tmp_path = None
+    finally:
+        if _tmp_path is not None:
+            _tmp_path.unlink(missing_ok=True)
 
     ch.success(f"Removed quick action: {name}")

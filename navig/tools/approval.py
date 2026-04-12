@@ -166,7 +166,7 @@ def set_approval_policy(policy: ApprovalPolicy | str) -> None:
         policy = ApprovalPolicy(policy.lower())
     with _policy_lock:
         _policy = policy
-    logger.debug("approval: policy set to %s", policy.value)
+    logger.debug("approval: policy set to {}", policy.value)
 
 
 def needs_approval(
@@ -231,7 +231,7 @@ async def _log_and_approve(req: ApprovalRequest) -> ApprovalDecision:
     If a richer interactive prompt is needed, replace this backend.
     """
     logger.warning(
-        "approval: auto-approving DANGEROUS tool '%s' (single-operator mode). "
+        "approval: auto-approving DANGEROUS tool '{}' (single-operator mode). "
         "Set a custom gate.backend for interactive confirmation.",
         req.tool_name,
     )
@@ -311,11 +311,11 @@ class ApprovalGate:
         try:
             decision = await self._backend(req)
         except Exception as exc:
-            logger.error("approval: backend raised unexpectedly: %s — denying", exc)
+            logger.error("approval: backend raised unexpectedly: {} — denying", exc)
             decision = ApprovalDecision.DENIED
 
         logger.info(
-            "approval: tool='%s' safety='%s' decision=%s",
+            "approval: tool='{}' safety='{}' decision={}",
             tool_name,
             safety_level,
             decision.value,

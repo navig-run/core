@@ -10,6 +10,22 @@ from typing import Any
 from navig import console_helper as ch
 
 
+def _resolve_assistant(ctx_obj: dict[str, Any]):
+    """Return the ProactiveAssistant instance, or None if unavailable.
+
+    The middleware stores a *callable* under ``ctx_obj["get_assistant"]`` that
+    waits (up to a short timeout) for the background load thread and then
+    returns the instance or None.  Using the callable is the correct access
+    pattern; falling back to the legacy ``ctx_obj["assistant"]`` key handles
+    any direct assignments made by older code paths.
+    """
+    get_fn = ctx_obj.get("get_assistant")
+    if callable(get_fn):
+        return get_fn(timeout=0.2)
+    # Legacy fallback: some code paths may store the instance directly.
+    return ctx_obj.get("assistant")
+
+
 def pre_execution_check(ctx_obj: dict[str, Any], command: str, args: dict[str, Any]) -> bool:
     """
     Check for pre-execution warnings before running a command.
@@ -25,7 +41,7 @@ def pre_execution_check(ctx_obj: dict[str, Any], command: str, args: dict[str, A
     if not ctx_obj.get("assistant_enabled"):
         return True
 
-    assistant = ctx_obj.get("assistant")
+    assistant = _resolve_assistant(ctx_obj)
     if not assistant:
         return True
 
@@ -83,7 +99,7 @@ def post_execution_log(
     if not ctx_obj.get("assistant_enabled"):
         return
 
-    assistant = ctx_obj.get("assistant")
+    assistant = _resolve_assistant(ctx_obj)
     if not assistant:
         return
 
@@ -126,7 +142,7 @@ def analyze_and_suggest_solutions(
     if not ctx_obj.get("assistant_enabled"):
         return
 
-    assistant = ctx_obj.get("assistant")
+    assistant = _resolve_assistant(ctx_obj)
     if not assistant:
         return
 

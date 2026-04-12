@@ -13,6 +13,8 @@ from navig.connectors.gmail.mappers import (
 )
 from navig.connectors.types import ActionType, ResourceType
 
+pytestmark = pytest.mark.integration
+
 # ── Mapper tests ─────────────────────────────────────────────────────────
 
 

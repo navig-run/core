@@ -27,6 +27,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from navig.config import get_config_manager
 from navig.tools.registry import BaseTool, StatusCallback, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -38,17 +39,11 @@ _MAX_OUTPUT_CHARS = 4_000
 # Shared helpers
 # ─────────────────────────────────────────────────────────────
 
+from navig.core.dict_utils import truncate_output  # noqa: PLC0415
+
+
 def _truncate(text: str, limit: int = _MAX_OUTPUT_CHARS) -> str:
-    """Truncate ``text`` to *limit* characters, appending a note if trimmed."""
-    if len(text) <= limit:
-        return text
-    return text[:limit] + f"\n... [truncated — {len(text)} chars total]"
-
-
-def _get_config_manager():
-    """Lazy singleton for ConfigManager."""
-    from navig.config import get_config_manager
-    return get_config_manager()
+    return truncate_output(text, limit)
 
 
 def _resolve_host(host_name: str | None = None) -> tuple[str, dict[str, Any]]:
@@ -56,7 +51,7 @@ def _resolve_host(host_name: str | None = None) -> tuple[str, dict[str, Any]]:
 
     Raises ``RuntimeError`` when no host is configured/found.
     """
-    cm = _get_config_manager()
+    cm = get_config_manager()
     if not host_name:
         host_name = cm.get_active_server() or cm.get_active_host()
     if not host_name:
@@ -70,7 +65,7 @@ def _resolve_host(host_name: str | None = None) -> tuple[str, dict[str, Any]]:
 def _get_remote_ops():
     """Build a ``RemoteOperations`` instance."""
     from navig.remote import RemoteOperations
-    return RemoteOperations(_get_config_manager())
+    return RemoteOperations(get_config_manager())
 
 
 def _get_discovery(host_config: dict[str, Any]):
@@ -590,7 +585,7 @@ class NavigHostShowTool(BaseTool):
     async def run(self, args: dict[str, Any], on_status: StatusCallback | None = None) -> ToolResult:
         t0 = time.monotonic()
         try:
-            cm = _get_config_manager()
+            cm = get_config_manager()
             host_name = cm.get_active_server() or cm.get_active_host()
             if not host_name:
                 return ToolResult(name=self.name, success=False, error="No active host configured")
@@ -792,7 +787,7 @@ class NavigAppListTool(BaseTool):
     async def run(self, args: dict[str, Any], on_status: StatusCallback | None = None) -> ToolResult:
         t0 = time.monotonic()
         try:
-            cm = _get_config_manager()
+            cm = get_config_manager()
             host_name = cm.get_active_server() or cm.get_active_host()
             if not host_name:
                 return ToolResult(name=self.name, success=False, error="No active host configured")
@@ -837,7 +832,7 @@ class NavigAppShowTool(BaseTool):
     async def run(self, args: dict[str, Any], on_status: StatusCallback | None = None) -> ToolResult:
         t0 = time.monotonic()
         try:
-            cm = _get_config_manager()
+            cm = get_config_manager()
             host_name = cm.get_active_server() or cm.get_active_host()
             if not host_name:
                 return ToolResult(name=self.name, success=False, error="No active host configured")

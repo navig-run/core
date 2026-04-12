@@ -11,6 +11,8 @@ are cached for display without needing to re-run derivation on every command.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -40,7 +42,20 @@ def persist_entity(entity: NaviEntity) -> None:
         "palette_key": entity.palette_key,
         "resonance": entity.resonance,
     }
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    data = json.dumps(payload, indent=2)
+    # Atomic write: write to a temp file then rename so a crash mid-write
+    # never leaves a truncated/corrupt entity.json.
+    tmp_path: Path | None = None
+    try:
+        fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        tmp_path = Path(tmp)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(data)
+        os.replace(tmp_path, path)
+        tmp_path = None  # replaced successfully
+    finally:
+        if tmp_path is not None and tmp_path.exists():
+            tmp_path.unlink(missing_ok=True)
 
 
 def load_entity() -> dict | None:

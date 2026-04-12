@@ -64,8 +64,8 @@ OAuth authentication requires provider-specific client registration. Currently, 
 
 ```bash
 # Add API key credential
-navig cred add openai sk-... --type api-key
-navig cred add anthropic sk-ant-... --type api-key
+navig vault add openai sk-... --type api-key
+navig vault add anthropic sk-ant-... --type api-key
 
 # Use the credentials
 navig ai "your question" --provider openai

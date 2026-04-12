@@ -5,9 +5,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from navig.plans.frontmatter import (
+    _safe_read,
+    first_h1 as _first_h1,
+    parse_frontmatter as _parse_frontmatter_map,
+)
 from navig.spaces.resolver import discover_space_paths
 
-_FRONTMATTER_RE = re.compile(r"^---\n([\s\S]*?)\n---\n?", re.MULTILINE)
 _CHECKBOX_RE = re.compile(r"^\s*-\s*\[([ xX])\]", re.MULTILINE)
 
 
@@ -21,41 +25,12 @@ class SpaceProgress:
     last_updated: str
 
 
-def _parse_frontmatter_map(text: str) -> dict[str, str]:
-    match = _FRONTMATTER_RE.match(text)
-    if not match:
-        return {}
-
-    values: dict[str, str] = {}
-    for raw in match.group(1).splitlines():
-        if ":" not in raw:
-            continue
-        key, value = raw.split(":", 1)
-        values[key.strip()] = value.strip()
-    return values
-
-
-def _first_h1(text: str) -> str:
-    for line in text.splitlines():
-        line = line.strip()
-        if line.startswith("# "):
-            return line[2:].strip()
-    return ""
-
-
 def _completion_from_markdown(text: str) -> float:
     checks = _CHECKBOX_RE.findall(text)
     if not checks:
         return 0.0
     done = sum(1 for c in checks if c.lower() == "x")
     return round((done / len(checks)) * 100.0, 1)
-
-
-def _safe_read(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError:
-        return ""
 
 
 def read_space_progress(space_name: str, space_path: Path, scope: str) -> SpaceProgress:

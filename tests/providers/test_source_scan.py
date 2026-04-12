@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+import pytest
+
+pytestmark = pytest.mark.integration
 
 
 def test_detect_provider_sources_reads_env_and_config(tmp_path: Path, monkeypatch):

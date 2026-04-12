@@ -24,7 +24,26 @@ else:
 
 import logging
 
+from navig.core.connection import _resolve_ssh_bin
+
 logger = logging.getLogger(__name__)
+
+
+def _require_server_identity(server_config: dict[str, Any]) -> tuple[str, str]:
+    """Return validated ``(user, host)`` for SSH tunnel operations."""
+    user = str(server_config.get("user", "")).strip()
+    host = str(server_config.get("host", "")).strip()
+    if not user or not host:
+        raise ValueError("Server configuration must include non-empty 'user' and 'host'.")
+    return user, host
+
+
+def _require_database_config(server_config: dict[str, Any]) -> dict[str, Any]:
+    """Return validated database config block for tunnel port wiring."""
+    database_cfg = server_config.get("database")
+    if not isinstance(database_cfg, dict):
+        raise ValueError("Server configuration must include a 'database' mapping.")
+    return database_cfg
 
 
 class TunnelManager:
@@ -181,7 +200,8 @@ class TunnelManager:
         if force_port:
             local_port = force_port
         else:
-            preferred_port = server_config["database"].get("local_tunnel_port", 3307)
+            database_cfg = _require_database_config(server_config)
+            preferred_port = database_cfg.get("local_tunnel_port", 3307)
             try:
                 # Try preferred port first
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -206,10 +226,18 @@ class TunnelManager:
                 local_port = self._find_available_port(port_range[0], port_range[1])
 
         # Build SSH tunnel command
-        remote_port = server_config["database"].get("remote_port", 3306)
+        database_cfg = _require_database_config(server_config)
+        remote_port = database_cfg.get("remote_port", 3306)
+        user, host = _require_server_identity(server_config)
 
+        # Respect the same trust model as RemoteOperations.execute_command():
+        # default to StrictHostKeyChecking=yes (rejects unknown hosts) unless
+        # trust_new_host is explicitly set in the server config (e.g. initial setup).
+        _strict_hk = (
+            "accept-new" if server_config.get("trust_new_host", False) else "yes"
+        )
         ssh_args = [
-            "ssh",
+            _resolve_ssh_bin(),
             "-L",
             f"{local_port}:localhost:{remote_port}",
             "-N",  # Don't execute remote command
@@ -221,7 +249,7 @@ class TunnelManager:
             "-o",
             "ExitOnForwardFailure=yes",
             "-o",
-            "StrictHostKeyChecking=accept-new",  # Auto-accept new host keys
+            f"StrictHostKeyChecking={_strict_hk}",
         ]
 
         # Add port if not default
@@ -233,7 +261,7 @@ class TunnelManager:
             ssh_args.extend(["-i", server_config["ssh_key"]])
 
         # Add user@host
-        ssh_args.append(f"{server_config['user']}@{server_config['host']}")
+        ssh_args.append(f"{user}@{host}")
 
         # Execute SSH command
         try:
@@ -260,7 +288,7 @@ class TunnelManager:
 
             # Get the PID (for -f backgrounded ssh, we need to find it)
             # The process we started will fork and exit, so we need to find the actual tunnel process
-            pid = self._find_tunnel_process(local_port, server_config["host"])
+            pid = self._find_tunnel_process(local_port, host)
 
             if pid is None:
                 raise RuntimeError("Failed to find SSH tunnel process")

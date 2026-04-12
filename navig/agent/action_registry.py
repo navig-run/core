@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -152,14 +153,17 @@ class ActionRegistry:
 # ---------------------------------------------------------------------------
 
 _registry: ActionRegistry | None = None
+_registry_lock = threading.Lock()
 
 
 def get_action_registry() -> ActionRegistry:
     """Return the process-wide ActionRegistry singleton (lazy-initialised)."""
     global _registry
     if _registry is None:
-        _registry = ActionRegistry()
-        _register_core_actions(_registry)
+        with _registry_lock:
+            if _registry is None:
+                _registry = ActionRegistry()
+                _register_core_actions(_registry)
     return _registry
 
 

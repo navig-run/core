@@ -15,5 +15,6 @@
       "query": "author:Kalcinator repo:Kalcinator/core",
       "label": "🌱 My Issues (Drafts)"
     }
-  ]
+  ],
+  "navigSpaces.ocrEnabled": false
 }

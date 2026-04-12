@@ -5,13 +5,46 @@ Execute commands through secure encrypted channels.
 """
 
 import os
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
 
+from navig.core.connection import _resolve_scp_bin, _resolve_ssh_bin
+
+
+def _resolve_ssh_timeout_seconds(default: int = 30) -> int:
+    """Resolve SSH timeout from env with safe fallback.
+
+    Any invalid or non-positive value falls back to ``default`` to avoid
+    import-time crashes from malformed environment configuration.
+    """
+    raw = os.environ.get("NAVIG_SSH_TIMEOUT", str(default)).strip()
+    try:
+        timeout = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return timeout if timeout > 0 else default
+
 # Default SSH/SCP timeout in seconds.  Override via NAVIG_SSH_TIMEOUT env var.
-_SSH_TIMEOUT = int(os.environ.get("NAVIG_SSH_TIMEOUT", "30"))
+_SSH_TIMEOUT = _resolve_ssh_timeout_seconds()
+
+
+def _require_server_identity(server_config: dict[str, Any]) -> tuple[str, str]:
+    """Return validated ``(user, host)`` identity for SSH/SCP operations."""
+    user = str(server_config.get("user", "")).strip()
+    host = str(server_config.get("host", "")).strip()
+    if not user or not host:
+        raise ValueError("Server configuration must include non-empty 'user' and 'host'.")
+    return user, host
+
+
+def is_local_host(server_config: dict) -> bool:
+    """Return True when *server_config* refers to the local machine."""
+    return (
+        bool(server_config.get("is_local"))
+        or str(server_config.get("type", "")).lower() == "local"
+        or server_config.get("host", "") in ("localhost", "127.0.0.1", "::1")
+    )
 
 
 class RemoteOperations:
@@ -58,37 +91,10 @@ class RemoteOperations:
 
         # Local-host bypass: run directly without SSH so there's no dependency
         # on an SSH client being installed, and Windows-native commands work.
-        _is_local = (
-            bool(server_config.get("is_local"))
-            or str(server_config.get("type", "")).lower() == "local"
-            or server_config.get("host", "") in ("localhost", "127.0.0.1", "::1")
-        )
-        if _is_local:
+        if is_local_host(server_config):
             return self.execute_local(command, capture_output=capture_output)
 
-        # Resolve ssh binary — shutil.which handles PATH lookup and raises a
-        # clear error when ssh/ssh.exe is absent rather than letting subprocess
-        # produce a cryptic FileNotFoundError.
-        _ssh_bin = shutil.which("ssh") or shutil.which("ssh.exe")
-        if _ssh_bin is None and os.name == "nt":
-            # 32-bit Python on 64-bit Windows may not see System32\OpenSSH via
-            # PATH due to file-system redirection; check the canonical locations.
-            _sysroot = os.environ.get("SystemRoot", r"C:\Windows")
-            for _candidate in (
-                os.path.join(_sysroot, "SysNative", "OpenSSH", "ssh.exe"),
-                os.path.join(_sysroot, "System32", "OpenSSH", "ssh.exe"),
-            ):
-                if os.path.isfile(_candidate):
-                    _ssh_bin = _candidate
-                    break
-
-        if _ssh_bin is None:
-            raise RuntimeError(
-                "SSH client not found — install OpenSSH or configure a direct "
-                "local transport.\n"
-                "On Windows: Settings → Apps → Optional Features → OpenSSH Client\n"
-                "On Linux/macOS: install the 'openssh-client' package."
-            )
+        _ssh_bin = _resolve_ssh_bin()
 
         ssh_args = [_ssh_bin, *ssh_opts]
 
@@ -104,14 +110,15 @@ class RemoteOperations:
         if server_config.get("ssh_key"):
             ssh_args.extend(["-i", server_config["ssh_key"]])
 
+        user, host = _require_server_identity(server_config)
+
         # Add user@host
-        ssh_args.append(f"{server_config['user']}@{server_config['host']}")
+        ssh_args.append(f"{user}@{host}")
 
         # Add the command
         ssh_args.append(command)
 
         # Pre-flight: warn on mDNS .local hosts (unreliable on Windows)
-        host = server_config.get("host", "")
         if host.endswith(".local") and os.name == "nt":
             import warnings
 
@@ -172,9 +179,16 @@ class RemoteOperations:
         self, local_path: Path, remote_path: str, server_config: dict[str, Any]
     ) -> bool:
         """Upload file to remote server via SCP."""
-        scp_args = ["scp"]
+        scp_bin = _resolve_scp_bin()
+        scp_args = [scp_bin]
 
-        # Add SSH options
+        # Match the StrictHostKeyChecking posture used in execute_command().
+        if server_config.get("trust_new_host"):
+            scp_args.extend(["-o", "StrictHostKeyChecking=accept-new"])
+        else:
+            scp_args.extend(["-o", "StrictHostKeyChecking=yes"])
+
+        # Add other SSH options
         if server_config.get("port", 22) != 22:
             scp_args.extend(["-P", str(server_config["port"])])
 
@@ -182,15 +196,16 @@ class RemoteOperations:
             scp_args.extend(["-i", server_config["ssh_key"]])
 
         # Source and destination
+        user, host = _require_server_identity(server_config)
         scp_args.append(str(local_path))
-        scp_args.append(f"{server_config['user']}@{server_config['host']}:{remote_path}")
+        scp_args.append(f"{user}@{host}:{remote_path}")
 
         try:
             result = subprocess.run(scp_args, timeout=_SSH_TIMEOUT)
         except subprocess.TimeoutExpired as _exc:
             raise RuntimeError(
                 f"SCP upload timed out after {_SSH_TIMEOUT}s — "
-                f"host '{server_config.get('host')}' is unreachable."
+                f"host '{host}' is unreachable."
             ) from _exc
         return result.returncode == 0
 
@@ -198,9 +213,16 @@ class RemoteOperations:
         self, remote_path: str, local_path: Path, server_config: dict[str, Any]
     ) -> bool:
         """Download file from remote server via SCP."""
-        scp_args = ["scp"]
+        scp_bin = _resolve_scp_bin()
+        scp_args = [scp_bin]
 
-        # Add SSH options
+        # Match the StrictHostKeyChecking posture used in execute_command().
+        if server_config.get("trust_new_host"):
+            scp_args.extend(["-o", "StrictHostKeyChecking=accept-new"])
+        else:
+            scp_args.extend(["-o", "StrictHostKeyChecking=yes"])
+
+        # Add other SSH options
         if server_config.get("port", 22) != 22:
             scp_args.extend(["-P", str(server_config["port"])])
 
@@ -208,7 +230,8 @@ class RemoteOperations:
             scp_args.extend(["-i", server_config["ssh_key"]])
 
         # Source and destination
-        scp_args.append(f"{server_config['user']}@{server_config['host']}:{remote_path}")
+        user, host = _require_server_identity(server_config)
+        scp_args.append(f"{user}@{host}:{remote_path}")
         scp_args.append(str(local_path))
 
         try:
@@ -216,6 +239,6 @@ class RemoteOperations:
         except subprocess.TimeoutExpired as _exc:
             raise RuntimeError(
                 f"SCP download timed out after {_SSH_TIMEOUT}s — "
-                f"host '{server_config.get('host')}' is unreachable."
+                f"host '{host}' is unreachable."
             ) from _exc
         return result.returncode == 0

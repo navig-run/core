@@ -158,11 +158,19 @@ def _strip_prefix(path: str) -> str:
 
 
 def _safe_argv() -> str:
-    """Return the CLI invocation without any potentially sensitive arguments."""
+    """Return the CLI invocation without any potentially sensitive arguments.
+
+    Uses non-global token extraction so that global prefixes like ``--host``
+    and ``--app`` are stripped before taking the first two command tokens.
+    That way ``navig --host prod host list`` is recorded as ``"host list"``
+    rather than ``"--host prod"``.
+    """
     try:
-        args = sys.argv[1:]
+        from navig.cli.registration import extract_non_global_tokens
+
+        tokens = extract_non_global_tokens(sys.argv[1:])
         # Keep only the first 2 positional tokens (e.g. "host list")
-        return " ".join(args[:2]) if args else "(empty)"
+        return " ".join(tokens[:2]) if tokens else "(empty)"
     except Exception:
         return "(unknown)"
 
@@ -210,19 +218,21 @@ def detect_regressions(samples: list[dict[str, Any]] | None = None) -> list[dict
     # Group by command
     by_cmd: dict[str, list[dict[str, Any]]] = {}
     for s in samples:
-        cmd = s.get("cmd", "")
+        if not isinstance(s, dict):
+            continue
+        cmd = str(s.get("cmd", "") or "")
         by_cmd.setdefault(cmd, []).append(s)
 
     regressions: list[dict[str, Any]] = []
     for cmd, entries in by_cmd.items():
         if len(entries) < 2:
             continue
-        entries.sort(key=lambda x: x["ts"])
+        entries.sort(key=lambda x: float(x.get("ts", 0) or 0))
         old_entry = entries[0]
         new_entry = entries[-1]
 
-        old_ms = old_entry.get("elapsed_ms", 0)
-        new_ms = new_entry.get("elapsed_ms", 0)
+        old_ms = float(old_entry.get("elapsed_ms", 0) or 0)
+        new_ms = float(new_entry.get("elapsed_ms", 0) or 0)
 
         if old_ms > 0 and new_ms > 0:
             delta_pct = ((new_ms - old_ms) / old_ms) * 100

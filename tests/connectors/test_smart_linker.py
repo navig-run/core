@@ -20,6 +20,8 @@ from navig.connectors.types import (
     ResourceType,
 )
 
+pytestmark = pytest.mark.integration
+
 
 class _MockGmail(BaseConnector):
     manifest = ConnectorManifest(

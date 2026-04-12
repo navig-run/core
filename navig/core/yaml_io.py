@@ -195,7 +195,7 @@ def load_yaml_with_lines(path: Path) -> YamlDocument:
     text = path.read_text(encoding="utf-8")
     node = yaml.compose(text, Loader=yaml.SafeLoader)
     if node is None:
-        return YamlDocument(data=None, line_map={((),): 1})
+        return YamlDocument(data=None, line_map={(): 1})
 
     line_map: dict[YamlPath, int] = {}
     data = _node_to_python(node, (), line_map)

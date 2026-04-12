@@ -707,7 +707,8 @@ class ProjectIndexer:
 
             try:
                 content = abs_path.read_text(encoding="utf-8", errors="replace")
-            except Exception:
+            except Exception as exc:
+                logger.debug("ProjectIndexer: failed to read %s during incremental update: %s", rel_path, exc)
                 continue
 
             new_hash = hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest()[:16]

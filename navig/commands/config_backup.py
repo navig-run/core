@@ -15,6 +15,49 @@ from pathlib import Path
 from typing import Any
 
 from navig import console_helper as ch
+from navig.console_helper import format_bytes as _format_size
+
+
+def _redact_dict(data: dict[str, Any], sensitive_keys: list[str]) -> None:
+    """Backward-compatible in-place redaction helper for tests/callers."""
+    sensitive = [entry.lower() for entry in sensitive_keys]
+
+    def _redact(value: Any) -> Any:
+        if isinstance(value, dict):
+            redacted: dict[str, Any] = {}
+            for key, child in value.items():
+                key_lower = str(key).lower()
+                if any(marker in key_lower for marker in sensitive):
+                    redacted[key] = "[REDACTED]"
+                else:
+                    redacted[key] = _redact(child)
+            return redacted
+        if isinstance(value, list):
+            return [_redact(child) for child in value]
+        return value
+
+    redacted = _redact(data)
+    data.clear()
+    data.update(redacted)
+
+
+def _require_input_file(options: dict[str, Any]) -> Path | None:
+    """Resolve required input file option and emit user-friendly error if missing."""
+    file_value = options.get("file")
+    if not file_value:
+        ch.error("Input file is required. Use --file <path>.")
+        return None
+    return Path(file_value)
+
+
+def _safe_extract_tar(tar: tarfile.TarFile, destination: Path) -> None:
+    """Safely extract tar members, blocking path traversal outside destination."""
+    destination = destination.resolve()
+    for member in tar.getmembers():
+        member_path = (destination / member.name).resolve()
+        if destination != member_path and destination not in member_path.parents:
+            raise ValueError(f"Unsafe archive entry: {member.name}")
+    tar.extractall(destination)
 
 
 def _get_backup_dir() -> Path:
@@ -149,6 +192,7 @@ def _redact_secrets_in_dir(dir_path: Path):
     import yaml
 
     from navig.core.security import redact_dict
+    from navig.core.yaml_io import atomic_write_yaml
 
     sensitive_keys = ["password", "api_key", "openrouter_api_key", "secret", "token"]
 
@@ -160,8 +204,7 @@ def _redact_secrets_in_dir(dir_path: Path):
             if data and isinstance(data, dict):
                 redacted = redact_dict(data, sensitive_keys=sensitive_keys)
 
-                with open(yaml_file, "w", encoding="utf-8") as f:
-                    yaml.dump(redacted, f, default_flow_style=False, sort_keys=False)
+                atomic_write_yaml(redacted, yaml_file)
         except Exception:
             pass  # Skip files that can't be processed
 
@@ -423,7 +466,9 @@ def import_config(options: dict[str, Any]):
 
     config_manager = get_config_manager()
 
-    input_file = Path(options.get("file"))
+    input_file = _require_input_file(options)
+    if input_file is None:
+        return
     merge = options.get("merge", True)
     password = options.get("password")
     json_output = options.get("json", False)
@@ -459,7 +504,7 @@ def import_config(options: dict[str, Any]):
             # Archive format
             with tempfile.TemporaryDirectory() as tmpdir:
                 with tarfile.open(input_file, "r:gz") as tar:
-                    tar.extractall(tmpdir)
+                    _safe_extract_tar(tar, Path(tmpdir))
 
                 extract_path = Path(tmpdir) / "navig-config"
 
@@ -621,7 +666,9 @@ def inspect_export(options: dict[str, Any]):
     """
     import yaml
 
-    input_file = Path(options.get("file"))
+    input_file = _require_input_file(options)
+    if input_file is None:
+        return
     password = options.get("password")
     json_output = options.get("json", False)
 
@@ -649,7 +696,7 @@ def inspect_export(options: dict[str, Any]):
             # Archive format
             with tempfile.TemporaryDirectory() as tmpdir:
                 with tarfile.open(input_file, "r:gz") as tar:
-                    tar.extractall(tmpdir)
+                    _safe_extract_tar(tar, Path(tmpdir))
 
                 extract_path = Path(tmpdir) / "navig-config"
 
@@ -735,7 +782,9 @@ def delete_export(options: dict[str, Any]):
     Options:
         file: Export file to delete
     """
-    input_file = Path(options.get("file"))
+    input_file = _require_input_file(options)
+    if input_file is None:
+        return
     json_output = options.get("json", False)
 
     if not input_file.exists():
@@ -762,17 +811,3 @@ def delete_export(options: dict[str, Any]):
             ch.raw_print(json.dumps({"success": False, "error": str(e)}))
         else:
             ch.error(f"Failed to delete: {e}")
-
-
-# ============================================================================
-# HELPERS
-# ============================================================================
-
-
-def _format_size(size_bytes: int) -> str:
-    """Format bytes as human-readable size."""
-    for unit in ["B", "KB", "MB", "GB"]:
-        if size_bytes < 1024:
-            return f"{size_bytes:.1f} {unit}"
-        size_bytes /= 1024
-    return f"{size_bytes:.1f} TB"

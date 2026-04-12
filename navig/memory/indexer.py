@@ -310,6 +310,7 @@ class MemoryIndexer:
         except Exception as e:
             result.files_failed = 1
             result.errors.append(str(e))
+            _debug_log(f"Failed to index file {file_path}: {e}")
 
         result.duration_seconds = time.time() - start_time
         return result

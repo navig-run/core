@@ -12,6 +12,7 @@ import re
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from navig.console_helper import strip_ansi
 from navig.debug_logger import get_debug_logger
 from navig.gateway.session_manager import NavigSessionKey
 
@@ -247,7 +248,7 @@ class ChannelRouter:
             # Pre-load soul content once for all agents
             self._soul_content = None
             try:
-                from navig.agent.conversational import ConversationalAgent
+                from navig.agent.conv import ConversationalAgent
 
                 self._soul_content = ConversationalAgent.load_soul_content()
                 if self._soul_content:
@@ -259,7 +260,7 @@ class ChannelRouter:
                 logger.warning("Could not load SOUL.md: %s", e)
 
         if session_key not in self._conv_agents:
-            from navig.agent.conversational import ConversationalAgent
+            from navig.agent.conv import ConversationalAgent
 
             # Try to get AI client
             ai_client = None
@@ -276,6 +277,16 @@ class ChannelRouter:
             )
 
         return self._conv_agents[session_key]
+
+    def flush_conv_agents(self) -> None:
+        """Flush the cached ConversationalAgent instances.
+
+        Call this after a provider/model switch so the next message
+        gets a fresh agent that resolves the updated AI client.
+        """
+        if hasattr(self, "_conv_agents"):
+            self._conv_agents.clear()
+            logger.debug("ConversationalAgent cache flushed")
 
     def _record_engagement_interaction(self, message: str):
         """Record user interaction for proactive engagement state tracking."""
@@ -369,10 +380,6 @@ class ChannelRouter:
             return f"❌ Error: {e}"
 
     @staticmethod
-    def _strip_ansi(text: str) -> str:
-        return re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
-
-    @staticmethod
     def _extract_command_suggestions(output: str) -> list[str]:
         suggestions: list[str] = []
         inline_hint = re.search(r"Did you mean", output, flags=re.IGNORECASE)
@@ -395,7 +402,7 @@ class ChannelRouter:
         return uniq[:4]
 
     def _format_command_failure(self, command: str, output: str, exit_code: int) -> str:
-        cleaned = self._strip_ansi(output or "").strip()
+        cleaned = strip_ansi(output or "").strip()
         requested = (command.strip().split() or ["command"])[0]
 
         if "No such command" in cleaned:
@@ -417,7 +424,7 @@ class ChannelRouter:
         return f"❌ Command failed (exit {exit_code}).\n{body}{suffix}"
 
     def _format_command_success(self, command: str, output: str) -> str:
-        cleaned = self._strip_ansi(output or "").strip("\n")
+        cleaned = strip_ansi(output or "").strip("\n")
         if not cleaned.strip():
             if command.startswith("auto clipboard"):
                 return "📋 Clipboard is empty."

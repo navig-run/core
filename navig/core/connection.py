@@ -5,6 +5,7 @@ Polymorphic execution layer that abstracts the difference between
 SSH (remote) and subprocess (local) command execution.
 """
 
+import os
 import shutil
 import subprocess
 from abc import ABC, abstractmethod
@@ -14,6 +15,40 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     pass
+
+
+def _resolve_ssh_bin() -> str:
+    """Resolve the ssh binary path, with Windows OpenSSH fallback."""
+    bin_path = shutil.which("ssh") or shutil.which("ssh.exe")
+    if bin_path is None and os.name == "nt":
+        _sysroot = os.environ.get("SystemRoot", r"C:\Windows")
+        for _candidate in (
+            os.path.join(_sysroot, "SysNative", "OpenSSH", "ssh.exe"),
+            os.path.join(_sysroot, "System32", "OpenSSH", "ssh.exe"),
+        ):
+            if os.path.isfile(_candidate):
+                bin_path = _candidate
+                break
+    if bin_path is None:
+        raise RuntimeError("SSH client not found on PATH. Install OpenSSH.")
+    return bin_path
+
+
+def _resolve_scp_bin() -> str:
+    """Resolve the scp binary path, with Windows OpenSSH fallback."""
+    bin_path = shutil.which("scp") or shutil.which("scp.exe")
+    if bin_path is None and os.name == "nt":
+        _sysroot = os.environ.get("SystemRoot", r"C:\Windows")
+        for _candidate in (
+            os.path.join(_sysroot, "SysNative", "OpenSSH", "scp.exe"),
+            os.path.join(_sysroot, "System32", "OpenSSH", "scp.exe"),
+        ):
+            if os.path.isfile(_candidate):
+                bin_path = _candidate
+                break
+    if bin_path is None:
+        raise RuntimeError("SCP client not found on PATH. Install OpenSSH.")
+    return bin_path
 
 
 @dataclass
@@ -305,7 +340,7 @@ class SSHConnection(ConnectionAdapter):
 
     def _build_ssh_args(self) -> list:
         """Build base SSH command arguments."""
-        ssh_args = ["ssh"]
+        ssh_args = [_resolve_ssh_bin()]
         ssh_args.extend(["-o", "StrictHostKeyChecking=yes"])
         ssh_args.extend(["-o", "ConnectTimeout=10"])
 
@@ -377,7 +412,7 @@ class SSHConnection(ConnectionAdapter):
         Returns:
             True if transfer succeeded
         """
-        scp_args = ["scp"]
+        scp_args = [_resolve_scp_bin()]
 
         if self.host_config.get("port", 22) != 22:
             scp_args.extend(["-P", str(self.host_config["port"])])
@@ -402,7 +437,7 @@ class SSHConnection(ConnectionAdapter):
         Returns:
             True if transfer succeeded
         """
-        scp_args = ["scp"]
+        scp_args = [_resolve_scp_bin()]
 
         if self.host_config.get("port", 22) != 22:
             scp_args.extend(["-P", str(self.host_config["port"])])

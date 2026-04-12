@@ -498,9 +498,10 @@ class BotStatsStore:
 
         expires_at = datetime.fromisoformat(row["expires_at"])
         if expires_at <= _utc_now():
-            # Expired, delete it
-            conn.execute("DELETE FROM cache WHERE key = ?", (key,))
-            conn.commit()
+            # Expired — delete under lock so it can't race with cache_set()
+            with self._lock:
+                conn.execute("DELETE FROM cache WHERE key = ?", (key,))
+                conn.commit()
             return None
 
         value = json.loads(row["value"])
@@ -609,11 +610,14 @@ class BotStatsStore:
 
 # Global instance
 _store: BotStatsStore | None = None
+_store_lock = threading.Lock()
 
 
 def get_bot_store() -> BotStatsStore:
     """Get or create the global bot stats store."""
     global _store
     if _store is None:
-        _store = BotStatsStore()
+        with _store_lock:
+            if _store is None:  # double-checked locking
+                _store = BotStatsStore()
     return _store

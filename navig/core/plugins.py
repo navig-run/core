@@ -40,6 +40,7 @@ import importlib
 import importlib.util
 import inspect
 import sys
+import threading
 from abc import ABC
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -726,14 +727,17 @@ class PluginRegistry:
 # =============================================================================
 
 _registry: PluginRegistry | None = None
+_registry_lock = threading.Lock()
 
 
 def get_plugin_registry() -> PluginRegistry:
     """Get the global plugin registry."""
     global _registry
     if _registry is None:
-        _registry = PluginRegistry()
-        _registry.initialize()
+        with _registry_lock:
+            if _registry is None:
+                _registry = PluginRegistry()
+                _registry.initialize()
     return _registry
 
 

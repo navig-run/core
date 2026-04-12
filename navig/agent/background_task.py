@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -353,6 +354,7 @@ class BackgroundTaskManager:
 # ─────────────────────────────────────────────────────────────
 
 _manager: BackgroundTaskManager | None = None
+_manager_lock = threading.Lock()
 
 
 def get_manager(output_dir: Path | None = None) -> BackgroundTaskManager:
@@ -363,11 +365,14 @@ def get_manager(output_dir: Path | None = None) -> BackgroundTaskManager:
     """
     global _manager
     if _manager is None:
-        _manager = BackgroundTaskManager(output_dir=output_dir)
+        with _manager_lock:
+            if _manager is None:
+                _manager = BackgroundTaskManager(output_dir=output_dir)
     return _manager
 
 
 def reset_manager() -> None:
     """Reset the singleton — used by tests."""
     global _manager
-    _manager = None
+    with _manager_lock:
+        _manager = None

@@ -12,6 +12,8 @@ This module owns:
 from __future__ import annotations
 
 import sys
+import threading
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -51,8 +53,9 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "mx": ("navig.commands.matrix", "matrix_app"),
     "store": ("navig.commands.store", "store_app"),
     "vault": ("navig.commands.vault", "vault_app"),
-    "cred": ("navig.commands.vault", "cred_app"),
-    "cred-profile": ("navig.commands.vault", "profile_app"),
+    # ── Deprecated vault aliases — kept for backward compat; runtime warning via main.py ──
+    "cred": ("navig.commands.vault", "cred_app"),          # deprecated → navig vault
+    "cred-profile": ("navig.commands.vault", "profile_app"),  # deprecated → navig vault profile
     # Operating-mode profiles (node / builder / operator / architect)
     # Credential profiles are now `navig vault profile list/use`
     "profile": ("navig.commands.profile", "profile_app"),
@@ -116,9 +119,8 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "port": ("navig.commands.local", "local_app"),
     "proxy": ("navig.commands.tunnel", "tunnel_app"),
     "env": ("navig.commands.config", "config_app"),
-    "secret": ("navig.commands.vault", "vault_app"),
+    "secret": ("navig.commands.vault", "vault_app"),  # deprecated → navig vault
     "job": ("navig.commands.flow", "flow_app"),
-    "cron": ("navig.commands.cron", "cron_app"),
     "wiki": ("navig.commands.wiki", "wiki_app"),
     "alias": ("navig.commands.script", "script_app"),
     "server": ("navig.commands.server", "server_app"),
@@ -219,6 +221,73 @@ _HIDDEN_COMMANDS: frozenset[str] = frozenset({
 # calling _register_external_commands() multiple times (e.g. in tests) does not
 # add duplicate add_typer() entries and corrupt the Click group routing.
 _registered_app_cmds: dict[int, set[str]] = {}
+_registration_lock = threading.Lock()
+
+_VALUE_CONSUMING_GLOBAL_FLAGS: frozenset[str] = frozenset({"--host", "-h", "--app", "-p"})
+_GLOBAL_FLAGS: frozenset[str] = frozenset({
+    "--host",
+    "-h",
+    "--app",
+    "-p",
+    "--verbose",
+    "--quiet",
+    "-q",
+    "--dry-run",
+    "--yes",
+    "-y",
+    "--confirm",
+    "-c",
+    "--raw",
+    "--json",
+    "--debug-log",
+    "--no-cache",
+    "--version",
+    "-v",
+    "--help",
+})
+
+
+def extract_non_global_tokens(args: list[str]) -> list[str]:
+    """Return argv tokens with global flags and consumed values removed."""
+    skip_next = False
+    tokens: list[str] = []
+    for token in args:
+        if skip_next:
+            skip_next = False
+            continue
+        if token in _VALUE_CONSUMING_GLOBAL_FLAGS:
+            skip_next = True
+            continue
+        if token in _GLOBAL_FLAGS or token.startswith("--"):
+            continue
+        tokens.append(token)
+    return tokens
+
+
+def _first_non_global_token(args: list[str]) -> str | None:
+    """Return first non-global token from argv tail."""
+    tokens = extract_non_global_tokens(args)
+    return tokens[0] if tokens else None
+
+
+def _resolve_cli_target_from_argv(argv: list[str] | None = None) -> str | None:
+    """Resolve top-level CLI command target from argv when argv belongs to NAVIG.
+
+    When this function is called in embedded contexts (tests, in-process
+    invocations), ``sys.argv`` usually belongs to the host process (e.g.
+    ``pytest``). In that case, we intentionally return ``None`` so callers can
+    use safe fallback behavior instead of misrouting based on unrelated args.
+    """
+    active_argv = argv if argv is not None else sys.argv
+    if len(active_argv) <= 1:
+        return None
+
+    argv0 = str(active_argv[0])
+    executable = Path(argv0).name.lower()
+    if "navig" not in executable and "navig" not in argv0.lower():
+        return None
+
+    return _first_non_global_token(active_argv[1:])
 
 
 def _clear_registration_cache(target_app: "typer.Typer | None" = None) -> None:
@@ -226,10 +295,11 @@ def _clear_registration_cache(target_app: "typer.Typer | None" = None) -> None:
 
     Called by tests that need a completely fresh registration state.
     """
-    if target_app is None:
-        _registered_app_cmds.clear()
-    else:
-        _registered_app_cmds.pop(id(target_app), None)
+    with _registration_lock:
+        if target_app is None:
+            _registered_app_cmds.clear()
+        else:
+            _registered_app_cmds.pop(id(target_app), None)
 
 
 def _register_external_commands(
@@ -263,14 +333,15 @@ def _register_external_commands(
 
     # Idempotency cache — prevents duplicate add_typer() calls on the same app
     app_key = id(target_app)
-    if app_key not in _registered_app_cmds:
-        _registered_app_cmds[app_key] = set()
-    _already: set[str] = _registered_app_cmds[app_key]
+    with _registration_lock:
+        if app_key not in _registered_app_cmds:
+            _registered_app_cmds[app_key] = set()
+        _already: set[str] = _registered_app_cmds[app_key]
 
     if register_all:
         target = None  # triggers fallback path below
     else:
-        target = sys.argv[1] if len(sys.argv) > 1 else None
+        target = _resolve_cli_target_from_argv()
 
     # ------------------------------------------------------------------
     # Fast path: target is a known external command → import only it

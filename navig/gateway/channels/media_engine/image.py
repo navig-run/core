@@ -231,15 +231,17 @@ async def _stage_vision(file_bytes: bytes, budget: BudgetGuard) -> str | None:
 def _stage_ocr(file_bytes: bytes) -> str | None:
     """Extract text from image via pytesseract (synchronous, free)."""
     try:
-        import pytesseract  # type: ignore
-        from PIL import Image  # type: ignore
+        from navig.core.ocr import extract_ocr_text_from_image_bytes
 
-        img = Image.open(io.BytesIO(file_bytes))
-        text = pytesseract.image_to_string(img).strip()
-        return text if len(text) >= 3 else None
+        return extract_ocr_text_from_image_bytes(file_bytes)
     except Exception as exc:
         logger.debug("OCR: %s", exc)
-    return None
+        return None
+
+
+def extract_ocr_text(file_bytes: bytes) -> str | None:
+    """Public best-effort OCR helper for channel-level reuse."""
+    return _stage_ocr(file_bytes)
 
 
 async def _stage_serpapi(file_bytes: bytes, budget: BudgetGuard) -> list[dict] | None:

@@ -4,45 +4,8 @@ macOS Automation Adapter using AppleScript and osascript
 
 import subprocess
 import sys
-from dataclasses import dataclass
 
-
-@dataclass
-class ExecutionResult:
-    success: bool
-    stdout: str = ""
-    stderr: str = ""
-    exit_code: int = 0
-
-
-@dataclass
-class WindowInfo:
-    id: str
-    title: str
-    x: int
-    y: int
-    width: int
-    height: int
-    pid: int
-    process_name: str = ""
-    class_name: str = ""
-    is_maximized: bool = False
-    is_minimized: bool = False
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "title": self.title,
-            "x": self.x,
-            "y": self.y,
-            "width": self.width,
-            "height": self.height,
-            "pid": self.pid,
-            "process_name": self.process_name,
-            "class_name": self.class_name,
-            "is_maximized": self.is_maximized,
-            "is_minimized": self.is_minimized,
-        }
+from navig.adapters.automation.types import ExecutionResult, WindowInfo
 
 
 class MacOSAdapter:

@@ -66,7 +66,8 @@ def _detect_nerd_font() -> bool:
         from navig.platform.paths import config_dir
         from navig.ui._capabilities import read_terminal_json
 
-        navig_dir = config_dir()
+        navig_home = os.getenv("NAVIG_HOME", "").strip()
+        navig_dir = Path(navig_home) if navig_home else config_dir()
         data = read_terminal_json(navig_dir)
         if "nerd_font" in data:
             return bool(data["nerd_font"])

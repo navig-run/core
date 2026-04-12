@@ -15,10 +15,8 @@ def upload_file_cmd(local: Path, remote: str | None, options: dict[str, Any]):
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    server_name = options.get("app") or config_manager.get_active_server()
-    if not server_name:
-        ch.error("No active server.")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     if not local.exists():
         ch.error(f"Local file not found: {local}")
@@ -95,10 +93,8 @@ def download_file_cmd(remote: str, local: Path | None, options: dict[str, Any]):
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    server_name = options.get("app") or config_manager.get_active_server()
-    if not server_name:
-        ch.error("No active server.")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     if local is None:
         local = Path.cwd() / Path(remote).name

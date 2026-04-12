@@ -12,6 +12,9 @@ from navig.mesh.registry import (
     NodeRecord,
     NodeRegistry,
 )
+import pytest
+
+pytestmark = pytest.mark.integration
 
 
 def _make_record(**kwargs) -> NodeRecord:

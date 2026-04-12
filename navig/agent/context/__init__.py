@@ -24,8 +24,11 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
+import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -127,7 +130,17 @@ class ContextFile:
         """Save context file to disk."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         content = format_markdown_with_frontmatter(self._frontmatter, self._body)
-        self.path.write_text(content, encoding="utf-8")
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=self.path.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                _fh.write(content)
+            os.replace(_tmp_path, self.path)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
 
     @property
     def frontmatter(self) -> dict[str, Any]:
@@ -365,13 +378,16 @@ class ContextLayer:
 # =============================================================================
 
 _default_context: ContextLayer | None = None
+_context_lock = threading.Lock()
 
 
 def get_context_layer() -> ContextLayer:
     """Get the default context layer instance."""
     global _default_context
     if _default_context is None:
-        _default_context = ContextLayer()
+        with _context_lock:
+            if _default_context is None:
+                _default_context = ContextLayer()
     return _default_context
 
 

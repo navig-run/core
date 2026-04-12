@@ -27,7 +27,46 @@ vault_app = typer.Typer(
     no_args_is_help=True,
 )
 vault_app.add_typer(profile_app, name="profile")
+
+# Backward-compat alias — ``navig cred`` still dispatches to vault_app but a
+# deprecation warning is emitted by main.py.  Do NOT register new commands here;
+# add them on vault_app directly.  ``navig vault`` is the canonical noun.
 cred_app = vault_app
+
+
+def _run_test_by_id(cred_id: str) -> None:
+    """Run a vault test by credential ID and print results.  Plain function — no Typer annotations."""
+    vault = _vault_mod.get_vault()
+    con = get_console()
+    try:
+        con.print(f"Running validation for [cyan]{cred_id}[/cyan]...")
+        result = vault.test(cred_id)
+        credential = vault.get_by_id(cred_id, caller="vault.test")
+        if credential is not None:
+            tested_at = getattr(result, "tested_at", None)
+            update_meta = {
+                "validation_success": bool(result.success),
+                "validation_message": str(result.message or ""),
+            }
+            if tested_at:
+                update_meta["validation_tested_at"] = tested_at.isoformat()
+            if isinstance(getattr(result, "details", None), dict):
+                vm = result.details.get("validation_mode")
+                if vm:
+                    update_meta["validation_mode"] = vm
+            vault.update(credential.id, metadata=update_meta)
+        if result.success:
+            _ch.success("Validation successful!")
+            con.print(f"[green]{result.message}[/green]")
+            if result.details:
+                _rprint(result.details)
+        else:
+            _ch.error("Validation failed.")
+            con.print(f"[red]{result.message}[/red]")
+            if result.details:
+                _rprint(result.details)
+    except Exception as exc:
+        _ch.error(f"Test failed: {exc}")
 
 
 def _resolve_test_target_mode(vault, target: str, provider: str | None, credential_id: str | None):
@@ -60,30 +99,38 @@ def _resolve_test_target_mode(vault, target: str, provider: str | None, credenti
 # Maps provider aliases → (canonical_provider, credential_type, data_key, default_label)
 PROVIDER_DEFAULTS = {
     # AI providers
-    "openai": ("openai", "api_key", "api_key", "OpenAI"),
-    "openrouter": ("openrouter", "api_key", "api_key", "OpenRouter"),
-    "anthropic": ("anthropic", "api_key", "api_key", "Anthropic"),
-    "groq": ("groq", "api_key", "api_key", "Groq"),
-    "github_models": ("github_models", "token", "token", "GitHub Models"),
-    "github-models": ("github_models", "token", "token", "GitHub Models"),
-    "copilot": ("github_models", "token", "token", "GitHub Copilot Models"),
+    "openai": ("openai", "api_key", "api_key", "OpenAI API Key"),
+    "openrouter": ("openrouter", "api_key", "api_key", "OpenRouter API Key"),
+    "anthropic": ("anthropic", "api_key", "api_key", "Anthropic API Key"),
+    "claude": ("anthropic", "api_key", "api_key", "Anthropic API Key"),
+    "groq": ("groq", "api_key", "api_key", "Groq API Key"),
+    "xai": ("xai", "api_key", "api_key", "xAI API Key"),
+    "grok": ("xai", "api_key", "api_key", "xAI API Key"),
+    "nvidia": ("nvidia", "api_key", "api_key", "NVIDIA NIM API Key"),
+    "nvidia_nim": ("nvidia", "api_key", "api_key", "NVIDIA NIM API Key"),
+    "nim": ("nvidia", "api_key", "api_key", "NVIDIA NIM API Key"),
+    "mistral": ("mistral", "api_key", "api_key", "Mistral API Key"),
+    "cerebras": ("cerebras", "api_key", "api_key", "Cerebras API Key"),
+    "gemini": ("google", "api_key", "api_key", "Google Gemini API Key"),
+    "google": ("google", "api_key", "api_key", "Google Gemini API Key"),
+    "ollama": ("ollama", "api_key", "api_key", "Ollama API Key"),
+    "github_models": ("github_models", "token", "token", "GitHub Models Token"),
+    "github-models": ("github_models", "token", "token", "GitHub Models Token"),
+    "copilot": ("github_models", "token", "token", "GitHub Copilot Token"),
     # Voice providers
-    "deepgram": ("deepgram", "api_key", "api_key", "Deepgram"),
-    "elevenlabs": ("elevenlabs", "api_key", "api_key", "ElevenLabs"),
+    "deepgram": ("deepgram", "api_key", "api_key", "Deepgram API Key"),
+    "elevenlabs": ("elevenlabs", "api_key", "api_key", "ElevenLabs API Key"),
     # VCS
-    "github": ("github", "token", "token", "GitHub"),
-    "gitlab": ("gitlab", "token", "token", "GitLab"),
-    # Generic
-    "telegram": ("telegram", "token", "token", "Telegram Bot"),
+    "github": ("github", "token", "token", "GitHub Token"),
+    "gitlab": ("gitlab", "token", "token", "GitLab Token"),
+    # Generic integrations
+    "telegram": ("telegram", "token", "token", "Telegram Bot Token"),
     "firecrawl": ("firecrawl", "api_key", "api_key", "Firecrawl API Key"),
+    "tavily": ("tavily", "api_key", "api_key", "Tavily API Key"),
+    "brave": ("brave", "api_key", "api_key", "Brave Search API Key"),
 }
 
 
-def _console():
-    """Return a Rich Console instance (created on first call)."""
-    from rich.console import Console
-
-    return get_console()
 
 
 def _rprint(*args, **kwargs):
@@ -98,6 +145,7 @@ def _Table(*args, **kwargs):
     from rich.table import Table
 
     return Table(*args, **kwargs)
+
 
 
 # ============================================================================
@@ -162,7 +210,7 @@ def vault_list(
             last_used,
         )
 
-    con = _console()
+    con = get_console()
     con.print(table)
 
     active_profile = vault.get_active_profile()
@@ -246,19 +294,22 @@ def add_credential(
     interactive: bool = typer.Option(
         True, "--interactive/--no-interactive", "-i/-I", help="Prompt for secrets"
     ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Replace existing credential without prompting"
+    ),
 ):
     """Add a new credential to the vault.
 
     \b
     Smart defaults — just provide the provider name:
-      navig cred add github_models   # prompts securely for token
-      navig cred add openrouter      # prompts securely for API key
-      navig cred add copilot         # alias for github_models
+      navig vault add github_models   # prompts securely for token
+      navig vault add openrouter      # prompts securely for API key
+      navig vault add copilot         # alias for github_models
 
     \b
     Pipe-friendly (no shell history):
-      cat ~/token.txt | navig cred add github_models --stdin
-      echo $TOKEN | navig cred add openai --stdin
+      cat ~/token.txt | navig vault add github_models --stdin
+      echo $TOKEN | navig vault add openai --stdin
     """
     vault = _vault_mod.get_vault()
 
@@ -275,13 +326,35 @@ def add_credential(
         if credential_type is None:
             credential_type = "api_key"
 
+    # ── Duplicate guard ───────────────────────────────────────
+    existing = vault.get(provider, profile_id=profile, caller="vault.add")
+    if existing is not None:
+        short_id = existing.id[:8]
+        if force:
+            vault.delete(provider)
+        elif interactive and not from_stdin:
+            _ch.warning(
+                f"A credential for [cyan]{provider}[/cyan] already exists in profile "
+                f"[magenta]{profile}[/magenta] (ID: {short_id})."
+            )
+            if not _ch.confirm_action("Replace it with the new key?", default=False):
+                _ch.dim("Aborted — existing credential kept.")
+                raise typer.Exit(0)
+            vault.delete(provider)
+        else:
+            _ch.error(
+                f"Credential for '{provider}' already exists (ID: {short_id}). "
+                "Use --force to replace it."
+            )
+            raise typer.Exit(1)
+
     # ── Read from stdin if requested ──────────────────────────
     if from_stdin:
         if not sys.stdin.isatty():
             secret = sys.stdin.read().strip()
         else:
             _ch.error(
-                "--stdin requires piped input (e.g. echo TOKEN | navig cred add provider --stdin)"
+                "--stdin requires piped input (e.g. echo TOKEN | navig vault add provider --stdin)"
             )
             raise typer.Exit(1)
         if not secret:
@@ -352,11 +425,16 @@ def add_credential(
             label=label,
             metadata=metadata,
         )
-        _ch.success(f"Credential added successfully! ID: {cred_id}")
+        short_id = cred_id[:8]
+        display_label = label or provider
+        _ch.success(
+            f"[bold]{display_label}[/bold] saved to vault  "
+            f"[dim](ID: {short_id} · profile: {profile})[/dim]"
+        )
 
         # Ask to test immediately (skip in non-interactive / stdin mode)
         if interactive and not from_stdin and _ch.confirm_action("Test this credential now?"):
-            test_credential(cred_id)
+            _run_test_by_id(cred_id)
 
     except Exception as e:
         _ch.error(f"Failed to add credential: {e}")
@@ -418,7 +496,7 @@ def info_credential(
     # ── Optional live test ───────────────────────────────────────────────────
     test_result = None
     if test:
-        con = _console()
+        con = get_console()
         con.print(f"[dim]Running live test for [cyan]{cred.provider}[/cyan]…[/dim]")
         try:
             test_result = vault.test(target_id)
@@ -440,7 +518,7 @@ def info_credential(
             _ch.warning(f"Live test failed: {exc}")
 
     raw_meta = (raw.metadata if raw else {}) or {}
-    con = _console()
+    con = get_console()
 
     # ── Section 1: Identity ──────────────────────────────────────────────────
     id_table = Table(box=None, show_header=False, padding=(0, 1))
@@ -593,7 +671,7 @@ def show_credential(
         _ch.error(f"Credential {credential_id} not found")
         raise typer.Exit(1)
 
-    con = _console()
+    con = get_console()
     con.print(f"[bold cyan]Credential Details: {cred.id}[/bold cyan]")
     con.print(f"Provider: [green]{cred.provider}[/green]")
     con.print(f"Profile:  [magenta]{cred.profile_id}[/magenta]")
@@ -648,27 +726,77 @@ def edit_credential(
         raise typer.Exit(1)
 
 
+def _resolve_cred_for_deletion(vault, target: str):
+    """Resolve a provider name or credential ID to a Credential object.
+
+    Tries in order:
+    1. Exact provider name  (e.g. ``openai``, ``github_models``)
+    2. Credential UUID / short-ID via ``get_by_id``
+    3. Case-insensitive provider scan across all credentials
+    """
+    # 1. provider name
+    cred = vault.get(target)
+    if cred:
+        return cred
+
+    # 2. credential ID
+    cred = vault.get_by_id(target)
+    if cred:
+        return cred
+
+    # 3. fuzzy: scan all credentials, match provider or label case-insensitively
+    target_lower = target.lower()
+    for c in vault.list_creds():
+        if (c.provider or "").lower() == target_lower or (c.label or "").lower() == target_lower:
+            return vault.get_by_id(c.id)
+
+    return None
+
+
 @vault_app.command("delete")
 def delete_credential(
-    credential_id: str = typer.Argument(..., help="Credential ID"),
-    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
+    target: str = typer.Argument(..., help="Provider name (e.g. openai) or credential ID"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
 ):
-    """Delete a credential permanently."""
+    """Delete a vault credential by provider name or credential ID.
+
+    Examples:
+
+        navig vault delete openai
+
+        navig vault delete github_models
+
+        navig vault delete 6a858358 --force
+    """
     vault = _vault_mod.get_vault()
-    cred = vault.get_by_id(credential_id)
+    cred = _resolve_cred_for_deletion(vault, target)
 
     if not cred:
-        _ch.error(f"Credential {credential_id} not found")
+        _ch.error(f"No vault entry found for '{target}'. Run `navig vault list` to see available entries.")
         raise typer.Exit(1)
 
+    provider_display = cred.provider or cred.label or cred.id
+    label_display = cred.label or "(no label)"
+
     if not force:
-        if not _ch.confirm_action(f"Delete credential {cred.label} ({cred.id})?"):
+        _ch.warning(f"About to permanently delete: [bold]{label_display}[/bold] (provider: {provider_display}, id: {cred.id})")
+        if not _ch.confirm_action("Delete this credential?"):
             raise typer.Abort()
 
-    if vault.delete(credential_id):
-        _ch.success(f"Credential {credential_id} deleted.")
+    if vault.delete(cred.id):
+        _ch.success(f"Deleted '{provider_display}' from vault.")
     else:
         _ch.error("Failed to delete credential.")
+        raise typer.Exit(1)
+
+
+@vault_app.command("remove", hidden=True)
+def remove_credential(
+    target: str = typer.Argument(..., help="Provider name (e.g. openai) or credential ID"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+):
+    """Alias for `vault delete`."""
+    delete_credential(target=target, force=force)
 
 
 @vault_app.command("test")
@@ -696,7 +824,7 @@ def test_credential(
         _ch.error(str(exc))
         raise typer.Exit(1) from None
 
-    con = _console()
+    con = get_console()
     con.print(f"Running validation for [cyan]{resolved}[/cyan]...")
 
     try:
@@ -713,7 +841,7 @@ def test_credential(
                 "Vault decryption failed for this credential. Re-import the key (or reset broken entry) and try again."
             )
             con.print(
-                "[yellow]Tip:[/yellow] Use `navig cred list`, delete the broken provider entry, then add it again from your backup .env."
+                "[yellow]Tip:[/yellow] Use `navig vault list`, delete the broken provider entry, then add it again from your backup .env."
             )
             raise typer.Exit(1) from None
         raise
@@ -744,6 +872,7 @@ def test_credential(
         if result.details:
             _rprint(result.details)
         raise typer.Exit(1)
+
 
 
 @vault_app.command("disable")
@@ -786,7 +915,7 @@ def clone_credential(
 def list_providers():
     """List supported providers with built-in validation."""
     providers = _validators_mod.list_supported_validators()
-    con = _console()
+    con = get_console()
     con.print("Supported Providers (with validation):")
     for p in providers:
         con.print(f"  • {p}")
@@ -827,7 +956,7 @@ def show_audit_log(
             log["accessed_by"],
         )
 
-    _console().print(table)
+    get_console().print(table)
 
 
 @vault_app.command("activate")
@@ -845,7 +974,7 @@ def activate_credential(
 
     \b
     Example:
-      navig cred activate d08ae821
+      navig vault activate d08ae821
     """
     vault = _vault_mod.get_vault()
 
@@ -889,7 +1018,7 @@ def list_profiles():
     if active not in profiles:
         profiles.append(active)
 
-    con = _console()
+    con = get_console()
     con.print("Available Profiles:")
     for p in profiles:
         is_active = p == active
@@ -1048,7 +1177,7 @@ def vault_validate(
 ):
     """Validate a credential against the provider's API."""
     vault = _vault_mod.get_vault()
-    con = _console()
+    con = get_console()
     con.print(f"Running validation for [cyan]{provider}[/cyan]...")
     try:
         result = vault.test_provider(provider, profile_id=profile)
@@ -1097,7 +1226,7 @@ def vault_check_all(
         _ch.warning("Vault is empty — nothing to check.")
         return
 
-    con = _console()
+    con = get_console()
     results: list[dict] = []
     any_failed = False
 

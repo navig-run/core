@@ -7,10 +7,13 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Any
 
+from navig.core.dict_utils import deep_merge as _deep_merge
 from navig.platform import paths
 
 logger = logging.getLogger("navig.settings")
@@ -53,20 +56,6 @@ def _global_settings_dir() -> Path:
 
 def _layers_dir() -> Path:
     return _global_settings_dir() / "layers"
-
-
-# ── Deep merge ────────────────────────────────────────────────
-
-
-def _deep_merge(base: dict, override: dict) -> dict:
-    """Recursively merge *override* into a copy of *base*."""
-    result = copy.deepcopy(base)
-    for k, v in override.items():
-        if k in result and isinstance(result[k], dict) and isinstance(v, dict):
-            result[k] = _deep_merge(result[k], v)
-        else:
-            result[k] = copy.deepcopy(v)
-    return result
 
 
 # ── Flat key helpers ──────────────────────────────────────────
@@ -176,7 +165,17 @@ class SettingsResolver:
             node = node.setdefault(part, {})
         node[parts[-1]] = value
 
-        file_path.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=file_path.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                _fh.write(json.dumps(existing, indent=2, ensure_ascii=False))
+            os.replace(_tmp_path, file_path)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
         self._cache = None  # invalidate cache
 
     def all_sources(self) -> list[tuple[str, Path, bool]]:

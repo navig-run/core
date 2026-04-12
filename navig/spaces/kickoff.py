@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from navig.spaces.progress import _parse_frontmatter_map
+from navig.spaces.progress import _parse_frontmatter_map, _safe_read
 
 _PENDING_CHECKBOX_RE = re.compile(r"^\s*-\s*\[\s\]\s*(.+)$", re.MULTILINE)
 _BULLET_RE = re.compile(r"^\s*[-*]\s+(.+)$", re.MULTILINE)
@@ -15,13 +15,6 @@ class SpaceKickoff:
     space: str
     goal: str
     actions: list[str]
-
-
-def _safe_read(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError:
-        return ""
 
 
 def _vision_goal(vision_text: str, fallback: str) -> str:

@@ -7,6 +7,8 @@ from navig.importers.base import BaseImporter
 from navig.importers.core import UniversalImporter
 from navig.importers.models import ImportedItem
 
+pytestmark = pytest.mark.integration
+
 
 class _OkImporter(BaseImporter):
     SOURCE_NAME = "ok"

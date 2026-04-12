@@ -8,6 +8,7 @@ Performance note: ALL Rich imports are deferred until actually needed
 to improve CLI startup time (~120 ms saved).
 """
 
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -119,6 +120,18 @@ class _LazyConsole:
         if real is None:
             real = self._load()
         delattr(real, name)
+
+    def __enter__(self):
+        real = object.__getattribute__(self, "_real")
+        if real is None:
+            real = self._load()
+        return real.__enter__()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        real = object.__getattribute__(self, "_real")
+        if real is None:
+            real = self._load()
+        return real.__exit__(exc_type, exc_val, exc_tb)
 
 
 # ============================================================================
@@ -985,3 +998,17 @@ def newline(count: int = 1):
 def get_console():
     """Get the global console instance for advanced usage."""
     return console
+
+
+def format_bytes(n: int) -> str:
+    """Format *n* bytes as a human-readable string (e.g. ``1.2 MB``)."""
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024:
+            return f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} TB"
+
+
+def strip_ansi(text: str) -> str:
+    """Remove ANSI escape sequences from *text*."""
+    return re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)

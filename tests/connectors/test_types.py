@@ -12,6 +12,9 @@ from navig.connectors.types import (
     Resource,
     ResourceType,
 )
+import pytest
+
+pytestmark = pytest.mark.unit
 
 
 class TestConnectorDomain:

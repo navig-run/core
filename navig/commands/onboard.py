@@ -23,6 +23,7 @@ import platform
 import shutil
 import socket
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -482,7 +483,7 @@ def check_disk_space(min_mb: int = 100) -> bool:
 def check_config_dir_writable() -> bool:
     """~/.navig is writable (create-on-demand)."""
     try:
-        navig_dir = Path("~/.navig").expanduser()
+        navig_dir = config_dir()
         navig_dir.mkdir(parents=True, exist_ok=True)
         probe = navig_dir / ".write_probe"
         probe.write_text("ok", encoding="utf-8")
@@ -503,23 +504,7 @@ def check_ollama_reachable(host: str = "http://localhost:11434") -> bool:
         return False
 
 
-def check_api_key_in_env(provider: str) -> bool:
-    """Check whether provider API key exists in environment or navig.config."""
-    key_map = {
-        "openai": "OPENAI_API_KEY",
-        "anthropic": "ANTHROPIC_API_KEY",
-        "openrouter": "OPENROUTER_API_KEY",
-    }
-    env_var = key_map.get(provider.lower())
-    if not env_var:
-        return False
-    try:
-        from navig.config import get as _cfg_get  # lazy
-
-        return bool(_cfg_get(env_var, ""))
-    except Exception:
-        return bool(os.environ.get(env_var))
-
+from navig.providers.source_scan import check_api_key_in_env  # noqa: PLC0415
 
 # ---------------------------------------------------------------------------
 # Provider detection — runs all probes concurrently, finishes within timeout_ms
@@ -2826,7 +2811,17 @@ def sync_to_env(config: dict[str, Any], console: ConsoleType = None) -> None:
         if not found:
             env_lines.append(f"{key}={value}")
 
-    env_path.write_text(line_ending.join(env_lines) + line_ending, encoding="utf-8")
+    _tmp_path: Path | None = None
+    try:
+        _fd, _tmp = tempfile.mkstemp(dir=env_path.parent, suffix=".tmp")
+        _tmp_path = Path(_tmp)
+        with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+            _fh.write(line_ending.join(env_lines) + line_ending)
+        os.replace(_tmp_path, env_path)
+        _tmp_path = None
+    finally:
+        if _tmp_path is not None:
+            _tmp_path.unlink(missing_ok=True)
 
     if console:
         console.print(f"[green]✓ Environment synced to:[/green] {env_path}")

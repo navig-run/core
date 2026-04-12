@@ -73,7 +73,7 @@ REGISTRY: dict[str, CapabilityEntry] = {
     "vault": CapabilityEntry(
         tier=CapabilityTier.CORE,
         module="navig.vault",
-        cli_commands=["vault", "cred", "cred-profile"],
+        cli_commands=["vault"],  # "cred" / "cred-profile" / "secret" are deprecated aliases kept for compat
         notes="Secrets store — required by nearly every feature",
     ),
     "memory": CapabilityEntry(

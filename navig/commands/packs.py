@@ -24,6 +24,7 @@ from typing import Any
 import yaml
 
 from navig import console_helper as ch
+from navig.core.yaml_io import atomic_write_yaml
 
 
 class PackType(str, Enum):
@@ -728,8 +729,7 @@ class PackManager:
         )
 
         try:
-            with open(pack_file, "w", encoding="utf-8") as f:
-                yaml.dump(manifest.to_dict(), f, default_flow_style=False, sort_keys=False)
+            atomic_write_yaml(manifest.to_dict(), pack_file)
 
             self._loaded = False
             return pack_file

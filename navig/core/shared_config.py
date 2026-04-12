@@ -22,6 +22,7 @@ from typing import Any
 
 import yaml
 
+from navig.core.yaml_io import atomic_write_yaml
 from navig.platform.paths import config_dir
 
 
@@ -67,6 +68,8 @@ class ConfigSingleton:
                 # Data storage
                 self._global_data: dict[str, Any] = {}
                 self._project_data: dict[str, Any] = {}
+                self._project_cache_path: Path | None = None
+                self._project_cache_mtime_ns: int | None = None
 
                 # Load configuration
                 self._load()
@@ -83,26 +86,49 @@ class ConfigSingleton:
 
     def _load(self) -> None:
         """Load configuration from disk (global + project-local)."""
-        # Load global config
-        if self.global_config_path.exists():
-            try:
-                with open(self.global_config_path, encoding="utf-8") as f:
-                    self._global_data = yaml.safe_load(f) or {}
-            except Exception:
-                self._global_data = {}
-        else:
-            # Create default config
-            self._global_data = self._get_default_config()
-            self._ensure_dirs()
-            self._save_global()
+        # Load global config — delegate to ConfigManager so there is only one
+        # in-memory YAML copy.  Deferred import avoids import-time cycle.
+        from navig.config import get_config_manager  # noqa: PLC0415
+        try:
+            self._global_data = get_config_manager().global_config
+        except Exception:
+            # Fallback for rare bootstrap edge-case (ConfigManager unavailable).
+            if self.global_config_path.exists():
+                try:
+                    with open(self.global_config_path, encoding="utf-8") as f:
+                        self._global_data = yaml.safe_load(f) or {}
+                except Exception:
+                    self._global_data = {}
+            else:
+                self._global_data = self._get_default_config()
+                self._ensure_dirs()
+                self._save_global()
 
-        # Load project-local config
-        if self.project_config_path.exists():
+        # Load project-local config for the current CWD snapshot.
+        self._refresh_project_data(force=True)
+
+    def _refresh_project_data(self, force: bool = False) -> None:
+        """Reload project-local config when current project path changes."""
+        path = self.project_config_path
+        try:
+            mtime_ns = path.stat().st_mtime_ns if path.exists() else None
+        except OSError:
+            mtime_ns = None
+
+        if not force and path == self._project_cache_path and mtime_ns == self._project_cache_mtime_ns:
+            return
+
+        self._project_cache_path = path
+        self._project_cache_mtime_ns = mtime_ns
+
+        if path.exists():
             try:
-                with open(self.project_config_path, encoding="utf-8") as f:
+                with open(path, encoding="utf-8") as f:
                     self._project_data = yaml.safe_load(f) or {}
             except Exception:
                 self._project_data = {}
+        else:
+            self._project_data = {}
 
     def _get_default_config(self) -> dict[str, Any]:
         """Get default configuration values."""
@@ -127,16 +153,16 @@ class ConfigSingleton:
     def _save_global(self) -> None:
         """Save global configuration to disk (atomic write)."""
         self._ensure_dirs()
-        tmp = self.global_config_path.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            yaml.dump(self._global_data, f, default_flow_style=False, allow_unicode=True)
-        tmp.replace(self.global_config_path)  # atomic rename
+        atomic_write_yaml(self._global_data, self.global_config_path, allow_unicode=True)
 
     def _save_project(self) -> None:
         """Save project-local configuration to disk."""
         self.project_config_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.project_config_path, "w", encoding="utf-8") as f:
-            yaml.dump(self._project_data, f, default_flow_style=False, allow_unicode=True)
+        atomic_write_yaml(self._project_data, self.project_config_path, allow_unicode=True)
+        try:
+            self._project_cache_mtime_ns = self.project_config_path.stat().st_mtime_ns
+        except OSError:
+            self._project_cache_mtime_ns = None
 
     def _get_nested(self, data: dict[str, Any], key: str, default: Any = None) -> Any:
         """Get value using dot notation (e.g., 'plugins.brain.db_path')."""
@@ -174,6 +200,8 @@ class ConfigSingleton:
             Configuration value or default
         """
         with self._lock:
+            if scope in ("project", "merged"):
+                self._refresh_project_data()
             if scope == "global":
                 return self._get_nested(self._global_data, key, default)
             elif scope == "project":
@@ -196,6 +224,7 @@ class ConfigSingleton:
         """
         with self._lock:
             if scope == "project":
+                self._refresh_project_data()
                 self._set_nested(self._project_data, key, value)
             else:
                 self._set_nested(self._global_data, key, value)
@@ -216,6 +245,13 @@ class ConfigSingleton:
     def reload(self) -> None:
         """Reload configuration from disk (discard in-memory changes)."""
         with self._lock:
+            # Invalidate ConfigManager's cache so _load() re-reads from disk.
+            try:
+                from navig.config import get_config_manager  # noqa: PLC0415
+                cm = get_config_manager()
+                cm._global_config_loaded = False
+            except Exception:
+                pass
             self._load()
 
     # =========================================================================
@@ -226,42 +262,29 @@ class ConfigSingleton:
         """
         Get active host with source indicator.
 
-        Resolution order:
-        1. NAVIG_ACTIVE_HOST environment variable
-        2. Project-local config (.navig/config.yaml:active_host)
-        3. Global cache (~/.navig/cache/active_host.txt)
-        4. Default host from global config
+        Delegates to the canonical ``ContextManager`` via ``ConfigManager``
+        so that resolution logic (env → project → legacy → cache → default)
+        is maintained in a single place.
 
         Returns:
             Tuple of (host_name, source) where source is one of:
             'env', 'project', 'cache', 'default', or None if no host found
         """
-        # 1. Environment variable (highest priority)
-        env_host = os.environ.get("NAVIG_ACTIVE_HOST")
-        if env_host:
-            return (env_host, "env")
+        try:
+            from navig.config import get_config_manager
 
-        # 2. Project-local config
-        project_host = self.get("active_host", scope="project")
-        if project_host:
-            return (project_host, "project")
-
-        # 3. Global cache
-        cache_file = self.cache_dir / "active_host.txt"
-        if cache_file.exists():
-            try:
-                cached_host = cache_file.read_text(encoding="utf-8").strip()
-                if cached_host:
-                    return (cached_host, "cache")
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
-
-        # 4. Default host from global config
-        default_host = self.get("default_host", scope="global")
-        if default_host:
-            return (default_host, "default")
-
-        return (None, "none")
+            cm = get_config_manager()
+            result = cm.get_active_host(return_source=True)
+            if isinstance(result, tuple):
+                return result
+            # Fallback: older ConfigManager may return bare str
+            return (result, "config") if result else (None, "none")
+        except Exception:  # noqa: BLE001
+            # Graceful degradation: env-only fallback if ConfigManager unavailable
+            env_host = os.environ.get("NAVIG_ACTIVE_HOST")
+            if env_host:
+                return (env_host, "env")
+            return (None, "none")
 
     def set_active_host(self, host: str, scope: str = "cache") -> None:
         """
@@ -293,27 +316,19 @@ class ConfigSingleton:
         Returns:
             Tuple of (app_name, source)
         """
-        # 1. Environment variable
-        env_app = os.environ.get("NAVIG_ACTIVE_APP")
-        if env_app:
-            return (env_app, "env")
+        try:
+            from navig.config import get_config_manager
 
-        # 2. Project-local config
-        project_app = self.get("app.name", scope="project")
-        if project_app:
-            return (project_app, "project")
-
-        # 3. Global cache
-        cache_file = self.cache_dir / "active_app.txt"
-        if cache_file.exists():
-            try:
-                cached_app = cache_file.read_text(encoding="utf-8").strip()
-                if cached_app:
-                    return (cached_app, "cache")
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
-
-        return (None, "none")
+            cm = get_config_manager()
+            result = cm.get_active_app(return_source=True)
+            if isinstance(result, tuple):
+                return result
+            return (result, "config") if result else (None, "none")
+        except Exception:  # noqa: BLE001
+            env_app = os.environ.get("NAVIG_ACTIVE_APP")
+            if env_app:
+                return (env_app, "env")
+            return (None, "none")
 
     def set_active_app(self, app_name: str, scope: str = "cache") -> None:
         """

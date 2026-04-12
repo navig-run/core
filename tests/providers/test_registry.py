@@ -14,6 +14,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 # ─── Registry Structure Tests ──────────────────────────────────────────────────
 
 
@@ -176,6 +178,93 @@ class TestVerifier:
         assert result.key_detected is True, (
             "Local provider 'ollama' should pass key check (no key required)"
         )
+
+    def test_verify_disabled_cloud_provider_ignores_missing_config_issue(self):
+        """Disabled cloud providers without ProviderConfig should not produce hard issues."""
+        from navig.providers.registry import get_provider
+        from navig.providers.verifier import verify_provider
+
+        manifest = get_provider("github_copilot")
+        assert manifest is not None
+        assert manifest.enabled is False
+
+        result = verify_provider(manifest)
+        assert not any("no ProviderConfig entry in BUILTIN_PROVIDERS" in issue for issue in result.issues)
+
+    def test_verify_provider_logs_soft_issues_as_debug(self):
+        from navig.providers.registry import get_provider
+        from navig.providers.verifier import verify_provider
+
+        manifest = get_provider("openai")
+        assert manifest is not None
+
+        with (
+            patch("navig.providers.verifier._check_key", return_value=False),
+            patch("navig.providers.verifier.logger.debug") as debug_log,
+            patch("navig.providers.verifier.logger.warning") as warning_log,
+        ):
+            verify_provider(manifest)
+
+        debug_calls = [str(call) for call in debug_log.call_args_list]
+        warning_calls = [str(call) for call in warning_log.call_args_list]
+        assert any("no API key found" in call for call in debug_calls)
+        assert not any("no API key found" in call for call in warning_calls)
+
+    def test_verify_provider_logs_hard_issues_as_warning(self):
+        from navig.providers.registry import get_provider
+        from navig.providers.verifier import verify_provider
+
+        manifest = get_provider("openai")
+        assert manifest is not None
+
+        with (
+            patch("navig.providers.verifier._check_config", return_value=False),
+            patch("navig.providers.verifier._check_key", return_value=True),
+            patch("navig.providers.verifier.logger.warning") as warning_log,
+        ):
+            verify_provider(manifest)
+
+        warning_calls = [str(call) for call in warning_log.call_args_list]
+        assert any("no ProviderConfig entry in BUILTIN_PROVIDERS" in call for call in warning_calls)
+
+    def test_check_key_falls_back_when_primary_vault_lookup_raises(self, monkeypatch):
+        from navig.providers.registry import get_provider
+        from navig.providers.verifier import _check_key
+
+        manifest = get_provider("openai")
+        assert manifest is not None
+
+        for var in manifest.env_vars:
+            monkeypatch.delenv(var, raising=False)
+
+        fake_vault = MagicMock()
+        fake_vault.get_api_key.side_effect = RuntimeError("primary lookup failed")
+        fake_vault.get_secret.return_value = "sk-test"
+
+        with patch("navig.vault.get_vault", return_value=fake_vault):
+            assert _check_key(manifest) is True
+
+    def test_check_probe_returns_false_for_malformed_probe(self):
+        from navig.providers.verifier import _check_probe
+
+        assert _check_probe("not-a-host-port") is False
+
+    def test_check_probe_returns_false_on_socket_error(self):
+        from navig.providers.verifier import _check_probe
+
+        fake_socket = MagicMock()
+        fake_socket.__enter__.return_value = fake_socket
+        fake_socket.connect_ex.side_effect = OSError("network unreachable")
+
+        with patch("navig.providers.verifier.socket.socket", return_value=fake_socket):
+            assert _check_probe("127.0.0.1:11434") is False
+
+    def test_is_soft_issue_is_case_and_whitespace_tolerant(self):
+        from navig.providers.verifier import _is_soft_issue
+
+        assert _is_soft_issue(" no API key found — set OPENAI_API_KEY")
+        assert _is_soft_issue("LOCAL SERVICE UNREACHABLE AT 127.0.0.1:11434")
+        assert not _is_soft_issue("no ProviderConfig entry in BUILTIN_PROVIDERS")
 
 
 # ─── Wizard Dynamic Loading Tests ─────────────────────────────────────────────

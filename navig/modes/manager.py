@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from navig import console_helper as ch
+from navig.core.yaml_io import safe_load_yaml
 from navig.platform import paths
 
 _BUILTIN_YAML = Path(__file__).parent / "builtin.yaml"
@@ -104,30 +105,22 @@ def get_mode(name: str) -> ModeProfile | None:
 
 
 def _navig_home() -> Path:
+    """Backward-compatible home path helper."""
     return paths.config_dir()
 
 
 def _pin_path() -> Path:
-    return _navig_home() / ".mode_pin"
+    return paths.config_dir() / ".mode_pin"
 
 
 def _config_path() -> Path:
-    return _navig_home() / "config.yaml"
+    return paths.config_dir() / "config.yaml"
 
 
 def get_active_mode_name() -> str:
     """Return the active mode name from ~/.navig/config.yaml, defaulting to 'builder'."""
-    cfg = _config_path()
-    if not cfg.exists():
-        return _DEFAULT_MODE
-    try:
-        import yaml  # type: ignore[import-untyped]
-
-        with open(cfg, encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-        return data.get("active_mode", _DEFAULT_MODE)
-    except Exception:
-        return _DEFAULT_MODE
+    data = safe_load_yaml(_config_path()) or {}
+    return data.get("active_mode", _DEFAULT_MODE)
 
 
 def get_active_mode() -> ModeProfile:

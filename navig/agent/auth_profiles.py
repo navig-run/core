@@ -150,7 +150,7 @@ class AuthProfilePool:
                 cd = self._cooldowns.get(name)
                 if cd and cd.is_on_cooldown():
                     logger.debug(
-                        "auth_profiles: skipping '%s' (cooldown %.0fs left)",
+                        "auth_profiles: skipping '{}' (cooldown {:.0f}s left)",
                         name,
                         cd.remaining_seconds(),
                     )
@@ -170,7 +170,7 @@ class AuthProfilePool:
                 return
             cd.record_failure()
             logger.warning(
-                "auth_profiles: '%s' marked failed (count=%d, cooldown=%.0fs)",
+                "auth_profiles: '{}' marked failed (count={}, cooldown={:.0f}s)",
                 name,
                 cd.failure_count,
                 cd.cooldown_seconds,
@@ -186,6 +186,8 @@ class AuthProfilePool:
     def add_profile(self, profile: AuthProfile) -> None:
         """Dynamically add a profile to the pool (thread-safe)."""
         with self._lock:
+            if profile.name in self._profiles:
+                self._rotation = [n for n in self._rotation if n != profile.name]
             self._profiles[profile.name] = profile
             self._cooldowns.setdefault(profile.name, ProfileCooldown())
             self._rotation.extend([profile.name] * max(1, profile.weight))
@@ -258,12 +260,17 @@ def get_profile_pool() -> AuthProfilePool:
                 if not key or not name:
                     logger.warning("auth_profiles: skipping profile with missing name/api_key")
                     continue
+                try:
+                    weight = int(entry.get("weight", 1))
+                except (ValueError, TypeError):
+                    weight = 1
+
                 profiles.append(
                     AuthProfile(
                         name=name,
                         api_key=key,
                         provider=entry.get("provider", "openai"),
-                        weight=int(entry.get("weight", 1)),
+                        weight=weight,
                         extra={
                             k: v
                             for k, v in entry.items()
@@ -272,10 +279,10 @@ def get_profile_pool() -> AuthProfilePool:
                     )
                 )
         except Exception as exc:
-            logger.warning("auth_profiles: failed to load profiles from config: %s", exc)
+            logger.warning("auth_profiles: failed to load profiles from config: {}", exc)
 
         _pool_instance = AuthProfilePool(profiles)
-        logger.debug("auth_profiles: pool initialized with %d profile(s)", len(profiles))
+        logger.debug("auth_profiles: pool initialized with {} profile(s)", len(profiles))
         return _pool_instance
 
 

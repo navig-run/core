@@ -16,6 +16,7 @@ from typing import Any
 
 import yaml
 
+from navig.core.dict_utils import deep_merge as _deep_merge
 from navig.core.security import substitute_env_vars
 
 # Lazy imports — config_schema pulls in pydantic (~285ms); defer until needed
@@ -153,21 +154,4 @@ def _process_includes(data: Any, base_dir: Path, seen_paths: set[Path], depth: i
     return data
 
 
-def _deep_merge(base: Any, override: Any) -> Any:
-    """
-    Deep merge two structures. Override takes precedence.
-    Arrays concatenate.
-    """
-    if isinstance(base, dict) and isinstance(override, dict):
-        result = base.copy()
-        for key, value in override.items():
-            if key in result:
-                result[key] = _deep_merge(result[key], value)
-            else:
-                result[key] = value
-        return result
 
-    elif isinstance(base, list) and isinstance(override, list):
-        return base + override
-
-    return override

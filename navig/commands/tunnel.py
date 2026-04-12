@@ -134,11 +134,8 @@ def auto_tunnel(options: dict[str, Any]):
     This command verifies the tunnel is healthy and attempts recovery if not.
     For programmatic auto tunnel management, use TunnelManager.auto_tunnel() context manager.
     """
-    server_name = options.get("app") or config_manager.get_active_server()
-
-    if not server_name:
-        ch.error("No active server.")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     # Check health
     health = tunnel_manager.check_tunnel_health(server_name)

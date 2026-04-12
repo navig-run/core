@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-import yaml
+from navig.core.yaml_io import safe_load_yaml
 
 if TYPE_CHECKING:
     pass
@@ -228,8 +228,7 @@ class ContextManager:
                 local_apps = []
                 for app_file in local_apps_dir.glob("*.yaml"):
                     try:
-                        with open(app_file) as f:
-                            app_data = yaml.safe_load(f) or {}
+                        app_data = safe_load_yaml(app_file) or {}
                         if app_data.get("host") == host_name:
                             local_apps.append(app_file.stem)
                     except Exception:
@@ -322,9 +321,16 @@ class ContextManager:
 
         Note: Global mode does not validate if app exists on active host
         """
-        # Update local .navig config if applicable
-        if local is not False:
+        # Update local .navig config if applicable.
+        # In default mode (local=None), local context is best-effort and should
+        # not block global active_app cache updates.
+        if local is True:
             self.set_active_app_local(app_name)
+        elif local is None:
+            try:
+                self.set_active_app_local(app_name)
+            except (FileNotFoundError, ValueError):
+                pass  # best-effort local update; continue with global cache
 
         # Update global cache if applicable
         if local is not True:

@@ -27,12 +27,14 @@ Public surface (all slash-command handlers):
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import logging
 import os
 import random
 import re
 import socket
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -82,10 +84,11 @@ except ImportError:
 
 
 def _format_bridge_status(online: bool, url: str) -> str:
-    """Return a single Markdown line describing Bridge Grid status (DUP-5 fix)."""
+    """Return a single HTML line describing Bridge Grid status."""
+    _url = html.escape(url)
     if online:
-        return f"{_ni('bolt')} *Bridge:* online at `{url}`"
-    return f"{_ni('bolt')} *Bridge:* offline (`{url}`)"
+        return f"{_ni('bolt')} <b>Bridge:</b> online at <code>{_url}</code>"
+    return f"{_ni('bolt')} <b>Bridge:</b> offline (<code>{_url}</code>)"
 
 
 def _escape_markdown_v2(text: str) -> str:
@@ -1216,10 +1219,10 @@ class TelegramCommandsMixin:
                 ]
             )
             if target_message_id:
-                await self.edit_message(
+                if await self.edit_message(
                     chat_id, target_message_id, text, parse_mode="Markdown", keyboard=keyboard
-                )
-                return
+                ) is not None:
+                    return
             sent = await self.send_message(chat_id, text, parse_mode="Markdown", keyboard=keyboard)
             if sent and isinstance(sent, dict):
                 state["message_id"] = sent.get("message_id")
@@ -1263,10 +1266,10 @@ class TelegramCommandsMixin:
         text = f"{_ni('warn')} Something went wrong while opening that screen."
         keyboard = [[{"text": "🏠 Home", "callback_data": "nav:home"}]]
         if target_message_id:
-            await self.edit_message(
+            if await self.edit_message(
                 chat_id, target_message_id, text, parse_mode=None, keyboard=keyboard
-            )
-            return
+            ) is not None:
+                return
         sent = await self.send_message(chat_id, text, parse_mode=None, keyboard=keyboard)
         if sent and isinstance(sent, dict):
             state["message_id"] = sent.get("message_id")
@@ -1414,6 +1417,11 @@ class TelegramCommandsMixin:
 
             handoff = consume_chat_onboarding_handoff_state()
             steps = get_chat_onboarding_step_progress()
+            if not handoff:
+                home_navig_dir = Path.home() / ".navig"
+                handoff = consume_chat_onboarding_handoff_state(home_navig_dir)
+                if handoff:
+                    steps = get_chat_onboarding_step_progress(home_navig_dir)
         except Exception:
             handoff = None
             steps = []
@@ -1806,10 +1814,10 @@ class TelegramCommandsMixin:
             from navig.store.runtime import get_runtime_store
 
             reminder_count = len(get_runtime_store().get_user_reminders(user_id) or [])
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; runtime store may not be available
 
-        # ── Setup readiness ──────────────────────────────────────────────────
+        # ── Setup readiness ────────────────────────────────────────────────────
         readiness_state = "unknown"
         readiness_score = 0
         status_fix_issues: list[dict[str, str]] = []
@@ -1823,10 +1831,10 @@ class TelegramCommandsMixin:
             issues = readiness.get("issues", []) if isinstance(readiness, dict) else []
             if isinstance(issues, list):
                 status_fix_issues = [i for i in issues if isinstance(i, dict)]
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; init status may not be available
 
-        # ── Assemble message ─────────────────────────────────────────────────
+        # ── Assemble message ────────────────────────────────────────────────────
         readiness_icon = "✅" if readiness_state == "ready" else "⚠️"
         reminder_str = f"`{reminder_count} active`" if reminder_count is not None else "`—`"
 
@@ -2183,7 +2191,17 @@ class TelegramCommandsMixin:
             if existing and not existing.endswith("\n"):
                 existing += "\n"
         content = existing + f"\n## {heading}\n\n" + "\n".join(lines) + "\n"
-        path.write_text(content, encoding="utf-8")
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                _fh.write(content)
+            os.replace(_tmp_path, path)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
 
     def _apply_intake_to_space_docs(self, space: str, answers: dict[str, str]) -> Path:
         from navig.commands.space import _spaces_dir
@@ -2284,10 +2302,10 @@ class TelegramCommandsMixin:
             ],
         ]
         if message_id:
-            await self.edit_message(
+            if await self.edit_message(
                 chat_id, message_id, text_payload, parse_mode="Markdown", keyboard=keyboard
-            )
-            return
+            ) is not None:
+                return
         sent = await self.send_message(
             chat_id, text_payload, parse_mode="Markdown", keyboard=keyboard
         )
@@ -2859,6 +2877,103 @@ class TelegramCommandsMixin:
                 metadata=metadata,
             )
 
+    async def _handle_pending_api_key_input(self, chat_id: int, user_id: int, text: str) -> bool:
+        """Handle a pending API key reply prompted by the prov_cfg_ callback.
+
+        Returns True if the message was consumed (key stored, cancelled, or
+        invalid — any case where normal dispatch should be suppressed).
+        """
+        pending_map: dict = getattr(self, "_pending_api_key_input", {})
+        entry = pending_map.get(user_id)
+        if not entry:
+            return False
+        # Skip slash commands so /cancel, /provider etc. still work normally
+        if text.strip().startswith("/"):
+            return False
+
+        lowered = text.strip().lower()
+        prompt_msg_id = entry.get("prompt_msg_id")
+
+        async def _delete_prompt() -> None:
+            if prompt_msg_id:
+                try:
+                    await self._api_call(
+                        "deleteMessage",
+                        {"chat_id": chat_id, "message_id": prompt_msg_id},
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+
+        if lowered in {"cancel", "stop", "abort", "no"}:
+            pending_map.pop(user_id, None)
+            await _delete_prompt()
+            await self.send_message(chat_id, "🛑 API key entry cancelled.", parse_mode=None)
+            return True
+
+        api_key = text.strip()
+        if len(api_key) < 10:
+            await self.send_message(
+                chat_id,
+                "⚠️ That doesn't look like a valid API key (too short). Try again or send `cancel`.",
+                parse_mode=None,
+            )
+            return True
+
+        provider_id = entry.get("provider", "")
+        pending_map.pop(user_id, None)
+        await _delete_prompt()
+
+        # Store key in vault
+        try:
+            from navig.vault import get_vault
+
+            get_vault().add(
+                provider_id,
+                "api_key",
+                {"api_key": api_key},
+                profile_id="default",
+                label=f"{provider_id.title()} Key",
+            )
+            logger.info("API key for %s stored in vault via Telegram", provider_id)
+        except Exception as exc:
+            logger.warning("Failed to store API key for %s in vault: %s", provider_id, exc)
+            await self.send_message(
+                chat_id,
+                f"⚠️ Could not save API key: {exc}\nTry `navig init` via CLI to set it.",
+                parse_mode=None,
+            )
+            return True
+
+        # Trigger provider activation with the newly saved key
+        try:
+            from navig.providers.registry import get_provider
+
+            manifest = get_provider(provider_id)
+            cb_handler = getattr(self, "_cb_handler", None)
+            if manifest and cb_handler is not None:
+                await cb_handler._activate_provider_with_defaults(
+                    "", chat_id, 0, provider_id, manifest
+                )
+            else:
+                self._update_llm_mode_router(
+                    provider_id, {"small": "", "big": "", "coder_big": ""}
+                )
+                prov_name_disp = manifest.display_name if manifest else provider_id
+                await self.send_message(
+                    chat_id,
+                    f"✅ API key for *{prov_name_disp}* saved. Use /provider to activate it.",
+                    parse_mode="Markdown",
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Post-key-entry activation failed for %s: %s", provider_id, exc)
+            await self.send_message(
+                chat_id,
+                f"✅ API key saved. Use /provider to activate *{provider_id}*.",
+                parse_mode="Markdown",
+            )
+
+        return True
+
     async def _handle_nl_pending_reply(self, chat_id: int, user_id: int, text: str) -> bool:
         from navig.store.runtime import get_runtime_store
 
@@ -3418,7 +3533,7 @@ class TelegramCommandsMixin:
                         ready = bool(result.local_probe_ok)
                     elif manifest.requires_key:
                         vault_ok, vault_validated = self._provider_vault_validation_status(manifest)
-                        ready = key_detected or bool(vault_validated)
+                        ready = key_detected or vault_ok  # consistent with _handle_providers: key exists in vault
                     else:
                         ready = True
                 except Exception:
@@ -3804,8 +3919,8 @@ class TelegramCommandsMixin:
         if provider_arg:
             await self.send_message(
                 chat_id,
-                f"*Provider: `{provider_arg}`*\n\nUse `/settings` \u2192 Providers to configure connection details, or check `~/.navig/config.yaml` under `llm_router.modes`.",
-                parse_mode="Markdown",
+                f"<b>Provider: <code>{html.escape(provider_arg)}</code></b>\n\nUse /settings \u2192 Providers to configure connection details, or check <code>~/.navig/config.yaml</code> under <code>llm_router.modes</code>.",
+                parse_mode="HTML",
             )
             return
         bridge_online, bridge_url = await self._probe_bridge_grid()
@@ -3847,7 +3962,7 @@ class TelegramCommandsMixin:
             pass
 
         # ── Header ──────────────────────────────────────────────────────
-        lines: list[str] = ["🎛️ *AI Providers*", ""]
+        lines: list[str] = ["🎛️ <b>AI Providers</b>", ""]
 
         # Session override banner
         if session_overrides:
@@ -3873,9 +3988,9 @@ class TelegramCommandsMixin:
                 active_name = f"{_am.emoji} {_am.display_name}" if _am else active_prov
             except Exception:  # noqa: BLE001
                 active_name = active_prov
-            lines.append(f"✅ Current: *{active_name}*")
+            lines.append(f"✅ Current: <b>{html.escape(active_name)}</b>")
         elif active_prov == "bridge_copilot":
-            lines.append(f"✅ Current: *{_ni('bolt')} Bridge*")
+            lines.append(f"✅ Current: <b>{_ni('bolt')} Bridge</b>")
 
         # Bridge status (single line)
         bridge_active = active_prov == "bridge_copilot"
@@ -3899,7 +4014,7 @@ class TelegramCommandsMixin:
                     return model.split("/")[-1] if model else "—"
 
                 lines.append("")
-                lines.append(f"⚡`{_short(small)}` · 🧠`{_short(big)}` · 💻`{_short(code)}`")
+                lines.append(f"⚡<code>{_short(small)}</code> · 🧠<code>{_short(big)}</code> · 💻<code>{_short(code)}</code>")
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
@@ -3911,13 +4026,13 @@ class TelegramCommandsMixin:
             if vision_result:
                 v_prov, v_model, v_reason = vision_result
                 v_short = v_model.split("/")[-1].split(":")[-1]
-                lines.append(f"👁 Vision: `{v_short}` ({v_reason})")
+                lines.append(f"👁 Vision: <code>{html.escape(v_short)}</code> ({html.escape(v_reason)})")
         except Exception:  # noqa: BLE001
             pass
 
         if user_pref == "noai":
             lines.append("")
-            lines.append("🚫 *Next message:* `raw / no AI` _(one-shot)_")
+            lines.append("🚫 <b>Next message:</b> <code>raw / no AI</code> <i>(one-shot)</i>")
 
         lines.append("")
         lines.append("Tap a provider to activate it:")
@@ -3955,10 +4070,13 @@ class TelegramCommandsMixin:
                 if manifest.tier == "local" and manifest.local_probe:
                     ready = bool(result.local_probe_ok)
                 elif manifest.tier == "cloud" and manifest.requires_key:
-                    vault_has_key, vault_validated = self._provider_vault_validation_status(
-                        manifest
-                    )
-                    ready = key_detected or bool(vault_validated)
+                    try:
+                        vault_has_key, vault_validated = self._provider_vault_validation_status(
+                            manifest
+                        )
+                    except Exception:  # noqa: BLE001
+                        vault_has_key = False
+                    ready = key_detected or vault_has_key
                 elif manifest.requires_key:
                     ready = key_detected
                 else:
@@ -4023,7 +4141,7 @@ class TelegramCommandsMixin:
             [
                 {"text": "🔀 Hybrid", "callback_data": "pu_hybrid"},
                 {"text": "👁 Vision", "callback_data": "pu_vision"},
-                {"text": "📊 Show", "callback_data": "pu_show"},
+                {"text": "🎙 Voice",  "callback_data": "pu_voice"},
             ]
         )
         if session_overrides:
@@ -4046,7 +4164,7 @@ class TelegramCommandsMixin:
                     chat_id,
                     message_id,
                     text_payload,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                     keyboard=keyboard_rows,
                 )
                 return
@@ -4054,7 +4172,7 @@ class TelegramCommandsMixin:
                 pass  # fall through to fresh send
 
         await self.send_message(
-            chat_id, text_payload, parse_mode="Markdown", keyboard=keyboard_rows
+            chat_id, text_payload, parse_mode="HTML", keyboard=keyboard_rows
         )
 
     async def _show_provider_activation_confirmation(
@@ -4149,36 +4267,67 @@ class TelegramCommandsMixin:
         try:
             vault = self._get_vault()
             if vault is not None:
-                infos = vault.list(provider=manifest.id)
-                if infos:
-                    has_vault_key = True
-                    metadata = (infos[0].metadata or {}) if infos[0] else {}
-                    if metadata.get("validation_success") is True:
-                        validated = True
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Legacy vault provider readiness check failed: %s", exc)
+                # Primary: canonical label (e.g. "openai") via get_api_key
+                try:
+                    key = vault.get_api_key(manifest.id)
+                    if key:
+                        has_vault_key = True
+                except Exception:  # noqa: BLE001
+                    pass
 
-        try:
-            vault = self._get_vault()
-            if vault is not None:
-                store = vault.store()
-                for label in getattr(manifest, "vault_keys", []) or []:
+                # Primary fallback: decryption-free presence check for canonical label.
+                # vault.store().get() is pure SQL — safe even when CryptoEngine fails in daemon.
+                if not has_vault_key:
                     try:
-                        item = store.get(label)
-                    except Exception:
-                        continue
-                    if item is None:
-                        continue
-                    has_vault_key = True
-                    try:
-                        metadata = getattr(item, "metadata", {}) if item else {}
-                        if (
-                            isinstance(metadata, dict)
-                            and metadata.get("validation_success") is True
-                        ):
-                            validated = True
-                    except Exception as exc:  # noqa: BLE001
-                        logger.debug("Vault metadata check failed for %s: %s", label, exc)
+                        _store = vault.store()
+                        if _store.get(manifest.id) is not None:
+                            has_vault_key = True
+                    except Exception:  # noqa: BLE001
+                        pass
+
+                # Secondary: manifest-declared vault_keys (e.g. "openai/api-key")
+                if not has_vault_key:
+                    store = vault.store()
+                    for label in getattr(manifest, "vault_keys", []) or []:
+                        try:
+                            item = store.get(label)
+                        except Exception:
+                            continue
+                        if item is None:
+                            continue
+                        has_vault_key = True
+                        try:
+                            metadata = getattr(item, "metadata", {}) if item else {}
+                            if (
+                                isinstance(metadata, dict)
+                                and metadata.get("validation_success") is True
+                            ):
+                                validated = True
+                        except Exception as exc:  # noqa: BLE001
+                            logger.debug("Vault metadata check failed for %s: %s", label, exc)
+                        break
+                # Tertiary: env_var names as vault labels (covers legacy/alternative
+                # storage — e.g. GITHUB_TOKEN stored as 'github_token')
+                if not has_vault_key:
+                    _already_tried = {manifest.id} | set(getattr(manifest, "vault_keys", []) or [])
+                    for var in getattr(manifest, "env_vars", []) or []:
+                        var_lower = var.lower()
+                        if var_lower in _already_tried:
+                            continue
+                        try:
+                            key = vault.get_api_key(var_lower)
+                            if key:
+                                has_vault_key = True
+                                break
+                        except Exception:  # noqa: BLE001
+                            pass
+                        try:
+                            item = store.get(var_lower)
+                            if item is not None:
+                                has_vault_key = True
+                                break
+                        except Exception:  # noqa: BLE001
+                            pass
         except Exception as exc:  # noqa: BLE001
             logger.debug("Vault provider readiness check failed: %s", exc)
 
@@ -4240,18 +4389,36 @@ class TelegramCommandsMixin:
 
             endpoint = ""
             headers = {}
+            def _get_key(pid: str) -> str:
+                """Resolve API key for provider from env, then vault/config."""
+                env_map = {
+                    "openrouter": ["OPENROUTER_API_KEY"],
+                    "xai": ["XAI_API_KEY", "GROK_KEY"],
+                    "nvidia": ["NVIDIA_API_KEY", "NIM_API_KEY"],
+                }
+                for _env in env_map.get(pid, []):
+                    _v = os.environ.get(_env, "")
+                    if _v:
+                        return _v
+                try:
+                    from navig.agent.model_router import _resolve_provider_api_key
+
+                    return _resolve_provider_api_key(pid) or ""
+                except Exception:  # noqa: BLE001
+                    return ""
+
             if prov_id == "openrouter":
-                api_key = os.environ.get("OPENROUTER_API_KEY", "")
+                api_key = _get_key("openrouter")
                 if api_key:
                     endpoint = "https://openrouter.ai/api/v1/models"
                     headers = {"Authorization": f"Bearer {api_key}"}
             elif prov_id == "xai":
-                api_key = os.environ.get("XAI_API_KEY") or os.environ.get("GROK_KEY", "")
+                api_key = _get_key("xai")
                 if api_key:
                     endpoint = "https://api.x.ai/v1/models"
                     headers = {"Authorization": f"Bearer {api_key}"}
             elif prov_id == "nvidia":
-                api_key = os.environ.get("NVIDIA_API_KEY") or os.environ.get("NIM_API_KEY", "")
+                api_key = _get_key("nvidia")
                 if api_key:
                     endpoint = "https://integrate.api.nvidia.com/v1/models"
                     headers = {"Authorization": f"Bearer {api_key}"}
@@ -4392,6 +4559,19 @@ class TelegramCommandsMixin:
             reset_router()
         except Exception:  # noqa: BLE001
             logger.debug("Failed to reset unified router singleton", exc_info=True)
+        # Flush ConversationalAgent cache so next message gets a fresh agent
+        # with the updated provider/model resolved through UnifiedRouter.
+        try:
+            flush_fn = getattr(self, "flush_conv_agents", None)
+            if flush_fn is None:
+                # Try via gateway reference (when self is not a ChannelRouter subclass)
+                gw = getattr(self, "gateway", None)
+                if gw is not None:
+                    flush_fn = getattr(getattr(gw, "channel_router", None), "flush_conv_agents", None)
+            if callable(flush_fn):
+                flush_fn()
+        except Exception:  # noqa: BLE001
+            logger.debug("Failed to flush ConversationalAgent cache", exc_info=True)
 
         try:
             from navig.llm_router import get_llm_router
@@ -4435,17 +4615,56 @@ class TelegramCommandsMixin:
                 for mode_name in TelegramCommandsMixin._TIER_TO_MODES.get(tier, []):
                     router.update_mode(mode_name, provider=provider_id, model=model)
 
-            # Persist to global config under ``llm_router.llm_modes``
+            # Persist both llm_router.llm_modes and ai.default_provider in a single
+            # call to avoid two-snapshot race conditions and double disk writes.
             all_modes = router.get_all_modes()
+            cfg_mgr = get_config_manager()
+            # Re-read from live config (not a stale local snapshot) for both keys.
+            live_cfg = cfg_mgr.global_config or {}
+            llm_router_cfg = dict(live_cfg.get("llm_router") or {})
+            llm_router_cfg["llm_modes"] = all_modes
+            ai_cfg = dict(live_cfg.get("ai") or {})
+            ai_cfg["default_provider"] = provider_id
+            cfg_mgr.update_global_config({"llm_router": llm_router_cfg, "ai": ai_cfg})
+            self._refresh_ai_runtime_after_router_update()
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "Failed to persist LLM mode router assignments for %s",
+                provider_id,
+                exc_info=True,
+            )
+
+    def _deactivate_provider(self, provider_id: str) -> None:
+        """Clear all LLM mode router slots pointing at ``provider_id`` and persist.
+
+        After this call every mode that was using the provider is reset to an
+        empty provider/model so the router falls back to raw (no-AI) operation
+        until a new provider is activated.
+        """
+        try:
+            from navig.config import get_config_manager
+            from navig.llm_router import get_llm_router
+
+            router = get_llm_router()
+            if not router:
+                return
+
+            all_modes = router.get_all_modes()
+            for mode_name, mode_cfg in all_modes.items():
+                if isinstance(mode_cfg, dict) and mode_cfg.get("provider") == provider_id:
+                    router.update_mode(mode_name, provider="", model="")
+
+            # Persist cleared state
+            updated_modes = router.get_all_modes()
             cfg_mgr = get_config_manager()
             global_cfg = dict(cfg_mgr.global_config or {})
             llm_router_cfg = dict(global_cfg.get("llm_router") or {})
-            llm_router_cfg["llm_modes"] = all_modes
+            llm_router_cfg["llm_modes"] = updated_modes
             cfg_mgr.update_global_config({"llm_router": llm_router_cfg})
             self._refresh_ai_runtime_after_router_update()
         except Exception:  # noqa: BLE001
             logger.debug(
-                "Failed to persist LLM mode router assignments for %s",
+                "Failed to deactivate provider %s from LLM mode router",
                 provider_id,
                 exc_info=True,
             )
@@ -4459,6 +4678,7 @@ class TelegramCommandsMixin:
         page: int = 0,
         selected_tier: str = "s",
         message_id: int | None = None,
+        show_models: bool = False,
     ) -> None:
         """Show tier-first model picker for a provider with edit-in-place pagination."""
         emoji, name = _ni("robot"), prov_id
@@ -4505,20 +4725,46 @@ class TelegramCommandsMixin:
                 pass  # best-effort; display continues without banner
 
         # Resolve currently-assigned models for each tier
+        # Priority 1: hybrid router (when active and assigned to this provider)
         current: dict = {"small": None, "big": None, "coder_big": None}
-        router_active = False
         try:
             from navig.agent.ai_client import get_ai_client
 
             router = get_ai_client().model_router
             if router and router.is_active:
-                router_active = True
                 for tier in ("small", "big", "coder_big"):
                     slot = router.cfg.slot_for_tier(tier)
                     if slot.provider == prov_id and slot.model:
                         current[tier] = slot.model
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
+
+        # Priority 2: LLM Mode Router (written on every activation, even without hybrid)
+        if any(v is None for v in current.values()):
+            try:
+                from navig.llm_router import get_llm_router
+
+                lr = get_llm_router()
+                if lr:
+                    for tier, modes in TelegramCommandsMixin._TIER_TO_MODES.items():
+                        if current[tier] is not None:
+                            continue  # already filled by hybrid router
+                        mc = lr.modes.get_mode(modes[0])
+                        if mc and getattr(mc, "model", None) and getattr(mc, "provider", "") == prov_id:
+                            current[tier] = mc.model
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
+
+        # Priority 3: curated defaults — always shown for ALL providers so users see what
+        # models would be assigned even before explicitly activating the provider.
+        if any(v is None for v in current.values()):
+            try:
+                _curated = TelegramCommandsMixin._select_curated_tier_defaults(prov_id, models)
+                for tier in ("small", "big", "coder_big"):
+                    if current[tier] is None and _curated.get(tier):
+                        current[tier] = _curated[tier]
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         # Build tier display labels using HTML (safe for all model name chars)
         tier_emoji = {"small": _ni("bolt"), "big": _ni("brain"), "coder_big": _ni("computer")}
@@ -4543,9 +4789,10 @@ class TelegramCommandsMixin:
         end = start + page_size
         page_models = models[start:end]
 
-        viewing_line = f"Viewing: {tier_emoji[tier_name]} {tier_label[tier_name]}"
+        # Pagination header shown in text only when there are multiple pages
+        _viewing_header = f"{tier_emoji[tier_name]} {tier_label[tier_name]}"
         if total_pages > 1:
-            viewing_line += f" — page {page + 1}/{total_pages}"
+            _viewing_header += f" ({page + 1}/{total_pages})"
         lines = [
             f"<b>{emoji} {name}</b> — assign model to tier",
             "",
@@ -4553,27 +4800,21 @@ class TelegramCommandsMixin:
         if _key_missing:
             lines.append(f"⚠️ <i>API key not configured — set {_key_hint}</i>")
             lines.append("")
+        _action_hint = (
+            f"<i>Assigning to: {_viewing_header} — tap a model below.</i>"
+            if show_models
+            else "<i>Tap Small, Big, or Code to pick a model.</i>"
+        )
         lines.extend(
             [
                 _tier_line("small"),
                 _tier_line("big"),
                 _tier_line("coder_big"),
                 "",
-                viewing_line,
-                "Tap a model below to assign it.",
+                _action_hint,
             ]
         )
-        for offset, m in enumerate(page_models):
-            idx = start + offset
-            short_m = m.split("/")[-1].split(":")[-1]
-            lines.append(f"{idx}. {short_m}")
-
-        if not router_active:
-            lines.append("")
-            lines.append(
-                f"{_ni('warn')} <i>Hybrid routing is disabled. Enable "
-                "<code>routing.enabled: true</code> in your config, then restart NAVIG to apply tier assignments.</i>"
-            )
+        # Model list shown only as keyboard buttons (no duplicate numbered text list)
 
         keyboard: list[list[dict[str, str]]] = []
         keyboard.append(
@@ -4592,20 +4833,21 @@ class TelegramCommandsMixin:
                 },
             ]
         )
-        for offset, m in enumerate(page_models):
-            idx = start + offset
-            short = m.split("/")[-1].split(":")[-1]
-            label = short if len(short) <= 42 else short[:39] + "..."
-            keyboard.append(
-                [
-                    {
-                        "text": f"{label}",
-                        "callback_data": f"pms_{prov_id}_{idx}_{selected_tier}_{page}",
-                    }
-                ]
-            )
+        if show_models:
+            for offset, m in enumerate(page_models):
+                idx = start + offset
+                short = m.split("/")[-1].split(":")[-1]
+                label = short if len(short) <= 42 else short[:39] + "..."
+                keyboard.append(
+                    [
+                        {
+                            "text": f"{label}",
+                            "callback_data": f"pms_{prov_id}_{idx}_{selected_tier}_{page}",
+                        }
+                    ]
+                )
 
-        if total_pages > 1:
+        if show_models and total_pages > 1:
             page_nav: list[dict[str, str]] = []
             if page > 0:
                 page_nav.append(
@@ -4624,33 +4866,57 @@ class TelegramCommandsMixin:
                 )
             keyboard.append(page_nav)
 
+        # Show Activate / Deactivate button depending on live router state
+        _is_active_prov = False
+        try:
+            from navig.llm_router import get_llm_router as _glr
+
+            _lr = _glr()
+            if _lr:
+                _is_active_prov = any(
+                    isinstance(v, dict) and v.get("provider") == prov_id
+                    for v in _lr.get_all_modes().values()
+                )
+        except Exception:  # noqa: BLE001
+            pass
+        if _is_active_prov:
+            keyboard.append(
+                [{"text": f"🔴 Deactivate {name}", "callback_data": f"prov_deactivate_{prov_id}"}]
+            )
+        else:
+            keyboard.append(
+                [{"text": f"🚀 Activate {name}", "callback_data": f"prov_activate_{prov_id}"}]
+            )
         keyboard.append(
             [
-                {"text": f"🚀 Activate {name}", "callback_data": f"prov_activate_{prov_id}"},
-                {"text": "← Providers", "callback_data": "prov_back"},
-            ]
-        )
-        keyboard.append(
-            [
-                {"text": "🔙 Back", "callback_data": "nav:back"},
+                {"text": "🔙 Back", "callback_data": "nav:providers"},
                 {"text": "🏠 Home", "callback_data": "nav:home"},
             ]
         )
+        keyboard.append([{"text": "✖ Close", "callback_data": "prov_close"}])
 
         text_payload = "\n".join(lines)
         if message_id:
             try:
-                await self.edit_message(
+                result = await self.edit_message(
                     chat_id,
                     message_id,
                     text_payload,
                     parse_mode="HTML",
                     keyboard=keyboard,
                 )
-                return
+                # _api_call never raises — check return value to detect silent failures
+                if result is not None:
+                    return
+                logger.debug(
+                    "Provider picker edit_message returned None for %s in chat %s (message %s). Falling back to send_message.",
+                    prov_id,
+                    chat_id,
+                    message_id,
+                )
             except Exception as exc:  # noqa: BLE001
                 logger.debug(
-                    "Provider picker edit_message failed for %s in chat %s (message %s): %s. Falling back to send_message.",
+                    "Provider picker edit_message raised for %s in chat %s (message %s): %s. Falling back to send_message.",
                     prov_id,
                     chat_id,
                     message_id,
@@ -4697,7 +4963,21 @@ class TelegramCommandsMixin:
         tier_emoji = {"small": "⚡", "big": "🧠", "coder_big": "💻"}
         tier_label = {"small": "Small", "big": "Big", "coder_big": "Code"}
 
+        # Check if hybrid router is active in the current process
+        _hybrid_active = False
+        try:
+            from navig.agent.ai_client import get_ai_client
+
+            _hr = get_ai_client().model_router
+            if _hr and _hr.is_active:
+                _hybrid_active = True
+        except Exception:  # noqa: BLE001
+            pass
+
         lines: list[str] = ["<b>🔀 Hybrid Routing</b>", ""]
+        if not _hybrid_active:
+            lines.append("⚠️ <i>Hybrid routing is currently disabled.</i>")
+            lines.append("")
         lines.append("Assign a provider to each tier. Tap a tier to change it.")
         lines.append("")
 
@@ -4741,8 +5021,10 @@ class TelegramCommandsMixin:
                 ]
             )
 
-        # Connected providers summary row (for quick pick)
-        connected = [p for p in providers if p.connected]
+        # Connected providers summary row (for quick pick).
+        # Exclude AirLLM — it probes as always-connected but is a local inference
+        # runner, not a cloud tier target for hybrid routing.
+        connected = [p for p in providers if p.connected and p.id != "airllm"]
         if connected:
             prov_row: list[dict[str, str]] = []
             for p in connected[:4]:  # max 4 per row
@@ -4750,6 +5032,12 @@ class TelegramCommandsMixin:
                     {"text": f"{p.emoji} {p.display_name}", "callback_data": f"hyb_pick_{p.id}"}
                 )
             keyboard.append(prov_row)
+
+        # Enable hybrid routing button (only when not active)
+        if not _hybrid_active:
+            keyboard.append(
+                [{"text": "🔛 Enable Hybrid Routing", "callback_data": "hyb_enable"}]
+            )
 
         # Save / Reset / Back
         if session_overrides:
@@ -4761,20 +5049,17 @@ class TelegramCommandsMixin:
             )
         keyboard.append(
             [
-                {"text": "🔙 Providers", "callback_data": "nav:providers"},
+                {"text": "🔙 Back", "callback_data": "nav:back"},
                 {"text": "✖ Close", "callback_data": "prov_close"},
             ]
         )
 
         text_payload = "\n".join(lines)
         if message_id:
-            try:
-                await self.edit_message(
-                    chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
-                )
+            if await self.edit_message(
+                chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
+            ) is not None:
                 return
-            except Exception:  # noqa: BLE001
-                pass
         await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
 
     async def _handle_provider_vision(
@@ -4871,13 +5156,10 @@ class TelegramCommandsMixin:
 
         text_payload = "\n".join(lines)
         if message_id:
-            try:
-                await self.edit_message(
-                    chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
-                )
+            if await self.edit_message(
+                chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
+            ) is not None:
                 return
-            except Exception:  # noqa: BLE001
-                pass
         await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
 
     async def _handle_provider_show(
@@ -4992,13 +5274,10 @@ class TelegramCommandsMixin:
 
         text_payload = "\n".join(lines)
         if message_id:
-            try:
-                await self.edit_message(
-                    chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
-                )
+            if await self.edit_message(
+                chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
+            ) is not None:
                 return
-            except Exception:  # noqa: BLE001
-                pass
         await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
 
     async def _handle_provider_reset(
@@ -5041,13 +5320,10 @@ class TelegramCommandsMixin:
 
         text_payload = "\n".join(lines)
         if message_id:
-            try:
-                await self.edit_message(
-                    chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
-                )
+            if await self.edit_message(
+                chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
+            ) is not None:
                 return
-            except Exception:  # noqa: BLE001
-                pass
         await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
 
     async def _handle_models_reset(
@@ -5132,13 +5408,10 @@ class TelegramCommandsMixin:
 
         text_payload = "\n".join(lines)
         if message_id:
-            try:
-                await self.edit_message(
-                    chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
-                )
+            if await self.edit_message(
+                chat_id, message_id, text_payload, parse_mode="HTML", keyboard=keyboard
+            ) is not None:
                 return
-            except Exception:  # noqa: BLE001
-                pass
         await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
 
     # ── End Provider control surface ─────────────────────────────────────
@@ -5284,7 +5557,7 @@ class TelegramCommandsMixin:
         lines.append(SEP)
 
         # -- Session messages - triple-fallback (DUP-10 fix: extracted helper) -
-        session_messages = self._load_recent_messages(user_id)
+        session_messages = self._load_recent_messages(user_id, chat_id=chat_id)
         all_sessions_count = 0
         if _HAS_SESSIONS:
             try:
@@ -5424,7 +5697,7 @@ class TelegramCommandsMixin:
         ]
         await self.send_message(chat_id, "\n".join(lines), keyboard=trace_keyboard)
 
-    def _load_recent_messages(self, user_id: int) -> list:
+    def _load_recent_messages(self, user_id: int, chat_id: int = 0) -> list:
         """Load recent session messages via three fallback paths.
 
         1. SessionManager in-memory cache
@@ -5433,11 +5706,14 @@ class TelegramCommandsMixin:
 
         Returns a list of ``{"role": ..., "content": ...}`` dicts.
         """
+        # BUG-15 fix: chat_id was previously referenced but not in scope (NameError
+        # silently swallowed by the except block, always falling through to fallback).
+        _chat_id = chat_id or user_id  # DM: chat_id == user_id
         if _HAS_SESSIONS:
             try:
                 sm = get_session_manager()
                 # Use the real session object via the public API
-                raw_session = sm.get_session(chat_id, user_id)
+                raw_session = sm.get_session(_chat_id, user_id)
                 if raw_session is not None:
                     return list(raw_session.messages or [])
             except Exception:  # noqa: BLE001
@@ -5723,7 +5999,7 @@ class TelegramCommandsMixin:
             status = "\u2705" if has else "\U0001f512"
             lines.append(f"{status} *{prov['label']}* \u2014 `{prov['role']}`")
             if not has:
-                lines.append(f"  _No key found — tap to add_")
+                lines.append("  _No key found — tap to add_")
                 cb = f"voice_prov_add:{prov['id']}"
             else:
                 lines.append("  _Key stored in vault_")

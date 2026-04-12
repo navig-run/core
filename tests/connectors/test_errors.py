@@ -10,6 +10,9 @@ from navig.connectors.errors import (
     ConnectorNotFoundError,
     ConnectorRateLimitError,
 )
+import pytest
+
+pytestmark = pytest.mark.unit
 
 
 class TestConnectorErrors:

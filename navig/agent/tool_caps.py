@@ -15,6 +15,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
+import re
+import tempfile
 import time
 from pathlib import Path
 
@@ -93,6 +96,8 @@ def cap_result(
     """
     if max_chars is None:
         max_chars = get_cap_for_tool(tool_name)
+    elif max_chars < 0:
+        max_chars = 0
 
     if len(result) <= max_chars:
         return result
@@ -154,14 +159,29 @@ def _write_spillover(content: str, tool_name: str) -> Path | None:
     try:
         SPILLOVER_DIR.mkdir(parents=True, exist_ok=True)
         hash_id = hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest()[:12]
-        prefix = tool_name.replace("/", "_").replace("\\", "_") if tool_name else "tool"
+        if tool_name:
+            prefix = re.sub(r"[^A-Za-z0-9._-]+", "_", tool_name).strip("._")
+            if not prefix:
+                prefix = "tool"
+        else:
+            prefix = "tool"
         spill_file = SPILLOVER_DIR / f"{prefix}_{hash_id}.txt"
 
         # Avoid re-writing identical content
         if spill_file.exists():
             return spill_file
 
-        spill_file.write_text(content, encoding="utf-8")
+        _tmp_spill: Path | None = None
+        try:
+            _fd_sp, _tmp_sp = tempfile.mkstemp(dir=SPILLOVER_DIR, suffix=".tmp")
+            _tmp_spill = Path(_tmp_sp)
+            with os.fdopen(_fd_sp, "w", encoding="utf-8") as _fh_sp:
+                _fh_sp.write(content)
+            os.replace(_tmp_spill, spill_file)
+            _tmp_spill = None
+        finally:
+            if _tmp_spill is not None:
+                _tmp_spill.unlink(missing_ok=True)
         return spill_file
     except OSError as exc:
         logger.debug("_write_spillover failed for tool %r: %s", tool_name, exc)

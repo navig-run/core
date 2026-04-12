@@ -10,6 +10,8 @@ import pytest
 
 from navig.connectors.circuit_breaker import CircuitBreaker, CircuitState
 
+pytestmark = pytest.mark.integration
+
 
 class TestCircuitBreaker:
     def test_initial_state_closed(self):

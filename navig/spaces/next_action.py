@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from navig.spaces.progress import collect_spaces_progress, read_space_progress
+from navig.spaces.progress import _safe_read, collect_spaces_progress, read_space_progress
 from navig.spaces.resolver import resolve_space
 
 _PENDING_RE = re.compile(r"^\s*-\s*\[\s\]\s*(.+)$", re.MULTILINE)
@@ -17,13 +17,6 @@ class SpaceNextAction:
     goal: str
     completion_pct: float
     next_task: str
-
-
-def _safe_read(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError:
-        return ""
 
 
 def first_pending_task(current_phase_text: str) -> str:

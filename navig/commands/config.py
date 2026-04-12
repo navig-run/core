@@ -1,6 +1,8 @@
 """Configuration management commands for NAVIG."""
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -18,14 +20,6 @@ from navig.console_helper import get_console
 from navig.core.yaml_io import load_yaml_with_lines
 from navig.migration import migrate_all_configs
 from navig.platform import paths
-
-
-def _package_schema_dir() -> Path:
-    return Path(__file__).resolve().parents[1] / "schemas"
-
-
-def _read_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _default_config_roots(scope: str | None) -> list[tuple[str, Path]]:
@@ -513,7 +507,7 @@ def install_schemas(
     target_dir = target_root / "schemas"
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    src_dir = _package_schema_dir()
+    src_dir = Path(__file__).resolve().parents[1] / "schemas"
     host_src = src_dir / "host.schema.json"
     app_src = src_dir / "app.schema.json"
 
@@ -551,7 +545,17 @@ def install_schemas(
             "**/apps/*.yaml",
         ]
         settings["yaml.schemas"] = yaml_schemas
-        settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=settings_path.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                _fh.write(json.dumps(settings, indent=2))
+            os.replace(_tmp_path, settings_path)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
         vscode_settings_written = True
 
     if json_out:

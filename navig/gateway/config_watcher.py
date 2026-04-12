@@ -8,6 +8,8 @@ Watches for changes to:
 """
 
 import asyncio
+import os
+import tempfile
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -418,7 +420,17 @@ Last updated: Never
         """Write to a workspace file."""
         self.base_path.mkdir(parents=True, exist_ok=True)
         file_path = self.base_path / filename
-        file_path.write_text(content, encoding="utf-8")
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=file_path.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                _fh.write(content)
+            os.replace(_tmp_path, file_path)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
         logger.debug("Updated workspace file: %s", filename)
 
     def append_to_file(self, filename: str, content: str) -> None:

@@ -1,6 +1,9 @@
 import sqlite3
 
 from navig.importers.sources.firefox import FirefoxImporter
+import pytest
+
+pytestmark = pytest.mark.integration
 
 
 def test_firefox_places_parse(tmp_path) -> None:

@@ -218,6 +218,20 @@ DEPRECATION_MAP = {
     "navig cleanup-temp": "navig server run --cleanup-temp",
     "navig check-filesystem": "navig server test --filesystem",
     "navig system-maintenance": "navig server run --maintenance",
+    # Vault / credential command aliases
+    "navig cred": "navig vault",
+    "navig cred add": "navig vault add",
+    "navig cred list": "navig vault list",
+    "navig cred delete": "navig vault delete",
+    "navig cred remove": "navig vault delete",
+    "navig cred show": "navig vault show",
+    "navig cred info": "navig vault info",
+    "navig cred activate": "navig vault activate",
+    "navig cred edit": "navig vault edit",
+    "navig cred test": "navig vault test",
+    "navig cred-profile": "navig vault profile",
+    "navig cred-profile list": "navig vault profile list",
+    "navig secret": "navig vault",
 }
 
 

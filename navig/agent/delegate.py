@@ -191,7 +191,7 @@ class DelegateTool:
         depth: int,
     ) -> str:
         """Instantiate and run a child ConversationalAgent."""
-        from navig.agent.conversational import ConversationalAgent
+        from navig.agent.conv import ConversationalAgent
 
         child = ConversationalAgent()
         # Propagate user identity

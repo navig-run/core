@@ -140,10 +140,6 @@ def _derive_avatar_seed(node_id: str, name: str, born_at: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def _qr_target(node_id: str) -> str:
-    return f"{NODE_URL_BASE}/{node_id}"
-
-
 # ── Public API ─────────────────────────────────────────────────────────────
 
 
@@ -160,13 +156,13 @@ def load_or_create(navig_dir: Path, name: str) -> GenesisData:
         try:
             raw = json.loads(genesis_path.read_text(encoding="utf-8"))
             return GenesisData(**{k: raw.get(k) for k in GenesisData.__dataclass_fields__})
-        except Exception:
+        except (json.JSONDecodeError, KeyError, TypeError):
             pass  # Corrupt file — regenerate
 
     born_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     node_id = _derive_node_id(born_at)
     avatar_seed = _derive_avatar_seed(node_id, name, born_at)
-    qr_target = _qr_target(node_id)
+    qr_target = f"{NODE_URL_BASE}/{node_id}"
 
     avatar_path = _export_avatar_png(
         navig_dir=navig_dir,

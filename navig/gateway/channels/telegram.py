@@ -11,6 +11,7 @@ Provides integration with Telegram Bot API for:
 """
 
 import asyncio
+import html
 import logging
 import random
 from collections.abc import Awaitable, Callable
@@ -704,6 +705,11 @@ class TelegramChannel:
         # Use caption as text for media with captions (photos, videos with text)
         if not text and message.get("caption"):
             text = message.get("caption", "")
+            if message.get("photo"):
+                try:
+                    await self._handle_photo_vision(chat_id, user_id, is_group, message)
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Captioned photo analysis failed: %s", exc)
 
         # Check if replying to a bot message
         is_reply_to_bot = False
@@ -906,6 +912,15 @@ class TelegramChannel:
                     except Exception:  # noqa: BLE001
                         pass  # best-effort; session overrides are optional
 
+                try:
+                    if await self._handle_pending_api_key_input(
+                        chat_id=chat_id,
+                        user_id=user_id,
+                        text=text,
+                    ):
+                        return
+                except AttributeError:
+                    pass  # best-effort: attribute absent; skip
                 try:
                     if await self._handle_nl_pending_reply(
                         chat_id=chat_id,
@@ -1954,6 +1969,8 @@ class TelegramChannel:
             await self.send_message(chat_id, "⚠️ Failed to download photo.", parse_mode=None)
             return
 
+        ocr_text = self._extract_photo_ocr_text(image_bytes)
+
         # Build the vision API call based on provider format
         b64_image = base64.b64encode(image_bytes).decode()
         prompt = caption or (
@@ -1966,16 +1983,49 @@ class TelegramChannel:
             provider_id, model_name, api_format, b64_image, prompt
         )
 
-        if description:
-            short_model = model_name.split("/")[-1].split(":")[-1]
-            footer = f"\n\n_👁 {short_model}_"
-            await self.send_message(chat_id, description + footer, parse_mode="Markdown")
+        reply = self._compose_photo_analysis_reply(model_name, description, ocr_text)
+        if reply:
+            await self.send_message(chat_id, reply, parse_mode="HTML")
         else:
             await self.send_message(
                 chat_id,
                 "⚠️ Vision analysis failed — the model could not process this image.",
                 parse_mode=None,
             )
+
+    def _extract_photo_ocr_text(self, image_bytes: bytes) -> str | None:
+        """Best-effort OCR text extraction for Telegram photos."""
+        try:
+            from navig.core.ocr import extract_ocr_text_from_image_bytes
+
+            return extract_ocr_text_from_image_bytes(image_bytes)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Photo OCR extraction failed: %s", exc)
+            return None
+
+    def _compose_photo_analysis_reply(
+        self,
+        model_name: str,
+        description: str | None,
+        ocr_text: str | None,
+    ) -> str:
+        """Build a safe HTML reply combining vision summary and OCR snippet."""
+        parts: list[str] = []
+        if description:
+            parts.append(html.escape(description.strip()))
+
+        if ocr_text:
+            snippet = ocr_text.strip()
+            if len(snippet) > 700:
+                snippet = snippet[:700] + "…"
+            parts.append(f"\n📝 <b>OCR</b>\n<code>{html.escape(snippet)}</code>")
+
+        if not parts:
+            return ""
+
+        short_model = model_name.split("/")[-1].split(":")[-1]
+        parts.append(f"\n\n<i>👁 {html.escape(short_model)}</i>")
+        return "\n".join(parts)
 
     async def _call_vision_api(
         self,
@@ -2468,6 +2518,31 @@ class TelegramChannel:
                 except OSError:
                     pass  # best-effort cleanup
 
+    async def _transcribe_audio_file(
+        self,
+        chat_id: int,
+        file_id: str,
+        is_voice: bool = False,
+        task_view: object | None = None,
+    ) -> str | None:
+        """Delegate audio-file STT transcription to TelegramVoiceMixin.
+
+        BUG-22 fix: TelegramChannel does not inherit TelegramVoiceMixin; this
+        stub makes ``self.channel._transcribe_audio_file(...)`` calls from
+        ``telegram_keyboards.py`` (transcribe / lang actions) work.
+        """
+        try:
+            from navig.gateway.channels.telegram_voice import TelegramVoiceMixin
+
+            return await TelegramVoiceMixin._transcribe_audio_file(
+                self, chat_id, file_id, is_voice=is_voice, task_view=task_view
+            )
+        except Exception as _e:  # noqa: BLE001
+            import logging
+
+            logging.getLogger("navig").warning("_transcribe_audio_file delegation failed: %s", _e)
+            return None
+
     async def _maybe_send_voice(
         self,
         chat_id: int,
@@ -2759,12 +2834,35 @@ class TelegramChannel:
 
         return await TelegramCommandsMixin._probe_bridge_grid(self)
 
-    @staticmethod
-    def _provider_vault_validation_status(manifest) -> tuple[bool, bool]:
-        """Delegate static vault-key validation used by provider list rendering."""
+    def _provider_vault_validation_status(self, manifest) -> tuple[bool, bool]:
+        """Delegate vault-key validation used by provider list rendering."""
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
-        return TelegramCommandsMixin._provider_vault_validation_status(manifest)
+        return TelegramCommandsMixin._provider_vault_validation_status(self, manifest)
+
+    def _get_vault(self):
+        """Delegate vault access used by provider verification helpers."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._get_vault(self)
+
+    def _list_enabled_providers(self) -> list:
+        """Delegate provider list used by the /provider hub."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._list_enabled_providers(self)
+
+    def _verify_provider(self, manifest):
+        """Delegate single-provider verification used by the /provider hub."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._verify_provider(self, manifest)
+
+    def _get_provider_info(self, provider_id: str):
+        """Delegate provider manifest lookup used by activation flows."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._get_provider_info(self, provider_id)
 
     def _get_navigation_store(self) -> dict[int, dict[str, Any]]:
         """Delegate navigation store helper for single-message Telegram UX."""
@@ -2817,6 +2915,7 @@ class TelegramChannel:
         page: int = 0,
         selected_tier: str = "s",
         message_id: int | None = None,
+        show_models: bool = False,
     ) -> None:
         """Delegate to the canonical tier-first model picker in TelegramCommandsMixin."""
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
@@ -2828,6 +2927,7 @@ class TelegramChannel:
             page=page,
             selected_tier=selected_tier,
             message_id=message_id,
+            show_models=show_models,
         )
 
     async def _show_provider_activation_confirmation(
@@ -2979,6 +3079,322 @@ class TelegramChannel:
             is_group=is_group,
         )
 
+    # ── Provider control surface handlers (pu_* callbacks) ───────────────────
+
+    async def _handle_provider_hybrid(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        message_id: int | None = None,
+        text: str = "",
+    ) -> None:
+        """Delegate hybrid routing screen (pu_hybrid callback)."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_provider_hybrid(
+            self, chat_id, user_id, message_id=message_id, text=text
+        )
+
+    async def _handle_provider_vision(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        message_id: int | None = None,
+    ) -> None:
+        """Delegate vision provider picker (pu_vision / vis_* callbacks)."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_provider_vision(
+            self, chat_id, user_id, message_id=message_id
+        )
+
+    async def _handle_provider_show(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        message_id: int | None = None,
+    ) -> None:
+        """Delegate routing state view (pu_show callback)."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_provider_show(
+            self, chat_id, user_id, message_id=message_id
+        )
+
+    async def _handle_provider_reset(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        message_id: int | None = None,
+    ) -> None:
+        """Delegate session override reset (pu_reset_session callback)."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_provider_reset(
+            self, chat_id, user_id, message_id=message_id
+        )
+
+    # ── Slash command handlers missing from initial delegation pass ───────────
+
+    async def _handle_trace_cmd(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        text: str = "",
+    ) -> None:
+        """Delegate /trace command (debug on|off toggle + trace view)."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_trace_cmd(
+            self, chat_id=chat_id, user_id=user_id, text=text
+        )
+
+    async def _handle_restart_cmd(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        text: str = "",
+        metadata: dict | None = None,
+    ) -> None:
+        """Delegate /restart command."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_restart_cmd(
+            self, chat_id=chat_id, user_id=user_id, text=text, metadata=metadata
+        )
+
+    async def _handle_skill_cmd(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        text: str = "",
+        metadata: dict | None = None,
+    ) -> None:
+        """Delegate /skill command."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_skill_cmd(
+            self, chat_id=chat_id, user_id=user_id, text=text, metadata=metadata
+        )
+
+    # ── Callback handlers missing from initial delegation pass ────────────────
+
+    async def _handle_nl_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        user_id: int,
+    ) -> None:
+        """Delegate nl_yes / nl_cancel / nl_pick:* NL confirm/cancel callbacks."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_nl_callback(
+            self, cb_id, cb_data, chat_id, user_id
+        )
+
+    async def _handle_status_fix_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        user_id: int,
+    ) -> None:
+        """Delegate stfix:* setup-fix callbacks from /status readiness panels."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_status_fix_callback(
+            self, cb_id, cb_data, chat_id, user_id
+        )
+
+    # ── Secondary helper stubs (BUGs 23-30: called by already-delegated methods) ─
+
+    def _runtime_state_with_context(
+        self,
+        user_id: int,
+        chat_id: int,
+        context: dict[str, Any],
+    ) -> None:
+        """Delegate runtime AI-state persistence for NL/intake flows."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        TelegramCommandsMixin._runtime_state_with_context(self, user_id, chat_id, context)
+
+    def _apply_intake_to_space_docs(self, space: str, answers: dict[str, str]) -> Any:
+        """Delegate intake answer → space doc writer."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._apply_intake_to_space_docs(self, space, answers)
+
+    async def _handle_nl_command_pick(
+        self,
+        chat_id: int,
+        user_id: int,
+        command: str,
+    ) -> str:
+        """Delegate NL confirmed-command executor (nl_pick:*)."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return await TelegramCommandsMixin._handle_nl_command_pick(
+            self, chat_id, user_id, command
+        )
+
+    async def _run_nl_intent(
+        self,
+        chat_id: int,
+        user_id: int,
+        intent: str,
+        space: str,
+        *,
+        command: str = "",
+        args: str = "",
+        is_group: bool = False,
+        username: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Delegate NL intent executor (space / intake / command / freetext)."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._run_nl_intent(
+            self,
+            chat_id,
+            user_id,
+            intent,
+            space,
+            command=command,
+            args=args,
+            is_group=is_group,
+            username=username,
+            metadata=metadata,
+        )
+
+    def _load_recent_messages(self, user_id: int, chat_id: int = 0) -> list:
+        """Delegate recent-message loader for /trace snapshot."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._load_recent_messages(self, user_id, chat_id)
+
+    def _refresh_ai_runtime_after_router_update(self) -> None:
+        """Delegate AI-runtime refresh after LLM router changes."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        TelegramCommandsMixin._refresh_ai_runtime_after_router_update(self)
+
+    @staticmethod
+    def _mark_chat_onboarding_step(step_id: str) -> None:
+        """Delegate onboarding-step marker (static)."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        TelegramCommandsMixin._mark_chat_onboarding_step(step_id)
+
+    @staticmethod
+    def _is_cli_command_success(response: str) -> bool:
+        """Delegate CLI response success checker (static)."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._is_cli_command_success(response)
+
+    @staticmethod
+    def _has_host_connectivity_confirmation(response: str) -> bool:
+        """Delegate host-connectivity confirmation detector (static)."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._has_host_connectivity_confirmation(response)
+
+    # ── Core message-flow handlers (BUGs 18-20: were guarded by AttributeError) ───
+
+    async def _handle_nl_pending_reply(
+        self,
+        chat_id: int,
+        user_id: int,
+        text: str,
+    ) -> bool:
+        """Delegate NL pending confirmation replies (yes / cancel / go)."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return await TelegramCommandsMixin._handle_nl_pending_reply(
+            self, chat_id, user_id, text
+        )
+
+    async def _handle_intake_reply(
+        self,
+        chat_id: int,
+        user_id: int,
+        text: str,
+    ) -> bool:
+        """Delegate /intake guided-reply processing."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return await TelegramCommandsMixin._handle_intake_reply(
+            self, chat_id, user_id, text
+        )
+
+    async def _handle_natural_language_request(
+        self,
+        chat_id: int,
+        user_id: int,
+        text: str,
+        is_group: bool = False,
+        username: str = "",
+        metadata: dict | None = None,
+    ) -> bool:
+        """Delegate natural-language → command intent resolver."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return await TelegramCommandsMixin._handle_natural_language_request(
+            self,
+            chat_id,
+            user_id,
+            text,
+            is_group=is_group,
+            username=username,
+            metadata=metadata,
+        )
+
+    # ── Voice toggle handlers (BUGs 16-17: hardcoded slash route, no guard) ───────
+
+    async def _handle_voiceon_cmd(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        is_group: bool = False,
+    ) -> None:
+        """Delegate /voiceon — enable voice replies."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_voiceon_cmd(
+            self, chat_id, user_id, is_group
+        )
+
+    async def _handle_voiceoff_cmd(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        is_group: bool = False,
+    ) -> None:
+        """Delegate /voiceoff — disable voice replies."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_voiceoff_cmd(
+            self, chat_id, user_id, is_group
+        )
+
+    # ── Voice provider panel (BUG-21: st_goto_voice_provider keyboard button) ───
+
+    async def _handle_provider_voice(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        is_group: bool = False,
+        message_id: int | None = None,
+    ) -> None:
+        """Delegate voice provider key-status panel (Deepgram / ElevenLabs)."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_provider_voice(
+            self, chat_id, user_id, is_group, message_id
+        )
+
     async def _handle_debug(self, chat_id: int) -> None:
         """Show daemon debug info (/debug)."""
         import os
@@ -3042,7 +3458,8 @@ class TelegramChannel:
                         except Exception:
                             pass  # best-effort: vault item unreadable; skip
             except Exception:
-                pass  # best-effort: vault unavailable; key shown as missing(rf"DEEPGRAM\_KEY: `{'✓ set' if dg else '✗ missing'}`")
+                pass  # best-effort: vault unavailable; key shown as missing
+        lines.append(rf"DEEPGRAM\_KEY: `{'✓ set' if dg else '✗ missing'}`")
         await self.send_message(chat_id, "\n".join(lines))
 
     async def _handle_trace(self, chat_id: int, user_id: int) -> None:
@@ -3114,12 +3531,12 @@ class TelegramChannel:
             try:
                 sm = get_session_manager()
                 all_sessions_count = len(sm.sessions)
-                sk = f"agent:default:telegram:default:dm:{user_id}"
+                sk = f"telegram:user:{user_id}"
                 # Prefer in-memory cache; fall back to disk load
-                raw_session = sm.sessions.get(sk)
+                raw_session = sm._sessions.get(sk)
                 if raw_session is None and sm._get_session_file(sk).exists():
                     try:
-                        raw_session = await sm.get_session(sk)
+                        raw_session = sm.get_session(chat_id, user_id)
                     except Exception:  # noqa: BLE001
                         pass  # best-effort; failure is non-critical
                 if raw_session is not None:

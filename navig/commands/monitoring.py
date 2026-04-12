@@ -1,4 +1,4 @@
-"""
+﻿"""
 Resource Monitoring and Health Check Module
 
 Provides comprehensive server monitoring including:
@@ -21,27 +21,23 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
+from navig.cli.recovery import require_active_server
 from navig.config import get_config_manager
 from navig.console_helper import _safe_symbol, console
 from navig.remote import RemoteOperations
 
-
-def _is_local_host(server_config: dict) -> bool:
-    """Return True if the server config points to the local machine."""
-    return (
-        bool(server_config.get("is_local"))
-        or str(server_config.get("type", "")).lower() == "local"
-        or server_config.get("host", "") in ("localhost", "127.0.0.1", "::1")
-    )
+try:
+    from navig.console_helper import format_bytes as _fmt_bytes
+except ImportError:
+    def _fmt_bytes(value: Any) -> str:
+        return str(value)
 
 
-def _fmt_bytes(n: int) -> str:
-    """Human-readable byte size."""
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if abs(n) < 1024.0:
-            return f"{n:.1f} {unit}"
-        n = int(n / 1024)
-    return f"{n:.1f} PB"
+try:
+    from navig.remote import is_local_host
+except ImportError:
+    def is_local_host(name: str | None) -> bool:
+        return False
 
 
 def _monitor_disk_local_windows(app_name: str, threshold: int, options: dict) -> None:
@@ -75,7 +71,7 @@ def _monitor_disk_local_windows(app_name: str, threshold: int, options: dict) ->
         }, indent=2))
         return
 
-    table = Table(title=f"Disk Space — {app_name} (Threshold: {threshold}%)",
+    table = Table(title=f"Disk Space - {app_name} (Threshold: {threshold}%)",
                   show_header=True, header_style="bold cyan")
     table.add_column("Drive", style="cyan")
     table.add_column("Device", style="dim")
@@ -223,11 +219,7 @@ def monitor_resources(options: dict[str, Any]) -> None:
         options: Command options including server config, dry_run, json_output
     """
     config = get_config_manager()
-    app_name = options.get("app") or config.get_active_server()
-
-    if not app_name:
-        console.print("[red]✗[/red] No active server. Use --app or set active server.")
-        return
+    app_name = require_active_server(options, config)
 
     server_config = config.load_server_config(app_name)
     remote = RemoteOperations(config)
@@ -240,17 +232,17 @@ def monitor_resources(options: dict[str, Any]) -> None:
         f"\n[cyan]{_safe_symbol(chr(0x1F4CA), '>>')} Monitoring Resources:[/cyan] {app_name}\n"
     )
 
-    # ── Local Windows fast-path (psutil, no SSH, no Linux commands) ──────────
-    if _is_local_host(server_config) and platform.system() == "Windows":
+    # -- Local Windows fast-path (psutil, no SSH, no Linux commands) --
+    if is_local_host(server_config) and platform.system() == "Windows":
         _monitor_resources_local_windows(app_name, options)
         return
 
     metrics = {}
     alerts = []
 
-    # ── QUANTUM VELOCITY E1: all 6 metrics in ONE SSH round-trip ─────────────
-    # Previously: 6 separate SSH calls (~6× round-trip latency).
-    # Now: 1 batched command with delimited sections (~1× round-trip).
+    # -- QUANTUM VELOCITY E1: all 6 metrics in ONE SSH round-trip --
+    # Previously: 6 separate SSH calls (~6x round-trip latency).
+    # Now: 1 batched command with delimited sections (~1x round-trip).
     _BATCH = (
         "echo '===CPU==='; top -bn1 | grep 'Cpu(s)' | awk '{print $2}' | cut -d'%' -f1; "
         "echo '===MEM==='; free | grep Mem | awk '{print ($3/$2) * 100.0, $3, $2}'; "
@@ -269,7 +261,7 @@ def monitor_resources(options: dict[str, Any]) -> None:
         progress.add_task("Collecting metrics\u2026", total=None)
         batch_result = remote.execute_command(_BATCH, server_config)
 
-    # ── Parse delimited output ──────────────────────────────────────────────
+    # -- Parse delimited output --
     if batch_result.returncode == 0:
         _sections: dict = {}
         _cur_key = None
@@ -389,9 +381,9 @@ def monitor_resources(options: dict[str, Any]) -> None:
                 f"\n[yellow]{_safe_symbol(chr(0x26A0), '!')} Alerts ({len(alerts)}):[/yellow]"
             )
             for alert in alerts:
-                console.print(f"  [yellow]•[/yellow] {alert}")
+                console.print(f"  [yellow]\u2022[/yellow] {alert}")
         else:
-            console.print("\n[green]✓[/green] All metrics within normal range")
+            console.print("\n[green]\u2713[/green] All metrics within normal range")
 
 
 def monitor_disk(threshold: int, options: dict[str, Any]) -> None:
@@ -403,11 +395,7 @@ def monitor_disk(threshold: int, options: dict[str, Any]) -> None:
         options: Command options including server config, dry_run, json_output
     """
     config = get_config_manager()
-    app_name = options.get("app") or config.get_active_server()
-
-    if not app_name:
-        console.print("[red]✗[/red] No active server. Use --app or set active server.")
-        return
+    app_name = require_active_server(options, config)
 
     server_config = config.load_server_config(app_name)
     remote = RemoteOperations(config)
@@ -422,8 +410,8 @@ def monitor_disk(threshold: int, options: dict[str, Any]) -> None:
         f"\n[cyan]{_safe_symbol(chr(0x1F4BE), '>>')} Disk Space Monitoring:[/cyan] {app_name}\n"
     )
 
-    # ── Local Windows fast-path (psutil, no SSH, no Linux commands) ──────────
-    if _is_local_host(server_config) and platform.system() == "Windows":
+    # -- Local Windows fast-path (psutil, no SSH, no Linux commands) --
+    if is_local_host(server_config) and platform.system() == "Windows":
         _monitor_disk_local_windows(app_name, threshold, options)
         return
 
@@ -432,7 +420,7 @@ def monitor_disk(threshold: int, options: dict[str, Any]) -> None:
     result = remote.execute_command(disk_cmd, server_config)
 
     if result.returncode != 0:
-        console.print("[red]✗[/red] Failed to retrieve disk information")
+        console.print("[red]\u2717[/red] Failed to retrieve disk information")
         return
 
     disks = []
@@ -501,9 +489,9 @@ def monitor_disk(threshold: int, options: dict[str, Any]) -> None:
         if alerts:
             console.print(f"\n[red]{_safe_symbol(chr(0x26A0), '!')} {len(alerts)} Alert(s):[/red]")
             for alert in alerts:
-                console.print(f"  [red]•[/red] {alert}")
+                console.print(f"  [red]\u2022[/red] {alert}")
         else:
-            console.print(f"\n[green]✓[/green] All disks below {threshold}% threshold")
+            console.print(f"\n[green]\u2713[/green] All disks below {threshold}% threshold")
 
 
 def monitor_services(options: dict[str, Any]) -> None:
@@ -516,11 +504,7 @@ def monitor_services(options: dict[str, Any]) -> None:
         options: Command options including server config, dry_run, json_output
     """
     config = get_config_manager()
-    app_name = options.get("app_name") or config.get_active_server()
-
-    if not app_name:
-        console.print("[red]✗[/red] No active server. Use --app or set active server.")
-        return
+    app_name = require_active_server(options, config)
 
     server_config = config.get_app_config(app_name)
     remote = RemoteOperations(server_config)
@@ -556,9 +540,9 @@ def monitor_services(options: dict[str, Any]) -> None:
     service_status = []
     inactive_services = []
 
-    # ── QUANTUM VELOCITY E2: all service checks in ONE SSH round-trip ─────────
-    # Previously: 1 SSH call per service × 16 services = 16 round-trips.
-    # Now: 1 batched command → parse delimited output.
+    # -- QUANTUM VELOCITY E2: all service checks in ONE SSH round-trip --
+    # Previously: 1 SSH call per service x 16 services = 16 round-trips.
+    # Now: 1 batched command -> parse delimited output.
     _BATCH_SVC = "; ".join(
         f"echo '===SVC:{s}==='; systemctl is-active {s} 2>/dev/null || echo 'not-installed'"
         for s in services
@@ -573,7 +557,7 @@ def monitor_services(options: dict[str, Any]) -> None:
         progress.add_task("Checking services\u2026", total=None)
         svc_batch = remote.execute_command(_BATCH_SVC, server_config)
 
-    # ── Parse delimited output ──────────────────────────────────────────────
+    # -- Parse delimited output --
     _svc_map: dict = {}
     if svc_batch.returncode == 0:
         _cur_svc = None
@@ -617,10 +601,10 @@ def monitor_services(options: dict[str, Any]) -> None:
             status = svc["status"]
 
             if status == "active":
-                status_icon = "[green]✓ active[/green]"
+                status_icon = "[green]\u2713 active[/green]"
                 health_icon = _health_icon("healthy")
             elif status == "inactive":
-                status_icon = "[red]✗ inactive[/red]"
+                status_icon = "[red]\u2717 inactive[/red]"
                 health_icon = _health_icon("stopped")
             elif status == "not-installed":
                 status_icon = "[dim]- not installed[/dim]"
@@ -638,9 +622,9 @@ def monitor_services(options: dict[str, Any]) -> None:
                 f"\n[yellow]{_safe_symbol(chr(0x26A0), '!')} {len(inactive_services)} service(s) inactive:[/yellow]"
             )
             for svc in inactive_services:
-                console.print(f"  [yellow]•[/yellow] {svc}")
+                console.print(f"  [yellow]\u2022[/yellow] {svc}")
         else:
-            console.print("\n[green]✓[/green] All installed services are running")
+            console.print("\n[green]\u2713[/green] All installed services are running")
 
 
 def monitor_network(options: dict[str, Any]) -> None:
@@ -657,11 +641,7 @@ def monitor_network(options: dict[str, Any]) -> None:
         options: Command options including server config, dry_run, json_output
     """
     config = get_config_manager()
-    app_name = options.get("app_name") or config.get_active_server()
-
-    if not app_name:
-        console.print("[red]✗[/red] No active server. Use --app or set active server.")
-        return
+    app_name = require_active_server(options, config)
 
     server_config = config.get_app_config(app_name)
     remote = RemoteOperations(server_config)
@@ -676,7 +656,7 @@ def monitor_network(options: dict[str, Any]) -> None:
 
     metrics = {}
 
-    # ── QUANTUM VELOCITY E3: all network metrics in ONE SSH round-trip ─────────
+    # -- QUANTUM VELOCITY E3: all network metrics in ONE SSH round-trip --
     _BATCH_NET = (
         "echo '===CONN==='; ss -s; "
         "echo '===LISTEN==='; ss -tuln 2>/dev/null | grep -c LISTEN || echo 0; "
@@ -693,7 +673,7 @@ def monitor_network(options: dict[str, Any]) -> None:
         progress.add_task("Collecting network stats\u2026", total=None)
         net_batch = remote.execute_command(_BATCH_NET, server_config)
 
-    # ── Parse delimited output ──────────────────────────────────────────────
+    # -- Parse delimited output --
     if net_batch.returncode == 0:
         _net_sections: dict = {}
         _cur_net = None
@@ -761,11 +741,7 @@ def health_check(options: dict[str, Any]) -> None:
         options: Command options including server config, dry_run, json_output
     """
     config = get_config_manager()
-    app_name = options.get("app_name") or config.get_active_server()
-
-    if not app_name:
-        console.print("[red]✗[/red] No active server. Use --app or set active server.")
-        return
+    app_name = require_active_server(options, config)
 
     if options.get("dry_run"):
         console.print(
@@ -778,19 +754,19 @@ def health_check(options: dict[str, Any]) -> None:
     )
 
     # Run all monitoring checks
-    console.print("[cyan]→[/cyan] Checking resources...")
+    console.print(f"[cyan]{_safe_symbol(chr(0x2192), '->')}[/cyan] Checking resources...")
     monitor_resources(options)
 
-    console.print("\n[cyan]→[/cyan] Checking services...")
+    console.print(f"\n[cyan]{_safe_symbol(chr(0x2192), '->')}[/cyan] Checking services...")
     monitor_services(options)
 
-    console.print("\n[cyan]→[/cyan] Checking disk space...")
+    console.print(f"\n[cyan]{_safe_symbol(chr(0x2192), '->')}[/cyan] Checking disk space...")
     monitor_disk(80, options)
 
-    console.print("\n[cyan]→[/cyan] Checking network...")
+    console.print(f"\n[cyan]{_safe_symbol(chr(0x2192), '->')}[/cyan] Checking network...")
     monitor_network(options)
 
-    console.print("\n[green]✓[/green] Health check complete")
+    console.print(f"\n[green]{_safe_symbol(chr(0x2713), 'OK')}[/green] Health check complete")
 
 
 def generate_report(options: dict[str, Any]) -> None:
@@ -810,11 +786,7 @@ def generate_report(options: dict[str, Any]) -> None:
         options: Command options including server config, dry_run
     """
     config = get_config_manager()
-    app_name = options.get("app_name") or config.get_active_server()
-
-    if not app_name:
-        console.print("[red]✗[/red] No active server. Use --app or set active server.")
-        return
+    app_name = require_active_server(options, config)
 
     server_config = config.get_app_config(app_name)
     remote = RemoteOperations(server_config)
@@ -823,7 +795,9 @@ def generate_report(options: dict[str, Any]) -> None:
         console.print(f"[yellow]DRY RUN:[/yellow] Would generate report for {app_name}")
         return
 
-    console.print(f"\n[cyan]📝 Generating Health Report:[/cyan] {app_name}\n")
+    console.print(
+        f"\n[cyan]{_safe_symbol(chr(0x1F4DD), '[report]')} Generating Health Report:[/cyan] {app_name}\n"
+    )
 
     report = {
         "timestamp": datetime.now().isoformat(),
@@ -942,15 +916,15 @@ def generate_report(options: dict[str, Any]) -> None:
         json.dump(report, indent=2, fp=f)
 
     # Display summary
-    console.print(f"\n[green]✓[/green] Report generated: {report_file}")
+    console.print(f"\n[green]{_safe_symbol(chr(0x2713), 'OK')}[/green] Report generated: {report_file}")
     console.print("\n[cyan]Summary:[/cyan]")
-    console.print(f"  • Server: {app_name}")
-    console.print(f"  • Timestamp: {report['timestamp']}")
-    console.print(f"  • Alerts: {len(report['alerts'])}")
+    console.print(f"  {_safe_symbol(chr(0x2022), '-')} Server: {app_name}")
+    console.print(f"  {_safe_symbol(chr(0x2022), '-')} Timestamp: {report['timestamp']}")
+    console.print(f"  {_safe_symbol(chr(0x2022), '-')} Alerts: {len(report['alerts'])}")
 
     if report["alerts"]:
         console.print(f"\n[yellow]{_safe_symbol(chr(0x26A0), '!')} Alerts:[/yellow]")
         for alert in report["alerts"]:
-            console.print(f"  [yellow]•[/yellow] {alert}")
+            console.print(f"  [yellow]{_safe_symbol(chr(0x2022), '-')}[/yellow] {alert}")
     else:
-        console.print("\n[green]✓[/green] No alerts - system healthy")
+        console.print(f"\n[green]{_safe_symbol(chr(0x2713), 'OK')}[/green] No alerts - system healthy")

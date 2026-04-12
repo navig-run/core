@@ -1,6 +1,9 @@
 import plistlib
 
 from navig.importers.sources.safari import SafariImporter
+import pytest
+
+pytestmark = pytest.mark.integration
 
 
 def test_safari_bookmarks_parse(tmp_path) -> None:

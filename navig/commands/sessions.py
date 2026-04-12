@@ -18,12 +18,14 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
 
+from navig.console_helper import format_bytes as _human_size
 from navig.lazy_loader import lazy_import
 
 ch = lazy_import("navig.console_helper")
@@ -331,14 +333,6 @@ def _parse_session(
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-
-def _human_size(b: int) -> str:
-    for unit in ("B", "KB", "MB", "GB"):
-        if b < 1024:
-            return f"{b:.0f} {unit}"
-        b /= 1024
-    return f"{b:.1f} TB"
 
 
 def _all_sessions_or_die(
@@ -664,7 +658,17 @@ def _cmd_export(
                     "turns": [{"role": t.role, "text": t.text} for t in s.turns],
                 }
             )
-        output.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=output.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                _fh.write(json.dumps(data, indent=2, ensure_ascii=False))
+            os.replace(_tmp_path, output)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
 
     elif fmt == "md":
         lines = []
@@ -679,7 +683,17 @@ def _cmd_export(
                 lines.append("")
             lines.append("---")
             lines.append("")
-        output.write_text("\n".join(lines), encoding="utf-8")
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=output.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                _fh.write("\n".join(lines))
+            os.replace(_tmp_path, output)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
 
     elif fmt == "csv":
         import csv

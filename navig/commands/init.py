@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,7 @@ from typing import Any
 import yaml
 
 from navig import console_helper as ch
+from navig.core.yaml_io import atomic_write_yaml
 from navig.platform.paths import config_dir, onboarding_json_path
 
 _CHAT_ONBOARDING_CANONICAL_STEPS: tuple[tuple[str, str, str], ...] = (
@@ -199,8 +201,7 @@ def init_app(options: dict[str, Any]) -> None:
         }
 
         config_file = navig_dir / "config.yaml"
-        with open(config_file, "w", encoding="utf-8") as f:
-            yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+        atomic_write_yaml(config_data, config_file)
 
         # Copy NAVIG instructions file to .github/instructions/ (silent operation)
         project_root = Path.cwd()
@@ -671,7 +672,11 @@ def show_init_status(*, render: bool = True) -> dict[str, Any]:
 
     web_cfg = cfg.global_config.get("web", {}) if isinstance(cfg.global_config, dict) else {}
     web_search_cfg = web_cfg.get("search", {}) if isinstance(web_cfg, dict) else {}
-    web_provider = str(web_search_cfg.get("provider") or os.environ.get("NAVIG_WEB_SEARCH_PROVIDER") or "auto").strip().lower()
+    web_provider = (
+        str(web_search_cfg.get("provider") or os.environ.get("NAVIG_WEB_SEARCH_PROVIDER") or "auto")
+        .strip()
+        .lower()
+    )
     if not web_provider:
         web_provider = "auto"
 
@@ -702,7 +707,9 @@ def show_init_status(*, render: bool = True) -> dict[str, Any]:
     if web_provider and web_provider != "auto":
         web_key = _web_key_from_vault(web_provider)
     if not web_key and web_provider == "brave":
-        web_key = str(web_search_cfg.get("api_key") or os.environ.get("BRAVE_API_KEY") or "").strip()
+        web_key = str(
+            web_search_cfg.get("api_key") or os.environ.get("BRAVE_API_KEY") or ""
+        ).strip()
     if not web_key:
         api_keys = web_search_cfg.get("api_keys", {}) if isinstance(web_search_cfg, dict) else {}
         if isinstance(api_keys, dict):
@@ -873,9 +880,7 @@ def show_init_status(*, render: bool = True) -> dict[str, Any]:
                 ch.step(action)
 
         # ── Environment (dim metadata) ───────────────────────────────────
-        ch.dim(
-            f"Python {payload['python_version']}  ·  NAVIG {payload['navig_version']}"
-        )
+        ch.dim(f"Python {payload['python_version']}  ·  NAVIG {payload['navig_version']}")
 
     return payload
 
@@ -885,8 +890,14 @@ def get_init_status_payload() -> dict[str, Any]:
     return show_init_status(render=False)
 
 
+def _resolve_navig_base_dir(navig_dir: Path | None = None) -> Path:
+    if navig_dir is not None:
+        return navig_dir
+    return config_dir()
+
+
 def _chat_onboarding_handoff_file(navig_dir: Path | None = None) -> Path:
-    base = navig_dir or (config_dir())
+    base = _resolve_navig_base_dir(navig_dir)
     return base / "state" / "chat_onboarding_handoff.json"
 
 
@@ -897,7 +908,7 @@ def _onboarding_artifact_file(navig_dir: Path | None = None) -> Path:
         if not state_candidate.exists() and legacy_candidate.exists():
             return legacy_candidate
         return state_candidate
-    home_navig_dir = config_dir()
+    home_navig_dir = _resolve_navig_base_dir(None)
     home_state_candidate = home_navig_dir / "state" / "onboarding.json"
     home_legacy_candidate = home_navig_dir / "onboarding.json"
     if not home_state_candidate.exists() and home_legacy_candidate.exists():
@@ -1055,7 +1066,17 @@ def _persist_telegram_bootstrap_token(token: str, navig_dir: Path | None = None)
         ]
         lines.append(f"NAVIG_TELEGRAM_BOT_TOKEN={token}")
         lines.append(f"TELEGRAM_BOT_TOKEN={token}")
-        env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=env_path.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                _fh.write("\n".join(lines) + "\n")
+            os.replace(_tmp_path, env_path)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
         wrote = True
     except Exception:
         pass  # best-effort: .env file unwritable; try next storage path
@@ -1090,7 +1111,17 @@ def _auto_start_chat_runtime() -> bool:
         cfg = json.loads(config_path.read_text(encoding="utf-8"))
         cfg["telegram_bot"] = True
         cfg["gateway"] = True
-        config_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=config_path.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                _fh.write(json.dumps(cfg, indent=2))
+            os.replace(_tmp_path, config_path)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
     except Exception:
         pass  # best-effort: daemon config unavailable; still attempt service_start
 
@@ -1185,6 +1216,7 @@ def run_init(dry_run: bool = False, no_genesis: bool = False, name: str = "") ->
 
 # ── CLI gateway functions (called by navig/cli/__init__.py thin wrappers) ────
 
+
 def run_init_command(
     ctx: Any,
     *,
@@ -1270,9 +1302,7 @@ def run_init_command(
             except Exception:
                 from rich.console import Console as _C
 
-                _C().print(
-                    "[yellow]TUI launch failed; falling back to CLI onboarding.[/yellow]"
-                )
+                _C().print("[yellow]TUI launch failed; falling back to CLI onboarding.[/yellow]")
 
     jump_to_step = "ai-provider" if provider else None
     state = run_engine_onboarding(

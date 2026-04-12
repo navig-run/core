@@ -1125,6 +1125,7 @@ Context provided with each query:
 _config_manager_instance: ConfigManager | None = None
 _config_manager_config_dir: Path | None = None
 _config_manager_force_new: bool = False
+_config_manager_lock = threading.Lock()
 
 
 def get_config_manager(
@@ -1159,8 +1160,14 @@ def get_config_manager(
     )
 
     if needs_new:
-        _config_manager_instance = ConfigManager(config_dir=config_dir, verbose=verbose)
-        _config_manager_config_dir = config_dir
+        with _config_manager_lock:
+            # Re-evaluate under lock (double-checked locking)
+            needs_new = (
+                force_new or _config_manager_instance is None or config_dir != _config_manager_config_dir
+            )
+            if needs_new:
+                _config_manager_instance = ConfigManager(config_dir=config_dir, verbose=verbose)
+                _config_manager_config_dir = config_dir
 
     return _config_manager_instance
 
@@ -1168,7 +1175,8 @@ def get_config_manager(
 def set_config_cache_bypass(enabled: bool) -> None:
     """Enable or disable process-wide config-manager cache bypass."""
     global _config_manager_force_new
-    _config_manager_force_new = enabled
+    with _config_manager_lock:
+        _config_manager_force_new = enabled
 
 
 def reset_config_manager() -> None:
@@ -1181,5 +1189,6 @@ def reset_config_manager() -> None:
     - Testing scenarios requiring fresh state
     """
     global _config_manager_instance, _config_manager_config_dir
-    _config_manager_instance = None
-    _config_manager_config_dir = None
+    with _config_manager_lock:
+        _config_manager_instance = None
+        _config_manager_config_dir = None

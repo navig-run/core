@@ -31,21 +31,6 @@ def _cron_callback(ctx: typer.Context) -> None:
         from navig.cli.launcher import smart_launch  # noqa: PLC0415
 
         smart_launch("cron", cron_app)
-
-
-def _check_gateway() -> bool:
-    """Check if gateway is running and show helpful message if not."""
-    try:
-        import requests
-
-        response = requests.get("http://localhost:8789/health", timeout=2)
-        return response.status_code == 200
-    except Exception:
-        ch.warning("Gateway is not running")
-        ch.info("Start with: navig gateway start")
-        return False
-
-
 @cron_app.command("list")
 def cron_list():
     """List all scheduled jobs."""

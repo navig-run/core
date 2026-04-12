@@ -43,9 +43,12 @@ from __future__ import annotations
 
 import logging
 import os
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from navig.platform.paths import config_dir
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +59,6 @@ logger = logging.getLogger(__name__)
 _DEFAULT_PROFILE = "default"
 _ACTIVE_PROFILE_FILE = "active_profile"
 _PROFILES_DIR = "profiles"
-
-
-def _navig_home() -> Path:
-    """Return ``~/.navig/``."""
-    from navig.platform.paths import config_dir
-
-    return config_dir()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -138,8 +134,18 @@ class Profile:
             import yaml
 
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.config_path, "w", encoding="utf-8") as f:
-                yaml.safe_dump(self.config_overrides, f, default_flow_style=False)
+            _content = yaml.safe_dump(self.config_overrides, default_flow_style=False)
+            _tmp_path: Path | None = None
+            try:
+                _fd, _tmp = tempfile.mkstemp(dir=self.config_path.parent, suffix=".tmp")
+                _tmp_path = Path(_tmp)
+                with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                    _fh.write(_content)
+                os.replace(_tmp_path, self.config_path)
+                _tmp_path = None
+            finally:
+                if _tmp_path is not None:
+                    _tmp_path.unlink(missing_ok=True)
         except Exception as exc:
             logger.warning("Failed to save profile config: %s", exc)
 
@@ -150,7 +156,7 @@ class Profile:
 
 def _read_active_profile_name() -> str:
     """Read the sticky active profile from ``~/.navig/active_profile``."""
-    path = _navig_home() / _ACTIVE_PROFILE_FILE
+    path = config_dir() / _ACTIVE_PROFILE_FILE
     if path.exists():
         try:
             name = path.read_text(encoding="utf-8").strip()
@@ -163,10 +169,20 @@ def _read_active_profile_name() -> str:
 
 def _write_active_profile_name(name: str) -> None:
     """Persist the active profile name."""
-    path = _navig_home() / _ACTIVE_PROFILE_FILE
+    path = config_dir() / _ACTIVE_PROFILE_FILE
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(name.strip(), encoding="utf-8")
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                _fh.write(name.strip())
+            os.replace(_tmp_path, path)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
     except Exception as exc:
         logger.warning("Could not write active_profile: %s", exc)
 

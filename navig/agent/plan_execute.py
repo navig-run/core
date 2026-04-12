@@ -23,6 +23,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -376,10 +378,17 @@ class PlanExecuteAgent:
 
             ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             trace_path = runs_dir / f"{ts}.json"
-            trace_path.write_text(
-                json.dumps(plan.to_dict(), indent=2, default=str),
-                encoding="utf-8",
-            )
+            _tmp_trace: Path | None = None
+            try:
+                _fd_t, _tmp_t = tempfile.mkstemp(dir=runs_dir, suffix=".tmp")
+                _tmp_trace = Path(_tmp_t)
+                with os.fdopen(_fd_t, "w", encoding="utf-8") as _fh_t:
+                    _fh_t.write(json.dumps(plan.to_dict(), indent=2, default=str))
+                os.replace(_tmp_trace, trace_path)
+                _tmp_trace = None
+            finally:
+                if _tmp_trace is not None:
+                    _tmp_trace.unlink(missing_ok=True)
             logger.info("Plan-execute: trace saved to %s", trace_path)
         except Exception as exc:
             logger.debug("Plan-execute: failed to save trace — %s", exc)

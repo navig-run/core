@@ -288,7 +288,7 @@ class ProactiveEngine:
 
             # AUDIT DECISION:
             # Correct: vault-first keeps secrets out of flat config.
-            # Non-breaking: env and legacy config passwords still resolve as fallback.
+            # Non-breaking: env and plaintext config passwords still resolve as fallback.
             # Simpler alternatives would keep relying on plaintext secrets.
             try:
                 if provider_key:
@@ -302,7 +302,7 @@ class ProactiveEngine:
                     if secret:
                         pwd = secret.reveal()
             except Exception:
-                # Vault lookup failure should not stop legacy/env fallback.
+                # Vault lookup failure should not stop env/config fallback.
                 pwd = None
 
             if not pwd:
@@ -311,7 +311,7 @@ class ProactiveEngine:
                 pwd = email_conf.get("password")
                 if pwd:
                     ch.warning(
-                        "Using legacy plaintext email password from config. "
+                        "Using plaintext email password from config. "
                         "Run 'navig email setup <provider>' to migrate to vault."
                     )
 

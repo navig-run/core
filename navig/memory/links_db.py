@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -264,15 +265,27 @@ class LinksDB:
 # ─────────────────────────── singleton ───────────────────────────────────────
 
 _db_instance: LinksDB | None = None
+_db_lock = threading.Lock()
 
 
 def get_links_db() -> LinksDB:
     """Return the singleton LinksDB, initialised from the NAVIG data directory."""
     global _db_instance
     if _db_instance is None:
-        from navig.config import get_config
+        with _db_lock:
+            if _db_instance is None:
+                from navig.config import get_config
 
-        cfg = get_config()
-        db_path = Path(cfg.data_dir) / "links.db"
-        _db_instance = LinksDB(db_path)
+                cfg = get_config()
+                db_path = Path(cfg.data_dir) / "links.db"
+                _db_instance = LinksDB(db_path)
     return _db_instance
+
+
+def reset_links_db() -> None:
+    """Reset singleton (for testing)."""
+    global _db_instance
+    with _db_lock:
+        if _db_instance is not None:
+            _db_instance.close()
+        _db_instance = None

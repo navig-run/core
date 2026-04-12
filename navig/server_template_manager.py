@@ -14,6 +14,7 @@ import yaml
 
 from navig import console_helper as ch
 from navig.config import ConfigManager, get_config_manager
+from navig.core.dict_utils import deep_merge
 from navig.template_manager import TemplateManager
 
 
@@ -64,6 +65,10 @@ class ServerTemplateManager:
         """Create server template directory if it doesn't exist."""
         template_dir = self._get_server_template_dir(server_name)
         template_dir.mkdir(parents=True, exist_ok=True)
+
+    def _deep_merge(self, base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+        """Backward-compatible deep merge wrapper for template config tests/callers."""
+        return deep_merge(base, overlay)
 
     def initialize_templates_from_detection(
         self, server_name: str, detected_templates: dict[str, dict[str, Any]]
@@ -257,7 +262,7 @@ class ServerTemplateManager:
                     custom_config = yaml.safe_load(f)
 
                 # Deep merge custom config
-                merged_config = self._deep_merge(merged_config, custom_config)
+                merged_config = deep_merge(merged_config, custom_config)
             except Exception as e:
                 ch.warning(f"Failed to load custom config for '{template_name}': {e}")
 
@@ -477,19 +482,4 @@ class ServerTemplateManager:
 
         return True
 
-    def _deep_merge(self, base: dict, overlay: dict) -> dict:
-        """
-        Deep merge two dictionaries.
 
-        Values from overlay override values in base.
-        Recursively merges nested dicts.
-        """
-        result = copy.deepcopy(base)
-
-        for key, value in overlay.items():
-            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-                result[key] = self._deep_merge(result[key], value)
-            else:
-                result[key] = copy.deepcopy(value)
-
-        return result

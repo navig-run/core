@@ -22,8 +22,10 @@ Helper script
 from __future__ import annotations
 
 import json
+import os
 import platform
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -72,10 +74,6 @@ def _scripts_dir() -> Path:
         return config_dir() / "scripts"
 
 
-def _helper_script() -> Path:
-    return _scripts_dir() / "mount-drive.ps1"
-
-
 # ── Registry I/O ─────────────────────────────────────────────
 
 
@@ -92,7 +90,17 @@ def _load_registry() -> dict[str, Any]:
 def _save_registry(data: dict[str, Any]) -> None:
     path = _registry_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    _tmp_path: Path | None = None
+    try:
+        _fd, _tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        _tmp_path = Path(_tmp)
+        with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+            _fh.write(json.dumps(data, indent=2, ensure_ascii=False))
+        os.replace(_tmp_path, path)
+        _tmp_path = None
+    finally:
+        if _tmp_path is not None:
+            _tmp_path.unlink(missing_ok=True)
 
 
 # ── Junction helpers ──────────────────────────────────────────
@@ -371,7 +379,7 @@ def cmd_sync(
         typer.secho(f"  ✗ dead: {label}", fg=typer.colors.YELLOW)
 
     # Regenerate script
-    script_path = _helper_script()
+    script_path = _scripts_dir() / "mount-drive.ps1"
     script_content = _generate_ps1(drives)
 
     if dry_run:

@@ -17,6 +17,8 @@ from navig.connectors.types import (
     Resource,
 )
 
+pytestmark = pytest.mark.integration
+
 
 class _StubConnector(BaseConnector):
     """Minimal concrete connector for testing."""

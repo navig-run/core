@@ -352,9 +352,9 @@ def ensure_telegram_uid(
 
     # Best-effort: also write to ~/.navig/.env for env-based fallback access
     try:
-        from pathlib import Path as _Path
+        from pathlib import Path as _Path  # noqa: F401 (kept for symmetry)
 
-        env_file = _config_dir() / ".env"
+        env_file = config_dir() / ".env"
         existing = env_file.read_text(encoding="utf-8") if env_file.exists() else ""
         lines = [ln for ln in existing.splitlines() if not ln.startswith("NAVIG_TELEGRAM_UID=")]
         lines.append(f"NAVIG_TELEGRAM_UID={uid}")

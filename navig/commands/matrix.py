@@ -253,7 +253,7 @@ def accounts():
 
     if not creds:
         console.print("[yellow]![/] No Matrix accounts in vault")
-        console.print("  Add one: [cyan]navig cred add --provider matrix[/]")
+        console.print("  Add one: [cyan]navig vault add --provider matrix[/]")
         return
 
     # Determine "active" profile from config

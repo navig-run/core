@@ -7,6 +7,8 @@ Enables autonomous goal decomposition and execution tracking.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -187,8 +189,17 @@ class GoalPlanner:
                 "updated_at": datetime.now().isoformat(),
             }
 
-            with open(self.goals_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
+            _tmp_path: Path | None = None
+            try:
+                _fd, _tmp = tempfile.mkstemp(dir=self.goals_file.parent, suffix=".tmp")
+                _tmp_path = Path(_tmp)
+                with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                    json.dump(data, _fh, indent=2)
+                os.replace(_tmp_path, self.goals_file)
+                _tmp_path = None
+            finally:
+                if _tmp_path is not None:
+                    _tmp_path.unlink(missing_ok=True)
 
             self.logger.log_operation("goals", {"action": "save", "count": len(self._goals)})
 

@@ -10,6 +10,7 @@ Usage:
     navig init --install-daemon
 """
 
+import logging
 import os
 import subprocess
 import sys
@@ -17,6 +18,8 @@ from pathlib import Path
 from typing import Any
 
 from navig.platform.paths import config_dir
+
+_log = logging.getLogger(__name__)
 
 # Try questionary first, fall back to simple prompts
 try:
@@ -289,8 +292,8 @@ class SetupWizard:
             vlt.put(vault_path, value.encode())
             print("  ✅ Saved to vault (encrypted)")
             return
-        except Exception:
-            pass  # Fall through to .env fallback
+        except Exception as _e:
+            _log.debug("vault save failed; falling back to .env write: %s", _e)
 
         # Fallback: plain .env file with owner-only permissions.
         env_file = self.navig_dir / ".env"

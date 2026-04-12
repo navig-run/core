@@ -44,16 +44,12 @@ def list_vhosts(options: dict[str, Any]) -> None:
 
     # Get active host and app
     if not host_name:
-        host_name = config_manager.get_active_host()
-    if not host_name:
-        console.print("[red]✗ No active host configured[/red]")
-        return
+        from navig.cli.recovery import require_active_host  # noqa: PLC0415
+        host_name = require_active_host(options, config_manager)
 
     if not app_name:
-        app_name = config_manager.get_active_app()
-    if not app_name:
-        console.print("[red]✗ No active app configured[/red]")
-        return
+        from navig.cli.recovery import require_active_app  # noqa: PLC0415
+        app_name = require_active_app(options, config_manager)
 
     # Load app configuration and extract webserver type
     try:
@@ -341,16 +337,12 @@ def test_config(options: dict[str, Any]) -> None:
 
     # Get active host and app
     if not host_name:
-        host_name = config_manager.get_active_host()
-    if not host_name:
-        console.print("[red]✗ No active host configured[/red]")
-        return
+        from navig.cli.recovery import require_active_host  # noqa: PLC0415
+        host_name = require_active_host(options, config_manager)
 
     if not app_name:
-        app_name = config_manager.get_active_app()
-    if not app_name:
-        console.print("[red]✗ No active app configured[/red]")
-        return
+        from navig.cli.recovery import require_active_app  # noqa: PLC0415
+        app_name = require_active_app(options, config_manager)
 
     # Load app configuration and extract webserver type
     try:
@@ -454,16 +446,12 @@ def enable_site(options: dict[str, Any]) -> None:
 
     # Get active host and app
     if not host_name:
-        host_name = config_manager.get_active_host()
-    if not host_name:
-        console.print("[red]✗ No active host configured[/red]")
-        return
+        from navig.cli.recovery import require_active_host  # noqa: PLC0415
+        host_name = require_active_host(options, config_manager)
 
     if not app_name:
-        app_name = config_manager.get_active_app()
-    if not app_name:
-        console.print("[red]✗ No active app configured[/red]")
-        return
+        from navig.cli.recovery import require_active_app  # noqa: PLC0415
+        app_name = require_active_app(options, config_manager)
 
     # Load app configuration and extract webserver type
     try:
@@ -546,16 +534,12 @@ def disable_site(options: dict[str, Any]) -> None:
 
     # Get active host and app
     if not host_name:
-        host_name = config_manager.get_active_host()
-    if not host_name:
-        console.print("[red]✗ No active host configured[/red]")
-        return
+        from navig.cli.recovery import require_active_host  # noqa: PLC0415
+        host_name = require_active_host(options, config_manager)
 
     if not app_name:
-        app_name = config_manager.get_active_app()
-    if not app_name:
-        console.print("[red]✗ No active app configured[/red]")
-        return
+        from navig.cli.recovery import require_active_app  # noqa: PLC0415
+        app_name = require_active_app(options, config_manager)
 
     # Load app configuration and extract webserver type
     try:
@@ -638,16 +622,12 @@ def enable_module(options: dict[str, Any]) -> None:
 
     # Get active host and app
     if not host_name:
-        host_name = config_manager.get_active_host()
-    if not host_name:
-        console.print("[red]✗ No active host configured[/red]")
-        return
+        from navig.cli.recovery import require_active_host  # noqa: PLC0415
+        host_name = require_active_host(options, config_manager)
 
     if not app_name:
-        app_name = config_manager.get_active_app()
-    if not app_name:
-        console.print("[red]✗ No active app configured[/red]")
-        return
+        from navig.cli.recovery import require_active_app  # noqa: PLC0415
+        app_name = require_active_app(options, config_manager)
 
     # Load app configuration and extract webserver type
     try:
@@ -731,16 +711,12 @@ def disable_module(options: dict[str, Any]) -> None:
 
     # Get active host and app
     if not host_name:
-        host_name = config_manager.get_active_host()
-    if not host_name:
-        console.print("[red]✗ No active host configured[/red]")
-        return
+        from navig.cli.recovery import require_active_host  # noqa: PLC0415
+        host_name = require_active_host(options, config_manager)
 
     if not app_name:
-        app_name = config_manager.get_active_app()
-    if not app_name:
-        console.print("[red]✗ No active app configured[/red]")
-        return
+        from navig.cli.recovery import require_active_app  # noqa: PLC0415
+        app_name = require_active_app(options, config_manager)
 
     # Load app configuration and extract webserver type
     try:
@@ -820,16 +796,12 @@ def reload_server(options: dict[str, Any]) -> None:
 
     # Get active host and app
     if not host_name:
-        host_name = config_manager.get_active_host()
-    if not host_name:
-        console.print("[red]✗ No active host configured[/red]")
-        return
+        from navig.cli.recovery import require_active_host  # noqa: PLC0415
+        host_name = require_active_host(options, config_manager)
 
     if not app_name:
-        app_name = config_manager.get_active_app()
-    if not app_name:
-        console.print("[red]✗ No active app configured[/red]")
-        return
+        from navig.cli.recovery import require_active_app  # noqa: PLC0415
+        app_name = require_active_app(options, config_manager)
 
     # Load app configuration and extract webserver type
     try:
@@ -944,16 +916,12 @@ def get_recommendations(options: dict[str, Any]) -> None:
 
     # Get active host and app
     if not host_name:
-        host_name = config_manager.get_active_host()
-    if not host_name:
-        console.print("[red]✗ No active host configured[/red]")
-        return
+        from navig.cli.recovery import require_active_host  # noqa: PLC0415
+        host_name = require_active_host(options, config_manager)
 
     if not app_name:
-        app_name = config_manager.get_active_app()
-    if not app_name:
-        console.print("[red]✗ No active app configured[/red]")
-        return
+        from navig.cli.recovery import require_active_app  # noqa: PLC0415
+        app_name = require_active_app(options, config_manager)
 
     # Load app configuration and extract webserver type
     try:

@@ -1,4 +1,5 @@
 import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -126,12 +127,21 @@ Constraints:
 
             code = match.group(1).strip() if match else artifact
 
-            # Backup original?
-            backup_path = self.target_file.with_suffix(f"{self.target_file.suffix}.bak")
-            self.target_file.rename(backup_path)
-
-            with open(self.target_file, "w", encoding="utf-8") as f:
-                f.write(code)
+            # Write new code atomically, then swap original to backup
+            _tmp_path: Path | None = None
+            try:
+                _fd, _tmp = tempfile.mkstemp(dir=self.target_file.parent, suffix=".tmp")
+                _tmp_path = Path(_tmp)
+                with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                    _fh.write(code)
+                # Only rename original after the new content is safely on-disk
+                if self.target_file.exists():
+                    self.target_file.rename(backup_path)
+                os.replace(_tmp_path, self.target_file)
+                _tmp_path = None
+            finally:
+                if _tmp_path is not None:
+                    _tmp_path.unlink(missing_ok=True)
 
             success(f"Fixed code saved to {self.target_file}")
             info(f"Backup at {backup_path}")

@@ -7,17 +7,9 @@ from pathlib import Path
 
 import yaml
 
+from navig.core.yaml_io import safe_load_yaml
+
 _SENTINEL = ".workspace_to_spaces.migrated"
-
-
-def _load_config(config_file: Path) -> dict:
-    if not config_file.exists():
-        return {}
-    try:
-        data = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
 
 
 def _write_config(config_file: Path, data: dict) -> None:
@@ -126,7 +118,7 @@ def migrate_workspace_to_spaces(
     spaces_root = navig_root / "spaces"
 
     try:
-        cfg = _load_config(config_file)
+        cfg = safe_load_yaml(config_file) or {}
         active = _extract_active_space(cfg)
         if not active:
             active = "default"

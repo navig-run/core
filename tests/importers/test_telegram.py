@@ -2,6 +2,9 @@ import json
 from zipfile import ZipFile
 
 from navig.importers.sources.telegram import TelegramImporter
+import pytest
+
+pytestmark = pytest.mark.integration
 
 
 def _payload() -> dict:

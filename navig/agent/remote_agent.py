@@ -33,7 +33,12 @@ logger = logging.getLogger(__name__)
 # ── Caps ─────────────────────────────────────────────────────
 MAX_CONCURRENT_HOSTS = 5
 MAX_OUTPUT_CHARS = 30_000
-COMMAND_TIMEOUT = int(os.environ.get("NAVIG_REMOTE_TIMEOUT", "120"))
+try:
+    COMMAND_TIMEOUT = int(os.environ.get("NAVIG_REMOTE_TIMEOUT", "120"))
+    if COMMAND_TIMEOUT <= 0:
+        COMMAND_TIMEOUT = 120
+except (ValueError, TypeError):
+    COMMAND_TIMEOUT = 120
 
 
 # ── Data structures ──────────────────────────────────────────
@@ -404,8 +409,8 @@ def _build_navig_command(
     return " ".join(parts)
 
 
+from navig.core.dict_utils import truncate_output  # noqa: PLC0415
+
+
 def _truncate(text: str, limit: int = MAX_OUTPUT_CHARS) -> str:
-    """Cap output length to prevent token explosion."""
-    if len(text) <= limit:
-        return text
-    return text[:limit] + f"\n... [truncated — {len(text)} chars total]"
+    return truncate_output(text, limit)

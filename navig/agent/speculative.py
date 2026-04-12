@@ -20,6 +20,7 @@ import hashlib
 import json
 import logging
 import os
+import threading
 import time
 from collections import Counter, defaultdict, deque
 from dataclasses import dataclass, field
@@ -468,17 +469,26 @@ class SpeculativeExecutor:
         Returns the tool result string (same contract as
         ``AgentToolRegistry.dispatch``).
         """
+        is_read_only = tool in READ_ONLY_TOOLS
+
         # Always record for future prediction.
         self.prediction.record(tool, args)
 
-        # Check cache — speculative hit path.
-        cached = self.cache.get(tool, args)
-        if cached is not None:
-            logger.debug("Speculative HIT: %s", tool)
-            return cached
+        # Check cache — speculative hit path (read-only tools only).
+        if is_read_only:
+            cached = self.cache.get(tool, args)
+            if cached is not None:
+                logger.debug("Speculative HIT: %s", tool)
+                return cached
 
         # Cache miss — execute normally.
         result_str: str = self._dispatch_fn(tool, args)
+
+        # Strict correctness: any mutating tool clears speculative reads.
+        if not is_read_only:
+            self._cancel_inflight_speculations_no_wait()
+            self.cache.clear()
+            logger.debug("Speculative cache cleared after mutating tool: %s", tool)
 
         # Trigger speculation in background (fire-and-forget).
         if self._should_speculate():
@@ -521,6 +531,13 @@ class SpeculativeExecutor:
             self._speculation_tasks.append(task)
 
         # Housekeep completed tasks.
+        self._speculation_tasks = [t for t in self._speculation_tasks if not t.done()]
+
+    def _cancel_inflight_speculations_no_wait(self) -> None:
+        """Cancel in-flight speculative tasks without awaiting completion."""
+        for task in self._speculation_tasks:
+            if not task.done():
+                task.cancel()
         self._speculation_tasks = [t for t in self._speculation_tasks if not t.done()]
 
     async def _speculative_run(self, pred: Prediction) -> None:
@@ -571,6 +588,7 @@ class SpeculativeExecutor:
 # ─────────────────────────────────────────────────────────────
 
 _speculative_executor: SpeculativeExecutor | None = None
+_speculative_executor_lock = threading.Lock()
 
 
 def get_speculative_executor(
@@ -584,32 +602,37 @@ def get_speculative_executor(
     if _speculative_executor is not None:
         return _speculative_executor
 
-    try:
-        from navig.config import get_config_manager
+    with _speculative_executor_lock:
+        if _speculative_executor is not None:
+            return _speculative_executor
 
-        mgr = get_config_manager()
-        agent_cfg = mgr.global_config.get("agent", {})
-    except Exception:
-        agent_cfg = {}
+        try:
+            from navig.config import get_config_manager
 
-    spec_cfg = agent_cfg.get("speculative", {})
-    if not spec_cfg.get("enabled", True):
-        return None
+            mgr = get_config_manager()
+            agent_cfg = mgr.global_config.get("agent", {})
+        except Exception:
+            agent_cfg = {}
 
-    if dispatch_fn is None:
-        # Import lazily to avoid circular deps.
-        from navig.agent.agent_tool_registry import _AGENT_REGISTRY
+        spec_cfg = agent_cfg.get("speculative", {})
+        if not spec_cfg.get("enabled", True):
+            return None
 
-        dispatch_fn = _AGENT_REGISTRY.dispatch
+        if dispatch_fn is None:
+            # Import lazily to avoid circular deps.
+            from navig.agent.agent_tool_registry import _AGENT_REGISTRY
 
-    _speculative_executor = SpeculativeExecutor(dispatch_fn, config=spec_cfg)
+            dispatch_fn = _AGENT_REGISTRY.dispatch
+
+        _speculative_executor = SpeculativeExecutor(dispatch_fn, config=spec_cfg)
     return _speculative_executor
 
 
 def reset_speculative_executor() -> None:
     """Reset the singleton (for testing)."""
     global _speculative_executor
-    _speculative_executor = None
+    with _speculative_executor_lock:
+        _speculative_executor = None
 
 
 def get_speculative_runtime_snapshot() -> dict[str, Any]:
@@ -629,6 +652,21 @@ def get_speculative_runtime_snapshot() -> dict[str, Any]:
     spec_cfg = agent_cfg.get("speculative", {})
     enabled = bool(spec_cfg.get("enabled", True))
 
+    try:
+        min_hit_rate = float(spec_cfg.get("min_hit_rate", SpeculativeExecutor.DEFAULT_MIN_HIT_RATE))
+    except (ValueError, TypeError):
+        min_hit_rate = SpeculativeExecutor.DEFAULT_MIN_HIT_RATE
+
+    try:
+        cache_max_entries = int(spec_cfg.get("cache_max_entries", 50))
+    except (ValueError, TypeError):
+        cache_max_entries = 50
+
+    try:
+        cache_ttl = float(spec_cfg.get("cache_ttl", SpeculativeCache.DEFAULT_TTL))
+    except (ValueError, TypeError):
+        cache_ttl = SpeculativeCache.DEFAULT_TTL
+
     effective = {
         "max_history": _env_int("NAVIG_SPEC_MAX_HISTORY", PredictionEngine.MAX_HISTORY, min_value=5, max_value=500),
         "min_confidence": _env_float(
@@ -639,7 +677,7 @@ def get_speculative_runtime_snapshot() -> dict[str, Any]:
         ),
         "min_hit_rate": _env_float(
             "NAVIG_SPEC_MIN_HIT_RATE",
-            float(spec_cfg.get("min_hit_rate", SpeculativeExecutor.DEFAULT_MIN_HIT_RATE)),
+            min_hit_rate,
             min_value=0.0,
             max_value=1.0,
         ),
@@ -648,13 +686,13 @@ def get_speculative_runtime_snapshot() -> dict[str, Any]:
         ),
         "cache_max_entries": _env_int(
             "NAVIG_SPEC_CACHE_MAX_ENTRIES",
-            int(spec_cfg.get("cache_max_entries", 50)),
+            cache_max_entries,
             min_value=5,
             max_value=1000,
         ),
         "cache_ttl_sec": _env_float(
             "NAVIG_SPEC_CACHE_TTL_SEC",
-            float(spec_cfg.get("cache_ttl", SpeculativeCache.DEFAULT_TTL)),
+            cache_ttl,
             min_value=1.0,
             max_value=3600.0,
         ),

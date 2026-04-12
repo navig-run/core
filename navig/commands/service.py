@@ -77,15 +77,22 @@ def service_install(
     import json
 
     from navig.daemon import service_manager as sm
-    from navig.daemon.entry import save_default_config
+    from navig.daemon.entry import DEFAULT_DAEMON_CONFIG, save_default_config
 
     config_path = save_default_config()
-    cfg = json.loads(config_path.read_text(encoding="utf-8"))
+    try:
+        cfg = json.loads(config_path.read_text(encoding="utf-8"))
+        if not isinstance(cfg, dict):
+            cfg = DEFAULT_DAEMON_CONFIG.copy()
+    except (json.JSONDecodeError, OSError):
+        cfg = DEFAULT_DAEMON_CONFIG.copy()
     cfg["telegram_bot"] = bot
     cfg["gateway"] = gateway
     cfg["scheduler"] = scheduler
     cfg["health_port"] = health_port
-    config_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    tmp_path = config_path.with_suffix(config_path.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    os.replace(tmp_path, config_path)
 
     ch.info("Installing NAVIG daemon...")
     chosen = method or sm.detect_best_method()
@@ -203,7 +210,10 @@ def service_stop():
     if NavigDaemon.stop_running_daemon():
         ch.success("Daemon stopped")
     else:
-        ch.error("Failed to stop daemon. Try: taskkill /F /PID " + str(pid))
+        if os.name == "nt":
+            ch.error("Failed to stop daemon. Try: taskkill /F /PID " + str(pid))
+        else:
+            ch.error("Failed to stop daemon. Try: kill -9 " + str(pid))
         raise typer.Exit(1)
 
 
@@ -225,7 +235,9 @@ def service_restart():
 
     if NavigDaemon.is_running():
         ch.info("Stopping daemon...")
-        NavigDaemon.stop_running_daemon()
+        if not NavigDaemon.stop_running_daemon():
+            ch.error("Failed to stop existing daemon")
+            raise typer.Exit(1)
         time.sleep(1)
 
     ch.info("Starting daemon...")
@@ -252,6 +264,7 @@ def service_restart():
         ch.success(f"Daemon restarted (pid={NavigDaemon.read_pid()})")
     else:
         ch.error("Daemon failed to start. Check: navig service logs")
+        raise typer.Exit(1)
 
 
 # =========================================================================
@@ -274,12 +287,13 @@ def service_status(
     from navig.daemon.supervisor import NavigDaemon
 
     if json_output:
+        running, detail = sm.status()
         state = NavigDaemon.read_state()
-        running = NavigDaemon.is_running()
         out = {
             "running": running,
             "pid": NavigDaemon.read_pid(),
             "children": state.get("children", []) if state else [],
+            "detail": detail,
         }
         print(json.dumps(out, indent=2))
         return
@@ -317,10 +331,11 @@ def service_uninstall(
     # Stop first
     if NavigDaemon.is_running():
         ch.info("Stopping daemon...")
-        NavigDaemon.stop_running_daemon()
+        if not NavigDaemon.stop_running_daemon():
+            ch.error("Failed to stop running daemon before uninstall")
+            raise typer.Exit(1)
 
-    chosen = method or sm.detect_best_method()
-    ok, msg = sm.uninstall(method=chosen)
+    ok, msg = sm.uninstall(method=method)
     if ok:
         ch.success(msg)
     else:
@@ -334,7 +349,7 @@ def service_uninstall(
 @service_app.command("logs")
 def service_logs(
     follow: bool = typer.Option(False, "--follow", "-f", help="Follow log output"),
-    lines: int = typer.Option(50, "--lines", "-n", help="Number of lines to show"),
+    lines: int = typer.Option(50, "--lines", "-n", min=1, help="Number of lines to show"),
     child: str | None = typer.Option(
         None, "--child", "-c", help="Show specific child log (e.g. 'children')"
     ),
@@ -409,7 +424,11 @@ def service_config(
     config_path = save_default_config()
 
     if show:
-        cfg = json.loads(config_path.read_text(encoding="utf-8"))
+        try:
+            cfg = json.loads(config_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            ch.error(f"Failed to read daemon config: {exc}")
+            raise typer.Exit(1) from exc
         ch.info("Daemon Configuration")
         ch.console.print(f"  File: {config_path}")
         ch.console.print()

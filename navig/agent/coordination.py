@@ -9,6 +9,7 @@ Enables multi-agent orchestration with:
 """
 
 import asyncio
+import threading
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -549,13 +550,16 @@ class AgentCoordinator:
 
 # Global coordinator instance
 _coordinator: AgentCoordinator | None = None
+_coordinator_lock = threading.Lock()
 
 
 def get_coordinator() -> AgentCoordinator:
     """Get or create the global agent coordinator."""
     global _coordinator
     if _coordinator is None:
-        _coordinator = AgentCoordinator()
+        with _coordinator_lock:
+            if _coordinator is None:
+                _coordinator = AgentCoordinator()
     return _coordinator
 
 

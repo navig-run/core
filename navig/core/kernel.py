@@ -1,4 +1,5 @@
 import glob
+import logging
 import os
 import re
 
@@ -6,6 +7,8 @@ import yaml
 
 from .models import NavigCommand, NavigPack, SkillManifest
 from .plugin_manager import PluginManager
+
+logger = logging.getLogger(__name__)
 
 
 class NavigKernel:
@@ -17,12 +20,15 @@ class NavigKernel:
         self.plugin_manager = PluginManager(os.path.join(root_path, "plugins"))
 
     def bootstrap(self):
-        print("🚀 NAVIG Kernel Booting...")
+        logger.info("kernel: booting")
         self.plugin_manager.discover_and_load()
         self.load_skills()
         self.load_packs()
-        print(
-            f"🌟 System Ready. Loaded {len(self.skills)} skills, {len(self.packs)} packs, and {len(self.plugin_manager.plugins)} active plugins."
+        logger.info(
+            "kernel: ready — %d skills, %d packs, %d plugins",
+            len(self.skills),
+            len(self.packs),
+            len(self.plugin_manager.plugins),
         )
 
     def load_skills(self):
@@ -56,10 +62,8 @@ class NavigKernel:
                 cmd.source_skill = skill.name
                 self.commands[cmd.name] = cmd
 
-        except Exception as e:
-            # Silently fail for now or log debug
-            print(f"⚠️  Could not parse {filepath}: {e}")
-            pass
+        except Exception as e:  # noqa: BLE001
+            logger.debug("kernel: could not parse skill %s: %s", filepath, e)
 
     def load_packs(self):
         patterns = [
@@ -84,31 +88,27 @@ class NavigKernel:
 
             pack = NavigPack(**content)
             self.packs[pack.name] = pack
-        except Exception:
-            # print(f"⚠️  Could not parse pack {filepath}: {e}")
-            pass
+        except Exception as e:  # noqa: BLE001
+            logger.debug("kernel: could not parse pack %s: %s", filepath, e)
 
     def run_pack(self, pack_name: str):
         pack = self.packs.get(pack_name)
         if not pack:
-            print(f"❌ Pack {pack_name} not found.")
+            logger.warning("kernel: pack '%s' not found", pack_name)
             return
 
-        print(f"\n📦 RUNNING PACK: {pack.name}")
-        print(f"   {pack.description}")
+        logger.info("kernel: running pack '%s': %s", pack.name, pack.description)
 
         for i, step in enumerate(pack.steps):
-            print(f"\n➡️  Step {i + 1}: {step.description or step.name}")
-            print(f"   Command: {step.command}")
-
-            # Here we resolve the command in the kernel to check for safety!
-            # We assume step.command is a full CLI string "navig docker restart ..."
-
-            # Simple simulation of execution
+            logger.info(
+                "kernel: step %d/%d: %s — %s",
+                i + 1,
+                len(pack.steps),
+                step.name,
+                step.command,
+            )
             # In reality, we'd parse the command string, resolve intent, check safety, execute.
-            # For now, just execute blindly (unsafe) or mock it.
-
-            print(f"   ✅ (Mock) Executed: {step.command}")
+            logger.debug("kernel: (mock) executed: %s", step.command)
 
     def resolve_intent(self, query: str) -> object | None:
         # Returns NavigCommand or NavigPack
@@ -177,18 +177,18 @@ class NavigKernel:
     def execute_command(self, cmd_name: str, args: list[str] = None):
         cmd = self.commands.get(cmd_name)
         if not cmd:
-            print(f"❌ Command {cmd_name} not found.")
+            logger.warning("kernel: command '%s' not found", cmd_name)
             return
 
         # Check safety
         if cmd.risk in ["destructive", "moderate"] or cmd.confirmation_required:
             msg = cmd.confirmation_msg or f"Execute {cmd.name}?"
-            ans = input(f"🛑 {msg} [y/N] ")
+            ans = input(f"\U0001f6d1 {msg} [y/N] ")
             if ans.lower() != "y":
-                print("❌ Aborted.")
+                logger.info("kernel: execution of '%s' aborted by user", cmd_name)
                 return
 
-        print(f"✅ Executing {cmd.syntax}...")
+        logger.info("kernel: executing %s", cmd.syntax)
 
         parts = cmd.syntax.split()
         if len(parts) >= 3 and parts[0] == "navig" and parts[1] == "memory":
@@ -222,7 +222,7 @@ class NavigKernel:
             self._dispatch_registry(method, params)
 
         else:
-            print(f"🖥️  (System Command Simulation): {cmd.syntax}")
+            logger.debug("kernel: (system command simulation): %s", cmd.syntax)
 
     def _dispatch_registry(self, method: str, params: dict):
         """Dispatch *method* via CommandRegistry; fall back to plugin_manager if not found."""
@@ -231,12 +231,12 @@ class NavigKernel:
 
             try:
                 result = CommandRegistry.run(method, params, ctx=None)
-                print(f"✨ Result: {result}")
+                logger.debug("kernel: dispatch result: %s", result)
                 return
             except KeyError:
-                pass  # Fall through to legacy fallback Below
+                pass  # Fall through to legacy fallback
         except Exception as exc:  # noqa: BLE001
-            print(f"❌ CommandRegistry dispatch failed: {exc}")
+            logger.warning("kernel: CommandRegistry dispatch failed: %s", exc)
         # Fallback: old plugin manager
         self._exec_plugin_legacy(method, params)
 
@@ -244,6 +244,6 @@ class NavigKernel:
         """Legacy fallback — executes via plugin_manager.execute_skill."""
         try:
             result = self.plugin_manager.execute_skill(method, method, params)
-            print(f"✨ Plugin Result: {result}")
-        except Exception as e:
-            print(f"❌ Plugin execution failed: {e}")
+            logger.debug("kernel: plugin result: %s", result)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("kernel: plugin execution failed: %s", e)

@@ -1,4 +1,7 @@
 from navig.importers.models import ImportedItem, validate_item_dict
+import pytest
+
+pytestmark = pytest.mark.unit
 
 
 def test_imported_item_to_dict_validates() -> None:

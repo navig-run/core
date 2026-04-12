@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import copy
 import math
+import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -23,7 +24,7 @@ if TYPE_CHECKING:
     from navig.memory.storage import MemoryStorage
 
 
-from navig.memory._util import _debug_log
+from navig.memory._util import _atomic_write_text, _debug_log
 
 
 def _get_memory_dir() -> Path:
@@ -35,6 +36,7 @@ def _get_memory_dir() -> Path:
 
 # Module-level singleton
 _manager_instance: MemoryManager | None = None
+_manager_lock = threading.Lock()
 
 
 def get_memory_manager(
@@ -54,10 +56,12 @@ def get_memory_manager(
     global _manager_instance
 
     if _manager_instance is None:
-        _manager_instance = MemoryManager(
-            memory_dir=memory_dir or _get_memory_dir(),
-            use_embeddings=use_embeddings,
-        )
+        with _manager_lock:
+            if _manager_instance is None:
+                _manager_instance = MemoryManager(
+                    memory_dir=memory_dir or _get_memory_dir(),
+                    use_embeddings=use_embeddings,
+                )
 
     return _manager_instance
 
@@ -66,10 +70,11 @@ def reload_memory_manager() -> MemoryManager:
     """Force reload of the memory manager."""
     global _manager_instance
 
-    if _manager_instance:
-        _manager_instance.close()
+    with _manager_lock:
+        if _manager_instance:
+            _manager_instance.close()
+        _manager_instance = None
 
-    _manager_instance = None
     return get_memory_manager()
 
 
@@ -536,7 +541,7 @@ class MemoryManager:
             target_dir = self.memory_dir
 
         file_path = target_dir / filename
-        file_path.write_text(content, encoding="utf-8")
+        _atomic_write_text(file_path, content)
 
         # Index the new file
         self.index_file(file_path)

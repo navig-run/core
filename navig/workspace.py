@@ -7,6 +7,7 @@ Inspired by advanced workspace and agent template systems.
 
 import json
 import logging
+import os
 import re
 import tempfile
 from datetime import datetime
@@ -228,7 +229,17 @@ class WorkspaceManager:
         try:
             self.workspace_path.mkdir(parents=True, exist_ok=True)
             file_path = self.workspace_path / filename
-            file_path.write_text(content, encoding="utf-8")
+            _tmp_path: Path | None = None
+            try:
+                _fd, _tmp = tempfile.mkstemp(dir=file_path.parent, suffix=".tmp")
+                _tmp_path = Path(_tmp)
+                with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                    _fh.write(content)
+                os.replace(_tmp_path, file_path)
+                _tmp_path = None
+            finally:
+                if _tmp_path is not None:
+                    _tmp_path.unlink(missing_ok=True)
             return True
         except Exception as e:
             logger.error("Failed to update %s: %s", filename, e)
@@ -587,7 +598,17 @@ class WorkspaceManager:
                         break
 
                 content = "\n".join(lines)
-                agents_path.write_text(content, encoding="utf-8")
+                _tmp_path: Path | None = None
+                try:
+                    _fd, _tmp = tempfile.mkstemp(dir=agents_path.parent, suffix=".tmp")
+                    _tmp_path = Path(_tmp)
+                    with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                        _fh.write(content)
+                    os.replace(_tmp_path, agents_path)
+                    _tmp_path = None
+                finally:
+                    if _tmp_path is not None:
+                        _tmp_path.unlink(missing_ok=True)
                 return True
         except Exception as e:
             logger.error("Failed to add memory: %s", e)

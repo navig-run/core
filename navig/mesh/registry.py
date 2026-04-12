@@ -19,8 +19,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import socket
 import sys
+import tempfile
+import threading
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -503,7 +506,19 @@ class NodeRegistry:
     def _save_to_disk(self) -> None:
         try:
             data = [r.to_dict() for r in self._peers.values() if not r.is_self]
-            self._peers_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            payload = json.dumps(data, indent=2)
+            # Atomic write so a mid-write crash never corrupts the warm-start cache.
+            tmp_path: Path | None = None
+            try:
+                fd, tmp = tempfile.mkstemp(dir=self._storage_dir, suffix=".tmp")
+                tmp_path = Path(tmp)
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    fh.write(payload)
+                os.replace(tmp_path, self._peers_file)
+                tmp_path = None
+            finally:
+                if tmp_path is not None and tmp_path.exists():
+                    tmp_path.unlink(missing_ok=True)
         except Exception as e:
             logger.warning("[mesh.registry] Failed to save peers: %s", e)
 
@@ -524,12 +539,15 @@ class NodeRegistry:
 # ─────────────────────────── Singleton ───────────────────────────────
 
 _registry_instance: NodeRegistry | None = None
+_registry_lock = threading.Lock()
 
 
 def get_registry(storage_dir: Path | None = None) -> NodeRegistry:
     global _registry_instance
     if _registry_instance is None:
-        if storage_dir is None:
-            storage_dir = config_dir()
-        _registry_instance = NodeRegistry(storage_dir)
+        with _registry_lock:
+            if _registry_instance is None:  # double-checked locking
+                if storage_dir is None:
+                    storage_dir = config_dir()
+                _registry_instance = NodeRegistry(storage_dir)
     return _registry_instance

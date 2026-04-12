@@ -10,6 +10,8 @@ Manages agent mode configuration with support for:
 
 from __future__ import annotations
 
+import os
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -394,8 +396,18 @@ class AgentConfig:
 
             config_path = Path(config_path)
             config_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(config_path, "w", encoding="utf-8") as fh:
-                yaml.safe_dump(self.to_dict(), fh, default_flow_style=False)
+            _content = yaml.safe_dump(self.to_dict(), default_flow_style=False)
+            _tmp_path: Path | None = None
+            try:
+                _fd, _tmp = tempfile.mkstemp(dir=config_path.parent, suffix=".tmp")
+                _tmp_path = Path(_tmp)
+                with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                    _fh.write(_content)
+                os.replace(_tmp_path, config_path)
+                _tmp_path = None
+            finally:
+                if _tmp_path is not None:
+                    _tmp_path.unlink(missing_ok=True)
             return
 
         from navig.config import get_config_manager

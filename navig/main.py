@@ -16,12 +16,15 @@ Plugin Loading:
 5. All enabled plugins with satisfied dependencies are registered
 """
 
+import logging
 import os
 import shutil
 import sys
 from pathlib import Path
 
 from navig.platform import paths
+
+_log = logging.getLogger(__name__)
 
 
 def _read_text_file(path: Path) -> str:
@@ -76,7 +79,7 @@ def _fast_help_text(version: str) -> str:
     return "\n".join(
         [
             hr,
-            f"  NAVIG v{version}  ·  host: {host}  ·  profile: {profile}",
+            f"  NAVIG v{version}  |  host: {host}  |  profile: {profile}",
             hr,
             "  Server management from your terminal. Fast, scriptable, exact.",
             "  CORE",
@@ -131,7 +134,7 @@ def _fast_help_text(version: str) -> str:
             "    navig db dump mydb -o predeploy.sql    Snapshot DB before deploy",
             hr,
             f"  {_fast_rotating_tip()}",
-            "  navig <command> --help   ·   navig help <topic>",
+            "  navig <command> --help   |   navig help <topic>",
             hr,
         ]
     )
@@ -146,10 +149,26 @@ def _maybe_handle_fast_path(argv: list[str]) -> bool:
     Returns True if handled.
     """
     args = [a for a in argv[1:] if a]
+    from navig.cli.registration import extract_non_global_tokens
+
+    command_tokens = extract_non_global_tokens(args)
 
     if not args:
         from navig import __version__
 
+        sys.stdout.write(_fast_help_text(__version__) + "\n")
+        return True
+
+    # Global-only invocations (e.g. `navig --host prod`) or global-flag-prefixed
+    # top-level help/version should stay on the ultra-fast path.
+    if not command_tokens:
+        from navig import __version__
+
+        if any(flag in args for flag in {"--version", "-v"}):
+            sys.stdout.write(__version__ + "\n")
+            return True
+
+        # Includes explicit help flags and global-only no-command invocations.
         sys.stdout.write(_fast_help_text(__version__) + "\n")
         return True
 
@@ -174,10 +193,10 @@ def _maybe_handle_fast_path(argv: list[str]) -> bool:
 
     # `navig start` — alias for `navig dashboard` (Kraken TUI)
     # Let normal CLI parsing handle help forms.
-    if args and args[0] == "start":
-        if any(flag in args[1:] for flag in ("--help", "-h", "help")):
+    if command_tokens and command_tokens[0] == "start":
+        if len(command_tokens) > 1 and any(flag in command_tokens[1:] for flag in ("--help", "-h", "help")):
             return False
-        return _handle_start_command(args[1:])
+        return _handle_start_command(command_tokens[1:])
 
     return False
 
@@ -214,19 +233,65 @@ def _normalize_help_compat_args(argv: list[str]) -> list[str]:
     if len(argv) <= 2:
         return argv
 
-    args = argv[1:]
+    from navig.cli.registration import extract_non_global_tokens
 
-    if args[0] == "help" and len(args) == 1:
+    args = argv[1:]
+    non_global_tokens = extract_non_global_tokens(args)
+    if not non_global_tokens:
+        return argv
+
+    value_flags = {"--host", "-h", "--app", "-p"}
+    global_flags = {
+        "--host",
+        "-h",
+        "--app",
+        "-p",
+        "--verbose",
+        "--quiet",
+        "-q",
+        "--dry-run",
+        "--yes",
+        "-y",
+        "--confirm",
+        "-c",
+        "--raw",
+        "--json",
+        "--debug-log",
+        "--no-cache",
+        "--version",
+        "-v",
+        "--help",
+    }
+
+    non_global_positions: list[int] = []
+    skip_next = False
+    for idx, token in enumerate(args):
+        if skip_next:
+            skip_next = False
+            continue
+        if token in value_flags:
+            skip_next = True
+            continue
+        if token in global_flags or token.startswith("--"):
+            continue
+        non_global_positions.append(idx)
+
+    if non_global_tokens[0] == "help" and len(non_global_tokens) == 1:
         return argv
 
     # Leading help: `navig help db` → `navig db --help`
-    if args[0] == "help" and len(args) >= 2:
-        return [argv[0]] + args[1:] + ["--help"]
+    if non_global_tokens[0] == "help" and len(non_global_tokens) >= 2:
+        normalized = list(argv)
+        help_arg_index = 1 + non_global_positions[0]
+        del normalized[help_arg_index]
+        normalized.append("--help")
+        return normalized
 
     # Legacy alias: `navig memory list` -> `navig memory sessions`
-    if len(args) >= 2 and args[0] == "memory" and args[1] == "list":
+    if len(non_global_tokens) >= 2 and non_global_tokens[0] == "memory" and non_global_tokens[1] == "list":
         normalized = list(argv)
-        normalized[2] = "sessions"
+        list_arg_index = 1 + non_global_positions[1]
+        normalized[list_arg_index] = "sessions"
         args = normalized[1:]
         argv = normalized
 
@@ -235,8 +300,9 @@ def _normalize_help_compat_args(argv: list[str]) -> list[str]:
 
     normalized = list(argv)
 
-    if args[-1] == "help":
-        normalized[-1] = "--help"
+    if non_global_tokens[-1] == "help":
+        help_arg_index = 1 + non_global_positions[-1]
+        normalized[help_arg_index] = "--help"
         return normalized
 
     if args[-1] == "-h" and args[0] != "-h":
@@ -302,6 +368,30 @@ _loaded_plugins: list[str] = []
 _failed_plugins: list[dict[str, str]] = []
 
 # ---------------------------------------------------------------------------
+# Deprecated top-level command aliases.
+# When the user runs one of these, a warning is printed BEFORE dispatch so
+# the command still works but they see the canonical replacement.
+# ---------------------------------------------------------------------------
+_CLI_DEPRECATED_ALIASES: dict[str, str] = {
+    "cred": "vault",
+    "cred-profile": "vault profile",
+    "secret": "vault",
+}
+
+
+def _warn_deprecated_cli_alias() -> None:
+    """Print a deprecation warning if argv[1] is a known renamed command noun."""
+    if len(sys.argv) < 2:
+        return
+    cmd = sys.argv[1]
+    canonical = _CLI_DEPRECATED_ALIASES.get(cmd)
+    if canonical:
+        from navig.deprecation import deprecation_warning
+        deprecation_warning(f"navig {cmd}", f"navig {canonical}")
+
+
+
+# ---------------------------------------------------------------------------
 # Single source of truth for all built-in (plugin-free) command names.
 # Rules:
 #   • Every command listed here skips plugin loading on startup (~110 ms saving).
@@ -325,16 +415,13 @@ _BUILTIN_COMMANDS: frozenset[str] = frozenset({
     "local",
     "mcp",
     "profile",
-    "security",
-    "monitor",
     "index",
     "skills", "skill",
-    "flow", "workflow",
+    "flow",
     "wiki",
     "scaffold",
     "migrate",
-    "server-template", "template",
-    "hestia",
+    "server-template",
     "bridge",
     "farmore",
     "copilot",
@@ -357,7 +444,7 @@ _BUILTIN_COMMANDS: frozenset[str] = frozenset({
     "telegram", "tg",
     "matrix", "mx",
     "store",
-    "cred", "cred-profile",
+    "vault",  # canonical; "cred" / "cred-profile" / "secret" are deprecated aliases
     "flux", "fx",
     "cortex",
     "desktop",
@@ -383,7 +470,6 @@ _BUILTIN_COMMANDS: frozenset[str] = frozenset({
     "telemetry",
     "wut", "eval",
     "webdash",
-    "explain",
     "snapshot", "replay",
     "cloud",
     "benchmark",
@@ -451,7 +537,10 @@ def _should_skip_plugin_loading(argv: list[str]) -> bool:
     This keeps cold start fast while preserving full functionality for
     real operational commands.
     """
-    args = [a for a in argv[1:] if a]  # strip program name
+    from navig.cli.registration import extract_non_global_tokens
+
+    raw_args = [a for a in argv[1:] if a]  # strip program name
+    args = extract_non_global_tokens(raw_args)
 
     if not args:
         return True
@@ -459,8 +548,8 @@ def _should_skip_plugin_loading(argv: list[str]) -> bool:
     if len(args) == 1 and args[0] in {"--help", "--version"}:
         return True
 
-    # In-app help command.
-    if len(args) == 1 and args[0] == "help":
+    # In-app help command (with or without topic).
+    if args and args[0] == "help":
         return True
 
     # Core built-in commands that never use plugins.
@@ -471,11 +560,13 @@ def _should_skip_plugin_loading(argv: list[str]) -> bool:
     if args[0] == "plugin":
         return False
 
-    # Check the plugin cache to short-circuit invalid commands or fast paths
+    # Check plugin cache for known plugin commands (best-effort speedup).
+    # Never short-circuit unknown commands here: stale cache can otherwise
+    # hide valid plugin commands after install/rename and cause false negatives.
     try:
         import json
-        from pathlib import Path
 
+        # Path is imported at module level; no redundant import needed here.
         cache_file = paths.data_dir() / "plugins_cache.json"
         legacy_cache_file = paths.config_dir() / "data" / "plugins_cache.json"
         if not cache_file.exists() and legacy_cache_file.exists():
@@ -492,10 +583,11 @@ def _should_skip_plugin_loading(argv: list[str]) -> bool:
 
                 plugin_path = plugin_data.get("path")
                 if isinstance(plugin_path, str) and plugin_path:
+                    # Path is imported at module top level; no re-import needed.
                     cached_names.add(Path(plugin_path).name)
 
-            if args[0] not in cached_names:
-                return True
+            if args[0] in cached_names:
+                return False
     except json.JSONDecodeError:
         # P1-6: Corrupted plugin cache — log a warning instead of silently ignoring
         import logging as _logging
@@ -510,7 +602,6 @@ def _should_skip_plugin_loading(argv: list[str]) -> bool:
         _logging.getLogger(__name__).debug(
             "Plugin check exception: %s", e, exc_info=True
         )
-        pass
 
     return False
 
@@ -650,10 +741,10 @@ def add_plugin_commands(app) -> None:
         name: str = typer.Argument(..., help="Plugin name to enable"),
     ):
         """Enable a disabled plugin."""
-        from navig.core import Config
+        from navig.config import get_config_manager
         from navig.plugins import get_plugin_manager
 
-        config = Config()
+        config = get_config_manager()
         manager = get_plugin_manager()
 
         info = manager.get_plugin_info(name)
@@ -672,10 +763,10 @@ def add_plugin_commands(app) -> None:
         name: str = typer.Argument(..., help="Plugin name to disable"),
     ):
         """Disable a plugin (without uninstalling)."""
-        from navig.core import Config
+        from navig.config import get_config_manager
         from navig.plugins import get_plugin_manager
 
-        config = Config()
+        config = get_config_manager()
         manager = get_plugin_manager()
 
         info = manager.get_plugin_info(name)
@@ -697,9 +788,9 @@ def add_plugin_commands(app) -> None:
         import os
         from pathlib import Path
 
-        from navig.core import Config
+        from navig.config import get_config_manager
 
-        config = Config()
+        config = get_config_manager()
         source_path = Path(path).expanduser()
 
         if source_path.exists() and source_path.is_dir():
@@ -789,7 +880,6 @@ def add_plugin_commands(app) -> None:
         """Uninstall a user-installed plugin."""
         import shutil
 
-        from navig.core import Config  # noqa: F401
         from navig.plugins import get_plugin_manager
 
         manager = get_plugin_manager()
@@ -855,6 +945,7 @@ def main() -> None:
         _check_first_run()
 
         # One-time migration: legacy ~/.navig/workspace → ~/.navig/spaces/*
+        # Non-fatal: a migration failure must never prevent NAVIG from starting.
         try:
             from pathlib import Path as _Path
 
@@ -868,27 +959,24 @@ def main() -> None:
             migrate_workspace_to_spaces(_navig_root)
             ensure_no_stale_spaces_registration()
         except Exception as _migration_exc:
-            _eprint(f"\n[red]Migration error:[/red] {_migration_exc}")
-            sys.exit(1)
+            import logging as _logging
+
+            _logging.getLogger(__name__).warning(
+                "Workspace migration error (non-fatal): %s",
+                _migration_exc,
+                exc_info=True,
+            )
+            _eprint(f"[yellow]⚠ Migration warning (non-fatal):[/yellow] {_migration_exc}")
 
         # Import the existing CLI app (maintains all current functionality)
         from navig.cli import _register_external_commands, app
 
+        # Emit a one-time deprecation warning for renamed top-level command nouns.
+        # This runs before Typer dispatch so the message appears above command output.
+        _warn_deprecated_cli_alias()
+
         # Register all external command sub-apps (deferred from module load)
         _register_external_commands()
-
-        # Register operating profile command (node/builder/operator/architect)
-        try:
-            from navig.commands.profile import profile_app
-
-            app.add_typer(profile_app, name="profile")
-        except Exception as e:  # never break startup
-            import logging as _logging
-
-            _logging.getLogger(__name__).warning(
-                "Failed to load profile sub-app: %s", e, exc_info=True
-            )
-            pass
 
         skip_plugins = _should_skip_plugin_loading(sys.argv)
 
@@ -922,8 +1010,12 @@ def main() -> None:
         if e.code != 0 and len(sys.argv) >= 2:
             _handle_powershell_parsing_error(sys.argv)
         # "Did you mean?" suggestions for misspelled top-level commands
-        if e.code == 2 and len(sys.argv) >= 2 and not sys.argv[1].startswith("-"):
-            _suggest_did_you_mean(sys.argv[1])
+        if e.code == 2 and len(sys.argv) >= 2:
+            from navig.cli.registration import extract_non_global_tokens
+
+            command_tokens = extract_non_global_tokens(sys.argv[1:])
+            if command_tokens:
+                _suggest_did_you_mean(command_tokens[0])
         raise
     except Exception as e:
         # Use our robust crash handler
@@ -944,8 +1036,8 @@ def _suggest_did_you_mean(unknown: str) -> None:
             _eprint("\n[yellow]Did you mean?[/yellow]")
             for s in suggestions[:3]:
                 _eprint(f"  navig {s}")
-    except Exception:
-        pass  # Never let suggestion logic crash the process
+    except Exception as _e:
+        _log.debug("did-you-mean suggestion failed: %s", _e)
 
 
 def _handle_powershell_parsing_error(argv: list[str]) -> None:
@@ -956,8 +1048,11 @@ def _handle_powershell_parsing_error(argv: list[str]) -> None:
     """
     import os
 
+    from navig.cli.registration import extract_non_global_tokens
+
     # Only help if this looks like a 'navig run' command
-    if len(argv) < 2 or argv[1] not in ["run", "r"]:
+    _ps_cmd_tokens = extract_non_global_tokens(argv[1:])
+    if not _ps_cmd_tokens or _ps_cmd_tokens[0] not in ["run", "r"]:
         return
 
     # Detect PowerShell environment
@@ -972,8 +1067,12 @@ def _handle_powershell_parsing_error(argv: list[str]) -> None:
     if not is_powershell:
         return
 
-    # Join all args to see the original attempted command
-    attempted_cmd = " ".join(argv[2:]) if len(argv) > 2 else ""
+    # Join the arguments that were passed TO the run command.
+    # Use _ps_cmd_tokens[1:] (already global-flag-stripped) rather than the
+    # raw argv[2:], which would include global flag *values* (e.g. the hostname
+    # from --host prod) and could produce false positives when the hostname
+    # itself contains odd quote counts or backslashes.
+    attempted_cmd = " ".join(_ps_cmd_tokens[1:])
 
     # Check for signs PowerShell mangled it (backslash-escaped quotes, broken strings)
     powershell_mangled = any(

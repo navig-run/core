@@ -19,6 +19,7 @@ import re
 from navig.console_helper import get_console
 
 logger = logging.getLogger("navig.safety_guard")
+_VALID_CONFIRMATION_LEVELS = {"critical", "standard", "verbose"}
 
 # ─────────────────────────────────────────────────────────────
 # Destructive Patterns
@@ -133,33 +134,41 @@ def require_human_confirmation_if_destructive(
     Returns:
         True if the action is safe to proceed, False if user denied.
     """
+    action_text = _coerce_action_text(planned_action)
+
+    # Empty/invalid actions are treated as no-op for this guard; callers decide
+    # execution semantics separately.
+    if not action_text:
+        logger.debug("Guard pass (empty action)")
+        return True
+
     # Check for destructive patterns for uncensored-model gating.
-    match = DESTRUCTIVE_PATTERNS.search(planned_action)
+    match = DESTRUCTIVE_PATTERNS.search(action_text)
 
     # Censored mode: this guard is intentionally bypassed for backward
     # compatibility. Risk-based confirmation is handled by should_confirm().
     if not is_uncensored:
-        logger.debug("Guard bypass (censored mode): %s", _truncate(planned_action))
+        logger.debug("Guard bypass (censored mode): %s", _truncate(action_text))
         return True
 
     if not match:
         # Uncensored model, not destructive — log risky patterns
-        risky = RISKY_PATTERNS.search(planned_action)
+        risky = RISKY_PATTERNS.search(action_text)
         if risky:
             logger.info(
                 "Guard NOTICE (risky, uncensored): pattern='%s' action='%s'",
                 risky.group(),
-                _truncate(planned_action),
+                _truncate(action_text),
             )
         else:
-            logger.debug("Guard pass (no destructive pattern): %s", _truncate(planned_action))
+            logger.debug("Guard pass (no destructive pattern): %s", _truncate(action_text))
         return True
 
     # Destructive action detected — always escalate regardless of model type
     logger.warning(
         "Guard TRIGGERED: destructive pattern='%s' action='%s' context='%s' uncensored=%s",
         match.group(),
-        _truncate(planned_action),
+        _truncate(action_text),
         context or "none",
         is_uncensored,
     )
@@ -169,7 +178,7 @@ def require_human_confirmation_if_destructive(
         return True
 
     # Require human confirmation
-    return _prompt_confirmation(planned_action, match.group())
+    return _prompt_confirmation(action_text, match.group())
 
 
 def is_destructive(action: str) -> bool:
@@ -276,19 +285,40 @@ def should_confirm(
         - **standard**: Confirm destructive + risky actions.
         - **verbose**: Confirm everything (including safe).
     """
-    risk = classify_action_risk(action)
+    level = _normalize_confirmation_level(confirmation_level)
+    risk = classify_action_risk(_coerce_action_text(action))
 
     if risk == "safe":
-        if auto_confirm_safe or confirmation_level in ("critical", "standard"):
+        if auto_confirm_safe or level in ("critical", "standard"):
             return False
         # verbose → confirm even safe actions
-        return confirmation_level == "verbose"
+        return level == "verbose"
 
     if risk == "risky":
-        if confirmation_level == "critical":
+        if level == "critical":
             return False
         # standard + verbose → confirm risky
         return True
 
     # risk == "destructive" → always confirm
     return True
+
+
+def _normalize_confirmation_level(level: str | None) -> str:
+    """Normalize confirmation level to a supported value.
+
+    Invalid/missing values fall back to ``standard`` to keep behavior stable.
+    """
+    normalized = str(level or "").strip().lower()
+    if normalized in _VALID_CONFIRMATION_LEVELS:
+        return normalized
+    if normalized:
+        logger.debug("Unknown confirmation level '%s'; falling back to 'standard'", normalized)
+    return "standard"
+
+
+def _coerce_action_text(action: object) -> str:
+    """Best-effort conversion of an arbitrary action payload to text."""
+    if action is None:
+        return ""
+    return str(action)

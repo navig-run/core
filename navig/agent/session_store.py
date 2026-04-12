@@ -38,6 +38,7 @@ import json
 import logging
 import os
 import secrets
+import tempfile
 import threading
 import time
 from dataclasses import asdict, dataclass, field
@@ -196,6 +197,7 @@ class SessionStore:
         self.meta_file = self._base_dir / f"{self.session_id}.meta.json"
         self._workspace = workspace
         self._meta: SessionMetadata | None = None
+        self._lock = threading.Lock()  # guards JSONL write + metadata update
 
     # ── Write operations ────────────────────────────────────
 
@@ -203,20 +205,24 @@ class SessionStore:
         """Append a single entry to the session NDJSON file.
 
         Creates the directory and metadata file on the first append.
+        Thread-safe: the lock serialises both the JSONL write and the
+        metadata read-modify-write so that concurrent appenders do not
+        lose turn-count increments.
         """
         self.file.parent.mkdir(parents=True, exist_ok=True)
 
         line = json.dumps(entry.to_dict(), ensure_ascii=False)
-        with open(self.file, "a", encoding="utf-8") as f:
-            f.write(line + "\n")
+        with self._lock:
+            with open(self.file, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
 
-        # Update metadata
-        meta = self._load_or_create_meta()
-        meta.turn_count += 1
-        meta.last_active = entry.timestamp or time.time()
-        meta.total_tokens += entry.tokens_used
-        meta.total_cost += entry.cost
-        self._save_meta(meta)
+            # Update metadata (read-modify-write must stay inside the lock)
+            meta = self._load_or_create_meta()
+            meta.turn_count += 1
+            meta.last_active = entry.timestamp or time.time()
+            meta.total_tokens += entry.tokens_used
+            meta.total_cost += entry.cost
+            self._save_meta(meta)
 
     def mark_compact_boundary(self) -> None:
         """Record a compact boundary marker.
@@ -404,10 +410,18 @@ class SessionStore:
         """Persist metadata to the sidecar file."""
         self._meta = meta
         self.meta_file.parent.mkdir(parents=True, exist_ok=True)
-        self.meta_file.write_text(
-            json.dumps(meta.to_dict(), ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        _content = json.dumps(meta.to_dict(), ensure_ascii=False, indent=2) + "\n"
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=self.meta_file.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                _fh.write(_content)
+            os.replace(_tmp_path, self.meta_file)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
 
 
 # ─────────────────────────────────────────────────────────────

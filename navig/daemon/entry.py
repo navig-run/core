@@ -12,39 +12,100 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
+from navig.debug_logger import get_debug_logger
 from navig.platform import paths
 
 NAVIG_HOME = paths.config_dir()
 DAEMON_CONFIG = NAVIG_HOME / "daemon" / "config.json"
+
+DEFAULT_DAEMON_CONFIG = {
+    "telegram_bot": True,
+    "gateway": False,
+    "gateway_port": 8789,
+    "scheduler": False,
+    "health_port": 0,
+    "engagement": True,
+}
+
+logger = get_debug_logger()
+
+
+def _as_bool(value: object, default: bool) -> bool:
+    """Coerce common JSON/env-style truthy/falsey values to bool."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off", ""}:
+            return False
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return default
+
+
+def _as_int(value: object, default: int) -> int:
+    """Coerce common JSON/env-style numeric values to int."""
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        normalized = value.strip()
+        if not normalized:
+            return default
+        try:
+            return int(normalized, 10)
+        except ValueError:
+            return default
+    return default
+
+
+def _write_config_atomic(config: dict) -> None:
+    """Persist daemon config using atomic replace to avoid partial writes."""
+    DAEMON_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = DAEMON_CONFIG.with_suffix(DAEMON_CONFIG.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    os.replace(tmp_path, DAEMON_CONFIG)
 
 
 def _load_config() -> dict:
     """Load daemon config or return defaults."""
     if DAEMON_CONFIG.exists():
         try:
-            return json.loads(DAEMON_CONFIG.read_text(encoding="utf-8"))
-        except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
-    return {
-        "telegram_bot": True,
-        # AUDIT self-check: Correct implementation? yes - default matches daemon contract tests.
-        # AUDIT self-check: Break callers? no - callers can still enable gateway explicitly in config.
-        # AUDIT self-check: Simpler alternative? yes - flip the default boolean only.
-        "gateway": False,
-        "gateway_port": 8789,
-        "scheduler": False,
-        "health_port": 0,
-        "engagement": True,
-    }
+            payload = json.loads(DAEMON_CONFIG.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                return payload
+            logger.warning(
+                "Daemon config %s has invalid root type %s; using defaults",
+                DAEMON_CONFIG,
+                type(payload).__name__,
+            )
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed to read daemon config %s: %s", DAEMON_CONFIG, exc)
+    return DEFAULT_DAEMON_CONFIG.copy()
 
 
 def save_default_config() -> Path:
-    """Write the default daemon config if it doesn't exist."""
+    """Ensure daemon config exists and is valid JSON object; repair if malformed."""
     DAEMON_CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    if not DAEMON_CONFIG.exists():
-        DAEMON_CONFIG.write_text(json.dumps(_load_config(), indent=2), encoding="utf-8")
+    should_repair = not DAEMON_CONFIG.exists()
+    if not should_repair:
+        try:
+            payload = json.loads(DAEMON_CONFIG.read_text(encoding="utf-8"))
+            should_repair = not isinstance(payload, dict)
+        except (json.JSONDecodeError, OSError):
+            should_repair = True
+
+    if should_repair:
+        _write_config_atomic(DEFAULT_DAEMON_CONFIG.copy())
     return DAEMON_CONFIG
 
 
@@ -71,19 +132,19 @@ def main() -> None:
 
     from navig.daemon.supervisor import NavigDaemon
 
-    daemon = NavigDaemon(health_port=cfg.get("health_port", 0))
+    daemon = NavigDaemon(health_port=_as_int(cfg.get("health_port", 0), 0))
 
-    if cfg.get("telegram_bot", True):
+    if _as_bool(cfg.get("telegram_bot", True), True):
         # Allow bot_script override
         bot_path = cfg.get("bot_script")
         daemon.add_telegram_bot(
             bot_script=Path(bot_path) if bot_path else None,
         )
 
-    if cfg.get("gateway", False):
-        daemon.add_gateway(port=cfg.get("gateway_port", 8789))
+    if _as_bool(cfg.get("gateway", False), False):
+        daemon.add_gateway(port=_as_int(cfg.get("gateway_port", 8789), 8789))
 
-    if cfg.get("scheduler", False):
+    if _as_bool(cfg.get("scheduler", False), False):
         daemon.add_scheduler()
 
     daemon.run()

@@ -19,6 +19,8 @@ from navig.connectors.types import (
     ResourceType,
 )
 
+pytestmark = pytest.mark.integration
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -79,7 +81,6 @@ def test_manifest_cannot_act():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_connect_reads_env_variable(connector, monkeypatch):
     monkeypatch.setenv("PERPLEXITY_API_KEY", "sk-test-key")
     await connector.connect()
@@ -87,7 +88,6 @@ async def test_connect_reads_env_variable(connector, monkeypatch):
     assert connector._api_key == "sk-test-key"
 
 
-@pytest.mark.asyncio
 async def test_connect_raises_without_key(connector, monkeypatch):
     monkeypatch.delenv("PERPLEXITY_API_KEY", raising=False)
     with pytest.raises(ValueError, match="API key not found"):
@@ -100,7 +100,6 @@ async def test_connect_raises_without_key(connector, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_search_returns_answer_and_citations(connector, monkeypatch):
     monkeypatch.setenv("PERPLEXITY_API_KEY", "sk-test-key")
     await connector.connect()
@@ -116,7 +115,6 @@ async def test_search_returns_answer_and_citations(connector, monkeypatch):
     assert answer.resource_type == ResourceType.DOCUMENT
 
 
-@pytest.mark.asyncio
 async def test_search_includes_citations(connector, monkeypatch):
     monkeypatch.setenv("PERPLEXITY_API_KEY", "sk-test-key")
     await connector.connect()
@@ -130,13 +128,11 @@ async def test_search_includes_citations(connector, monkeypatch):
     assert "https://example.com/1" in cite_urls
 
 
-@pytest.mark.asyncio
 async def test_search_raises_when_not_connected(connector):
     with pytest.raises(RuntimeError, match="not connected"):
         await connector.search("query")
 
 
-@pytest.mark.asyncio
 async def test_search_no_citations_still_returns_answer(connector, monkeypatch):
     monkeypatch.setenv("PERPLEXITY_API_KEY", "sk-test-key")
     await connector.connect()
@@ -154,7 +150,6 @@ async def test_search_no_citations_still_returns_answer(connector, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_fetch_always_returns_none(connector, monkeypatch):
     monkeypatch.setenv("PERPLEXITY_API_KEY", "sk-test-key")
     await connector.connect()
@@ -167,7 +162,6 @@ async def test_fetch_always_returns_none(connector, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_act_returns_failure(connector, monkeypatch):
     monkeypatch.setenv("PERPLEXITY_API_KEY", "sk-test-key")
     await connector.connect()
@@ -183,7 +177,6 @@ async def test_act_returns_failure(connector, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_health_check_ok(connector, monkeypatch):
     monkeypatch.setenv("PERPLEXITY_API_KEY", "sk-test-key")
     await connector.connect()
@@ -196,14 +189,12 @@ async def test_health_check_ok(connector, monkeypatch):
     assert health.latency_ms >= 0
 
 
-@pytest.mark.asyncio
 async def test_health_check_not_connected(connector):
     health = await connector.health_check()
     assert health.ok is False
     assert "Not connected" in health.message
 
 
-@pytest.mark.asyncio
 async def test_health_check_api_error(connector, monkeypatch):
     monkeypatch.setenv("PERPLEXITY_API_KEY", "sk-test-key")
     await connector.connect()
@@ -220,7 +211,6 @@ async def test_health_check_api_error(connector, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_disconnect_clears_state(connector, monkeypatch):
     monkeypatch.setenv("PERPLEXITY_API_KEY", "sk-test-key")
     await connector.connect()
@@ -236,7 +226,6 @@ async def test_disconnect_clears_state(connector, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_post_401_raises_connector_auth_error(connector, monkeypatch):
     """HTTP 401 from Perplexity API should raise ConnectorAuthError, not ValueError."""
     from navig.connectors.errors import ConnectorAuthError
@@ -261,7 +250,6 @@ async def test_post_401_raises_connector_auth_error(connector, monkeypatch):
     assert connector.status == ConnectorStatus.ERROR
 
 
-@pytest.mark.asyncio
 async def test_post_429_raises_connector_rate_limit_error(connector, monkeypatch):
     """HTTP 429 from Perplexity API should raise ConnectorRateLimitError, not RuntimeError."""
     from navig.connectors.errors import ConnectorRateLimitError

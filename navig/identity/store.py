@@ -53,15 +53,18 @@ CREATE TABLE IF NOT EXISTS navig_identities (
 # ── Singleton ───────────────────────────────────────────────────────────
 
 _store: IdentityStore | None = None
+_store_lock = threading.Lock()
 
 
 def get_identity_store(db_path: Path | None = None) -> IdentityStore:
     """Return (or create) the global IdentityStore singleton."""
     global _store
     if _store is None:
-        if db_path is None:
-            db_path = paths.data_dir() / "identity.db"
-        _store = IdentityStore(db_path)
+        with _store_lock:
+            if _store is None:  # double-checked locking
+                if db_path is None:
+                    db_path = paths.data_dir() / "identity.db"
+                _store = IdentityStore(db_path)
     return _store
 
 
@@ -167,11 +170,12 @@ class IdentityStore:
             self._conn.commit()
 
     def delete(self, telegram_id: int) -> bool:
-        cur = self._conn.execute(
-            "DELETE FROM navig_identities WHERE telegram_id = ?",
-            (telegram_id,),
-        )
-        self._conn.commit()
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM navig_identities WHERE telegram_id = ?",
+                (telegram_id,),
+            )
+            self._conn.commit()
         return cur.rowcount > 0
 
     def list_all(self, limit: int = 100) -> list[UserProfile]:

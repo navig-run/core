@@ -12,7 +12,7 @@ Architecture:
 
 Setup:
     1. Create a bot at t.me/BotFather, get the token
-    2. navig cred add telegram --token <bot_token>
+    2. navig vault add telegram --token <bot_token>
     3. Set your chat_id: navig kg remember user telegram_chat_id <your_chat_id>
     4. Start the bridge daemon: navig telegram listen
 
@@ -350,7 +350,7 @@ def get_telegram_bridge() -> TelegramBridge:
         cred_list = vault.list(provider="telegram")
         if not cred_list:
             raise RuntimeError(
-                "Telegram credential not found. Run: navig cred add telegram --token <bot_token>"
+                "Telegram credential not found. Run: navig vault add telegram --token <bot_token>"
             )
         full_cred = vault.get_by_id(cred_list[0].id, caller="telegram_bridge")
         token = ""

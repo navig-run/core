@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
@@ -322,11 +323,14 @@ class UnifiedProviderFactory:
 
 # Singleton
 _factory: UnifiedProviderFactory | None = None
+_factory_lock = threading.Lock()
 
 
 def get_provider_factory() -> UnifiedProviderFactory:
     """Get the global UnifiedProviderFactory singleton."""
     global _factory
     if _factory is None:
-        _factory = UnifiedProviderFactory()
+        with _factory_lock:
+            if _factory is None:
+                _factory = UnifiedProviderFactory()
     return _factory

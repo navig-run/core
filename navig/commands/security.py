@@ -20,6 +20,7 @@ from rich.console import Console
 from rich.progress import Progress
 from rich.table import Table
 
+from navig.cli.recovery import require_active_server
 from navig.config import get_config_manager
 from navig.console_helper import get_console
 from navig.remote import RemoteOperations
@@ -65,11 +66,7 @@ def firewall_status(options):
         options: Global options (dry_run, json_output, etc.)
     """
     config_manager = get_config_manager()
-    server_name = config_manager.get_active_server()
-
-    if not server_name:
-        console.print("[red]✗[/red] No active server configured")
-        return
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
@@ -125,11 +122,7 @@ def firewall_add_rule(port, protocol, allow_from, options):
         options: Global options
     """
     config_manager = get_config_manager()
-    server_name = config_manager.get_active_server()
-
-    if not server_name:
-        console.print("[red]✗[/red] No active server configured")
-        return
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
@@ -188,11 +181,7 @@ def firewall_remove_rule(port, protocol, options):
         options: Global options
     """
     config_manager = get_config_manager()
-    server_name = config_manager.get_active_server()
-
-    if not server_name:
-        console.print("[red]✗[/red] No active server configured")
-        return
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
@@ -231,11 +220,7 @@ def firewall_enable(options):
         options: Global options
     """
     config_manager = get_config_manager()
-    server_name = config_manager.get_active_server()
-
-    if not server_name:
-        console.print("[red]✗[/red] No active server configured")
-        return
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
@@ -266,11 +251,7 @@ def firewall_disable(options):
         options: Global options
     """
     config_manager = get_config_manager()
-    server_name = config_manager.get_active_server()
-
-    if not server_name:
-        console.print("[red]✗[/red] No active server configured")
-        return
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
@@ -306,11 +287,7 @@ def fail2ban_status(options):
         options: Global options
     """
     config_manager = get_config_manager()
-    server_name = config_manager.get_active_server()
-
-    if not server_name:
-        console.print("[red]✗[/red] No active server configured")
-        return
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
@@ -411,11 +388,7 @@ def fail2ban_unban(ip_address, jail, options):
         options: Global options
     """
     config_manager = get_config_manager()
-    server_name = config_manager.get_active_server()
-
-    if not server_name:
-        console.print("[red]✗[/red] No active server configured")
-        return
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
@@ -467,11 +440,7 @@ def ssh_audit(options):
         options: Global options
     """
     config_manager = get_config_manager()
-    server_name = config_manager.get_active_server()
-
-    if not server_name:
-        console.print("[red]✗[/red] No active server configured")
-        return
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
@@ -574,11 +543,7 @@ def check_security_updates(options):
         options: Global options
     """
     config_manager = get_config_manager()
-    server_name = config_manager.get_active_server()
-
-    if not server_name:
-        console.print("[red]✗[/red] No active server configured")
-        return
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
@@ -628,11 +593,7 @@ def audit_connections(options):
         options: Global options
     """
     config_manager = get_config_manager()
-    server_name = config_manager.get_active_server()
-
-    if not server_name:
-        console.print("[red]✗[/red] No active server configured")
-        return
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
@@ -701,11 +662,7 @@ def security_scan(options):
         options: Global options
     """
     config_manager = get_config_manager()
-    server_name = config_manager.get_active_server()
-
-    if not server_name:
-        console.print("[red]✗[/red] No active server configured")
-        return
+    server_name = require_active_server(options, config_manager)
 
     if options.get("dry_run"):
         console.print("[yellow]DRY RUN:[/yellow] Would run comprehensive security scan")

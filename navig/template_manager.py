@@ -6,6 +6,8 @@ Hot-swappable. Versioned. Traceable.
 """
 
 import json
+import os
+import tempfile
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -105,11 +107,20 @@ class Template:
 
     def save_metadata(self):
         """Save template metadata to file (preserving original format)."""
-        with open(self.metadata_file, "w", encoding="utf-8") as f:
-            if self.metadata_format == "yaml":
-                yaml.dump(self.metadata, f, default_flow_style=False, sort_keys=False)
-            else:
-                json.dump(self.metadata, f, indent=2)
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=self.metadata_file.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                if self.metadata_format == "yaml":
+                    yaml.dump(self.metadata, _fh, default_flow_style=False, sort_keys=False)
+                else:
+                    json.dump(self.metadata, _fh, indent=2)
+            os.replace(_tmp_path, self.metadata_file)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
 
     def is_enabled(self) -> bool:
         """Check if template is enabled."""

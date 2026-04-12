@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import logging
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -596,14 +597,19 @@ class ToolRouter:
 
 _registry: ToolRegistry | None = None
 _router: ToolRouter | None = None
+_registry_lock = threading.Lock()
+_router_lock = threading.Lock()
 
 
 def get_tool_registry() -> ToolRegistry:
     """Get the global ToolRegistry singleton."""
     global _registry
     if _registry is None:
-        _registry = ToolRegistry()
-        _registry.initialize()
+        with _registry_lock:
+            if _registry is None:
+                registry = ToolRegistry()
+                registry.initialize()
+                _registry = registry
     return _registry
 
 
@@ -611,12 +617,16 @@ def get_tool_router(safety_policy: dict[str, Any] | None = None) -> ToolRouter:
     """Get the global ToolRouter singleton."""
     global _router
     if _router is None:
-        _router = ToolRouter(safety_policy=safety_policy)
+        with _router_lock:
+            if _router is None:
+                _router = ToolRouter(safety_policy=safety_policy)
     return _router
 
 
 def reset_globals() -> None:
     """Reset singletons (for testing)."""
     global _registry, _router
-    _registry = None
-    _router = None
+    with _registry_lock:
+        _registry = None
+    with _router_lock:
+        _router = None

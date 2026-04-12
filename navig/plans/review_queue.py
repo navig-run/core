@@ -15,14 +15,13 @@ Human operators use this module to:
 from __future__ import annotations
 
 import logging
-import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+from navig.plans.frontmatter import parse_frontmatter_with_body as _parse_frontmatter
 
-_FRONTMATTER_RE = re.compile(r"^---\n([\s\S]*?)\n---\n?", re.MULTILINE)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -46,20 +45,6 @@ class ReviewItem:
 
     reason: str
     """Why the item was routed to review (from frontmatter or empty)."""
-
-
-def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
-    """Parse ``---``-delimited frontmatter, return (dict, body)."""
-    match = _FRONTMATTER_RE.match(text)
-    if not match:
-        return {}, text
-    values: dict[str, str] = {}
-    for line in match.group(1).splitlines():
-        if ":" not in line:
-            continue
-        key, val = line.split(":", 1)
-        values[key.strip()] = val.strip()
-    return values, text[match.end():]
 
 
 def _canonical_name(filename: str) -> str:

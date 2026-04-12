@@ -74,6 +74,36 @@ class ExecutionSettings:
 
     def __init__(self, provider: ExecutionConfigProvider):
         self._provider = provider
+        # mtime-guarded local config cache: avoids opening and parsing
+        # .navig/config.yaml on every get_mode() / get_confirmation_level() call.
+        self._local_cfg_cache: dict[str, Any] | None = None
+        self._local_cfg_mtime: float = -1.0
+
+    def _read_local_config(self) -> dict[str, Any]:
+        """Return the parsed project-local config, using an mtime cache.
+
+        Avoids re-reading .navig/config.yaml on every call. The cache is
+        invalidated when the file's mtime changes so hot-reloads are seen
+        within the same process.
+        """
+        local_config_file = Path.cwd() / ".navig" / "config.yaml"
+        try:
+            mtime = local_config_file.stat().st_mtime
+        except OSError:
+            # File absent or permission error — clear cache, return empty.
+            self._local_cfg_cache = {}
+            self._local_cfg_mtime = -1.0
+            return {}
+        if self._local_cfg_mtime == mtime and self._local_cfg_cache is not None:
+            return self._local_cfg_cache
+        try:
+            with open(local_config_file, encoding="utf-8") as f:
+                config: dict[str, Any] = yaml.safe_load(f) or {}
+        except Exception:  # noqa: BLE001
+            config = {}
+        self._local_cfg_cache = config
+        self._local_cfg_mtime = mtime
+        return config
 
     def get_mode(self) -> str:
         """
@@ -85,16 +115,10 @@ class ExecutionSettings:
             'interactive' (default) or 'auto'
         """
         # Check project-local config first
-        local_config_file = Path.cwd() / ".navig" / "config.yaml"
-        if local_config_file.exists():
-            try:
-                with open(local_config_file, encoding="utf-8") as f:
-                    local_config = yaml.safe_load(f) or {}
-                    execution = local_config.get("execution", {})
-                    if "mode" in execution:
-                        return execution["mode"]
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+        local_config = self._read_local_config()
+        execution = local_config.get("execution", {})
+        if "mode" in execution:
+            return execution["mode"]
 
         # Fall back to global config
         execution = self._provider.global_config.get("execution", {})
@@ -129,16 +153,10 @@ class ExecutionSettings:
             'critical', 'standard' (default), or 'verbose'
         """
         # Check project-local config first
-        local_config_file = Path.cwd() / ".navig" / "config.yaml"
-        if local_config_file.exists():
-            try:
-                with open(local_config_file, encoding="utf-8") as f:
-                    local_config = yaml.safe_load(f) or {}
-                    execution = local_config.get("execution", {})
-                    if "confirmation_level" in execution:
-                        return execution["confirmation_level"]
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+        local_config = self._read_local_config()
+        execution = local_config.get("execution", {})
+        if "confirmation_level" in execution:
+            return execution["confirmation_level"]
 
         # Fall back to global config
         execution = self._provider.global_config.get("execution", {})

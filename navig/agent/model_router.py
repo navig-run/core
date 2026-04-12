@@ -321,7 +321,8 @@ def _resolve_provider_api_key(
             vault = get_vault()
             for path in manifest_vault_keys:
                 try:
-                    secret = (vault.get_secret(path) or "").strip()
+                    raw = vault.get_secret(path)
+                    secret = raw.reveal().strip() if raw is not None else ""
                     if secret:
                         return secret
                 except (KeyError, AttributeError, TypeError, ValueError):

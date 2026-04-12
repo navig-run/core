@@ -11,6 +11,9 @@ Design decisions:
 from __future__ import annotations
 
 import json
+import logging
+import os
+import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
@@ -24,6 +27,8 @@ TierLabel = Literal["essential", "recommended", "optional"]
 ARTIFACT_VERSION = 1
 ARTIFACT_FILENAME = "onboarding.json"
 ENGINE_VERSION = "2.0.0"
+
+_log = logging.getLogger(__name__)
 
 OnFailurePolicy = Literal["abort", "skip", "retry"]
 
@@ -405,10 +410,22 @@ class OnboardingEngine:
             "engineVersion": self._state.engine_version,
             "steps": [asdict(s) for s in self._state.steps],
         }
-        self._artifact.write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        data = json.dumps(payload, indent=2, ensure_ascii=False)
+        # Atomic write: a crash mid-write leaves the previous checkpoint intact
+        # rather than producing a corrupt artifact that wipes all progress.
+        tmp_path: Path | None = None
+        try:
+            fd, tmp = tempfile.mkstemp(
+                dir=self._config.navig_dir, suffix=".tmp"
+            )
+            tmp_path = Path(tmp)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(data)
+            os.replace(tmp_path, self._artifact)
+            tmp_path = None  # replaced successfully
+        finally:
+            if tmp_path is not None and tmp_path.exists():
+                tmp_path.unlink(missing_ok=True)
 
     def _load_or_init_state(self) -> EngineState:
         if self._config.reset and self._artifact.exists():
@@ -427,8 +444,8 @@ class OnboardingEngine:
                 )
                 state.steps = [StepRecord(**s) for s in raw.get("steps", [])]
                 return state
-            except Exception:
-                pass  # Corrupt artifact — start fresh
+            except Exception as _e:
+                _log.debug("onboarding artifact read failed, starting fresh: %s", _e)
 
         return EngineState(started_at=_now())
 

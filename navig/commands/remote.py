@@ -13,6 +13,7 @@ from typing import Any
 import typer
 
 from navig import console_helper as ch
+from navig.core.connection import _resolve_ssh_bin
 
 
 def _check_powershell_quoting_issues(
@@ -267,26 +268,10 @@ def _execute_with_progress(remote_ops, command: str, host_config: dict[str, Any]
     Shows elapsed time after 3 seconds of waiting. The indicator updates
     in the terminal line above the command output area.
     """
-    import pathlib as _pl
-    import shutil
     import subprocess
 
-    # Resolve ssh binary — 32-bit Python on 64-bit Windows cannot find System32\OpenSSH via PATH
-    def _find_ssh():
-        b = shutil.which("ssh") or shutil.which("ssh.exe")
-        if b:
-            return b
-        _sr = os.environ.get("SystemRoot", "C:/Windows")
-        for _c in [
-            _pl.Path(_sr) / "SysNative" / "OpenSSH" / "ssh.exe",
-            _pl.Path(_sr) / "System32" / "OpenSSH" / "ssh.exe",
-        ]:
-            if _c.exists():
-                return str(_c)
-        raise FileNotFoundError("ssh.exe not found")
-
     # Build SSH command (same logic as RemoteOperations.execute_command)
-    ssh_args = [_find_ssh()]
+    ssh_args = [_resolve_ssh_bin()]
     ssh_args.extend(["-o", "StrictHostKeyChecking=yes"])
     ssh_args.extend(["-o", "ConnectTimeout=10"])
 
@@ -536,7 +521,7 @@ def _read_from_editor() -> str | None:
             pass  # best-effort; failure is non-critical
 
 
-def _encode_b64_command(command: str) -> str:
+def _encode_b64_command(command: str) -> str | None:
     """Encode command as Base64 for escape-proof transmission.
 
     The command is encoded locally and decoded on the remote server,

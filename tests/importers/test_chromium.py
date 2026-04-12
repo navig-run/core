@@ -2,6 +2,9 @@ import json
 
 from navig.importers.sources.chrome import ChromeImporter
 from navig.importers.sources.edge import EdgeImporter
+import pytest
+
+pytestmark = pytest.mark.integration
 
 
 def _sample_bookmarks() -> dict:

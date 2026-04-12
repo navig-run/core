@@ -1061,42 +1061,41 @@ def _call_legacy(
     model_override: str | None = None,
     timeout: float = 120.0,
 ) -> str:
-    """Legacy path using existing AIAssistant / direct OpenRouter."""
-    from navig.config import get_config_manager
+    """Last-resort path: direct OpenRouter HTTP call with no provider routing."""
+    import requests  # noqa: PLC0415
+
+    from navig.config import get_config_manager  # noqa: PLC0415
 
     cm = get_config_manager()
-    ai_key = cm.global_config.get("openrouter_api_key")
+    global_cfg = cm.global_config
+    ai_key = (
+        os.environ.get("OPENROUTER_API_KEY", "").strip()
+        or str(global_cfg.get("ai", {}).get("api_key") or "").strip()
+        or str(global_cfg.get("openrouter_api_key") or "").strip()
+    )
 
     if not ai_key:
-        # Try NAVIG_AI_MODEL env var
-        env_model = os.environ.get("NAVIG_AI_MODEL")
-        if env_model:
-            logger.debug("Using NAVIG_AI_MODEL=%s via legacy path", env_model)
+        return "Error: OpenRouter API key not configured."
 
-    # Use the existing ask_ai_with_context for simplicity
-    from navig.ai import ask_ai_with_context
-
-    # Extract system and user messages
-    system_prompt = ""
-    history = []
-    user_msg = ""
-
-    for m in messages:
-        if m["role"] == "system":
-            system_prompt = m["content"]
-        elif m["role"] == "assistant":
-            history.append(m)
-        elif m["role"] == "user":
-            user_msg = m["content"]
-            history.append(m)
-
-    # Remove last user message from history (ask_ai_with_context adds it)
-    if history and history[-1]["role"] == "user":
-        history = history[:-1]
-
-    return ask_ai_with_context(
-        prompt=user_msg,
-        system_prompt=system_prompt,
-        history=history if history else None,
-        model=model_override,
+    model = (
+        model_override
+        or str(global_cfg.get("ai", {}).get("model") or "").strip()
+        or "google/gemini-2.5-flash"
     )
+
+    try:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {ai_key}",
+                "HTTP-Referer": "https://github.com/navig-run/core",
+                "X-Title": "NAVIG Autonomous Agent",
+            },
+            json={"model": model, "messages": messages, "temperature": 0.7, "max_tokens": 4096},
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("_call_legacy request failed: %s", exc)
+        return f"Error: {exc}"

@@ -241,6 +241,11 @@ class CoordinatorAgent:
                 wid = f"{wid}_{idx}"
             seen_ids.add(wid)
 
+            try:
+                timeout = int(item.get("timeout", 120))
+            except (ValueError, TypeError):
+                timeout = 120
+
             specs.append(
                 WorkerSpec(
                     worker_id=wid,
@@ -248,7 +253,7 @@ class CoordinatorAgent:
                     tools_allowed=item.get("tools_allowed", []),
                     model=str(item.get("model", "auto")),
                     depends_on=item.get("depends_on", []),
-                    timeout=int(item.get("timeout", 120)),
+                    timeout=timeout,
                     context=str(item.get("context", "")),
                 )
             )

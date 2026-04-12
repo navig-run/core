@@ -23,7 +23,7 @@ except ImportError:
     HAS_NUMPY = False
 
 
-from navig.memory._util import _debug_log
+from navig.memory._util import _atomic_write_text, _debug_log
 
 
 @dataclass
@@ -348,8 +348,8 @@ class CachedEmbeddingProvider(EmbeddingProvider):
     def _save_cache(self) -> None:
         """Save cache to disk."""
         try:
-            with open(self._cache_file(), "w", encoding="utf-8") as f:
-                json.dump(self._cache, f)
+            content = json.dumps(self._cache, ensure_ascii=False)
+            _atomic_write_text(self._cache_file(), content)
         except Exception as e:
             _debug_log(f"Failed to save embedding cache: {e}")
 

@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import time
 from dataclasses import asdict, dataclass
 
@@ -226,12 +227,15 @@ class FormatterStore:
 
 
 _formatter_store: FormatterStore | None = None
+_formatter_store_lock = threading.Lock()
 
 
 def get_formatter_store() -> FormatterStore:
     global _formatter_store
     if _formatter_store is None:
-        _formatter_store = FormatterStore()
+        with _formatter_store_lock:
+            if _formatter_store is None:
+                _formatter_store = FormatterStore()
     return _formatter_store
 
 

@@ -6,6 +6,7 @@ and retry logic. Based on robust fallback architecture.
 """
 
 import asyncio
+import threading
 import time
 from dataclasses import dataclass
 from typing import TypeVar
@@ -407,13 +408,16 @@ class FallbackManager:
 
 # Global instance
 _fallback_manager: FallbackManager | None = None
+_fallback_manager_lock = threading.Lock()
 
 
 def get_fallback_manager() -> FallbackManager:
     """Get or create global fallback manager."""
     global _fallback_manager
     if _fallback_manager is None:
-        _fallback_manager = FallbackManager()
+        with _fallback_manager_lock:
+            if _fallback_manager is None:
+                _fallback_manager = FallbackManager()
     return _fallback_manager
 
 

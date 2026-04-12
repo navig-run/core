@@ -269,7 +269,7 @@ class SMSHitLChannel(HitLChannel):
     Free-text only — no buttons.
 
     Configure:
-        navig cred add twilio --account_sid <sid> --auth_token <tok> --from_number +15551234567
+        navig vault add twilio --account_sid <sid> --auth_token <tok> --from_number +15551234567
         navig kg remember user sms_phone +15557654321
     """
 

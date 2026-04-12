@@ -730,8 +730,8 @@ class CallbackHandler:
                 await self._handle_model_switch(cb_id, cb_data, chat_id, message_id, user_id)
                 return
 
-            # ── Provider model picker callbacks (pm_*) — no store needed ──
-            if cb_data.startswith("pm_"):
+            # ── Provider model picker callbacks (pmv_*/pms_*) — no store needed ──
+            if cb_data.startswith("pmv_") or cb_data.startswith("pms_"):
                 await self._handle_provider_model_callback(
                     cb_id, cb_data, chat_id, message_id, user_id
                 )
@@ -1263,12 +1263,13 @@ class CallbackHandler:
 
         defaults = self.channel._select_curated_tier_defaults(prov_id, models)
 
-        # Update hybrid router (optional layer, best-effort)
+        # Update hybrid router (best-effort — write regardless of is_active so slots
+        # are pre-populated and the tier-summary display can read them back)
         try:
             from navig.agent.ai_client import get_ai_client
 
             router = get_ai_client().model_router
-            if router and router.is_active:
+            if router:
                 for tier in ("small", "big", "coder_big"):
                     slot = router.cfg.slot_for_tier(tier)
                     slot.provider = prov_id
@@ -1295,12 +1296,29 @@ class CallbackHandler:
             logger.debug("Unable to mark ai-provider onboarding step for %s", prov_id)
 
         if not models:
-            # Provider is saved; no models resolved yet — guide user to /models
-            await self.channel.send_message(
-                chat_id,
-                f"⚠️ No models found for {prov_name} — use /models to assign models manually.",
-                parse_mode=None,
-            )
+            # Provider is saved; no models resolved yet.
+            # Distinguish between "no key" (most common) and "key OK but no models".
+            _has_api_key = False
+            try:
+                from navig.agent.model_router import _resolve_provider_api_key
+                from navig.config import get_config_manager as _gcm
+
+                _has_api_key = bool(
+                    _resolve_provider_api_key(prov_id, _gcm().global_config or {})
+                )
+            except Exception:
+                pass
+            if _has_api_key:
+                _warn_msg = (
+                    f"⚠️ No models found for {prov_name} — use /models to assign models manually."
+                )
+            else:
+                _warn_msg = (
+                    f"🔑 *API key required for {prov_name}.*\n"
+                    "Go back to the provider list and tap ⚙️ Configure to enter your key.\n"
+                    "Once the key is saved, select the provider again to activate it."
+                )
+            await self.channel.send_message(chat_id, _warn_msg, parse_mode="Markdown")
             return True
 
         await self.channel._show_models_tier_summary(
@@ -1387,6 +1405,7 @@ class CallbackHandler:
                     page=page_num,
                     selected_tier=tier_code,
                     message_id=message_id,
+                    show_models=True,
                 )
             else:
                 await self._answer(cb_id, "⚠️ Bad page callback")
@@ -1405,6 +1424,48 @@ class CallbackHandler:
             except Exception as exc:
                 logger.warning("Provider activation failed (prov_activate_): %s", exc)
                 await self._answer(cb_id, "⚠️ Activation failed — please try again", show_alert=True)
+            return
+
+        # ── Deactivate provider: prov_deactivate_{prov_id} ──────────────────
+        if cb_data.startswith("prov_deactivate_"):
+            prov_id_d = cb_data[len("prov_deactivate_") :]
+            try:
+                from navig.providers.registry import get_provider as _gp
+
+                _manifest_d = _gp(prov_id_d)
+                _dname = (
+                    getattr(_manifest_d, "display_name", None) or prov_id_d
+                ) if _manifest_d else prov_id_d
+                _demoji = getattr(_manifest_d, "emoji", "") if _manifest_d else ""
+            except Exception:
+                _dname = prov_id_d
+                _demoji = ""
+            if hasattr(self.channel, "_deactivate_provider"):
+                try:
+                    self.channel._deactivate_provider(prov_id_d)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Provider deactivation failed for %s: %s", prov_id_d, exc)
+            # Arm session-level raw mode so the very next message doesn't hit a stale provider
+            if hasattr(self.channel, "_set_one_shot_noai"):
+                self.channel._set_one_shot_noai(user_id)
+            else:
+                self.channel._user_model_prefs[user_id] = "noai"
+            await self._answer(
+                cb_id,
+                f"🔴 {_demoji} {_dname} deactivated — raw mode active".strip(),
+            )
+            # Refresh the picker in-place so the Activate button appears again
+            try:
+                await self.channel._show_provider_model_picker(
+                    chat_id,
+                    prov_id_d,
+                    page=0,
+                    selected_tier="s",
+                    message_id=message_id,
+                    show_models=False,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Picker refresh after deactivation failed for %s: %s", prov_id_d, exc)
             return
 
         # Providers that open a full model↔tier picker
@@ -1430,6 +1491,11 @@ class CallbackHandler:
             # Answer the callback immediately so Telegram removes the loading
             # spinner regardless of how long the picker takes to render.
             await self._answer(cb_id, "")
+            # Push "providers" onto the nav stack so Back returns to providers list.
+            _nav = self.channel._get_navigation_state(chat_id)
+            _stk = _nav.setdefault("screen_stack", ["main"])
+            if not _stk or _stk[-1] != "providers":
+                _stk.append("providers")
             try:
                 await self.channel._show_provider_model_picker(
                     chat_id,
@@ -1501,14 +1567,35 @@ class CallbackHandler:
                 await self.channel._handle_providers(chat_id, user_id, message_id=message_id)
             return
 
-        # ── Config stub: prov_cfg_{prov_id} → guidance for API key ──────────
+        # ── Config: prov_cfg_{prov_id} → prompt user to enter API key ─────────
         if cb_data.startswith("prov_cfg_"):
             cfg_prov_id = cb_data[len("prov_cfg_") :]
-            await self._answer(
-                cb_id,
-                f"🔑 Configure {cfg_prov_id} API key via `navig init` or vault settings.",
-                show_alert=True,
-            )
+            await self._answer(cb_id, "")
+            try:
+                result = await self.channel._api_call(
+                    "sendMessage",
+                    {
+                        "chat_id": chat_id,
+                        "text": (
+                            f"🔑 *Enter your {cfg_prov_id} API key:*\n\n"
+                            "Paste it in a reply — it will be stored securely in your vault.\n"
+                            "_Send_ `cancel` _to abort._"
+                        ),
+                        "parse_mode": "Markdown",
+                        "reply_markup": {"force_reply": True, "selective": True},
+                    },
+                )
+                prompt_msg_id = (result or {}).get("result", {}).get("message_id")
+            except Exception as exc:
+                logger.warning("Failed to send API key prompt for %s: %s", cfg_prov_id, exc)
+                prompt_msg_id = None
+            if not hasattr(self.channel, "_pending_api_key_input"):
+                self.channel._pending_api_key_input = {}
+            self.channel._pending_api_key_input[user_id] = {
+                "provider": cfg_prov_id,
+                "chat_id": chat_id,
+                "prompt_msg_id": prompt_msg_id,
+            }
             return
 
         # ── Dynamic provider: prov_{id} → immediate activation ──────────────
@@ -1568,13 +1655,22 @@ class CallbackHandler:
             except ValueError:
                 page = 0
             await self._answer(cb_id, "")
-            await self.channel._show_provider_model_picker(
-                chat_id,
-                prov_id,
-                page=page,
-                selected_tier=tier_code,
-                message_id=message_id,
-            )
+            try:
+                await self.channel._show_provider_model_picker(
+                    chat_id,
+                    prov_id,
+                    page=page,
+                    selected_tier=tier_code,
+                    message_id=message_id,
+                    show_models=True,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Provider tier tab render failed for %s/%s: %s",
+                    prov_id,
+                    tier_code,
+                    exc,
+                )
             return
 
         if not cb_data.startswith("pms_"):
@@ -1665,6 +1761,7 @@ class CallbackHandler:
                 page=page,
                 selected_tier=tier_code,
                 message_id=message_id,
+                show_models=True,
             )
         except Exception as exc:  # noqa: BLE001
             logger.debug("Provider picker refresh skipped after successful pms_: %s", exc)
@@ -1687,7 +1784,28 @@ class CallbackHandler:
         - hyb_assign_{tier}_{prov} : assign provider to tier as session override
         - hyb_save                 : save session overrides to durable config
         - hyb_reset                : clear session tier overrides
+        - hyb_enable               : enable hybrid routing in-process + config
         """
+        if cb_data == "hyb_enable":
+            await self._answer(cb_id, "")
+            try:
+                from navig.core.config_loader import get_config_manager
+
+                cfg_mgr = get_config_manager()
+                cfg_mgr.update_global_config({"routing": {"enabled": True}})
+                # Best-effort in-process activation without requiring a daemon restart
+                if hasattr(self.channel, "_refresh_ai_runtime_after_router_update"):
+                    self.channel._refresh_ai_runtime_after_router_update()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("hyb_enable failed: %s", exc)
+                await self.channel.send_message(
+                    chat_id, "⚠️ Failed to enable hybrid routing.", parse_mode=None
+                )
+                return
+            # Re-render hybrid screen so it reflects the new active state
+            await self.channel._handle_provider_hybrid(chat_id, user_id, message_id=message_id)
+            return
+
         if cb_data == "hyb_save":
             # Save current session tier overrides to config
             await self._answer(cb_id, "")
@@ -2025,6 +2143,11 @@ class CallbackHandler:
             await self.channel._handle_provider_reset(chat_id, user_id, message_id=message_id)
             return
 
+        if cb_data == "pu_voice":
+            await self._answer(cb_id, "")
+            await self.channel._handle_voice_menu(chat_id, user_id, message_id=message_id)
+            return
+
         await self._answer(cb_id, "⚠️ Unknown action", show_alert=True)
 
     # ── End provider control surface callbacks ───────────────────────────
@@ -2297,6 +2420,11 @@ class CallbackHandler:
         """Handle /trace action buttons: refresh, providers, model, close."""
         if cb_data == "trace_refresh":
             await self._answer(cb_id, "🔄 Refreshing...")
+            # Delete the old trace message before sending a fresh one to avoid accumulation
+            await self.channel._api_call(
+                "deleteMessage",
+                {"chat_id": chat_id, "message_id": message_id},
+            )
             try:
                 await self.channel._handle_trace(chat_id, user_id)
             except Exception as exc:
@@ -2623,7 +2751,8 @@ class CallbackHandler:
             "st_goto_voice": "_handle_voice_menu",
             "st_goto_voice_provider": "_handle_provider_voice",
             "st_goto_providers": "_handle_providers_and_models",
-            "st_goto_focus": "_handle_mode_menu",
+            # _handle_mode_menu does not exist — the correct method is _handle_mode
+            "st_goto_focus": "_handle_mode",
             "st_goto_model": "_handle_models_command",
             "st_goto_trace": "_handle_trace",
             "st_goto_debug": "_handle_debug",
@@ -2635,9 +2764,14 @@ class CallbackHandler:
             method = getattr(self.channel, method_name, None)
             if method:
                 try:
-                    if cb_data in ("st_goto_model", "st_goto_trace"):
+                    if cb_data == "st_goto_model":
+                        # _handle_models_command accepts message_id — pass it for in-place edit
+                        await method(chat_id, user_id, message_id=message_id)
+                    elif cb_data == "st_goto_trace":
+                        # _handle_trace has no message_id param
                         await method(chat_id, user_id)
                     elif cb_data == "st_goto_focus":
+                        # _handle_mode signature: (chat_id, text="", user_id=0)
                         await method(chat_id, "", user_id=user_id)
                     else:
                         try:

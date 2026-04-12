@@ -5,12 +5,12 @@ Per-user and per-group session isolation with:
 - Reply tracking and threading
 - Mention gating for groups
 - Automatic session cleanup
-- Thread-safe access via asyncio.Lock
+- Thread-safe access via session lock
 """
 
-import asyncio
 import json
 import logging
+import threading
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -145,7 +145,7 @@ class SessionManager:
     - Per-group session isolation
     - Automatic session cleanup
     - File-based persistence
-    - Thread-safe access via asyncio.Lock
+    - Thread-safe access via re-entrant lock
     """
 
     def __init__(
@@ -161,7 +161,7 @@ class SessionManager:
         self.session_timeout_days = session_timeout_days
 
         self._sessions: dict[str, TelegramSession] = {}
-        self._lock = asyncio.Lock()  # Protects _sessions dict and file I/O
+        self._lock = threading.RLock()  # Protects _sessions dict and file I/O
         self._load_sessions()
 
     def _get_session_key(self, chat_id: int, user_id: int, is_group: bool) -> str:
@@ -179,32 +179,34 @@ class SessionManager:
 
     def _load_sessions(self):
         """Load all sessions from disk."""
-        for session_file in self.storage_dir.glob("*.json"):
-            try:
-                with open(session_file, encoding="utf-8") as f:
-                    data = json.load(f)
-                session = TelegramSession.from_dict(data)
-                self._sessions[session.session_key] = session
-            except Exception as e:
-                logger.error("Failed to load session %s: %s", session_file, e)
+        with self._lock:
+            for session_file in self.storage_dir.glob("*.json"):
+                try:
+                    with open(session_file, encoding="utf-8") as f:
+                        data = json.load(f)
+                    session = TelegramSession.from_dict(data)
+                    self._sessions[session.session_key] = session
+                except Exception as e:
+                    logger.error("Failed to load session %s: %s", session_file, e)
 
     def _save_session(self, session: TelegramSession):
         """Save session to disk."""
         import os
 
-        session_file = self._get_session_file(session.session_key)
-        tmp_file = session_file.with_suffix(".tmp.json")
-        try:
-            with open(tmp_file, "w", encoding="utf-8") as f:
-                json.dump(session.to_dict(), f, indent=2)
-            os.replace(tmp_file, session_file)
-        except Exception as e:
-            if tmp_file.exists():
-                try:
-                    tmp_file.unlink()
-                except OSError:
-                    pass  # best-effort: skip on IO error
-            logger.error("Failed to save session: %s", e)
+        with self._lock:
+            session_file = self._get_session_file(session.session_key)
+            tmp_file = session_file.with_suffix(".tmp.json")
+            try:
+                with open(tmp_file, "w", encoding="utf-8") as f:
+                    json.dump(session.to_dict(), f, indent=2)
+                os.replace(tmp_file, session_file)
+            except Exception as e:
+                if tmp_file.exists():
+                    try:
+                        tmp_file.unlink()
+                    except OSError:
+                        pass  # best-effort: skip on IO error
+                logger.error("Failed to save session: %s", e)
 
     def get_or_create_session(
         self, chat_id: int, user_id: int, is_group: bool = False, username: str = ""
@@ -212,18 +214,19 @@ class SessionManager:
         """
         Get existing session or create new one.
         """
-        session_key = self._get_session_key(chat_id, user_id, is_group)
+        with self._lock:
+            session_key = self._get_session_key(chat_id, user_id, is_group)
 
-        if session_key not in self._sessions:
-            self._sessions[session_key] = TelegramSession(
-                session_key=session_key,
-                user_id=user_id,
-                chat_id=chat_id,
-                is_group=is_group,
-                username=username,
-            )
+            if session_key not in self._sessions:
+                self._sessions[session_key] = TelegramSession(
+                    session_key=session_key,
+                    user_id=user_id,
+                    chat_id=chat_id,
+                    is_group=is_group,
+                    username=username,
+                )
 
-        return self._sessions[session_key]
+            return self._sessions[session_key]
 
     def add_user_message(
         self,
@@ -236,15 +239,16 @@ class SessionManager:
         username: str = "",
     ) -> TelegramSession:
         """Add a user message to session."""
-        session = self.get_or_create_session(chat_id, user_id, is_group, username)
-        session.add_message("user", text, message_id, reply_to)
+        with self._lock:
+            session = self.get_or_create_session(chat_id, user_id, is_group, username)
+            session.add_message("user", text, message_id, reply_to)
 
-        # Trim old messages
-        if len(session.messages) > self.max_messages:
-            session.messages = session.messages[-self.max_messages :]
+            # Trim old messages
+            if len(session.messages) > self.max_messages:
+                session.messages = session.messages[-self.max_messages :]
 
-        self._save_session(session)
-        return session
+            self._save_session(session)
+            return session
 
     def add_assistant_message(
         self,
@@ -255,30 +259,33 @@ class SessionManager:
         is_group: bool = False,
     ) -> TelegramSession:
         """Add an assistant response to session."""
-        session = self.get_or_create_session(chat_id, user_id, is_group)
-        session.add_message("assistant", text, message_id)
-        self._save_session(session)
-        return session
+        with self._lock:
+            session = self.get_or_create_session(chat_id, user_id, is_group)
+            session.add_message("assistant", text, message_id)
+            self._save_session(session)
+            return session
 
     def get_session(
         self, chat_id: int, user_id: int, is_group: bool = False
     ) -> TelegramSession | None:
         """Get session if it exists."""
-        session_key = self._get_session_key(chat_id, user_id, is_group)
-        return self._sessions.get(session_key)
+        with self._lock:
+            session_key = self._get_session_key(chat_id, user_id, is_group)
+            return self._sessions.get(session_key)
 
     def clear_session(self, chat_id: int, user_id: int, is_group: bool = False):
         """Clear a session's message history."""
-        session_key = self._get_session_key(chat_id, user_id, is_group)
+        with self._lock:
+            session_key = self._get_session_key(chat_id, user_id, is_group)
 
-        if session_key in self._sessions:
-            session = self._sessions[session_key]
-            session.messages = []
-            session.message_count = 0
-            session.reply_chain = []
-            session.context_summary = ""
-            session.metadata = {}
-            self._save_session(session)
+            if session_key in self._sessions:
+                session = self._sessions[session_key]
+                session.messages = []
+                session.message_count = 0
+                session.reply_chain = []
+                session.context_summary = ""
+                session.metadata = {}
+                self._save_session(session)
 
     def get_session_metadata(
         self,
@@ -289,8 +296,9 @@ class SessionManager:
         is_group: bool = False,
     ) -> Any:
         """Get a metadata value from a session, or default when missing."""
-        session = self.get_or_create_session(chat_id, user_id, is_group=is_group)
-        return (session.metadata or {}).get(key, default)
+        with self._lock:
+            session = self.get_or_create_session(chat_id, user_id, is_group=is_group)
+            return (session.metadata or {}).get(key, default)
 
     def set_session_metadata(
         self,
@@ -302,22 +310,23 @@ class SessionManager:
         username: str = "",
     ) -> TelegramSession:
         """Set or clear a metadata value in a session and persist it."""
-        session = self.get_or_create_session(
-            chat_id,
-            user_id,
-            is_group=is_group,
-            username=username,
-        )
-        if session.metadata is None:
-            session.metadata = {}
+        with self._lock:
+            session = self.get_or_create_session(
+                chat_id,
+                user_id,
+                is_group=is_group,
+                username=username,
+            )
+            if session.metadata is None:
+                session.metadata = {}
 
-        if value is None:
-            session.metadata.pop(key, None)
-        else:
-            session.metadata[key] = value
+            if value is None:
+                session.metadata.pop(key, None)
+            else:
+                session.metadata[key] = value
 
-        self._save_session(session)
-        return session
+            self._save_session(session)
+            return session
 
     # ── Session Override Helpers ─────────────────────────────────────────
     # Overrides use the ``so:`` namespace prefix in session metadata.
@@ -374,29 +383,32 @@ class SessionManager:
         is_group: bool = False,
     ) -> int:
         """Remove all ``so:*`` overrides. Returns count of keys removed."""
-        session = self.get_or_create_session(chat_id, user_id, is_group=is_group)
-        if not session.metadata:
-            return 0
-        prefix = self._SO_PREFIX
-        to_remove = [k for k in session.metadata if k.startswith(prefix)]
-        for k in to_remove:
-            del session.metadata[k]
-        if to_remove:
-            self._save_session(session)
-        return len(to_remove)
+        with self._lock:
+            session = self.get_or_create_session(chat_id, user_id, is_group=is_group)
+            if not session.metadata:
+                return 0
+            prefix = self._SO_PREFIX
+            to_remove = [k for k in session.metadata if k.startswith(prefix)]
+            for k in to_remove:
+                del session.metadata[k]
+            if to_remove:
+                self._save_session(session)
+            return len(to_remove)
 
     def delete_session(self, session_key: str):
         """Delete a session completely."""
-        if session_key in self._sessions:
-            del self._sessions[session_key]
+        with self._lock:
+            if session_key in self._sessions:
+                del self._sessions[session_key]
 
-        session_file = self._get_session_file(session_key)
-        if session_file.exists():
-            session_file.unlink()
+            session_file = self._get_session_file(session_key)
+            if session_file.exists():
+                session_file.unlink()
 
     def list_sessions(self) -> list[TelegramSession]:
         """List all sessions."""
-        return list(self._sessions.values())
+        with self._lock:
+            return list(self._sessions.values())
 
     def prune_inactive(self) -> int:
         """
@@ -404,31 +416,32 @@ class SessionManager:
 
         Returns number of sessions removed.
         """
-        cutoff = datetime.now() - timedelta(days=self.session_timeout_days)
-        removed = 0
+        with self._lock:
+            cutoff = datetime.now() - timedelta(days=self.session_timeout_days)
+            removed = 0
 
-        to_remove = []
-        for key, session in self._sessions.items():
-            try:
-                last_active = datetime.fromisoformat(session.last_active)
-            except (ValueError, TypeError) as e:
-                # Malformed timestamp — mark for removal
-                logger.warning(
-                    "Session %s has invalid last_active timestamp %r: %s",
-                    key,
-                    session.last_active,
-                    e,
-                )
-                to_remove.append(key)
-                continue
-            if last_active < cutoff:
-                to_remove.append(key)
+            to_remove = []
+            for key, session in self._sessions.items():
+                try:
+                    last_active = datetime.fromisoformat(session.last_active)
+                except (ValueError, TypeError) as e:
+                    # Malformed timestamp — mark for removal
+                    logger.warning(
+                        "Session %s has invalid last_active timestamp %r: %s",
+                        key,
+                        session.last_active,
+                        e,
+                    )
+                    to_remove.append(key)
+                    continue
+                if last_active < cutoff:
+                    to_remove.append(key)
 
-        for key in to_remove:
-            self.delete_session(key)
-            removed += 1
+            for key in to_remove:
+                self.delete_session(key)
+                removed += 1
 
-        return removed
+            return removed
 
 
 class MentionGate:
@@ -515,14 +528,18 @@ class MentionGate:
 # =============================================================================
 
 _session_manager: SessionManager | None = None
+_session_manager_lock = threading.Lock()
 _mention_gate: MentionGate | None = None
+_mention_gate_lock = threading.Lock()
 
 
 def get_session_manager() -> SessionManager:
     """Get global session manager."""
     global _session_manager
     if _session_manager is None:
-        _session_manager = SessionManager()
+        with _session_manager_lock:
+            if _session_manager is None:
+                _session_manager = SessionManager()
     return _session_manager
 
 
@@ -530,5 +547,7 @@ def get_mention_gate(bot_username: str = "navig_bot") -> MentionGate:
     """Get global mention gate."""
     global _mention_gate
     if _mention_gate is None:
-        _mention_gate = MentionGate(bot_username)
+        with _mention_gate_lock:
+            if _mention_gate is None:
+                _mention_gate = MentionGate(bot_username)
     return _mention_gate

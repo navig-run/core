@@ -250,8 +250,8 @@ class ConversationStore(BaseStore):
             except Exception:
                 try:
                     conn.execute("ROLLBACK")
-                except Exception:  # noqa: BLE001
-                    pass  # best-effort; failure is non-critical
+                except Exception as rollback_exc:  # noqa: BLE001
+                    _debug_log(f"add_message rollback failed (non-fatal): {rollback_exc}")
                 raise
             finally:
                 conn.isolation_level = old_iso

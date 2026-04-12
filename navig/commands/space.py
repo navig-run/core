@@ -81,7 +81,9 @@ def _spaces_dir(create: bool = True) -> Path:
 
 
 def _suggest_builtins() -> str:
-    return "Tip: Common spaces \u2014 default (My Space), " + ", ".join(s for s in _BUILTIN_SPACES if s != "default")
+    return "Tip: Common spaces \u2014 default (My Space), " + ", ".join(
+        s for s in _BUILTIN_SPACES if s != "default"
+    )
 
 
 def _active_space_cache_file() -> Path:
@@ -138,7 +140,7 @@ def _set_active_space(name: str) -> None:
 
     # Best-effort: mirror into ~/.navig/config.yaml so `navig config show` reflects it
     try:
-        import yaml
+        from navig.core.yaml_io import atomic_write_yaml
 
         cm = get_config_manager()
         gc = dict(cm.global_config)
@@ -158,10 +160,7 @@ def _set_active_space(name: str) -> None:
                 gc.pop("spaces", None)
 
         config_file = Path(cm.global_config_dir) / "config.yaml"
-        config_file.write_text(
-            yaml.dump(gc, default_flow_style=False, allow_unicode=True),
-            encoding="utf-8",
-        )
+        atomic_write_yaml(gc, config_file, allow_unicode=True)
     except Exception:  # noqa: BLE001
         pass  # cache file is the source of truth; config.yaml update is best-effort
 
@@ -211,6 +210,8 @@ def _maybe_show_default_hint() -> None:
             hint_file.write_text("shown", encoding="utf-8")
         except OSError:
             pass  # best-effort: skip on IO error
+
+
 def _validate_slug(name: str) -> str:
     value = (name or "").strip().lower()
     if _SLUG_RE.match(value):

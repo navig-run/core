@@ -1,15 +1,15 @@
-"""Advanced Database Operation Commands - SECURE VERSION"""
+﻿"""Advanced Database Operation Commands - SECURE VERSION"""
 
 import json
 import os
 import re
 import subprocess
-import tempfile
 from typing import Any, Dict
 
 from rich.table import Table
 
 from navig import console_helper as ch
+from navig.commands._db_utils import create_mysql_config_file
 
 
 def _validate_sql_identifier(identifier: str, identifier_type: str = "identifier") -> bool:
@@ -38,8 +38,8 @@ def _validate_sql_identifier(identifier: str, identifier_type: str = "identifier
             f"Only alphanumeric characters and underscores are allowed."
         )
 
-    # Prevent SQL injection via common keywords
-    dangerous_keywords = [
+    # Block exact reserved SQL keywords (case-insensitive)
+    reserved_keywords = {
         "SELECT",
         "INSERT",
         "UPDATE",
@@ -52,22 +52,15 @@ def _validate_sql_identifier(identifier: str, identifier_type: str = "identifier
         "EXECUTE",
         "UNION",
         "WHERE",
-        "OR",
-        "1=1",
         "INFORMATION_SCHEMA",
-        "--",
-        "/*",
-        "*/",
-        ";",
-    ]
+    }
 
     upper_identifier = identifier.upper()
-    for keyword in dangerous_keywords:
-        if keyword in upper_identifier:
-            raise ValueError(
-                f"Invalid {identifier_type} name: '{identifier}'. "
-                f"Contains disallowed keyword or pattern: {keyword}"
-            )
+    if upper_identifier in reserved_keywords:
+        raise ValueError(
+            f"Invalid {identifier_type} name: '{identifier}'. "
+            "Identifier cannot be a reserved SQL keyword."
+        )
 
     # Additional length check
     if len(identifier) > 64:  # MySQL max identifier length
@@ -94,47 +87,6 @@ def _escape_sql_identifier(identifier: str) -> str:
     return f"`{clean_identifier}`"
 
 
-def _create_mysql_config_file(db_user: str, db_password: str) -> str:
-    """
-    Create temporary MySQL configuration file with credentials.
-
-    This prevents password exposure in process listings (ps aux shows command args).
-    The file is created with restrictive permissions (0600).
-
-    Args:
-        db_user: Database username
-        db_password: Database password
-
-    Returns:
-        Path to temporary config file (caller must delete after use)
-    """
-    # Create temp file with restrictive permissions
-    fd, temp_path = tempfile.mkstemp(prefix="navig_mysql_", suffix=".cnf", text=True)
-
-    try:
-        # Set file permissions to 0600 (read/write for owner only)
-        try:
-            os.chmod(temp_path, 0o600)
-        except (OSError, PermissionError):
-            pass  # best-effort: skip on access/IO error
-        # Write MySQL config format
-        config_content = f"""[client]
-user={db_user}
-password={db_password}
-"""
-        os.write(fd, config_content.encode("utf-8"))
-        os.close(fd)
-
-        return temp_path
-    except Exception as e:
-        # Clean up on error
-        os.close(fd)
-        try:
-            os.unlink(temp_path)
-        except OSError:
-            pass  # Cleanup - file may not exist
-        raise RuntimeError(f"Failed to create secure MySQL config: {e}") from e
-
 
 def list_databases_cmd(options: dict[str, Any]):
     """List all databases with sizes.
@@ -151,10 +103,8 @@ def list_databases_cmd(options: dict[str, Any]):
     config_manager = get_config_manager()
     tunnel_manager = TunnelManager(config_manager)
 
-    server_name = options.get("app") or config_manager.get_active_server()
-    if not server_name:
-        ch.error("No active server.")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     # Ensure tunnel
     tunnel_info = tunnel_manager.get_tunnel_status(server_name)
@@ -178,7 +128,7 @@ def list_databases_cmd(options: dict[str, Any]):
     # Create secure config file for credentials
     config_file = None
     try:
-        config_file = _create_mysql_config_file(db["user"], db["password"])
+        config_file = create_mysql_config_file(db["user"], db["password"])
 
         mysql_cmd = [
             "mysql",
@@ -260,10 +210,8 @@ def optimize_table_cmd(table: str, options: dict[str, Any]):
     config_manager = get_config_manager()
     tunnel_manager = TunnelManager(config_manager)
 
-    server_name = options.get("app") or config_manager.get_active_server()
-    if not server_name:
-        ch.error("No active server.")
-        return False
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     # SECURITY: Validate table name
     try:
@@ -296,7 +244,7 @@ def optimize_table_cmd(table: str, options: dict[str, Any]):
 
     config_file = None
     try:
-        config_file = _create_mysql_config_file(db["user"], db["password"])
+        config_file = create_mysql_config_file(db["user"], db["password"])
 
         mysql_cmd = [
             "mysql",
@@ -355,10 +303,8 @@ def repair_table_cmd(table: str, options: Dict[str, Any]):
     config_manager = get_config_manager()
     tunnel_manager = TunnelManager(config_manager)
 
-    server_name = options.get("app") or config_manager.get_active_server()
-    if not server_name:
-        ch.error("No active server.")
-        return False
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     # SECURITY: Validate table name
     try:
@@ -391,7 +337,7 @@ def repair_table_cmd(table: str, options: Dict[str, Any]):
 
     config_file = None
     try:
-        config_file = _create_mysql_config_file(db["user"], db["password"])
+        config_file = create_mysql_config_file(db["user"], db["password"])
 
         mysql_cmd = [
             "mysql",
@@ -447,10 +393,8 @@ def list_users_cmd(options: Dict[str, Any]):
     config_manager = get_config_manager()
     tunnel_manager = TunnelManager(config_manager)
 
-    server_name = options.get("app") or config_manager.get_active_server()
-    if not server_name:
-        ch.error("No active server.")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     # Ensure tunnel
     tunnel_info = tunnel_manager.get_tunnel_status(server_name)
@@ -464,7 +408,7 @@ def list_users_cmd(options: Dict[str, Any]):
 
     config_file = None
     try:
-        config_file = _create_mysql_config_file(db["user"], db["password"])
+        config_file = create_mysql_config_file(db["user"], db["password"])
 
         mysql_cmd = [
             "mysql",
@@ -540,10 +484,8 @@ def list_tables_cmd(database: str, options: Dict[str, Any]):
     config_manager = get_config_manager()
     tunnel_manager = TunnelManager(config_manager)
 
-    server_name = options.get("app") or config_manager.get_active_server()
-    if not server_name:
-        ch.error("No active server.")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     # SECURITY: Validate database name
     try:
@@ -561,7 +503,7 @@ def list_tables_cmd(database: str, options: Dict[str, Any]):
     db = server_config["database"]
 
     # SECURITY: Use backtick escaping for database name in WHERE clause
-    safe_database = _escape_sql_identifier(database)  # noqa: F841 — validates input; value embedded below via {database}
+    safe_database = _escape_sql_identifier(database)  # noqa: F841 - validates input; value embedded below via {database}
 
     # Note: We can't use backticks in string comparison, so we validate heavily first
     # Then use single quotes which is safe after validation
@@ -577,7 +519,7 @@ def list_tables_cmd(database: str, options: Dict[str, Any]):
 
     config_file = None
     try:
-        config_file = _create_mysql_config_file(db["user"], db["password"])
+        config_file = create_mysql_config_file(db["user"], db["password"])
 
         mysql_cmd = [
             "mysql",

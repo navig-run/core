@@ -215,11 +215,14 @@ class QueryTimer:
 # ── Module-level singleton ────────────────────────────────────
 
 _timer: QueryTimer | None = None
+_timer_lock = threading.Lock()
 
 
 def get_query_timer(**kwargs) -> QueryTimer:
     """Get or create the global QueryTimer instance."""
     global _timer
     if _timer is None:
-        _timer = QueryTimer(**kwargs)
+        with _timer_lock:
+            if _timer is None:  # double-checked locking
+                _timer = QueryTimer(**kwargs)
     return _timer

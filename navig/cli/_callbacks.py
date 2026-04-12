@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import typer
 
 from navig import __version__
@@ -9,6 +11,7 @@ from navig.cli.help_dictionaries import HELP_REGISTRY
 from navig.lazy_loader import lazy_import
 
 ch = lazy_import("navig.console_helper")
+_log = logging.getLogger(__name__)
 _HACKER_QUOTES: list | None = None
 
 
@@ -69,8 +72,8 @@ def show_compact_help():
             raise typer.Exit()
         except typer.Exit:
             raise
-        except Exception:
-            pass  # best-effort: rich --help rendering failed; fall through to plain version as _version
+        except Exception as _e:
+            _log.debug("rich help rendering failed; falling back to plain help: %s", _e)
 
     typer.echo(f"NAVIG v{__version__}")
     typer.echo("  navig <command> [options]")
@@ -108,9 +111,13 @@ def _schema_callback(value: bool):
 def version_callback(value: bool):
     """Show version and exit."""
     if value:
-        ch.info(f"NAVIG v{__version__}")
-        import random
+        try:
+            ch.info(f"NAVIG v{__version__}")
+            import random
 
-        quote, author = random.choice(_get_hacker_quotes())
-        ch.dim(f"💬 {quote} - {author}")
+            quote, author = random.choice(_get_hacker_quotes())
+            ch.dim(f"💬 {quote} - {author}")
+        except Exception:
+            # Fallback when Rich / console_helper is not available.
+            typer.echo(f"NAVIG v{__version__}")
         raise typer.Exit()

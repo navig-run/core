@@ -13,13 +13,16 @@ This module provides a lightweight fallback that works without extra dependencie
 
 import json
 import math
+import os
 import re
+import tempfile
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from navig import console_helper as ch
+from navig.platform.paths import config_dir
 
 if TYPE_CHECKING:
     from navig.memory.project_indexer import ProjectIndexer
@@ -370,8 +373,17 @@ class WikiRAG:
             ]
         }
 
-        with open(self.index_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=self.index_file.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                json.dump(data, _fh, indent=2)
+            os.replace(_tmp_path, self.index_file)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
 
     def rebuild_index(self):
         """Rebuild the search index from wiki pages.
@@ -504,6 +516,9 @@ class WikiRAG:
             content: Document content
             title: Optional title (extracted from content if not provided)
         """
+        if self._project_indexer is not None:
+            return
+
         if not title:
             for line in content.split("\n"):
                 if line.startswith("# "):
@@ -530,6 +545,9 @@ class WikiRAG:
         Args:
             path: Document path to remove
         """
+        if self._project_indexer is not None:
+            return
+
         self.documents = [d for d in self.documents if d.path != path]
         self.index.index(self.documents)
         self._save_index()
@@ -561,14 +579,17 @@ class WikiRAG:
 
 
 def get_wiki_rag(
-    wiki_path: Path,
+    wiki_path: Path | None = None,
     project_root: Path | None = None,
     use_unified: bool = False,
 ) -> WikiRAG:
     """Get or create WikiRAG instance.
 
     Args:
-        wiki_path: Path to wiki directory.
+        wiki_path: Path to wiki directory. When omitted, defaults to
+            ``<project_root>/.navig/wiki`` when *project_root* is provided,
+            otherwise tries ``.navig/wiki`` in CWD then falls back to
+            ``~/.navig/wiki``.
         project_root: Project root for unified indexer (optional).
         use_unified: When True and *project_root* is given, delegates to
             ``ProjectIndexer`` (SQLite FTS5) instead of the in-memory BM25.
@@ -577,6 +598,23 @@ def get_wiki_rag(
     Returns:
         WikiRAG instance.
     """
+    if wiki_path is None:
+        if project_root is not None:
+            wiki_path = Path(project_root) / ".navig" / "wiki"
+        else:
+            cwd = Path.cwd()
+            project_wiki: Path | None = None
+            for parent in [cwd, *cwd.parents]:
+                navig_dir = parent / ".navig"
+                if navig_dir.is_dir():
+                    project_wiki = navig_dir / "wiki"
+                    break
+
+            if project_wiki is not None:
+                wiki_path = project_wiki
+            else:
+                wiki_path = config_dir() / "wiki"
+
     if use_unified and project_root is not None:
         try:
             from navig.memory.project_indexer import ProjectIndexer

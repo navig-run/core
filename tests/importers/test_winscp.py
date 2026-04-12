@@ -1,4 +1,7 @@
 from navig.importers.sources.winscp import WinSCPImporter
+import pytest
+
+pytestmark = pytest.mark.integration
 
 
 def test_winscp_ini_parse(tmp_path) -> None:

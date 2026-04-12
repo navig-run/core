@@ -50,39 +50,46 @@ def _force_utf8_stdio() -> None:
 
 _force_utf8_stdio()
 
-import threading as _threading  # P1-10: thread safety for singleton lazy-init
+import threading as _threading
 
-_config_manager = None
+# ---------------------------------------------------------------------------
+# Config manager
+# ---------------------------------------------------------------------------
+# Delegate to navig.config.get_config_manager() — the single source of truth.
+# Removing a duplicate module-level cache means navig.config.reset_config_manager()
+# correctly clears the instance for tests and --no-cache without needing a
+# second flush of cli.__init__._config_manager.
+# ---------------------------------------------------------------------------
 _NO_CACHE = False
-_config_manager_lock = _threading.Lock()
-
-
-def _get_config_manager():
-    """Lazy-load and cache the ConfigManager (thread-safe — P1-10)."""
-    global _config_manager
-    if _config_manager is None:
-        with _config_manager_lock:
-            if _config_manager is None:  # double-checked locking
-                from navig.config import get_config_manager
-
-                _config_manager = get_config_manager(force_new=_NO_CACHE)
-    return _config_manager
-
-
-# Heavy dependencies - loaded lazily on first use
-# This reduces startup time by ~200ms for commands that don't need them
-_TunnelManager = None
-_RemoteOperations = None
-_AIAssistant = None
-_lazy_lock = _threading.Lock()  # shared lock for lazy class references (cheap)
 _log = logging.getLogger(__name__)
 
 
+def _get_config_manager():
+    """Return the process-wide ConfigManager from navig.config."""
+    from navig.config import get_config_manager
+
+    return get_config_manager()
+
+
+# ---------------------------------------------------------------------------
+# Heavy-class lazy references
+# ---------------------------------------------------------------------------
+# Each class gets its own lock so a slow import of one cannot block the others.
+# These store the *class* (not an instance) for deferred construction.
+# ---------------------------------------------------------------------------
+_TunnelManager = None
+_RemoteOperations = None
+_AIAssistant = None
+_tunnel_lock = _threading.Lock()
+_remote_lock = _threading.Lock()
+_ai_lock = _threading.Lock()
+
+
 def _get_tunnel_manager():
-    """Lazy load TunnelManager (thread-safe — P1-10)."""
+    """Lazy-load TunnelManager class (thread-safe)."""
     global _TunnelManager
     if _TunnelManager is None:
-        with _lazy_lock:
+        with _tunnel_lock:
             if _TunnelManager is None:
                 from navig.tunnel import TunnelManager
 
@@ -91,10 +98,10 @@ def _get_tunnel_manager():
 
 
 def _get_remote_operations():
-    """Lazy load RemoteOperations (thread-safe — P1-10)."""
+    """Lazy-load RemoteOperations class (thread-safe)."""
     global _RemoteOperations
     if _RemoteOperations is None:
-        with _lazy_lock:
+        with _remote_lock:
             if _RemoteOperations is None:
                 from navig.remote import RemoteOperations
 
@@ -103,10 +110,10 @@ def _get_remote_operations():
 
 
 def _get_ai_assistant():
-    """Lazy load AIAssistant (thread-safe — P1-10)."""
+    """Lazy-load AIAssistant class (thread-safe)."""
     global _AIAssistant
     if _AIAssistant is None:
-        with _lazy_lock:
+        with _ai_lock:
             if _AIAssistant is None:
                 from navig.ai import AIAssistant
 
@@ -242,19 +249,21 @@ def main(
     # Store global options in context for subcommands to access
     ctx.ensure_object(dict)
 
-    global _NO_CACHE, _config_manager
+    global _NO_CACHE
     _NO_CACHE = bool(no_cache)
-    try:
-        from navig.config import reset_config_manager, set_config_cache_bypass
-
-        set_config_cache_bypass(_NO_CACHE)
-        if _NO_CACHE:
-            reset_config_manager()
-    except Exception:
-        pass  # best-effort reset; failure does not affect CLI startup
     if _NO_CACHE:
-        # Ensure subsequent calls create a fresh ConfigManager.
-        _config_manager = None
+        # Invalidate navig.config's cached instance so _get_config_manager()
+        # returns a fresh ConfigManager on the next call.  Restore bypass=False
+        # immediately so the fresh instance gets cached (not re-created on every
+        # subsequent call in this process).
+        try:
+            from navig.config import reset_config_manager, set_config_cache_bypass
+
+            set_config_cache_bypass(True)   # mark: create fresh on next call
+            reset_config_manager()           # drop the stale cached instance
+            set_config_cache_bypass(False)  # allow the fresh instance to be cached
+        except Exception as _cache_exc:  # noqa: BLE001
+            _log.debug("no-cache reset failed (non-fatal): %s", _cache_exc)
 
     # Auto-detect host if --app is specified without --host
     # void: the system finds what you need before you know you need it
@@ -306,6 +315,7 @@ def main(
     ctx.obj["yes"] = yes
     ctx.obj["confirm"] = confirm
     ctx.obj["raw"] = raw
+    ctx.obj["plain"] = raw  # --raw is the global alias for --plain; initialise so subcommands inherit it
     ctx.obj["json"] = json
     ctx.obj["debug_log"] = debug_log
 
@@ -340,34 +350,19 @@ def main(
         # Check if user passed a natural language query as argument
         # (navig "check disk space" should work like AI chat)
         import sys
+        from pathlib import Path
 
-        remaining_args = sys.argv[1:]
+        executable = Path(sys.argv[0]).name.lower() if sys.argv else ""
+        if "navig" in executable:
+            remaining_args = sys.argv[1:]
+        else:
+            # In embedded/in-process calls (e.g., pytest invoking `app([...])`),
+            # host process argv is unrelated to NAVIG and must not drive NL routing.
+            remaining_args = []
 
-        # Filter out global flags
-        global_flags = {
-            "--host",
-            "-h",
-            "--app",
-            "-p",
-            "--verbose",
-            "--quiet",
-            "-q",
-            "--dry-run",
-            "--yes",
-            "-y",
-            "--confirm",
-            "-c",
-            "--raw",
-            "--json",
-            "--debug-log",
-            "--no-cache",
-            "--version",
-            "-v",
-            "--help",
-        }
-        non_flag_args = [
-            arg for arg in remaining_args if arg not in global_flags and not arg.startswith("--")
-        ]
+        from navig.cli.registration import extract_non_global_tokens
+
+        non_flag_args = extract_non_global_tokens(remaining_args)
 
         if non_flag_args and not non_flag_args[0].startswith("-"):
             # User passed something like: navig "check disk space"

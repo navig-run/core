@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -76,6 +78,16 @@ class RemediationAction:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RemediationAction:
         """Create a RemediationAction from serialized data."""
+        try:
+            attempts = int(data.get("attempts", 0))
+        except (ValueError, TypeError):
+            attempts = 0
+            
+        try:
+            max_attempts = int(data.get("max_attempts", 5))
+        except (ValueError, TypeError):
+            max_attempts = 5
+
         return cls(
             id=data["id"],
             type=RemediationType(data["type"]),
@@ -83,8 +95,8 @@ class RemediationAction:
             reason=data["reason"],
             timestamp=datetime.fromisoformat(data["timestamp"]),
             status=RemediationStatus(data.get("status", RemediationStatus.PENDING.value)),
-            attempts=int(data.get("attempts", 0)),
-            max_attempts=int(data.get("max_attempts", 5)),
+            attempts=attempts,
+            max_attempts=max_attempts,
             error=data.get("error"),
             metadata=data.get("metadata", {}),
         )
@@ -219,10 +231,17 @@ class RemediationEngine:
                 "updated_at": datetime.now().isoformat(),
                 "actions": [a.to_dict() for a in self._actions.values()],
             }
-            self.actions_file.write_text(
-                json.dumps(payload, indent=2),
-                encoding="utf-8",
-            )
+            _tmp_path: Path | None = None
+            try:
+                _fd, _tmp = tempfile.mkstemp(dir=self.actions_file.parent, suffix=".tmp")
+                _tmp_path = Path(_tmp)
+                with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                    _fh.write(json.dumps(payload, indent=2))
+                os.replace(_tmp_path, self.actions_file)
+                _tmp_path = None
+            finally:
+                if _tmp_path is not None:
+                    _tmp_path.unlink(missing_ok=True)
         except Exception as e:
             self._log(f"Failed to save remediation actions: {e}", level="warning")
 

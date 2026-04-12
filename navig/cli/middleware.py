@@ -27,6 +27,8 @@ from pathlib import Path
 
 import typer
 
+from navig.cli.registration import extract_non_global_tokens
+
 _log = logging.getLogger(__name__)
 
 
@@ -54,7 +56,13 @@ def init_operation_recorder(
         from navig.operation_recorder import OperationType, get_operation_recorder
 
         recorder = get_operation_recorder()
-        command_str = " ".join(sys.argv[1:])  # Exclude 'python -m navig'
+        command_str = " ".join(sys.argv[1:])  # Exclude 'python -m navig'; full string for op-type detection
+
+        # Build a global-flag-stripped command string for the skip check so that
+        # short-form flags like "-h" (help) don't false-match substrings in
+        # "--host" or "-v" in "--verbose"/"--version".
+        _non_global = extract_non_global_tokens(sys.argv[1:])
+        _cmd_str_for_skip = " ".join(_non_global)
 
         # Determine operation type from command
         op_type = OperationType.LOCAL_COMMAND
@@ -77,9 +85,11 @@ def init_operation_recorder(
         elif "service" in command_str:
             op_type = OperationType.SERVICE_RESTART
 
-        # Skip recording for certain meta commands
+        # Skip recording for certain meta commands.  Use the non-global token
+        # string so that short flags like "-h" / "-v" are checked against the
+        # actual command words, not substrings inside "--host" or "--verbose".
         skip_record = any(
-            kw in command_str
+            kw in _cmd_str_for_skip
             for kw in [
                 "history ",
                 "help",
@@ -128,14 +138,27 @@ def _register_operation_complete_atexit(ctx: typer.Context) -> None:
 
                 if record and recorder:
                     duration_ms = (time.time() - start_time) * 1000
+                    # Determine success from the active exception context, if any.
+                    # sys.exc_info() returns non-None during exception-driven exits.
+                    import sys as _sys
+
+                    _exc_type, _exc_val, _ = _sys.exc_info()
+                    if _exc_type is None:
+                        _success = True
+                    elif issubclass(_exc_type, SystemExit):
+                        _code = getattr(_exc_val, "code", 0)
+                        _success = _code in (0, None)
+                    else:
+                        _success = False
+
                     recorder.complete_operation(
                         record=record,
-                        success=True,
+                        success=_success,
                         output="",
                         duration_ms=duration_ms,
                     )
-            except Exception:
-                pass  # Silent fail for recording
+            except Exception as _e:
+                _log.debug("operation recorder write failed: %s", _e)
 
         # daemon=False so the write completes before process exits.
         # join(1.0) caps CLI exit delay to ≤1 second even on slow DB.
@@ -262,7 +285,8 @@ def register_fact_extraction() -> None:
     Never surfaces errors to the user.
     """
     _SKIP_FACT_CMDS = frozenset(["memory", "kg", "index", "history", "version", "help"])
-    _invoked_cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+    _non_global_tokens = extract_non_global_tokens(sys.argv[1:])
+    _invoked_cmd = _non_global_tokens[0] if _non_global_tokens else ""
 
     if _invoked_cmd in _SKIP_FACT_CMDS or _invoked_cmd in ("", "--help", "--version"):
         return
@@ -273,8 +297,12 @@ def register_fact_extraction() -> None:
                 command_str = " ".join(sys.argv[1:])
                 if not command_str.strip():
                     return
-                _skip_prefixes = ("--help", "--version", "memory ", "kg ", "index ")
-                if any(command_str.startswith(p) for p in _skip_prefixes):
+                # Guard using normalized (non-global) tokens so prefixed globals
+                # don't prevent accurate skip detection.
+                _cmd_tokens = extract_non_global_tokens(sys.argv[1:])
+                _first_cmd = _cmd_tokens[0] if _cmd_tokens else ""
+                _skip_cmds = {"memory", "kg", "index", "--help", "--version"}
+                if _first_cmd in _skip_cmds:
                     return
                 from navig.memory.manager import get_memory_manager
 
@@ -288,8 +316,8 @@ def register_fact_extraction() -> None:
                     )
                     if _result and hasattr(_mgr, "store_facts"):
                         _mgr.store_facts(_result)
-            except Exception:
-                pass  # Never surface memory errors to the user
+            except Exception as _e:
+                _log.debug("fact extraction failed: %s", _e)
 
         threading.Thread(target=_do_extract, daemon=True).start()
 

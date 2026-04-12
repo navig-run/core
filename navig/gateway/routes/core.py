@@ -227,7 +227,9 @@ def _websocket(gw):
         cid = id(ws)
         logger.info("WS connected: %s", cid)
         subscriptions = gw.__dict__.setdefault("_ws_subscriptions", {})
+        connections = gw.__dict__.setdefault("ws_connections", set())
         subscriptions[cid] = set()
+        connections.add(ws)
 
         try:
             async for msg in ws:
@@ -241,6 +243,7 @@ def _websocket(gw):
                     logger.error("WS error: %s", ws.exception())
         finally:
             subscriptions.pop(cid, None)
+            connections.discard(ws)
             logger.info("WS disconnected: %s", cid)
         return ws
 

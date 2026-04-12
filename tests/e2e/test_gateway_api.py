@@ -5,6 +5,8 @@ import pytest
 
 from navig.gateway.server import GatewayConfig, NavigGateway
 
+pytestmark = pytest.mark.slow
+
 
 @pytest.fixture
 async def test_gateway():
@@ -30,7 +32,6 @@ async def test_gateway():
     await task
 
 
-@pytest.mark.asyncio
 async def test_gateway_health_endpoint(test_gateway):
     """Test that the core API boots and serves health checks."""
     async with aiohttp.ClientSession() as session:
@@ -42,7 +43,6 @@ async def test_gateway_health_endpoint(test_gateway):
             assert "timestamp" in data["data"]
 
 
-@pytest.mark.asyncio
 async def test_gateway_status_endpoint(test_gateway):
     """Test that the core API boots and serves status checks."""
     async with aiohttp.ClientSession() as session:

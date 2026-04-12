@@ -1,6 +1,5 @@
 """Backup Commands - Comprehensive backup and restore system"""
 
-import hashlib
 import json
 import os
 import shutil
@@ -14,6 +13,7 @@ from typing import Any
 from rich.table import Table
 
 from navig import console_helper as ch
+from navig.commands._db_utils import calculate_file_checksum, create_mysql_config_file
 
 
 def _run_scp_command(
@@ -71,69 +71,14 @@ def _verify_disk_space(
     except OSError as e:
         return False, f"Failed to check disk space: {e}"
 
-
-def _calculate_file_checksum(file_path: Path, algorithm: str = "sha256") -> str:
-    """
-    Calculate checksum for backup integrity verification.
-
-    Args:
-        file_path: Path to file
-        algorithm: Hash algorithm (sha256, md5)
-
-    Returns:
-        Hex digest string
-    """
-    hash_obj = hashlib.new(algorithm)
-
-    with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            hash_obj.update(chunk)
-
-    return hash_obj.hexdigest()
+def _result_stdout_text(result: subprocess.CompletedProcess | object) -> str:
+    """Return normalized stdout text from command results."""
+    return str(getattr(result, "stdout", "") or "")
 
 
-def _create_mysql_config_file(user: str, password: str) -> str:
-    """
-    Create temporary MySQL config file with credentials.
-    Returns path to config file.
-    SECURITY: Prevents password from appearing in process listings.
-    """
-    fd, config_path = tempfile.mkstemp(suffix=".cnf", text=True)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write("[client]\n")
-            f.write(f"user={user}\n")
-            f.write(f"password={password}\n")
-        # Set restrictive permissions (owner read/write only)
-        try:
-            os.chmod(config_path, 0o600)
-        except (OSError, PermissionError):
-            pass  # best-effort: skip on access/IO error
-        return config_path
-    except Exception:
-        try:
-            os.unlink(config_path)
-        except OSError:
-            pass  # Cleanup - operation may fail
-        raise
-
-
-def _cleanup_failed_backup(backup_dir: Path, error_msg: str):
-    """
-    Clean up partial backup on failure.
-
-    Args:
-        backup_dir: Backup directory to remove
-        error_msg: Error message to log
-    """
-    try:
-        if backup_dir.exists():
-            shutil.rmtree(backup_dir)
-            ch.warning(f"Cleaned up partial backup: {backup_dir.name}")
-    except OSError as e:
-        ch.warning(f"Failed to cleanup partial backup: {e}")
-
-    ch.error(f"Backup failed: {error_msg}")
+def _result_indicates_missing(result: subprocess.CompletedProcess | object) -> bool:
+    """Return True when a probe command returned the sentinel 'missing'."""
+    return _result_stdout_text(result).strip() == "missing"
 
 
 def backup_system_config(name: str | None, options: dict[str, Any]):
@@ -142,10 +87,8 @@ def backup_system_config(name: str | None, options: dict[str, Any]):
     from navig.remote import RemoteOperations
 
     config_manager = get_config_manager()
-    server_name = options.get("app") or config_manager.get_active_server()
-    if not server_name:
-        ch.error("No active server.")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
@@ -183,7 +126,7 @@ def backup_system_config(name: str | None, options: dict[str, Any]):
         check_cmd = f'test -f {remote_file} && echo "exists" || echo "missing"'
         result = remote_ops.execute_command(check_cmd)
 
-        if "missing" in result:
+        if _result_indicates_missing(result):
             ch.warning(f"⊘ {remote_file} (not found)")
             results.append({"file": remote_file, "status": "skipped", "reason": "not found"})
             continue
@@ -217,8 +160,18 @@ def backup_system_config(name: str | None, options: dict[str, Any]):
     }
 
     metadata_file = backup_dir.parent / "metadata.json"
-    with open(metadata_file, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=2)
+    metadata_file.parent.mkdir(parents=True, exist_ok=True)
+    _tmp_m1: Path | None = None
+    try:
+        _fd_m1, _tmp_m1s = tempfile.mkstemp(dir=metadata_file.parent, suffix=".tmp")
+        _tmp_m1 = Path(_tmp_m1s)
+        with os.fdopen(_fd_m1, "w", encoding="utf-8") as _fh_m1:
+            json.dump(metadata, _fh_m1, indent=2)
+        os.replace(_tmp_m1, metadata_file)
+        _tmp_m1 = None
+    finally:
+        if _tmp_m1 is not None:
+            _tmp_m1.unlink(missing_ok=True)
 
     if options.get("json"):
         ch.raw_print(json.dumps(metadata))
@@ -236,10 +189,8 @@ def backup_all_databases(name: str | None, compress: str, options: dict[str, Any
     config_manager = get_config_manager()
     tunnel_manager = TunnelManager(config_manager)
 
-    server_name = options.get("app") or config_manager.get_active_server()
-    if not server_name:
-        ch.error("No active server.")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
 
@@ -283,7 +234,7 @@ def backup_all_databases(name: str | None, compress: str, options: dict[str, Any
     db_config = server_config["database"]
 
     # Create secure config file (prevents password in process listings)
-    config_file = _create_mysql_config_file(db_config["user"], db_config["password"])
+    config_file = create_mysql_config_file(db_config["user"], db_config["password"])
 
     try:
         # Get list of databases
@@ -380,7 +331,7 @@ def backup_all_databases(name: str | None, compress: str, options: dict[str, Any
                     file_size = dump_file.stat().st_size / (1024 * 1024)
 
                 # Calculate checksum for integrity verification
-                checksum = _calculate_file_checksum(final_file)
+                checksum = calculate_file_checksum(final_file)
 
                 total_size += file_size
                 ch.success(f"   ✓ {db_name} ({file_size:.2f} MB)")
@@ -420,8 +371,18 @@ def backup_all_databases(name: str | None, compress: str, options: dict[str, Any
     }
 
     metadata_file = backup_dir.parent / "metadata.json"
-    with open(metadata_file, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=2)
+    metadata_file.parent.mkdir(parents=True, exist_ok=True)
+    _tmp_m2: Path | None = None
+    try:
+        _fd_m2, _tmp_m2s = tempfile.mkstemp(dir=metadata_file.parent, suffix=".tmp")
+        _tmp_m2 = Path(_tmp_m2s)
+        with os.fdopen(_fd_m2, "w", encoding="utf-8") as _fh_m2:
+            json.dump(metadata, _fh_m2, indent=2)
+        os.replace(_tmp_m2, metadata_file)
+        _tmp_m2 = None
+    finally:
+        if _tmp_m2 is not None:
+            _tmp_m2.unlink(missing_ok=True)
 
     if options.get("json"):
         ch.raw_print(json.dumps(metadata))
@@ -438,10 +399,8 @@ def backup_hestia(name: str | None, options: dict[str, Any]):
     from navig.remote import RemoteOperations
 
     config_manager = get_config_manager()
-    server_name = options.get("app") or config_manager.get_active_server()
-    if not server_name:
-        ch.error("No active server.")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
@@ -450,7 +409,7 @@ def backup_hestia(name: str | None, options: dict[str, Any]):
     check_cmd = 'command -v v-list-users >/dev/null 2>&1 && echo "installed" || echo "missing"'
     result = remote_ops.execute_command(check_cmd)
 
-    if "missing" in result:
+    if _result_indicates_missing(result):
         ch.error("HestiaCP not detected on this server")
         return
 
@@ -506,7 +465,7 @@ def backup_hestia(name: str | None, options: dict[str, Any]):
         check_cmd = f'test -d {remote_path} && echo "exists" || echo "missing"'
         result = remote_ops.execute_command(check_cmd)
 
-        if "missing" in result:
+        if _result_indicates_missing(result):
             ch.warning(f"   ⊘ {remote_path} (not found)")
             results.append({"directory": remote_path, "desc": desc, "status": "skipped"})
             continue
@@ -579,8 +538,18 @@ def backup_hestia(name: str | None, options: dict[str, Any]):
     }
 
     metadata_file = backup_dir.parent / "metadata.json"
-    with open(metadata_file, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=2)
+    metadata_file.parent.mkdir(parents=True, exist_ok=True)
+    _tmp_m3: Path | None = None
+    try:
+        _fd_m3, _tmp_m3s = tempfile.mkstemp(dir=metadata_file.parent, suffix=".tmp")
+        _tmp_m3 = Path(_tmp_m3s)
+        with os.fdopen(_fd_m3, "w", encoding="utf-8") as _fh_m3:
+            json.dump(metadata, _fh_m3, indent=2)
+        os.replace(_tmp_m3, metadata_file)
+        _tmp_m3 = None
+    finally:
+        if _tmp_m3 is not None:
+            _tmp_m3.unlink(missing_ok=True)
 
     if options.get("json"):
         ch.raw_print(json.dumps(metadata))
@@ -597,10 +566,8 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
     from navig.remote import RemoteOperations
 
     config_manager = get_config_manager()
-    server_name = options.get("app") or config_manager.get_active_server()
-    if not server_name:
-        ch.error("No active server.")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
     remote_ops = RemoteOperations(config_manager)
@@ -634,7 +601,7 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
         check_cmd = f'test -{"d" if is_dir else "f"} {remote_path.rstrip("/")} && echo "exists" || echo "missing"'
         result = remote_ops.execute_command(check_cmd)
 
-        if "missing" in result:
+        if _result_indicates_missing(result):
             continue
 
         if is_dir:
@@ -646,7 +613,7 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
             files_cmd = f"find {remote_path.rstrip('/')} -type f"
             files_result = remote_ops.execute_command(files_cmd)
 
-            for file_path in files_result.strip().split("\n"):
+            for file_path in _result_stdout_text(files_result).strip().split("\n"):
                 if file_path:
                     local_file = local_subdir / Path(file_path).name
                     try:
@@ -692,7 +659,7 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
         check_cmd = f'test -{"d" if is_dir else "f"} {remote_path.rstrip("/")} && echo "exists" || echo "missing"'
         result = remote_ops.execute_command(check_cmd)
 
-        if "missing" in result:
+        if _result_indicates_missing(result):
             continue
 
         if is_dir:
@@ -702,7 +669,7 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
             files_cmd = f"find {remote_path.rstrip('/')} -type f"
             files_result = remote_ops.execute_command(files_cmd)
 
-            for file_path in files_result.strip().split("\n"):
+            for file_path in _result_stdout_text(files_result).strip().split("\n"):
                 if file_path:
                     local_file = local_subdir / Path(file_path).name
                     try:
@@ -742,8 +709,18 @@ def backup_web_config(name: str | None, options: dict[str, Any]):
     }
 
     metadata_file = backup_dir.parent / "metadata.json"
-    with open(metadata_file, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=2)
+    metadata_file.parent.mkdir(parents=True, exist_ok=True)
+    _tmp_m4: Path | None = None
+    try:
+        _fd_m4, _tmp_m4s = tempfile.mkstemp(dir=metadata_file.parent, suffix=".tmp")
+        _tmp_m4 = Path(_tmp_m4s)
+        with os.fdopen(_fd_m4, "w", encoding="utf-8") as _fh_m4:
+            json.dump(metadata, _fh_m4, indent=2)
+        os.replace(_tmp_m4, metadata_file)
+        _tmp_m4 = None
+    finally:
+        if _tmp_m4 is not None:
+            _tmp_m4.unlink(missing_ok=True)
 
     if options.get("json"):
         ch.raw_print(json.dumps(metadata))
@@ -759,11 +736,8 @@ def backup_all(name: str | None, compress: str, options: dict[str, Any]):
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    server_name = options.get("app") or config_manager.get_active_server()
-
-    if not server_name:
-        ch.error("No active server.")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_name = name or f"{server_name}_full_{timestamp}"

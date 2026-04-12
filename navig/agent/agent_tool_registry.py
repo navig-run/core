@@ -328,7 +328,7 @@ def _build_openai_schema(tool: BaseTool, vault_keys: list[str]) -> dict[str, Any
     Handles two parameter formats:
 
     1. **List format** (new): ``parameters = [{"name":..., "type":..., ...}]``
-    2. **Dict format** (legacy): ``parameters = {"key": "description", ...}``
+    2. **Dict format** (compat): ``parameters = {"key": "description", ...}``
     3. **JSON Schema object** (already conformant): ``parameters = {"type":"object", ...}``
 
     Credential fields listed in *vault_keys* are stripped from the schema so
@@ -382,7 +382,7 @@ def _build_openai_schema(tool: BaseTool, vault_keys: list[str]) -> dict[str, Any
                 ]
 
     elif isinstance(raw, dict):
-        # Legacy dict: {"key": "description"} or {"key": {"desc": "..."}}
+        # Compat dict: {"key": "description"} or {"key": {"desc": "..."}}
         properties = {}
         for pname, pdesc in raw.items():
             if pname in vault_keys:

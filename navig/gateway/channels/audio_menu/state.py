@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -57,6 +59,17 @@ def save_config(user_id: int, cfg: AudioConfig) -> None:
     """Persist AudioConfig to disk and update in-memory cache."""
     _cache[user_id] = cfg
     try:
-        _store_path(user_id).write_text(json.dumps(asdict(cfg), indent=2))
+        _p = _store_path(user_id)
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=_p.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                _fh.write(json.dumps(asdict(cfg), indent=2))
+            os.replace(_tmp_path, _p)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
     except OSError:
         pass  # best-effort cleanup

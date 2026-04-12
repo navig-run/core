@@ -13,6 +13,9 @@ import sys
 import time
 from pathlib import Path
 from typing import Callable, Tuple
+import pytest
+
+pytestmark = pytest.mark.slow
 
 # Add project to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))

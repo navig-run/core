@@ -23,6 +23,7 @@ from rich.console import Console
 from rich.table import Table
 
 from navig.console_helper import get_console
+from navig.core.yaml_io import atomic_write_yaml
 
 console = get_console()
 
@@ -577,8 +578,7 @@ def deploy_init(
 
     # Write to disk
     config_dir.mkdir(parents=True, exist_ok=True)
-    with open(config_path, "w", encoding="utf-8") as fh:
-        yaml.dump(doc, fh, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    atomic_write_yaml(doc, config_path, allow_unicode=True)
 
     console.print(
         f"\n[green]✓[/green]  Created [cyan]{config_path.relative_to(project_root)}[/cyan]"

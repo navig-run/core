@@ -55,7 +55,7 @@ async def _edit(
     except Exception as exc:
         # Telegram returns 400 when the message body hasn't changed — that's fine.
         if "not modified" not in str(exc).lower():
-            logger.debug("audio_menu: editMessageText failed: %s", exc)
+            logger.debug("audio_menu: editMessageText failed: {}", exc)
 
 
 async def handle_audio_callback(
@@ -226,7 +226,7 @@ async def handle_audio_callback(
                 session.tts_provider = _TTS_MAP.get(provider_id, "auto")
                 sm._save_session(session)
             except Exception as sync_err:
-                logger.debug("audio_menu: session tts_provider sync: %s", sync_err)
+                logger.debug("audio_menu: session tts_provider sync: {}", sync_err)
 
             await _edit(
                 channel,
@@ -251,4 +251,4 @@ async def handle_audio_callback(
 
     except Exception as exc:
         # Never crash the bot on keyboard navigation errors.
-        logger.warning("audio_menu handler error [%s]: %s", cb_data, exc)
+        logger.warning("audio_menu handler error [{}]: {}", cb_data, exc)

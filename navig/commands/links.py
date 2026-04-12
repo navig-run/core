@@ -30,20 +30,10 @@ _links_db_mod = lazy_import("navig.memory.links_db")
 links_app = typer.Typer(name="links", help="Manage browser bookmarks with vault auto-login")
 
 
-def _db():
-    return _links_db_mod.get_links_db()
-
-
 def _Table(*args, **kwargs):
     from rich.table import Table
 
     return Table(*args, **kwargs)
-
-
-def _console():
-    from rich.console import Console
-
-    return get_console()
 
 
 def _rprint(*args, **kwargs):
@@ -67,7 +57,7 @@ def add_link(
     json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
 ):
     """Add a new bookmark. Optionally associate a vault credential for auto-login."""
-    db = _db()
+    db = _links_db_mod.get_links_db()
 
     # Check for duplicate
     existing = db.get_by_url(url)
@@ -99,7 +89,7 @@ def list_links(
     json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
 ):
     """List all bookmarks."""
-    db = _db()
+    db = _links_db_mod.get_links_db()
 
     if tag:
         links = db.list_by_tag(tag)
@@ -137,7 +127,7 @@ def list_links(
             last,
         )
 
-    _console().print(table)
+    get_console().print(table)
 
 
 # ─────────────────────────── search ──────────────────────────────────────────
@@ -150,7 +140,7 @@ def search_links(
     json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
 ):
     """Full-text search bookmarks by URL, title, notes, or tags."""
-    db = _db()
+    db = _links_db_mod.get_links_db()
     links = db.search(query, limit=limit)
 
     if json_output:
@@ -161,7 +151,7 @@ def search_links(
         _ch.warning(f"No bookmarks matching '{query}'.")
         return
 
-    con = _console()
+    con = get_console()
     con.print(f'[bold]Found {len(links)} result(s) for[/bold] "{query}":\n')
     for link in links:
         cred_hint = f" [green]🔑 {link.vault_cred_id}[/green]" if link.vault_cred_id else ""
@@ -182,7 +172,7 @@ def show_link(
     json_output: bool = typer.Option(False, "--json", help="Output in JSON format"),
 ):
     """Show full details for a bookmark."""
-    db = _db()
+    db = _links_db_mod.get_links_db()
     link = db.get(link_id)
     if not link:
         _ch.error(f"Link {link_id} not found")
@@ -192,7 +182,7 @@ def show_link(
         _rprint(json.dumps(link.to_dict(), default=str))
         return
 
-    con = _console()
+    con = get_console()
     con.print(f"\n[bold cyan]Link: {link.id}[/bold cyan]")
     con.print(f"URL:        [blue]{link.url}[/blue]")
     con.print(f"Title:      {link.title or '—'}")
@@ -223,7 +213,7 @@ def open_link(
     """
     import asyncio
 
-    db = _db()
+    db = _links_db_mod.get_links_db()
     link = db.get(link_id)
     if not link:
         _ch.error(f"Link {link_id} not found.")
@@ -277,7 +267,7 @@ def edit_link(
     cred: str | None = typer.Option(None, "--cred", "-c", help="Vault credential ID"),
 ):
     """Edit link metadata."""
-    db = _db()
+    db = _links_db_mod.get_links_db()
     tag_list = [t.strip() for t in tags.split(",")] if tags else None
     if db.update(link_id, title=title, notes=notes, tags=tag_list, vault_cred_id=cred):
         _ch.success(f"Link {link_id} updated.")
@@ -295,7 +285,7 @@ def tag_link(
     tag: str = typer.Argument(..., help="Tag to add"),
 ):
     """Add a tag to a link."""
-    db = _db()
+    db = _links_db_mod.get_links_db()
     link = db.get(link_id)
     if not link:
         _ch.error(f"Link {link_id} not found.")
@@ -314,7 +304,7 @@ def delete_link(
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ):
     """Delete a bookmark permanently."""
-    db = _db()
+    db = _links_db_mod.get_links_db()
     link = db.get(link_id)
     if not link:
         _ch.error(f"Link {link_id} not found.")
@@ -344,7 +334,7 @@ def import_links(
     """Bulk import bookmarks from legacy JSON or native browser bookmark files."""
     import pathlib
 
-    db = _db()
+    db = _links_db_mod.get_links_db()
     path = pathlib.Path(file)
     if not path.exists():
         _ch.error(f"File not found: {file}")

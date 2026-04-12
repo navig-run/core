@@ -10,7 +10,9 @@ Features:
 
 import asyncio
 import json
+import os
 import re
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -324,7 +326,18 @@ class CronService:
             "jobs": [j.to_dict() for j in self.jobs.values()],
         }
 
-        self._get_jobs_path().write_text(json.dumps(data, indent=2), encoding="utf-8")
+        _jobs_path = self._get_jobs_path()
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=_jobs_path.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                _fh.write(json.dumps(data, indent=2))
+            os.replace(_tmp_path, _jobs_path)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
 
     def _generate_id(self) -> str:
         """Generate unique job ID."""

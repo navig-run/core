@@ -123,6 +123,18 @@ visibility: private
 """
 
 
+_WIKI_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".gif"}
+
+
+def _is_image_inbox_file(path: Path) -> bool:
+    return path.suffix.lower() in _WIKI_IMAGE_SUFFIXES
+
+
+def _render_ocr_markdown(title: str, ocr_text: str) -> str:
+    cleaned = (ocr_text or "").strip()
+    return f"# {title}\n\n{cleaned}\n"
+
+
 def get_wiki_path(config: ConfigManager) -> Path:
     """Get the wiki directory path for current project."""
     if config.app_config_dir:
@@ -548,17 +560,36 @@ def process_inbox_item(wiki_path: Path, filename: str, auto_move: bool = False) 
     if not file_path.exists():
         return {"error": f"File not found: {filename}"}
 
-    # Read content
-    try:
-        content = file_path.read_text(encoding="utf-8")
-    except Exception as e:
-        return {"error": f"Cannot read file: {e}"}
+    title = file_path.stem
+
+    if _is_image_inbox_file(file_path):
+        try:
+            image_bytes = file_path.read_bytes()
+        except Exception as e:
+            return {"error": f"Cannot read file: {e}"}
+
+        try:
+            from navig.core.ocr import extract_ocr_text_from_image_bytes
+
+            ocr_text = extract_ocr_text_from_image_bytes(image_bytes)
+        except Exception as e:
+            return {"error": f"OCR unavailable: {e}"}
+
+        if not ocr_text:
+            return {"error": "No OCR text detected in image"}
+
+        content = _render_ocr_markdown(title.replace("-", " ").title(), ocr_text)
+    else:
+        # Read content
+        try:
+            content = file_path.read_text(encoding="utf-8")
+        except Exception as e:
+            return {"error": f"Cannot read file: {e}"}
 
     # Categorize
     suggested_folder = categorize_content(content, filename)
 
     # Extract title
-    title = file_path.stem
     for line in content.split("\n"):
         if line.startswith("# "):
             title = line[2:].strip()

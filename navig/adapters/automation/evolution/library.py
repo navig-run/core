@@ -3,6 +3,8 @@ Script Library for AHK Automation
 """
 
 import json
+import os
+import tempfile
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -53,8 +55,17 @@ class ScriptLibrary:
 
     def _save_index(self):
         data = {k: v.to_dict() for k, v in self._index.items()}
-        with open(self.index_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=self.index_file.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                json.dump(data, _fh, indent=2)
+            os.replace(_tmp_path, self.index_file)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
 
     def save_script(self, goal: str, script: str, tags: list[str] = None) -> str:
         """Save a new script to the library."""
@@ -75,8 +86,17 @@ class ScriptLibrary:
 
         # Save script file
         script_path = self.storage_dir / "scripts" / f"{script_id}.ahk"
-        with open(script_path, "w", encoding="utf-8") as f:
-            f.write(script)
+        _tmp_path: Path | None = None
+        try:
+            _fd, _tmp = tempfile.mkstemp(dir=script_path.parent, suffix=".tmp")
+            _tmp_path = Path(_tmp)
+            with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                _fh.write(script)
+            os.replace(_tmp_path, script_path)
+            _tmp_path = None
+        finally:
+            if _tmp_path is not None:
+                _tmp_path.unlink(missing_ok=True)
 
         # Update index
         self._index[script_id] = entry

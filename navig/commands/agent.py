@@ -604,6 +604,8 @@ def agent_config_cmd(
 
     import yaml
 
+    from navig.core.yaml_io import atomic_write_yaml
+
     config_path = _get_config_path()
 
     if not config_path.exists():
@@ -644,8 +646,7 @@ def agent_config_cmd(
 
         current[keys[-1]] = value
 
-        with open(config_path, "w", encoding="utf-8") as f:
-            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+        atomic_write_yaml(data, config_path)
 
         ch.success(f"Set {set_key} = {value}")
         return
@@ -747,6 +748,8 @@ def agent_personality(
     """
     import yaml
 
+    from navig.core.yaml_io import atomic_write_yaml
+
     if action == "list":
         from navig.agent.soul import BUILTIN_PROFILES
 
@@ -804,8 +807,7 @@ def agent_personality(
 
         data.setdefault("agent", {}).setdefault("personality", {})["profile"] = name
 
-        with open(config_path, "w", encoding="utf-8") as f:
-            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+        atomic_write_yaml(data, config_path)
 
         ch.success(f"Personality set to: {name}")
 
@@ -837,8 +839,7 @@ def agent_personality(
             "verbosity": "normal",
         }
 
-        with open(profile_path, "w", encoding="utf-8") as f:
-            yaml.dump(template, f, default_flow_style=False, sort_keys=False)
+        atomic_write_yaml(template, profile_path)
 
         ch.success(f"Created personality: {profile_path}")
         ch.info("Edit the file to customize behavior")
@@ -846,220 +847,6 @@ def agent_personality(
     else:
         ch.error(f"Unknown action: {action}")
         ch.info("Valid: list, show, set, create")
-
-
-@agent_app.command("service")
-def agent_service(
-    action: str = typer.Argument(..., help="Action: install, uninstall, status"),
-):
-    """
-    Manage agent as a system service.
-
-    Actions:
-        install   - Install as systemd/launchd/Windows service
-        uninstall - Remove the service
-        status    - Check service status
-
-    Examples:
-        navig agent service install
-        navig agent service status
-        navig agent service uninstall
-    """
-
-    if sys.platform == "linux":
-        _service_linux(action)
-    elif sys.platform == "darwin":
-        _service_macos(action)
-    elif sys.platform == "win32":
-        _service_windows(action)
-    else:
-        ch.error(f"Unsupported platform: {sys.platform}")
-        raise typer.Exit(1)
-
-
-def _service_linux(action: str):
-    """Manage systemd service on Linux."""
-    import os
-    import subprocess
-
-    service_name = "navig-agent"
-    service_file = Path(f"/etc/systemd/system/{service_name}.service")
-
-    python_path = sys.executable
-
-    if action == "install":
-        content = f"""[Unit]
-Description=NAVIG Autonomous Agent
-After=network.target
-
-[Service]
-Type=simple
-User={os.environ.get("USER", "root")}
-ExecStart={python_path} -m navig agent start --foreground
-Restart=on-failure
-RestartSec=5
-WorkingDirectory={Path.home()}
-
-[Install]
-WantedBy=multi-user.target
-"""
-
-        try:
-            # Write service file (requires sudo)
-            ch.info(f"Creating service file: {service_file}")
-            ch.info("You may be prompted for sudo password...")
-
-            # Write to temp file first
-            temp_file = Path("/tmp/navig-agent.service")
-            temp_file.write_text(content)
-
-            subprocess.run(["sudo", "cp", str(temp_file), str(service_file)], check=True)
-            subprocess.run(["sudo", "systemctl", "daemon-reload"], check=True)
-            subprocess.run(["sudo", "systemctl", "enable", service_name], check=True)
-
-            temp_file.unlink()
-
-            ch.success("Service installed!")
-            ch.info(f"Start with: sudo systemctl start {service_name}")
-
-        except subprocess.CalledProcessError as e:
-            ch.error(f"Failed to install service: {e}")
-            raise typer.Exit(1) from e
-
-    elif action == "uninstall":
-        try:
-            subprocess.run(["sudo", "systemctl", "stop", service_name], check=False)
-            subprocess.run(["sudo", "systemctl", "disable", service_name], check=False)
-            subprocess.run(["sudo", "rm", "-f", str(service_file)], check=True)
-            subprocess.run(["sudo", "systemctl", "daemon-reload"], check=True)
-
-            ch.success("Service uninstalled")
-
-        except subprocess.CalledProcessError as e:
-            ch.error(f"Failed to uninstall: {e}")
-
-    elif action == "status":
-        try:
-            result = subprocess.run(
-                ["systemctl", "status", service_name], capture_output=True, text=True
-            )
-            print(result.stdout)
-            if result.stderr:
-                print(result.stderr)
-        except Exception as e:
-            ch.error(f"Error: {e}")
-
-    else:
-        ch.error(f"Unknown action: {action}")
-
-
-def _service_macos(action: str):
-    """Manage launchd service on macOS."""
-    import subprocess
-
-    plist_name = "com.navig.agent"
-    plist_file = Path.home() / "Library" / "LaunchAgents" / f"{plist_name}.plist"
-
-    python_path = sys.executable
-
-    if action == "install":
-        plist_file.parent.mkdir(parents=True, exist_ok=True)
-
-        content = f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>{plist_name}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{python_path}</string>
-        <string>-m</string>
-        <string>navig</string>
-        <string>agent</string>
-        <string>start</string>
-        <string>--foreground</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>{_get_agent_config_dir()}/logs/agent.log</string>
-    <key>StandardErrorPath</key>
-    <string>{_get_agent_config_dir()}/logs/agent.err</string>
-</dict>
-</plist>
-"""
-
-        plist_file.write_text(content)
-        subprocess.run(["launchctl", "load", str(plist_file)], check=True)
-
-        ch.success("Service installed!")
-        ch.info("Service will start on login")
-        ch.info(f"Start now with: launchctl start {plist_name}")
-
-    elif action == "uninstall":
-        if plist_file.exists():
-            subprocess.run(["launchctl", "unload", str(plist_file)], check=False)
-            plist_file.unlink()
-            ch.success("Service uninstalled")
-        else:
-            ch.info("Service not installed")
-
-    elif action == "status":
-        result = subprocess.run(["launchctl", "list", plist_name], capture_output=True, text=True)
-        if result.returncode == 0:
-            ch.success("Service is running")
-            print(result.stdout)
-        else:
-            ch.info("Service is not running")
-
-    else:
-        ch.error(f"Unknown action: {action}")
-
-
-def _service_windows(action: str):
-    """Manage Windows Service — delegates to 'navig service' commands."""
-    ch.info("Windows Service Management")
-    ch.console.print()
-
-    # Use the new unified daemon/service system
-    try:
-        from navig.daemon import service_manager as sm
-
-        if action == "install":
-            ch.info("Installing via new NAVIG daemon system...")
-            ok, msg = sm.install(start_now=True)
-            if ok:
-                ch.success(msg)
-            else:
-                ch.error(msg)
-                ch.console.print()
-                ch.info("Tip: For more options use: navig service install --help")
-
-        elif action == "uninstall":
-            ok, msg = sm.uninstall()
-            if ok:
-                ch.success(msg)
-            else:
-                ch.error(msg)
-
-        elif action == "status":
-            running, detail = sm.status()
-            for line in detail.split("\n"):
-                ch.console.print(f"  {line}")
-
-        else:
-            ch.error(f"Unknown action: {action}")
-
-    except ImportError:
-        # Fallback if daemon module not yet available
-        ch.info("Use the new command: navig service install")
-        ch.info("  navig service install          # auto-detect best method")
-        ch.info("  navig service install --method task   # no admin needed")
-        ch.info("  navig service install --method nssm   # full Windows service")
-
 
 # ============================================================================
 # Telegram Bot Integration
@@ -1121,7 +908,7 @@ def telegram_start(
         raise typer.Exit(1)
 
     ch.info("Starting Telegram bot...")
-    ch.console.print("  Model source: ai_model_preference + routing (NAVIG_AI_MODEL is legacy)")
+    ch.console.print("  Model source: ai_model_preference + routing (NAVIG_AI_MODEL is deprecated)")
     ch.console.print(f"  Typing mode: {os.getenv('TYPING_MODE', 'instant')}")
 
     allowed = os.getenv("ALLOWED_TELEGRAM_USERS")
@@ -1188,9 +975,9 @@ def telegram_status():
         ch.console.print("  ❌ Token: NOT SET")
 
     if model_pref:
-        ch.console.print(f"  Legacy NAVIG_AI_MODEL: {model_pref} [deprecated]")
+        ch.console.print(f"  NAVIG_AI_MODEL (deprecated): {model_pref}")
     else:
-        ch.console.print("  Legacy NAVIG_AI_MODEL: not set")
+        ch.console.print("  NAVIG_AI_MODEL (deprecated): not set")
     ch.console.print("  Effective model source: ai_model_preference + routing")
     ch.console.print(f"  Typing Mode: {typing_mode}")
 
@@ -1239,7 +1026,7 @@ def telegram_setup():
     ch.console.print("   ```")
     ch.console.print("   TELEGRAM_BOT_TOKEN=your_token_here")
     ch.console.print("   ALLOWED_TELEGRAM_USERS=your_user_id")
-    ch.console.print("   # Optional legacy var (deprecated): NAVIG_AI_MODEL=openrouter")
+    ch.console.print("   # Optional (deprecated): NAVIG_AI_MODEL=openrouter")
     ch.console.print("   ```")
     ch.console.print()
 
@@ -1250,7 +1037,7 @@ def telegram_setup():
     ch.info("Environment Variables:")
     ch.console.print("  TELEGRAM_BOT_TOKEN     - Required. Bot token from @BotFather")
     ch.console.print("  ALLOWED_TELEGRAM_USERS - Optional. Comma-separated user IDs")
-    ch.console.print("  NAVIG_AI_MODEL         - Optional legacy override (deprecated)")
+    ch.console.print("  NAVIG_AI_MODEL         - Optional override (deprecated)")
     ch.console.print("  TYPING_MODE            - Optional. instant/message/never")
     ch.console.print("  NAVIG_GATEWAY_URL      - Optional. Gateway for session persistence")
 
@@ -1479,7 +1266,7 @@ def agent_learn(
 
 
 @agent_app.command("service")
-def agent_service(  # noqa: F811
+def agent_service(
     action: str = typer.Argument(..., help="Action: install, uninstall, status"),
     start: bool = typer.Option(True, "--start/--no-start", help="Start service after install"),
 ):

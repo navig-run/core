@@ -49,11 +49,8 @@ def list_users_cmd(options: dict[str, Any]):
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    server_name = options.get("app") or config_manager.get_active_server()
-
-    if not server_name:
-        ch.error("No active server.")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
 
@@ -127,11 +124,8 @@ def list_domains_cmd(user: str | None, options: dict[str, Any]):
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    server_name = options.get("app") or config_manager.get_active_server()
-
-    if not server_name:
-        ch.error("No active server.")
-        return
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
 
@@ -251,11 +245,8 @@ def add_user_cmd(username: str, password: str, email: str, options: dict[str, An
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    server_name = options.get("app") or config_manager.get_active_server()
-
-    if not server_name:
-        ch.error("No active server.")
-        return False
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
 
@@ -307,11 +298,8 @@ def delete_user_cmd(username: str, options: dict[str, Any]):
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    server_name = options.get("app") or config_manager.get_active_server()
-
-    if not server_name:
-        ch.error("No active server.")
-        return False
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
 
@@ -362,11 +350,8 @@ def add_domain_cmd(user: str, domain: str, options: dict[str, Any]):
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    server_name = options.get("app") or config_manager.get_active_server()
-
-    if not server_name:
-        ch.error("No active server.")
-        return False
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
 
@@ -406,11 +391,8 @@ def delete_domain_cmd(user: str, domain: str, options: dict[str, Any]):
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    server_name = options.get("app") or config_manager.get_active_server()
-
-    if not server_name:
-        ch.error("No active server.")
-        return False
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
 
@@ -458,11 +440,8 @@ def renew_ssl_cmd(user: str, domain: str, options: dict[str, Any]):
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    server_name = options.get("app") or config_manager.get_active_server()
-
-    if not server_name:
-        ch.error("No active server.")
-        return False
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
 
@@ -501,11 +480,8 @@ def rebuild_web_cmd(user: str, options: dict[str, Any]):
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    server_name = options.get("app") or config_manager.get_active_server()
-
-    if not server_name:
-        ch.error("No active server.")
-        return False
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
 
@@ -544,11 +520,8 @@ def backup_user_cmd(user: str, options: dict[str, Any]):
     from navig.config import get_config_manager
 
     config_manager = get_config_manager()
-    server_name = options.get("app") or config_manager.get_active_server()
-
-    if not server_name:
-        ch.error("No active server.")
-        return False
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
 

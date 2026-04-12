@@ -15,6 +15,8 @@ from navig.selfheal.scanner import (
     scan_files,
 )
 
+pytestmark = pytest.mark.slow
+
 
 class TestScanFiltersbelowConfidence:
     """scan_files() must drop findings below the configured min_confidence."""

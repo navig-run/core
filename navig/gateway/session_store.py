@@ -165,7 +165,7 @@ class SessionStore:
         with self._lock:
             if k not in self._contexts:
                 self._contexts[k] = OperatorContext(key=key)
-                logger.debug("session_store: created context for %s", k)
+                logger.debug("session_store: created context for {}", k)
             return self._contexts[k]
 
     def get(self, key: SessionKey) -> OperatorContext | None:
@@ -186,7 +186,7 @@ class SessionStore:
             # Inline get-or-create to avoid re-acquiring the non-reentrant lock.
             if k not in self._contexts:
                 self._contexts[k] = OperatorContext(key=key)
-                logger.debug("session_store: created context for %s", k)
+                logger.debug("session_store: created context for {}", k)
             ctx = self._contexts[k]
             ctx.meta.update(updates)
             ctx.last_active = time.time()
@@ -196,7 +196,7 @@ class SessionStore:
         with self._lock:
             removed = self._contexts.pop(str(key), None) is not None
         if removed:
-            logger.debug("session_store: removed context for %s", key)
+            logger.debug("session_store: removed context for {}", key)
         return removed
 
     def active_contexts(self) -> list[OperatorContext]:
@@ -215,7 +215,7 @@ class SessionStore:
             for k in idle_keys:
                 del self._contexts[k]
         if idle_keys:
-            logger.debug("session_store: expired %d idle context(s)", len(idle_keys))
+            logger.debug("session_store: expired {} idle context(s)", len(idle_keys))
         return len(idle_keys)
 
     def save(self) -> None:
@@ -230,7 +230,7 @@ class SessionStore:
             tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
             tmp.replace(self._persist_path)  # atomic on POSIX; best-effort on Windows
         except Exception as exc:
-            logger.warning("session_store: failed to persist: %s", exc)
+            logger.warning("session_store: failed to persist: {}", exc)
 
     # ------------------------------------------------------------------
     # Internal
@@ -244,9 +244,9 @@ class SessionStore:
             for k, d in raw.items():
                 ctx = OperatorContext.from_dict(d)
                 self._contexts[k] = ctx
-            logger.debug("session_store: loaded %d context(s)", len(self._contexts))
+            logger.debug("session_store: loaded {} context(s)", len(self._contexts))
         except Exception as exc:
-            logger.warning("session_store: failed to load persisted sessions: %s", exc)
+            logger.warning("session_store: failed to load persisted sessions: {}", exc)
 
 
 # =============================================================================

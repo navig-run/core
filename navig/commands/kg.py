@@ -23,10 +23,6 @@ _kg_mod = lazy_import("navig.memory.knowledge_graph")
 kg_app = typer.Typer(name="kg", help="Knowledge graph — remember facts, routines, and habits")
 
 
-def _kg():
-    return _kg_mod.get_knowledge_graph()
-
-
 @kg_app.command("remember")
 def kg_remember(
     subject: str = typer.Argument(..., help="Entity (e.g. 'user', 'github.com')"),
@@ -45,7 +41,7 @@ def kg_remember(
     """Store a fact triple in the knowledge graph."""
     import json
 
-    kg = _kg()
+    kg = _kg_mod.get_knowledge_graph()
     fid = kg.remember_fact(
         subject,
         predicate,
@@ -83,7 +79,7 @@ def kg_recall(
     """Recall all facts about a subject."""
     import json
 
-    kg = _kg()
+    kg = _kg_mod.get_knowledge_graph()
     facts = kg.recall(subject, predicate=predicate, min_confidence=min_confidence)
     if json_output:
         from rich import print as rprint
@@ -116,7 +112,7 @@ def kg_search(
     """Full-text search across all facts (subject, predicate, object)."""
     import json
 
-    kg = _kg()
+    kg = _kg_mod.get_knowledge_graph()
     facts = kg.search_facts(query, limit=limit)
     if json_output:
         from rich import print as rprint
@@ -142,7 +138,7 @@ def kg_forget(
     force: bool = typer.Option(False, "--force", "-f"),
 ):
     """Delete a fact by ID."""
-    kg = _kg()
+    kg = _kg_mod.get_knowledge_graph()
     if not force:
         if not _ch.confirm_action(f"Delete fact {fact_id}?"):
             raise typer.Abort()
@@ -161,7 +157,7 @@ def kg_routines(
     """List all registered routines."""
     import json
 
-    kg = _kg()
+    kg = _kg_mod.get_knowledge_graph()
     routines = kg.get_routines(enabled_only=enabled_only)
     if json_output:
         from rich import print as rprint
@@ -189,7 +185,7 @@ def kg_routines(
 @kg_app.command("status")
 def kg_status():
     """Show knowledge graph statistics."""
-    kg = _kg()
+    kg = _kg_mod.get_knowledge_graph()
     con = kg._con
     fact_count = con.execute("SELECT COUNT(*) FROM facts").fetchone()[0]
     routine_count = con.execute("SELECT COUNT(*) FROM routines").fetchone()[0]

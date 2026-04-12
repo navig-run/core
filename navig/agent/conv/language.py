@@ -81,7 +81,7 @@ class LanguageResult:
 _INSTRUCTIONS: dict[str, str] = {
     "ru": (
         "### LANGUAGE RULE ###\n"
-        "Reply in English only. Do not mix in other languages or scripts.\n"
+        "Reply in Russian only. Do not mix in other languages or scripts.\n"
         "### END LANGUAGE RULE ###"
     ),
     "zh": (

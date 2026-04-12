@@ -290,8 +290,11 @@ def task_scheduler_status() -> tuple[bool, str]:
             capture_output=True,
             text=True,
         )
-        running = "Running" in result.stdout
-        return running, result.stdout.strip()
+        detail = (result.stdout or result.stderr or "").strip()
+        if result.returncode != 0:
+            return False, detail or "Task Scheduler query failed"
+        running = "running" in (result.stdout or "").lower()
+        return running, detail
     except Exception as e:
         return False, str(e)
 
@@ -503,7 +506,10 @@ def detect_best_method() -> str:
 
 def install(method: str | None = None, start_now: bool = True) -> tuple[bool, str]:
     """Install NAVIG daemon as a persistent service."""
-    method = method or detect_best_method()
+    if method is None:
+        method = detect_best_method()
+    else:
+        method = method.strip().lower()
     if method == "nssm":
         if not has_nssm():
             return (
@@ -536,20 +542,55 @@ def install(method: str | None = None, start_now: bool = True) -> tuple[bool, st
 
 def uninstall(method: str | None = None) -> tuple[bool, str]:
     """Remove NAVIG daemon service."""
-    method = method or detect_best_method()
+    if method is not None:
+        method = method.strip().lower()
+
     if method == "nssm":
         return nssm_uninstall()
-    elif method == "task":
+    if method == "task":
         return task_scheduler_uninstall()
-    elif method == "systemd":
+    if method == "systemd":
         return systemd_uninstall()
+
+    # Auto mode: uninstall any known backend that might be installed,
+    # instead of relying on a single best-method detection.
+    attempts: list[tuple[str, tuple[bool, str]]] = []
+    if sys.platform == "win32":
+        if has_nssm():
+            attempts.append(("nssm", nssm_uninstall()))
+        attempts.append(("task", task_scheduler_uninstall()))
+    else:
+        if has_systemd():
+            attempts.append(("systemd", systemd_uninstall()))
+
+    successes = [f"{backend}: {msg}" for backend, (ok, msg) in attempts if ok]
+    if successes:
+        return True, "\n".join(successes)
+
+    if method is None and attempts:
+        failures = [f"{backend}: {msg}" for backend, (_ok, msg) in attempts]
+        return False, "No installed service backend could be removed.\n" + "\n".join(failures)
+
+    if method is None:
+        return False, "No supported service backend found"
     return False, f"Unknown method: {method}"
 
 
 def status(method: str | None = None) -> tuple[bool, str]:
     """Check NAVIG daemon service status."""
-    # Try both methods
     from navig.daemon.supervisor import NavigDaemon
+
+    if method is not None:
+        method = method.strip().lower()
+
+    def _summary_line(detail: str | None) -> str | None:
+        if not detail:
+            return None
+        for raw_line in detail.splitlines():
+            line = raw_line.strip()
+            if line:
+                return " ".join(line.split())
+        return None
 
     daemon_running = NavigDaemon.is_running()
     daemon_pid = NavigDaemon.read_pid()
@@ -569,26 +610,25 @@ def status(method: str | None = None) -> tuple[bool, str]:
 
     # Platform-specific service checks
     if sys.platform == "win32":
-        # Check NSSM
-        if has_nssm():
-            running, detail = nssm_status()
-            lines.append(f"\nNSSM service: {detail}")
+        if method in (None, "nssm") and has_nssm():
+            running_ns, detail_ns = nssm_status()
+            lines.append(f"NSSM service: {'Active' if running_ns else 'Inactive'}")
+            summary = _summary_line(detail_ns)
+            if summary:
+                lines.append(f"  Detail: {summary}")
 
-        # Check Task Scheduler
-        try:
+        if method in (None, "task"):
             running_ts, detail_ts = task_scheduler_status()
-            if "ERROR" not in detail_ts:
-                lines.append(f"\nTask Scheduler: {'Active' if running_ts else 'Inactive'}")
-        except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
+            lines.append(f"Task Scheduler: {'Active' if running_ts else 'Inactive'}")
+            summary = _summary_line(detail_ts)
+            if summary:
+                lines.append(f"  Detail: {summary}")
     else:
-        # Linux / macOS — check systemd
-        if has_systemd():
+        if method in (None, "systemd") and has_systemd():
             running_sd, detail_sd = systemd_status()
-            lines.append(
-                f"\nsystemd unit ({SYSTEMD_UNIT}): {'Active' if running_sd else 'Inactive'}"
-            )
-            for line in detail_sd.split("\n")[:8]:
-                lines.append(f"  {line}")
+            lines.append(f"systemd unit ({SYSTEMD_UNIT}): {'Active' if running_sd else 'Inactive'}")
+            summary = _summary_line(detail_sd)
+            if summary:
+                lines.append(f"  Detail: {summary}")
 
     return daemon_running, "\n".join(lines)

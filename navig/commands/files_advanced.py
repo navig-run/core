@@ -21,10 +21,8 @@ def delete_file_cmd(remote: str, options: dict[str, Any]):
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    server_name = options.get("app") or config_manager.get_active_server()
-    if not server_name:
-        ch.error("No active server.")
-        return False
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
 
@@ -114,10 +112,8 @@ def mkdir_cmd(remote: str, options: dict[str, Any]):
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    server_name = options.get("app") or config_manager.get_active_server()
-    if not server_name:
-        ch.error("No active server.")
-        return False
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
 
@@ -180,10 +176,8 @@ def chmod_cmd(remote: str, mode: str, options: dict[str, Any]):
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    server_name = options.get("app") or config_manager.get_active_server()
-    if not server_name:
-        ch.error("No active server.")
-        return False
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
 
@@ -249,10 +243,8 @@ def chown_cmd(remote: str, owner: str, options: dict[str, Any]):
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    server_name = options.get("app") or config_manager.get_active_server()
-    if not server_name:
-        ch.error("No active server.")
-        return False
+    from navig.cli.recovery import require_active_server  # noqa: PLC0415
+    server_name = require_active_server(options, config_manager)
 
     server_config = config_manager.load_server_config(server_name)
 
@@ -320,10 +312,8 @@ def cat_file_cmd(
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get("host") or config_manager.get_active_host()
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return
+    from navig.cli.recovery import require_active_host  # noqa: PLC0415
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
 
@@ -470,10 +460,8 @@ def write_file_cmd(
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get("host") or config_manager.get_active_host()
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return False
+    from navig.cli.recovery import require_active_host  # noqa: PLC0415
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
 
@@ -605,10 +593,8 @@ def list_dir_cmd(
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get("host") or config_manager.get_active_host()
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return
+    from navig.cli.recovery import require_active_host  # noqa: PLC0415
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
 
@@ -712,10 +698,8 @@ def tree_cmd(remote: str, options: dict[str, Any], depth: int = 2, dirs_only: bo
     config_manager = get_config_manager()
     remote_ops = RemoteOperations(config_manager)
 
-    host_name = options.get("host") or config_manager.get_active_host()
-    if not host_name:
-        ch.error("No active host.", "Use 'navig host use <name>' to set one.")
-        return
+    from navig.cli.recovery import require_active_host  # noqa: PLC0415
+    host_name = require_active_host(options, config_manager)
 
     host_config = config_manager.load_host_config(host_name)
 

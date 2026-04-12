@@ -593,12 +593,44 @@ class Vault:
         item = self._store.get_by_id(credential_id)
         if item is None:
             return False
+
         # Decrypt existing data and merge
+        decrypt_failed = False
         try:
             existing_payload = self.get_bytes(item.label)
             existing_data = json.loads(existing_payload)
-        except (KeyError, json.JSONDecodeError, Exception):
+        except (KeyError, json.JSONDecodeError):
             existing_data = {}
+        except Exception:  # noqa: BLE001  — e.g. CryptoError, OSError
+            # Decryption failed.  If the caller is only updating metadata/label
+            # (data=None), preserve the encrypted blob unchanged to prevent
+            # silently wiping the credential's secret.
+            decrypt_failed = True
+            existing_data = {}
+
+        if decrypt_failed and data is None:
+            # Metadata / label-only update — patch the item metadata in-place
+            # without touching the encrypted DEK or blob.
+            new_meta = dict(item.metadata)
+            if metadata is not None:
+                new_meta.update(metadata)
+            if label is not None:
+                new_meta["label"] = label
+            patched = VaultItem(
+                id=item.id,
+                kind=item.kind,
+                label=item.label,
+                provider=item.provider,
+                encrypted_dek=item.encrypted_dek,
+                encrypted_blob=item.encrypted_blob,
+                metadata=new_meta,
+                created_at=item.created_at,
+                updated_at=datetime.now(timezone.utc),
+                last_used_at=item.last_used_at,
+                version=item.version + 1,
+            )
+            self._store.upsert(patched)
+            return True
 
         if data is not None:
             existing_data.update(data)

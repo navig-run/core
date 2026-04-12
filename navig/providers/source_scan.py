@@ -4,7 +4,10 @@ import os
 from pathlib import Path
 from typing import Any
 
-_FALLBACK_ENV_VARS: dict[str, tuple[str, ...]] = {
+from navig.core.yaml_io import safe_load_yaml
+
+# Public canonical map: provider ID → env var names (tuple, order = priority)
+PROVIDER_ENV_KEYS: dict[str, tuple[str, ...]] = {
     "openrouter": ("OPENROUTER_API_KEY",),
     "openai": ("OPENAI_API_KEY",),
     "anthropic": ("ANTHROPIC_API_KEY", "CLAUDE_API_KEY"),
@@ -13,8 +16,18 @@ _FALLBACK_ENV_VARS: dict[str, tuple[str, ...]] = {
     "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
     "nvidia": ("NVIDIA_API_KEY", "NIM_API_KEY"),
     "xai": ("XAI_API_KEY", "GROK_KEY"),
+    "grok": ("GROK_API_KEY", "XAI_API_KEY", "GROK_KEY"),
     "mistral": ("MISTRAL_API_KEY",),
+    "deepseek": ("DEEPSEEK_API_KEY",),
+    "siliconflow": ("SILICONFLOW_API_KEY",),
+    "cohere": ("COHERE_API_KEY",),
+    "together": ("TOGETHER_API_KEY",),
     "github_models": ("GITHUB_TOKEN", "GH_TOKEN"),
+    # Local providers — no API key required
+    "ollama": (),
+    "llamacpp": (),
+    "airllm": (),
+    "mcp_bridge": (),
 }
 
 _FALLBACK_CFG_KEYS: dict[str, tuple[str, ...]] = {
@@ -43,18 +56,6 @@ _FALLBACK_PROVIDER_IDS: tuple[str, ...] = (
 )
 
 
-def _load_config(navig_dir: Path) -> dict[str, Any]:
-    try:
-        import yaml  # type: ignore[import]
-
-        cfg_path = navig_dir / "config.yaml"
-        if not cfg_path.exists():
-            return {}
-        return yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
-    except Exception:  # noqa: BLE001
-        return {}
-
-
 def provider_env_vars(provider_id: str) -> tuple[str, ...]:
     env_vars: list[str] = []
     try:
@@ -66,7 +67,7 @@ def provider_env_vars(provider_id: str) -> tuple[str, ...]:
     except Exception:  # noqa: BLE001
         pass
 
-    for fallback in _FALLBACK_ENV_VARS.get(provider_id, ()):
+    for fallback in PROVIDER_ENV_KEYS.get(provider_id, ()):
         if fallback not in env_vars:
             env_vars.append(fallback)
     return tuple(env_vars)
@@ -81,7 +82,7 @@ def provider_env_key(provider_id: str) -> str:
 
 
 def provider_has_config_key(provider_id: str, *, navig_dir: Path, cfg: dict[str, Any] | None = None) -> bool:
-    data = cfg if cfg is not None else _load_config(navig_dir)
+    data = cfg if cfg is not None else safe_load_yaml(navig_dir / "config.yaml") or {}
     for key in _FALLBACK_CFG_KEYS.get(provider_id, ()):
         if str(data.get(key) or "").strip():
             return True
@@ -128,6 +129,20 @@ def detect_provider_sources(provider_id: str, *, navig_dir: Path, cfg: dict[str,
     return sources
 
 
+def check_api_key_in_env(provider: str) -> bool:
+    """Return True if a known API key for *provider* is set in the environment or navig config."""
+    for env_name in provider_env_vars(provider.lower()):
+        try:
+            from navig.config import get as _cfg_get  # noqa: PLC0415
+
+            if bool(_cfg_get(env_name, "")):
+                return True
+        except Exception:  # noqa: BLE001
+            if os.environ.get(env_name):
+                return True
+    return False
+
+
 def scan_enabled_provider_sources(*, navig_dir: Path, cfg: dict[str, Any] | None = None) -> dict[str, list[str]]:
     try:
         from navig.providers.registry import list_enabled_providers
@@ -141,7 +156,7 @@ def scan_enabled_provider_sources(*, navig_dir: Path, cfg: dict[str, Any] | None
         provider_ids = list(_FALLBACK_PROVIDER_IDS)
 
     deduped = sorted(set(provider_ids))
-    config = cfg if cfg is not None else _load_config(navig_dir)
+    config = cfg if cfg is not None else safe_load_yaml(navig_dir / "config.yaml") or {}
 
     detected: dict[str, list[str]] = {}
     for provider_id in deduped:

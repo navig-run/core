@@ -25,7 +25,10 @@ def gateway_cli_defaults() -> tuple[int, str]:
         raw = {}
 
     gw = raw.get("gateway") or {}
-    port = int(gw.get("port") or 8789)
+    try:
+        port = int(gw.get("port") or 8789)
+    except (ValueError, TypeError):
+        port = 8789
     host = str(gw.get("host") or "127.0.0.1")
     return port, host
 

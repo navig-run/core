@@ -131,7 +131,7 @@ class SoulLoader:
 
     Primary public surface: ``get_condensed(has_rich_soul: bool) -> str``
 
-    Legacy surface (``cached_content``, ``override``, ``build_system_prompt``,
+    Compatibility surface (``cached_content``, ``override``, ``build_system_prompt``,
     ``_load_sync``) is preserved for backward compatibility.
     """
 
@@ -151,7 +151,7 @@ class SoulLoader:
         self._initialized = True
         self._raw: str | None = None  # raw SOUL.md text from disk
         self._has_rich: bool = False  # whether a rich source was found
-        self._loaded: str | None = None  # condensed result (legacy compat)
+        self._loaded: str | None = None  # condensed result (compat mode)
         self._lock: asyncio.Lock | None = None
         self._watcher_started: bool = False
         self._loop: asyncio.AbstractEventLoop | None = None

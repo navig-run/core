@@ -22,6 +22,7 @@ import yaml
 from rich.table import Table
 
 from navig import console_helper as ch
+from navig.core.yaml_io import atomic_write_yaml
 
 # ============================================================================
 # DATA CLASSES
@@ -132,9 +133,7 @@ class WorkflowManager:
                     if not manifest_file.exists():
                         continue
                     try:
-                        manifest = _json.loads(
-                            manifest_file.read_text(encoding="utf-8")
-                        )
+                        manifest = _json.loads(manifest_file.read_text(encoding="utf-8"))
                     except Exception:
                         continue
                     pkg_type = manifest.get("type", "")
@@ -523,14 +522,7 @@ class WorkflowManager:
             ],
         )
 
-        with open(target_file, "w", encoding="utf-8") as f:
-            yaml.dump(
-                template.to_dict(),
-                f,
-                default_flow_style=False,
-                sort_keys=False,
-                allow_unicode=True,
-            )
+        atomic_write_yaml(template.to_dict(), target_file, allow_unicode=True)
 
         return target_file
 

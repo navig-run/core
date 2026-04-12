@@ -220,7 +220,16 @@ class WebhookReceiver:
 
         # Verify signature
         signature_valid = None
-        if source_cfg.verify_signature and source_cfg.secret:
+        if source_cfg.verify_signature:
+            if not source_cfg.secret:
+                # verify_signature=True but no secret configured — reject to
+                # avoid silently accepting unauthenticated events.
+                logger.warning(
+                    "Webhook source '%s' requires signature but has no secret configured",
+                    source,
+                )
+                return web.json_response({"error": "Source misconfigured: no secret"}, status=500)
+
             signature_valid = self._verify_signature(
                 source, body, dict(request.headers), source_cfg
             )
@@ -302,7 +311,10 @@ class WebhookReceiver:
         """
         from aiohttp import web
 
-        limit = int(request.query.get("limit", 20))
+        try:
+            limit = int(request.query.get("limit", 20))
+        except (ValueError, TypeError):
+            limit = 20
         source_filter = request.query.get("source")
 
         events = self._recent_events[-limit:]
