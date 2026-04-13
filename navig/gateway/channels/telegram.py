@@ -1677,11 +1677,47 @@ class TelegramChannel:
         placeholder_id = (placeholder or {}).get("message_id")
 
         typing_task = asyncio.create_task(self._keep_typing(chat_id))
+
+        # Entity enrichment: silently fetch web context for named title/person references
+        # before sending to the LLM.  Uses the same entity-signal checks as
+        # select_tools_for_text() but avoids a full ACT pipeline — just prepends
+        # the top-3 search snippets so the model can ground its response in facts.
+        _enriched_text = text
+        if HAS_CLASSIFIER and (
+            _contains_title_marker(text)
+            or _has_mid_sentence_cap(text)
+            or _has_script_mixing(text)
+        ):
+            try:
+                from navig.tools import get_pipeline_registry as _get_pipeline_registry
+
+                _reg = _get_pipeline_registry()
+                _sr = await asyncio.wait_for(
+                    _reg.run_tool("search", {"query": text}), timeout=3.0
+                )
+                if _sr.success and isinstance(_sr.output, dict):
+                    _hits = _sr.output.get("results") or _sr.output.get("items") or []
+                    if _hits:
+                        _ctx = ["[Web context]"]
+                        for _i, _h in enumerate(_hits[:3], 1):
+                            _t = _h.get("title", "")
+                            _s = _h.get("snippet", "")
+                            _u = _h.get("url", "")
+                            _line = (
+                                f"{_i}. {_t}"
+                                + (f" \u2014 {_s}" if _s else "")
+                                + (f" ({_u})" if _u else "")
+                            )
+                            _ctx.append(_line)
+                        _enriched_text = "\n".join(_ctx) + "\n\nUser message: " + text
+            except Exception:
+                pass  # silent \u2014 never surface search errors to the user in REASON mode
+
         try:
             response = await self.on_message(
                 channel="telegram",
                 user_id=str(user_id),
-                message=text,
+                message=_enriched_text,
                 metadata=metadata,
             )
         finally:
@@ -3709,16 +3745,16 @@ class TelegramChannel:
         import sys
 
         lines = ["🛠 *Debug*\n"]
-        lines.append(f"Python: `{sys.version.split()[0]}`")
+        lines.append(f"Python: <code>{sys.version.split()[0]}</code>")
         try:
             import navig as _navig_pkg
 
             pkg_file = getattr(_navig_pkg, "__file__", "unknown")
             pkg_ver = getattr(_navig_pkg, "__version__", "unknown")
-            lines.append(f"navig pkg: `{pkg_file}`")
-            lines.append(f"version: `{pkg_ver}`")
+            lines.append(f"navig pkg: <code>{pkg_file}</code>")
+            lines.append(f"version: <code>{pkg_ver}</code>")
         except Exception as e:
-            lines.append(f"navig: ❌ `{e}`")
+            lines.append(f"navig: ❌ <code>{e}</code>")
         try:
             from navig.platform import paths as _paths
             from navig.vault import get_vault
@@ -3727,7 +3763,7 @@ class TelegramChannel:
             v = get_vault()
             items = v.list() if hasattr(v, "list") else []
             count = len(items)
-            lines.append(f"vault: 🟢 `{count} entries` ({_vpath})")
+            lines.append(f"vault: 🟢 <code>{count} entries</code> ({_vpath})")
         except Exception as e:
             try:
                 from navig.platform import paths as _paths
@@ -3735,19 +3771,19 @@ class TelegramChannel:
                 _vpath = str(_paths.vault_dir())
             except Exception:
                 _vpath = "?"
-            lines.append(f"vault: ❌ `{e}` — path: `{_vpath}`")
+            lines.append(f"vault: ❌ <code>{e}</code> — path: <code>{_vpath}</code>")
         if HAS_SESSIONS:
             try:
                 sm = get_session_manager()
                 s_list = sm.list_sessions() if hasattr(sm, "list_sessions") else []
-                lines.append(f"sessions: `{len(s_list)} loaded`")
+                lines.append(f"sessions: <code>{len(s_list)} loaded</code>")
             except Exception:
                 lines.append("sessions: ❌")
-        lines.append(rf"HAS\_VOICE: `{HAS_VOICE}`")
-        lines.append(rf"HAS\_KEYBOARDS: `{HAS_KEYBOARDS}`")
-        lines.append(rf"HAS\_SESSIONS: `{HAS_SESSIONS}`")
-        pp = os.environ.get("PYTHONPATH", "_(not set)_")
-        lines.append(f"PYTHONPATH: `{pp}`")
+        lines.append(f"HAS_VOICE: <code>{HAS_VOICE}</code>")
+        lines.append(f"HAS_KEYBOARDS: <code>{HAS_KEYBOARDS}</code>")
+        lines.append(f"HAS_SESSIONS: <code>{HAS_SESSIONS}</code>")
+        pp = os.environ.get("PYTHONPATH", "(not set)")
+        lines.append(f"PYTHONPATH: <code>{pp}</code>")
         dg = os.environ.get("DEEPGRAM_KEY") or os.environ.get("DEEPGRAM_API_KEY")
         if not dg:
             # Also check vault for deepgram key
@@ -3767,7 +3803,7 @@ class TelegramChannel:
                             pass  # best-effort: vault item unreadable; skip
             except Exception:
                 pass  # best-effort: vault unavailable; key shown as missing
-        lines.append(rf"DEEPGRAM\_KEY: `{'✓ set' if dg else '✗ missing'}`")
+        lines.append(f"DEEPGRAM_KEY: <code>{'set' if dg else 'missing'}</code>")
         await self.send_message(chat_id, "\n".join(lines))
 
     async def _handle_trace(self, chat_id: int, user_id: int) -> None:
@@ -3802,9 +3838,9 @@ class TelegramChannel:
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
-        lines.append("🔌 *Routing*")
+        lines.append("🔌 <b>Routing</b>")
         if _bridge_active:
-            lines.append("  🟢 Bridge (VS Code) — *connected*")
+            lines.append("  🟢 Bridge (VS Code) — <b>connected</b>")
         else:
             lines.append("  ⚫ Bridge — offline (using model router)")
 
@@ -3825,9 +3861,9 @@ class TelegramChannel:
                         continue
                     provider = getattr(mc, "provider", "?")
                     model = getattr(mc, "model", "?")
-                    lines.append(f"  {icon} {label} → `{provider}:{model}`")
+                    lines.append(f"  {icon} {label} → <code>{provider}:{model}</code>")
         except Exception:
-            lines.append("  _(model router unavailable)_")
+            lines.append("  <i>(model router unavailable)</i>")
 
         lines.append(SEP)
 
@@ -3885,12 +3921,12 @@ class TelegramChannel:
 
         # ── Memory snapshot ────────────────────────────────────────────────────
         lines.append(
-            f"🧠 *Memory* — {len(session_messages)} msgs · {all_sessions_count} session(s)"
+            f"🧠 <b>Memory</b> — {len(session_messages)} msgs · {all_sessions_count} session(s)"
         )
         lines.append(SEP)
 
         # ── Recent messages ────────────────────────────────────────────────────
-        lines.append("💬 *Recent*")
+        lines.append("💬 <b>Recent</b>")
         recent = session_messages[-8:]
         if recent:
             for msg in recent:
@@ -3902,7 +3938,7 @@ class TelegramChannel:
                     else raw_content[:64].rsplit(" ", 1)[0] + "…"
                 )
                 if not preview:
-                    preview = "_(empty)_"
+                    preview = "<i>(empty)</i>"
                 arrow = "⬅" if role in ("user", "human") else "➡"
                 actor = "👤" if role in ("user", "human") else "🤖"
                 ts_raw = msg.get("timestamp") or msg.get("ts") or ""
@@ -3917,7 +3953,7 @@ class TelegramChannel:
                         pass  # best-effort; failure is non-critical
                 lines.append(f"  {ts_prefix}{arrow} {actor}: {preview}")
         else:
-            lines.append("  _(no recent activity)_")
+            lines.append("  <i>(no recent activity)</i>")
 
         lines.append(SEP)
 
@@ -3951,7 +3987,7 @@ class TelegramChannel:
                 pass  # best-effort; failure is non-critical
 
         lines.append(
-            f"⚙️  *Session* — tier: `{tier_label}` · host: `{active_host}` · voice: `{voice_label}`"
+            f"⚙️  <b>Session</b> — tier: <code>{tier_label}</code> · host: <code>{active_host}</code> · voice: <code>{voice_label}</code>"
         )
         lines.append(f"🛡  Voice pipeline: {'🟢 active' if HAS_VOICE else '⚫ inactive'}")
         lines.append(SEP)
@@ -3984,12 +4020,12 @@ class TelegramChannel:
                 pass  # best-effort cleanup
 
         if daemon_issues:
-            lines.append("📋 *Daemon Warnings*")
+            lines.append("📋 <b>Daemon Warnings</b>")
             for issue in daemon_issues[-5:]:
                 display = issue if len(issue) <= 100 else issue[:97] + "…"
-                lines.append(f"  ⚠️  `{display}`")
+                lines.append(f"  ⚠️  <code>{display}</code>")
         else:
-            lines.append("📋 *Daemon* — ✅ no warnings")
+            lines.append("📋 <b>Daemon</b> — ✅ no warnings")
 
         # ── Vault status ───────────────────────────────────────────────────────
         vault_ok = False
@@ -4004,7 +4040,7 @@ class TelegramChannel:
         except Exception as _ve:
             vault_msg = str(_ve)[:60]
 
-        lines.append(f"🔐 *Vault* — {'✅' if vault_ok else '❌'} {vault_msg}")
+        lines.append(f"🔐 <b>Vault</b> — {'✅' if vault_ok else '❌'} {vault_msg}")
         lines.append(SEP)
 
         trace_keyboard = [
@@ -4320,9 +4356,9 @@ class TelegramChannel:
                         if raw and raw != "n/a":
                             since = f" — since {raw.split()[-2]}"
                 icon = "🟢" if state == "active" else "🔴"
-                lines.append(f"{icon} *Daemon:* {state}{since}")
+                lines.append(f"{icon} <b>Daemon:</b> {state}{since}")
             except Exception:
-                lines.append("⚡ *Daemon:* status unavailable")
+                lines.append("⚡ <b>Daemon:</b> status unavailable")
 
             # ── Bridge ──
             bridge_port = 42070
@@ -4343,7 +4379,7 @@ class TelegramChannel:
             except Exception:
                 bridge_ok = False
             lines.append(
-                f"\u26a1 *Bridge:* {'online (bridge_copilot)' if bridge_ok else 'offline'}"
+                f"\u26a1 <b>Bridge:</b> {'online (bridge_copilot)' if bridge_ok else 'offline'}"
             )
 
             # ── Vault ──
@@ -4352,7 +4388,7 @@ class TelegramChannel:
 
                 v = get_vault()
                 key_count = len(v.list()) if hasattr(v, "list") else "?"
-                lines.append(f"🔑 *Vault:* {key_count} keys stored")
+                lines.append(f"🔑 <b>Vault:</b> {key_count} keys stored")
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -4360,14 +4396,14 @@ class TelegramChannel:
             if HAS_SESSIONS:
                 try:
                     sm = get_session_manager()
-                    lines.append(f"💬 *Sessions:* {len(sm.sessions)} active")
+                    lines.append(f"💬 <b>Sessions:</b> {len(sm.sessions)} active")
                 except Exception:  # noqa: BLE001
                     pass  # best-effort; failure is non-critical
 
             # ── Server uptime ──
             try:
                 up = _sp.run(["uptime", "-p"], capture_output=True, text=True, timeout=2)
-                lines.append(f"⏱ *Server:* {up.stdout.strip()}")
+                lines.append(f"⏱ <b>Server:</b> {up.stdout.strip()}")
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -4383,7 +4419,7 @@ class TelegramChannel:
                 if len(dfl) >= 2:
                     parts = dfl[1].split()
                     if len(parts) >= 3:
-                        lines.append(f"💾 *Disk:* {parts[0]} used, {parts[1]} free ({parts[2]})")
+                        lines.append(f"💾 <b>Disk:</b> {parts[0]} used, {parts[1]} free ({parts[2]})")
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -4401,17 +4437,17 @@ class TelegramChannel:
                                 role = e.get("role") or e.get("type", "")
                                 content = str(e.get("content") or e.get("text") or "")[:60]
                                 if role in ("user", "human") and content.startswith("/"):
-                                    recent.append(f"  • `{content}`")
+                                    recent.append(f"  • <code>{content}</code>")
                             except Exception:  # noqa: BLE001
                                 pass  # best-effort; failure is non-critical
                 except Exception:  # noqa: BLE001
                     pass  # best-effort; failure is non-critical
 
             if recent:
-                lines.append("*Recent commands:*")
+                lines.append("<b>Recent commands:</b>")
                 lines.extend(recent[-5:])
             else:
-                lines.append("_No recent command history._")
+                lines.append("<i>No recent command history.</i>")
 
             await self.send_message(chat_id, "\n".join(lines))
         finally:
@@ -4553,9 +4589,9 @@ class TelegramChannel:
                 safety_icon = {"safe": "🟢", "elevated": "🟡", "destructive": "🔴"}.get(
                     s.safety, "⚪"
                 )
-                lines.append(f"  {safety_icon} `{s.id}` — {s.name}")
+                lines.append(f"  {safety_icon} <code>{s.id}</code> — {s.name}")
 
-        lines.append("\n\nUsage: `/skill <id>` for info · `/skill <id> <command>` to run")
+        lines.append("\n\nUsage: <code>/skill &lt;id&gt;</code> for info · <code>/skill &lt;id&gt; &lt;command&gt;</code> to run")
 
         await self.send_message(chat_id, "\n".join(lines))
 

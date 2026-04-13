@@ -2805,6 +2805,12 @@ class TelegramCommandsMixin:
             )
             return True
 
+        # ── Multilingual reminder short-circuit (runs before English-only alias map) ──
+        reminder_pseudo = self._sniff_reminder_intent(text)
+        if reminder_pseudo:
+            await self._handle_remindme(chat_id, user_id, reminder_pseudo)
+            return True
+
         resolved = self._resolve_nl_command_intent(text)
         if not resolved:
             lowered = (text or "").strip().lower()
@@ -6038,7 +6044,7 @@ class TelegramCommandsMixin:
             status = "\u2705" if has else "\U0001f512"
             lines.append(f"{status} <b>{prov['label']}</b> \u2014 <code>{prov['role']}</code>")
             if not has:
-                lines.append("  _No key found — tap to add_")
+                lines.append("  <i>No key found — tap to add</i>")
                 cb = f"voice_prov_add:{prov['id']}"
             else:
                 lines.append("  <i>Key stored in vault</i>")
@@ -7481,7 +7487,7 @@ class TelegramCommandsMixin:
                 persona=state.get("persona") or "assistant",
                 context=context,
             )
-            await self.send_message(chat_id, "⏸️ Continuation paused. Use `/continue` to resume.")
+            await self.send_message(chat_id, "⏸️ Continuation paused. Use <code>/continue</code> to resume.")
         except Exception as e:
             logger.error("Failed to pause continuation: %s", e)
             await self.send_message(chat_id, "❌ Failed to pause continuation.")
@@ -7679,8 +7685,69 @@ class TelegramCommandsMixin:
             parse_mode="HTML",
         )
 
+    @staticmethod
+    def _sniff_reminder_intent(text: str) -> str | None:
+        """Detect a reminder request in any language; return a normalised /remindme string or None.
+
+        Supports: English, Russian, French, German, Spanish, Chinese, Korean.
+        Pattern matching is script/script-mixing-agnostic so it works even when
+        the verb and message are in different Unicode blocks.
+        """
+        lowered = (text or "").lower()
+        _VERBS = (
+            "remind me", "set reminder", "set a reminder",
+            "напомни", "напомните",          # Russian
+            "rappelle-moi", "rappelle moi",   # French
+            "erinnere mich",                  # German
+            "recuérdame",                     # Spanish
+            "提醒我",                          # Chinese
+            "알려줘",                           # Korean
+        )
+        if not any(v in lowered for v in _VERBS):
+            return None
+
+        # ── Absolute time HH:MM ────────────────────────────────────────────
+        abs_m = re.search(r"\b(\d{1,2}):(\d{2})\b", text)
+        if abs_m:
+            hour, minute = int(abs_m.group(1)), int(abs_m.group(2))
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                msg = (text[: abs_m.start()] + " " + text[abs_m.end() :]).strip()
+                for v in sorted(_VERBS, key=len, reverse=True):
+                    msg = re.sub(rf"\b{re.escape(v)}\b", "", msg, flags=re.IGNORECASE)
+                msg = re.sub(
+                    r"\b(мне|at|в|um|à|me|mir|to|for|in)\b", "", msg, flags=re.IGNORECASE
+                )
+                msg = re.sub(r"\s+", " ", msg).strip(" .,!?:;-–—")
+                return f"/remindme at {hour:02d}:{minute:02d} {msg or 'reminder'}"
+
+        # ── Relative time N min / hour / day ──────────────────────────────
+        rel_m = re.search(
+            r"\b(\d+)\s*(мин(?:уты?|ут?)?|min(?:utes?)?|час(?:а|ов)?|hours?|hr?s?|day?s?)\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if rel_m:
+            qty = int(rel_m.group(1))
+            unit_raw = rel_m.group(2).lower()
+            if unit_raw.startswith(("ч", "h")):
+                unit_word = "hour" if qty == 1 else "hours"
+            elif unit_raw.startswith("d"):
+                unit_word = "day" if qty == 1 else "days"
+            else:
+                unit_word = "minute" if qty == 1 else "minutes"
+            msg = (text[: rel_m.start()] + " " + text[rel_m.end() :]).strip()
+            for v in sorted(_VERBS, key=len, reverse=True):
+                msg = re.sub(rf"\b{re.escape(v)}\b", "", msg, flags=re.IGNORECASE)
+            msg = re.sub(
+                r"\b(мне|через|in|nach|me|mir|to|for)\b", "", msg, flags=re.IGNORECASE
+            )
+            msg = re.sub(r"\s+", " ", msg).strip(" .,!?:;-–—")
+            return f"/remindme in {qty} {unit_word} {msg or 'reminder'}"
+
+        return None
+
     def _parse_remindme_request(self, text: str) -> tuple[datetime | None, str, str | None]:
-        """Parse /remindme payload to (remind_at_utc, message, error)."""
+        """Parse /remindme payload to (remind_at_local→UTC, message, error)."""
         arg = text[len("/remindme") :].strip()
         if not arg:
             return (
@@ -7718,10 +7785,12 @@ class TelegramCommandsMixin:
                 return None, "", "Time must be in 24h format, e.g. <code>at 21:30</code>."
             if not msg:
                 return None, "", "Reminder message cannot be empty."
-            now = datetime.now(timezone.utc)
-            remind_at = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            if remind_at <= now:
-                remind_at = remind_at + timedelta(days=1)
+            # Build time in server-local timezone, then convert to UTC for DB storage
+            now_local = datetime.now().astimezone()
+            remind_at = now_local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if remind_at <= now_local:
+                remind_at += timedelta(days=1)
+            remind_at = remind_at.astimezone(timezone.utc)
             return remind_at, msg, None
 
         return (
@@ -7744,19 +7813,12 @@ class TelegramCommandsMixin:
             message=message,
             remind_at=remind_at,
         )
-        when = remind_at.strftime("%Y-%m-%d %H:%M UTC")
-        utc_note = ""
-        if re.match(r"^\s*/?remindme\s+at\s+", text, flags=re.IGNORECASE):
-            utc_note = (
-                "\nℹ️ <code>at HH:MM</code> uses server UTC. "
-                "Use <code>/remindme in &lt;duration&gt; ...</code> for relative/local timing."
-            )
+        # Show the time in server-local timezone so the user sees what they typed
+        local_when = remind_at.astimezone().strftime("%Y-%m-%d %H:%M")
         await self.send_message(
             chat_id,
-            (
-                f"⏰ Reminder set.\nID: <code>{reminder_id}</code>\nWhen: <code>{when}</code>\n"
-                f"Message: {message}{utc_note}"
-            ),
+            f"⏰ Reminder set.\nID: <code>{reminder_id}</code>\nWhen: <code>{local_when}</code>\nMessage: {message}",
+            parse_mode="HTML",
         )
 
     async def _handle_myreminders(self, chat_id: int, user_id: int) -> None:

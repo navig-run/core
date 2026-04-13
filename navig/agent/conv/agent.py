@@ -84,6 +84,9 @@ class ConversationalAgent:
         self._focus_mode = self._last_user_message = self._tier_override = ""
         self._entrypoint, self.context = "channel", {}
         self._plan_context_loaded = False
+        # User profile — lazy-loaded from USER.md on first turn (cached for session lifetime)
+        self._user_profile_content: str = ""
+        self._user_profile_loaded: bool = False
 
     @property
     def ai_client(self):
@@ -262,6 +265,18 @@ class ConversationalAgent:
             parts.append(f"You are talking to {uname} (your operator). Address them naturally.")
         elif uid := self._user_identity.get("user_id", ""):
             parts.append(f"User ID: {uid}.")
+        # Lazy-load USER.md once per agent session and inject into system prompt
+        if not self._user_profile_loaded:
+            self._user_profile_loaded = True
+            try:
+                from navig.workspace import WorkspaceManager
+
+                raw = WorkspaceManager().get_file_content("USER.md") or ""
+                self._user_profile_content = raw.strip()
+            except Exception:
+                pass  # best-effort; no profile is fine
+        if self._user_profile_content:
+            parts.append(f"## About the user\n{self._user_profile_content}")
         return "\n".join(parts)
 
     def _normalize_supported_lang_code(self, code: str) -> str:
