@@ -59,10 +59,10 @@ class TelegramMessagingMixin:
         if len(args) < 2:
             await self.send_message(
                 chat_id,
-                "Usage: `/send @alias [network] message`\n"
-                "Example: `/send @alice Hello!`\n"
-                "Example: `/send @alice whatsapp Hello!`",
-                parse_mode="Markdown",
+                "Usage: <code>/send @alias [network] message</code>\n"
+                "Example: <code>/send @alice Hello!</code>\n"
+                "Example: <code>/send @alice whatsapp Hello!</code>",
+                parse_mode="HTML",
             )
             return
 
@@ -82,10 +82,10 @@ class TelegramMessagingMixin:
         try:
             receipt = await self._messaging_dispatch(target, body, network=network)
             if receipt.ok:
-                status = f"✅ Sent via *{receipt.adapter or 'adapter'}*"
+                status = f"✅ Sent via <b>{receipt.adapter or 'adapter'}</b>"
                 if receipt.message_id:
-                    status += f" (`{receipt.message_id}`)"
-                await self.send_message(chat_id, status, parse_mode="Markdown")
+                    status += f" (<code>{receipt.message_id}</code>)"
+                await self.send_message(chat_id, status, parse_mode="HTML")
             else:
                 await self.send_message(chat_id, f"❌ Send failed: {receipt.error}")
         except Exception as exc:
@@ -103,7 +103,7 @@ class TelegramMessagingMixin:
             args = args[1:]
 
         if len(args) < 2:
-            await self.send_message(chat_id, "Usage: `/sms @alias message`", parse_mode="Markdown")
+            await self.send_message(chat_id, "Usage: <code>/sms @alias message</code>", parse_mode="HTML")
             return
 
         target = args[0]
@@ -113,8 +113,8 @@ class TelegramMessagingMixin:
             if receipt.ok:
                 await self.send_message(
                     chat_id,
-                    f"✅ SMS sent (`{receipt.message_id or 'ok'}`)",
-                    parse_mode="Markdown",
+                    f"✅ SMS sent (<code>{receipt.message_id or 'ok'}</code>)",
+                    parse_mode="HTML",
                 )
             else:
                 await self.send_message(chat_id, f"❌ SMS failed: {receipt.error}")
@@ -132,7 +132,7 @@ class TelegramMessagingMixin:
             args = args[1:]
 
         if len(args) < 2:
-            await self.send_message(chat_id, "Usage: `/wa @alias message`", parse_mode="Markdown")
+            await self.send_message(chat_id, "Usage: <code>/wa @alias message</code>", parse_mode="HTML")
             return
 
         target = args[0]
@@ -142,8 +142,8 @@ class TelegramMessagingMixin:
             if receipt.ok:
                 await self.send_message(
                     chat_id,
-                    f"✅ WhatsApp sent (`{receipt.message_id or 'ok'}`)",
-                    parse_mode="Markdown",
+                    f"✅ WhatsApp sent (<code>{receipt.message_id or 'ok'}</code>)",
+                    parse_mode="HTML",
                 )
             else:
                 await self.send_message(chat_id, f"❌ WhatsApp failed: {receipt.error}")
@@ -166,7 +166,7 @@ class TelegramMessagingMixin:
             try:
                 thread_id = int(args[0])
             except ValueError:
-                await self.send_message(chat_id, "Usage: `/thread [id]`", parse_mode="Markdown")
+                await self.send_message(chat_id, "Usage: <code>/thread [id]</code>", parse_mode="HTML")
                 return
 
             thread = store.get_by_id(thread_id)
@@ -175,14 +175,14 @@ class TelegramMessagingMixin:
                 return
 
             lines = [
-                f"🧵 *Thread #{thread.id}*",
-                f"  Adapter: `{thread.adapter}`",
-                f"  Remote: `{thread.remote_conversation_id}`",
+                f"🧵 <b>Thread #{thread.id}</b>",
+                f"  Adapter: <code>{thread.adapter}</code>",
+                f"  Remote: <code>{thread.remote_conversation_id}</code>",
                 f"  Contact: {thread.contact_alias or '(none)'}",
                 f"  Status: {thread.status}",
                 f"  Last active: {thread.last_active}",
             ]
-            await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+            await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
         else:
             await self._handle_messaging_threads(chat_id=chat_id, text="")
 
@@ -204,11 +204,11 @@ class TelegramMessagingMixin:
             await self.send_message(chat_id, "No active threads.")
             return
 
-        lines = ["🧵 *Active Threads*\n"]
+        lines = ["🧵 <b>Active Threads</b>\n"]
         for t in threads:
             alias_str = f"@{t.contact_alias}" if t.contact_alias else "(unknown)"
-            lines.append(f"  `#{t.id}` [{t.adapter}] {alias_str} — {t.status}")
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+            lines.append(f"  <code>#{t.id}</code> [{t.adapter}] {alias_str} — {t.status}")
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
 
     # ── /contact @alias ───────────────────────────────────────
 
@@ -219,7 +219,7 @@ class TelegramMessagingMixin:
             args = args[1:]
 
         if not args:
-            await self.send_message(chat_id, "Usage: `/contact @alias`", parse_mode="Markdown")
+            await self.send_message(chat_id, "Usage: <code>/contact @alias</code>", parse_mode="HTML")
             return
 
         alias = args[0].lstrip("@")
@@ -233,17 +233,17 @@ class TelegramMessagingMixin:
             return
 
         lines = [
-            f"👤 *@{contact.alias}*",
+            f"👤 <b>@{contact.alias}</b>",
             f"  Name: {contact.display_name or '(none)'}",
             f"  Default: {contact.default_network or '(auto)'}",
         ]
         if contact.routes:
             lines.append("  Routes:")
             for r in contact.routes:
-                lines.append(f"    • {r.network}: `{r.address}` (pri={r.priority})")
+                lines.append(f"    • {r.network}: <code>{r.address}</code> (pri={r.priority})")
         if contact.fallbacks:
             lines.append(f"  Fallbacks: {', '.join(contact.fallbacks)}")
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
 
     # ── /contacts ─────────────────────────────────────────────
 
@@ -258,17 +258,17 @@ class TelegramMessagingMixin:
             await self.send_message(
                 chat_id,
                 "No contacts yet. Add one with:\n"
-                "`navig contacts add --alias alice --name 'Alice' "
-                "--route 'whatsapp:+33612345678'`",
-                parse_mode="Markdown",
+                "<code>navig contacts add --alias alice --name 'Alice' "
+                "--route 'whatsapp:+33612345678'</code>",
+                parse_mode="HTML",
             )
             return
 
-        lines = ["👥 *Contacts*\n"]
+        lines = ["👥 <b>Contacts</b>\n"]
         for c in contacts:
             nets = ", ".join(r.network for r in c.routes) or "no routes"
             lines.append(f"  @{c.alias} — {c.display_name or '(unnamed)'} [{nets}]")
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
 
     # ── /reply [thread_id] message ────────────────────────────
 
@@ -283,8 +283,8 @@ class TelegramMessagingMixin:
         if not args:
             await self.send_message(
                 chat_id,
-                "Usage: `/reply [thread_id] message`\nExample: `/reply 42 Thanks for the update!`",
-                parse_mode="Markdown",
+                "Usage: <code>/reply [thread_id] message</code>\nExample: <code>/reply 42 Thanks for the update!</code>",
+                parse_mode="HTML",
             )
             return
 
@@ -310,7 +310,7 @@ class TelegramMessagingMixin:
 
         thread = store.get_by_id(thread_id)
         if thread is None:
-            await self.send_message(chat_id, f"Thread `#{thread_id}` not found.")
+            await self.send_message(chat_id, f"Thread <code>#{thread_id}</code> not found.")
             return
 
         try:
@@ -318,8 +318,8 @@ class TelegramMessagingMixin:
             if receipt.ok:
                 await self.send_message(
                     chat_id,
-                    f"✅ Reply sent to `#{thread_id}` via *{thread.adapter}*",
-                    parse_mode="Markdown",
+                    f"✅ Reply sent to <code>#{thread_id}</code> via <b>{thread.adapter}</b>",
+                    parse_mode="HTML",
                 )
             else:
                 await self.send_message(chat_id, f"❌ Reply failed: {receipt.error}")

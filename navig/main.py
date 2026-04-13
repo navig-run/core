@@ -39,8 +39,6 @@ def _fast_status_context() -> tuple[str, str]:
     if not active_host:
         active_host = _read_text_file(paths.cache_dir() / "active_host.txt")
     if not active_host:
-        active_host = _read_text_file(paths.config_dir() / "cache" / "active_host.txt")
-    if not active_host:
         active_host = "none"
 
     active_profile = os.environ.get("NAVIG_PROFILE", "").strip()
@@ -61,9 +59,8 @@ def _fast_rotating_tip() -> str:
     ]
     try:
         import datetime as _dt
-
         idx = _dt.date.today().toordinal() % len(tips)
-    except Exception:
+    except (ImportError, ValueError):
         idx = 0
     return tips[idx]
 
@@ -368,30 +365,6 @@ _loaded_plugins: list[str] = []
 _failed_plugins: list[dict[str, str]] = []
 
 # ---------------------------------------------------------------------------
-# Deprecated top-level command aliases.
-# When the user runs one of these, a warning is printed BEFORE dispatch so
-# the command still works but they see the canonical replacement.
-# ---------------------------------------------------------------------------
-_CLI_DEPRECATED_ALIASES: dict[str, str] = {
-    "cred": "vault",
-    "cred-profile": "vault profile",
-    "secret": "vault",
-}
-
-
-def _warn_deprecated_cli_alias() -> None:
-    """Print a deprecation warning if argv[1] is a known renamed command noun."""
-    if len(sys.argv) < 2:
-        return
-    cmd = sys.argv[1]
-    canonical = _CLI_DEPRECATED_ALIASES.get(cmd)
-    if canonical:
-        from navig.deprecation import deprecation_warning
-        deprecation_warning(f"navig {cmd}", f"navig {canonical}")
-
-
-
-# ---------------------------------------------------------------------------
 # Single source of truth for all built-in (plugin-free) command names.
 # Rules:
 #   • Every command listed here skips plugin loading on startup (~110 ms saving).
@@ -444,7 +417,7 @@ _BUILTIN_COMMANDS: frozenset[str] = frozenset({
     "telegram", "tg",
     "matrix", "mx",
     "store",
-    "vault",  # canonical; "cred" / "cred-profile" / "secret" are deprecated aliases
+    "vault",
     "flux", "fx",
     "cortex",
     "desktop",
@@ -568,9 +541,6 @@ def _should_skip_plugin_loading(argv: list[str]) -> bool:
 
         # Path is imported at module level; no redundant import needed here.
         cache_file = paths.data_dir() / "plugins_cache.json"
-        legacy_cache_file = paths.config_dir() / "data" / "plugins_cache.json"
-        if not cache_file.exists() and legacy_cache_file.exists():
-            cache_file = legacy_cache_file
         if cache_file.exists():
             with open(cache_file, encoding="utf-8") as f:
                 cached_data = json.load(f)
@@ -944,36 +914,8 @@ def main() -> None:
         # blocked by the onboarding wizard (macOS and other platforms included).
         _check_first_run()
 
-        # One-time migration: legacy ~/.navig/workspace → ~/.navig/spaces/*
-        # Non-fatal: a migration failure must never prevent NAVIG from starting.
-        try:
-            from pathlib import Path as _Path
-
-            from navig.config import get_config_manager as _get_cm
-            from navig.migrations.workspace_to_spaces import (
-                ensure_no_stale_spaces_registration,
-                migrate_workspace_to_spaces,
-            )
-
-            _navig_root = _Path(_get_cm().global_config_dir)
-            migrate_workspace_to_spaces(_navig_root)
-            ensure_no_stale_spaces_registration()
-        except Exception as _migration_exc:
-            import logging as _logging
-
-            _logging.getLogger(__name__).warning(
-                "Workspace migration error (non-fatal): %s",
-                _migration_exc,
-                exc_info=True,
-            )
-            _eprint(f"[yellow]⚠ Migration warning (non-fatal):[/yellow] {_migration_exc}")
-
         # Import the existing CLI app (maintains all current functionality)
         from navig.cli import _register_external_commands, app
-
-        # Emit a one-time deprecation warning for renamed top-level command nouns.
-        # This runs before Typer dispatch so the message appears above command output.
-        _warn_deprecated_cli_alias()
 
         # Register all external command sub-apps (deferred from module load)
         _register_external_commands()

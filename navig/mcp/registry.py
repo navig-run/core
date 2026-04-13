@@ -1,301 +1,297 @@
-"""MCP Client Manager and Tool Registry."""
+"""MCP Client Manager and unified tool registry."""
+
+from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from navig.debug_logger import get_debug_logger
 
 from .client import MCPClient, MCPClientConfig
 from .protocol import MCPResource, MCPTool
 
-if TYPE_CHECKING:
-    pass
-
 logger = get_debug_logger()
 
 
 class MCPClientManager:
-    """
-    Manages multiple MCP client connections.
+    """Manages multiple MCP client connections.
 
     Provides:
-    - Unified tool registry across all connected servers
-    - Auto-connect for configured servers
-    - Reconnection handling
-    - Tool routing to correct client
+    - A unified tool and resource registry across all connected servers.
+    - Auto-connect for clients marked ``auto_connect=True``.
+    - Retry logic on connection failure.
+    - Tool routing: ``call_tool`` automatically picks the right client.
 
-    Example:
+    Example::
+
         manager = MCPClientManager()
-
-        # Add clients from config
         await manager.add_client(MCPClientConfig(
-            id="filesystem",
+            id="fs",
             command="npx",
             args=["-y", "@anthropic/mcp-server-filesystem", "/tmp"],
         ))
-
         await manager.start()
 
-        # Get all tools across clients
         for tool in manager.get_all_tools():
-            print(f"{tool.server_id}/{tool.name}")
+            print(tool.server_id, tool.name)
 
-        # Call a tool (automatically routes to correct client)
         result = await manager.call_tool("read_file", {"path": "/tmp/test.txt"})
-
         await manager.stop()
     """
 
-    def __init__(self, config: dict | None = None):
-        self.config = config or {}
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        self.config: dict[str, Any] = config or {}
         self._clients: dict[str, MCPClient] = {}
-        self._reconnect_tasks: dict[str, asyncio.Task] = {}
-        self._bg_tasks: set[asyncio.Task] = set()
+        self._reconnect_tasks: dict[str, asyncio.Task[None]] = {}
+        # Strong references to fire-and-forget background tasks.
+        self._bg_tasks: set[asyncio.Task[None]] = set()
         self._started = False
 
-    def _fire_and_forget(self, coro) -> None:
-        """Run a coroutine in the background, retaining a strong reference."""
-        task = asyncio.create_task(coro)
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _fire_and_forget(self, coro: Any) -> None:
+        """Schedule *coro* as a background task, keeping a strong reference."""
+        task: asyncio.Task[None] = asyncio.create_task(coro)
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
 
+    # ------------------------------------------------------------------
+    # Read-only views
+    # ------------------------------------------------------------------
+
     @property
     def clients(self) -> dict[str, MCPClient]:
-        """Get all registered clients."""
         return self._clients
 
     def get_connected_clients(self) -> list[MCPClient]:
-        """Get all connected clients."""
         return [c for c in self._clients.values() if c.is_connected]
 
     def get_all_tools(self) -> list[MCPTool]:
-        """Get tools from all connected clients."""
-        tools = []
+        tools: list[MCPTool] = []
         for client in self._clients.values():
             if client.is_connected:
                 tools.extend(client.tools)
         return tools
 
     def get_all_resources(self) -> list[MCPResource]:
-        """Get resources from all connected clients."""
-        resources = []
+        resources: list[MCPResource] = []
         for client in self._clients.values():
             if client.is_connected:
                 resources.extend(client.resources)
         return resources
 
     def find_tool(self, name: str) -> tuple[MCPClient, MCPTool] | None:
-        """
-        Find tool by name across all clients.
-
-        Returns (client, tool) tuple or None if not found.
-        """
+        """Return ``(client, tool)`` for the first client that exposes *name*, or ``None``."""
         for client in self._clients.values():
-            if client.is_connected:
-                for tool in client.tools:
-                    if tool.name == name:
-                        return client, tool
+            if not client.is_connected:
+                continue
+            for tool in client.tools:
+                if tool.name == name:
+                    return client, tool
         return None
 
-    async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any:
-        """
-        Call a tool, routing to the correct client.
+    # ------------------------------------------------------------------
+    # Tool invocation
+    # ------------------------------------------------------------------
+
+    async def call_tool(
+        self, name: str, arguments: dict[str, Any] | None = None
+    ) -> Any:
+        """Call *name* on whichever connected client advertises it.
 
         Args:
-            name: Tool name
-            arguments: Tool arguments (None is normalised to {} per MCP spec)
-
-        Returns:
-            Tool result
+            name:      Tool name.
+            arguments: Tool arguments; ``None`` is normalised to ``{}``.
 
         Raises:
-            ValueError: If tool not found in any client
+            ValueError: If no connected client has the tool.
         """
         result = self.find_tool(name)
-        if not result:
+        if result is None:
             available = [t.name for t in self.get_all_tools()]
-            raise ValueError(f"Tool not found: {name} (available: {available})")
-
-        client, tool = result
-        # Normalise None → {} — MCP spec requires arguments to be an object.
+            raise ValueError(
+                f"Tool {name!r} not found on any connected client "
+                f"(available: {available})"
+            )
+        client, _ = result
         return await client.call_tool(name, arguments or {})
 
-    async def add_client(self, config: MCPClientConfig) -> MCPClient:
-        """
-        Add a new MCP client.
+    # ------------------------------------------------------------------
+    # Client management
+    # ------------------------------------------------------------------
 
-        If config.auto_connect is True the client will be connected immediately
-        in the background (regardless of whether start() has been called).
+    async def add_client(self, config: MCPClientConfig) -> MCPClient:
+        """Register and optionally auto-connect a client.
+
+        If ``config.auto_connect`` is ``True`` the connection attempt starts
+        immediately in the background, regardless of whether :meth:`start` has
+        been called.
         """
         client = MCPClient(config)
         self._clients[config.id] = client
 
         if config.auto_connect:
-            # Connect immediately — do not gate on _started since the gateway
-            # calls add_client() before start() is ever invoked.
             self._fire_and_forget(self._connect_with_retry(client))
 
         return client
 
-    async def remove_client(self, client_id: str):
-        """Remove and disconnect a client."""
+    async def remove_client(self, client_id: str) -> None:
+        """Disconnect and deregister a client."""
         client = self._clients.pop(client_id, None)
-        if client:
+        if client is not None:
             await client.disconnect()
 
-        # Cancel any reconnect task
         task = self._reconnect_tasks.pop(client_id, None)
-        if task:
+        if task is not None:
             task.cancel()
 
-    async def start(self):
-        """
-        Start manager and auto-connect configured clients.
+    async def start(self) -> None:
+        """Start the manager and auto-connect all configured clients.
 
-        Loads client configs from self.config['mcp']['clients'].
+        Client configs are read from ``self.config['mcp']['clients']``.
         """
         if self._started:
             return
 
         self._started = True
 
-        # Load clients from config
-        mcp_config = self.config.get("mcp", {}).get("clients", {})
-
+        mcp_config: dict[str, Any] = (
+            self.config.get("mcp", {}).get("clients", {})
+        )
         for client_id, client_cfg in mcp_config.items():
             if not client_cfg.get("enabled", True):
                 continue
 
-            config = MCPClientConfig.from_dict(client_id, client_cfg)
-            client = MCPClient(config)
+            cfg = MCPClientConfig.from_dict(client_id, client_cfg)
+            client = MCPClient(cfg)
             self._clients[client_id] = client
 
-            if config.auto_connect:
-                # Connect in background to not block startup
+            if cfg.auto_connect:
                 self._fire_and_forget(self._connect_with_retry(client))
 
-        logger.info("MCP Client Manager started with %s clients", len(self._clients))
+        logger.info(
+            "MCP Client Manager started with %d client(s)", len(self._clients)
+        )
 
-    async def stop(self):
-        """Stop all clients."""
+    async def stop(self) -> None:
+        """Disconnect all clients and cancel all background tasks."""
         self._started = False
 
-        # Cancel reconnect tasks
         for task in self._reconnect_tasks.values():
             task.cancel()
         self._reconnect_tasks.clear()
 
-        # Disconnect all clients
-        disconnect_tasks = [client.disconnect() for client in self._clients.values()]
-        if disconnect_tasks:
-            await asyncio.gather(*disconnect_tasks, return_exceptions=True)
-
+        if self._clients:
+            await asyncio.gather(
+                *[c.disconnect() for c in self._clients.values()],
+                return_exceptions=True,
+            )
         self._clients.clear()
+
         logger.info("MCP Client Manager stopped")
 
     async def connect_client(self, client_id: str) -> bool:
-        """
-        Connect a specific client.
-
-        Returns True if connected successfully.
-        """
+        """Connect a specific registered client.  Returns ``True`` on success."""
         client = self._clients.get(client_id)
-        if not client:
-            raise ValueError(f"Client not found: {client_id}")
-
+        if client is None:
+            raise ValueError(f"Client not found: {client_id!r}")
         await self._connect_with_retry(client, max_attempts=1)
         return client.is_connected
 
     async def disconnect_client(self, client_id: str) -> bool:
-        """
-        Disconnect a specific client.
-
-        Returns True if client was found and disconnected.
-        """
+        """Disconnect a specific client.  Returns ``True`` if found."""
         client = self._clients.get(client_id)
-        if not client:
+        if client is None:
             return False
 
-        # Cancel reconnect task if any
         task = self._reconnect_tasks.pop(client_id, None)
-        if task:
+        if task is not None:
             task.cancel()
 
         await client.disconnect()
         return True
 
     async def reconnect_client(self, client_id: str) -> bool:
-        """
-        Reconnect a specific client.
-
-        Returns True if reconnected successfully.
-        """
+        """Disconnect and reconnect a specific client.  Returns ``True`` on success."""
         client = self._clients.get(client_id)
-        if not client:
-            raise ValueError(f"Client not found: {client_id}")
-
+        if client is None:
+            raise ValueError(f"Client not found: {client_id!r}")
         await client.disconnect()
         await self._connect_with_retry(client, max_attempts=1)
         return client.is_connected
 
+    # ------------------------------------------------------------------
+    # Status
+    # ------------------------------------------------------------------
+
     def get_status(self) -> dict[str, Any]:
-        """
-        Get status of all clients.
-
-        Returns dict with client statuses.
-        """
-        clients = []
-        for client_id, client in self._clients.items():
-            clients.append(
-                {
-                    "id": client_id,
-                    "connected": client.is_connected,
-                    "tools_count": len(client.tools) if client.is_connected else 0,
-                    "resources_count": (len(client.resources) if client.is_connected else 0),
-                    "server_info": client._server_info if client.is_connected else None,
-                }
-            )
-
+        """Return a status snapshot for all registered clients."""
+        clients = [
+            {
+                "id": client_id,
+                "connected": client.is_connected,
+                "tools_count": len(client.tools) if client.is_connected else 0,
+                "resources_count": len(client.resources) if client.is_connected else 0,
+                # Access the private attribute only for status reporting.
+                "server_info": client._server_info if client.is_connected else None,
+            }
+            for client_id, client in self._clients.items()
+        ]
         return {
             "clients": clients,
             "total_tools": len(self.get_all_tools()),
             "total_resources": len(self.get_all_resources()),
         }
 
+    # ------------------------------------------------------------------
+    # Retry / reconnect internals
+    # ------------------------------------------------------------------
+
     async def _connect_with_retry(
         self,
         client: MCPClient,
         max_attempts: int = 3,
         retry_delay: float = 5.0,
-    ):
-        """Connect client with retry on failure."""
+    ) -> None:
+        """Attempt to connect *client*, retrying up to *max_attempts* times."""
         for attempt in range(max_attempts):
             try:
                 await client.connect()
                 logger.info("MCP client %s connected", client.id)
                 return
-            except Exception as e:
+            except Exception as exc:
                 logger.warning(
                     "MCP client %s connect failed (attempt %d/%d): %s",
                     client.id,
                     attempt + 1,
                     max_attempts,
-                    e,
+                    exc,
                 )
                 if attempt < max_attempts - 1:
+                    # Exponential back-off: 5 s, 10 s, 15 s, …
                     await asyncio.sleep(retry_delay * (attempt + 1))
 
-        logger.error("MCP client %s failed to connect after %s attempts", client.id, max_attempts)
+        logger.error(
+            "MCP client %s failed to connect after %d attempt(s)",
+            client.id,
+            max_attempts,
+        )
 
-    async def _schedule_reconnect(self, client: MCPClient, delay: float = 30.0):
-        """Schedule reconnection attempt for a client."""
+    async def _schedule_reconnect(
+        self, client: MCPClient, delay: float = 30.0
+    ) -> None:
+        """Schedule a single reconnect attempt for *client* after *delay* seconds."""
         if client.id in self._reconnect_tasks:
-            return
+            return  # Already scheduled
 
-        async def reconnect():
+        async def _reconnect() -> None:
             await asyncio.sleep(delay)
             if not client.is_connected and self._started:
                 await self._connect_with_retry(client)
             self._reconnect_tasks.pop(client.id, None)
 
-        self._reconnect_tasks[client.id] = asyncio.create_task(reconnect())
+        self._reconnect_tasks[client.id] = asyncio.create_task(
+            _reconnect(), name=f"mcp-reconnect-{client.id}"
+        )

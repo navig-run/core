@@ -57,13 +57,13 @@ def _get_handler(command_name: str):
 
 
 def _format_checkdomain(result: dict[str, Any]) -> str:
-    """Format a checkdomain result dict into a Telegram Markdown reply."""
+    """Format a checkdomain result dict into a Telegram HTML reply."""
     icon = {"available": "✅", "taken": "❌", "error": "⚠️"}.get(
         result.get("status", "error"), "❓"
     )
     domain = result.get("domain", "")
     details = result.get("details", "No details.")
-    return f"{icon} *{domain}*\n{details}"
+    return f"{icon} <b>{domain}</b>\n{details}"
 
 
 async def cmd_checkdomain(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -71,16 +71,16 @@ async def cmd_checkdomain(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     args = context.args or []
     if not args:
         await update.message.reply_text(
-            "🌐 *Domain Checker*\n\n"
-            "Usage: `/checkdomain example.com`\n\n"
-            "Or say:\n• _check domain navig.io_\n• _is schema.cx available_",
-            parse_mode="Markdown",
+            "🌐 <b>Domain Checker</b>\n\n"
+            "Usage: <code>/checkdomain example.com</code>\n\n"
+            "Or say:\n• <i>check domain navig.io</i>\n• <i>is schema.cx available</i>",
+            parse_mode="HTML",
         )
         return
 
     domain = args[0].lower().strip("./")
     status_msg = await update.message.reply_text(
-        f"🔍 Checking `{domain}`…", parse_mode="Markdown"
+        f"🔍 Checking <code>{domain}</code>…", parse_mode="HTML"
     )
 
     handler = _get_handler("checkdomain")
@@ -95,9 +95,9 @@ async def cmd_checkdomain(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         reply = _format_checkdomain(result)
     except Exception as exc:  # noqa: BLE001
         logger.exception("checkdomain handler raised")
-        reply = f"⚠️ Error checking `{domain}`: {exc}"
+        reply = f"⚠️ Error checking <code>{domain}</code>: {exc}"
 
-    await status_msg.edit_text(reply, parse_mode="Markdown")
+    await status_msg.edit_text(reply, parse_mode="HTML")
 
 
 # Registry: maps command string -> handler coroutine

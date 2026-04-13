@@ -2,39 +2,40 @@
 NAVIG Core Module
 
 Core DevOps functionality with no optional dependencies.
-This module contains essential commands that form the stable foundation of NAVIG.
+Provides the stable foundation of NAVIG: host management, application
+management, context, execution settings, YAML I/O, security, and the
+event-driven hook system.
 
-Command Groups:
-- host: Host management
-- app: Application management
-- tunnel: SSH tunnel management
-- db: Database operations
-- remote: Remote command execution
-- security: Security operations
-- monitoring: Server monitoring
-- web: Web server management
-- docker: Container management
-- backup: Backup operations
-- files: File operations
+Command Groups exposed via CLI:
+    host, app, tunnel, db, remote, security, monitoring,
+    web, docker, backup, files
 
-Core Utilities (Agent-inspired):
-- security: Sensitive data redaction, env var substitution, command safety
-- hooks: Event-driven hook system for extensibility
+Core Utilities:
+    security — sensitive-data redaction, env-var substitution, command safety
+    hooks    — event-driven hook system for extensibility
 """
+
+from __future__ import annotations
 
 from navig.core.apps import AppManager
 from navig.core.context import ContextManager
 from navig.core.execution import ExecutionSettings
 from navig.core.hosts import HostManager
 from navig.core.shared_config import Config
-
-# Extracted config managers (for direct imports)
 from navig.core.yaml_io import atomic_write_yaml, log_shadow_anomaly
 
 
-# Lazy imports for optional modules
-def get_security():
-    """Get security module (redaction, env vars, auditing)."""
+# ---------------------------------------------------------------------------
+# Lazy accessors — keep optional heavy imports out of the hot import path
+# ---------------------------------------------------------------------------
+
+
+def get_security() -> dict:
+    """Return the security-module public API as a dict.
+
+    Lazy import avoids the regex-compilation cost at startup when security
+    functions are not needed.
+    """
     from navig.core.security import (
         redact_sensitive_text,
         run_security_audit,
@@ -50,8 +51,8 @@ def get_security():
     }
 
 
-def get_hooks():
-    """Get hooks module (event system)."""
+def get_hooks() -> dict:
+    """Return the hook-system public API as a dict."""
     from navig.core.hooks import (
         HookEvent,
         register_hook,
@@ -68,9 +69,9 @@ def get_hooks():
 
 
 __all__ = [
-    # Core config
+    # Core configuration
     "Config",
-    # Extracted managers
+    # Manager classes
     "HostManager",
     "AppManager",
     "ContextManager",
@@ -78,7 +79,7 @@ __all__ = [
     # YAML utilities
     "atomic_write_yaml",
     "log_shadow_anomaly",
-    # Lazy accessors
+    # Lazy accessor functions
     "get_security",
     "get_hooks",
 ]

@@ -29,6 +29,7 @@ from typing import Any
 
 _log = logging.getLogger(__name__)
 
+from navig.core.file_permissions import set_owner_only_file_permissions
 from navig.core.yaml_io import safe_load_yaml
 
 from .engine import EngineConfig, OnboardingStep, StepResult
@@ -1551,10 +1552,7 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
             lines = [ln for ln in existing.splitlines() if not ln.startswith("TELEGRAM_BOT_TOKEN=")]
             lines.append(f"TELEGRAM_BOT_TOKEN={token}")
             env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-            try:
-                env_path.chmod(0o600)
-            except (OSError, PermissionError):
-                pass  # best-effort: skip on access/IO error
+            set_owner_only_file_permissions(env_path)
             writes.append(".env")
         except Exception:  # noqa: BLE001
             pass

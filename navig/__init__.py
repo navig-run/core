@@ -8,13 +8,9 @@ from __future__ import annotations
 
 import warnings
 
-# Suppress spurious requests-version mismatch warning that fires when urllib3
-# or charset_normalizer is newer than what the installed requests wheel was
-# tested against.  This is harmless – requests still works correctly.
-# Two complementary filters:
-#   1. Match by message prefix (covers all known message formats).
-#   2. Match by the unique message suffix so any future prefix rewording is
-#      also caught without requiring a filter update.
+# Suppress spurious urllib3/charset-normalizer version mismatch warnings that
+# fire when those packages are newer than what the installed requests wheel was
+# built against. The warnings are harmless — requests still works correctly.
 warnings.filterwarnings(
     "ignore",
     message=r"urllib3.*|chardet.*|charset_normalizer.*",
@@ -32,40 +28,38 @@ from pathlib import Path
 
 
 def _resolve_version() -> str:
-    """Resolve the package version from the active project metadata.
+    """Resolve the package version.
 
     Preference order:
-    1. Local ``pyproject.toml`` when running from a source checkout.
-    2. Installed package metadata when running from a wheel/site-packages.
-    3. A safe semver fallback so CLI version output never goes blank.
+    1. Installed package metadata (fast path — used in wheel/site-packages installs).
+    2. Source-checkout ``pyproject.toml`` adjacent to this file.
+    3. Safe semver fallback so CLI version output never goes blank.
     """
+    # Fast path: installed wheel / editable install with metadata
+    try:
+        from importlib.metadata import PackageNotFoundError, version
 
-    project_candidates = [
-        Path.cwd() / "pyproject.toml",
-        Path(__file__).resolve().parents[1] / "pyproject.toml",
-    ]
-    for project_file in project_candidates:
-        if not project_file.exists():
-            continue
+        return version("navig")
+    except Exception:
+        pass
+
+    # Slow path: running from a source checkout without an editable install
+    project_file = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    if project_file.exists():
         try:
             try:
                 import tomllib
             except ModuleNotFoundError:
-                import tomli as tomllib
+                import tomli as tomllib  # type: ignore[no-redef]
 
             data = tomllib.loads(project_file.read_text(encoding="utf-8"))
-            version = data.get("project", {}).get("version")
-            if isinstance(version, str) and version.strip():
-                return version.strip()
+            version_str = data.get("project", {}).get("version")
+            if isinstance(version_str, str) and version_str.strip():
+                return version_str.strip()
         except Exception:
-            pass  # best-effort: pyproject.toml unreadable or missing version field
+            pass  # pyproject.toml unreadable or missing version field
 
-    try:
-        from importlib.metadata import PackageNotFoundError, version  # noqa: F401
-
-        return version("navig")
-    except Exception:
-        return "0.0.0"
+    return "0.0.0"
 
 
 __version__ = _resolve_version()

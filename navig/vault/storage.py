@@ -12,6 +12,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from navig.core.file_permissions import set_owner_only_file_permissions
+
 from .encryption import VaultEncryption
 from .types import Credential, CredentialInfo, CredentialType
 
@@ -128,16 +130,7 @@ class VaultStorage:
             )
             conn.commit()
 
-        # Set restrictive file permissions (Unix only)
-        try:
-            import os
-
-            try:
-                os.chmod(self.vault_path, 0o600)
-            except (OSError, PermissionError):
-                pass  # best-effort: skip on access/IO error
-        except OSError:
-            pass  # best-effort cleanup
+            set_owner_only_file_permissions(self.vault_path)
 
     def save(self, credential: Credential) -> None:
         """

@@ -1,6 +1,9 @@
-"""Task worker for executing queued tasks."""
+"""Task worker — dequeues and executes tasks from a TaskQueue."""
+
+from __future__ import annotations
 
 import asyncio
+import functools
 import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -16,46 +19,43 @@ logger = get_debug_logger()
 
 @dataclass
 class WorkerConfig:
-    """Task worker configuration."""
+    """Configuration for a TaskWorker instance."""
 
     max_concurrent: int = 5
+    """Maximum number of tasks to execute concurrently."""
+
     poll_interval: float = 1.0
+    """Polling interval (seconds) when the queue is empty."""
+
     shutdown_timeout: float = 30.0
-    default_timeout: float = 300.0  # 5 minutes
+    """Grace period (seconds) to wait for running tasks on stop()."""
+
+    default_timeout: float = 300.0
+    """Per-task execution timeout (seconds) when Task.timeout is not set."""
 
 
 class TaskWorker:
-    """
-    Task worker that processes tasks from a queue.
+    """Concurrent task worker that drains a :class:`~navig.tasks.queue.TaskQueue`.
 
     Supports:
-    - Concurrent task execution
-    - Task timeouts
-    - Handler registration
-    - Graceful shutdown
+    - Bounded concurrency via an asyncio semaphore.
+    - Per-task and global default timeouts.
+    - Sync and async handler functions.
+    - Graceful shutdown with configurable drain timeout.
+    - Inline execution via :meth:`execute_now` (bypasses the queue).
 
-    Example:
+    Example::
+
         queue = TaskQueue()
         worker = TaskWorker(queue)
 
-        # Register handlers
         @worker.handler("backup_database")
-        async def backup_handler(params):
+        async def backup(params: dict) -> dict:
             host = params["host"]
-            # ... backup logic ...
-            return {"size": "1.2GB"}
+            return {"bytes": 1_200_000}
 
-        # Start worker
         await worker.start()
-
-        # Add tasks
-        await queue.add(Task(
-            name="backup",
-            handler="backup_database",
-            params={"host": "prod-db"},
-        ))
-
-        # Stop worker
+        await queue.add(Task(name="backup", handler="backup_database", params={"host": "prod"}))
         await worker.stop()
     """
 
@@ -63,205 +63,199 @@ class TaskWorker:
         self,
         queue: TaskQueue,
         config: WorkerConfig | None = None,
-    ):
-        """
-        Initialize task worker.
-
-        Args:
-            queue: Task queue to process
-            config: Worker configuration
-        """
+    ) -> None:
         self.queue = queue
         self.config = config or WorkerConfig()
 
-        self._handlers: dict[str, Callable] = {}
+        self._handlers: dict[str, Callable[..., Any]] = {}
         self._running = False
-        self._tasks: dict[str, asyncio.Task] = {}  # task_id -> asyncio.Task
+        self._active_tasks: dict[str, asyncio.Task[None]] = {}
         self._semaphore = asyncio.Semaphore(self.config.max_concurrent)
-        self._worker_task: asyncio.Task | None = None
+        self._loop_task: asyncio.Task[None] | None = None
         self._stats = {
             "started_at": None,
             "tasks_completed": 0,
             "tasks_failed": 0,
         }
 
-    def handler(self, name: str):
-        """
-        Decorator to register a task handler.
+    # ------------------------------------------------------------------
+    # Handler registration
+    # ------------------------------------------------------------------
 
-        Args:
-            name: Handler name (matches Task.handler)
+    def handler(self, name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """Decorator: register *func* as the handler for tasks with ``handler=name``.
 
-        Example:
+        Example::
+
             @worker.handler("send_email")
-            async def send_email_handler(params):
-                # ... send email ...
+            async def send_email(params: dict) -> dict:
                 return {"sent": True}
         """
 
-        def decorator(func: Callable):
+        def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
             self._handlers[name] = func
             return func
 
         return decorator
 
-    def register_handler(self, name: str, func: Callable):
-        """
-        Register a task handler.
-
-        Args:
-            name: Handler name
-            func: Handler function (async or sync)
-        """
+    def register_handler(self, name: str, func: Callable[..., Any]) -> None:
+        """Register *func* as the handler for tasks with ``handler=name``."""
         self._handlers[name] = func
+
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
 
     @property
     def is_running(self) -> bool:
-        """Check if worker is running."""
         return self._running
 
     @property
-    def active_tasks(self) -> int:
-        """Get number of currently running tasks."""
-        return len(self._tasks)
+    def active_count(self) -> int:
+        """Number of tasks currently executing."""
+        return len(self._active_tasks)
 
-    async def start(self):
-        """Start the worker."""
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    async def start(self) -> None:
+        """Start the worker loop."""
         if self._running:
             return
-
         self._running = True
         self._stats["started_at"] = datetime.now()
-        self._worker_task = asyncio.create_task(self._worker_loop())
+        self._loop_task = asyncio.create_task(
+            self._worker_loop(), name="task-worker-loop"
+        )
+        logger.info(
+            "TaskWorker started (max_concurrent=%d)", self.config.max_concurrent
+        )
 
-        logger.info("TaskWorker started (max_concurrent=%d)", self.config.max_concurrent)
-
-    async def stop(self, wait: bool = True):
-        """
-        Stop the worker.
+    async def stop(self, wait: bool = True) -> None:
+        """Stop the worker.
 
         Args:
-            wait: Wait for running tasks to complete
+            wait: When ``True``, drain active tasks before cancelling the loop.
         """
         self._running = False
 
-        if wait and self._tasks:
-            logger.info("Waiting for %d tasks to complete...", len(self._tasks))
+        if wait and self._active_tasks:
+            logger.info(
+                "TaskWorker draining %d active task(s)…", len(self._active_tasks)
+            )
             try:
                 await asyncio.wait_for(
-                    asyncio.gather(*self._tasks.values(), return_exceptions=True),
+                    asyncio.gather(*self._active_tasks.values(), return_exceptions=True),
                     timeout=self.config.shutdown_timeout,
                 )
             except asyncio.TimeoutError:
-                logger.warning("Shutdown timeout, cancelling remaining tasks")
-                for task in self._tasks.values():
-                    task.cancel()
+                logger.warning(
+                    "Shutdown timeout reached — cancelling %d task(s)",
+                    len(self._active_tasks),
+                )
+                for t in self._active_tasks.values():
+                    t.cancel()
 
-        if self._worker_task:
-            self._worker_task.cancel()
+        if self._loop_task is not None:
+            self._loop_task.cancel()
             try:
-                await self._worker_task
+                await self._loop_task
             except asyncio.CancelledError:
-                pass  # task cancelled; expected during shutdown
+                pass
 
         logger.info("TaskWorker stopped")
 
-    async def _worker_loop(self):
-        """Main worker loop."""
+    # ------------------------------------------------------------------
+    # Worker loop
+    # ------------------------------------------------------------------
+
+    async def _worker_loop(self) -> None:
+        """Main loop: poll the queue and dispatch tasks concurrently."""
         while self._running:
             try:
-                # Get next task first (does NOT hold the semaphore while waiting)
                 task = await self.queue.get_next(
                     wait=True, timeout=self.config.poll_interval
                 )
-
-                if task:
-                    # Acquire slot only once we have a task to run
+                if task is not None:
                     await self._semaphore.acquire()
-                    asyncio_task = asyncio.create_task(self._execute_task(task))
-                    self._tasks[task.id] = asyncio_task
-
+                    asyncio_task = asyncio.create_task(
+                        self._execute_task(task),
+                        name=f"task-{task.id}",
+                    )
+                    self._active_tasks[task.id] = asyncio_task
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                logger.error("Worker loop error: %s", e)
+            except Exception as exc:
+                logger.error("Worker loop error: %s", exc)
                 await asyncio.sleep(self.config.poll_interval)
 
-    async def _execute_task(self, task: Task):
-        """Execute a single task."""
+    async def _execute_task(self, task: Task) -> None:
+        """Execute *task*, updating queue state on completion or failure."""
         try:
             handler = self._handlers.get(task.handler)
+            if handler is None:
+                raise ValueError(
+                    f"No handler registered for {task.handler!r} (task {task.id!r})"
+                )
 
-            if not handler:
-                raise ValueError(f"No handler registered for: {task.handler}")
-
-            # Execute with timeout
             timeout = task.timeout or self.config.default_timeout
 
             try:
                 if inspect.iscoroutinefunction(handler):
                     result = await asyncio.wait_for(
-                        handler(task.params),
-                        timeout=timeout,
+                        handler(task.params), timeout=timeout
                     )
                 else:
-                    # Run sync handler in thread pool
                     loop = asyncio.get_running_loop()
                     result = await asyncio.wait_for(
                         loop.run_in_executor(None, handler, task.params),
                         timeout=timeout,
                     )
 
-                # Mark complete
                 await self.queue.complete(task.id, result=result)
                 self._stats["tasks_completed"] += 1
-
                 logger.info("Task completed: %s (%s)", task.id, task.name)
 
             except asyncio.TimeoutError:
-                await self.queue.fail(task.id, f"Task timed out after {timeout}s")
+                error_msg = f"Timed out after {timeout}s"
+                await self.queue.fail(task.id, error_msg)
                 self._stats["tasks_failed"] += 1
-                logger.error("Task timeout: %s", task.id)
+                logger.error("Task timed out: %s", task.id)
 
-        except Exception as e:
-            await self.queue.fail(task.id, str(e))
+        except Exception as exc:
+            await self.queue.fail(task.id, str(exc))
             self._stats["tasks_failed"] += 1
-            logger.error("Task failed: %s - %s", task.id, e)
+            logger.error("Task failed: %s — %s", task.id, exc)
 
         finally:
-            self._tasks.pop(task.id, None)
-            self._semaphore.release()  # Release slot acquired in _worker_loop
+            self._active_tasks.pop(task.id, None)
+            self._semaphore.release()
+
+    # ------------------------------------------------------------------
+    # Inline execution (bypasses queue)
+    # ------------------------------------------------------------------
 
     async def execute_now(self, task: Task) -> Any:
-        """
-        Execute a task immediately without queuing.
-
-        Args:
-            task: Task to execute
-
-        Returns:
-            Task result
+        """Execute *task* immediately without going through the queue.
 
         Raises:
-            ValueError: If no handler is registered
-            Exception: If task fails
+            ValueError: No handler registered for ``task.handler``.
+            Exception:  Any exception raised by the handler.
         """
         handler = self._handlers.get(task.handler)
-
-        if not handler:
-            raise ValueError(f"No handler registered for: {task.handler}")
+        if handler is None:
+            raise ValueError(
+                f"No handler registered for {task.handler!r} (task {task.id!r})"
+            )
 
         task.status = TaskStatus.RUNNING
         task.started_at = datetime.now()
+        timeout = task.timeout or self.config.default_timeout
 
         try:
-            timeout = task.timeout or self.config.default_timeout
-
             if inspect.iscoroutinefunction(handler):
-                result = await asyncio.wait_for(
-                    handler(task.params),
-                    timeout=timeout,
-                )
+                result = await asyncio.wait_for(handler(task.params), timeout=timeout)
             else:
                 loop = asyncio.get_running_loop()
                 result = await asyncio.wait_for(
@@ -272,63 +266,65 @@ class TaskWorker:
             task.status = TaskStatus.COMPLETED
             task.completed_at = datetime.now()
             task.result = result
-
             return result
 
-        except Exception as e:
+        except Exception:
             task.status = TaskStatus.FAILED
             task.completed_at = datetime.now()
-            task.error = str(e)
             raise
 
+    # ------------------------------------------------------------------
+    # Stats
+    # ------------------------------------------------------------------
+
     def get_stats(self) -> dict[str, Any]:
-        """Get worker statistics."""
+        """Return a snapshot of worker statistics."""
+        started_at = self._stats["started_at"]
         return {
             "running": self._running,
-            "started_at": (
-                self._stats["started_at"].isoformat()
-                if self._stats["started_at"]
-                else None
-            ),
-            "active_tasks": self.active_tasks,
+            "started_at": started_at.isoformat() if started_at else None,
+            "active_tasks": self.active_count,
             "max_concurrent": self.config.max_concurrent,
             "tasks_completed": self._stats["tasks_completed"],
             "tasks_failed": self._stats["tasks_failed"],
-            "registered_handlers": list(self._handlers.keys()),
+            "registered_handlers": list(self._handlers),
         }
 
 
-# Convenience functions for common patterns
-def create_task_handler(func: Callable) -> Callable:
-    """
-    Decorator to create a task-compatible handler.
+# ---------------------------------------------------------------------------
+# Convenience: create_task_handler decorator
+# ---------------------------------------------------------------------------
 
-    Wraps a function to accept a params dict.
 
-    Example:
+def create_task_handler(func: Callable[..., Any]) -> Callable[[dict[str, Any]], Any]:
+    """Decorator that adapts a typed function to accept a ``params`` dict.
+
+    Allows handlers to be written with explicit keyword arguments instead of
+    manually unpacking a dict.
+
+    Example::
+
         @create_task_handler
-        async def my_handler(host: str, port: int = 22):
-            # ...
+        async def my_handler(host: str, port: int = 22) -> dict:
+            ...
 
-        # Can be called as:
-        await my_handler({"host": "example.com", "port": 22})
+        # The wrapper is called as: await my_handler({"host": "example.com"})
     """
-    import functools
+    sig = inspect.signature(func)
+
     @functools.wraps(func)
-    async def wrapper(params: dict):
-        sig = inspect.signature(func)
-
-        # Map params to function arguments
-        kwargs = {}
-        for name, param in sig.parameters.items():
-            if name in params:
-                kwargs[name] = params[name]
+    async def wrapper(params: dict[str, Any]) -> Any:
+        kwargs: dict[str, Any] = {}
+        for param_name, param in sig.parameters.items():
+            if param_name in params:
+                kwargs[param_name] = params[param_name]
             elif param.default is inspect.Parameter.empty:
-                raise ValueError(f"Missing required parameter: {name}")
-
+                raise ValueError(
+                    f"Missing required parameter {param_name!r} for handler "
+                    f"{func.__name__!r}"
+                )
         if inspect.iscoroutinefunction(func):
             return await func(**kwargs)
-        else:
-            return func(**kwargs)
+        return func(**kwargs)
 
     return wrapper

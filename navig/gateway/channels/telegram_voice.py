@@ -275,12 +275,12 @@ class TelegramVoiceMixin:
         if stt_provider is None:
             await self.send_message(
                 chat_id,
-                "🎙️ *Voice transcription not configured\\.*\n\n"
-                "Add any of the following to `~/.navig/.env` and restart:\n"
-                "• `DEEPGRAM_KEY=<key>` — blazing fast, recommended\n"
-                "• `OPENAI_API_KEY=<key>` — Whisper API fallback\n"
-                "• `pip install openai-whisper` — offline, no key needed",
-                parse_mode="MarkdownV2",
+                "🎙️ <b>Voice transcription not configured.</b>\n\n"
+                "Add any of the following to <code>~/.navig/.env</code> and restart:\n"
+                "• <code>DEEPGRAM_KEY=&lt;key&gt;</code> — blazing fast, recommended\n"
+                "• <code>OPENAI_API_KEY=&lt;key&gt;</code> — Whisper API fallback\n"
+                "• <code>pip install openai-whisper</code> — offline, no key needed",
+                parse_mode="HTML",
             )
             return None, ""
 
@@ -353,8 +353,8 @@ class TelegramVoiceMixin:
                 if "whisper not installed" in raw_err or "No module named 'whisper'" in raw_err:
                     user_msg = (
                         "🎙️ Transcription failed: local Whisper is not installed.\n"
-                        "Run `pip install openai-whisper`, or add `DEEPGRAM_KEY` / "
-                        "`OPENAI_API_KEY` to `~/.navig/.env`."
+                        "Run <code>pip install openai-whisper</code>, or add <code>DEEPGRAM_KEY</code> / "
+                        "<code>OPENAI_API_KEY</code> to <code>~/.navig/.env</code>."
                     )
                 elif "API key" in raw_err or "not set" in raw_err or "not configured" in raw_err:
                     user_msg = "🎙️ Transcription failed: no STT API key — type your message instead."
@@ -364,7 +364,7 @@ class TelegramVoiceMixin:
                     user_msg = f"🎙️ Audio file too large — {raw_err.split(':', 1)[-1].strip()}"
                 else:
                     user_msg = "🎙️ Couldn't transcribe audio — try again or type it out."
-                await self.send_message(chat_id, user_msg, parse_mode=None)
+                await self.send_message(chat_id, user_msg, parse_mode="HTML")
                 return None, ""
 
             transcript = result.text.strip()
@@ -397,8 +397,8 @@ class TelegramVoiceMixin:
                 ]
                 await self.send_message(
                     chat_id,
-                    f"🎙️ *Heard:*\n_{_mdv2_escape(transcript)}_",
-                    parse_mode="MarkdownV2",
+                    f"🎙️ <b>Heard:</b>\n<i>{_html.escape(transcript)}</i>",
+                    parse_mode="HTML",
                     keyboard=heard_kb,
                 )
             detected_lang = (result.language or "") if hasattr(result, "language") else ""
@@ -779,18 +779,18 @@ class TelegramVoiceMixin:
         size_str = f"{file_size // 1024:,} KB" if file_size else "—"
 
         if kind == "voice_recording":
-            header = "🎤 *Voice recording*"
+            header = "🎤 <b>Voice recording</b>"
         elif kind == "music":
-            header = f"🎵 *{title}*"
+            header = f"🎵 <b>{_html.escape(title)}</b>"
             if performer:
-                header += f"\nby {performer}"
+                header += f"\nby {_html.escape(performer)}"
         else:
-            header = f"🎵 *{title}*"
+            header = f"🎵 <b>{_html.escape(title)}</b>"
 
         card = header
         card += (
-            f"\n⏱ {_mdv2_escape(dur_str)}  \u00b7  💾 {_mdv2_escape(size_str)}  \u00b7  "
-            f"`{_mdv2_escape(mime_type)}`"
+            f"\n⏱ {_html.escape(dur_str)}  \u00b7  💾 {_html.escape(size_str)}  \u00b7  "
+            f"<code>{_html.escape(mime_type)}</code>"
         )
 
         # First row: Transcribe + Identify
@@ -818,7 +818,7 @@ class TelegramVoiceMixin:
         await self.send_message(
             chat_id,
             card,
-            parse_mode="MarkdownV2",
+            parse_mode="HTML",
             keyboard=keyboard,
             reply_to_message_id=message_id,
         )

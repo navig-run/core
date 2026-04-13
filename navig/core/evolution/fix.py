@@ -84,15 +84,8 @@ Constraints:
                 # Replace {file} placeholder
                 cmd_str = self.check_command.replace("{file}", tmp_path)
 
-                import platform
-
-                if platform.system().lower() == "windows":
-                    cmd_args = ["cmd.exe", "/c", cmd_str]
-                else:
-                    cmd_args = ["bash", "-c", cmd_str]
-
                 info(f"Running validation: {cmd_str}")
-                result = subprocess.run(cmd_args, capture_output=True, text=True)
+                result = subprocess.run(cmd_str, shell=True, capture_output=True, text=True)
 
                 if result.returncode != 0:
                     self.last_failure_summary = summarize_check_failure(

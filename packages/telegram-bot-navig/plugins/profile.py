@@ -55,7 +55,7 @@ class ProfilePlugin(BotPlugin):
             await update.message.reply_text("❌ User not found.")
             return
         name = html.escape(chat.full_name or chat.title or str(chat.id))
-        lines = [f"🔵 *NAVIG Node — {name}*\n", f"🆔 ID: `{chat.id}`"]
+        lines = [f"🔵 <b>NAVIG Node — {name}</b>\n", f"🆔 ID: <code>{chat.id}</code>"]
         if getattr(chat, "username", None):
             lines.append(f"🔗 @{chat.username}")
         if getattr(chat, "first_name", None):
@@ -68,14 +68,14 @@ class ProfilePlugin(BotPlugin):
                 )
             )
         if getattr(chat, "bio", None):
-            lines.append(f"\n📝 _{html.escape(chat.bio)}_")
+            lines.append(f"\n📝 <i>{html.escape(chat.bio)}</i>")
         if getattr(chat, "type", None):
             lines.append(f"📂 Type: {chat.type}")
         if getattr(chat, "is_bot", False):
             lines.append("🤖 Bot: ✅")
         if getattr(chat, "is_premium", False):
             lines.append("⭐ Premium: ✅")
-        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
 
 def create():

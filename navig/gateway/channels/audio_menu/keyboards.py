@@ -43,8 +43,8 @@ def screen_a_keyboard(cfg: AudioConfig) -> list[list[dict[str, Any]]]:
 
 def screen_a_text(cfg: AudioConfig) -> str:
     pdata = PROVIDERS.get(cfg.provider, {})
-    active_label = f"{pdata.get('label', cfg.provider)} › `{cfg.model}` › `{cfg.voice}`"
-    return f"🎙 *Audio & Voice Settings*\nActive: {active_label}\n\nSelect a provider:"
+    active_label = f"{pdata.get('label', cfg.provider)} › <code>{cfg.model}</code> › <code>{cfg.voice}</code>"
+    return f"🎤 <b>Audio &amp; Voice Settings</b>\nActive: {active_label}\n\nSelect a provider:"
 
 
 # ── Screen B — Model List ───────────────────────────────────────────
@@ -77,7 +77,7 @@ def screen_b_keyboard(provider_id: str, cfg: AudioConfig) -> list[list[dict[str,
 
 def screen_b_text(provider_id: str, cfg: AudioConfig) -> str:
     pdata = PROVIDERS.get(provider_id, {})
-    return f"🎙 *{pdata.get('label', provider_id)}* — Models\n\nSelect a model:"
+    return f"🎤 <b>{pdata.get('label', provider_id)}</b> — Models\n\nSelect a model:"
 
 
 # ── Screen C — Model Settings Panel ────────────────────────────────
@@ -149,7 +149,7 @@ def screen_c_text(provider_id: str, model_id: str, cfg: AudioConfig) -> str:
     is_active = cfg.provider == provider_id and cfg.model == model_id and cfg.active
     status = "✅ Active" if is_active else "○ Inactive"
     return (
-        f"⚙️ *{mdata.get('label', model_id)}*\n"
+        f"⚙️ <b>{mdata.get('label', model_id)}</b>\n"
         f"Provider: {pdata.get('label', provider_id)} · {status}\n\n"
         "Adjust settings:"
     )
@@ -221,7 +221,7 @@ def screen_d_text(provider_id: str, model_id: str, page: int, cfg: AudioConfig) 
     mdata = PROVIDERS.get(provider_id, {}).get("models", {}).get(model_id, {})
     total = len(mdata.get("voices", []))
     total_pages = max(1, (total + VOICES_PER_PAGE - 1) // VOICES_PER_PAGE)
-    return f"🎙 *Select Voice*  _(page {page + 1}/{total_pages})_\nCurrent: `{cfg.voice}`"
+    return f"🎤 <b>Select Voice</b>  <i>(page {page + 1}/{total_pages})</i>\nCurrent: <code>{cfg.voice}</code>"
 
 
 # ── Screen E — Speed Picker ─────────────────────────────────────────
@@ -254,7 +254,7 @@ def screen_e_keyboard(
 
 
 def screen_e_text(provider_id: str, model_id: str, cfg: AudioConfig) -> str:
-    return f"⚡ *Select Speech Speed*\nCurrent: `{cfg.speed}x`"
+    return f"⚡ <b>Select Speech Speed</b>\nCurrent: <code>{cfg.speed}x</code>"
 
 
 # ── Screen F — Format Picker ────────────────────────────────────────
@@ -287,4 +287,4 @@ def screen_f_keyboard(
 
 
 def screen_f_text(provider_id: str, model_id: str, cfg: AudioConfig) -> str:
-    return f"🎚 *Select Audio Format*\nCurrent: `{cfg.format}`"
+    return f"🎚 <b>Select Audio Format</b>\nCurrent: <code>{cfg.format}</code>"

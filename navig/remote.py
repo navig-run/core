@@ -153,18 +153,10 @@ class RemoteOperations:
     def execute_local(self, command: str, capture_output: bool = True) -> subprocess.CompletedProcess:
         """Execute a command on the *local* machine (no SSH).  Platform-aware.
 
-        On Windows uses PowerShell so the full Windows command vocabulary is
-        available.  On POSIX uses the default shell.
+        Uses the platform-native default shell (ComSpec on Windows, /bin/sh on
+        POSIX) to avoid hard dependencies on specific shell binaries.
         """
         try:
-            if os.name == "nt":
-                args = ["powershell", "-NonInteractive", "-NoProfile", "-Command", command]
-                return subprocess.run(
-                    args,
-                    capture_output=capture_output,
-                    text=True,
-                    timeout=_SSH_TIMEOUT,
-                )
             return subprocess.run(  # noqa: S602
                 command,
                 shell=True,

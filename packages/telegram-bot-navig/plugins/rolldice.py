@@ -39,7 +39,7 @@ class RollDicePlugin(BotPlugin):
         result = random.randint(1, 6)
         faces = {1: "⚀", 2: "⚁", 3: "⚂", 4: "⚃", 5: "⚄", 6: "⚅"}
         await update.message.reply_text(
-            f"{faces[result]} You rolled a *{result}*!", parse_mode="Markdown"
+            f"{faces[result]} You rolled a <b>{result}</b>!", parse_mode="HTML"
         )
 
 

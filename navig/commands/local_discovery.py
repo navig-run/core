@@ -48,21 +48,15 @@ def run_local_command(command: str, timeout: int = 10) -> tuple[bool, str, str]:
         Tuple of (success: bool, stdout: str, stderr: str)
     """
     try:
-        if platform.system() == "Windows":
-            # Use PowerShell on Windows for better compatibility.
-            # Do NOT pass text=True here — we decode manually so that non-UTF-8
-            # bytes in output (e.g. accented chars from Windows locale paths)
-            # don't crash the subprocess reader thread (UnicodeDecodeError).
-            result = subprocess.run(
-                ["powershell", "-Command", command],
-                capture_output=True,
-                timeout=timeout,
-                shell=False,
-            )
-        else:
-            result = subprocess.run(
-                ["bash", "-c", command], capture_output=True, timeout=timeout
-            )
+        # Do NOT pass text=True here — we decode manually so that non-UTF-8
+        # bytes in output (e.g. accented chars from locale-specific paths)
+        # don't crash the subprocess reader thread (UnicodeDecodeError).
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            timeout=timeout,
+            shell=True,
+        )
 
         stdout = _decode_subprocess_output(result.stdout).strip()
         stderr = _decode_subprocess_output(result.stderr).strip()

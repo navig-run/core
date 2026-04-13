@@ -553,16 +553,10 @@ def _invoke_navig(cli_args: str, options: dict[str, Any]) -> int:
 
 def _invoke_shell(command: str, cwd: Path) -> int:
     """Run a shell command safely in the skill's directory."""
-    import platform
-
-    if platform.system().lower() == "windows":
-        args = ["cmd.exe", "/c", command]
-    else:
-        args = ["bash", "-c", command]
-
     try:
         result = subprocess.run(
-            args,
+            command,
+            shell=True,
             cwd=str(cwd),
             text=True,
         )

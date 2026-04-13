@@ -46,9 +46,9 @@ class CheckDomainPlugin(BotPlugin):
         args = context.args or []
         if not args:
             await update.message.reply_text(
-                "🌐 *Domain Checker*\n\nUsage: `/checkdomain example.com`\n\n"
-                "Or say:\n• _check domain navig.io_\n• _is schema.cx available_",
-                parse_mode="Markdown",
+                "🌐 <b>Domain Checker</b>\n\nUsage: <code>/checkdomain example.com</code>\n\n"
+                "Or say:\n• <i>check domain navig.io</i>\n• <i>is schema.cx available</i>",
+                parse_mode="HTML",
             )
             return
         await self._check(update, args[0].lower().strip("./"))
@@ -63,18 +63,18 @@ class CheckDomainPlugin(BotPlugin):
     async def _check(self, update, domain):
         if not _DOM.fullmatch(domain):
             await update.message.reply_text(
-                f"⚠️ `{domain}` is not a valid domain.", parse_mode="Markdown"
+                f"⚠️ <code>{domain}</code> is not a valid domain.", parse_mode="HTML"
             )
             return
         status = await update.message.reply_text(
-            f"🔍 Checking `{domain}`…", parse_mode="Markdown"
+            f"🔍 Checking <code>{domain}</code>…", parse_mode="HTML"
         )
         result = await asyncio.to_thread(self._rdap, domain)
         text = {
-            "available": f"✅ *{domain}* appears to be *available!*",
-            "taken": f"❌ *{domain}* is already registered.",
-        }.get(result, f"⚠️ Could not determine availability of *{domain}*.")
-        await status.edit_text(text, parse_mode="Markdown")
+            "available": f"✅ <b>{domain}</b> appears to be <b>available!</b>",
+            "taken": f"❌ <b>{domain}</b> is already registered.",
+        }.get(result, f"⚠️ Could not determine availability of <b>{domain}</b>.")
+        await status.edit_text(text, parse_mode="HTML")
 
     @staticmethod
     def _rdap(domain):

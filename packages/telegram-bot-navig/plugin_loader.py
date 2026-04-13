@@ -440,32 +440,32 @@ class PluginLoader:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         """/help — list all available bot commands."""
-        lines = ["*Available commands:*\n"]
-        lines.append("_Management_")
-        lines.append("`/help`  — show this message")
-        lines.append("`/plugins`  — list all plugins and their status")
-        lines.append("`/activate <name>`  — enable a plugin")
-        lines.append("`/deactivate <name>`  — disable a plugin")
+        lines = ["<b>Available commands:</b>\n"]
+        lines.append("<i>Management</i>")
+        lines.append("<code>/help</code>  — show this message")
+        lines.append("<code>/plugins</code>  — list all plugins and their status")
+        lines.append("<code>/activate &lt;name&gt;</code>  — enable a plugin")
+        lines.append("<code>/deactivate &lt;name&gt;</code>  — disable a plugin")
 
         cmd_plugins = [p for p in self._plugins.values() if p.command]
         if cmd_plugins:
-            lines.append("\n_Plugins_")
+            lines.append("\n<i>Plugins</i>")
             for plugin in cmd_plugins:
-                state = "" if plugin.enabled else " *(disabled)*"
-                lines.append(f"`/{plugin.command}`  — {plugin.meta.description}{state}")
+                state = "" if plugin.enabled else " <i>(disabled)</i>"
+                lines.append(f"<code>/{plugin.command}</code>  — {plugin.meta.description}{state}")
 
         passive_plugins = [
             p for p in self._plugins.values() if not p.command and p.passive_patterns
         ]
         if passive_plugins:
-            lines.append("\n_Passive listeners_")
+            lines.append("\n<i>Passive listeners</i>")
             for plugin in passive_plugins:
-                state = "" if plugin.enabled else " *(disabled)*"
+                state = "" if plugin.enabled else " <i>(disabled)</i>"
                 lines.append(
-                    f"• *{plugin.meta.name}*  — {plugin.meta.description}{state}"
+                    f"• <b>{plugin.meta.name}</b>  — {plugin.meta.description}{state}"
                 )
 
-        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
     async def _cmd_plugins(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -475,29 +475,29 @@ class PluginLoader:
             await update.message.reply_text("No plugins loaded.")
             return
 
-        lines = ["*Installed plugins:*\n"]
+        lines = ["<b>Installed plugins:</b>\n"]
         for plugin in self._plugins.values():
             state = "✅ enabled" if plugin.enabled else "❌ disabled"
             if plugin.command:
-                trigger = f"`/{plugin.command}`"
+                trigger = f"<code>/{plugin.command}</code>"
             elif plugin.passive_patterns:
-                trigger = f"_(passive — {len(plugin.passive_patterns)} pattern(s))_"
+                trigger = f"<i>(passive — {len(plugin.passive_patterns)} pattern(s))</i>"
             else:
-                trigger = "_(business only)_"
+                trigger = "<i>(business only)</i>"
             biz = "  🏢 business" if plugin.handles_business else ""
             lines.append(
-                f"• {trigger} — *{plugin.meta.name}* v{plugin.meta.version}"
+                f"• {trigger} — <b>{plugin.meta.name}</b> v{plugin.meta.version}"
                 f"\n  {plugin.meta.description}"
                 f"\n  Status: {state}{biz}"
             )
 
         if self._errors:
-            lines.append("\n*Failed to load:*")
+            lines.append("\n<b>Failed to load:</b>")
             for stem, err in self._errors.items():
                 short = (err[:80] + "...") if len(err) > 80 else err
-                lines.append(f"• WARNING `{stem}` — `{short}`")
+                lines.append(f"• WARNING <code>{stem}</code> — <code>{short}</code>")
 
-        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
     async def _cmd_activate(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -518,7 +518,7 @@ class PluginLoader:
 
         plugin.enable()
         await update.message.reply_text(
-            f'Plugin "{name}" has been *enabled*.', parse_mode="Markdown"
+            f'Plugin "{name}" has been <b>enabled</b>.', parse_mode="HTML"
         )
 
     async def _cmd_deactivate(
@@ -540,7 +540,7 @@ class PluginLoader:
 
         plugin.disable()
         await update.message.reply_text(
-            f'Plugin "{name}" has been *disabled*.', parse_mode="Markdown"
+            f'Plugin "{name}" has been <b>disabled</b>.', parse_mode="HTML"
         )
 
 

@@ -49,7 +49,7 @@ class NodePlugin(BotPlugin):
             await update.message.reply_text("❌ Node not found.")
             return
         name = html.escape(chat.full_name or chat.title or str(chat.id))
-        lines = ["🔵 *NAVIG Node*", "", f"👤 *{name}*", f"🆔 `{chat.id}`"]
+        lines = ["🔵 <b>NAVIG Node</b>", "", f"👤 <b>{name}</b>", f"🆔 <code>{chat.id}</code>"]
         if getattr(chat, "username", None):
             lines.append(f"🔗 @{chat.username}")
         if getattr(chat, "bio", None):
@@ -58,7 +58,7 @@ class NodePlugin(BotPlugin):
             lines.append("🤖 Bot node")
         if getattr(chat, "is_premium", False):
             lines.append("⭐ Premium node")
-        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
 
 def create():

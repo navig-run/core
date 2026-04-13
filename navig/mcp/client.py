@@ -1,4 +1,6 @@
-"""MCP Client for connecting to external MCP servers."""
+"""MCP Client — connects to a single external MCP server."""
+
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
@@ -21,21 +23,20 @@ logger = get_debug_logger()
 
 @dataclass
 class MCPClientConfig:
-    """Configuration for an MCP client connection."""
+    """Configuration for a single MCP client connection."""
 
     id: str
     command: str | None = None
     args: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
-    transport: str = "stdio"  # "stdio" or "sse"
-    url: str | None = None  # For SSE transport
-    cwd: str | None = None  # Working directory
+    transport: str = "stdio"  # "stdio" | "sse" | "websocket"
+    url: str | None = None
+    cwd: str | None = None
     auto_connect: bool = True
     enabled: bool = True
 
     @classmethod
-    def from_dict(cls, id: str, data: dict) -> "MCPClientConfig":
-        """Create from config dictionary."""
+    def from_dict(cls, id: str, data: dict[str, Any]) -> MCPClientConfig:
         return cls(
             id=id,
             command=data.get("command"),
@@ -50,38 +51,34 @@ class MCPClientConfig:
 
 
 class MCPClient:
-    """
-    MCP client for connecting to external MCP servers.
+    """MCP client that manages the lifecycle of one server connection.
 
     Handles:
-    - Connection lifecycle
-    - Protocol initialization
-    - Tool discovery and invocation
-    - Resource access
+    - Transport selection and connection lifecycle.
+    - MCP protocol initialisation handshake.
+    - Tool, resource, and prompt discovery.
+    - Request routing via ``call_tool`` / ``read_resource`` / ``get_prompt``.
 
-    Example:
+    Example::
+
         config = MCPClientConfig(
-            id="filesystem",
+            id="fs",
             command="npx",
             args=["-y", "@anthropic/mcp-server-filesystem", "/tmp"],
         )
-
         client = MCPClient(config)
         await client.connect()
 
-        # List available tools
         for tool in client.tools:
-            print(f"{tool.name}: {tool.description}")
+            print(tool.name, tool.description)
 
-        # Call a tool
-        result = await client.call_tool("read_file", {"path": "/tmp/test.txt"})
-
+        result = await client.call_tool("read_file", {"path": "/tmp/hello.txt"})
         await client.disconnect()
     """
 
     PROTOCOL_VERSION = "2024-11-05"
 
-    def __init__(self, config: MCPClientConfig):
+    def __init__(self, config: MCPClientConfig) -> None:
         self.config = config
         self.id = config.id
 
@@ -94,63 +91,52 @@ class MCPClient:
         self._initialized = False
         self._server_info: dict[str, Any] = {}
 
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
+
     @property
     def is_connected(self) -> bool:
-        """Check if client is connected and initialized."""
-        return self._transport is not None and self._transport.is_connected() and self._initialized
+        """``True`` when the transport is up **and** the MCP handshake is complete."""
+        return (
+            self._transport is not None
+            and self._transport.is_connected()
+            and self._initialized
+        )
 
     @property
     def tools(self) -> list[MCPTool]:
-        """Get list of available tools."""
         return list(self._tools.values())
 
     @property
     def resources(self) -> list[MCPResource]:
-        """Get list of available resources."""
         return list(self._resources.values())
 
     @property
     def prompts(self) -> list[MCPPrompt]:
-        """Get list of available prompts."""
         return list(self._prompts.values())
 
     @property
     def capabilities(self) -> MCPCapabilities | None:
-        """Get server capabilities."""
         return self._capabilities
 
-    async def connect(self):
-        """Connect to MCP server and initialize protocol."""
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    async def connect(self) -> None:
+        """Connect to the MCP server and complete the initialisation handshake."""
         if self.is_connected:
-            logger.warning("MCP client %s already connected", self.id)
+            logger.warning("MCP client %s is already connected", self.id)
             return
 
-        # Create transport based on config
-        if self.config.transport == "sse":
-            if not self.config.url:
-                raise ValueError(f"SSE transport requires 'url' for client {self.id}")
-            self._transport = SSETransport(self.config.url)
-        elif self.config.transport == "websocket":
-            if not self.config.url:
-                raise ValueError(f"WebSocket transport requires 'url' for client {self.id}")
-            self._transport = WebSocketTransport(self.config.url)
-        else:
-            if not self.config.command:
-                raise ValueError(f"Stdio transport requires 'command' for client {self.id}")
-            self._transport = StdioTransport(
-                command=self.config.command,
-                args=self.config.args,
-                env=self.config.env,
-                cwd=self.config.cwd,
-            )
-
-        await self._transport.connect()
+        transport = self._build_transport()
+        await transport.connect()
+        self._transport = transport
 
         try:
-            # Initialize protocol
             await self._initialize()
 
-            # Discover capabilities
             if self._capabilities:
                 if self._capabilities.tools:
                     await self._discover_tools()
@@ -167,15 +153,14 @@ class MCPClient:
                 len(self._resources),
                 len(self._prompts),
             )
-
-        except Exception as e:
-            await self._transport.disconnect()
+        except Exception as exc:
+            await transport.disconnect()
             self._transport = None
-            raise RuntimeError(f"MCP initialization failed: {e}") from e
+            raise RuntimeError(f"MCP initialisation failed for {self.id!r}: {exc}") from exc
 
-    async def disconnect(self):
-        """Disconnect from MCP server."""
-        if self._transport:
+    async def disconnect(self) -> None:
+        """Disconnect from the MCP server and clear all cached state."""
+        if self._transport is not None:
             await self._transport.disconnect()
             self._transport = None
 
@@ -188,169 +173,182 @@ class MCPClient:
 
         logger.info("MCP client %s disconnected", self.id)
 
-    async def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any:
-        """
-        Call a tool on the connected server.
+    # ------------------------------------------------------------------
+    # Public operations
+    # ------------------------------------------------------------------
+
+    async def call_tool(
+        self, name: str, arguments: dict[str, Any] | None = None
+    ) -> Any:
+        """Call a tool on the connected server.
 
         Args:
-            name: Tool name
-            arguments: Tool arguments
+            name:      Tool name (must be listed in :attr:`tools`).
+            arguments: Arguments dict; ``None`` is normalised to ``{}``.
 
         Returns:
-            Tool result (content)
+            Tool result, unwrapped from the MCP content envelope when possible.
 
         Raises:
-            ValueError: If tool not found
-            RuntimeError: If call fails
+            RuntimeError: When not connected or the server returns an error.
+            ValueError:   When the tool name is not found.
         """
-        if not self.is_connected:
-            raise RuntimeError(f"MCP client {self.id} not connected")
+        self._assert_connected()
 
         if name not in self._tools:
-            raise ValueError(f"Tool not found: {name} (available: {list(self._tools.keys())})")
+            raise ValueError(
+                f"Tool {name!r} not found on client {self.id!r} "
+                f"(available: {list(self._tools)})"
+            )
 
         response = await self._send_request(
             MCPMethod.TOOLS_CALL, {"name": name, "arguments": arguments or {}}
         )
-
         if response.is_error:
-            raise RuntimeError(f"Tool call failed: {response.get_error_message()}")
+            raise RuntimeError(
+                f"Tool call {name!r} failed: {response.get_error_message()}"
+            )
 
-        # Extract content from result
         result = response.result
         if isinstance(result, dict) and "content" in result:
             content = result["content"]
-            # If single text content, return just the text
-            if isinstance(content, list) and len(content) == 1:
-                item = content[0]
-                if item.get("type") == "text":
-                    return item.get("text", "")
+            # Unwrap single-item text content for ergonomic calling.
+            if (
+                isinstance(content, list)
+                and len(content) == 1
+                and isinstance(content[0], dict)
+                and content[0].get("type") == "text"
+            ):
+                return content[0].get("text", "")
             return content
 
         return result
 
     async def read_resource(self, uri: str) -> Any:
-        """
-        Read a resource from the connected server.
-
-        Args:
-            uri: Resource URI
-
-        Returns:
-            Resource content
-        """
-        if not self.is_connected:
-            raise RuntimeError(f"MCP client {self.id} not connected")
-
+        """Read a resource from the connected server."""
+        self._assert_connected()
         response = await self._send_request(MCPMethod.RESOURCES_READ, {"uri": uri})
-
         if response.is_error:
-            raise RuntimeError(f"Resource read failed: {response.get_error_message()}")
-
+            raise RuntimeError(
+                f"Resource read {uri!r} failed: {response.get_error_message()}"
+            )
         return response.result
 
-    async def get_prompt(self, name: str, arguments: dict[str, str] | None = None) -> Any:
-        """
-        Get a prompt from the connected server.
-
-        Args:
-            name: Prompt name
-            arguments: Prompt arguments
-
-        Returns:
-            Prompt result
-        """
-        if not self.is_connected:
-            raise RuntimeError(f"MCP client {self.id} not connected")
-
+    async def get_prompt(
+        self, name: str, arguments: dict[str, str] | None = None
+    ) -> Any:
+        """Retrieve a prompt from the connected server."""
+        self._assert_connected()
         response = await self._send_request(
             MCPMethod.PROMPTS_GET, {"name": name, "arguments": arguments or {}}
         )
-
         if response.is_error:
-            raise RuntimeError(f"Prompt get failed: {response.get_error_message()}")
-
+            raise RuntimeError(
+                f"Prompt get {name!r} failed: {response.get_error_message()}"
+            )
         return response.result
 
     async def ping(self) -> bool:
-        """Ping server to check connectivity."""
+        """Return ``True`` if the server responds to a ping."""
         if not self._transport or not self._transport.is_connected():
             return False
-
         try:
             response = await self._send_request(MCPMethod.PING, {})
             return not response.is_error
         except Exception:
             return False
 
-    async def _initialize(self):
-        """Send initialize request to server."""
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _build_transport(self) -> MCPTransport:
+        """Construct the appropriate transport from config."""
+        transport_type = self.config.transport
+
+        if transport_type == "sse":
+            if not self.config.url:
+                raise ValueError(
+                    f"SSE transport requires 'url' for client {self.id!r}"
+                )
+            return SSETransport(self.config.url)
+
+        if transport_type == "websocket":
+            if not self.config.url:
+                raise ValueError(
+                    f"WebSocket transport requires 'url' for client {self.id!r}"
+                )
+            return WebSocketTransport(self.config.url)
+
+        # Default: stdio
+        if not self.config.command:
+            raise ValueError(
+                f"Stdio transport requires 'command' for client {self.id!r}"
+            )
+        return StdioTransport(
+            command=self.config.command,
+            args=self.config.args,
+            env=self.config.env,
+            cwd=self.config.cwd,
+        )
+
+    def _assert_connected(self) -> None:
+        if not self.is_connected:
+            raise RuntimeError(f"MCP client {self.id!r} is not connected")
+
+    async def _initialize(self) -> None:
+        """Execute the MCP initialise handshake."""
         response = await self._send_request(
             MCPMethod.INITIALIZE,
             {
                 "protocolVersion": self.PROTOCOL_VERSION,
-                "capabilities": {
-                    "roots": {"listChanged": True},
-                },
+                "capabilities": {"roots": {"listChanged": True}},
                 "clientInfo": {"name": "navig", "version": "1.0.0"},
             },
         )
-
         if response.is_error:
-            raise RuntimeError(f"MCP initialize failed: {response.get_error_message()}")
+            raise RuntimeError(
+                f"MCP initialise failed: {response.get_error_message()}"
+            )
 
-        # Parse server info and capabilities
         result = response.result or {}
         self._server_info = result.get("serverInfo", {})
         self._capabilities = MCPCapabilities.from_dict(result)
 
-        logger.debug("MCP server: %s", self._server_info.get("name", "unknown"))
+        logger.debug(
+            "MCP server connected: %s", self._server_info.get("name", "unknown")
+        )
 
-        # Send initialized notification
         await self._send_notification(MCPMethod.INITIALIZED, {})
 
-    async def _discover_tools(self):
-        """Discover available tools from server."""
+    async def _discover_tools(self) -> None:
         response = await self._send_request(MCPMethod.TOOLS_LIST, {})
-
         if response.is_error:
             logger.warning("Failed to list tools: %s", response.get_error_message())
             return
-
-        result = response.result or {}
-        tools = result.get("tools", [])
-
-        for tool_data in tools:
+        for tool_data in (response.result or {}).get("tools", []):
             tool = MCPTool.from_dict(tool_data, server_id=self.id)
             self._tools[tool.name] = tool
 
-    async def _discover_resources(self):
-        """Discover available resources from server."""
+    async def _discover_resources(self) -> None:
         response = await self._send_request(MCPMethod.RESOURCES_LIST, {})
-
         if response.is_error:
-            logger.warning("Failed to list resources: %s", response.get_error_message())
+            logger.warning(
+                "Failed to list resources: %s", response.get_error_message()
+            )
             return
-
-        result = response.result or {}
-        resources = result.get("resources", [])
-
-        for res_data in resources:
+        for res_data in (response.result or {}).get("resources", []):
             resource = MCPResource.from_dict(res_data, server_id=self.id)
             self._resources[resource.uri] = resource
 
-    async def _discover_prompts(self):
-        """Discover available prompts from server."""
+    async def _discover_prompts(self) -> None:
         response = await self._send_request(MCPMethod.PROMPTS_LIST, {})
-
         if response.is_error:
-            logger.warning("Failed to list prompts: %s", response.get_error_message())
+            logger.warning(
+                "Failed to list prompts: %s", response.get_error_message()
+            )
             return
-
-        result = response.result or {}
-        prompts = result.get("prompts", [])
-
-        for prompt_data in prompts:
+        for prompt_data in (response.result or {}).get("prompts", []):
             prompt = MCPPrompt(
                 name=prompt_data["name"],
                 description=prompt_data.get("description"),
@@ -359,25 +357,22 @@ class MCPClient:
             )
             self._prompts[prompt.name] = prompt
 
-    async def _send_request(self, method: MCPMethod, params: dict[str, Any]) -> JSONRPCResponse:
-        """Send request and wait for response."""
+    async def _send_request(
+        self, method: MCPMethod, params: dict[str, Any]
+    ) -> JSONRPCResponse:
         self._request_id += 1
-
         request = JSONRPCRequest(
-            method=method.value,
-            params=params,
-            id=self._request_id,
+            method=method.value, params=params, id=self._request_id
         )
-
+        assert self._transport is not None  # guarded by _assert_connected callers
         response_data = await self._transport.send(request.to_json())
         return JSONRPCResponse.from_json(response_data)
 
-    async def _send_notification(self, method: MCPMethod, params: dict[str, Any]):
-        """Send notification (no response expected)."""
+    async def _send_notification(
+        self, method: MCPMethod, params: dict[str, Any]
+    ) -> None:
         request = JSONRPCRequest(
-            method=method.value,
-            params=params,
-            id=None,  # Notifications have no ID
+            method=method.value, params=params, id=None
         )
-
+        assert self._transport is not None
         await self._transport.send_notification(request.to_json())

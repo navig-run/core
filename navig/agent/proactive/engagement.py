@@ -435,12 +435,12 @@ class EngagementCoordinator:
     def _build_contextual_tip(self, command: str, count: int) -> str | None:
         """Build a contextual usage tip based on command patterns."""
         tips = {
-            "db": f"You've used `db` {count} times. Did you know you can pipe queries with `--plain` for scripting?",
-            "run": "Tip: for complex commands, `navig run -i` opens an editor — no more escaping quotes.",
-            "file": "Pro tip: `navig file list --tree --depth 2` gives a quick directory overview.",
-            "host": "Remember: `navig host monitor show` gives you a full health snapshot.",
-            "docker": "Quick win: `navig docker stats` shows real-time resource usage across all containers.",
-            "backup": "Consider scheduling regular backups with `navig flow run backup-daily`.",
+            "db": f"You've used <code>db</code> {count} times. Did you know you can pipe queries with <code>--plain</code> for scripting?",
+            "run": "Tip: for complex commands, <code>navig run -i</code> opens an editor — no more escaping quotes.",
+            "file": "Pro tip: <code>navig file list --tree --depth 2</code> gives a quick directory overview.",
+            "host": "Remember: <code>navig host monitor show</code> gives you a full health snapshot.",
+            "docker": "Quick win: <code>navig docker stats</code> shows real-time resource usage across all containers.",
+            "backup": "Consider scheduling regular backups with <code>navig flow run backup-daily</code>.",
         }
         return tips.get(command)
 

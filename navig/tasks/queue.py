@@ -1,4 +1,6 @@
-"""Task queue with priority, dependencies, and persistence."""
+"""Task queue with priority ordering, dependency management, and optional persistence."""
+
+from __future__ import annotations
 
 import asyncio
 import heapq
@@ -16,7 +18,7 @@ logger = get_debug_logger()
 
 
 class TaskStatus(str, Enum):
-    """Task execution status."""
+    """Task execution status values."""
 
     PENDING = "pending"
     QUEUED = "queued"
@@ -24,11 +26,11 @@ class TaskStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
-    WAITING = "waiting"  # Waiting for dependencies
+    WAITING = "waiting"  # Waiting for dependencies to complete
 
 
 class TaskPriority(int, Enum):
-    """Task priority levels (lower = higher priority)."""
+    """Named priority levels (lower integer = higher priority)."""
 
     CRITICAL = 0
     HIGH = 10
@@ -39,27 +41,26 @@ class TaskPriority(int, Enum):
 
 @dataclass
 class Task:
-    """
-    Task definition with priority, dependencies, and retry configuration.
+    """A unit of deferred work.
 
     Attributes:
-        id: Unique task identifier
-        name: Human-readable task name
-        handler: Name of handler function to execute
-        params: Parameters to pass to handler
-        priority: Task priority (lower = higher priority)
-        dependencies: List of task IDs that must complete first
-        max_retries: Maximum retry attempts on failure
-        retry_delay: Delay in seconds between retries
-        timeout: Task execution timeout in seconds
-        created_at: Task creation timestamp
-        started_at: Execution start timestamp
-        completed_at: Execution completion timestamp
-        status: Current task status
-        result: Task result on completion
-        error: Error message on failure
-        retry_count: Current retry attempt number
-        meta: Additional metadata
+        name:        Human-readable label.
+        handler:     Name of the registered handler function to call.
+        params:      Arguments forwarded to the handler.
+        priority:    Scheduling priority (lower = higher priority).
+        dependencies: IDs of tasks that must complete before this one runs.
+        max_retries: Maximum number of automatic retries on failure.
+        retry_delay: Delay in seconds between retries.
+        timeout:     Per-execution timeout in seconds (``None`` = use worker default).
+        id:          Stable identifier (auto-generated 8-char UUID prefix).
+        created_at:  Wall-clock creation time.
+        started_at:  Time execution began (set by worker/queue).
+        completed_at: Time execution finished.
+        status:      Current lifecycle status.
+        result:      Return value from handler on success.
+        error:       Error message on failure.
+        retry_count: Number of retry attempts so far.
+        meta:        Arbitrary caller-supplied metadata.
     """
 
     name: str
@@ -71,7 +72,7 @@ class Task:
     retry_delay: float = 5.0
     timeout: float | None = None
 
-    # Auto-generated/managed fields
+    # Auto-managed fields — do not set manually unless restoring from disk.
     id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
     created_at: datetime = field(default_factory=datetime.now)
     started_at: datetime | None = None
@@ -82,14 +83,13 @@ class Task:
     retry_count: int = 0
     meta: dict[str, Any] = field(default_factory=dict)
 
-    def __lt__(self, other: "Task") -> bool:
-        """Compare by priority for heap ordering."""
+    def __lt__(self, other: Task) -> bool:
+        """Heap ordering: lower priority value → earlier execution; ties broken by creation time."""
         if self.priority != other.priority:
             return self.priority < other.priority
         return self.created_at < other.created_at
 
-    def to_dict(self) -> dict:
-        """Serialize to dictionary."""
+    def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "name": self.name,
@@ -102,17 +102,18 @@ class Task:
             "timeout": self.timeout,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "started_at": self.started_at.isoformat() if self.started_at else None,
-            "completed_at": (self.completed_at.isoformat() if self.completed_at else None),
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "status": self.status.value,
-            "result": str(self.result) if self.result else None,
+            # Coerce result to string for JSON safety; callers should store
+            # JSON-serialisable results for faithful round-tripping.
+            "result": str(self.result) if self.result is not None else None,
             "error": self.error,
             "retry_count": self.retry_count,
             "meta": self.meta,
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Task":
-        """Deserialize from dictionary."""
+    def from_dict(cls, data: dict[str, Any]) -> Task:
         task = cls(
             id=data.get("id", str(uuid.uuid4())[:8]),
             name=data["name"],
@@ -126,12 +127,15 @@ class Task:
             meta=data.get("meta", {}),
         )
 
-        if data.get("created_at"):
-            task.created_at = datetime.fromisoformat(data["created_at"])
-        if data.get("started_at"):
-            task.started_at = datetime.fromisoformat(data["started_at"])
-        if data.get("completed_at"):
-            task.completed_at = datetime.fromisoformat(data["completed_at"])
+        for attr, key in (
+            ("created_at", "created_at"),
+            ("started_at", "started_at"),
+            ("completed_at", "completed_at"),
+        ):
+            raw = data.get(key)
+            if raw:
+                setattr(task, attr, datetime.fromisoformat(raw))
+
         if data.get("status"):
             task.status = TaskStatus(data["status"])
 
@@ -143,188 +147,179 @@ class Task:
 
 
 class TaskQueue:
-    """
-    Priority-based task queue with dependency management.
+    """Priority-based task queue with dependency management.
 
     Features:
-    - Priority-based ordering (heap)
-    - Task dependencies (DAG)
-    - Persistence to disk
-    - Task status tracking
-    - Retry support
+    - Min-heap priority ordering.
+    - DAG dependency tracking (tasks wait until all dependencies complete).
+    - Optional persistence to disk (JSON).
+    - Status tracking and bulk cleanup of terminal-state tasks.
 
-    Example:
+    Example::
+
         queue = TaskQueue()
 
-        # Add tasks
-        task1 = await queue.add(Task(
+        t1 = await queue.add(Task(
             name="backup-db",
             handler="backup_database",
             params={"host": "prod-db"},
             priority=TaskPriority.HIGH.value,
         ))
 
-        task2 = await queue.add(Task(
+        t2 = await queue.add(Task(
             name="notify",
             handler="send_notification",
-            dependencies=[task1.id],  # Wait for backup
+            dependencies=[t1.id],
         ))
 
-        # Get next ready task
         task = await queue.get_next()
-
-        # Mark complete
-        await queue.complete(task.id, result={"size": "1.2GB"})
+        await queue.complete(task.id, result={"bytes": 1_200_000})
     """
 
-    def __init__(self, persist_path: str | None = None):
-        """
-        Initialize task queue.
-
-        Args:
-            persist_path: Optional path to persist queue state
-        """
-        self._heap: list[Task] = []  # Priority heap
-        self._tasks: dict[str, Task] = {}  # id -> Task
-        self._completed: set[str] = set()  # Completed task IDs
+    def __init__(self, persist_path: str | None = None) -> None:
+        self._heap: list[Task] = []
+        self._tasks: dict[str, Task] = {}
+        self._completed: set[str] = set()
         self._lock = asyncio.Lock()
-        self._task_added_event = asyncio.Event()
+        self._task_added = asyncio.Event()
 
-        self._persist_path = Path(persist_path).expanduser() if persist_path else None
-        if self._persist_path:
+        self._persist_path: Path | None = None
+        if persist_path:
+            self._persist_path = Path(persist_path).expanduser()
             self._persist_path.parent.mkdir(parents=True, exist_ok=True)
             self._load_from_disk()
 
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
+
     @property
     def size(self) -> int:
-        """Get number of pending tasks."""
+        """Number of tasks currently in the ready heap."""
         return len(self._heap)
 
     @property
     def total(self) -> int:
-        """Get total number of tracked tasks."""
+        """Total number of tracked tasks (all statuses)."""
         return len(self._tasks)
 
+    # ------------------------------------------------------------------
+    # Mutation
+    # ------------------------------------------------------------------
+
     async def add(self, task: Task) -> Task:
-        """
-        Add task to queue.
-
-        Args:
-            task: Task to add
-
-        Returns:
-            Added task with ID
-        """
+        """Enqueue *task*.  Raises ``ValueError`` on duplicate ID."""
         async with self._lock:
-            # Check for duplicate ID
             if task.id in self._tasks:
-                raise ValueError(f"Task with ID {task.id} already exists")
+                raise ValueError(f"Task ID already exists: {task.id!r}")
 
-            # Check dependency validity
+            # Warn if a declared dependency is not yet known.
             for dep_id in task.dependencies:
                 if dep_id not in self._tasks and dep_id not in self._completed:
-                    # Allow non-existent dependencies (they might be added later)
-                    logger.warning("Task %s depends on unknown task %s", task.id, dep_id)
+                    logger.warning(
+                        "Task %s depends on unknown task %s", task.id, dep_id
+                    )
 
-            # Determine initial status
-            if task.dependencies:
-                # Check if dependencies are met
-                deps_met = all(dep_id in self._completed for dep_id in task.dependencies)
-                task.status = TaskStatus.QUEUED if deps_met else TaskStatus.WAITING
-            else:
-                task.status = TaskStatus.QUEUED
+            deps_satisfied = all(
+                dep_id in self._completed for dep_id in task.dependencies
+            )
+            task.status = TaskStatus.QUEUED if deps_satisfied else TaskStatus.WAITING
 
-            # Add to tracking
             self._tasks[task.id] = task
 
-            # Add to heap if ready
             if task.status == TaskStatus.QUEUED:
                 heapq.heappush(self._heap, task)
-                self._task_added_event.set()
+                self._task_added.set()
 
             logger.debug("Task added: %s (%s)", task.id, task.name)
             self._persist()
-
             return task
 
-    async def get_next(self, wait: bool = False, timeout: float | None = None) -> Task | None:
-        """
-        Get next ready task from queue.
+    async def get_next(
+        self, wait: bool = False, timeout: float | None = None
+    ) -> Task | None:
+        """Return the next ready task, optionally blocking until one is available.
 
-        If wait=True, waits until a task is available or timeout occurs.
+        Args:
+            wait:    Block until a task is available or *timeout* expires.
+            timeout: Maximum seconds to wait (``None`` = wait indefinitely).
+
+        Returns:
+            The task with its status set to ``RUNNING``, or ``None``.
         """
-        start_time = datetime.now()
+        deadline = (
+            asyncio.get_running_loop().time() + timeout
+            if timeout is not None
+            else None
+        )
+
         while True:
             async with self._lock:
-                while self._heap:
-                    task = heapq.heappop(self._heap)
-
-                    # Skip cancelled tasks
-                    if task.status == TaskStatus.CANCELLED:
-                        continue
-
-                    # Check dependencies again
-                    deps_met = all(dep_id in self._completed for dep_id in task.dependencies)
-
-                    if deps_met:
-                        task.status = TaskStatus.RUNNING
-                        task.started_at = datetime.now()
-                        self._persist()
-                        return task
-                    else:
-                        # Put back with waiting status
-                        task.status = TaskStatus.WAITING
-                        heapq.heappush(self._heap, task)
-                        continue
-                self._task_added_event.clear()
+                task = self._pop_ready()
+                if task is not None:
+                    self._persist()
+                    return task
+                self._task_added.clear()
 
             if not wait:
                 return None
 
-            elapsed = (datetime.now() - start_time).total_seconds()
-            if timeout and elapsed >= timeout:
+            remaining = (
+                max(0.0, deadline - asyncio.get_running_loop().time())
+                if deadline is not None
+                else None
+            )
+            if remaining is not None and remaining <= 0:
                 return None
 
             try:
-                if timeout:
-                    await asyncio.wait_for(self._task_added_event.wait(), timeout - elapsed)
+                if remaining is not None:
+                    await asyncio.wait_for(self._task_added.wait(), remaining)
                 else:
-                    await self._task_added_event.wait()
+                    await self._task_added.wait()
             except asyncio.TimeoutError:
                 return None
 
-    async def complete(
-        self,
-        task_id: str,
-        result: Any = None,
-    ) -> Task:
-        """
-        Mark task as completed.
+    def _pop_ready(self) -> Task | None:
+        """Pop the highest-priority task whose dependencies are met.
 
-        Args:
-            task_id: Task ID
-            result: Task result
-
-        Returns:
-            Completed task
+        Must be called while holding ``self._lock``.
         """
+        skipped: list[Task] = []
+        result: Task | None = None
+
+        while self._heap:
+            task = heapq.heappop(self._heap)
+
+            if task.status == TaskStatus.CANCELLED:
+                continue  # Discard; never put back
+
+            deps_met = all(dep_id in self._completed for dep_id in task.dependencies)
+            if deps_met:
+                task.status = TaskStatus.RUNNING
+                task.started_at = datetime.now()
+                result = task
+                break
+            else:
+                task.status = TaskStatus.WAITING
+                skipped.append(task)
+
+        for t in skipped:
+            heapq.heappush(self._heap, t)
+
+        return result
+
+    async def complete(self, task_id: str, result: Any = None) -> Task:
+        """Mark *task_id* as completed and unblock dependent tasks."""
         async with self._lock:
-            task = self._tasks.get(task_id)
-            if not task:
-                raise ValueError(f"Task not found: {task_id}")
-
+            task = self._require_task(task_id)
             task.status = TaskStatus.COMPLETED
             task.completed_at = datetime.now()
             task.result = result
-
             self._completed.add(task_id)
-
-            # Check if any waiting tasks can now run
-            self._check_waiting_tasks()
-
+            self._unblock_waiting_tasks()
             logger.debug("Task completed: %s (%s)", task_id, task.name)
             self._persist()
-
             return task
 
     async def fail(
@@ -333,75 +328,51 @@ class TaskQueue:
         error: str,
         retry: bool = True,
     ) -> Task:
-        """
-        Mark task as failed.
-
-        Args:
-            task_id: Task ID
-            error: Error message
-            retry: Whether to retry if possible
-
-        Returns:
-            Failed task
-        """
+        """Mark *task_id* as failed, scheduling a retry when applicable."""
         async with self._lock:
-            task = self._tasks.get(task_id)
-            if not task:
-                raise ValueError(f"Task not found: {task_id}")
-
+            task = self._require_task(task_id)
             task.error = error
             task.retry_count += 1
 
-            # Check retry
             if retry and task.retry_count <= task.max_retries:
                 task.status = TaskStatus.QUEUED
-                # Re-add to heap after delay
-                asyncio.create_task(self._delayed_requeue(task))
-                logger.debug("Task retry scheduled: %s (attempt %s)", task_id, task.retry_count)
+                asyncio.create_task(
+                    self._delayed_requeue(task),
+                    name=f"task-retry-{task_id}",
+                )
+                logger.debug(
+                    "Task retry scheduled: %s (attempt %d)", task_id, task.retry_count
+                )
             else:
                 task.status = TaskStatus.FAILED
                 task.completed_at = datetime.now()
-                logger.debug("Task failed: %s (%s) - %s", task_id, task.name, error)
+                logger.debug(
+                    "Task failed permanently: %s (%s) — %s", task_id, task.name, error
+                )
 
             self._persist()
             return task
-
-    async def _delayed_requeue(self, task: Task):
-        """Re-add task to queue after delay."""
-        await asyncio.sleep(task.retry_delay)
-        async with self._lock:
-            if task.status == TaskStatus.QUEUED:
-                heapq.heappush(self._heap, task)
-                self._persist()
 
     async def cancel(self, task_id: str) -> Task:
-        """
-        Cancel a pending task.
-
-        Args:
-            task_id: Task ID
-
-        Returns:
-            Cancelled task
-        """
+        """Cancel a pending or waiting task."""
         async with self._lock:
-            task = self._tasks.get(task_id)
-            if not task:
-                raise ValueError(f"Task not found: {task_id}")
-
+            task = self._require_task(task_id)
             if task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
-                raise ValueError(f"Cannot cancel {task.status.value} task")
-
+                raise ValueError(
+                    f"Cannot cancel a {task.status.value!r} task ({task_id!r})"
+                )
             task.status = TaskStatus.CANCELLED
             task.completed_at = datetime.now()
-
             logger.debug("Task cancelled: %s", task_id)
             self._persist()
-
             return task
 
+    # ------------------------------------------------------------------
+    # Reads
+    # ------------------------------------------------------------------
+
     async def get(self, task_id: str) -> Task | None:
-        """Get task by ID."""
+        """Return task by ID, or ``None`` if not found."""
         return self._tasks.get(task_id)
 
     async def list_tasks(
@@ -409,123 +380,119 @@ class TaskQueue:
         status: TaskStatus | None = None,
         limit: int = 100,
     ) -> list[Task]:
-        """
-        List tasks with optional status filter.
-
-        Args:
-            status: Filter by status
-            limit: Maximum tasks to return
-
-        Returns:
-            List of tasks
-        """
+        """Return up to *limit* tasks, optionally filtered by *status*."""
         tasks = list(self._tasks.values())
-
-        if status:
+        if status is not None:
             tasks = [t for t in tasks if t.status == status]
-
-        # Sort by priority then created_at
         tasks.sort(key=lambda t: (t.priority, t.created_at))
-
         return tasks[:limit]
 
     async def clear_completed(self, older_than_hours: int = 24) -> int:
-        """
-        Clear old completed tasks.
+        """Remove terminal-state tasks older than *older_than_hours* hours.
 
-        Args:
-            older_than_hours: Only clear tasks older than this
-
-        Returns:
-            Number of tasks cleared
+        Returns the number of tasks removed.
         """
         async with self._lock:
             cutoff = datetime.now()
-            count = 0
-
-            to_remove = []
-            for task_id, task in self._tasks.items():
-                if task.status in (
-                    TaskStatus.COMPLETED,
-                    TaskStatus.FAILED,
-                    TaskStatus.CANCELLED,
-                ):
-                    if task.completed_at:
-                        age_hours = (cutoff - task.completed_at).total_seconds() / 3600
-                        if age_hours > older_than_hours:
-                            to_remove.append(task_id)
-
+            terminal = {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}
+            to_remove = [
+                task_id
+                for task_id, task in self._tasks.items()
+                if task.status in terminal
+                and task.completed_at is not None
+                and (cutoff - task.completed_at).total_seconds() / 3600
+                > older_than_hours
+            ]
             for task_id in to_remove:
                 del self._tasks[task_id]
                 self._completed.discard(task_id)
-                count += 1
-
             self._persist()
-            return count
-
-    def _check_waiting_tasks(self):
-        """Check if any waiting tasks can now be queued."""
-        for task in self._tasks.values():
-            if task.status == TaskStatus.WAITING:
-                deps_met = all(dep_id in self._completed for dep_id in task.dependencies)
-                if deps_met:
-                    task.status = TaskStatus.QUEUED
-                    heapq.heappush(self._heap, task)
-                    self._task_added_event.set()
-
-    def _persist(self):
-        """Persist queue state to disk."""
-        if not self._persist_path:
-            return
-
-        try:
-            data = {
-                "tasks": {task_id: task.to_dict() for task_id, task in self._tasks.items()},
-                "completed": list(self._completed),
-            }
-
-            with open(self._persist_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2)
-        except Exception as e:
-            logger.error("Failed to persist task queue: %s", e)
-
-    def _load_from_disk(self):
-        """Load queue state from disk."""
-        if not self._persist_path or not self._persist_path.exists():
-            return
-
-        try:
-            with open(self._persist_path, encoding="utf-8") as f:
-                data = json.load(f)
-
-            self._completed = set(data.get("completed", []))
-
-            for task_id, task_data in data.get("tasks", {}).items():
-                task = Task.from_dict(task_data)
-                self._tasks[task_id] = task
-
-                # Re-queue pending tasks
-                if task.status in (
-                    TaskStatus.PENDING,
-                    TaskStatus.QUEUED,
-                    TaskStatus.WAITING,
-                ):
-                    if task.status != TaskStatus.WAITING:
-                        heapq.heappush(self._heap, task)
-
-            logger.info("Loaded %s tasks from disk", len(self._tasks))
-        except Exception as e:
-            logger.error("Failed to load task queue: %s", e)
+            return len(to_remove)
 
     def get_stats(self) -> dict[str, Any]:
-        """Get queue statistics."""
-        status_counts = {}
+        """Return a snapshot of queue statistics."""
+        status_counts: dict[str, int] = {}
         for task in self._tasks.values():
-            status_counts[task.status.value] = status_counts.get(task.status.value, 0) + 1
-
+            status_counts[task.status.value] = (
+                status_counts.get(task.status.value, 0) + 1
+            )
         return {
             "total_tasks": len(self._tasks),
             "heap_size": len(self._heap),
             "completed_count": len(self._completed),
             "status_counts": status_counts,
         }
+
+    # ------------------------------------------------------------------
+    # Internal helpers (must be called under self._lock unless noted)
+    # ------------------------------------------------------------------
+
+    def _require_task(self, task_id: str) -> Task:
+        """Return the task or raise ``ValueError``."""
+        task = self._tasks.get(task_id)
+        if task is None:
+            raise ValueError(f"Task not found: {task_id!r}")
+        return task
+
+    def _unblock_waiting_tasks(self) -> None:
+        """Push any WAITING tasks whose dependencies are now fully met."""
+        for task in self._tasks.values():
+            if task.status == TaskStatus.WAITING:
+                if all(dep_id in self._completed for dep_id in task.dependencies):
+                    task.status = TaskStatus.QUEUED
+                    heapq.heappush(self._heap, task)
+                    self._task_added.set()
+
+    async def _delayed_requeue(self, task: Task) -> None:
+        """Re-add *task* to the heap after its ``retry_delay``."""
+        await asyncio.sleep(task.retry_delay)
+        async with self._lock:
+            if task.status == TaskStatus.QUEUED:
+                heapq.heappush(self._heap, task)
+                self._task_added.set()
+                self._persist()
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+
+    def _persist(self) -> None:
+        """Write current queue state to disk (no-op when no path is configured)."""
+        if self._persist_path is None:
+            return
+        try:
+            data = {
+                "tasks": {tid: t.to_dict() for tid, t in self._tasks.items()},
+                "completed": list(self._completed),
+            }
+            self._persist_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        except OSError as exc:
+            logger.error("Failed to persist task queue: %s", exc)
+
+    def _load_from_disk(self) -> None:
+        """Restore queue state from disk on startup."""
+        if self._persist_path is None or not self._persist_path.exists():
+            return
+        try:
+            raw = self._persist_path.read_text(encoding="utf-8")
+            data = json.loads(raw)
+        except Exception as exc:
+            logger.error("Failed to load task queue from disk: %s", exc)
+            return
+
+        self._completed = set(data.get("completed", []))
+
+        for task_data in data.get("tasks", {}).values():
+            task = Task.from_dict(task_data)
+            self._tasks[task.id] = task
+
+            # Only re-heap tasks that were actively queued (not waiting/running).
+            if task.status == TaskStatus.QUEUED:
+                heapq.heappush(self._heap, task)
+            elif task.status == TaskStatus.RUNNING:
+                # Tasks that were RUNNING when the process died are re-queued so
+                # they don't silently vanish; the worker will execute them again.
+                task.status = TaskStatus.QUEUED
+                heapq.heappush(self._heap, task)
+
+        logger.info("Loaded %d task(s) from disk", len(self._tasks))

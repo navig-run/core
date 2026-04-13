@@ -71,10 +71,10 @@ class MusicPlugin(BotPlugin):
         args = context.args or []
         if not args:
             await update.message.reply_text(
-                "🎵 *Music Link Converter*\n\nUsage: `/music <url>`\n\n"
+                "🎵 <b>Music Link Converter</b>\n\nUsage: <code>/music &lt;url&gt;</code>\n\n"
                 "Or just paste any Spotify / Apple Music / Deezer / Tidal / SoundCloud URL — "
                 "I will convert it to links for all major platforms automatically.",
-                parse_mode="Markdown",
+                parse_mode="HTML",
             )
             return
         await self._process(update, args[0])
@@ -91,7 +91,7 @@ class MusicPlugin(BotPlugin):
             await status.edit_text("❌ Track not found on song.link.")
             return
         await status.edit_text(
-            self._fmt(data), parse_mode="Markdown", disable_web_page_preview=True
+            self._fmt(data), parse_mode="HTML", disable_web_page_preview=True
         )
 
     @staticmethod
@@ -115,7 +115,7 @@ class MusicPlugin(BotPlugin):
             e = ents[eid]
             a, t = e.get("artistName", ""), e.get("title", "")
             if a and t:
-                title = f"🎵 *{t}*\nby _{a}_"
+                title = f"🎵 <b>{t}</b>\nby <i>{a}</i>"
         lines = [title, ""]
         for plat, info in data.get("linksByPlatform", {}).items():
             label = _LABELS.get(plat, f"🎵 {plat.capitalize()}")

@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from navig.core.file_permissions import set_owner_only_file_permissions
 from navig.platform.paths import config_dir
 
 _log = logging.getLogger(__name__)
@@ -300,10 +301,7 @@ class SetupWizard:
         env_file.parent.mkdir(parents=True, exist_ok=True)
         with open(env_file, "a", encoding="utf-8") as f:
             f.write(f"\n{env_var}={value}\n")
-        try:
-            env_file.chmod(0o600)
-        except OSError:
-            pass  # chmod may fail on Windows or when mocked in tests
+        set_owner_only_file_permissions(env_file)
         print(f"  ✅ Saved to {env_file}")
 
     def _setup_ssh(self):
@@ -511,10 +509,7 @@ class SetupWizard:
 
         # Set permissions
         try:
-            try:
-                os.chmod(self.config_file, 0o600)
-            except (OSError, PermissionError):
-                pass  # best-effort: skip on access/IO error
+            set_owner_only_file_permissions(self.config_file)
             print("  ✅ File permissions set (600)")
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical

@@ -61,7 +61,7 @@ class JokePlugin(BotPlugin):
     async def handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         setup, punchline = random.choice(JOKES)
         await update.message.reply_text(
-            f"😄 _{setup}_\n\n*{punchline}*", parse_mode="Markdown"
+            f"😄 <i>{setup}</i>\n\n<b>{punchline}</b>", parse_mode="HTML"
         )
 
 

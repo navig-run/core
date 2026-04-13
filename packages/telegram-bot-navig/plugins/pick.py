@@ -51,12 +51,12 @@ class PickPlugin(BotPlugin):
         ]
         if len(items) < 2:
             await update.message.reply_text(
-                "🎯 Usage: `/pick pizza, sushi, tacos`\nOr say: _choose between coffee or tea_",
-                parse_mode="Markdown",
+                "\ud83c\udfaf Usage: <code>/pick pizza, sushi, tacos</code>\nOr say: <i>choose between coffee or tea</i>",
+                parse_mode="HTML",
             )
             return
         await update.message.reply_text(
-            f"🎯 I choose: *{random.choice(items)}*", parse_mode="Markdown"
+            f"\ud83c\udfaf I choose: <b>{random.choice(items)}</b>", parse_mode="HTML"
         )
 
 

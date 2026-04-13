@@ -207,8 +207,10 @@ def stack_health():
 
     healthcheck = stack_path / "navig_healthcheck.sh"
     if healthcheck.exists():
-        subprocess.run(["bash", str(healthcheck)])
-        return
+        result = subprocess.run(str(healthcheck), shell=True, check=False)
+        if result.returncode == 0:
+            return
+        ch.warning("Healthcheck script failed; running manual checks instead.")
 
     # Fallback: manual checks
     ch.info("Running health checks...")

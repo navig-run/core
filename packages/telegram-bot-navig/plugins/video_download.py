@@ -73,8 +73,8 @@ class VideoDownloadPlugin(BotPlugin):
             return
         if not shutil.which("yt-dlp"):
             await update.message.reply_text(
-                "⚠️ `yt-dlp` not found. Install with `pip install yt-dlp`.",
-                parse_mode="Markdown",
+                "⚠️ <code>yt-dlp</code> not found. Install with <code>pip install yt-dlp</code>.",
+                parse_mode="HTML",
             )
             return
         for url in urls[:3]:
@@ -106,22 +106,22 @@ class VideoDownloadPlugin(BotPlugin):
                 link = await asyncio.to_thread(self._catbox, path)
                 await status.edit_text(
                     (
-                        f"🎬 [Watch / Download]({link})"
+                        f'🎬 <a href="{link}">Watch / Download</a>'
                         if link
                         else "❌ Catbox upload failed."
                     ),
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                 )
             else:
                 await status.edit_text("📤 Large file → uploading to GoFile…")
                 link = await asyncio.to_thread(self._gofile, path)
                 await status.edit_text(
                     (
-                        f"🎬 [Watch / Download]({link})"
+                        f'🎬 <a href="{link}">Watch / Download</a>'
                         if link
                         else "❌ GoFile upload failed."
                     ),
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                 )
         finally:
             shutil.rmtree(tmp, ignore_errors=True)

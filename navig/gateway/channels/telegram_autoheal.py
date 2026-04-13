@@ -73,10 +73,10 @@ _CLASS_BADGE: dict[FailureClass, str] = {
 _CLASS_EXPLANATION: dict[FailureClass, str] = {
     FailureClass.SSH_AUTH_FAIL: (
         "The server rejected your SSH credentials. "
-        "Either the public key is not in `authorized_keys`, or password auth is disabled."
+        "Either the public key is not in <code>authorized_keys</code>, or password auth is disabled."
     ),
     FailureClass.SSH_HOSTKEY_UNKNOWN: (
-        "SSH refused to connect because the server's host key is not in your `known_hosts` file. "
+        "SSH refused to connect because the server's host key is not in your <code>known_hosts</code> file. "
         "This is a safety check — you need to trust the host first."
     ),
     FailureClass.SSH_TRANSPORT_FAIL: (
@@ -333,8 +333,8 @@ class AutoHealMixin:
                 sm.update_settings(chat_id, user_id, autoheal_enabled=True)
             await self.send_message(
                 chat_id,
-                "🔧 *Auto-Heal ON* — I'll silently attempt repairs when commands fail.",
-                parse_mode="Markdown",
+                "🔧 <b>Auto-Heal ON</b> — I'll silently attempt repairs when commands fail.",
+                parse_mode="HTML",
             )
             return
 
@@ -343,8 +343,8 @@ class AutoHealMixin:
                 sm.update_settings(chat_id, user_id, autoheal_enabled=False)
             await self.send_message(
                 chat_id,
-                "🔕 *Auto-Heal OFF* — I'll show you diagnostic options when commands fail.",
-                parse_mode="Markdown",
+                "🔕 <b>Auto-Heal OFF</b> — I'll show you diagnostic options when commands fail.",
+                parse_mode="HTML",
             )
             return
 
@@ -353,8 +353,8 @@ class AutoHealMixin:
                 sm.update_settings(chat_id, user_id, autoheal_hive_enabled=True)
             await self.send_message(
                 chat_id,
-                "🐝 *Hive Mind ON* — unknown failures will open GitHub PRs automatically.",
-                parse_mode="Markdown",
+                "🐝 <b>Hive Mind ON</b> — unknown failures will open GitHub PRs automatically.",
+                parse_mode="HTML",
             )
             return
 
@@ -363,8 +363,8 @@ class AutoHealMixin:
                 sm.update_settings(chat_id, user_id, autoheal_hive_enabled=False)
             await self.send_message(
                 chat_id,
-                "🐝 *Hive Mind OFF* — local fixes only, no PR submissions.",
-                parse_mode="Markdown",
+                "🐝 <b>Hive Mind OFF</b> — local fixes only, no PR submissions.",
+                parse_mode="HTML",
             )
             return
 
@@ -374,8 +374,8 @@ class AutoHealMixin:
 
         await self.send_message(
             chat_id,
-            "Usage: `/autoheal [on|off|status|hive on|hive off]`",
-            parse_mode="Markdown",
+            "Usage: <code>/autoheal [on|off|status|hive on|hive off]</code>",
+            parse_mode="HTML",
         )
 
     async def _send_autoheal_status(self, chat_id: int, user_id: int, sm: Any) -> None:
@@ -394,14 +394,14 @@ class AutoHealMixin:
         hm_icon = "🟢" if hive_on else "🔴"
 
         lines = [
-            "⚙️ *Auto-Heal Status*",
+            "⚙️ <b>Auto-Heal Status</b>",
             "",
-            f"{ah_icon} Auto-Heal: `{'ON' if autoheal_on else 'OFF'}`",
-            f"{hm_icon} Hive Mind:  `{'ON' if hive_on else 'OFF'}`",
+            f"{ah_icon} Auto-Heal: <code>{'ON' if autoheal_on else 'OFF'}</code>",
+            f"{hm_icon} Hive Mind:  <code>{'ON' if hive_on else 'OFF'}</code>",
         ]
 
         if history:
-            lines += ["", "─── *Last heal events* ───"]
+            lines += ["", "─── <b>Last heal events</b> ───"]
             for evt in history[-5:]:
                 icon = {"resolved": "✅", "partial": "⚠️", "failed": "❌"}.get(
                     evt.get("status", ""), "•"
@@ -409,11 +409,11 @@ class AutoHealMixin:
                 ts = evt.get("timestamp", "")[:16]
                 fc = evt.get("failure_class", "?")
                 cmd_preview = (evt.get("cmd", ""))[:40]
-                lines.append(f"{icon} `{ts}` {fc} — `{cmd_preview}`")
+                lines.append(f"{icon} <code>{ts}</code> {fc} — <code>{cmd_preview}</code>")
         else:
-            lines += ["", "_No heal events recorded yet._"]
+            lines += ["", "<i>No heal events recorded yet.</i>"]
 
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="Markdown")
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
 
     # ------------------------------------------------------------------ #
     #  Main fail-dispatch entry point (called from _handle_cli_command)   #
@@ -435,8 +435,8 @@ class AutoHealMixin:
         if existing and not existing.done():
             await self.send_message(
                 ctx.chat_id,
-                f"⏳ Already healing `{ctx.host or 'this target'}` — please wait.",
-                parse_mode="Markdown",
+                f"⏳ Already healing <code>{ctx.host or 'this target'}</code> — please wait.",
+                parse_mode="HTML",
             )
             return
 
@@ -450,7 +450,7 @@ class AutoHealMixin:
             # Silent auto-fix: send progress message, run fix in background task
             progress_msg = await self._send_progress_message(
                 ctx.chat_id,
-                f"🔧 Auto-Heal running for *{_CLASS_BADGE[ctx.failure_class]}*…",
+                f"🔧 Auto-Heal running for <b>{_CLASS_BADGE[ctx.failure_class]}</b>…",
             )
             task = asyncio.create_task(self._autofix_with_report(ctx, progress_msg))
             self._active_heals[dedup_key] = task
@@ -474,7 +474,7 @@ class AutoHealMixin:
             await self._edit_or_send(
                 ctx.chat_id,
                 progress_msg_id,
-                "❌ Auto-Heal encountered an internal error. Use `/autoheal status` for details.",
+                "❌ Auto-Heal encountered an internal error. Use <code>/autoheal status</code> for details.",
             )
 
     # ------------------------------------------------------------------ #
@@ -522,8 +522,8 @@ class AutoHealMixin:
             return HealResult(
                 status="partial",
                 message=(
-                    "🛢 *DB_PERMISSION_DENY* — Credentials must be reviewed manually.\n\n"
-                    f"Check your database connection settings:\n`{cfg_hint}`\n\n"
+                    "🛢 <b>DB_PERMISSION_DENY</b> — Credentials must be reviewed manually.\n\n"
+                    f"Check your database connection settings:\n<code>{cfg_hint}</code>\n\n"
                     "Verify the username / password and that the user has the "
                     "required grants on this database."
                 ),
@@ -535,7 +535,7 @@ class AutoHealMixin:
             return HealResult(
                 status="failed",
                 message=(
-                    f"🔍 `{cmd_word}` is not installed on `{host}`.\n\n"
+                    f"🔍 <code>{cmd_word}</code> is not installed on <code>{host}</code>.\n\n"
                     "Install it on the remote server first, then retry your command."
                 ),
                 should_retry=False,
@@ -546,7 +546,7 @@ class AutoHealMixin:
                 status="partial",
                 message=(
                     "⌛ The command timed out. Options:\n"
-                    "• Increase timeout: `NAVIG_SSH_TIMEOUT=60 navig run …`\n"
+                    "• Increase timeout: <code>NAVIG_SSH_TIMEOUT=60 navig run …</code>\n"
                     "• Check if the command is still running on the server\n"
                     "• Verify the server is not under heavy load"
                 ),
@@ -568,10 +568,10 @@ class AutoHealMixin:
             return HealResult(
                 status="failed",
                 message=(
-                    "❓ *UNKNOWN failure* — could not classify this error.\n\n"
+                    "❓ <b>UNKNOWN failure</b> — could not classify this error.\n\n"
                     "Enable Hive Mind to open a GitHub fix PR:\n"
-                    "`/autoheal hive on`\n\n"
-                    f"Raw error:\n```\n{ctx.stderr[:600]}\n```"
+                    "<code>/autoheal hive on</code>\n\n"
+                    f"Raw error:\n<pre>{ctx.stderr[:600]}</pre>"
                 ),
                 should_retry=False,
             )
@@ -593,7 +593,7 @@ class AutoHealMixin:
             return HealResult(
                 status="partial",
                 message=(
-                    f"🐝 *Hive Mind* submitted a GitHub PR for this failure.\n\n[View PR]({pr_url})"
+                    f"🐝 <b>Hive Mind</b> submitted a GitHub PR for this failure.\n\n<a href=\"{pr_url}\">View PR</a>"
                 ),
                 pr_url=pr_url,
                 should_retry=False,
@@ -602,7 +602,7 @@ class AutoHealMixin:
             # NAVIG_GITHUB_TOKEN not set
             return HealResult(
                 status="failed",
-                message=f"🐝 *Hive Mind* is enabled but `NAVIG_GITHUB_TOKEN` is not set.\n_{exc}_",
+                message=f"🐝 <b>Hive Mind</b> is enabled but <code>NAVIG_GITHUB_TOKEN</code> is not set.\n<i>{exc}</i>",
                 should_retry=False,
             )
         except Exception as exc:  # noqa: BLE001
@@ -623,8 +623,8 @@ class AutoHealMixin:
                 return HealResult(
                     status="partial",
                     message=(
-                        "🐝 *Hive Mind* could not reach GitHub (API may be down).\n"
-                        f"Patch saved locally: `{patch_path.name}`\n"
+                        "🐝 <b>Hive Mind</b> could not reach GitHub (API may be down).\n"
+                        f"Patch saved locally: <code>{patch_path.name}</code>\n"
                         "It will be retried on next bot restart."
                     ),
                     should_retry=False,
@@ -634,7 +634,7 @@ class AutoHealMixin:
                 logger.exception("autoheal: local patch storage also failed")
                 return HealResult(
                     status="failed",
-                    message="🐝 *Hive Mind* failed and local storage also failed. See logs.",
+                    message="🐝 <b>Hive Mind</b> failed and local storage also failed. See logs.",
                     should_retry=False,
                 )
 
@@ -645,15 +645,15 @@ class AutoHealMixin:
     async def _run_investigate(self, ctx: FailureContext) -> str:
         """Run diagnostics and return a structured report string."""
         lines = [
-            "🔍 *Diagnostic Report*",
+            "🔍 <b>Diagnostic Report</b>",
             "",
-            f"*Class:* {_CLASS_BADGE[ctx.failure_class]}",
-            f"*Host:* `{ctx.host or 'unknown'}`",
-            f"*Exit code:* `{ctx.exit_code}`",
-            f"*Command:* `{ctx.original_cmd[:120]}`",
+            f"<b>Class:</b> {_CLASS_BADGE[ctx.failure_class]}",
+            f"<b>Host:</b> <code>{ctx.host or 'unknown'}</code>",
+            f"<b>Exit code:</b> <code>{ctx.exit_code}</code>",
+            f"<b>Command:</b> <code>{ctx.original_cmd[:120]}</code>",
             "",
-            "─── *Error output* ───",
-            f"```\n{ctx.stderr[:600]}\n```",
+            "─── <b>Error output</b> ───",
+            f"<pre>{ctx.stderr[:600]}</pre>",
         ]
 
         # Optionally enrich with ErrorResolution analysis
@@ -662,7 +662,7 @@ class AutoHealMixin:
 
             solutions = analyze_error(ctx.original_cmd, ctx.exit_code, ctx.stderr)
             if solutions:
-                lines += ["", "─── *Suggested solutions* ───"]
+                lines += ["", "─── <b>Suggested solutions</b> ───"]
                 for sol in solutions[:3]:
                     lines.append(f"• {getattr(sol, 'description', str(sol))}")
         except Exception:
@@ -684,7 +684,7 @@ class AutoHealMixin:
                 healer = SSHHealer()
                 reachable = await healer._tcp_probe(ctx.host, 22)
                 ssh_status = "✅ reachable" if reachable else "❌ unreachable"
-                lines += ["", f"*SSH port 22 on `{ctx.host}`:* {ssh_status}"]
+                lines += ["", f"<b>SSH port 22 on <code>{ctx.host}</code>:</b> {ssh_status}"]
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -696,7 +696,7 @@ class AutoHealMixin:
         explanation = _CLASS_EXPLANATION[ctx.failure_class]
 
         lines = [
-            f"📖 *What happened — {badge}*",
+            f"📖 <b>What happened — {badge}</b>",
             "",
             explanation,
             "",
@@ -706,26 +706,26 @@ class AutoHealMixin:
         if ctx.failure_class == FailureClass.SSH_HOSTKEY_UNKNOWN:
             host = ctx.host or "the server"
             lines += [
-                "*How to fix:*",
-                f"Tap 🔧 Auto-Fix to run `ssh-keyscan` and trust `{host}` automatically.",
-                f"Or run manually:\n`ssh-keyscan -H {host} >> ~/.ssh/known_hosts`",
+                "<b>How to fix:</b>",
+                f"Tap 🔧 Auto-Fix to run <code>ssh-keyscan</code> and trust <code>{host}</code> automatically.",
+                f"Or run manually:\n<code>ssh-keyscan -H {host} &gt;&gt; ~/.ssh/known_hosts</code>",
             ]
         elif ctx.failure_class == FailureClass.SSH_AUTH_FAIL:
             lines += [
-                "*How to fix:*",
+                "<b>How to fix:</b>",
                 "Tap 🔧 Auto-Fix — NAVIG will check your SSH key and guide you if one needs generating.",
             ]
         elif ctx.failure_class == FailureClass.SSH_TRANSPORT_FAIL:
             lines += [
-                "*How to fix:*",
+                "<b>How to fix:</b>",
                 "Tap 🔧 Auto-Fix to probe the SSH port and retry the connection.",
                 "Or check that the SSH daemon is running on the server.",
             ]
         elif ctx.failure_class == FailureClass.DB_PERMISSION_DENY:
             cfg_hint = self._get_navig_config_path()
             lines += [
-                "*How to fix:*",
-                f"Check your database credentials at:\n`{cfg_hint}`",
+                "<b>How to fix:</b>",
+                f"Check your database credentials at:\n<code>{cfg_hint}</code>",
             ]
 
         return "\n".join(lines)
@@ -738,10 +738,10 @@ class AutoHealMixin:
         """Send the failure badge + 3-button heal keyboard as one message."""
         badge = _CLASS_BADGE[ctx.failure_class]
         explanation = _CLASS_EXPLANATION[ctx.failure_class]
-        text = f"❌ *Command failed — {badge}*\n\n{explanation}\n\nChoose an action:"
+        text = f"❌ <b>Command failed — {badge}</b>\n\n{explanation}\n\nChoose an action:"
 
         keyboard = self._build_heal_keyboard(ctx)
-        await self.send_message(ctx.chat_id, text, keyboard=keyboard, parse_mode="Markdown")
+        await self.send_message(ctx.chat_id, text, keyboard=keyboard, parse_mode="HTML")
 
     def _build_heal_keyboard(self, ctx: FailureContext) -> list[list[dict[str, str]]]:
         """Build the 3-button heal keyboard using the CallbackStore pattern."""
@@ -822,7 +822,7 @@ class AutoHealMixin:
         if action == "heal_fix":
             await self._answer_callback(cb_id, "🔧 Running fix…")
             progress_msg = await self._send_progress_message(
-                chat_id, f"🔧 Fixing *{_CLASS_BADGE[fc]}*…"
+                chat_id, f"🔧 Fixing <b>{_CLASS_BADGE[fc]}</b>…"
             )
             result = await self._run_autofix(ctx)
             self._record_heal_event(ctx, result.status)
@@ -831,12 +831,12 @@ class AutoHealMixin:
         elif action == "heal_diag":
             await self._answer_callback(cb_id, "🔍 Running diagnostics…")
             report = await self._run_investigate(ctx)
-            await self.send_message(chat_id, report, parse_mode="Markdown")
+            await self.send_message(chat_id, report, parse_mode="HTML")
 
         elif action == "heal_explain":
             await self._answer_callback(cb_id, "📖 Loading explanation…")
             explanation = await self._run_explain(ctx)
-            await self.send_message(chat_id, explanation, parse_mode="Markdown")
+            await self.send_message(chat_id, explanation, parse_mode="HTML")
 
     # ------------------------------------------------------------------ #
     #  Result reporting                                                    #
@@ -850,7 +850,7 @@ class AutoHealMixin:
     ) -> None:
         """Edit the in-progress message with the final result, then retry if resolved."""
         if result.status == "resolved":
-            text = f"✅ *Fixed!* {result.message}"
+            text = f"✅ <b>Fixed!</b> {result.message}"
             await self._edit_or_send(ctx.chat_id, progress_msg_id, text)
             if result.should_retry:
                 # Retry the original command automatically
@@ -876,13 +876,13 @@ class AutoHealMixin:
 
         elif result.status == "partial":
             icon = "⚠️"
-            text = f"{icon} *Partial fix.* {result.message}"
+            text = f"{icon} <b>Partial fix.</b> {result.message}"
             if result.pr_url:
                 text += f"\n\n🐝 [Hive Mind PR]({result.pr_url})"
             await self._edit_or_send(ctx.chat_id, progress_msg_id, text)
 
         else:  # "failed"
-            text = f"❌ *Fix failed.* {result.message}"
+            text = f"❌ <b>Fix failed.</b> {result.message}"
             # Attach full diagnostic if hive is not enabled
             sm = self._get_session_manager_safe()
             hive_on = False
@@ -890,7 +890,7 @@ class AutoHealMixin:
                 session = sm.get_or_create_session(ctx.chat_id, ctx.user_id, False)
                 hive_on = getattr(session, "autoheal_hive_enabled", False)
             if not hive_on and ctx.failure_class == FailureClass.UNKNOWN:
-                text += "\n\nEnable Hive Mind to escalate: `/autoheal hive on`"
+                text += "\n\nEnable Hive Mind to escalate: <code>/autoheal hive on</code>"
             await self._edit_or_send(ctx.chat_id, progress_msg_id, text)
 
     # ------------------------------------------------------------------ #
@@ -904,7 +904,7 @@ class AutoHealMixin:
                 "sendMessage",
                 chat_id=chat_id,
                 text=text,
-                parse_mode="Markdown",
+                parse_mode="HTML",
             )
             if isinstance(result, dict):
                 return result.get("message_id")
@@ -921,12 +921,12 @@ class AutoHealMixin:
                     chat_id=chat_id,
                     message_id=message_id,
                     text=text,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                 )
                 return
             except Exception:
                 pass  # fall back to a new message
-        await self.send_message(chat_id, text, parse_mode="Markdown")
+        await self.send_message(chat_id, text, parse_mode="HTML")
 
     async def _answer_callback(self, cb_id: str, text: str) -> None:
         """Answer a callback_query (shows toast notification)."""

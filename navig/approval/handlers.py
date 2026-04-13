@@ -49,10 +49,10 @@ class TelegramApprovalHandler:
             level_emoji = {"confirm": "⚠️", "dangerous": "🚨"}.get(request.level.value, "❓")
 
             message = (
-                f"{level_emoji} **Approval Required**\n\n"
-                f"**Command:** `{request.command}`\n"
-                f"**Level:** {request.level.value}\n"
-                f"**Expires:** {request.expires_at.strftime('%H:%M:%S') if request.expires_at else 'Never'}"
+                f"{level_emoji} <b>Approval Required</b>\n\n"
+                f"<b>Command:</b> <code>{request.command}</code>\n"
+                f"<b>Level:</b> {request.level.value}\n"
+                f"<b>Expires:</b> {request.expires_at.strftime('%H:%M:%S') if request.expires_at else 'Never'}"
             )
 
             # Send to user
@@ -61,7 +61,7 @@ class TelegramApprovalHandler:
                 chat_id=int(chat_id),
                 text=message,
                 reply_markup=keyboard,
-                parse_mode="Markdown",
+                parse_mode="HTML",
             )
 
         except Exception as e:

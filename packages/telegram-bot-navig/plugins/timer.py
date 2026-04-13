@@ -76,10 +76,10 @@ class TimerPlugin(BotPlugin):
         raw = " ".join(context.args or [])
         if not raw:
             await update.message.reply_text(
-                "⏱ *Timer*\n\nUsage: `/timer <duration>`\n\n"
-                "• `/timer 30s` · `/timer 5m` · `/timer 2h` · `/timer 1h30m`\n\n"
-                "Or say: _set a timer for 10 minutes_",
-                parse_mode="Markdown",
+                "⏱ <b>Timer</b>\n\nUsage: <code>/timer &lt;duration&gt;</code>\n\n"
+                "• <code>/timer 30s</code> · <code>/timer 5m</code> · <code>/timer 2h</code> · <code>/timer 1h30m</code>\n\n"
+                "Or say: <i>set a timer for 10 minutes</i>",
+                parse_mode="HTML",
             )
             return
         await self._start(update, raw)
@@ -99,7 +99,7 @@ class TimerPlugin(BotPlugin):
         secs = _parse(dur_str)
         if secs is None:
             await update.message.reply_text(
-                "⚠️ Can't parse duration. Try `/timer 5m`.", parse_mode="Markdown"
+                "⚠️ Can't parse duration. Try <code>/timer 5m</code>.", parse_mode="HTML"
             )
             return
         if secs < 5:
@@ -114,7 +114,7 @@ class TimerPlugin(BotPlugin):
             return
         slot = next(i for i in range(1, 4) if (uid, i) not in _TIMERS)
         msg = await update.message.reply_text(
-            f"⏱ Timer #{slot}: *{_fmt(secs)}* remaining…", parse_mode="Markdown"
+            f"⏱ Timer #{slot}: <b>{_fmt(secs)}</b> remaining…", parse_mode="HTML"
         )
         _TIMERS[(uid, slot)] = asyncio.create_task(
             _run(
@@ -141,16 +141,16 @@ async def _run(uid, slot, total, chat_id, msg_id, bot):
                     await bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=msg_id,
-                        text=f"⏱ Timer #{slot}: *{_fmt(rem)}* remaining…",
-                        parse_mode="Markdown",
+                        text=f"⏱ Timer #{slot}: <b>{_fmt(rem)}</b> remaining…",
+                        parse_mode="HTML",
                     )
                 except Exception:
                     pass
         await bot.edit_message_text(
             chat_id=chat_id,
             message_id=msg_id,
-            text=f"⏰ *Timer #{slot} complete!*",
-            parse_mode="Markdown",
+            text=f"⏰ <b>Timer #{slot} complete!</b>",
+            parse_mode="HTML",
         )
     except asyncio.CancelledError:
         try:
@@ -158,7 +158,7 @@ async def _run(uid, slot, total, chat_id, msg_id, bot):
                 chat_id=chat_id,
                 message_id=msg_id,
                 text=f"❌ Timer #{slot} cancelled.",
-                parse_mode="Markdown",
+                parse_mode="HTML",
             )
         except Exception:
             pass

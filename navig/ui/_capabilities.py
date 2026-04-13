@@ -12,6 +12,7 @@ Used by:
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -88,9 +89,9 @@ def _probe_windows() -> bool:
     except Exception:  # noqa: BLE001
         pass
     # 2. User-local fonts (Windows 10+)
-    user_fonts = (
-        Path.home() / "AppData" / "Local" / "Microsoft" / "Windows" / "Fonts"
-    )
+    local_appdata = (os.environ.get("LOCALAPPDATA") or "").strip()
+    base = Path(local_appdata).expanduser() if local_appdata else (Path.home() / "AppData" / "Local")
+    user_fonts = base / "Microsoft" / "Windows" / "Fonts"
     return _any_nerd_font_in_dir(user_fonts)
 
 

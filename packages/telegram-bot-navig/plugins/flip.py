@@ -34,8 +34,8 @@ class FlipPlugin(BotPlugin):
         return "flip"
 
     async def handle(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        result = random.choice([("🪙 *Heads!*", "heads"), ("🪙 *Tails!*", "tails")])
-        await update.message.reply_text(result[0], parse_mode="Markdown")
+        result = random.choice([("🪙 <b>Heads!</b>", "heads"), ("🪙 <b>Tails!</b>", "tails")])
+        await update.message.reply_text(result[0], parse_mode="HTML")
 
 
 def create() -> FlipPlugin:

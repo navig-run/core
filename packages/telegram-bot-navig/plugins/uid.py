@@ -36,8 +36,8 @@ class UidPlugin(BotPlugin):
             c = await _get(args[0])
             if c:
                 await update.message.reply_text(
-                    f"🆔 *{html.escape(c.full_name or str(c.id))}*\n`{c.id}`",
-                    parse_mode="Markdown",
+                    f"🆔 <b>{html.escape(c.full_name or str(c.id))}</b>\n<code>{c.id}</code>",
+                    parse_mode="HTML",
                 )
             else:
                 await update.message.reply_text("❌ User not found.")
@@ -47,12 +47,12 @@ class UidPlugin(BotPlugin):
         ):
             u = update.message.reply_to_message.from_user
             await update.message.reply_text(
-                f"🆔 *{html.escape(u.full_name)}*\n`{u.id}`", parse_mode="Markdown"
+                f"🆔 <b>{html.escape(u.full_name)}</b>\n<code>{u.id}</code>", parse_mode="HTML"
             )
         else:
             u = update.effective_user
             await update.message.reply_text(
-                f"🆔 *Your Telegram ID*\n`{u.id}`", parse_mode="Markdown"
+                f"🆔 <b>Your Telegram ID</b>\n<code>{u.id}</code>", parse_mode="HTML"
             )
 
 

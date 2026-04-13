@@ -55,7 +55,7 @@ class TelegramMeshMixin:
 
     Requires on self:
       - self._session: aiohttp.ClientSession
-      - self.send_message(chat_id, text, parse_mode="Markdown")
+      - self.send_message(chat_id, text, parse_mode="HTML")
       - self._features: dict (from TelegramFeaturesMixin)
       - self._has_feature(name): bool -> dict | None
     """
@@ -69,28 +69,28 @@ class TelegramMeshMixin:
             if not peers:
                 await self.send_message(
                     chat_id,
-                    "_no mesh peers discovered yet_",
-                    parse_mode="MarkdownV2",
+                    "<i>no mesh peers discovered yet</i>",
+                    parse_mode="HTML",
                 )
                 return
 
-            lines = ["*mesh peers:*\n"]
+            lines = ["<b>mesh peers:</b>\n"]
             for p in peers:
                 role_symbol = "👑" if p.get("role") == "leader" else "⏳"
                 load = p.get("load", 0.0)
                 host = p.get("hostname", p.get("node_id", "?"))
-                is_self = " *(you)*" if p.get("is_self") else ""
+                is_self = " <i>(you)</i>" if p.get("is_self") else ""
                 capabilities = ", ".join(p.get("capabilities", []) or []) or "—"
                 lines.append(
-                    f"{role_symbol} `{_mdv2_escape(host)}`{is_self} — "
-                    f"load {_mdv2_escape(f'{load:.0%}')} — {_mdv2_escape(capabilities)}"
+                    f"{role_symbol} <code>{host}</code>{is_self} — "
+                    f"load {load:.0%} — {capabilities}"
                 )
 
-            await self.send_message(chat_id, "\n".join(lines), parse_mode="MarkdownV2")
+            await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
 
         except Exception as exc:
             logger.error("[mesh] /nodes handler error: %s", exc)
-            await self.send_message(chat_id, "_couldn't fetch peer list_")
+            await self.send_message(chat_id, "<i>couldn't fetch peer list</i>")
 
     # ── /leader ───────────────────────────────────────────────────────────────
 
@@ -103,19 +103,19 @@ class TelegramMeshMixin:
             my_role = state.get("my_role", "standby")
 
             if not leader:
-                await self.send_message(chat_id, "_no leader elected yet_")
+                await self.send_message(chat_id, "<i>no leader elected yet</i>")
                 return
 
             is_me = " *(this node)*" if my_role == "leader" else ""
             msg = (
-                f"*current leader:* `{_mdv2_escape(leader)}`{is_me}\n"
-                f"*epoch:* {_mdv2_escape(str(epoch))}"
+                f"<b>current leader:</b> <code>{leader}</code>{is_me}\n"
+                f"<b>epoch:</b> {epoch}"
             )
-            await self.send_message(chat_id, msg, parse_mode="MarkdownV2")
+            await self.send_message(chat_id, msg, parse_mode="HTML")
 
         except Exception as exc:
             logger.error("[mesh] /leader handler error: %s", exc)
-            await self.send_message(chat_id, "_couldn't fetch election state_")
+            await self.send_message(chat_id, "<i>couldn't fetch election state</i>")
 
     # ── /mesh ─────────────────────────────────────────────────────────────────
 
@@ -137,9 +137,9 @@ class TelegramMeshMixin:
                 icon = "🟢" if enabled else "⚫"
                 await self.send_message(
                     chat_id,
-                    f"{icon} mesh *{'enabled' if enabled else 'disabled'}* — "
-                    f"role: `{_mdv2_escape(role)}` — peers: {_mdv2_escape(str(peers))}",
-                    parse_mode="MarkdownV2",
+                    f"{icon} mesh <b>{'enabled' if enabled else 'disabled'}</b> — "
+                    f"role: <code>{role}</code> — peers: {peers}",
+                    parse_mode="HTML",
                 )
                 return
 
@@ -149,20 +149,20 @@ class TelegramMeshMixin:
                 status = resp.get("status", "ok")
                 await self.send_message(
                     chat_id,
-                    f"mesh *{'enabled' if enabled else 'disabled'}* — {status}",
-                    parse_mode="MarkdownV2",
+                    f"mesh <b>{'enabled' if enabled else 'disabled'}</b> — {status}",
+                    parse_mode="HTML",
                 )
                 return
 
             await self.send_message(
                 chat_id,
-                "_usage: /mesh [on|off|status]_",
-                parse_mode="MarkdownV2",
+                "<i>usage: /mesh [on|off|status]</i>",
+                parse_mode="HTML",
             )
 
         except Exception as exc:
             logger.error("[mesh] /mesh handler error: %s", exc)
-            await self.send_message(chat_id, "_mesh command failed_")
+            await self.send_message(chat_id, "<i>mesh command failed</i>")
 
     # ── /switch ───────────────────────────────────────────────────────────────
 
@@ -189,21 +189,21 @@ class TelegramMeshMixin:
             if accepted:
                 await self.send_message(
                     chat_id,
-                    f"✅ handoff requested → `{_mdv2_escape(target_out)}`\n"
-                    "_new leader will activate within 15s_",
-                    parse_mode="MarkdownV2",
+                    f"✅ handoff requested → <code>{target_out}</code>\n"
+                    "<i>new leader will activate within 15s</i>",
+                    parse_mode="HTML",
                 )
             else:
                 reason = resp.get("reason", "unknown")
                 await self.send_message(
                     chat_id,
-                    f"❌ handoff rejected: {_mdv2_escape(reason)}",
-                    parse_mode="MarkdownV2",
+                    f"❌ handoff rejected: {reason}",
+                    parse_mode="HTML",
                 )
 
         except Exception as exc:
             logger.error("[mesh] /switch handler error: %s", exc)
-            await self.send_message(chat_id, "_couldn't request handoff_")
+            await self.send_message(chat_id, "<i>couldn't request handoff</i>")
 
     # ── Internal HTTP helpers ─────────────────────────────────────────────────
 

@@ -242,9 +242,10 @@ class LocalConnection(ConnectionAdapter):
                     cwd=cwd,
                 )
             else:
-                # On Unix systems, use bash -c (safer than raw shell=True)
+                # On Unix-like systems, use platform-default shell dispatch.
                 result = subprocess.run(
-                    ["bash", "-c", command],
+                    command,
+                    shell=True,
                     capture_output=capture_output,
                     encoding="utf-8",
                     errors="replace",

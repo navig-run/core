@@ -190,9 +190,9 @@ def build_nav_keyboard(
 
 def _card_header(idx: int, total: int, topic: str) -> str:
     topic_short = textwrap.shorten(topic, width=40, placeholder="…") if topic else ""
-    header = f"*{'💭 ' if topic_short else ''}思 Card {idx + 1} of {total}*"
+    header = f"<b>{'💭 ' if topic_short else ''}思 Card {idx + 1} of {total}</b>"
     if topic_short:
-        header = f"*💭 {topic_short}* — card {idx + 1}/{total}"
+        header = f"<b>💭 {topic_short}</b> — card {idx + 1}/{total}"
     return header
 
 
@@ -296,7 +296,7 @@ class CardNavigator:
                     session.chat_id,
                     session.message_id,
                     text,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                     reply_markup={"inline_keyboard": keyboard},
                 )
                 return
@@ -307,7 +307,7 @@ class CardNavigator:
         msg_id = await self.channel.send_message(
             session.chat_id,
             text,
-            parse_mode="Markdown",
+            parse_mode="HTML",
             reply_markup={"inline_keyboard": keyboard},
         )
         session.message_id = msg_id
@@ -321,7 +321,7 @@ class CardNavigator:
             result = await send_fn(
                 session.chat_id,
                 text,
-                parse_mode="Markdown",
+                parse_mode="HTML",
                 reply_markup={"inline_keyboard": keyboard},
             )
             if isinstance(result, dict):
@@ -420,7 +420,7 @@ async def handle_card_callback(
                 chat_id,
                 session.message_id or message_id,
                 text,
-                parse_mode="Markdown",
+                parse_mode="HTML",
                 reply_markup={"inline_keyboard": []},
             )
         except Exception:  # noqa: BLE001

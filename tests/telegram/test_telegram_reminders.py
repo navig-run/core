@@ -370,7 +370,7 @@ async def test_space_command_switches_and_prints_kickoff(monkeypatch, tmp_path):
 
     await bot._handle_space(123, 456, "/space devops")
 
-    assert any("Active space: `devops`" in m[1] for m in bot.messages)
+    assert any("Active space: <code>devops</code>" in m[1] for m in bot.messages)
     assert any("Top next actions:" in m[1] for m in bot.messages)
 
 
@@ -380,8 +380,8 @@ async def test_spaces_command_lists_devops_and_sysops(monkeypatch, tmp_path):
     monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
 
     await bot._handle_spaces(123)
-    assert any("`devops`" in m[1] for m in bot.messages)
-    assert any("`sysops`" in m[1] for m in bot.messages)
+    assert any("<code>devops</code>" in m[1] for m in bot.messages)
+    assert any("<code>sysops</code>" in m[1] for m in bot.messages)
 
 
 async def test_status_does_not_mark_onboarding_step_on_view(monkeypatch):
@@ -440,7 +440,7 @@ async def test_status_shows_setup_readiness_and_fix_commands(monkeypatch):
     await bot._handle_status(123, 456)
 
     output = "\n".join(msg[1] for msg in bot.messages)
-    assert "*Setup*" in output
+    assert "<b>Setup</b>" in output
     assert "needs-attention" in output
     assert "Pending fixes:" in output
     assert "navig init --provider" in output
@@ -625,7 +625,7 @@ async def test_natural_language_health_improvement_starts_health_intake(monkeypa
 
     confirmed = await bot._handle_nl_pending_reply(123, 456, "yes")
     assert confirmed is True
-    assert any("Intake started for `health`" in m[1] for m in bot.messages)
+    assert any("Intake started for <code>health</code>" in m[1] for m in bot.messages)
 
 
 async def test_natural_language_status_runs_command_immediately(monkeypatch, tmp_path):
@@ -745,7 +745,7 @@ async def test_nl_callback_yes_and_cancel(monkeypatch, tmp_path):
     await bot._handle_natural_language_request(123, 456, "make me a money plan")
     await bot._handle_nl_callback("cb1", "nl_yes", 123, 456)
     assert any("Running now" in call[1].get("text", "") for call in bot.api_calls)
-    assert any("Intake started for `finance`" in m[1] for m in bot.messages)
+    assert any("Intake started for <code>finance</code>" in m[1] for m in bot.messages)
 
     await bot._handle_natural_language_request(123, 456, "improve health")
     await bot._handle_nl_callback("cb2", "nl_cancel", 123, 456)
@@ -833,7 +833,7 @@ async def test_start_consumes_chat_onboarding_handoff_once(monkeypatch, tmp_path
 
     assert any("NAVIG is ready" in msg[1] for msg in bot.messages)
     assert any("Welcome to NAVIG setup" in msg[1] for msg in bot.messages)
-    assert any("Onboarding progress: `2/3`" in msg[1] for msg in bot.messages)
+    assert any("Onboarding progress: <code>2/3</code>" in msg[1] for msg in bot.messages)
     assert any("✅ Choose AI provider" in msg[1] for msg in bot.messages)
     assert any("⬜ Connect first host" in msg[1] for msg in bot.messages)
     assert any("• Add or confirm your first server host" in msg[1] for msg in bot.messages)

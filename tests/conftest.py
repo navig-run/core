@@ -46,6 +46,15 @@ try:
 
     _vc.CryptoEngine.derive_key = _test_derive_key  # type: ignore[method-assign]
     del _test_derive_key  # prevent it from leaking into fixture namespace
+
+    # Also patch _machine_fingerprint so the new _stable_machine_uuid() helper
+    # (subprocess / file / registry calls) never runs during test collection.
+    _vc.CryptoEngine._machine_fingerprint = staticmethod(  # type: ignore[method-assign]
+        lambda: b"navig-test-machine"
+    )
+    _vc.CryptoEngine._legacy_fingerprint = staticmethod(  # type: ignore[method-assign]
+        lambda: b"navig-test-machine"
+    )
 except Exception:  # noqa: BLE001
     pass  # best-effort; if crypto module can't be imported, tests will still collect
 

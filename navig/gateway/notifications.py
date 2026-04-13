@@ -61,7 +61,7 @@ class Notification:
         emoji = emoji_map.get(self.type, "📢")
         prefix = priority_prefix.get(self.priority, "")
 
-        return f"{prefix}{emoji} **{self.title}**\n\n{self.message}"
+        return f"{prefix}{emoji} <b>{self.title}</b>\n\n{self.message}"
 
 
 @dataclass
@@ -364,7 +364,7 @@ class TelegramNotifier(ChannelNotifier):
         if not notifications:
             return
 
-        lines = ["📬 **Batched Updates**\n"]
+        lines = ["📬 <b>Batched Updates</b>\n"]
         for n in notifications:
             lines.append(f"• {n.title}")
 
@@ -442,7 +442,7 @@ class TelegramNotifier(ChannelNotifier):
         lines = [
             f"Good morning! It's {now.strftime('%A, %B %d')}.",
             "",
-            "**Today's Focus:**",
+            "<b>Today's Focus:</b>",
             "• Check your task list",
             "• Review pending alerts",
             "• Plan your top 3 priorities",
@@ -496,11 +496,11 @@ class TelegramNotifier(ChannelNotifier):
         closing = random.choice(closings)
 
         lines = [
-            f"📊 **{day_name} Evening — {shift_label.title()}**",
+            f"📊 <b>{day_name} Evening — {shift_label.title()}</b>",
             "",
-            f"_{day_context}_",
+            f"<i>{day_context}</i>",
             "",
-            "**Shutdown Checklist:**",
+            "<b>Shutdown Checklist:</b>",
             "• Review what shipped today",
             "• Lock in tomorrow's top priority",
             "• Confirm backups completed",

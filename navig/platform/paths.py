@@ -2,68 +2,63 @@
 """
 Single source of truth for all OS-specific paths used by NAVIG.
 
-Usage:
-    from navig.platform import paths
-    config_dir = paths.config_dir()
-    data_dir = paths.data_dir()
-    log_dir = paths.log_dir()
+Usage::
 
-    # Or get everything at once
+    from navig.platform import paths
+
+    config_dir = paths.config_dir()
+    data_dir   = paths.data_dir()
+    log_dir    = paths.log_dir()
+
+    # Full diagnostic bundle
     info = paths.platform_info()
 
-All other modules should import paths from here instead of
-doing ad-hoc `sys.platform == 'win32'` checks.
+All other modules must import from here rather than doing ad-hoc
+``sys.platform == 'win32'`` checks scattered across the codebase.
 
 Performance note:
-    OS detection uses `sys.platform` (set at interpreter init, 0 ns)
-    instead of `platform.system()` which triggers a WMI query on
-    Windows Python 3.12+ that can hang for 73 ms to infinity.
-    `platform` is still imported for non-hot-path uses (platform_info).
+    OS detection uses ``sys.platform`` (a string constant set at interpreter
+    startup, cost ≈ 0 ns) rather than ``platform.system()`` which triggers a
+    WMI query on Windows Python 3.12+ that can block for 73 ms to infinity.
+    The ``platform`` stdlib module is still imported for non-hot-path uses
+    (``platform_info``).
 """
 
+from __future__ import annotations
+
 import os
-import platform
 import sys
 from pathlib import Path
 from typing import Any
 
-# ── OS Detection (cached) ────────────────────────────────────
+# ── OS Detection (module-level constant after first call) ────────────────────
 
 _DETECTED_OS: str | None = None
 
 
 def current_os() -> str:
-    """
-    Detect current OS. Returns 'windows', 'linux', 'macos', or 'wsl'.
-    Cached after first call.
+    """Return the canonical OS name: ``'windows'``, ``'linux'``, ``'macos'``, or ``'wsl'``.
 
-    Uses ``sys.platform`` (a string constant, set at interpreter startup)
-    rather than ``platform.system()`` which triggers a WMI query on
-    Windows Python 3.12+ that can block for 73 ms to infinity.
+    The result is computed once and cached for the process lifetime.
     """
     global _DETECTED_OS
     if _DETECTED_OS is not None:
         return _DETECTED_OS
 
-    # sys.platform is a constant — no OS calls, no WMI, no subprocess.
-    # Values: 'win32' (all Windows), 'darwin' (macOS), 'linux' (Linux/WSL)
-    _p = sys.platform
-    if _p == "win32":
+    p = sys.platform
+    if p == "win32":
         _DETECTED_OS = "windows"
-    elif _p == "darwin":
+    elif p == "darwin":
         _DETECTED_OS = "macos"
-    elif _p == "linux":
-        # Check for WSL via /proc/version (fast file read, no WMI)
+    elif p == "linux":
+        # WSL detection via /proc/version — fast file read, no WMI, no subprocess.
         try:
-            with open("/proc/version") as f:
-                if "microsoft" in f.read().lower():
-                    _DETECTED_OS = "wsl"
-                else:
-                    _DETECTED_OS = "linux"
+            proc_version = Path("/proc/version").read_text(encoding="utf-8", errors="replace")
+            _DETECTED_OS = "wsl" if "microsoft" in proc_version.lower() else "linux"
         except (FileNotFoundError, PermissionError):
             _DETECTED_OS = "linux"
     else:
-        # FreeBSD, OpenBSD, Cygwin etc. — treat as Linux-like
+        # FreeBSD, OpenBSD, Cygwin, etc. — treat as Linux-like.
         _DETECTED_OS = "linux"
 
     return _DETECTED_OS
@@ -89,7 +84,7 @@ def is_unix() -> bool:
     return current_os() in ("linux", "macos", "wsl")
 
 
-# ── Path Resolution ──────────────────────────────────────────
+# ── Path Resolution ──────────────────────────────────────────────────────────
 
 
 def home_dir() -> Path:
@@ -98,57 +93,50 @@ def home_dir() -> Path:
 
 
 def config_dir() -> Path:
-    """
-    NAVIG configuration directory.
-    Respects NAVIG_CONFIG_DIR env var.
+    """NAVIG configuration directory.
+
+    Respects the ``NAVIG_CONFIG_DIR`` environment variable.
 
     Defaults:
-        Windows:  %USERPROFILE%\\.navig
-        Linux:    ~/.navig
-        macOS:    ~/.navig
-        Server:   /etc/navig (if running as system service)
+        - Windows: ``%USERPROFILE%\\.navig``
+        - Linux / macOS / WSL: ``~/.navig``
+        - System service: ``/etc/navig``
     """
     env = os.environ.get("NAVIG_CONFIG_DIR")
     if env:
         return Path(env)
-
-    # System service mode
     if _is_system_service():
         return Path("/etc/navig")
-
     return home_dir() / ".navig"
 
 
 def data_dir() -> Path:
-    """
-    NAVIG data directory (databases, state, sessions).
-    Respects NAVIG_DATA_DIR env var.
+    """NAVIG state/data directory (databases, sessions).
+
+    Respects ``NAVIG_DATA_DIR``.
 
     Defaults:
-        Windows:  %USERPROFILE%\\.navig\\data
-        Linux:    ~/.navig/data  (user) or /var/lib/navig (system)
-        macOS:    ~/.navig/data
+        - User: ``~/.navig/data``
+        - System service: ``/var/lib/navig``
     """
     env = os.environ.get("NAVIG_DATA_DIR")
     if env:
         return Path(env)
-
     if _is_system_service():
         return Path("/var/lib/navig")
-
     return config_dir() / "data"
 
 
 def log_dir() -> Path:
-    """
-    NAVIG log directory — stored in the OS-idiomatic user-local data area.
-    Respects NAVIG_LOG_DIR env var.
+    """NAVIG log directory, following OS-idiomatic conventions.
+
+    Respects ``NAVIG_LOG_DIR``.
 
     Defaults:
-        Windows:  %LOCALAPPDATA%\\navig\\logs
-        macOS:    ~/Library/Logs/navig
-        Linux:    $XDG_STATE_HOME/navig/logs  (~/.local/state/navig/logs)
-        System:   /var/log/navig
+        - Windows:       ``%LOCALAPPDATA%\\navig\\logs``
+        - macOS:         ``~/Library/Logs/navig``
+        - Linux / WSL:   ``$XDG_STATE_HOME/navig/logs`` → ``~/.local/state/navig/logs``
+        - System service: ``/var/log/navig``
     """
     env = os.environ.get("NAVIG_LOG_DIR")
     if env:
@@ -161,36 +149,35 @@ def log_dir() -> Path:
 
     if os_name == "windows":
         local_appdata = os.environ.get("LOCALAPPDATA")
-        if local_appdata:
-            return Path(local_appdata) / "navig" / "logs"
-        return config_dir() / "logs"
+        return Path(local_appdata) / "navig" / "logs" if local_appdata else config_dir() / "logs"
 
     if os_name == "macos":
         return home_dir() / "Library" / "Logs" / "navig"
 
-    # Linux / WSL: follow XDG \u2014 logs live under XDG_STATE_HOME (systemd convention)
+    # Linux / WSL — XDG_STATE_HOME (systemd convention for mutable state logs)
     xdg_state = os.environ.get("XDG_STATE_HOME")
-    if xdg_state:
-        return Path(xdg_state) / "navig" / "logs"
-    return home_dir() / ".local" / "state" / "navig" / "logs"
+    return (
+        Path(xdg_state) / "navig" / "logs"
+        if xdg_state
+        else home_dir() / ".local" / "state" / "navig" / "logs"
+    )
 
 
 def blackbox_dir() -> Path:
-    """
-    NAVIG blackbox directory for telemetry events and crash reports.
-    """
+    """Telemetry / crash-report blackbox directory."""
     return data_dir() / "blackbox"
 
 
 def cache_dir() -> Path:
-    """
-    NAVIG cache directory.
-    Respects NAVIG_CACHE_DIR env var.
+    """NAVIG cache directory.
+
+    Respects ``NAVIG_CACHE_DIR``.
 
     Defaults:
-        Windows:  %LOCALAPPDATA%\\navig\\cache  (or ~/.navig/cache)
-        Linux:    ~/.cache/navig  (user) or /var/cache/navig (system)
-        macOS:    ~/Library/Caches/navig
+        - Windows:       ``%LOCALAPPDATA%\\navig\\cache``
+        - macOS:         ``~/Library/Caches/navig``
+        - Linux / WSL:   ``$XDG_CACHE_HOME/navig`` → ``~/.cache/navig``
+        - System service: ``/var/cache/navig``
     """
     env = os.environ.get("NAVIG_CACHE_DIR")
     if env:
@@ -203,187 +190,85 @@ def cache_dir() -> Path:
 
     if os_name == "windows":
         local_appdata = os.environ.get("LOCALAPPDATA")
-        if local_appdata:
-            return Path(local_appdata) / "navig" / "cache"
-        return config_dir() / "cache"
+        return Path(local_appdata) / "navig" / "cache" if local_appdata else config_dir() / "cache"
 
     if os_name == "macos":
         return home_dir() / "Library" / "Caches" / "navig"
 
-    # Linux / WSL: follow XDG
     xdg_cache = os.environ.get("XDG_CACHE_HOME")
-    if xdg_cache:
-        return Path(xdg_cache) / "navig"
-    return home_dir() / ".cache" / "navig"
+    return Path(xdg_cache) / "navig" if xdg_cache else home_dir() / ".cache" / "navig"
 
 
 def workspace_dir() -> Path:
-    """
-    NAVIG workspace directory (identity files, soul, agents, etc.).
-    Always under config_dir/workspace.
-    """
+    """NAVIG workspace directory (identity, soul, agents, etc.)."""
     return config_dir() / "workspace"
 
 
-def find_app_root(verbose: bool = False) -> Path | None:
-    """
-    Find app root by searching upward for .navig/ directory.
-
-    Starts from current working directory and searches upward through
-    parent directories until .navig/ folder is found or filesystem root
-    is reached.
-
-    Returns:
-        Path to directory containing .navig/ folder, or None if not found
-    """
-    current = Path.cwd()
-
-    while True:
-        navig_dir = current / ".navig"
-
-        try:
-            if navig_dir.exists() and navig_dir.is_dir():
-                if is_directory_accessible(navig_dir):
-                    return current
-                else:
-                    if verbose:
-                        try:
-                            from navig import console_helper as ch
-
-                            ch.warning(
-                                f"Found .navig at {navig_dir} but cannot access it (permission denied)"
-                            )
-                        except ImportError:
-                            pass
-        except (PermissionError, OSError) as e:
-            if verbose:
-                try:
-                    from navig import console_helper as ch
-
-                    ch.warning(f"Cannot check {navig_dir}: {e}")
-                except ImportError:
-                    pass
-
-        parent = current.parent
-        if parent == current:
-            return None
-
-        current = parent
-
-
-def is_directory_accessible(directory: Path) -> bool:
-    """
-    Check if a directory is accessible (can read/write).
-
-    Args:
-        directory: Path to check
-
-    Returns:
-        True if directory is accessible, False otherwise
-    """
-    try:
-        # If the directory doesn't exist yet, try to create it.
-        # Fresh installs and test environments commonly start without ~/.navig.
-        if not directory.exists():
-            directory.mkdir(parents=True, exist_ok=True)
-
-        # Try to list directory contents (basic read access check)
-        if directory.is_dir():
-            list(directory.iterdir())
-            return True
-    except (PermissionError, OSError) as _e:
-        import logging as _logging
-
-        _logging.getLogger(__name__).debug(
-            "is_directory_accessible(%s) failed: %s", directory, _e
-        )
-    return False
-
-
 def debug_log_path() -> Path:
-    """Path to the debug log file (inside the platform log directory)."""
+    """Canonical path to the debug log file."""
     return log_dir() / "debug.log"
 
 
 def global_config_path() -> Path:
-    """Path to the main global config file (config.yaml).
+    """Path to the main global config file.
 
-    New layout: config/config.yaml
-    Legacy fallback: config.yaml at the root of the NAVIG directory.
+    New layout:    ``config/config.yaml`` inside :func:`config_dir`.
+    Legacy layout: ``config.yaml`` directly inside :func:`config_dir`.
     """
     new_path = config_dir() / "config" / "config.yaml"
     legacy = config_dir() / "config.yaml"
-    if not new_path.exists() and legacy.exists():
-        return legacy
-    return new_path
+    return legacy if not new_path.exists() and legacy.exists() else new_path
 
 
 def msg_trace_path() -> Path:
-    """Path to Telegram message trace log with stable legacy location.
-
-    The trace file has historically lived at ``~/.navig/msg_trace.jsonl``.
-    Keep that path stable for compatibility with existing telemetry and tests.
-    """
+    """Path to the Telegram message trace log (stable legacy location)."""
     return config_dir() / "msg_trace.jsonl"
 
 
 def genesis_json_path() -> Path:
-    """Path to genesis.json with legacy fallback."""
+    """Path to ``genesis.json`` with legacy fallback."""
     new_path = config_dir() / "state" / "genesis.json"
     legacy = config_dir() / "genesis.json"
-    if not new_path.exists() and legacy.exists():
-        return legacy
-    return new_path
+    return legacy if not new_path.exists() and legacy.exists() else new_path
 
 
 def entity_json_path() -> Path:
-    """Path to entity.json with legacy fallback."""
+    """Path to ``entity.json`` with legacy fallback."""
     new_path = config_dir() / "state" / "entity.json"
     legacy = config_dir() / "entity.json"
-    if not new_path.exists() and legacy.exists():
-        return legacy
-    return new_path
+    return legacy if not new_path.exists() and legacy.exists() else new_path
 
 
 def onboarding_json_path() -> Path:
-    """Path to onboarding.json with legacy fallback."""
+    """Path to ``onboarding.json`` with legacy fallback."""
     new_path = config_dir() / "state" / "onboarding.json"
     legacy = config_dir() / "onboarding.json"
-    if not new_path.exists() and legacy.exists():
-        return legacy
-    return new_path
+    return legacy if not new_path.exists() and legacy.exists() else new_path
 
 
 def builtin_store_dir() -> Path:
-    """Built-in content store bundled with NAVIG (store/ in the project root).
-
-    Contains formations, skills, templates, and other content packages
-    shipped with NAVIG. Use ``store_dir()`` for user-installed content.
-    """
-    return Path(__file__).resolve().parent.parent.parent / "store"
+    """Built-in content store bundled with NAVIG (``store/`` in project root)."""
+    return Path(__file__).resolve().parents[2] / "store"
 
 
 def builtin_packages_dir() -> Path:
-    """Built-in packages bundled with NAVIG (packages/ in the project root)."""
-    return Path(__file__).resolve().parent.parent.parent / "packages"
+    """Built-in packages bundled with NAVIG (``packages/`` in project root)."""
+    return Path(__file__).resolve().parents[2] / "packages"
 
 
 def vault_dir() -> Path:
-    """Encrypted vault storage directory (~/.navig/vault)."""
+    """Encrypted vault storage directory."""
     return config_dir() / "vault"
 
 
 def store_dir() -> Path:
-    """User content store location, with env override and legacy fallback."""
+    """User content store, with env override and legacy fallback."""
     env = os.environ.get("NAVIG_STORE_DIR")
     if env:
         return Path(env)
-
     new_path = config_dir() / "data" / "store"
     legacy = config_dir() / "store"
-    if not new_path.exists() and legacy.exists():
-        return legacy
-    return new_path
+    return legacy if not new_path.exists() and legacy.exists() else new_path
 
 
 def packages_dir() -> Path:
@@ -391,139 +276,174 @@ def packages_dir() -> Path:
     env = os.environ.get("NAVIG_PACKAGES_DIR")
     if env:
         return Path(env)
-
     new_path = config_dir() / "packs"
     legacy = config_dir() / "packages"
-    if not new_path.exists() and legacy.exists():
-        return legacy
-    return new_path
+    return legacy if not new_path.exists() and legacy.exists() else new_path
 
 
 def audio_configs_dir() -> Path:
     """Audio provider configs directory with legacy fallback."""
     new_path = config_dir() / "config" / "audio"
     legacy = config_dir() / "audio_configs"
-    if not new_path.exists() and legacy.exists():
-        return legacy
-    return new_path
+    return legacy if not new_path.exists() and legacy.exists() else new_path
 
 
 def ssh_key_dir() -> Path:
-    """SSH keys directory."""
+    """SSH keys directory (``~/.ssh``)."""
     return home_dir() / ".ssh"
 
 
 def temp_dir() -> Path:
     """Temporary directory for NAVIG operations."""
     import tempfile
-
     return Path(tempfile.gettempdir()) / "navig"
 
 
 def stack_dir() -> Path:
-    """
-    NAVIG infrastructure stack directory (docker-compose, .env, etc.).
-    Respects NAVIG_STACK_DIR env var.
+    """Infrastructure stack directory (docker-compose, .env, etc.).
+
+    Respects ``NAVIG_STACK_DIR``.
 
     Defaults:
-        Server mode: /opt/navig
-        User mode:   ~/.navig/stack
+        - System service: ``/opt/navig``
+        - Local server (``/opt/navig`` exists): ``/opt/navig``
+        - User: ``~/.navig/stack``
     """
     env = os.environ.get("NAVIG_STACK_DIR")
     if env:
         return Path(env)
-
     if _is_system_service():
         return Path("/opt/navig")
-
-    # Check if /opt/navig exists and is usable (local server setup)
     opt_navig = Path("/opt/navig")
     if is_unix() and opt_navig.is_dir():
         return opt_navig
-
     return config_dir() / "stack"
 
 
-# ── Shell helpers ─────────────────────────────────────────────
+# ── App-root discovery ────────────────────────────────────────────────────────
+
+
+def find_app_root(verbose: bool = False) -> Path | None:
+    """Walk upward from CWD to find a directory that contains ``.navig/``.
+
+    Returns the directory containing ``.navig/``, or ``None`` if not found.
+    """
+    current = Path.cwd()
+    while True:
+        navig_dir = current / ".navig"
+        try:
+            if navig_dir.is_dir():
+                if is_directory_accessible(navig_dir):
+                    return current
+                elif verbose:
+                    _warn(f"Found .navig at {navig_dir} but cannot access it (permission denied)")
+        except (PermissionError, OSError) as exc:
+            if verbose:
+                _warn(f"Cannot check {navig_dir}: {exc}")
+
+        parent = current.parent
+        if parent == current:
+            return None
+        current = parent
+
+
+def _warn(msg: str) -> None:
+    """Emit a warning via console_helper, falling back to stderr."""
+    try:
+        from navig import console_helper as ch
+        ch.warning(msg)
+    except ImportError:
+        sys.stderr.write(f"WARNING: {msg}\n")
+
+
+def is_directory_accessible(directory: Path) -> bool:
+    """Return ``True`` if *directory* exists and can be listed.
+
+    Creates the directory if it does not yet exist (fresh installs).
+    """
+    try:
+        if not directory.exists():
+            directory.mkdir(parents=True, exist_ok=True)
+        if directory.is_dir():
+            # A single iterdir() is cheaper than list(iterdir()) for large dirs.
+            next(directory.iterdir(), None)
+            return True
+    except (PermissionError, OSError) as exc:
+        import logging as _logging
+        _logging.getLogger(__name__).debug(
+            "is_directory_accessible(%s) failed: %s", directory, exc
+        )
+    return False
+
+
+# ── Shell helpers ─────────────────────────────────────────────────────────────
 
 
 def shell_name() -> str:
-    """Detect the user's shell."""
+    """Detect the user's interactive shell name."""
     if is_windows():
         return "powershell"
 
     shell = os.environ.get("SHELL", "")
-    if "zsh" in shell:
-        return "zsh"
-    elif "fish" in shell:
-        return "fish"
-    elif "bash" in shell:
-        return "bash"
+    for name in ("zsh", "fish", "bash"):
+        if name in shell:
+            return name
     return "sh"
 
 
 def shell_rc_path() -> Path | None:
-    """Path to the shell's RC file for PATH modifications."""
+    """Return the shell RC file path for PATH modifications, or ``None`` on Windows."""
     if is_windows():
-        return None  # Windows uses registry/environment variables
+        return None
 
-    shell = shell_name()
     home = home_dir()
-
-    rc_map = {
+    return {
         "zsh": home / ".zshrc",
         "bash": home / ".bashrc",
         "fish": home / ".config" / "fish" / "config.fish",
-    }
-    return rc_map.get(shell, home / ".profile")
+    }.get(shell_name(), home / ".profile")
 
 
-# ── System service detection ──────────────────────────────────
+# ── System-service detection ──────────────────────────────────────────────────
 
 
 def _is_system_service() -> bool:
-    """
-    Check if NAVIG is running as a system service (not as a user CLI).
-    Detects: systemd, running as 'navig' system user, or explicit env var.
-    """
-    # Explicit flag
+    """Return ``True`` when NAVIG is running as a system (root) service."""
     if os.environ.get("NAVIG_SYSTEM_SERVICE") == "1":
         return True
 
-    # Running as dedicated system user
     if is_unix():
         try:
             import pwd
-
-            user = pwd.getpwuid(os.getuid()).pw_name
-            if user == "navig":
+            if pwd.getpwuid(os.getuid()).pw_name == "navig":
                 return True
         except (ImportError, KeyError):
-            pass  # optional platform info unavailable
+            pass
 
-    # Systemd detection — only a *system* service if running as root.
-    # INVOCATION_ID is set by systemd for all services (including user services
-    # like `User=void`), so we must also check uid to avoid treating user-level
-    # daemons as system services and redirecting their paths to /var/log/navig.
-    if os.environ.get("INVOCATION_ID") and is_unix():
-        try:
-            if os.getuid() == 0:
-                return True
-        except AttributeError:
-            pass  # Windows — no getuid
+        # INVOCATION_ID is set by systemd for all services including user-level
+        # ones, so we additionally check uid==0 to avoid redirecting user-level
+        # daemon paths to /var/log/navig.
+        if os.environ.get("INVOCATION_ID"):
+            try:
+                if os.getuid() == 0:
+                    return True
+            except AttributeError:
+                pass  # Windows stub — never reached because of is_unix() guard
 
     return False
 
 
-# ── Platform info bundle ──────────────────────────────────────
+# ── Platform info bundle ──────────────────────────────────────────────────────
 
 
 def platform_info() -> dict[str, Any]:
+    """Return a full platform diagnostic bundle.
+
+    Suitable for ``navig status``, crash reports, and support tickets.
     """
-    Full platform information bundle.
-    Useful for diagnostics, logging, and `navig status`.
-    """
-    info = {
+    import platform
+
+    info: dict[str, Any] = {
         "os": current_os(),
         "os_version": platform.version(),
         "arch": platform.machine(),
@@ -543,33 +463,35 @@ def platform_info() -> dict[str, Any]:
 
     if is_linux() or is_wsl():
         try:
-            with open("/etc/os-release") as f:
-                for line in f:
+            with open("/etc/os-release", encoding="utf-8", errors="replace") as fh:
+                for line in fh:
                     if line.startswith("PRETTY_NAME="):
                         info["distro"] = line.split("=", 1)[1].strip().strip('"')
                         break
         except FileNotFoundError:
-            pass  # file already gone; expected
+            pass
 
     return info
 
 
-# ── Ensure directories exist ─────────────────────────────────
+# ── Directory bootstrap ───────────────────────────────────────────────────────
 
 
 def ensure_dirs() -> None:
-    """Create all NAVIG directories if they don't exist."""
-    for d in [config_dir(), data_dir(), log_dir(), cache_dir(), workspace_dir()]:
+    """Create all standard NAVIG directories if they do not already exist."""
+    for d in (config_dir(), data_dir(), log_dir(), cache_dir(), workspace_dir()):
         d.mkdir(parents=True, exist_ok=True)
 
 
-# ── Dependency checks ────────────────────────────────────────
+# ── Dependency checks ─────────────────────────────────────────────────────────
 
 
 def check_docker() -> dict[str, Any]:
-    """
-    Check Docker availability and version.
-    Returns dict with 'available', 'version', 'compose', 'compose_version'.
+    """Check Docker availability and return a status dict.
+
+    Returns a dict with keys:
+        ``available`` (bool), ``version`` (str | None),
+        ``compose`` (bool), ``compose_version`` (str | None).
     """
     import subprocess as _sp
 
@@ -582,16 +504,20 @@ def check_docker() -> dict[str, Any]:
 
     try:
         proc = _sp.run(
-            ["docker", "--version"], capture_output=True, text=True, timeout=5
+            ["docker", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if proc.returncode == 0:
             result["available"] = True
-            # "Docker version 29.2.1, build a5c7197"
             ver_text = proc.stdout.strip()
             if "version" in ver_text.lower():
-                result["version"] = ver_text.split("version")[-1].split(",")[0].strip()
+                result["version"] = (
+                    ver_text.split("version")[-1].split(",")[0].strip()
+                )
     except (FileNotFoundError, _sp.TimeoutExpired):
-        pass  # tool absent or timed out; optional check
+        pass
 
     if result["available"]:
         try:
@@ -605,6 +531,6 @@ def check_docker() -> dict[str, Any]:
                 result["compose"] = True
                 result["compose_version"] = proc.stdout.strip()
         except (FileNotFoundError, _sp.TimeoutExpired):
-            pass  # tool absent or timed out; optional check
+            pass
 
     return result

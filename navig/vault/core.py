@@ -28,6 +28,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from navig.core.file_permissions import set_owner_only_file_permissions
+
 from .crypto import CryptoEngine, CryptoError
 from .session import SessionStore, VaultSession
 from .store import VaultStore
@@ -331,10 +333,7 @@ class Vault:
         new_salt = os.urandom(32)
         self._engine._salt = None
         salt_path.write_bytes(new_salt)
-        try:
-            salt_path.chmod(0o600)
-        except (OSError, PermissionError):
-            pass
+        set_owner_only_file_permissions(salt_path)
 
         new_master = self._engine.derive_key(new_passphrase)
         items = self._store.list()
@@ -372,6 +371,67 @@ class Vault:
                 )
             )
         return rotated
+
+    # ── Fingerprint-change detection ──────────────────────────────────────────
+
+    def _fingerprint_path(self) -> Path:
+        """Path to the file that caches the current machine fingerprint."""
+        return self.vault_dir / ".vault_fp"
+
+    def _read_stored_fingerprint(self) -> bytes | None:
+        """Return the fingerprint stored on disk, or ``None`` if absent."""
+        fp = self._fingerprint_path()
+        try:
+            data = fp.read_bytes()
+            return data if data else None
+        except OSError:
+            return None
+
+    def _write_stored_fingerprint(self, fp_bytes: bytes) -> None:
+        """Persist the fingerprint to disk (best-effort)."""
+        fp = self._fingerprint_path()
+        try:
+            fp.write_bytes(fp_bytes)
+            set_owner_only_file_permissions(fp)
+        except Exception:
+            pass
+
+    def _rekey_from_old_fingerprint(self, old_fp_bytes: bytes) -> int:
+        """Re-wrap all DEK envelopes: old fingerprint-derived key → current key.
+
+        This is the vault-side analogue of ``rotate()`` but instead of
+        generating a new salt it keeps the existing salt and simply swaps the
+        key-encryption key.  Returns the number of items successfully re-keyed.
+        """
+        salt = self._engine._get_or_create_salt()
+        old_master = self._engine._kdf(old_fp_bytes, salt)
+        new_master = self._master_key()
+        items = self._store.list()
+        rekeyed = 0
+        for item in items:
+            if not item.encrypted_dek or not item.encrypted_blob:
+                continue
+            try:
+                dek = CryptoEngine.open(old_master, item.encrypted_dek)
+                new_enc_dek = CryptoEngine.seal(new_master, dek)
+                rotated_item = VaultItem(
+                    id=item.id,
+                    kind=item.kind,
+                    label=item.label,
+                    provider=item.provider,
+                    encrypted_dek=new_enc_dek,
+                    encrypted_blob=item.encrypted_blob,
+                    metadata=item.metadata,
+                    created_at=item.created_at,
+                    updated_at=datetime.now(timezone.utc),
+                    last_used_at=item.last_used_at,
+                    version=item.version + 1,
+                )
+                self._store.upsert(rotated_item)
+                rekeyed += 1
+            except CryptoError:
+                pass
+        return rekeyed
 
     # ── JSON key files ────────────────────────────────────────────────────────
 
@@ -953,8 +1013,64 @@ def _migrate_auth_profiles(vault: "Vault") -> None:
         pass  # Never crash on migration
 
 
+def _maybe_upgrade_fingerprint(vault: Vault) -> None:
+    """Silently re-key vault items when the machine fingerprint changed.
+
+    This handles two upgrade scenarios transparently:
+
+    1. **First run after the stable-fingerprint feature landed** (no
+       ``.vault_fp`` file yet).  We probe whether the current master key can
+       decrypt any stored item.  If it cannot, we try the legacy fingerprint
+       (``CryptoEngine._legacy_fingerprint()``) and re-key if that works.
+
+    2. **Subsequent runs where the fingerprint changed** (e.g. the operator
+       switched from 32-bit to 64-bit Python on macOS or Linux).  The stored
+       ``.vault_fp`` no longer matches; we re-key from the old fingerprint to
+       the new one and update the file.
+
+    All errors are silently swallowed — the vault does not raise on startup.
+    """
+    try:
+        current_fp = CryptoEngine._machine_fingerprint()
+        stored_fp = vault._read_stored_fingerprint()
+
+        if stored_fp is None:
+            # First run: check whether current key actually works.
+            items = vault._store.list()
+            decryptable = 0
+            for item in items[:3]:  # sample at most 3 items
+                if not item.encrypted_dek:
+                    continue
+                try:
+                    CryptoEngine.open(vault._master_key(), item.encrypted_dek)
+                    decryptable += 1
+                except CryptoError:
+                    break
+            if decryptable == 0 and any(i.encrypted_dek for i in items):
+                # Current key cannot decrypt — attempt legacy fingerprint
+                legacy_fp = CryptoEngine._legacy_fingerprint()
+                if legacy_fp != current_fp:
+                    n = vault._rekey_from_old_fingerprint(legacy_fp)
+                    if n > 0:
+                        vault._write_stored_fingerprint(current_fp)
+                        return
+            vault._write_stored_fingerprint(current_fp)
+
+        elif stored_fp == current_fp:
+            return  # fast path — fingerprint unchanged
+
+        else:
+            # Fingerprint changed between runs — re-key from stored → current.
+            vault._rekey_from_old_fingerprint(stored_fp)
+            vault._write_stored_fingerprint(current_fp)
+
+    except Exception:  # noqa: BLE001
+        pass  # never crash on startup due to fingerprint upgrade
+
+
 def _auto_migrate(vault: Vault) -> None:
     """Silently migrate legacy credentials to the unified vault if not done yet."""
+    _maybe_upgrade_fingerprint(vault)
     sentinel = vault.vault_dir / ".migrated_legacy"
     legacy_sentinel = vault.vault_dir / ".migrated_v1"
     if sentinel.exists() or legacy_sentinel.exists():

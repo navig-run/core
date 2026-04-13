@@ -186,6 +186,62 @@ class TestBuildHelpSubcategory:
     def test_unknown_sub_returns_none(self):
         assert TelegramCommandsMixin._build_help_subcategory("utilities", "fake") is None
 
+    # ------------------------------------------------------------------
+    # Underscore-escaping regression tests
+    # Telegram Markdown V1 parses _ as italic delimiters, so command names
+    # like auto_start / explain_ai must have underscores escaped in text.
+    # Before the fix both subcategories below returned 400 from Telegram
+    # ("can't parse entities"), which _api_call silently swallowed.
+    # ------------------------------------------------------------------
+
+    def test_personas_subcategory_returns_result(self):
+        """'Personas & Style' subcategory must return a valid (text, keyboard) tuple."""
+        result = TelegramCommandsMixin._build_help_subcategory("ai_models", "personas")
+        assert result is not None, "personas subcategory returned None — routing broken"
+        text, kb = result
+        assert "Personas" in text
+
+    def test_continuation_subcategory_returns_result(self):
+        """'Continuation & Auto' subcategory must return a valid (text, keyboard) tuple."""
+        result = TelegramCommandsMixin._build_help_subcategory("ai_models", "continuation")
+        assert result is not None, "continuation subcategory returned None — routing broken"
+        text, kb = result
+        assert "Continuation" in text
+
+    def test_underscore_command_names_escaped_in_text(self):
+        """Command names containing _ appear as-is in HTML mode (no backslash escaping)."""
+        result = TelegramCommandsMixin._build_help_subcategory("ai_models", "continuation")
+        assert result is not None
+        text, _ = result
+        # In HTML mode, underscore chars are NOT escaped with backslashes
+        assert "auto_start" in text, "auto_start should appear unescaped in HTML text"
+        assert "auto_stop" in text
+        assert "auto_status" in text
+        # MarkdownV2 backslash escapes must not appear in HTML output
+        assert "\\_" not in text, "backslash-escaped underscore must not appear in HTML text"
+
+    def test_explain_ai_escaped_in_personas_text(self):
+        result = TelegramCommandsMixin._build_help_subcategory("ai_models", "personas")
+        assert result is not None
+        text, _ = result
+        # In HTML mode, underscores are not escaped
+        assert "explain_ai" in text
+        assert "\\_" not in text, "backslash-escaped underscore must not appear in HTML text"
+
+    def test_callback_data_uses_raw_command_name(self):
+        """callback_data must NOT contain escape sequences — routing depends on raw names."""
+        result = TelegramCommandsMixin._build_help_subcategory("ai_models", "continuation")
+        assert result is not None
+        _, kb = result
+        all_cb = [btn["callback_data"] for row in kb for btn in row]
+        # The detail-page callbacks must use the raw (unescaped) command name
+        assert any("auto_start" in cb for cb in all_cb), (
+            "auto_start must appear unescaped in callback_data"
+        )
+        assert not any("\\_" in cb for cb in all_cb), (
+            "Escape sequences must not appear in callback_data"
+        )
+
 
 class TestBuildHelpCommandDetail:
     def test_known_command(self):
@@ -311,7 +367,7 @@ class TestHandleHelpCommand:
         assert len(calls["send"]) == 1
         sent = calls["send"][0]
         assert "NAVIG Command Center" in sent["text"]
-        assert sent["parse_mode"] == "Markdown"
+        assert sent["parse_mode"] == "HTML"
         # Should have category buttons
         all_cb = [btn["callback_data"] for row in sent["keyboard"] for btn in row]
         assert any(cb.startswith("help:c:") for cb in all_cb)

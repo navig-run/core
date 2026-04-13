@@ -48,7 +48,7 @@ async def _edit(
                 "chat_id": chat_id,
                 "message_id": message_id,
                 "text": text,
-                "parse_mode": "Markdown",
+                "parse_mode": "HTML",
                 "reply_markup": {"inline_keyboard": keyboard},
             },
         )

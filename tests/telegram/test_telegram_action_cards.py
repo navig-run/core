@@ -65,8 +65,8 @@ async def test_send_response_strips_search_tags_before_building_keyboard(
     assert "searchqualityreflection" not in sent_text
     assert "searchqualityscore" not in sent_text
     assert "<search>" not in sent_text
-    # Responses now use Markdown V1 formatting (with plain-text fallback on error)
-    assert sent_kwargs.get("parse_mode") == "Markdown"
+    # Responses now use HTML formatting (with plain-text fallback on error)
+    assert sent_kwargs.get("parse_mode") == "HTML"
 
     built_text = builder.build.call_args.kwargs["ai_response"]
     assert "searchqualityreflection" not in built_text

@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import logging
 import threading
 from collections import defaultdict
@@ -59,19 +60,17 @@ def _get_global_limiter() -> RateLimiter:
 def rate_limited(func: Callable) -> Callable:
     """Decorator to enforce rate limiting on a Telegram command handler."""
 
-    async def wrapper(self, update_or_chat_id: Any, *args, **kwargs):
-        # We need to extract user_id. In our architecture, it might be the second argument
-        # We'll just look for 'user_id' in kwargs or assume args[0] is chat_id and args[1] is user_id
+    @functools.wraps(func)
+    async def wrapper(self, *args, **kwargs):
         user_id = kwargs.get("user_id")
-        if user_id is None and len(args) >= 1 and isinstance(args[0], int):
-            user_id = args[0]  # user_id is often passed as a positional arg
+        if user_id is None and len(args) >= 2 and isinstance(args[1], int):
+            user_id = args[1]
 
         if user_id and not _get_global_limiter().is_allowed(user_id):
             logger.warning("Rate limit exceeded", extra={"user_id": user_id})
-            # Try to send a warning if we have chat_id
             chat_id = kwargs.get("chat_id")
-            if chat_id is None and isinstance(update_or_chat_id, int):
-                chat_id = update_or_chat_id
+            if chat_id is None and args and isinstance(args[0], int):
+                chat_id = args[0]
             if chat_id and hasattr(self, "send_message"):
                 await self.send_message(
                     chat_id,
@@ -79,7 +78,7 @@ def rate_limited(func: Callable) -> Callable:
                 )
             return
 
-        return await func(self, update_or_chat_id, *args, **kwargs)
+        return await func(self, *args, **kwargs)
 
     return wrapper
 
@@ -87,9 +86,10 @@ def rate_limited(func: Callable) -> Callable:
 def error_handled(func: Callable) -> Callable:
     """Decorator to gracefully handle errors in command handlers."""
 
-    async def wrapper(self, update_or_chat_id: Any, *args, **kwargs):
+    @functools.wraps(func)
+    async def wrapper(self, *args, **kwargs):
         try:
-            return await func(self, update_or_chat_id, *args, **kwargs)
+            return await func(self, *args, **kwargs)
         except Exception as e:
             logger.exception(
                 "Unhandled error in %s: %s",
@@ -98,13 +98,15 @@ def error_handled(func: Callable) -> Callable:
                 extra={"handler": func.__name__, "handler_args": args, "handler_kwargs": kwargs},
             )
             chat_id = kwargs.get("chat_id")
-            if chat_id is None and isinstance(update_or_chat_id, int):
-                chat_id = update_or_chat_id
+            if chat_id is None and args and isinstance(args[0], int):
+                chat_id = args[0]
 
             if chat_id and hasattr(self, "send_message"):
+                err_detail = str(e)[:200] if str(e) else type(e).__name__
                 await self.send_message(
                     chat_id,
-                    "⚠️ Something went wrong. Our team has been notified. Please try again in a moment.",
+                    f"❌ ran into a problem. {err_detail}",
+                    parse_mode=None,
                 )
 
     return wrapper
@@ -113,10 +115,11 @@ def error_handled(func: Callable) -> Callable:
 def typing_context(func: Callable) -> Callable:
     """Decorator that sends a continuous typing indicator if the operation is slow."""
 
-    async def wrapper(self, update_or_chat_id: Any, *args, **kwargs):
+    @functools.wraps(func)
+    async def wrapper(self, *args, **kwargs):
         chat_id = kwargs.get("chat_id")
-        if chat_id is None and isinstance(update_or_chat_id, int):
-            chat_id = update_or_chat_id
+        if chat_id is None and args and isinstance(args[0], int):
+            chat_id = args[0]
 
         typing_task = None
         if chat_id and hasattr(self, "_api_call"):
@@ -136,7 +139,7 @@ def typing_context(func: Callable) -> Callable:
             typing_task = asyncio.create_task(keep_typing())
 
         try:
-            return await func(self, update_or_chat_id, *args, **kwargs)
+            return await func(self, *args, **kwargs)
         finally:
             if typing_task:
                 typing_task.cancel()

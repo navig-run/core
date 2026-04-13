@@ -10,6 +10,8 @@ import os
 import tempfile
 from pathlib import Path
 
+from navig.core.file_permissions import set_owner_only_file_permissions
+
 
 def create_mysql_config_file(user: str, password: str) -> str:
     """
@@ -31,15 +33,12 @@ def create_mysql_config_file(user: str, password: str) -> str:
     """
     fd, config_path = tempfile.mkstemp(prefix="navig_mysql_", suffix=".cnf", text=True)
     try:
-        # Set restrictive permissions before writing secrets
-        try:
-            os.chmod(config_path, 0o600)
-        except (OSError, PermissionError):
-            pass  # best-effort: skip on access/IO error
+        set_owner_only_file_permissions(config_path)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write("[client]\n")
             f.write(f"user={user}\n")
             f.write(f"password={password}\n")
+        set_owner_only_file_permissions(config_path)
         return config_path
     except Exception as exc:
         # Best-effort cleanup on failure

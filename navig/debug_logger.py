@@ -1,15 +1,21 @@
 """
-Debug Logging System for NAVIG
+Debug Logging System for NAVIG.
 
-Captures all CLI activity, SSH commands, and operation results to a structured
-log file for troubleshooting and auditing purposes.
+Captures CLI activity, SSH commands, and operation results to a structured
+rotating log file for troubleshooting and auditing.
 
-Log Format:
+Log format:
 - ISO 8601 timestamps with milliseconds (YYYY-MM-DDTHH:MM:SS.sssZ)
 - Structured sections with clear separators
-- Sensitive data redaction (passwords, keys, tokens)
+- Sensitive data redaction delegated to ``navig.core.security``
 - RotatingFileHandler for log rotation
+
+The module-level ``get_debug_logger()`` function is the primary entry point
+for all other NAVIG modules that need a standard Python logger.  It delegates
+to ``navig.core.logging.get_logger`` so there is only one logging subsystem.
 """
+
+from __future__ import annotations
 
 import logging
 import sys
@@ -21,22 +27,21 @@ from typing import Any
 from navig.core.security import redact_sensitive_text
 
 
+# ---------------------------------------------------------------------------
+# DebugLogger — structured audit log written to a dedicated rotating file
+# ---------------------------------------------------------------------------
+
+
 class DebugLogger:
-    """
-    Comprehensive debug logger for NAVIG CLI operations.
+    """Structured audit logger for NAVIG CLI operations.
 
-    Features:
-    - ISO 8601 timestamps with milliseconds
-    - Rotating log files (default 10MB, 5 backups)
-    - Sensitive data redaction
-    - Structured log format with clear separators
-    - Performance-optimized with buffered I/O
+    All messages are written to a rotating file (default 10 MB × 5 backups).
+    Sensitive data is redacted before writing.  The logger does **not**
+    propagate to the root logger — it is purely for local audit trails.
     """
-
-    # Redaction is delegated to navig.core.security.redact_sensitive_text
-    # (single source of truth for all sensitive-data patterns).
 
     SEPARATOR = "=" * 80
+    _REDACTED_SENTINEL = "NoneType: None\n"  # traceback.format_exc() placeholder
 
     def __init__(
         self,
@@ -44,59 +49,58 @@ class DebugLogger:
         max_size_mb: int = 10,
         max_files: int = 5,
         truncate_output_kb: int = 10,
-    ):
+    ) -> None:
         """
-        Initialize the debug logger.
-
         Args:
-            log_path: Path to log file. If None, uses app-specific or global default.
-            max_size_mb: Maximum log file size in MB before rotation.
-            max_files: Number of backup files to keep.
-            truncate_output_kb: Maximum output size in KB before truncation.
+            log_path:          Target log file.  ``None`` → resolved from platform paths.
+            max_size_mb:       Rotation threshold in megabytes.
+            max_files:         Number of rotated backup files to keep.
+            truncate_output_kb: Maximum captured output size before truncation.
         """
-        # Convert string path to Path object if needed
-        if log_path is not None and not isinstance(log_path, Path):
-            log_path = Path(log_path)
-        self.log_path = log_path
+        self.log_path: Path | None = (
+            Path(log_path) if log_path is not None and not isinstance(log_path, Path)
+            else log_path
+        )
         self.max_size_bytes = max_size_mb * 1024 * 1024
         self.max_files = max_files
         self.truncate_output_bytes = truncate_output_kb * 1024
-        self.logger: logging.Logger | None = None
+
+        self._logger: logging.Logger | None = None
+        self._handler: RotatingFileHandler | None = None
         self._command_start_time: datetime | None = None
 
         self._setup_logger()
 
-    def _setup_logger(self):
-        """Configure the rotating file handler and logger."""
+    # ------------------------------------------------------------------
+    # Setup / teardown
+    # ------------------------------------------------------------------
+
+    def _setup_logger(self) -> None:
+        """Configure the rotating file handler and attach it to the logger."""
         if self.log_path is None:
-            # Use the canonical platform-local log path
             try:
                 from navig.platform import paths as _paths
-
                 self.log_path = _paths.debug_log_path()
             except Exception:
-                # Fallback if platform module unavailable
-                from navig.config import get_config_manager
+                try:
+                    from navig.config import get_config_manager
+                    self.log_path = get_config_manager().base_dir / "debug.log"
+                except Exception:
+                    self.log_path = Path.home() / ".navig" / "debug.log"
 
-                self.log_path = get_config_manager().base_dir / "debug.log"
-
-        # Ensure parent directory exists
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Create logger with unique name to avoid conflicts
-        self.logger = logging.getLogger("navig.debug")
-        self.logger.setLevel(logging.DEBUG)
+        logger = logging.getLogger("navig.debug")
+        logger.setLevel(logging.DEBUG)
 
-        # Remove existing handlers to avoid duplicates, closing them first to
-        # prevent ResourceWarning: unclosed file at garbage-collection time.
-        for _h in list(self.logger.handlers):
+        # Close and remove any existing handlers to prevent file descriptor leaks.
+        for h in list(logger.handlers):
             try:
-                _h.close()
-            except Exception:  # noqa: BLE001
+                h.close()
+            except Exception:
                 pass
-            self.logger.removeHandler(_h)
+            logger.removeHandler(h)
 
-        # Create rotating file handler
         handler = RotatingFileHandler(
             self.log_path,
             maxBytes=self.max_size_bytes,
@@ -104,288 +108,227 @@ class DebugLogger:
             encoding="utf-8",
         )
         handler.setLevel(logging.DEBUG)
+        handler.setFormatter(logging.Formatter("%(message)s"))
 
-        # Simple formatter - we handle formatting in log methods
-        formatter = logging.Formatter("%(message)s")
-        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        logger.propagate = False
 
-        self.logger.addHandler(handler)
-        self._handler = handler  # Store reference for cleanup
+        self._logger = logger
+        self._handler = handler
 
-        # Prevent propagation to root logger
-        self.logger.propagate = False
-
-    def close(self):
-        """Close the log file handler and release resources."""
-        if self.logger and hasattr(self, "_handler"):
+    def close(self) -> None:
+        """Close the file handler and release resources."""
+        if self._handler is not None and self._logger is not None:
             self._handler.close()
-            self.logger.removeHandler(self._handler)
+            self._logger.removeHandler(self._handler)
+            self._handler = None
 
-    def _get_timestamp(self) -> str:
-        """Get current timestamp in ISO 8601 format with milliseconds."""
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _timestamp() -> str:
+        """Return current UTC time as ISO 8601 with milliseconds."""
         now = datetime.now(timezone.utc)
         return now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
 
-    def _redact_sensitive_data(self, text: str) -> str:
-        """Redact sensitive information from text."""
-        if not text:
-            return text
-        return redact_sensitive_text(text)
+    def _redact(self, text: str) -> str:
+        return redact_sensitive_text(text) if text else text
 
-    def _truncate_output(self, output: str) -> str:
-        """Truncate output if it exceeds the configured limit."""
+    def _truncate(self, output: str) -> str:
         if not output:
             return output
-
-        output_bytes = output.encode("utf-8", errors="replace")
-        if len(output_bytes) <= self.truncate_output_bytes:
+        encoded = output.encode("utf-8", errors="replace")
+        if len(encoded) <= self.truncate_output_bytes:
             return output
+        truncated = encoded[: self.truncate_output_bytes].decode("utf-8", errors="replace")
+        return f"{truncated}\n... [OUTPUT TRUNCATED — {len(encoded)} bytes total]"
 
-        truncated = output_bytes[: self.truncate_output_bytes].decode("utf-8", errors="replace")
-        return f"{truncated}\n... [OUTPUT TRUNCATED - {len(output_bytes)} bytes total]"
+    def _write(self, message: str) -> None:
+        if self._logger is not None:
+            self._logger.debug(message)
 
-    def _log(self, message: str):
-        """Write message to log file."""
-        if self.logger:
-            self.logger.debug(message)
+    # ------------------------------------------------------------------
+    # Public logging methods
+    # ------------------------------------------------------------------
 
-    def log_command_start(self, command: str, args: dict[str, Any]):
-        """
-        Log the start of a CLI command.
-
-        Args:
-            command: The full command string (e.g., "navig host add myserver")
-            args: Dictionary of command arguments
-        """
+    def log_command_start(self, command: str, args: dict[str, Any]) -> None:
+        """Log the start of a CLI command invocation."""
         self._command_start_time = datetime.now(timezone.utc)
-        timestamp = self._get_timestamp()
+        ts = self._timestamp()
 
-        # Redact sensitive args
-        safe_args = {}
-        for key, value in args.items():
-            if isinstance(value, str):
-                safe_args[key] = self._redact_sensitive_data(str(value))
-            else:
-                safe_args[key] = value
+        safe_args = {
+            k: self._redact(str(v)) if isinstance(v, str) else v
+            for k, v in args.items()
+        }
 
-        lines = [
+        self._write("\n".join([
             self.SEPARATOR,
-            f"[{timestamp}] COMMAND START",
+            f"[{ts}] COMMAND START",
             f"Command: {command}",
             f"Arguments: {safe_args}",
             f"Working Directory: {Path.cwd()}",
             f"Python: {sys.version.split()[0]}",
             f"Platform: {sys.platform}",
             self.SEPARATOR,
-        ]
-        self._log("\n".join(lines))
+        ]))
 
     def log_ssh_command(
-        self, host: str, port: int, user: str, command: str, method: str = "subprocess"
-    ):
-        """
-        Log an SSH command being executed.
-
-        Args:
-            host: Remote host address
-            port: SSH port
-            user: SSH username
-            command: The command being executed
-            method: SSH method (subprocess or paramiko)
-        """
-        timestamp = self._get_timestamp()
-        safe_command = self._redact_sensitive_data(command)
-
-        lines = [
-            f"[{timestamp}] SSH COMMAND",
+        self,
+        host: str,
+        port: int,
+        user: str,
+        command: str,
+        method: str = "subprocess",
+    ) -> None:
+        """Log an SSH command before it is executed."""
+        ts = self._timestamp()
+        self._write("\n".join([
+            f"[{ts}] SSH COMMAND",
             f"Target: {user}@{host}:{port}",
             f"Method: {method}",
-            f"Command: {safe_command}",
-        ]
-        self._log("\n".join(lines))
+            f"Command: {self._redact(command)}",
+        ]))
 
-    def log_ssh_result(self, success: bool, output: str, error: str = "", duration_ms: float = 0):
-        """
-        Log the result of an SSH command.
-
-        Args:
-            success: Whether the command succeeded
-            output: Command stdout
-            error: Command stderr
-            duration_ms: Execution time in milliseconds
-        """
-        timestamp = self._get_timestamp()
+    def log_ssh_result(
+        self,
+        success: bool,
+        output: str,
+        error: str = "",
+        duration_ms: float = 0.0,
+    ) -> None:
+        """Log the result of an SSH command."""
+        ts = self._timestamp()
         status = "SUCCESS" if success else "FAILED"
 
-        # Truncate and redact output
-        safe_output = self._truncate_output(self._redact_sensitive_data(output))
-        safe_error = self._truncate_output(self._redact_sensitive_data(error))
+        safe_out = self._truncate(self._redact(output))
+        safe_err = self._truncate(self._redact(error))
 
         lines = [
-            f"[{timestamp}] SSH RESULT: {status}",
+            f"[{ts}] SSH RESULT: {status}",
             f"Duration: {duration_ms:.2f}ms",
         ]
-
-        if safe_output:
-            lines.append(f"Output:\n{safe_output}")
-        if safe_error:
-            lines.append(f"Error:\n{safe_error}")
-
+        if safe_out:
+            lines.append(f"Output:\n{safe_out}")
+        if safe_err:
+            lines.append(f"Error:\n{safe_err}")
         lines.append("-" * 40)
-        self._log("\n".join(lines))
 
-    def log_command_end(self, success: bool, message: str = ""):
-        """
-        Log the end of a CLI command.
+        self._write("\n".join(lines))
 
-        Args:
-            success: Whether the command completed successfully
-            message: Optional completion message
-        """
-        timestamp = self._get_timestamp()
+    def log_command_end(self, success: bool, message: str = "") -> None:
+        """Log the end of a CLI command invocation."""
+        ts = self._timestamp()
         status = "SUCCESS" if success else "FAILED"
 
-        # Calculate duration
-        duration_str = ""
-        if self._command_start_time:
-            duration = datetime.now(timezone.utc) - self._command_start_time
-            duration_ms = duration.total_seconds() * 1000
-            duration_str = f"Duration: {duration_ms:.2f}ms"
+        lines = [self.SEPARATOR, f"[{ts}] COMMAND END: {status}"]
 
-        lines = [
-            self.SEPARATOR,
-            f"[{timestamp}] COMMAND END: {status}",
-        ]
-        if duration_str:
-            lines.append(duration_str)
+        if self._command_start_time is not None:
+            elapsed = datetime.now(timezone.utc) - self._command_start_time
+            lines.append(f"Duration: {elapsed.total_seconds() * 1000:.2f}ms")
+            self._command_start_time = None
+
         if message:
-            # Convert message to string if needed
-            message_str = str(message) if not isinstance(message, str) else message
-            lines.append(f"Message: {self._redact_sensitive_data(message_str)}")
+            lines.append(f"Message: {self._redact(str(message))}")
+
         lines.append(self.SEPARATOR + "\n")
+        self._write("\n".join(lines))
 
-        self._log("\n".join(lines))
-        self._command_start_time = None
+    def log_error(self, error: Exception, context: str = "") -> None:
+        """Log an exception with its traceback."""
+        import traceback
 
-    def log_error(self, error: Exception, context: str = ""):
-        """
-        Log an error with context.
-
-        Args:
-            error: The exception that occurred
-            context: Description of what operation was being performed
-        """
-        timestamp = self._get_timestamp()
-
+        ts = self._timestamp()
         lines = [
-            f"[{timestamp}] ERROR",
+            f"[{ts}] ERROR",
             f"Type: {type(error).__name__}",
-            f"Message: {self._redact_sensitive_data(str(error))}",
+            f"Message: {self._redact(str(error))}",
         ]
         if context:
             lines.append(f"Context: {context}")
 
-        # Include traceback for debugging
-        import traceback
-
         tb = traceback.format_exc()
-        if tb and tb != "NoneType: None\n":
-            lines.append(f"Traceback:\n{self._redact_sensitive_data(tb)}")
+        if tb and tb.strip() != "NoneType: None":
+            lines.append(f"Traceback:\n{self._redact(tb)}")
 
         lines.append("-" * 40)
-        self._log("\n".join(lines))
+        self._write("\n".join(lines))
 
-    def log_operation(self, operation: str, details: dict[str, Any], success: bool = True):
-        """
-        Log a general operation (file transfer, database query, etc.).
-
-        Args:
-            operation: Name of the operation
-            details: Dictionary of operation details
-            success: Whether the operation succeeded
-        """
-        timestamp = self._get_timestamp()
+    def log_operation(
+        self,
+        operation: str,
+        details: dict[str, Any],
+        success: bool = True,
+    ) -> None:
+        """Log a general operation (file transfer, database query, etc.)."""
+        ts = self._timestamp()
         status = "SUCCESS" if success else "FAILED"
 
-        # Redact sensitive details
-        safe_details = {}
-        for key, value in details.items():
-            if isinstance(value, str):
-                safe_details[key] = self._redact_sensitive_data(str(value))
-            else:
-                safe_details[key] = value
+        safe_details = {
+            k: self._redact(str(v)) if isinstance(v, str) else v
+            for k, v in details.items()
+        }
 
-        lines = [
-            f"[{timestamp}] OPERATION: {operation} [{status}]",
-        ]
-        for key, value in safe_details.items():
-            lines.append(f"  {key}: {value}")
-
+        lines = [f"[{ts}] OPERATION: {operation} [{status}]"]
+        lines.extend(f"  {k}: {v}" for k, v in safe_details.items())
         lines.append("-" * 40)
-        self._log("\n".join(lines))
+        self._write("\n".join(lines))
 
 
-# Global logger instance
-_global_logger: DebugLogger | None = None
+# ---------------------------------------------------------------------------
+# Module-level singleton / public factory
+# ---------------------------------------------------------------------------
+
+# Module-private instance kept only for callers that construct DebugLogger
+# directly (legacy path).  Never exposed via get_debug_logger().
+_global_debug_logger: DebugLogger | None = None
 
 
 def get_debug_logger() -> logging.Logger:
-    """
-    Get a standard Python logger using the new structured logging system.
+    """Return a standard :class:`logging.Logger` for the calling module.
 
-    This function now delegates to navig.core.logging.get_logger
+    Delegates to :func:`navig.core.logging.get_logger` so all NAVIG subsystems
+    share a single, consistently configured logging hierarchy.
+
+    Falls back to a plain ``navig.gateway`` logger if the core logging module
+    is not yet available (e.g. during early boot).
     """
     try:
         from navig.core.logging import get_logger
-
         return get_logger("gateway")
     except ImportError:
-        # Fallback to legacy implementation if core.logging unavailable
         pass
 
-    global _global_logger
-
-    # Create a standard Python logger
+    # Fallback: plain logger configured once.
     logger = logging.getLogger("navig.gateway")
-
-    # Only configure if not already configured
     if not logger.handlers:
         logger.setLevel(logging.DEBUG)
-
-        # Try to use the NAVIG debug log path
         try:
             from navig.config import get_config_manager
 
-            config_manager = get_config_manager()
-            log_path = config_manager.base_dir / "debug.log"
+            log_path = get_config_manager().base_dir / "debug.log"
             log_path.parent.mkdir(parents=True, exist_ok=True)
-
-            # Add rotating file handler
-            handler = RotatingFileHandler(
+            fh = RotatingFileHandler(
                 log_path,
-                maxBytes=10 * 1024 * 1024,  # 10MB
+                maxBytes=10 * 1024 * 1024,
                 backupCount=5,
                 encoding="utf-8",
             )
-            handler.setLevel(logging.DEBUG)
-
-            # Format with timestamp
-            formatter = logging.Formatter(
-                "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
+            fh.setLevel(logging.DEBUG)
+            fh.setFormatter(
+                logging.Formatter(
+                    "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                    datefmt="%Y-%m-%d %H:%M:%S",
+                )
             )
-            handler.setFormatter(formatter)
-
-            logger.addHandler(handler)
+            logger.addHandler(fh)
         except Exception:
-            # Fallback to console if file logging fails
-            handler = logging.StreamHandler()
-            handler.setLevel(logging.DEBUG)
-            formatter = logging.Formatter("%(levelname)s - %(message)s")
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
+            sh = logging.StreamHandler()
+            sh.setLevel(logging.DEBUG)
+            sh.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
+            logger.addHandler(sh)
 
-        # Prevent propagation to root
         logger.propagate = False
 
     return logger

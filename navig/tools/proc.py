@@ -27,6 +27,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import subprocess
 import sys
 import time
 from collections.abc import Awaitable, Callable, Sequence
@@ -117,8 +118,7 @@ def _needs_cmd_wrapper(exe: str) -> bool:
 def _cmd_wrap_argv(exe: str, args: Sequence[str]) -> list[str]:
     """Wrap a .cmd/.bat binary + args under ``cmd.exe /d /s /c``."""
     comspec = os.environ.get("ComSpec", "cmd.exe")
-    # Build a single quoted token list ala buildCmdExeCommandLine
-    inner = " ".join([exe] + list(args))
+    inner = subprocess.list2cmdline([exe, *args])
     return [comspec, "/d", "/s", "/c", inner]
 
 

@@ -11,6 +11,8 @@ import platform
 import socket
 from pathlib import Path
 
+from navig.core.file_permissions import set_owner_only_file_permissions
+
 # Try to import cryptography, provide helpful error if missing
 try:
     from cryptography.fernet import Fernet, InvalidToken
@@ -86,9 +88,14 @@ class VaultEncryption:
             try:
                 import winreg
 
+                # KEY_WOW64_64KEY: forces 32-bit Python on 64-bit Windows to
+                # bypass WOW64 registry redirection so it reads the same
+                # MachineGuid path as 64-bit Python.
                 key = winreg.OpenKey(
                     winreg.HKEY_LOCAL_MACHINE,
                     r"SOFTWARE\Microsoft\Cryptography",
+                    0,
+                    winreg.KEY_READ | winreg.KEY_WOW64_64KEY,
                 )
                 machine_guid, _ = winreg.QueryValueEx(key, "MachineGuid")
                 components.append(machine_guid)
@@ -110,15 +117,7 @@ class VaultEncryption:
         # Ensure directory exists with proper permissions
         self.vault_dir.mkdir(parents=True, exist_ok=True)
         salt_path.write_bytes(salt)
-
-        # Set restrictive permissions (Unix only)
-        try:
-            try:
-                os.chmod(salt_path, 0o600)
-            except (OSError, PermissionError):
-                pass  # best-effort: skip on access/IO error
-        except OSError:
-            pass  # best-effort cleanup
+        set_owner_only_file_permissions(salt_path)
 
         return salt
 

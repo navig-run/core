@@ -20,6 +20,8 @@ import platform
 import socket
 from pathlib import Path
 
+from navig.core.file_permissions import set_owner_only_file_permissions
+
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -86,13 +88,7 @@ class CryptoEngine:
             self._salt = os.urandom(_SALT_LEN)
             self.vault_dir.mkdir(parents=True, exist_ok=True)
             salt_path.write_bytes(self._salt)
-            try:
-                try:
-                    salt_path.chmod(0o600)
-                except (OSError, PermissionError):
-                    pass  # best-effort: skip on access/IO error
-            except OSError:
-                pass  # Windows — no-op
+            set_owner_only_file_permissions(salt_path)
         return self._salt
 
     # ── Key derivation ────────────────────────────────────────────────────────
@@ -148,23 +144,74 @@ class CryptoEngine:
         return kdf.derive(material)
 
     @staticmethod
-    def _machine_fingerprint() -> bytes:
-        """Derive a stable per-machine key material (no passphrase required)."""
-        parts = [
-            platform.node(),
-            socket.gethostname(),
-            platform.system(),
-            platform.machine(),
-        ]
-        if platform.system() == "Windows":
+    def _os_arch() -> str:
+        """Return the hardware architecture, stable across 32-bit and 64-bit Python.
+
+        On POSIX, ``platform.machine()`` reflects the *Python binary's* bitness,
+        not the kernel's.  A 32-bit Python on a 64-bit Linux kernel reports
+        ``i686`` while a 64-bit Python reports ``x86_64``.  On Apple Silicon,
+        Rosetta-translated x86_64 Python reports ``x86_64`` while native ARM
+        Python reports ``arm64``.  In both cases ``os.uname().machine`` returns
+        the kernel's view (``x86_64`` / ``arm64``) regardless of Python bitness.
+
+        On Windows, ``platform.machine()`` already returns the CPU architecture
+        (``AMD64``) for both 32-bit and 64-bit Python, so no correction is needed.
+        """
+        if platform.system() != "Windows":
             try:
+                return os.uname().machine  # pylint: disable=no-member
+            except AttributeError:
+                pass  # should not happen on any POSIX platform; fall through
+        return platform.machine()
+
+    @staticmethod
+    def _stable_machine_uuid() -> str | None:
+        """Return a stable OS-level machine UUID, or ``None`` if unavailable.
+
+        Sources per platform:
+
+        - **Linux**   : ``/etc/machine-id`` (systemd) or
+          ``/var/lib/dbus/machine-id`` — a file read, no subprocess needed.
+        - **macOS**   : ``IOPlatformUUID`` from ``ioreg -rd1 -c
+          IOPlatformExpertDevice`` — survives OS upgrades, unique per logic-board.
+        - **Windows** : ``MachineGuid`` from
+          ``HKLM\SOFTWARE\Microsoft\Cryptography`` opened with
+          ``KEY_WOW64_64KEY`` so that 32-bit Python on a 64-bit OS bypasses
+          WOW64 registry redirection and reads the same value as 64-bit Python.
+
+        All errors are silently swallowed — the UUID is *extra* fingerprint
+        entropy and the vault remains functional without it.
+        """
+        system = platform.system()
+        try:
+            if system == "Linux":
+                for _mid in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+                    _p = Path(_mid)
+                    if _p.exists():
+                        uid = _p.read_text(encoding="utf-8").strip()
+                        if uid:
+                            return uid
+            elif system == "Darwin":
+                import subprocess  # noqa: PLC0415
+
+                result = subprocess.run(  # noqa: S603,S607
+                    ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                )
+                for line in result.stdout.splitlines():
+                    if "IOPlatformUUID" in line:
+                        _parts = line.split("=", 1)
+                        if len(_parts) == 2:
+                            uid = _parts[1].strip().strip('"')
+                            if uid:
+                                return uid
+            elif system == "Windows":
                 import winreg  # noqa: PLC0415
 
-                # Use KEY_WOW64_64KEY so that 32-bit Python processes bypass
-                # WOW64 registry redirection and read the same MachineGuid as
-                # 64-bit Python.  Without this flag, 32-bit processes on 64-bit
-                # Windows silently redirect to WOW6432Node, which may not have
-                # the Cryptography key, producing a different fingerprint.
+                # KEY_WOW64_64KEY forces 32-bit Python to bypass WOW64
+                # redirection so it reads the same path as 64-bit Python.
                 key = winreg.OpenKey(
                     winreg.HKEY_LOCAL_MACHINE,
                     r"SOFTWARE\Microsoft\Cryptography",
@@ -172,9 +219,55 @@ class CryptoEngine:
                     winreg.KEY_READ | winreg.KEY_WOW64_64KEY,
                 )
                 guid, _ = winreg.QueryValueEx(key, "MachineGuid")
-                parts.append(str(guid))
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+                if guid:
+                    return str(guid)
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; vault works without a UUID
+        return None
+
+    @staticmethod
+    def _machine_fingerprint() -> bytes:
+        """Derive stable per-machine key material (no passphrase required).
+
+        Robust across 32-bit / 64-bit Python on the same OS and across
+        Rosetta-translated vs. native Python on Apple Silicon:
+
+        - Uses ``_os_arch()`` (kernel arch) instead of ``platform.machine()``
+          (Python bitness) so 32-bit and 64-bit Python produce the same result.
+        - Appends a stable OS-level UUID (``_stable_machine_uuid()``) when
+          available, providing stronger binding to the physical machine.
+        """
+        parts = [
+            platform.node(),
+            socket.gethostname(),
+            platform.system(),
+            CryptoEngine._os_arch(),
+        ]
+        uid = CryptoEngine._stable_machine_uuid()
+        if uid:
+            parts.append(uid)
+        return "-".join(p for p in parts if p).encode()
+
+    @staticmethod
+    def _legacy_fingerprint() -> bytes:
+        """Reconstruct the fingerprint as produced by the pre-cross-platform code.
+
+        Used by the auto-migration path in ``navig.vault.core`` to re-key
+        vaults that were created before the stable UUID / arch fix.
+
+        The old code used ``platform.machine()`` (Python bitness) and added
+        a Windows ``MachineGuid`` only when the old registry call succeeded
+        (no ``KEY_WOW64_64KEY`` — so 32-bit Python on 64-bit Windows got no
+        GUID).  We cannot know which variant was in effect at write time, so
+        the migration logic probes both variants; this method returns the
+        no-UUID base, and the migration tries appending it separately.
+        """
+        parts = [
+            platform.node(),
+            socket.gethostname(),
+            platform.system(),
+            platform.machine(),  # intentional: reproduce old behaviour
+        ]
         return "-".join(p for p in parts if p).encode()
 
     @staticmethod

@@ -557,9 +557,9 @@ def _audio_header_text(session: Any) -> str:
     tts = tts_labels.get(getattr(session, "tts_provider", "auto"), "Auto")
 
     return (
-        "🔊 *Audio Settings*\n\n"
-        f"Voice input → `{voice_mode}` · Text input → `{text_mode}`\n"
-        f"Groups `{grp}` · Provider `{tts}`"
+        "🔊 <b>Audio Settings</b>\n\n"
+        f"Voice input → <code>{voice_mode}</code> · Text input → <code>{text_mode}</code>\n"
+        f"Groups <code>{grp}</code> · Provider <code>{tts}</code>"
     )
 
 
@@ -583,10 +583,10 @@ def _settings_hub_text(session: Any) -> str:
     vr = "on" if getattr(session, "voice_replies", False) else "off"
     ai_m = getattr(session, "ai_mode", "") or "auto"
     return (
-        "⚙️ *NAVIG Settings*\n\n"
-        f"Focus `{focus_label}` · AI mode `{ai_m}`\n"
-        f"Voice replies `{vr}` · TTS `{tts_p}`\n\n"
-        "_Tap a section — /voice for full audio settings_"
+        "⚙️ <b>NAVIG Settings</b>\n\n"
+        f"Focus <code>{focus_label}</code> · AI mode <code>{ai_m}</code>\n"
+        f"Voice replies <code>{vr}</code> · TTS <code>{tts_p}</code>\n\n"
+        "<i>Tap a section — /voice for full audio settings</i>"
     )
 
 
@@ -879,7 +879,7 @@ class CallbackHandler:
                 if code_blocks:
                     code_text = "\n\n".join(block.strip("`").strip() for block in code_blocks)
                     await self._answer(cb_id, "📋 Code extracted")
-                    await self.channel.send_message(chat_id, f"```\n{code_text[:3900]}\n```")
+                    await self.channel.send_message(chat_id, f"<pre>{code_text[:3900]}</pre>", parse_mode="HTML")
                 else:
                     await self._answer(cb_id, "No code blocks found")
                 return
@@ -1145,8 +1145,8 @@ class CallbackHandler:
                     await self._answer(cb_id, "📊 Full table")
                     await self.channel.send_message(
                         chat_id,
-                        f"```\n{table}\n```",
-                        parse_mode="MarkdownV2",
+                        f"<pre>{table}</pre>",
+                        parse_mode="HTML",
                     )
                 else:
                     await self._answer(cb_id, "Routing not active")
@@ -1314,11 +1314,11 @@ class CallbackHandler:
                 )
             else:
                 _warn_msg = (
-                    f"🔑 *API key required for {prov_name}.*\n"
+                    f"🔑 <b>API key required for {prov_name}.</b>\n"
                     "Go back to the provider list and tap ⚙️ Configure to enter your key.\n"
                     "Once the key is saved, select the provider again to activate it."
                 )
-            await self.channel.send_message(chat_id, _warn_msg, parse_mode="Markdown")
+            await self.channel.send_message(chat_id, _warn_msg, parse_mode="HTML")
             return True
 
         await self.channel._show_models_tier_summary(
@@ -1577,11 +1577,11 @@ class CallbackHandler:
                     {
                         "chat_id": chat_id,
                         "text": (
-                            f"🔑 *Enter your {cfg_prov_id} API key:*\n\n"
+                            f"🔑 <b>Enter your {cfg_prov_id} API key:</b>\n\n"
                             "Paste it in a reply — it will be stored securely in your vault.\n"
-                            "_Send_ `cancel` _to abort._"
+                            "<i>Send</i> <code>cancel</code> <i>to abort.</i>"
                         ),
-                        "parse_mode": "Markdown",
+                        "parse_mode": "HTML",
                         "reply_markup": {"force_reply": True, "selective": True},
                     },
                 )
@@ -2522,8 +2522,8 @@ class CallbackHandler:
 
                     await self.channel.send_message(
                         chat_id,
-                        f"📝 *Transcript:*\n{_mdv2_escape(transcript)}",
-                        parse_mode="MarkdownV2",
+                        f"📝 <b>Transcript:</b>\n{transcript}",
+                        parse_mode="HTML",
                     )
                 else:
                     view.set_step("finalize", StepState.FAILED, "No speech found")
@@ -2592,15 +2592,15 @@ class CallbackHandler:
             size_str = f"{file_size // 1024:,} KB" if file_size else "—"
             kind = "Voice recording" if is_speech else "Music file"
             info_text = (
-                f"ℹ️ *File Info*\n"
-                f"Title: {_mdv2_escape(title)}\n"
-                f"Artist: {_mdv2_escape(performer)}\n"
-                f"Duration: {_mdv2_escape(dur_str)}\n"
-                f"Size: {_mdv2_escape(size_str)}\n"
-                f"MIME: `{_mdv2_escape(mime_type)}`\n"
-                f"Type: {_mdv2_escape(kind)}"
+                f"ℹ️ <b>File Info</b>\n"
+                f"Title: {title}\n"
+                f"Artist: {performer}\n"
+                f"Duration: {dur_str}\n"
+                f"Size: {size_str}\n"
+                f"MIME: <code>{mime_type}</code>\n"
+                f"Type: {kind}"
             )
-            await self.channel.send_message(chat_id, info_text, parse_mode="MarkdownV2")
+            await self.channel.send_message(chat_id, info_text, parse_mode="HTML")
             return
 
         if action == "lang":
@@ -2622,8 +2622,8 @@ class CallbackHandler:
                         )
                         await self.channel.send_message(
                             chat_id,
-                            f"🌐 Detected language: *{_mdv2_escape(lang_reply or 'Unknown')}*",
-                            parse_mode="MarkdownV2",
+                            f"🌐 Detected language: <b>{lang_reply or 'Unknown'}</b>",
+                            parse_mode="HTML",
                         )
                     except Exception as _lde:  # noqa: BLE001
                         logger.debug("audmsg:lang inner error: %s", _lde)
@@ -2815,7 +2815,7 @@ class CallbackHandler:
                     "chat_id": chat_id,
                     "message_id": message_id,
                     "text": _audio_header_text(session),
-                    "parse_mode": "Markdown",
+                    "parse_mode": "HTML",
                     "reply_markup": {"inline_keyboard": keyboard_rows},
                 },
             )

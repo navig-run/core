@@ -192,9 +192,9 @@ class TelegramBridge:
         async with bot:
             text = (
                 f"🔐 NAVIG needs a verification code\n\n"
-                f"Service: *{service}*\n"
+                f"Service: <b>{service}</b>\n"
                 f"Please reply with the code from your authenticator app or SMS.\n"
-                f"_(Ref: {corr})_"
+                f"<i>(Ref: {corr})</i>"
             )
             if screenshot_path and Path(screenshot_path).exists():
                 with open(screenshot_path, "rb") as fh:
@@ -202,13 +202,13 @@ class TelegramBridge:
                         chat_id=self._chat_id,
                         photo=fh,
                         caption=text,
-                        parse_mode="Markdown",
+                        parse_mode="HTML",
                     )
             else:
                 await bot.send_message(
                     chat_id=self._chat_id,
                     text=text,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                 )
 
         try:

@@ -112,24 +112,24 @@ def format_approval_message(req: ApprovalRequest, request_id: str) -> str:
     emoji = RISK_EMOJIS.get(req.safety_level, "🟡")
 
     lines = [
-        f"{emoji} *Approval Required*",
+        f"{emoji} <b>Approval Required</b>",
         "",
-        f"*Tool*: `{req.tool_name}`",
-        f"*Risk*: {req.safety_level.upper()}",
+        f"<b>Tool:</b> <code>{req.tool_name}</code>",
+        f"<b>Risk:</b> {req.safety_level.upper()}",
     ]
 
     if req.reason:
-        lines.append(f"*Reason*: {req.reason}")
+        lines.append(f"<b>Reason:</b> {req.reason}")
 
     if req.parameters:
         details = _format_details(req.parameters)
         if details:
             lines.append("")
-            lines.append("*Details*:")
-            lines.extend(f"  • `{k}`: {v}" for k, v in details.items())
+            lines.append("<b>Details:</b>")
+            lines.extend(f"  • <code>{k}</code>: {v}" for k, v in details.items())
 
     lines.append("")
-    lines.append(f"_Request ID: {request_id}_")
+    lines.append(f"<i>Request ID: {request_id}</i>")
 
     return "\n".join(lines)
 
@@ -305,7 +305,7 @@ class TelegramApprovalBackend:
             await self._try_edit(
                 msg.chat_id,
                 msg.message_id,
-                text + f"\n\n⏰ *Timed out* → {suffix}",
+                text + f"\n\n⏰ <b>Timed out</b> → {suffix}",
             )
 
         self._pending.pop(request_id, None)
@@ -415,7 +415,7 @@ class TelegramApprovalBackend:
         payload = {
             "chat_id": chat_id,
             "text": text,
-            "parse_mode": "Markdown",
+            "parse_mode": "HTML",
             "reply_markup": json.dumps(reply_markup),
         }
         async with aiohttp.ClientSession() as session:
@@ -453,7 +453,7 @@ class TelegramApprovalBackend:
             "chat_id": chat_id,
             "message_id": message_id,
             "text": text,
-            "parse_mode": "Markdown",
+            "parse_mode": "HTML",
         }
         async with aiohttp.ClientSession() as session:
             await session.post(url, json=payload)

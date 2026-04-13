@@ -21,6 +21,7 @@ import os
 import sys
 from pathlib import Path
 
+from navig.core.file_permissions import set_owner_only_file_permissions
 from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
 
 name = "telegram"
@@ -107,11 +108,7 @@ def apply(action: Action, ctx: InstallerContext) -> Result:
         lines = [ln for ln in existing.splitlines() if not ln.startswith("TELEGRAM_BOT_TOKEN=")]
         lines.append(f"TELEGRAM_BOT_TOKEN={token}")
         env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        if sys.platform != "win32":
-            try:
-                env_path.chmod(0o600)
-            except (OSError, PermissionError):
-                pass  # best-effort: skip on access/IO error
+        set_owner_only_file_permissions(env_path)
         writes.append(".env")
     except Exception:  # noqa: BLE001
         pass

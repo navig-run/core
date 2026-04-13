@@ -14,6 +14,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+from navig.core.file_permissions import set_owner_only_file_permissions
 from navig.platform import paths
 
 from .types import (
@@ -209,10 +210,7 @@ class AuthProfileManager:
                     pass
 
         # Set file permissions (Unix only)
-        try:
-            os.chmod(self.store_path, 0o600)
-        except OSError:
-            pass  # best-effort; Windows does not support chmod
+            set_owner_only_file_permissions(self.store_path)
 
     def add_api_key(
         self,

@@ -37,7 +37,7 @@ class PingPlugin(BotPlugin):
         start = time.monotonic()
         msg = await update.message.reply_text("Pong! 🏓")
         elapsed_ms = (time.monotonic() - start) * 1000
-        await msg.edit_text(f"Pong! 🏓  _{elapsed_ms:.0f} ms_", parse_mode="Markdown")
+        await msg.edit_text(f"Pong! 🏓  <i>{elapsed_ms:.0f} ms</i>", parse_mode="HTML")
 
 
 def create() -> PingPlugin:

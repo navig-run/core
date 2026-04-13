@@ -15,6 +15,7 @@ New actions are written to ~/.navig/store/actions/user.yaml.
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import tempfile
 from datetime import datetime
@@ -276,17 +277,10 @@ def action_run(
         ch.info("[dry-run] Command not executed.")
         return
 
-    import platform
-    import subprocess
-
-    if platform.system().lower() == "windows":
-        args = ["cmd.exe", "/c", command]
-    else:
-        args = ["bash", "-c", command]
-
     try:
         result = subprocess.run(
-            args,
+            command,
+            shell=True,
             check=False,
         )
         if result.returncode != 0:

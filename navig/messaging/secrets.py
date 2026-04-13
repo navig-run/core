@@ -5,6 +5,7 @@ import os
 from typing import Any
 
 from navig import console_helper as ch
+from navig.core.file_permissions import set_owner_only_file_permissions
 from navig.platform.paths import config_dir
 
 logger = logging.getLogger(__name__)
@@ -359,10 +360,7 @@ def ensure_telegram_uid(
         lines = [ln for ln in existing.splitlines() if not ln.startswith("NAVIG_TELEGRAM_UID=")]
         lines.append(f"NAVIG_TELEGRAM_UID={uid}")
         env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        try:
-            env_file.chmod(0o600)
-        except (OSError, PermissionError):
-            pass  # best-effort: skip on access/IO error
+        set_owner_only_file_permissions(env_file)
     except Exception:
         pass  # .env write is best-effort; vault write succeeded above
 

@@ -125,7 +125,7 @@ class QuotePlugin(BotPlugin):
             )
             c.commit()
         await msg.reply_text(
-            f"💬 Quote by *{html.escape(aname)}* saved!", parse_mode="Markdown"
+            f"💬 Quote by <b>{html.escape(aname)}</b> saved!", parse_mode="HTML"
         )
 
     async def _random(self, update, chat_id: Optional[str]):
@@ -143,13 +143,13 @@ class QuotePlugin(BotPlugin):
         if not row:
             scope = "this chat" if chat_id else "any chat"
             await update.message.reply_text(
-                f"📭 No quotes saved in {scope} yet.\nReply to any message with *quote* to save one!",
-                parse_mode="Markdown",
+                f"📭 No quotes saved in {scope} yet.\nReply to any message with <b>quote</b> to save one!",
+                parse_mode="HTML",
             )
             return
         await update.message.reply_text(
-            f'💬 _"{html.escape(row["text"])}"_\n\n— *{html.escape(row["author_name"])}*',
-            parse_mode="Markdown",
+            f'💬 <i>"{html.escape(row["text"])}"</i>\n\n— <b>{html.escape(row["author_name"])}</b>',
+            parse_mode="HTML",
         )
 
     async def _stats(self, update, chat_id):
@@ -164,10 +164,10 @@ class QuotePlugin(BotPlugin):
         if not rows:
             await update.message.reply_text("📭 No quotes saved here yet.")
             return
-        lines = [f"📊 *Quote Stats* — {total} total\n"]
+        lines = [f"📊 <b>Quote Stats</b> — {total} total\n"]
         for i, r in enumerate(rows, 1):
-            lines.append(f"{i}. *{html.escape(r['author_name'])}* — {r['n']}")
-        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+            lines.append(f"{i}. <b>{html.escape(r['author_name'])}</b> — {r['n']}")
+        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
     async def _by_user(self, update, chat_id, username, count):
         with _db() as c:
@@ -182,8 +182,8 @@ class QuotePlugin(BotPlugin):
             return
         for r in rows:
             await update.message.reply_text(
-                f'💬 _"{html.escape(r["text"])}"_\n\n— *{html.escape(r["author_name"])}*',
-                parse_mode="Markdown",
+                f'💬 <i>"{html.escape(r["text"])}"</i>\n\n— <b>{html.escape(r["author_name"])}</b>',
+                parse_mode="HTML",
             )
 
 

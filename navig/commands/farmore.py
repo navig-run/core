@@ -95,7 +95,7 @@ def _require_farmore() -> bool:
         "farmore is not installed. Install it with:\n"
         "  pip install farmore\n"
         "or (from source):\n"
-        "  pip install -e K:\\_PROJECTS_OPENSOURCE\\farmore"
+        "  pip install -e /path/to/farmore"
     )
     return False
 
@@ -185,7 +185,7 @@ def farmore_search(
     Without a token only public repos at low rate limits are accessible.
 
     Examples:
-        navig farmore search "agent soul" -o K:\\_PROJECTS\\navig\\.lab\\.sou --limit 50 -y
+        navig farmore search "agent soul" -o ./mirrors --limit 50 -y
         navig farmore search "machine learning" --language python --min-stars 500
     """
     resolved_token = token or _resolve_github_token()
@@ -234,7 +234,7 @@ def farmore_backup(
     📦 Clone / mirror every repo for a user or organisation.
 
     Examples:
-        navig farmore backup myuser -d K:\\_PROJECTS\\mirrors -y
+        navig farmore backup myuser -d ./mirrors -y
         navig farmore backup myorg --visibility public
     """
     resolved_token = token or _resolve_github_token()
@@ -270,7 +270,7 @@ def farmore_clone(
     farmore is unavailable.
 
     Examples:
-        navig farmore clone owner/my-repo -d K:\\_PROJECTS\\mirrors
+        navig farmore clone owner/my-repo -d ./mirrors
         navig farmore clone https://github.com/owner/repo
     """
     resolved_token = token or _resolve_github_token()
@@ -454,7 +454,7 @@ def farmore_status():
     else:
         ch.error("farmore NOT installed.")
         ch.info("Install with:  pip install farmore")
-        ch.info("  or from source:  pip install -e K:\\_PROJECTS_OPENSOURCE\\farmore")
+        ch.info("  or from source:  pip install -e /path/to/farmore")
 
     # Token check
     token = _resolve_github_token()

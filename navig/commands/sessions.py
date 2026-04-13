@@ -21,7 +21,8 @@ import os
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
+from urllib.parse import unquote, urlparse
 
 import typer
 
@@ -95,18 +96,22 @@ class ChatSession:
 
 def _workspace_storage_root() -> Path:
     """Return the VS Code workspaceStorage directory."""
-    if os.name == "nt":
-        base = Path(os.environ.get("APPDATA", "~")).expanduser()
+    from navig.platform.paths import current_os, home_dir
+
+    home = home_dir()
+    os_name = current_os()
+
+    if os_name == "windows":
+        appdata = os.environ.get("APPDATA", "").strip()
+        base = Path(appdata).expanduser() if appdata else (home / "AppData" / "Roaming")
         return base / "Code" / "User" / "workspaceStorage"
-    else:
-        home = Path.home()
-        for candidate in [
-            home / ".config" / "Code" / "User" / "workspaceStorage",
-            home / "Library" / "Application Support" / "Code" / "User" / "workspaceStorage",
-        ]:
-            if candidate.exists():
-                return candidate
-        return home / ".config" / "Code" / "User" / "workspaceStorage"
+
+    if os_name == "macos":
+        return home / "Library" / "Application Support" / "Code" / "User" / "workspaceStorage"
+
+    xdg_config = os.environ.get("XDG_CONFIG_HOME", "").strip()
+    base = Path(xdg_config).expanduser() if xdg_config else (home / ".config")
+    return base / "Code" / "User" / "workspaceStorage"
 
 
 def _workspace_label(ws_path: Path) -> str:
@@ -117,12 +122,15 @@ def _workspace_label(ws_path: Path) -> str:
             data = json.loads(wf.read_text(encoding="utf-8", errors="replace"))
             folder = data.get("folder", "")
             if folder:
-                # Decode percent-encoded characters
-                from urllib.parse import unquote
-
                 folder = unquote(folder)
-                # Extract just the basename after last /
-                name = folder.rstrip("/\\").split("/")[-1].split("\\")[-1]
+                parsed = urlparse(folder)
+                folder_path = unquote(parsed.path) if parsed.scheme else folder
+                if parsed.scheme == "file" and parsed.netloc and not folder_path.startswith("//"):
+                    folder_path = f"//{parsed.netloc}{folder_path}"
+                if "\\" in folder_path or ":" in folder_path[:3]:
+                    name = PureWindowsPath(folder_path).name
+                else:
+                    name = PurePosixPath(folder_path).name
                 return name or folder[-40:]
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical

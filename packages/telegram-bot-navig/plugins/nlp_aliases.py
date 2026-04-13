@@ -158,9 +158,9 @@ class NLPAliasPlugin(BotPlugin):
             body = msg.reply_to_message.text or msg.reply_to_message.caption or ""
         if not body:
             await msg.reply_text(
-                f"{act['emoji']} *{act['label']}*\n\nReply to a message with `{act['aliases'][0]}`, "
-                f"or write:\n`{act['aliases'][0]} <your text>`",
-                parse_mode="Markdown",
+                f"{act['emoji']} <b>{act['label']}</b>\n\nReply to a message with <code>{act['aliases'][0]}</code>, "
+                f"or write:\n<code>{act['aliases'][0]} &lt;your text&gt;</code>",
+                parse_mode="HTML",
             )
             return
         status = await msg.reply_text(f"{act['emoji']} Processing…")
@@ -168,16 +168,16 @@ class NLPAliasPlugin(BotPlugin):
         resp = await asyncio.to_thread(_call_llm, prompt)
         if resp:
             await status.edit_text(
-                f"{act['emoji']} *{act['label']}:*\n\n{resp}", parse_mode="Markdown"
+                f"{act['emoji']} <b>{act['label']}:</b>\n\n{resp}", parse_mode="HTML"
             )
             return
         await status.edit_text(
-            f"{act['emoji']} *{act['label']} detected* ✓\n\n"
-            f"Target: _{body[:200]}_\n\n"
+            f"{act['emoji']} <b>{act['label']} detected</b> ✓\n\n"
+            f"Target: <i>{body[:200]}</i>\n\n"
             "⚠️ No AI provider available. Configure a provider via:\n"
-            "`navig vault set openrouter/api_key <your-key>`\n"
-            "or set up a local model with `navig ai`.",
-            parse_mode="Markdown",
+            "<code>navig vault set openrouter/api_key &lt;your-key&gt;</code>\n"
+            "or set up a local model with <code>navig ai</code>.",
+            parse_mode="HTML",
         )
 
 

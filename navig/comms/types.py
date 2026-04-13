@@ -61,7 +61,7 @@ class NotificationOptions:
     silent: bool = False  # Telegram silent / Matrix low-priority
     ttl_seconds: int = 0  # 0 = forever
     retry_count: int = 2  # max retries on transient failure
-    parse_mode: str = "Markdown"  # Telegram parse mode
+    parse_mode: str = "HTML"  # Telegram parse mode
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

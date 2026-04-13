@@ -241,12 +241,12 @@ class TelegramVoiceBot:
 
             text, markup = build_main_menu()
         except Exception:
-            text = "👋 Welcome to **NAVIG**!\n\nI'm your AI assistant. Send me a voice message or text to get started."
+            text = "👋 Welcome to <b>NAVIG</b>!\n\nI'm your AI assistant. Send me a voice message or text to get started."
             markup = None
 
         await update.message.reply_text(
             text,
-            parse_mode="Markdown",
+            parse_mode="HTML",
             reply_markup=markup,
         )
 
@@ -261,21 +261,21 @@ class TelegramVoiceBot:
             text = format_main_help()
         except Exception:
             text = (
-                "🤖 **NAVIG Commands**\n\n"
+                "🤖 <b>NAVIG Commands</b>\n\n"
                 "/start — Main menu\n"
                 "/help — This message\n"
                 "/status — System status\n\n"
-                "_Send a voice message or text to chat with NAVIG._"
+                "<i>Send a voice message or text to chat with NAVIG.</i>"
             )
 
-        await update.message.reply_text(text, parse_mode="Markdown")
+        await update.message.reply_text(text, parse_mode="HTML")
 
     async def _cmd_status(self, update, context) -> None:
         """Reply with current NAVIG system status."""
         if not self._is_allowed(update):
             return
 
-        lines = ["📊 *NAVIG Status*\n"]
+        lines = ["📊 <b>NAVIG Status</b>\n"]
         try:
             from navig.voice.pipeline import get_pipeline
 
@@ -293,7 +293,7 @@ class TelegramVoiceBot:
         except Exception:
             lines.append("• Mesh: ⚪ unavailable")
 
-        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 
     # ------------------------------------------------------------------ #
     # Voice message handler — the core feature
@@ -375,7 +375,7 @@ class TelegramVoiceBot:
             logger.info("Transcript: %r", transcript[:120])
 
             # Echo the transcript as a subtle confirmation
-            await msg.reply_text(f"🎙 _{transcript}_", parse_mode="Markdown")
+            await msg.reply_text(f"🎤 <i>{transcript}</i>", parse_mode="HTML")
 
             # ── 3. Intent Parsing (Voice-to-Action) ───────────────────
             if self.config.send_chat_action:
@@ -511,12 +511,12 @@ class TelegramVoiceBot:
 
             info = get_action_info(data)
             if info:
-                await query.edit_message_text(info["description"], parse_mode="Markdown")
+                await query.edit_message_text(info["description"], parse_mode="HTML")
                 return
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
-        await query.edit_message_text(f"⚙️ Action: `{data}`", parse_mode="Markdown")
+        await query.edit_message_text(f"⚙️ Action: <code>{data}</code>", parse_mode="HTML")
 
     # ------------------------------------------------------------------ #
     # STT, LLM, TTS helpers (delegate to pipeline components)

@@ -452,7 +452,7 @@ def gateway_test(
                 _tg_send(
                     target=target,
                     message=message,
-                    parse_mode="Markdown",
+                    parse_mode="HTML",
                     resolve_only=False,
                     host="",
                 )

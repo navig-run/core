@@ -269,17 +269,9 @@ class Hands(Component):
             if env:
                 full_env.update(env)
 
-            # Determine shell
-            if os.name == "nt":
-                # Windows
-                shell_cmd = ["cmd", "/c", command]
-            else:
-                # Unix
-                shell_cmd = ["bash", "-c", command]
-
             # Start process
-            process = await asyncio.create_subprocess_exec(
-                *shell_cmd,
+            process = await asyncio.create_subprocess_shell(
+                command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cwd,

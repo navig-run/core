@@ -10,6 +10,7 @@ import logging
 import os
 import platform
 import subprocess
+from pathlib import Path
 from typing import Any
 
 import typer
@@ -149,9 +150,10 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
     remote_ops = RemoteOperations(config_manager)
 
     # Always inject client platform so the AI gives OS-correct commands.
+    root_directory = Path.home().anchor or os.path.abspath(os.sep)
     context: dict = {
         "server": server_config,
-        "directory": "C:\\" if os.name == "nt" else "/",
+        "directory": root_directory,
         "client_os": f"{platform.system()} {platform.release()}",
         "client_arch": platform.machine(),
     }

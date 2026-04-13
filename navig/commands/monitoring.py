@@ -15,6 +15,7 @@ import json
 import platform
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from rich.panel import Panel
@@ -122,7 +123,7 @@ def _monitor_resources_local_windows(app_name: str, options: dict) -> None:
             alerts.append(f"High memory usage: {vm.percent:.1f}%")
 
         try:
-            _root_path = "C:\\" if platform.system() == "Windows" else "/"
+            _root_path = Path.home().anchor or "/"
             _du = psutil.disk_usage(_root_path)
             metrics["disk"] = {
                 "usage_percent": int(_du.percent),
