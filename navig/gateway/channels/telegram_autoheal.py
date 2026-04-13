@@ -410,7 +410,9 @@ class AutoHealMixin:
                 ts = evt.get("timestamp", "")[:16]
                 fc = evt.get("failure_class", "?")
                 cmd_preview = (evt.get("cmd", ""))[:40]
-                lines.append(f"{icon} <code>{ts}</code> {fc} — <code>{cmd_preview}</code>")
+                lines.append(
+                    f"{icon} <code>{html.escape(ts)}</code> {html.escape(str(fc))} — <code>{html.escape(cmd_preview)}</code>"
+                )
         else:
             lines += ["", "<i>No heal events recorded yet.</i>"]
 
@@ -436,7 +438,7 @@ class AutoHealMixin:
         if existing and not existing.done():
             await self.send_message(
                 ctx.chat_id,
-                f"⏳ Already healing <code>{ctx.host or 'this target'}</code> — please wait.",
+                f"⏳ Already healing <code>{html.escape(ctx.host or 'this target')}</code> — please wait.",
                 parse_mode="HTML",
             )
             return
@@ -524,7 +526,7 @@ class AutoHealMixin:
                 status="partial",
                 message=(
                     "🛢 <b>DB_PERMISSION_DENY</b> — Credentials must be reviewed manually.\n\n"
-                    f"Check your database connection settings:\n<code>{cfg_hint}</code>\n\n"
+                    f"Check your database connection settings:\n<code>{html.escape(cfg_hint)}</code>\n\n"
                     "Verify the username / password and that the user has the "
                     "required grants on this database."
                 ),
@@ -536,7 +538,7 @@ class AutoHealMixin:
             return HealResult(
                 status="failed",
                 message=(
-                    f"🔍 <code>{cmd_word}</code> is not installed on <code>{host}</code>.\n\n"
+                    f"🔍 <code>{html.escape(cmd_word)}</code> is not installed on <code>{html.escape(host)}</code>.\n\n"
                     "Install it on the remote server first, then retry your command."
                 ),
                 should_retry=False,
@@ -572,7 +574,7 @@ class AutoHealMixin:
                     "❓ <b>UNKNOWN failure</b> — could not classify this error.\n\n"
                     "Enable Hive Mind to open a GitHub fix PR:\n"
                     "<code>/autoheal hive on</code>\n\n"
-                    f"Raw error:\n<pre>{ctx.stderr[:600]}</pre>"
+                    f"Raw error:\n<pre>{html.escape(ctx.stderr[:600])}</pre>"
                 ),
                 should_retry=False,
             )
@@ -603,7 +605,7 @@ class AutoHealMixin:
             # NAVIG_GITHUB_TOKEN not set
             return HealResult(
                 status="failed",
-                message=f"🐝 <b>Hive Mind</b> is enabled but <code>NAVIG_GITHUB_TOKEN</code> is not set.\n<i>{exc}</i>",
+                message=f"🐝 <b>Hive Mind</b> is enabled but <code>NAVIG_GITHUB_TOKEN</code> is not set.\n<i>{html.escape(str(exc))}</i>",
                 should_retry=False,
             )
         except Exception as exc:  # noqa: BLE001
@@ -625,7 +627,7 @@ class AutoHealMixin:
                     status="partial",
                     message=(
                         "🐝 <b>Hive Mind</b> could not reach GitHub (API may be down).\n"
-                        f"Patch saved locally: <code>{patch_path.name}</code>\n"
+                        f"Patch saved locally: <code>{html.escape(patch_path.name)}</code>\n"
                         "It will be retried on next bot restart."
                     ),
                     should_retry=False,
@@ -706,10 +708,11 @@ class AutoHealMixin:
         # Failure-class-specific advice
         if ctx.failure_class == FailureClass.SSH_HOSTKEY_UNKNOWN:
             host = ctx.host or "the server"
+            safe_host = html.escape(host)
             lines += [
                 "<b>How to fix:</b>",
-                f"Tap 🔧 Auto-Fix to run <code>ssh-keyscan</code> and trust <code>{host}</code> automatically.",
-                f"Or run manually:\n<code>ssh-keyscan -H {host} &gt;&gt; ~/.ssh/known_hosts</code>",
+                f"Tap 🔧 Auto-Fix to run <code>ssh-keyscan</code> and trust <code>{safe_host}</code> automatically.",
+                f"Or run manually:\n<code>ssh-keyscan -H {safe_host} &gt;&gt; ~/.ssh/known_hosts</code>",
             ]
         elif ctx.failure_class == FailureClass.SSH_AUTH_FAIL:
             lines += [
@@ -726,7 +729,7 @@ class AutoHealMixin:
             cfg_hint = self._get_navig_config_path()
             lines += [
                 "<b>How to fix:</b>",
-                f"Check your database credentials at:\n<code>{cfg_hint}</code>",
+                f"Check your database credentials at:\n<code>{html.escape(cfg_hint)}</code>",
             ]
 
         return "\n".join(lines)
