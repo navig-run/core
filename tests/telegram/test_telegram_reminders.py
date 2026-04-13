@@ -21,7 +21,7 @@ def _make_dummy_bot():
             self.edits = []
             self.api_calls = []
 
-        async def send_message(self, chat_id, text, parse_mode="Markdown", **kwargs):
+        async def send_message(self, chat_id, text, parse_mode="HTML", **kwargs):
             self.messages.append((chat_id, text, parse_mode, kwargs))
             return {"ok": True}
 
@@ -30,7 +30,7 @@ def _make_dummy_bot():
             return {"ok": True}
 
         async def edit_message(
-            self, chat_id, message_id, text, parse_mode="Markdown", keyboard=None
+            self, chat_id, message_id, text, parse_mode="HTML", keyboard=None
         ):
             self.edits.append((chat_id, message_id, text, parse_mode, keyboard))
             return {"ok": True}
@@ -117,7 +117,7 @@ def _make_provider_bot(
             self.edits = []
             self.api_calls = []
 
-        async def send_message(self, chat_id, text, parse_mode="Markdown", **kwargs):
+        async def send_message(self, chat_id, text, parse_mode="HTML", **kwargs):
             self.messages.append((chat_id, text, parse_mode, kwargs))
             return {"ok": True}
 
@@ -126,7 +126,7 @@ def _make_provider_bot(
             return {"ok": True}
 
         async def edit_message(
-            self, chat_id, message_id, text, parse_mode="Markdown", keyboard=None
+            self, chat_id, message_id, text, parse_mode="HTML", keyboard=None
         ):
             self.edits.append((chat_id, message_id, text, parse_mode, keyboard))
             return {"ok": True}
@@ -1275,7 +1275,7 @@ async def test_provider_picker_falls_back_to_send_when_edit_returns_none(monkeyp
     # Override edit_message to simulate a silent Telegram failure (returns None)
     bot.edit_message_calls = []
 
-    async def _failing_edit(chat_id, message_id, text, parse_mode="Markdown", keyboard=None):
+    async def _failing_edit(chat_id, message_id, text, parse_mode="HTML", keyboard=None):
         bot.edit_message_calls.append((chat_id, message_id))
         return None  # simulate silent API failure
 

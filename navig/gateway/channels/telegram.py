@@ -571,7 +571,7 @@ class TelegramChannel:
 
                     sent = await self.send_message(
                         int(chat_id),
-                        f"{_header}\n{msg}",
+                        f"{_header}\n{html.escape(msg)}",
                         parse_mode="HTML",
                     )
                     if sent:
@@ -4598,7 +4598,7 @@ class TelegramChannel:
                 )
                 await self.send_message(
                     chat_id,
-                    f"❓ Skill <code>{skill_id}</code> not found.\n\nAvailable:\n{available}",
+                    f"❓ Skill <code>{html.escape(skill_id)}</code> not found.\n\nAvailable:\n{available}",
                 )
                 return
         except Exception:  # noqa: BLE001
@@ -4630,8 +4630,8 @@ class TelegramChannel:
                 else:
                     output_text = str(result.output or "")
 
-                header = f"🧩 <b>{skill_name}</b>" + (f" › <code>{command}</code>" if command else "")
-                msg = f"{header}\n\n{output_text[:3800]}" if output_text else f"{header}\n✅ Done."
+                header = f"🧩 <b>{html.escape(skill_name)}</b>" + (f" › <code>{html.escape(command)}</code>" if command else "")
+                msg = f"{header}\n\n{html.escape(output_text[:3800])}" if output_text else f"{header}\n✅ Done."
                 await self.send_message(chat_id, msg)
             else:
                 await self.send_message(
@@ -4858,14 +4858,12 @@ class TelegramChannel:
         text: str,
         keyboard: dict | None = None,
     ) -> None:
-        """Send *text* with HTML formatting, falling back to plain text on parse errors."""
-        result = await self.send_message(
-            chat_id, text, parse_mode="HTML", keyboard=keyboard
-        )
-        if result is None:
-            # Telegram rejected the parse — retry as plain text so the user
-            # always receives the content even if formatting can't be applied.
-            await self.send_message(chat_id, text, parse_mode=None, keyboard=keyboard)
+        """Send *text* with HTML formatting.
+
+        ``send_message`` already contains parse-mode fallback logic (HTML -> plain),
+        so this helper intentionally performs a single call to avoid duplicate retries.
+        """
+        await self.send_message(chat_id, text, parse_mode="HTML", keyboard=keyboard)
 
     async def _send_md_with_fallback(
         self,

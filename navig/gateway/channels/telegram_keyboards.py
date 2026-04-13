@@ -2842,8 +2842,17 @@ class CallbackHandler:
                                 is_group,
                                 message_id=message_id,
                             )
-                        except TypeError:
-                            await method(chat_id)
+                        except TypeError as exc:
+                            err = str(exc)
+                            signature_mismatch = (
+                                "unexpected keyword argument" in err
+                                or "positional argument" in err
+                                or "required positional argument" in err
+                            )
+                            if signature_mismatch:
+                                await method(chat_id)
+                            else:
+                                raise
                 except Exception as exc:
                     logger.debug("Nav callback %s failed: %s", cb_data, exc)
             return

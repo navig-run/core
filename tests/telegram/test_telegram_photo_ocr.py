@@ -34,7 +34,7 @@ async def test_handle_photo_vision_appends_ocr_snippet(monkeypatch):
     sent: list[tuple[int, str, str | None]] = []
 
     class _Channel(TelegramChannel):
-        async def send_message(self, chat_id, text, parse_mode="Markdown", **kwargs):
+        async def send_message(self, chat_id, text, parse_mode="HTML", **kwargs):
             sent.append((chat_id, text, parse_mode))
             return {"ok": True}
 
@@ -75,7 +75,7 @@ async def test_handle_photo_vision_sends_ocr_when_vision_empty(monkeypatch):
     sent: list[tuple[int, str, str | None]] = []
 
     class _Channel(TelegramChannel):
-        async def send_message(self, chat_id, text, parse_mode="Markdown", **kwargs):
+        async def send_message(self, chat_id, text, parse_mode="HTML", **kwargs):
             sent.append((chat_id, text, parse_mode))
             return {"ok": True}
 

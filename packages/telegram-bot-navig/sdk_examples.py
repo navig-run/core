@@ -34,6 +34,7 @@ from __future__ import annotations
 
 # ── imports used for local testing ──────────────────────────────────────────
 import asyncio
+import html
 import logging
 import sys
 from pathlib import Path
@@ -134,7 +135,7 @@ class PickPlugin(BotPlugin):
             await update.message.reply_text("Usage: /pick option1, option2, option3")
             return
         choice = random.choice(items)
-        await update.message.reply_text(f"🎯 I pick: *{choice}*", parse_mode="Markdown")
+        await update.message.reply_text(f"🎯 I pick: <b>{html.escape(choice)}</b>", parse_mode="HTML")
 
 
 def create_pick() -> PickPlugin:
@@ -206,7 +207,7 @@ class CalcPlugin(BotPlugin):
             # Format: drop trailing .0 for whole numbers
             formatted = f"{result:.10g}"
             await update.message.reply_text(
-                f"`{expr}` = *{formatted}*", parse_mode="Markdown"
+                f"<code>{html.escape(expr)}</code> = <b>{html.escape(formatted)}</b>", parse_mode="HTML"
             )
         except (ValueError, ZeroDivisionError, SyntaxError) as exc:
             await update.message.reply_text(f"⚠️ Could not evaluate: {exc}")

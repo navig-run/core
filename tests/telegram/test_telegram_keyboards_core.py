@@ -557,6 +557,50 @@ class TestCallbackHandlerSettings:
         delete_calls = [c for c in ch.api_calls if c[0] == "deleteMessage"]
         assert len(delete_calls) >= 1 or len(ch.api_calls) >= 1
 
+    async def test_settings_nav_typeerror_internal_is_not_retried_as_signature_mismatch(
+        self, monkeypatch
+    ):
+        """Non-signature TypeError in nav handler should not trigger method(chat_id) fallback."""
+
+        ch = _MinimalChannel()
+        calls: list[tuple] = []
+
+        async def _broken_settings_hub(*args, **kwargs):
+            calls.append((args, kwargs))
+            raise TypeError("internal type coercion failed")
+
+        ch._handle_settings_hub = _broken_settings_hub
+
+        class _Session:
+            voice_enabled = True
+            stt_enabled = True
+            voice_in_groups = True
+            voice_replies = True
+
+        class _SM:
+            def get_or_create_session(self, *args, **kwargs):
+                return _Session()
+
+            def _save_session(self, session):
+                return None
+
+        monkeypatch.setattr(
+            "navig.gateway.channels.telegram_sessions.get_session_manager",
+            lambda: _SM(),
+        )
+
+        handler = CallbackHandler(ch)
+        await handler._handle_settings_callback(
+            cb_id="q3",
+            cb_data="st_goto_settings",
+            chat_id=200,
+            message_id=5,
+            user_id=100,
+        )
+
+        # Should call exactly once; old broad fallback would call a second time with chat_id only.
+        assert len(calls) == 1
+
 
 class TestCallbackHandlerDebug:
     """Test _handle_debug_callback for dbg_* prefixes."""

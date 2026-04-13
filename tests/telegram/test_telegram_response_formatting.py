@@ -6,7 +6,7 @@ Covers:
   - **bold** → *bold* conversion
   - ## Heading → symbol conversion
   - _send_md_with_fallback delegates to _send_html_with_fallback (HTML mode)
-  - _send_md_with_fallback retries with parse_mode=None on API failure (None result)
+    - _send_md_with_fallback performs a single send (fallback is inside send_message)
   - _send_response applies _normalize_md before sending
 """
 
@@ -89,19 +89,17 @@ async def test_send_md_with_fallback_uses_markdown_parse_mode():
 
 
 async def test_send_md_with_fallback_retries_plain_on_api_failure():
-    """If API returns None (parse error), retry with parse_mode=None."""
+    """Helper performs one send call; parse fallback is owned by send_message."""
     from navig.gateway.channels.telegram import TelegramChannel
 
     ch = TelegramChannel(bot_token="123:FAKE")
-    # First call returns None (simulate Telegram parse error), second succeeds
-    ch.send_message = AsyncMock(side_effect=[None, {"message_id": 1}])
+    ch.send_message = AsyncMock(return_value=None)
 
     await ch._send_md_with_fallback(999, "some *broken markup")
 
-    assert ch.send_message.await_count == 2
-    # Second call must use plain (no parse_mode)
+    assert ch.send_message.await_count == 1
     _, kwargs = ch.send_message.await_args
-    assert kwargs.get("parse_mode") is None
+    assert kwargs.get("parse_mode") == "HTML"
 
 
 # ---------------------------------------------------------------------------
