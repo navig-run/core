@@ -2585,7 +2585,7 @@ class CallbackHandler:
 
                     await self.channel.send_message(
                         chat_id,
-                        f"📝 <b>Transcript:</b>\n{transcript}",
+                        f"📝 <b>Transcript:</b>\n{html.escape(transcript)}",
                         parse_mode="HTML",
                     )
                 else:
@@ -2656,11 +2656,11 @@ class CallbackHandler:
             kind = "Voice recording" if is_speech else "Music file"
             info_text = (
                 f"ℹ️ <b>File Info</b>\n"
-                f"Title: {title}\n"
-                f"Artist: {performer}\n"
+                f"Title: {html.escape(title)}\n"
+                f"Artist: {html.escape(performer)}\n"
                 f"Duration: {dur_str}\n"
                 f"Size: {size_str}\n"
-                f"MIME: <code>{mime_type}</code>\n"
+                f"MIME: <code>{html.escape(mime_type)}</code>\n"
                 f"Type: {kind}"
             )
             await self.channel.send_message(chat_id, info_text, parse_mode="HTML")
@@ -2685,7 +2685,7 @@ class CallbackHandler:
                         )
                         await self.channel.send_message(
                             chat_id,
-                            f"🌐 Detected language: <b>{lang_reply or 'Unknown'}</b>",
+                            f"🌐 Detected language: <b>{html.escape(lang_reply or 'Unknown')}</b>",
                             parse_mode="HTML",
                         )
                     except Exception as _lde:  # noqa: BLE001
