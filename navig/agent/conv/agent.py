@@ -9,7 +9,7 @@ import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -27,6 +27,13 @@ from navig.agent.conv.status_event import StatusEvent
 
 logger = logging.getLogger(__name__)
 
+# ── Session tunable constants (single source of truth) ───────────────────────────
+# USER.md chars injected into the system prompt per turn (≈ 375 tokens at 4 chars/token)
+_USER_PROFILE_MAX_CHARS: int = 1_500
+# Plan context snapshot keys that count as "non-null" for the log message
+_PLAN_CONTEXT_KEYS: tuple[str, ...] = (
+    "current_phase", "dev_plan", "wiki", "docs", "inbox_unread", "mcp_resources",
+)
 
 class ConversationalAgent:
     """
@@ -252,14 +259,8 @@ class ConversationalAgent:
             # Soul module may not be installed in all deployments; fallback is safe.
             self._focus_mode = "balance"
 
-    def _build_awareness_context(self) -> str:
-        now = datetime.now().astimezone()
-        parts = [f"System time: {now.strftime('%H:%M %Z')}, {now.strftime('%A %d %B %Y')}."]
-        if uname := self._user_identity.get("username", ""):
-            parts.append(f"You are talking to {uname} (your operator). Address them naturally.")
-        elif uid := self._user_identity.get("user_id", ""):
-            parts.append(f"User ID: {uid}.")
-        # Lazy-load USER.md once per agent session and inject into system prompt
+    def _load_user_profile(self) -> str:
+        """Return USER.md content (cached after first load), capped to _USER_PROFILE_MAX_CHARS."""
         if not self._user_profile_loaded:
             self._user_profile_loaded = True
             try:
@@ -269,29 +270,72 @@ class ConversationalAgent:
                 self._user_profile_content = raw.strip()
             except Exception:
                 pass  # best-effort; no profile is fine
-        if self._user_profile_content:
-            # Cap profile injection to avoid burning tokens on a large USER.md.
-            # 1 500 chars ≈ 375 tokens — enough for preferences & key facts.
-            _MAX_PROFILE_CHARS = 1500
-            _profile = self._user_profile_content
-            if len(_profile) > _MAX_PROFILE_CHARS:
-                _profile = _profile[:_MAX_PROFILE_CHARS].rstrip() + " …[profile truncated]"
-            parts.append(f"## About the user\n{_profile}")
+        if not self._user_profile_content:
+            return ""
+        profile = self._user_profile_content
+        if len(profile) > _USER_PROFILE_MAX_CHARS:
+            profile = profile[:_USER_PROFILE_MAX_CHARS].rstrip() + " …[profile truncated]"
+        return profile
+
+    def _get_plan_context_block(self) -> str:
+        """Load plan context once per session and return a formatted prompt block.
+
+        Caches the snapshot in ``self.context['plan_context']`` so the first caller
+        (``run_agentic`` or ``_get_ai_response``) pays the I/O cost; subsequent
+        calls return the formatted block from the cached snapshot.
+        """
+        if not self._plan_context_loaded:
+            try:
+                from navig.plans.context import PlanContext
+                from navig.spaces.resolver import get_default_space
+
+                space_name = get_default_space()
+                pc = PlanContext()
+                snapshot = pc.gather(space_name)
+                if snapshot:
+                    self.context["plan_context"] = snapshot
+                    non_null = sum(
+                        1 for key in _PLAN_CONTEXT_KEYS if snapshot.get(key) is not None
+                    )
+                    logger.info(
+                        "plan_context_loaded space=%s non_null_keys=%d",
+                        space_name,
+                        non_null,
+                    )
+                self._plan_context_loaded = True
+                return pc.format_for_prompt(snapshot) if snapshot else ""
+            except Exception as exc:
+                logger.debug("plan context injection skipped: %s", exc)
+                self._plan_context_loaded = True
+        # Already loaded — format from cached snapshot when present.
+        snapshot: dict[str, Any] = self.context.get("plan_context") or {}
+        if not snapshot:
+            return ""
+        try:
+            from navig.plans.context import PlanContext
+
+            return PlanContext().format_for_prompt(snapshot)
+        except Exception:
+            return ""
+
+    def _build_awareness_context(self) -> str:
+        now = datetime.now().astimezone()
+        parts = [f"System time: {now.strftime('%H:%M %Z')}, {now.strftime('%A %d %B %Y')}."]
+        if uname := self._user_identity.get("username", ""):
+            parts.append(f"You are talking to {uname} (your operator). Address them naturally.")
+        elif uid := self._user_identity.get("user_id", ""):
+            parts.append(f"User ID: {uid}.")
+        if profile := self._load_user_profile():
+            parts.append(f"## About the user\n{profile}")
         # When no recent history survived the session-boundary filter, tell the
-        # LLM explicitly to start fresh.  Without this notice the model may
-        # invent continuations of the previous session (e.g. sleep reminders).
-        # Reset the flag immediately after use so the note only fires once.
+        # LLM explicitly to start fresh so it does not invent continuations of the
+        # previous session (e.g. sleep reminders).  One-shot: cleared after first use.
         if getattr(self._history, "_session_is_fresh", True):
             try:
-                self._history._session_is_fresh = False  # one-shot: first turn only
+                self._history._session_is_fresh = False
             except AttributeError:
                 pass
-            parts.append(
-                "IMPORTANT: This is a fresh session — no recent conversation history "
-                "is loaded. Greet the user naturally and do NOT reference any previous "
-                "topics, reminders, or conversations unless the user explicitly "
-                "brings them up first."
-            )
+            parts.append("Fresh session — no prior conversation loaded.")
         return "\n".join(parts)
 
     def _normalize_supported_lang_code(self, code: str) -> str:
@@ -478,20 +522,8 @@ class ConversationalAgent:
         self._last_user_message = message
         system_prompt = self._build_system_prompt(message)
 
-        try:
-            from navig.plans.context import PlanContext
-            from navig.spaces.resolver import get_default_space
-
-            space_name = get_default_space()
-            plan_context = PlanContext()
-            snapshot = plan_context.gather(space_name)
-            plan_block = plan_context.format_for_prompt(snapshot)
-            if plan_block:
-                system_prompt += "\n\n" + plan_block
-            non_null = sum(1 for key, value in snapshot.items() if key != "errors" and value is not None)
-            logger.info("plan_context_loaded space=%s non_null_keys=%d", space_name, non_null)
-        except Exception as plan_exc:
-            logger.debug("plan context injection skipped (agentic): %s", plan_exc)
+        if plan_block := self._get_plan_context_block():
+            system_prompt += "\n\n" + plan_block
 
         toolset_names = _AGENT_REGISTRY.available_names(toolsets=toolsets)
         if toolset_names:
@@ -805,7 +837,7 @@ class ConversationalAgent:
         task = self._executor.current_task
         if task is not None:
             return f"Working on: {task.goal}\nStatus: {task.status.name}\nProgress: {task.current_step + 1}/{len(task.plan)}"
-        return "Ready and waiting for your next task! 🤖"
+        return "Idle — what's next?"
 
     async def _get_ai_response(self, message: str) -> str:
         if self._ai_client is None:
@@ -836,42 +868,13 @@ class ConversationalAgent:
             {"role": "system", "content": system_prompt},
             *self._history.get_messages(),
         ]
-        # ── Lazy plan context injection ──
-        if not self._plan_context_loaded:
-            try:
-                from navig.plans.context import PlanContext
-                from navig.spaces.resolver import get_default_space
-
-                active_space = get_default_space()
-                space_name = active_space
-                pc = PlanContext()
-                snapshot = pc.gather(space_name)
-                if snapshot:
-                    self.context["plan_context"] = snapshot
-                    non_null = sum(
-                        1
-                        for key in (
-                            "current_phase",
-                            "dev_plan",
-                            "wiki",
-                            "docs",
-                            "inbox_unread",
-                            "mcp_resources",
-                        )
-                        if snapshot.get(key) is not None
-                    )
-                    logger.info(
-                        "plan_context_loaded space=%s non_null_keys=%d",
-                        space_name,
-                        non_null,
-                    )
-                self._plan_context_loaded = True
-            except Exception as exc:
-                logger.debug("plan context injection skipped: %s", exc)
-                self._plan_context_loaded = True
-
-        if self.context:
-            msgs[0]["content"] += f"\nContext: {json.dumps(self.context)}"
+        # ── Lazy plan context injection (deduped through _get_plan_context_block) ──
+        if plan_block := self._get_plan_context_block():
+            msgs[0]["content"] += "\n\n" + plan_block
+        # Inject any remaining context entries (other than plan_context, handled above).
+        other_ctx = {k: v for k, v in self.context.items() if k != "plan_context"}
+        if other_ctx:
+            msgs[0]["content"] += f"\nContext: {json.dumps(other_ctx)}"
         tier = self._tier_override
         await self._emit_event(
             StatusEvent(

@@ -64,12 +64,20 @@ _RICH_IDENTITY = (
 
 _FALLBACK_IDENTITY = (
     "You are NAVIG — the Living Octopus\u2011Mind: a sharp, persistent companion who "
-    "helps across infrastructure, life goals, and strategic planning. "
-    "Talk naturally, like a trusted friend texting. "
-    "Be concise and direct. Skip corporate filler. Have opinions. "
+    "helps across infrastructure, life goals, and strategic planning.\n"
+    "Talk naturally, like a trusted friend texting. Be concise and direct. Skip corporate filler. Have opinions.\n"
     "You help with servers, code, deployments, but EQUALLY with goals, habits, health, "
     "creative work, finance, relationships, and personal growth. "
-    "You see no boundary between tech and life — both matter."
+    "You see no boundary between tech and life — both matter.\n\n"
+    "You are fully capable:\n"
+    "- Execute commands on remote servers (SSH, shell, system ops) — you do this yourself.\n"
+    "- Read and edit files on local and remote systems.\n"
+    "- Search the web for live info, docs, prices.\n"
+    "- Control desktop applications — open apps, click, type, manage windows.\n"
+    "- Manage databases — query, dump, restore, optimize.\n"
+    "- Run Docker — containers, compose stacks, logs, exec.\n"
+    "- Automate multi-step workflows and CI/CD.\n"
+    "Never claim you can't do something you can. Never invent URLs — search instead."
 )
 
 _CHAT_RULES = (
@@ -83,7 +91,7 @@ _CHAT_RULES = (
     "- Don't start every reply with 'I' — vary it up.\n"
     "- You ARE capable: you execute commands, edit files, search the web, control devices.\n"
     "- When you hit a real limit, reframe forward: one sentence, the next move. No apology.\n"
-    "- For short greetings (like 'hi', 'hello'), respond warmly and conversationally in your true persona, and do NOT abruptly drag in unrelated past chores or reminders.\n"
+    "- When someone just says hi or hello, meet them there — no unsolicited status reports, reminders, or chore lists.\n"
 )
 
 # ── Module-level I/O + condensation (bodies preserved per spec) ──────────────
@@ -227,10 +235,21 @@ class SoulLoader:
         return self._loaded
 
     def build_system_prompt(self, soul: str, lang_instruction: str, awareness: str) -> str:
-        """Assemble system prompt in canonical order: lang → awareness → identity → rules."""
+        """Assemble system prompt with labelled sections so the LLM can parse boundaries cleanly.
+
+        Section order: language instruction → ## Session Context → ## Who You Are → ## How to Talk
+        """
         identity = soul if soul else _FALLBACK_IDENTITY
-        parts = [p for p in (lang_instruction, awareness, identity, _CHAT_RULES) if p]
-        return "\n\n".join(parts)
+        sections: list[str] = []
+        if lang_instruction:
+            sections.append(lang_instruction)
+        if awareness:
+            sections.append(f"## Session Context\n{awareness}")
+        if identity:
+            sections.append(f"## Who You Are\n{identity}")
+        if _CHAT_RULES:
+            sections.append(f"## How to Talk\n{_CHAT_RULES}")
+        return "\n\n".join(sections)
 
     def _load_sync(self) -> str:
         """Synchronous load shim; preserved for agent.py call sites."""
