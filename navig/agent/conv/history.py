@@ -46,6 +46,9 @@ class ConversationHistory:
         self._max_tokens = max_tokens
         self._summarizer = summarizer
         self._messages: list[dict[str, str]] = []
+        # True when no history was loaded within the session boundary — signals
+        # the LLM to start fresh and not continue any prior conversation topic.
+        self._session_is_fresh: bool = True
         self._jsonl_path = config_dir() / "history" / f"{safe_id}.jsonl"
         if self._jsonl_path.exists():
             self.load_recent()
@@ -105,6 +108,9 @@ class ConversationHistory:
             except (json.JSONDecodeError, KeyError):
                 continue
         self._messages = loaded
+        # Mark the session as fresh when no messages survived the cutoff filter.
+        # This flag is read by ConversationalAgent to inject a system-prompt notice.
+        self._session_is_fresh = len(self._messages) == 0
 
     # ── Private helpers ─────────────────────────────────────────────────────
 

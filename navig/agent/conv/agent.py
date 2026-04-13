@@ -283,6 +283,21 @@ class ConversationalAgent:
             if len(_profile) > _MAX_PROFILE_CHARS:
                 _profile = _profile[:_MAX_PROFILE_CHARS].rstrip() + " …[profile truncated]"
             parts.append(f"## About the user\n{_profile}")
+        # When no recent history survived the session-boundary filter, tell the
+        # LLM explicitly to start fresh.  Without this notice the model may
+        # invent continuations of the previous session (e.g. sleep reminders).
+        # Reset the flag immediately after use so the note only fires once.
+        if getattr(self._history, "_session_is_fresh", True):
+            try:
+                self._history._session_is_fresh = False  # one-shot: first turn only
+            except AttributeError:
+                pass
+            parts.append(
+                "IMPORTANT: This is a fresh session — no recent conversation history "
+                "is loaded. Greet the user naturally and do NOT reference any previous "
+                "topics, reminders, or conversations unless the user explicitly "
+                "brings them up first."
+            )
         return "\n".join(parts)
 
     def _normalize_supported_lang_code(self, code: str) -> str:

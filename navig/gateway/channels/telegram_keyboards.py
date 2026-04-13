@@ -1207,7 +1207,7 @@ class CallbackHandler:
                     await self._answer(cb_id, "📊 Full table")
                     await self.channel.send_message(
                         chat_id,
-                        f"<pre>{table}</pre>",
+                        f"<pre>{html.escape(table)}</pre>",
                         parse_mode="HTML",
                     )
                 else:
@@ -2076,7 +2076,7 @@ class CallbackHandler:
             pass
 
         lines = [
-            f"<b>{emoji} {name}</b> — assign to tier",
+            f"<b>{emoji} {html.escape(name)}</b> — assign to tier",
             "",
             "<i>Tap a tier to assign this provider (session override).</i>",
         ]
