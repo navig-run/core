@@ -664,7 +664,9 @@ class TelegramChannel:
         if callback_query:
             cb_user = callback_query.get("from", {})
             cb_user_id = cb_user.get("id")
-            cb_chat = (callback_query.get("message") or {}).get("chat", {})
+            cb_message = callback_query.get("message") or {}
+            cb_chat = cb_message.get("chat", {})
+            cb_message_id = cb_message.get("message_id")
             cb_is_group = cb_chat.get("type") in ("group", "supergroup")
             cb_chat_id_cq = cb_chat.get("id", 0)
             if not self._is_user_authorized(cb_user_id, cb_chat_id_cq, cb_is_group):
@@ -707,7 +709,12 @@ class TelegramChannel:
                     try:
                         import inspect as _insp
                         _sig = _insp.signature(handler_fn)
-                        _kw = {"chat_id": cb_chat_id_cq, "user_id": cb_user_id, "metadata": {}}
+                        _kw = {
+                            "chat_id": cb_chat_id_cq,
+                            "user_id": cb_user_id,
+                            "message_id": cb_message_id,
+                            "metadata": {},
+                        }
                         _kw = {k: v for k, v in _kw.items() if k in _sig.parameters}
                         await handler_fn(**_kw)
                     except Exception as exc:
@@ -4519,7 +4526,7 @@ class TelegramChannel:
                                 role = e.get("role") or e.get("type", "")
                                 content = str(e.get("content") or e.get("text") or "")[:60]
                                 if role in ("user", "human") and content.startswith("/"):
-                                    recent.append(f"  • <code>{content}</code>")
+                                    recent.append(f"  • <code>{html.escape(content)}</code>")
                             except Exception:  # noqa: BLE001
                                 pass  # best-effort; failure is non-critical
                 except Exception:  # noqa: BLE001
