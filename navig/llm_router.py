@@ -65,6 +65,14 @@ logger = logging.getLogger("navig.llm_router")
 
 CANONICAL_MODES = {"small_talk", "big_tasks", "coding", "summarize", "research"}
 
+# ─────────────────────────────────────────────────────────────
+# Router defaults — single source of truth for tunable literals
+# ─────────────────────────────────────────────────────────────
+_DEFAULT_TEMPERATURE: float = 0.7       # Base temperature for new mode configs and resolved routes
+_DEFAULT_MAX_TOKENS: int = 4_096        # Base max-tokens fallback for new mode configs and resolved routes
+_OLLAMA_CACHE_TTL: float = 300.0        # Seconds before Ollama model cache expires
+_OLLAMA_PROBE_TIMEOUT: float = 3.0      # HTTP timeout (seconds) for Ollama availability probe
+
 MODE_ALIASES: dict[str, str] = {
     # small_talk
     "small": "small_talk",
@@ -182,8 +190,8 @@ if PYDANTIC_OK:
         model: str = ""
         fallback_model: str = ""
         fallback_provider: str = ""  # if empty, same as provider
-        temperature: float = Field(default=0.7, ge=0.0, le=2.0)
-        max_tokens: int = Field(default=4096, ge=1, le=131072)
+        temperature: float = Field(default=_DEFAULT_TEMPERATURE, ge=0.0, le=2.0)
+        max_tokens: int = Field(default=_DEFAULT_MAX_TOKENS, ge=1, le=131072)
         use_uncensored: bool = False
 
         model_config = ConfigDict(extra="allow")
@@ -352,8 +360,8 @@ class ResolvedLLMConfig:
         provider: str,
         model: str,
         base_url: str = "",
-        temperature: float = 0.7,
-        max_tokens: int = 4096,
+        temperature: float = _DEFAULT_TEMPERATURE,
+        max_tokens: int = _DEFAULT_MAX_TOKENS,
         is_uncensored: bool = False,
         resolution_reason: str = "",
         mode: str = "big_tasks",
@@ -409,13 +417,13 @@ def _check_ollama_models(base_url: str = "http://127.0.0.1:11434") -> dict[str, 
     import time
 
     now = time.time()
-    if _ollama_model_cache is not None and (now - _ollama_cache_ts) < 300:
+    if _ollama_model_cache is not None and (now - _ollama_cache_ts) < _OLLAMA_CACHE_TTL:
         return _ollama_model_cache
 
     try:
         import httpx
 
-        resp = httpx.get(f"{base_url}/api/tags", timeout=3.0)
+        resp = httpx.get(f"{base_url}/api/tags", timeout=_OLLAMA_PROBE_TIMEOUT)
         if resp.status_code == 200:
             data = resp.json()
             models = {}

@@ -7,11 +7,14 @@ across 9+ modules in this package.
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import tempfile
 import time
 from pathlib import Path
+
+_logger = logging.getLogger("navig.memory")
 
 
 def _atomic_write_text(path: Path, content: str) -> None:
@@ -41,14 +44,10 @@ def _atomic_write_text(path: Path, content: str) -> None:
 def _debug_log(message: str) -> None:
     """Best-effort debug logging for memory operations.
 
-    Creates a :class:`~navig.debug_logger.DebugLogger` lazily and logs
-    under the ``"memory"`` category.  Never raises — logging failures
-    must not interrupt memory operations.
+    Uses the standard ``navig.memory`` logger at DEBUG level.  Never
+    raises — logging failures must not interrupt memory operations.
     """
     try:
-        from navig.debug_logger import DebugLogger
-
-        logger = DebugLogger()
-        logger.log_operation("memory", {"message": message})
+        _logger.debug(message)
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
