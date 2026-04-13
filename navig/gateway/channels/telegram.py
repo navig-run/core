@@ -878,6 +878,8 @@ class TelegramChannel:
             metadata["session_key"] = session.session_key
             metadata["context_messages"] = session.get_context_messages(limit=10)
             try:
+                import time as _time
+                _lang_max_age = 12 * 3600  # 12 h — match ConversationHistory boundary
                 persisted_lang = session_manager.get_session_metadata(
                     chat_id,
                     user_id,
@@ -885,8 +887,21 @@ class TelegramChannel:
                     default="",
                     is_group=is_group,
                 )
-                if persisted_lang:
+                persisted_lang_ts = session_manager.get_session_metadata(
+                    chat_id,
+                    user_id,
+                    "last_detected_language_ts",
+                    default=0.0,
+                    is_group=is_group,
+                )
+                _lang_age = _time.time() - float(persisted_lang_ts or 0)
+                if persisted_lang and _lang_age < _lang_max_age:
                     metadata["last_detected_language"] = str(persisted_lang).strip().lower()
+                elif persisted_lang and _lang_age >= _lang_max_age:
+                    logger.debug(
+                        "Ignoring stale language hint '%s' (%.1f h old)",
+                        persisted_lang, _lang_age / 3600,
+                    )
             except Exception as e:
                 logger.debug("Could not load persisted language metadata: %s", e)
         if auto_active_in_chat:
@@ -898,11 +913,20 @@ class TelegramChannel:
             metadata["detected_language"] = normalized_voice_lang
             if session:
                 try:
+                    import time as _time_v
                     session_manager.set_session_metadata(
                         chat_id,
                         user_id,
                         "last_detected_language",
                         normalized_voice_lang,
+                        is_group=is_group,
+                        username=username,
+                    )
+                    session_manager.set_session_metadata(
+                        chat_id,
+                        user_id,
+                        "last_detected_language_ts",
+                        _time_v.time(),
                         is_group=is_group,
                         username=username,
                     )
@@ -1427,13 +1451,23 @@ class TelegramChannel:
         if not updated or session_manager is None:
             return
         try:
+            import time as _time_u
+            _uname = username or str(metadata.get("username", ""))
             session_manager.set_session_metadata(
                 chat_id,
                 user_id,
                 "last_detected_language",
                 updated,
                 is_group=is_group,
-                username=username or str(metadata.get("username", "")),
+                username=_uname,
+            )
+            session_manager.set_session_metadata(
+                chat_id,
+                user_id,
+                "last_detected_language_ts",
+                _time_u.time(),
+                is_group=is_group,
+                username=_uname,
             )
         except Exception as exc:  # noqa: BLE001
             logger.debug("Could not persist updated language metadata: %s", exc)

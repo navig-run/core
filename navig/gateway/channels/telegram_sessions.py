@@ -84,9 +84,18 @@ class TelegramSession:
             # Keep only last 50 message IDs
             self.reply_chain = self.reply_chain[-50:]
 
+    # Messages older than this are excluded from context injection.
+    # Mirrors ConversationHistory.SESSION_MAX_AGE_SECONDS (12 h).
+    _CONTEXT_MAX_AGE_HOURS: float = 12.0
+
     def get_context_messages(self, limit: int = 20) -> list[dict[str, str]]:
-        """Get recent messages for AI context."""
-        recent = self.messages[-limit:]
+        """Get recent messages for AI context, excluding any older than 12 h."""
+        cutoff = datetime.now() - timedelta(hours=self._CONTEXT_MAX_AGE_HOURS)
+        fresh = [
+            m for m in self.messages
+            if datetime.fromisoformat(m.timestamp) >= cutoff
+        ]
+        recent = fresh[-limit:]
         return [{"role": m.role, "content": m.content} for m in recent]
 
     def is_in_reply_chain(self, message_id: int) -> bool:

@@ -73,15 +73,24 @@ class ConversationHistory:
         """Return total estimated tokens across all messages currently in memory."""
         return sum(_estimate_tokens(m["content"]) for m in self._messages)
 
+    # ── Session-boundary constant ───────────────────────────────────────────
+    #: Messages older than this are not loaded into a fresh in-memory session.
+    #: 12 h covers overnight gaps without breaking long same-day sessions.
+    SESSION_MAX_AGE_SECONDS: float = 12 * 3600  # 12 hours
+
     def load_recent(self, n: int = 10) -> None:
         """
-        Read the last *n* complete lines from the JSONL file into memory.
-        Does not trigger truncation and does not re-append to the file.
+        Read the last *n* complete lines from the JSONL file into memory,
+        skipping any message whose ``ts`` timestamp is older than
+        ``SESSION_MAX_AGE_SECONDS``.  This prevents yesterday's language /
+        topic context from bleeding into a fresh session after an overnight
+        gap.
         """
         try:
             lines = self._jsonl_path.read_text(encoding="utf-8").splitlines()
         except OSError:
             return
+        cutoff = time.time() - self.SESSION_MAX_AGE_SECONDS
         loaded: list[dict[str, str]] = []
         for line in lines[-n:]:
             line = line.strip()
@@ -89,6 +98,9 @@ class ConversationHistory:
                 continue
             try:
                 obj = json.loads(line)
+                # Drop messages that pre-date the session boundary
+                if obj.get("ts", 0) < cutoff:
+                    continue
                 loaded.append({"role": obj["role"], "content": obj["content"]})
             except (json.JSONDecodeError, KeyError):
                 continue
