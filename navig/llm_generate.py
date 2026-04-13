@@ -30,6 +30,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("navig.llm_generate")
 
+# ─────────────────────────────────────────────────────────────
+# Module constants — single source of truth for llm_generate defaults
+# ─────────────────────────────────────────────────────────────
+_LLM_DEFAULT_TEMPERATURE: float = 0.7   # Fallback generation temperature
+_LLM_DEFAULT_MAX_TOKENS: int = 4_096    # Fallback max output tokens
+_LLM_DEFAULT_TIMEOUT: float = 120.0     # Default HTTP timeout (seconds)
+
 
 def llm_generate(
     messages: list[dict[str, str]],
@@ -41,7 +48,7 @@ def llm_generate(
     model_override: str | None = None,
     provider_override: str | None = None,
     stream: bool = False,
-    timeout: float = 120.0,
+    timeout: float = _LLM_DEFAULT_TIMEOUT,
 ) -> str:
     """
     Unified LLM generation — routes through llm_router then dispatches.
@@ -74,8 +81,8 @@ def llm_generate(
             provider=provider,
             model=model,
             messages=messages,
-            temperature=temperature or 0.7,
-            max_tokens=max_tokens or 4096,
+            temperature=temperature or _LLM_DEFAULT_TEMPERATURE,
+            max_tokens=max_tokens or _LLM_DEFAULT_MAX_TOKENS,
             timeout=timeout,
         )
 
@@ -124,7 +131,7 @@ def run_llm(
     model_override: str | None = None,
     provider_override: str | None = None,
     stream: bool = False,
-    timeout: float = 120.0,
+    timeout: float = _LLM_DEFAULT_TIMEOUT,
     fallback_models: list[str] | None = None,
     caller_info: dict[str, Any] | None = None,
     session_id: str | None = None,
@@ -184,8 +191,8 @@ def run_llm(
         selection = ModelSelection(
             provider_name=provider,
             model_name=model,
-            temperature=temperature or 0.7,
-            max_tokens=max_tokens or 4096,
+            temperature=temperature or _LLM_DEFAULT_TEMPERATURE,
+            max_tokens=max_tokens or _LLM_DEFAULT_MAX_TOKENS,
             strategy_name="model_override",
         )
     else:

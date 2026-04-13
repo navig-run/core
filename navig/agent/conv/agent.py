@@ -288,8 +288,8 @@ class ConversationalAgent:
 
                 raw = WorkspaceManager().get_file_content("USER.md") or ""
                 self._user_profile_content = raw.strip()
-            except Exception:
-                pass  # best-effort; no profile is fine
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("_load_user_profile: USER.md unavailable (%s)", exc)
         if not self._user_profile_content:
             return ""
         profile = self._user_profile_content
@@ -315,7 +315,8 @@ class ConversationalAgent:
                 from navig.plans.context import PlanContext
 
                 return PlanContext().format_for_prompt(cached)
-            except Exception:
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("_get_plan_context_block: cached format failed (%s)", exc)
                 return ""
         # Load (or reload after TTL expiry).
         try:
@@ -498,7 +499,8 @@ class ConversationalAgent:
                 suggested,
                 toolsets,
             )
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("F-20 semantic routing failed, using explicit toolsets (%s)", exc)
             toolsets = explicit_toolsets
 
         raw_schemas = _AGENT_REGISTRY.get_openai_schemas(toolsets=toolsets)
@@ -897,8 +899,8 @@ class ConversationalAgent:
         try:
             if hasattr(self._ai_client, "is_available") and not self._ai_client.is_available():
                 ai_available = False
-        except Exception:
-            pass  # best-effort; failure is non-critical
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("is_available probe failed (%s)", exc)
 
         system_prompt = self._build_system_prompt(message)
         msgs = [
