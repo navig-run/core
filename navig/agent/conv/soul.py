@@ -164,6 +164,7 @@ class SoulLoader:
         self._lock: asyncio.Lock | None = None
         self._watcher_started: bool = False
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._stop_poll: threading.Event = threading.Event()  # signals daemon to exit cleanly
         # Per-instance lru_cache so .cache_clear() is reachable on self
         self._build_condensed: Any = functools.lru_cache(maxsize=2)(self._condense_impl)
 
@@ -293,13 +294,17 @@ class SoulLoader:
             await self.reload()
 
     def _poll_fallback(self) -> None:
-        """stdlib polling fallback (5-second interval) when watchfiles is unavailable."""
+        """stdlib polling fallback (5-second interval) when watchfiles is unavailable.
+
+        Uses ``threading.Event.wait(timeout=5.0)`` instead of ``time.sleep(5)``
+        so the daemon thread exits promptly when ``_stop_poll`` is set (e.g. on
+        process shutdown or in tests), instead of blocking for up to 5 seconds.
+        """
         try:
             last_mtime = os.stat(SOUL_MD_PATH).st_mtime
         except OSError:
             return
-        while True:
-            time.sleep(5)
+        while not self._stop_poll.wait(timeout=5.0):
             try:
                 mtime = os.stat(SOUL_MD_PATH).st_mtime
             except OSError:

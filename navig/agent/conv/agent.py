@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import json
 import logging
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime
@@ -27,13 +28,29 @@ from navig.agent.conv.status_event import StatusEvent
 
 logger = logging.getLogger(__name__)
 
-# ── Session tunable constants (single source of truth) ───────────────────────────
+# ── Session tunable constants (single source of truth) ───────────────────────────────────────────
 # USER.md chars injected into the system prompt per turn (≈ 375 tokens at 4 chars/token)
 _USER_PROFILE_MAX_CHARS: int = 1_500
 # Plan context snapshot keys that count as "non-null" for the log message
 _PLAN_CONTEXT_KEYS: tuple[str, ...] = (
     "current_phase", "dev_plan", "wiki", "docs", "inbox_unread", "mcp_resources",
 )
+# Plan context TTL — re-fetch after this many seconds so /plans updates propagate
+_PLAN_CTX_TTL: float = 300.0
+# run_agentic defaults — all numeric knobs in one place
+_MAX_ITERATIONS: int = 90            # default ReAct loop budget
+_MAX_PARALLEL_TOOLS: int = 8         # semaphore width for fan-out tool calls
+_COMPRESS_AFTER_TURN: int = 3        # turns before context compression starts
+_BUDGET_WARN_PCT: float = 0.70       # inject budget-warning message above this
+_BUDGET_HARD_PCT: float = 0.90       # disable tool_choice above this
+_DISPLAY_TOOLS_LIMIT: int = 20       # max tools listed in system prompt snippet
+_HISTORY_RETAIN_MESSAGES: int = 20   # run_agentic teardown message cap (unused after JSONL fix)
+_AGENTIC_CLIENT_TIMEOUT: float = 120.0  # asyncio-level LLM call timeout (seconds)
+_AGENTIC_DEFAULT_PROVIDER: str = "openrouter"
+_AGENTIC_DEFAULT_MODEL: str = "openai/gpt-4o"
+_AGENTIC_DEFAULT_TEMP: float = 0.7
+_AGENTIC_DEFAULT_MAXTOK: int = 4_096
+
 
 class ConversationalAgent:
     """
@@ -90,10 +107,13 @@ class ConversationalAgent:
         self._has_text_detected: bool = False
         self._focus_mode = self._last_user_message = self._tier_override = ""
         self._entrypoint, self.context = "channel", {}
-        self._plan_context_loaded = False
+        self._plan_context_loaded: bool = False
+        self._plan_ctx_loaded_at: float = 0.0  # epoch timestamp of last plan ctx fetch
         # User profile — lazy-loaded from USER.md on first turn (cached for session lifetime)
         self._user_profile_content: str = ""
         self._user_profile_loaded: bool = False
+        # Declared here for static-analysis visibility (set True in run_agentic on first call)
+        self._agentic_tools_registered: bool = False
 
     @property
     def ai_client(self):
@@ -156,9 +176,7 @@ class ConversationalAgent:
                     )
                     if is_compat:
                         _compat = cb
-                        if inspect.iscoroutinefunction(_compat) or inspect.iscoroutinefunction(
-                            getattr(_compat, "__call__", None)  # noqa: B004
-                        ):
+                        if ConversationalAgent._is_async_callable(_compat):
 
                             async def cb(event: StatusEvent, _cb: Callable = _compat) -> None:  # noqa: E731
                                 await _cb(event.message)
@@ -181,12 +199,7 @@ class ConversationalAgent:
         if cb is None:
             return
         try:
-            # Use inspect (not deprecated asyncio.iscoroutinefunction) and also
-            # detect callable class instances whose __call__ is async.
-            is_coro_fn = inspect.iscoroutinefunction(cb) or inspect.iscoroutinefunction(
-                getattr(cb, "__call__", None)  # noqa: B004
-            )
-            if is_coro_fn:
+            if self._is_async_callable(cb):
                 await cb(event)
             else:
                 result = cb(event)
@@ -209,6 +222,13 @@ class ConversationalAgent:
         if loader.cached_content is None:
             loader._sync_load()
         return loader.cached_content or ""
+
+    @staticmethod
+    def _is_async_callable(cb: object) -> bool:
+        """Return True if *cb* is an async function or a callable with an async ``__call__``."""
+        return inspect.iscoroutinefunction(cb) or inspect.iscoroutinefunction(
+            getattr(cb, "__call__", None)  # noqa: B004
+        )
 
     def set_user_identity(self, user_id: str = "", username: str = "") -> None:
         """Attach the operator's identity to this session.
@@ -278,45 +298,51 @@ class ConversationalAgent:
         return profile
 
     def _get_plan_context_block(self) -> str:
-        """Load plan context once per session and return a formatted prompt block.
+        """Load plan context and return a formatted prompt block.
 
-        Caches the snapshot in ``self.context['plan_context']`` so the first caller
-        (``run_agentic`` or ``_get_ai_response``) pays the I/O cost; subsequent
-        calls return the formatted block from the cached snapshot.
+        Caches the snapshot in ``self.context['plan_context']``.  Auto-refreshes
+        after ``_PLAN_CTX_TTL`` seconds so ``/plans update`` changes propagate
+        within the same long-running session without requiring a restart.
         """
-        if not self._plan_context_loaded:
+        now = time.time()
+        ttl_fresh = self._plan_context_loaded and (now - self._plan_ctx_loaded_at) < _PLAN_CTX_TTL
+        if ttl_fresh:
+            # Serve from cache — format the already-gathered snapshot.
+            cached: dict[str, Any] = self.context.get("plan_context") or {}
+            if not cached:
+                return ""
             try:
                 from navig.plans.context import PlanContext
-                from navig.spaces.resolver import get_default_space
 
-                space_name = get_default_space()
-                pc = PlanContext()
-                snapshot = pc.gather(space_name)
-                if snapshot:
-                    self.context["plan_context"] = snapshot
-                    non_null = sum(
-                        1 for key in _PLAN_CONTEXT_KEYS if snapshot.get(key) is not None
-                    )
-                    logger.info(
-                        "plan_context_loaded space=%s non_null_keys=%d",
-                        space_name,
-                        non_null,
-                    )
-                self._plan_context_loaded = True
-                return pc.format_for_prompt(snapshot) if snapshot else ""
-            except Exception as exc:
-                logger.debug("plan context injection skipped: %s", exc)
-                self._plan_context_loaded = True
-        # Already loaded — format from cached snapshot when present.
-        snapshot: dict[str, Any] = self.context.get("plan_context") or {}
-        if not snapshot:
-            return ""
+                return PlanContext().format_for_prompt(cached)
+            except Exception:
+                return ""
+        # Load (or reload after TTL expiry).
         try:
             from navig.plans.context import PlanContext
+            from navig.spaces.resolver import get_default_space
 
-            return PlanContext().format_for_prompt(snapshot)
-        except Exception:
-            return ""
+            space_name = get_default_space()
+            pc = PlanContext()
+            snapshot = pc.gather(space_name)
+            if snapshot:
+                self.context["plan_context"] = snapshot
+                non_null = sum(
+                    1 for key in _PLAN_CONTEXT_KEYS if snapshot.get(key) is not None
+                )
+                logger.info(
+                    "plan_context_loaded space=%s non_null_keys=%d",
+                    space_name,
+                    non_null,
+                )
+            self._plan_context_loaded = True
+            self._plan_ctx_loaded_at = now
+            return pc.format_for_prompt(snapshot) if snapshot else ""
+        except Exception as exc:
+            logger.debug("plan context injection skipped: %s", exc)
+            self._plan_context_loaded = True
+            self._plan_ctx_loaded_at = now
+        return ""
 
     def _build_awareness_context(self) -> str:
         now = datetime.now().astimezone()
@@ -331,10 +357,7 @@ class ConversationalAgent:
         # LLM explicitly to start fresh so it does not invent continuations of the
         # previous session (e.g. sleep reminders).  One-shot: cleared after first use.
         if getattr(self._history, "_session_is_fresh", True):
-            try:
-                self._history._session_is_fresh = False
-            except AttributeError:
-                pass
+            self._history.mark_freshness_consumed()
             parts.append("Fresh session — no prior conversation loaded.")
         return "\n".join(parts)
 
@@ -371,6 +394,13 @@ class ConversationalAgent:
             awareness=self._build_awareness_context(),
         )
 
+    def _planner_fallback(self) -> str:
+        """Return a planner-generated response, or an actionable 'no provider' message."""
+        result = self._planner.plan(self._last_user_message)
+        if result:
+            return json.dumps(result)
+        return "No AI provider configured — run `navig config show` to check your setup."
+
     async def chat(self, message: str, tier_override: str = "") -> str:
         """Process one user turn end-to-end and return the agent's reply string.
 
@@ -396,9 +426,9 @@ class ConversationalAgent:
                 ContextSignal.build(message),
                 get_mood_profile(self._focus_mode),
             )
-        except Exception:
+        except Exception as exc:
             # Soul shaping is best-effort; the raw response is still valid output.
-            pass
+            logger.debug("soul shaping skipped: %s", exc)
         plan = self._plan_extractor.extract(response)
         if plan:
             result = await self._executor.execute_plan(plan)
@@ -410,7 +440,7 @@ class ConversationalAgent:
     async def run_agentic(
         self,
         message: str,
-        max_iterations: int = 90,
+        max_iterations: int = _MAX_ITERATIONS,
         toolset: str | list[str] = "core",
         cost_tracker=None,
         approval_policy=None,
@@ -427,7 +457,7 @@ class ConversationalAgent:
         from navig.providers.auth import AuthProfileManager
         from navig.providers.clients import ToolDefinition
 
-        if not getattr(self, "_agentic_tools_registered", False):
+        if not self._agentic_tools_registered:
             try:
                 register_all_tools()
                 self._agentic_tools_registered = True
@@ -483,10 +513,10 @@ class ConversationalAgent:
             for schema in raw_schemas
         ]
 
-        provider_name = "openrouter"
-        model_name = "openai/gpt-4o"
-        temperature = 0.7
-        max_tokens = 4096
+        provider_name = _AGENTIC_DEFAULT_PROVIDER
+        model_name = _AGENTIC_DEFAULT_MODEL
+        temperature = _AGENTIC_DEFAULT_TEMP
+        max_tokens = _AGENTIC_DEFAULT_MAXTOK
         base_url: str | None = None
         try:
             from navig.llm_router import resolve_llm
@@ -514,10 +544,10 @@ class ConversationalAgent:
                 )
             auth_mgr = AuthProfileManager()
             api_key, _ = auth_mgr.resolve_auth(provider_name)
-            client = create_client(provider_cfg, api_key=api_key, timeout=120.0)
+            client = create_client(provider_cfg, api_key=api_key, timeout=_AGENTIC_CLIENT_TIMEOUT)
         except Exception as exc:
             logger.error("run_agentic: could not create LLM client: %s", exc)
-            return "Sorry, I couldn't initialise the LLM client for agentic mode."
+            return f"Couldn't connect to the LLM provider ({provider_name}): {exc}"
 
         self._last_user_message = message
         system_prompt = self._build_system_prompt(message)
@@ -527,7 +557,7 @@ class ConversationalAgent:
 
         toolset_names = _AGENT_REGISTRY.available_names(toolsets=toolsets)
         if toolset_names:
-            displayed = ", ".join(f"`{name}`" for name in toolset_names[:20])
+            displayed = ", ".join(f"`{name}`" for name in toolset_names[:_DISPLAY_TOOLS_LIMIT])
             system_prompt += (
                 "\n\n## Agentic Mode\n"
                 f"You have access to the following tools: {displayed}.\n"
@@ -561,11 +591,62 @@ class ConversationalAgent:
         except Exception as exc:
             logger.debug("Exception suppressed: %s", exc)
 
+        # ── Hoist dispatch helpers — defined once per call, not once per turn ───────────────
+        sem = asyncio.Semaphore(_MAX_PARALLEL_TOOLS)
+
+        async def _dispatch_single(tool_call_item):
+            try:
+                args = (
+                    json.loads(tool_call_item.arguments)
+                    if isinstance(tool_call_item.arguments, str)
+                    else (tool_call_item.arguments or {})
+                )
+            except json.JSONDecodeError:
+                args = {}
+
+            try:
+                from navig.tools.approval import (
+                    ApprovalDecision,
+                    get_approval_gate,
+                    needs_approval,
+                )
+
+                if needs_approval(tool_call_item.name):
+                    gate = get_approval_gate()
+                    decision = await gate.check(
+                        tool_name=tool_call_item.name,
+                        safety_level="moderate",
+                        reason="agentic",
+                    )
+                    if decision == ApprovalDecision.DENIED:
+                        return (
+                            tool_call_item.id,
+                            f"[Denied: operator did not approve '{tool_call_item.name}']",
+                        )
+            except Exception as exc:
+                logger.debug("Exception suppressed: %s", exc)
+
+            try:
+                from navig.agent.speculative import get_speculative_executor
+
+                spec = get_speculative_executor()
+                if spec is not None:
+                    result_str = spec.execute(tool_call_item.name, args)
+                else:
+                    result_str = _AGENT_REGISTRY.dispatch(tool_call_item.name, args)
+            except Exception as exc:
+                result_str = f"[Tool error: {exc}]"
+            return (tool_call_item.id, result_str)
+
+        async def _sem_dispatch(tool_call_item):
+            async with sem:
+                return await _dispatch_single(tool_call_item)
+
         while not budget.is_exhausted():
             turn += 1
             budget.consume(1)
 
-            if compressor is not None and turn > 3:
+            if compressor is not None and turn > _COMPRESS_AFTER_TURN:
                 try:
                     msg_dicts = [
                         {
@@ -592,9 +673,9 @@ class ConversationalAgent:
 
             pct = budget.budget_used_pct()
             tool_choice: str | None = "auto"
-            if pct >= 0.90:
+            if pct >= _BUDGET_HARD_PCT:
                 tool_choice = "none"
-            elif pct >= 0.70:
+            elif pct >= _BUDGET_WARN_PCT:
                 working_messages.append(
                     Message(
                         role="system",
@@ -615,10 +696,22 @@ class ConversationalAgent:
             )
 
             try:
-                response = await client.complete(request)
+                response = await asyncio.wait_for(
+                    client.complete(request), timeout=_AGENTIC_CLIENT_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                logger.error(
+                    "run_agentic: LLM timed out on turn %d (%.0fs)",
+                    turn, _AGENTIC_CLIENT_TIMEOUT,
+                )
+                final_response = (
+                    f"LLM timed out after {_AGENTIC_CLIENT_TIMEOUT:.0f}s — "
+                    "provider may be unavailable."
+                )
+                break
             except Exception as exc:
                 logger.error("run_agentic: LLM call failed on turn %d: %s", turn, exc)
-                final_response = f"Error during agentic execution: {exc}"
+                final_response = f"Error during agentic execution (turn {turn}): {exc}"
                 break
 
             usage = response.usage or {}
@@ -671,50 +764,6 @@ class ConversationalAgent:
 
             pending_calls = response.tool_calls or []
 
-            async def _dispatch_single(tool_call_item):
-                try:
-                    args = (
-                        json.loads(tool_call_item.arguments)
-                        if isinstance(tool_call_item.arguments, str)
-                        else (tool_call_item.arguments or {})
-                    )
-                except json.JSONDecodeError:
-                    args = {}
-
-                try:
-                    from navig.tools.approval import (
-                        ApprovalDecision,
-                        get_approval_gate,
-                        needs_approval,
-                    )
-
-                    if needs_approval(tool_call_item.name):
-                        gate = get_approval_gate()
-                        decision = await gate.check(
-                            tool_name=tool_call_item.name,
-                            safety_level="moderate",
-                            reason="agentic",
-                        )
-                        if decision == ApprovalDecision.DENIED:
-                            return (
-                                tool_call_item.id,
-                                f"[Denied: operator did not approve '{tool_call_item.name}']",
-                            )
-                except Exception as exc:
-                    logger.debug("Exception suppressed: %s", exc)
-
-                try:
-                    from navig.agent.speculative import get_speculative_executor
-
-                    spec = get_speculative_executor()
-                    if spec is not None:
-                        result_str = spec.execute(tool_call_item.name, args)
-                    else:
-                        result_str = _AGENT_REGISTRY.dispatch(tool_call_item.name, args)
-                except Exception as exc:
-                    result_str = f"[Tool error: {exc}]"
-                return (tool_call_item.id, result_str)
-
             parallel_batch = []
             sequential_batch = []
             for tool_call in pending_calls:
@@ -726,17 +775,6 @@ class ConversationalAgent:
             collected_results: list[tuple[str, str]] = []
 
             if parallel_batch:
-                max_parallel = 8
-                sem = asyncio.Semaphore(max_parallel)
-
-                async def _sem_dispatch(tool_call_item, _sem=sem):
-                    async with _sem:
-                        return await _dispatch_single(tool_call_item)
-
-                par_results = await asyncio.gather(
-                    *[_sem_dispatch(tool_call_item) for tool_call_item in parallel_batch],
-                    return_exceptions=True,
-                )
                 for idx, result in enumerate(par_results):
                     if isinstance(result, BaseException):
                         collected_results.append((parallel_batch[idx].id, f"[Tool error: {result}]"))
@@ -757,11 +795,15 @@ class ConversationalAgent:
                 )
 
         if not final_response:
-            final_response = "Agent iteration budget exhausted without producing a final response."
+            final_response = (
+                f"Agent reached the {turn}-turn limit without a final answer. "
+                "Try a more specific request."
+            )
 
-        history_messages.append({"role": "user", "content": message})
-        history_messages.append({"role": "assistant", "content": final_response})
-        self.conversation_history = self._truncate_history(history_messages, max_messages=20)
+        # Persist both turns through the canonical add() path so JSONL is always updated.
+        # Previously the setter path was used which bypassed JSONL persistence entirely.
+        self._history.add("user", message)
+        self._history.add("assistant", final_response)
 
         try:
             from navig.agent.speculative import get_speculative_executor, reset_speculative_executor
@@ -841,8 +883,7 @@ class ConversationalAgent:
 
     async def _get_ai_response(self, message: str) -> str:
         if self._ai_client is None:
-            result = self._planner.plan(message)
-            return json.dumps(result) if result else "I'm ready to help."
+            return self._planner_fallback()
 
         # Track whether the *legacy* ai_client has a detected provider.
         # When False we skip chat_stream / chat_routed / chat (which rely on
@@ -858,10 +899,6 @@ class ConversationalAgent:
                 ai_available = False
         except Exception:
             pass  # best-effort; failure is non-critical
-
-        def _deterministic_fallback() -> str:
-            result = self._planner.plan(message)
-            return json.dumps(result) if result else "I'm ready to help."
 
         system_prompt = self._build_system_prompt(message)
         msgs = [
@@ -970,7 +1007,7 @@ class ConversationalAgent:
             except Exception as exc:
                 msg = str(exc).lower()
                 if "no ai provider available" in msg or "no provider available" in msg:
-                    return _deterministic_fallback()
+                    return self._planner_fallback()
                 raise
         if ai_available:
             try:
@@ -978,6 +1015,6 @@ class ConversationalAgent:
             except Exception as exc:
                 msg = str(exc).lower()
                 if "no ai provider available" in msg or "no provider available" in msg:
-                    return _deterministic_fallback()
+                    return self._planner_fallback()
                 raise
-        return _deterministic_fallback()
+        return self._planner_fallback()
