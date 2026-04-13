@@ -8,6 +8,9 @@ applyTo: '**'
 - Reuse existing structure; no ad-hoc folders/files.
 - Check `CHANGELOG.md` before related changes.
 - Keep repo root clean.
+- **Search before adding.** Before writing a new function, constant, or config key, grep/search the codebase for an existing equivalent. Extend rather than clone.
+- **No hardcoded configurable values.** Timeouts, limits, flags, and tunables belong in `config/defaults.yaml` or a single module-level constant — not scattered as inline literals. One source of truth per value.
+- **No overlapping registries or helpers.** Each concept (command map, tool registry, classifier map, formatter) has one authoritative location. Do not create a parallel version elsewhere.
 
 ## Local Folder Policy
 - `.dev/` is the default AI working folder for scripts, logs, outputs, and scratch artifacts.

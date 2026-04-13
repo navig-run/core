@@ -17,6 +17,20 @@
 ### No Duplicated Logic
 - Before adding a utility, check if it already exists. Do not duplicate helpers, formatters, or converters.
 - Reuse existing patterns: `ch.warning()`, `ch.error()`, `ch.dim()` from `navig.console_helper` for all user output.
+- **Deduplication checklist (run before every new addition):**
+  1. `grep` / semantic-search `navig/` and `tests/` for the same name or behaviour.
+  2. Check known utility homes: string formatting → `navig/console_helper.py`, paths → `navig/platform/paths.py`, SSH → `navig/ssh_keys.py`.
+  3. Extend or parameterise an 80 %-fit rather than writing a parallel copy.
+  4. One authoritative dict/list per concept (`_SLASH_REGISTRY`, `_EXTERNAL_CMD_MAP`, classifier maps). Never shadow with a second dict elsewhere.
+  5. After adding, re-read the file — if your addition made an existing helper redundant, remove the redundant one.
+
+### Single Source of Truth
+- **No hardcoded literals for configurable values.** Timeouts, thresholds, poll intervals, limits, model names, feature flags, and default paths must live in exactly one place:
+  - Runtime tunables → `config/defaults.yaml` or `navig/config.py` (via `get_config_manager()`).
+  - Module constants → a single `_CONSTANT = ...` at the top of the owning module.
+  - CLI defaults → `typer.Option(default=...)` referencing the constant, not a bare literal.
+- Flag any PR that introduces the same literal in two or more locations — extract it.
+- Flag any new config key that duplicates an existing one under a different name.
 
 ### Minimal & Focused Changes
 - PRs should be targeted. Avoid unrelated refactors bundled with feature changes.
