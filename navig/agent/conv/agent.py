@@ -253,14 +253,8 @@ class ConversationalAgent:
             self._focus_mode = "balance"
 
     def _build_awareness_context(self) -> str:
-        now = datetime.now()
-        h = now.hour
-        tod = (
-            "morning"
-            if 5 <= h < 12
-            else ("afternoon" if 12 <= h < 18 else "evening" if 18 <= h < 22 else "late night")
-        )
-        parts = [f"Current time: {now.strftime('%H:%M')} ({tod}), {now.strftime('%A %d %B %Y')}."]
+        now = datetime.now().astimezone()
+        parts = [f"System time: {now.strftime('%H:%M %Z')}, {now.strftime('%A %d %B %Y')}."]
         if uname := self._user_identity.get("username", ""):
             parts.append(f"You are talking to {uname} (your operator). Address them naturally.")
         elif uid := self._user_identity.get("user_id", ""):
