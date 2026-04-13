@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import html
 import logging
 import re
 import time
@@ -879,7 +880,7 @@ class CallbackHandler:
                 if code_blocks:
                     code_text = "\n\n".join(block.strip("`").strip() for block in code_blocks)
                     await self._answer(cb_id, "📋 Code extracted")
-                    await self.channel.send_message(chat_id, f"<pre>{code_text[:3900]}</pre>", parse_mode="HTML")
+                    await self.channel.send_message(chat_id, f"<pre>{html.escape(code_text[:3900])}</pre>", parse_mode="HTML")
                 else:
                     await self._answer(cb_id, "No code blocks found")
                 return
@@ -1369,13 +1370,14 @@ class CallbackHandler:
                 )
             except Exception:
                 pass
+            _safe_prov_name = html.escape(prov_name)
             if _has_api_key:
                 _warn_msg = (
-                    f"⚠️ No models found for {prov_name} — use /models to assign models manually."
+                    f"⚠️ No models found for {_safe_prov_name} — use /models to assign models manually."
                 )
             else:
                 _warn_msg = (
-                    f"🔑 <b>API key required for {prov_name}.</b>\n"
+                    f"🔑 <b>API key required for {_safe_prov_name}.</b>\n"
                     "Go back to the provider list and tap ⚙️ Configure to enter your key.\n"
                     "Once the key is saved, select the provider again to activate it."
                 )
@@ -2146,7 +2148,7 @@ class CallbackHandler:
                 manifest = get_provider(prov_id)
                 if manifest:
                     for m in manifest.models:
-                        if m[:40] == model_name or m == model_name:
+                        if m == model_name or m.startswith(model_name):
                             model_name = m
                             break
             except Exception:  # noqa: BLE001
