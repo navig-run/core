@@ -57,16 +57,19 @@ class ConversationHistory:
 
     def add(self, role: str, content: str) -> None:
         """Append a message, persist it to JSONL, then truncate if over budget."""
-        self._messages.append({"role": role, "content": content})
+        self._prune_stale()
+        now = time.time()
+        self._messages.append({"role": role, "content": content, "ts": now})
         self._jsonl_path.parent.mkdir(parents=True, exist_ok=True)
         with self._jsonl_path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"role": role, "content": content, "ts": time.time()}) + "\n")
+            fh.write(json.dumps({"role": role, "content": content, "ts": now}) + "\n")
         if self.token_count() > self._max_tokens:
             self._truncate()
 
     def get_messages(self) -> list[dict[str, str]]:
         """Return a shallow copy of the current in-memory message list."""
-        return list(self._messages)
+        self._prune_stale()
+        return [{"role": m["role"], "content": str(m["content"])} for m in self._messages]
 
     def clear(self) -> None:
         """Clear the in-memory message list (JSONL file is unchanged)."""
@@ -104,7 +107,7 @@ class ConversationHistory:
                 # Drop messages that pre-date the session boundary
                 if obj.get("ts", 0) < cutoff:
                     continue
-                loaded.append({"role": obj["role"], "content": obj["content"]})
+                loaded.append({"role": obj["role"], "content": obj["content"], "ts": obj.get("ts", time.time())})
             except (json.JSONDecodeError, KeyError):
                 continue
         self._messages = loaded
@@ -113,6 +116,28 @@ class ConversationHistory:
         self._session_is_fresh = len(self._messages) == 0
 
     # ── Private helpers ─────────────────────────────────────────────────────
+
+
+    def _prune_stale(self) -> None:
+        """
+        Drop any in-memory messages whose timestamp is older than
+        SESSION_MAX_AGE_SECONDS. This ensures that long-running processes
+        won't bleed yesterday's conversation state into a fresh turn today.
+        """
+        if not self._messages:
+            return
+            
+        cutoff = time.time() - self.SESSION_MAX_AGE_SECONDS
+        active_msgs = []
+        for m in self._messages:
+            if m.get("ts", time.time()) >= cutoff:
+                active_msgs.append(m)
+                
+        if not active_msgs and self._messages:
+            # We just cleared the entire in-memory state because it was stale.
+            self._session_is_fresh = True
+            
+        self._messages = active_msgs
 
     def _truncate(self) -> None:
         """
@@ -132,8 +157,9 @@ class ConversationHistory:
         recency = msgs[-4:]
         middle = msgs[2:-4]  # guaranteed non-empty given len(msgs) >= 7
         if self._summarizer is not None:
-            summary_text = self._summarizer(middle)
-            replacement = [{"role": "system", "content": f"[Summary: {summary_text}]"}]
+            middle_clean = [{"role": m["role"], "content": str(m["content"])} for m in middle]
+            summary_text = self._summarizer(middle_clean)
+            replacement = [{"role": "system", "content": f"[Summary: {summary_text}]", "ts": time.time()}]
         else:
             replacement = []
         self._messages = anchor + replacement + recency
