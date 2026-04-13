@@ -1,3 +1,4 @@
+import html
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -87,12 +88,12 @@ def render_compact(view: TaskView) -> str:
     active = view.active_step
     label = active.label if active else ("Done" if view.done else "…")
     icon = STATE_ICON[active.state] if active else "🟩"
-    return f"{icon} {view.percent}% — {label}"
+    return f"{icon} {view.percent}% — {html.escape(label)}"
 
 
 def render_big(view: TaskView) -> str:
     lines: list[str] = [
-        f"<b>{view.title}</b>",
+        f"<b>{html.escape(view.title)}</b>",
         f"{_progress_bar(view.percent)} {view.percent}%",
         "",
     ]
@@ -104,9 +105,9 @@ def render_big(view: TaskView) -> str:
     for step in visible:
         if step is None:
             continue
-        line = f"{STATE_ICON[step.state]} {step.label}"
+        line = f"{STATE_ICON[step.state]} {html.escape(step.label)}"
         if step.detail:
-            line += f"  <i>— {step.detail}</i>"
+            line += f"  <i>— {html.escape(step.detail)}</i>"
         lines.append(line)
     return "\n".join(lines)
 
