@@ -1,3 +1,4 @@
+import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -134,6 +135,8 @@ async def test_telegram_metadata_includes_last_detected_language(monkeypatch):
 
     session_manager = _DummySessionManager()
     session_manager.set_session_metadata(42, 42, "last_detected_language", "fr")
+    # Must also set the timestamp so the staleness guard (12h max-age) passes.
+    session_manager.set_session_metadata(42, 42, "last_detected_language_ts", time.time())
 
     monkeypatch.setattr("navig.gateway.channels.telegram.HAS_SESSIONS", True)
     monkeypatch.setattr(

@@ -503,3 +503,99 @@ async def test_prov_deactivate_answer_toast_contains_provider_name():
     assert any("deactivate" in t.lower() for t in answer_texts), (
         f"Expected toast with 'deactivated', got answer texts: {answer_texts}"
     )
+
+
+async def test_callback_answer_retries_when_first_ack_fails():
+    """If first answerCallbackQuery attempt fails, handler should retry in finally."""
+
+    class _RetryAckChannel(_FakeChannel):
+        def __init__(self):
+            super().__init__()
+            self._ack_attempts = 0
+
+        async def _api_call(self, method, data):
+            self.api_calls.append((method, data))
+            if method == "answerCallbackQuery":
+                self._ack_attempts += 1
+                if self._ack_attempts == 1:
+                    return None
+            return {"ok": True}
+
+    channel = _RetryAckChannel()
+    handler = CallbackHandler(channel)
+
+    await handler.handle(
+        {
+            "id": "cb-retry-ack",
+            "data": "helpme",
+            "from": {"id": 42},
+            "message": {"message_id": 90, "chat": {"id": 91}},
+        }
+    )
+
+    answer_calls = [p for m, p in channel.api_calls if m == "answerCallbackQuery"]
+    assert len(answer_calls) == 2, (
+        "Expected 2 answerCallbackQuery calls (initial + retry) when first attempt fails"
+    )
+
+
+async def test_task_callback_toggle_details_updates_task_view():
+    from navig.gateway.channels.task_card import make_task
+
+    class _TaskChannel(_FakeChannel):
+        def __init__(self):
+            super().__init__()
+            self.task_views = {}
+
+        async def _api_call(self, method, data):
+            self.api_calls.append((method, data))
+            return {"ok": True}
+
+    channel = _TaskChannel()
+    handler = CallbackHandler(channel)
+
+    view = make_task([("step1", "Running step")], title="Task")
+    view.message_id = 500
+    view.expanded = True
+    channel.task_views[500] = view
+
+    await handler.handle(
+        {
+            "id": "cb-task-toggle",
+            "data": "task:toggle_details",
+            "from": {"id": 333},
+            "message": {"message_id": 500, "chat": {"id": 700}},
+        }
+    )
+
+    assert view.expanded is False
+    edit_calls = [p for m, p in channel.api_calls if m == "editMessageText"]
+    assert edit_calls, "Expected task card edit after toggle_details"
+
+
+async def test_task_callback_expired_card_shows_expired_toast():
+    class _TaskChannel(_FakeChannel):
+        async def _api_call(self, method, data):
+            self.api_calls.append((method, data))
+            return {"ok": True}
+
+    channel = _TaskChannel()
+    handler = CallbackHandler(channel)
+
+    await handler.handle(
+        {
+            "id": "cb-task-expired",
+            "data": "task:refresh",
+            "from": {"id": 444},
+            "message": {"message_id": 9999, "chat": {"id": 800}},
+        }
+    )
+
+    answer_texts = [
+        p.get("text", "")
+        for m, p in channel.api_calls
+        if m == "answerCallbackQuery"
+    ]
+    assert any("expired" in t.lower() for t in answer_texts), (
+        f"Expected expired toast for missing task view, got: {answer_texts}"
+    )

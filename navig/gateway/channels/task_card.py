@@ -146,16 +146,19 @@ def make_task(steps: list[tuple[str, str]], title: str = "🤖 Working on it..."
 async def send_task_card(channel: Any, chat_id: int, view: TaskView) -> int | None:
     """Send initial status card via NAVIG Telegram channel"""
     await channel._api_call("sendChatAction", {"chat_id": chat_id, "action": "typing"})
-    res = await channel.send_message(
-        chat_id,
-        render(view),
-        parse_mode="HTML",
-        reply_markup=build_keyboard(view),
-        disable_web_page_preview=True,
+    res = await channel._api_call(
+        "sendMessage",
+        {
+            "chat_id": chat_id,
+            "text": render(view),
+            "parse_mode": "HTML",
+            "reply_markup": build_keyboard(view),
+            "disable_web_page_preview": True,
+        },
     )
-    if res and res.get("ok"):
+    if isinstance(res, dict):
         view.mark_edited()
-        view.message_id = res.get("result", {}).get("message_id")
+        view.message_id = res.get("message_id")
         return view.message_id
     return None
 

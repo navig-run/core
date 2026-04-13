@@ -938,9 +938,13 @@ class TelegramChannel:
                     is_group=is_group,
                 )
                 _lang_age = _time.time() - float(persisted_lang_ts or 0)
-                if persisted_lang and _lang_age < _lang_max_age:
+                # Only treat as stale when a real timestamp was stored.
+                # persisted_lang_ts == 0 / None means "no timestamp recorded yet"
+                # (not "set at Unix epoch"), so we allow it through.
+                _lang_is_stale = bool(persisted_lang_ts) and _lang_age >= _lang_max_age
+                if persisted_lang and not _lang_is_stale:
                     metadata["last_detected_language"] = str(persisted_lang).strip().lower()
-                elif persisted_lang and _lang_age >= _lang_max_age:
+                elif persisted_lang and _lang_is_stale:
                     logger.debug(
                         "Ignoring stale language hint '%s' (%.1f h old)",
                         persisted_lang, _lang_age / 3600,

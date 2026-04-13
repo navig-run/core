@@ -989,7 +989,67 @@ class CallbackHandler:
         if handler:
             await handler(cb_id, cb_data, chat_id, message_id, user_id)
             return
-        await self._answer(cb_id, "Task controls are not available in this build.")
+
+        task_views = getattr(self.channel, "task_views", None)
+        if not isinstance(task_views, dict) or not message_id:
+            await self._answer(cb_id, "⏳ Task card expired")
+            return
+
+        view = task_views.get(message_id)
+        if view is None:
+            await self._answer(cb_id, "⏳ Task card expired")
+            return
+
+        action = cb_data.split(":", 1)[1] if ":" in cb_data else ""
+
+        from navig.gateway.channels.task_card import StepState, update_task_card
+
+        if action == "toggle_details":
+            view.expanded = not bool(getattr(view, "expanded", True))
+            await update_task_card(self.channel, chat_id, view, force=True)
+            await self._answer(cb_id, "")
+            return
+
+        if action == "toggle_pause":
+            if bool(getattr(view, "done", False)):
+                await self._answer(cb_id, "✅ Task already completed")
+                return
+
+            view.running = not bool(getattr(view, "running", True))
+            active = getattr(view, "active_step", None)
+            if active is not None:
+                if view.running and getattr(active, "state", None) == StepState.PAUSED:
+                    active.state = StepState.ACTIVE
+                elif (not view.running) and getattr(active, "state", None) == StepState.ACTIVE:
+                    active.state = StepState.PAUSED
+
+            view.recompute_percent()
+            await update_task_card(self.channel, chat_id, view, force=True)
+            await self._answer(cb_id, "▶️ Resumed" if view.running else "⏸️ Paused")
+            return
+
+        if action == "stop":
+            if bool(getattr(view, "done", False)):
+                await self._answer(cb_id, "✅ Task already completed")
+                return
+
+            view.running = False
+            view.done = True
+            active = getattr(view, "active_step", None)
+            if active is not None and getattr(active, "state", None) == StepState.ACTIVE:
+                active.state = StepState.FAILED
+                active.detail = "Stopped by user"
+            view.recompute_percent()
+            await update_task_card(self.channel, chat_id, view, force=True)
+            await self._answer(cb_id, "🛑 Stopped")
+            return
+
+        if action == "refresh":
+            await update_task_card(self.channel, chat_id, view, force=True)
+            await self._answer(cb_id, "🔄 Refreshed")
+            return
+
+        await self._answer(cb_id, "⚠️ Unknown task action")
 
     async def _handle_navigation_callback(
         self,
@@ -1047,8 +1107,7 @@ class CallbackHandler:
             return
         if callback_id in self._answered_callback_ids:
             return
-        self._answered_callback_ids.add(callback_id)
-        await self.channel._api_call(
+        result = await self.channel._api_call(
             "answerCallbackQuery",
             {
                 "callback_query_id": callback_id,
@@ -1056,6 +1115,8 @@ class CallbackHandler:
                 "show_alert": show_alert,
             },
         )
+        if result is not None:
+            self._answered_callback_ids.add(callback_id)
 
     async def _handle_approval_action(
         self,

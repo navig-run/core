@@ -7582,7 +7582,7 @@ class TelegramCommandsMixin:
             logger.error("Failed to switch persona to %r: %s", name, e)
             await self.send_message(
                 chat_id,
-                f"❌ Could not switch to persona <b>{name}</b>: {e}",
+                f"❌ Could not switch to persona <b>{html.escape(name)}</b>: {html.escape(str(e))}",
                 parse_mode="HTML",
             )
 
@@ -7824,7 +7824,7 @@ class TelegramCommandsMixin:
         local_when = remind_at.astimezone().strftime("%Y-%m-%d %H:%M")
         await self.send_message(
             chat_id,
-            f"⏰ Reminder set.\nID: <code>{reminder_id}</code>\nWhen: <code>{local_when}</code>\nMessage: {message}",
+            f"⏰ Reminder set.\nID: <code>{reminder_id}</code>\nWhen: <code>{local_when}</code>\nMessage: {html.escape(message)}",
             parse_mode="HTML",
         )
 
@@ -7843,9 +7843,16 @@ class TelegramCommandsMixin:
         lines = ["⏰ <b>Your Active Reminders</b>", ""]
         for row in reminders:
             rid = row.get("id")
-            remind_at = str(row.get("remind_at") or "").replace("T", " ")[:16]
+            remind_at_raw = str(row.get("remind_at") or "")
+            # Convert UTC DB timestamp to server-local time so it matches what the user typed.
+            try:
+                from datetime import timezone as _tz
+                _due_dt = datetime.fromisoformat(remind_at_raw.rstrip("Z")).replace(tzinfo=_tz.utc)
+                remind_at = _due_dt.astimezone().strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                remind_at = remind_at_raw.replace("T", " ")[:16]
             msg = html.escape(str(row.get("message") or "").strip())
-            lines.append(f"<code>#{rid}</code> — <code>{remind_at} UTC</code>\n  {msg}")
+            lines.append(f"<code>#{rid}</code> — <code>{remind_at}</code>\n  {msg}")
         lines.append("\n<i>Use /cancelreminder &lt;id&gt; to remove one.</i>")
         keyboard = [
             [
@@ -7935,13 +7942,13 @@ class TelegramCommandsMixin:
                 parse_mode="HTML",
             )
             return
-        await self.send_message(chat_id, f"🎲 I choose: <b>{random.choice(choices)}</b>")
+        await self.send_message(chat_id, f"🎲 I choose: <b>{html.escape(random.choice(choices))}</b>", parse_mode="HTML")
 
     async def _handle_kick(self, chat_id: int, text: str) -> None:
         target = text[len("/kick") :].strip()
         await self.send_message(
             chat_id,
-            f"👢 Core restriction: Bot requires channel Admin rights to ban <code>{target}</code>.",
+            f"👢 Core restriction: Bot requires channel Admin rights to ban <code>{html.escape(target)}</code>.",
             parse_mode="HTML",
         )
 
@@ -7949,7 +7956,7 @@ class TelegramCommandsMixin:
         target = text[len("/mute") :].strip()
         await self.send_message(
             chat_id,
-            f"🔇 Core restriction: Bot requires channel Admin rights to restrict <code>{target}</code>.",
+            f"🔇 Core restriction: Bot requires channel Admin rights to restrict <code>{html.escape(target)}</code>.",
             parse_mode="HTML",
         )
 
@@ -7957,10 +7964,10 @@ class TelegramCommandsMixin:
         target = text[len("/unmute") :].strip()
         await self.send_message(
             chat_id,
-            f"🔊 Core restriction: Bot requires channel Admin rights to pardon <code>{target}</code>.",
+            f"🔊 Core restriction: Bot requires channel Admin rights to pardon <code>{html.escape(target)}</code>.",
             parse_mode="HTML",
         )
 
     async def _handle_search(self, chat_id: int, text: str) -> None:
         query = text[len("/search") :].strip()
-        await self.send_message(chat_id, f"🔍 User search proxy offline for query: <code>{query}</code>")
+        await self.send_message(chat_id, f"🔍 User search proxy offline for query: <code>{html.escape(query)}</code>", parse_mode="HTML")
