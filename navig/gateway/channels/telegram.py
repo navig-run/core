@@ -519,6 +519,7 @@ class TelegramChannel:
                     chat_id = reminder.get("chat_id")
                     msg = str(reminder.get("message") or "").strip()
                     retry_count = int(reminder.get("retry_count") or 0)
+                    remind_at_str = str(reminder.get("remind_at") or "")
 
                     if not chat_id or not msg:
                         # Malformed row — close it immediately
@@ -526,9 +527,41 @@ class TelegramChannel:
                             store.complete_reminder(reminder_id)
                         continue
 
+                    # Staleness check: silently discard reminders older than 24 h
+                    # (bot was offline; delivering ancient alerts would be confusing)
+                    _stale = False
+                    _overdue_hours = 0.0
+                    try:
+                        from datetime import datetime, timezone as _tz
+                        _due_dt = datetime.fromisoformat(
+                            remind_at_str.rstrip("Z")
+                        ).replace(tzinfo=_tz.utc)
+                        _overdue_hours = (
+                            datetime.now(_tz.utc) - _due_dt
+                        ).total_seconds() / 3600
+                        _stale = _overdue_hours > 24
+                    except Exception:
+                        pass
+
+                    if _stale:
+                        if reminder_id:
+                            store.fail_reminder(reminder_id)
+                        logger.info(
+                            "Reminder id=%s silently expired (%.1f h overdue)",
+                            reminder_id,
+                            _overdue_hours,
+                        )
+                        continue
+
+                    # Add a "missed" notice when first delivering an overdue reminder
+                    _header = "⏰ <b>Reminder</b>"
+                    if _overdue_hours > 1 and retry_count == 0:
+                        _due_label = remind_at_str.replace("T", " ")[:16]
+                        _header = f"⏰ <b>Missed reminder</b> <i>(was due {_due_label} UTC)</i>"
+
                     sent = await self.send_message(
                         int(chat_id),
-                        f"⏰ <b>Reminder</b>\n{msg}",
+                        f"{_header}\n{msg}",
                         parse_mode="HTML",
                     )
                     if sent:
@@ -662,11 +695,11 @@ class TelegramChannel:
                     pass
                 if handler_fn:
                     try:
-                        await handler_fn(
-                            chat_id=cb_chat_id_cq,
-                            user_id=cb_user_id,
-                            metadata={},
-                        )
+                        import inspect as _insp
+                        _sig = _insp.signature(handler_fn)
+                        _kw = {"chat_id": cb_chat_id_cq, "user_id": cb_user_id, "metadata": {}}
+                        _kw = {k: v for k, v in _kw.items() if k in _sig.parameters}
+                        await handler_fn(**_kw)
                     except Exception as exc:
                         logger.error("slash: callback handler %r error: %s", cmd_name, exc)
                 return

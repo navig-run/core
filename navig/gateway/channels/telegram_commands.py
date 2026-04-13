@@ -767,6 +767,13 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="utilities",
     ),
     SlashCommandEntry(
+        "reminders",
+        "List your active reminders",
+        handler="_handle_myreminders",
+        category="utilities",
+        visible=False,
+    ),
+    SlashCommandEntry(
         "cancelreminder",
         "Cancel a reminder",
         handler="_handle_cancelreminder",
@@ -7821,22 +7828,37 @@ class TelegramCommandsMixin:
             parse_mode="HTML",
         )
 
-    async def _handle_myreminders(self, chat_id: int, user_id: int) -> None:
+    async def _handle_myreminders(self, chat_id: int, user_id: int, metadata: MessageMetadata | None = None) -> None:
         from navig.store.runtime import get_runtime_store
 
         reminders = get_runtime_store().get_user_reminders(user_id)
         if not reminders:
-            await self.send_message(chat_id, "📭 You have no active reminders.")
+            await self.send_message(
+                chat_id,
+                "📭 You have no active reminders.",
+                parse_mode=None,
+            )
             return
 
         lines = ["⏰ <b>Your Active Reminders</b>", ""]
         for row in reminders:
             rid = row.get("id")
             remind_at = str(row.get("remind_at") or "").replace("T", " ")[:16]
-            msg = str(row.get("message") or "").strip()
-            lines.append(f"<code>#{rid}</code> at <code>{remind_at} UTC</code> — {msg}")
-        lines.append("\nUse <code>/cancelreminder &lt;id&gt;</code> to remove one.")
-        await self.send_message(chat_id, "\n".join(lines))
+            msg = html.escape(str(row.get("message") or "").strip())
+            lines.append(f"<code>#{rid}</code> — <code>{remind_at} UTC</code>\n  {msg}")
+        lines.append("\n<i>Use /cancelreminder &lt;id&gt; to remove one.</i>")
+        keyboard = [
+            [
+                {"text": "🔄 Refresh", "callback_data": "slash:reminders"},
+                {"text": "➕ Add reminder", "callback_data": "slash:remindme"},
+            ]
+        ]
+        await self.send_message(
+            chat_id,
+            "\n".join(lines),
+            parse_mode="HTML",
+            keyboard=keyboard,
+        )
 
     async def _handle_cancelreminder(self, chat_id: int, user_id: int, text: str) -> None:
         arg = text[len("/cancelreminder") :].strip()
