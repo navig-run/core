@@ -2157,12 +2157,12 @@ class TelegramCommandsMixin:
         from navig.spaces.contracts import CANONICAL_SPACES
 
         active = get_active_space()
-        lines = ["<b>Spaces</b>", f"Active: <code>{active}</code>", "", "Available:"]
+        lines = ["<b>Spaces</b>", f"Active: <code>{html.escape(active)}</code>", "", "Available:"]
         for name in CANONICAL_SPACES:
             marker = "•"
             if name == active:
                 marker = "▸"
-            lines.append(f"{marker} <code>{name}</code>")
+            lines.append(f"{marker} <code>{html.escape(name)}</code>")
         lines.append("\nUse <code>/space &lt;name&gt;</code> or choose below.")
         keyboard = [[{"text": "🧭 Start Intake", "callback_data": "nav:open:intake"}]]
         if message_id:
@@ -2340,7 +2340,7 @@ class TelegramCommandsMixin:
         self._runtime_state_with_context(user_id, chat_id, context)
 
         first_question = self._INTAKE_QUESTIONS[0][1]
-        text_payload = f"🧭 Intake started for <code>{selected_space}</code>.\n{first_question}"
+        text_payload = f"🧭 Intake started for <code>{html.escape(selected_space)}</code>.\n{first_question}"
         keyboard = [
             [
                 {"text": "🔙 Back", "callback_data": "nav:back"},
@@ -3750,7 +3750,7 @@ class TelegramCommandsMixin:
 
         if not models:
             lines = [
-                f"📝 <b>{tier_label} — {emoji} {name}</b>",
+                f"📝 <b>{html.escape(tier_label)} — {emoji} {html.escape(name)}</b>",
                 "",
                 (
                     "⚠️ Could not load models for this provider right now."
@@ -5154,7 +5154,9 @@ class TelegramCommandsMixin:
                 "fallback": "auto-detected fallback",
             }
             reason_text = reason_labels.get(cur_reason, cur_reason)
-            lines.append(f"Active: <code>{short_model}</code> ({cur_prov})")
+            lines.append(
+                f"Active: <code>{html.escape(short_model)}</code> ({html.escape(cur_prov)})"
+            )
             lines.append(f"Source: {reason_text}")
         else:
             lines.append("⚠️ No vision model available — connect a vision-capable provider.")
@@ -5175,7 +5177,7 @@ class TelegramCommandsMixin:
                     is_cur = current and current[0] == m.provider_id and current[1] == m.name
                     marker = " ✅" if is_cur else ""
                     lines.append(
-                        f"  • {m.capability_label} <code>{short}</code> ({prov_id}){marker}"
+                        f"  • {html.escape(m.capability_label)} <code>{html.escape(short)}</code> ({html.escape(prov_id)}){marker}"
                     )
         else:
             lines.append("No vision-capable models found from connected providers.")
@@ -5267,7 +5269,7 @@ class TelegramCommandsMixin:
         lines: list[str] = ["<b>📊 Routing State</b>", ""]
 
         # Active provider
-        prov_display = active_prov or "<i>none</i>"
+        prov_display = html.escape(active_prov) if active_prov else "<i>none</i>"
         lines.append(f"🎯 Active provider: <code>{prov_display}</code>")
         lines.append("")
 
@@ -5278,7 +5280,7 @@ class TelegramCommandsMixin:
                 prov_id, model = tier_assignments[tier]
                 short = model.split("/")[-1].split(":")[-1] if model else "—"
                 lines.append(
-                    f"  {tier_emoji[tier]} {tier_label[tier]}: <code>{short}</code> ({prov_id})"
+                    f"  {tier_emoji[tier]} {tier_label[tier]}: <code>{html.escape(short)}</code> ({html.escape(prov_id)})"
                 )
             else:
                 lines.append(f"  {tier_emoji[tier]} {tier_label[tier]}: —")
@@ -5288,7 +5290,7 @@ class TelegramCommandsMixin:
             lines.append("")
             lines.append("<b>Session overrides 🔶:</b>")
             for key, value in sorted(session_overrides.items()):
-                lines.append(f"  • {key}: <code>{value}</code>")
+                lines.append(f"  • {html.escape(str(key))}: <code>{html.escape(str(value))}</code>")
             lines.append("")
             lines.append("<i>Session overrides are temporary and lost on restart.</i>")
 
@@ -5302,13 +5304,13 @@ class TelegramCommandsMixin:
                     short = so_model.split("/")[-1].split(":")[-1]
                     lines.append(
                         f"  {tier_emoji[tier]} {tier_label[tier]}: "
-                        f"<code>{short}</code> ({so_prov}) 🔶"
+                        f"<code>{html.escape(short)}</code> ({html.escape(so_prov)}) 🔶"
                     )
                 elif tier in tier_assignments:
                     prov_id, model = tier_assignments[tier]
                     short = model.split("/")[-1].split(":")[-1] if model else "—"
                     lines.append(
-                        f"  {tier_emoji[tier]} {tier_label[tier]}: <code>{short}</code> ({prov_id})"
+                        f"  {tier_emoji[tier]} {tier_label[tier]}: <code>{html.escape(short)}</code> ({html.escape(prov_id)})"
                     )
                 else:
                     lines.append(f"  {tier_emoji[tier]} {tier_label[tier]}: —")
@@ -5321,7 +5323,9 @@ class TelegramCommandsMixin:
         if vision:
             v_prov, v_model, v_reason = vision
             short_v = v_model.split("/")[-1].split(":")[-1]
-            lines.append(f"👁 Vision: <code>{short_v}</code> ({v_prov}) — {v_reason}")
+            lines.append(
+                f"👁 Vision: <code>{html.escape(short_v)}</code> ({html.escape(v_prov)}) — {html.escape(v_reason)}"
+            )
         else:
             lines.append("👁 Vision: <i>not available</i>")
 
