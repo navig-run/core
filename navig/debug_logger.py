@@ -136,6 +136,10 @@ class DebugLogger:
     def _redact(self, text: str) -> str:
         return redact_sensitive_text(text) if text else text
 
+    def _redact_sensitive_data(self, text: str) -> str:
+        """Public alias for ``_redact`` — used in tests and external consumers."""
+        return self._redact(text)
+
     def _truncate(self, output: str) -> str:
         if not output:
             return output
