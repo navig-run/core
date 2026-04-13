@@ -276,7 +276,13 @@ class ConversationalAgent:
             except Exception:
                 pass  # best-effort; no profile is fine
         if self._user_profile_content:
-            parts.append(f"## About the user\n{self._user_profile_content}")
+            # Cap profile injection to avoid burning tokens on a large USER.md.
+            # 1 500 chars ≈ 375 tokens — enough for preferences & key facts.
+            _MAX_PROFILE_CHARS = 1500
+            _profile = self._user_profile_content
+            if len(_profile) > _MAX_PROFILE_CHARS:
+                _profile = _profile[:_MAX_PROFILE_CHARS].rstrip() + " …[profile truncated]"
+            parts.append(f"## About the user\n{_profile}")
         return "\n".join(parts)
 
     def _normalize_supported_lang_code(self, code: str) -> str:

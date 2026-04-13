@@ -556,8 +556,18 @@ class TelegramChannel:
                     # Add a "missed" notice when first delivering an overdue reminder
                     _header = "⏰ <b>Reminder</b>"
                     if _overdue_hours > 1 and retry_count == 0:
-                        _due_label = remind_at_str.replace("T", " ")[:16]
-                        _header = f"⏰ <b>Missed reminder</b> <i>(was due {_due_label} UTC)</i>"
+                        # Show the due time in server-local timezone so it matches
+                        # the time the user originally entered (e.g. "23:30" not UTC)
+                        try:
+                            from datetime import timezone as _tz2
+                            _due_dt2 = datetime.fromisoformat(
+                                remind_at_str.rstrip("Z")
+                            ).replace(tzinfo=_tz2.utc)
+                            _due_local = _due_dt2.astimezone()
+                            _due_label = _due_local.strftime("%Y-%m-%d %H:%M")
+                        except Exception:
+                            _due_label = remind_at_str.replace("T", " ")[:16]
+                        _header = f"⏰ <b>Missed reminder</b> <i>(was due {_due_label})</i>"
 
                     sent = await self.send_message(
                         int(chat_id),
@@ -1754,6 +1764,7 @@ class TelegramChannel:
             _contains_title_marker(text)
             or _has_mid_sentence_cap(text)
             or _has_script_mixing(text)
+            or _is_non_latin_dominant(text)  # catch pure Cyrillic/Arabic/CJK entity queries
         ):
             try:
                 from navig.tools import get_pipeline_registry as _get_pipeline_registry
