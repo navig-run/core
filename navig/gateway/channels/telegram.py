@@ -2913,7 +2913,7 @@ class TelegramChannel:
                 ]
             await self.send_message(
                 chat_id,
-                f"🎙️ <b>Heard:</b> <i>{transcript}</i>",
+                f"🎙️ <b>Heard:</b> <i>{html.escape(transcript)}</i>",
                 parse_mode="HTML",
                 keyboard=heard_kb,
             )
@@ -3834,16 +3834,16 @@ class TelegramChannel:
         import sys
 
         lines = ["🛠 <b>Debug</b>\n"]
-        lines.append(f"Python: <code>{sys.version.split()[0]}</code>")
+        lines.append(f"Python: <code>{html.escape(sys.version.split()[0])}</code>")
         try:
             import navig as _navig_pkg
 
             pkg_file = getattr(_navig_pkg, "__file__", "unknown")
             pkg_ver = getattr(_navig_pkg, "__version__", "unknown")
-            lines.append(f"navig pkg: <code>{pkg_file}</code>")
-            lines.append(f"version: <code>{pkg_ver}</code>")
+            lines.append(f"navig pkg: <code>{html.escape(str(pkg_file))}</code>")
+            lines.append(f"version: <code>{html.escape(str(pkg_ver))}</code>")
         except Exception as e:
-            lines.append(f"navig: ❌ <code>{e}</code>")
+            lines.append(f"navig: ❌ <code>{html.escape(str(e))}</code>")
         try:
             from navig.platform import paths as _paths
             from navig.vault import get_vault
@@ -3852,7 +3852,7 @@ class TelegramChannel:
             v = get_vault()
             items = v.list() if hasattr(v, "list") else []
             count = len(items)
-            lines.append(f"vault: 🟢 <code>{count} entries</code> ({_vpath})")
+            lines.append(f"vault: 🟢 <code>{count} entries</code> ({html.escape(_vpath)})")
         except Exception as e:
             try:
                 from navig.platform import paths as _paths
@@ -3860,7 +3860,9 @@ class TelegramChannel:
                 _vpath = str(_paths.vault_dir())
             except Exception:
                 _vpath = "?"
-            lines.append(f"vault: ❌ <code>{e}</code> — path: <code>{_vpath}</code>")
+            lines.append(
+                f"vault: ❌ <code>{html.escape(str(e))}</code> — path: <code>{html.escape(_vpath)}</code>"
+            )
         if HAS_SESSIONS:
             try:
                 sm = get_session_manager()
@@ -3872,7 +3874,7 @@ class TelegramChannel:
         lines.append(f"HAS_KEYBOARDS: <code>{HAS_KEYBOARDS}</code>")
         lines.append(f"HAS_SESSIONS: <code>{HAS_SESSIONS}</code>")
         pp = os.environ.get("PYTHONPATH", "(not set)")
-        lines.append(f"PYTHONPATH: <code>{pp}</code>")
+        lines.append(f"PYTHONPATH: <code>{html.escape(pp)}</code>")
         dg = os.environ.get("DEEPGRAM_KEY") or os.environ.get("DEEPGRAM_API_KEY")
         if not dg:
             # Also check vault for deepgram key
@@ -3950,7 +3952,9 @@ class TelegramChannel:
                         continue
                     provider = getattr(mc, "provider", "?")
                     model = getattr(mc, "model", "?")
-                    lines.append(f"  {icon} {label} → <code>{provider}:{model}</code>")
+                    lines.append(
+                        f"  {icon} {label} → <code>{html.escape(str(provider))}:{html.escape(str(model))}</code>"
+                    )
         except Exception:
             lines.append("  <i>(model router unavailable)</i>")
 
@@ -4076,7 +4080,7 @@ class TelegramChannel:
                 pass  # best-effort; failure is non-critical
 
         lines.append(
-            f"⚙️  <b>Session</b> — tier: <code>{tier_label}</code> · host: <code>{active_host}</code> · voice: <code>{voice_label}</code>"
+            f"⚙️  <b>Session</b> — tier: <code>{html.escape(str(tier_label))}</code> · host: <code>{html.escape(str(active_host))}</code> · voice: <code>{html.escape(str(voice_label))}</code>"
         )
         lines.append(f"🛡  Voice pipeline: {'🟢 active' if HAS_VOICE else '⚫ inactive'}")
         lines.append(SEP)
@@ -4112,7 +4116,7 @@ class TelegramChannel:
             lines.append("📋 <b>Daemon Warnings</b>")
             for issue in daemon_issues[-5:]:
                 display = issue if len(issue) <= 100 else issue[:97] + "…"
-                lines.append(f"  ⚠️  <code>{display}</code>")
+                lines.append(f"  ⚠️  <code>{html.escape(display)}</code>")
         else:
             lines.append("📋 <b>Daemon</b> — ✅ no warnings")
 
@@ -4673,12 +4677,14 @@ class TelegramChannel:
 
         lines: list[str] = ["🧩 <b>Available Skills</b>\n"]
         for cat, cat_skills in sorted(by_cat.items()):
-            lines.append(f"\n<b>{cat.title()}</b>")
+            lines.append(f"\n<b>{html.escape(cat.title())}</b>")
             for s in cat_skills:
                 safety_icon = {"safe": "🟢", "elevated": "🟡", "destructive": "🔴"}.get(
                     s.safety, "⚪"
                 )
-                lines.append(f"  {safety_icon} <code>{s.id}</code> — {s.name}")
+                lines.append(
+                    f"  {safety_icon} <code>{html.escape(str(s.id))}</code> — {html.escape(str(s.name))}"
+                )
 
         lines.append("\n\nUsage: <code>/skill &lt;id&gt;</code> for info · <code>/skill &lt;id&gt; &lt;command&gt;</code> to run")
 
