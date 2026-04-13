@@ -2209,11 +2209,11 @@ class TelegramCommandsMixin:
         _set_active_space(selected)
 
         kickoff = build_space_kickoff(selected, space_path, cwd=Path.cwd(), max_items=3)
-        lines = [f"✅ Active space: <code>{selected}</code>", f"Goal: {kickoff.goal}"]
+        lines = [f"✅ Active space: <code>{selected}</code>", f"Goal: {html.escape(kickoff.goal)}"]
         if kickoff.actions:
             lines.append("Top next actions:")
             for index, action in enumerate(kickoff.actions, start=1):
-                lines.append(f"{index}. {action}")
+                lines.append(f"{index}. {html.escape(action)}")
         else:
             lines.append("No next actions found yet.")
             lines.append("Run <code>/intake</code> to build Vision/Roadmap/Current Phase quickly.")
@@ -2228,7 +2228,7 @@ class TelegramCommandsMixin:
         context["continuation"] = continuation
         self._runtime_state_with_context(user_id, chat_id, context)
 
-        await self.send_message(chat_id, "\n".join(lines), parse_mode=None)
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
 
     def _append_markdown_section(self, path: Path, heading: str, lines: list[str]) -> None:
         existing = ""
@@ -3294,7 +3294,7 @@ class TelegramCommandsMixin:
             available = "  ".join(f"<code>{k}</code>" for k in MOOD_REGISTRY)
             await self.send_message(
                 chat_id,
-                f"Unknown mode: <code>{mode_arg}</code>\n\nAvailable: {available}",
+                f"Unknown mode: <code>{html.escape(mode_arg)}</code>\n\nAvailable: {available}",
                 parse_mode="HTML",
             )
             return
@@ -5182,15 +5182,31 @@ class TelegramCommandsMixin:
 
         # Build keyboard
         keyboard: list[list[dict[str, str]]] = []
+
+        def _safe_vis_callback_data(prov_id: str, model_name: str) -> str | None:
+            prefix = f"vis_{prov_id}:"
+            max_payload_bytes = 64 - len(prefix.encode("utf-8"))
+            if max_payload_bytes <= 0:
+                return None
+            token = model_name
+            while token and len(token.encode("utf-8")) > max_payload_bytes:
+                token = token[:-1]
+            if not token:
+                return None
+            return f"{prefix}{token}"
+
         for m in vision_models[:12]:  # max 12 buttons
             short = m.name.split("/")[-1].split(":")[-1]
             is_cur = current and current[0] == m.provider_id and current[1] == m.name
             check = " ✅" if is_cur else ""
+            callback_data = _safe_vis_callback_data(m.provider_id, m.name)
+            if not callback_data:
+                continue
             keyboard.append(
                 [
                     {
                         "text": f"👁 {short}{check}",
-                        "callback_data": f"vis_{m.provider_id}:{m.name[:40]}",
+                        "callback_data": callback_data,
                     }
                 ]
             )
@@ -6331,13 +6347,39 @@ class TelegramCommandsMixin:
         except Exception:
             return "localhost", {"is_local": True}, True
 
+    async def _send_monitor_card(
+        self,
+        chat_id: int,
+        text_payload: str,
+        keyboard: list[list[dict[str, str]]],
+        message_id: int | None = None,
+    ) -> None:
+        """Send monitoring card, editing in-place when message_id is provided."""
+        if message_id:
+            try:
+                if await self.edit_message(
+                    chat_id,
+                    message_id,
+                    text_payload,
+                    parse_mode="HTML",
+                    keyboard=keyboard,
+                ) is not None:
+                    return
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Monitor card in-place edit failed: %s", exc)
+        await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
+
     # -- Monitoring command handlers -------------------------------------------
 
     @rate_limited
     @error_handled
     @typing_context
     async def _handle_disk_cmd(
-        self, chat_id: int, user_id: int, metadata: MessageMetadata
+        self,
+        chat_id: int,
+        user_id: int,
+        metadata: MessageMetadata,
+        message_id: int | None = None,
     ) -> None:
         """Rich disk usage card (/disk /df)."""
         host_name, _server_config, is_local = self._mon_host_ctx()
@@ -6391,13 +6433,17 @@ class TelegramCommandsMixin:
                 {"text": "🔌 Ports", "callback_data": "slash:ports"},
             ],
         ]
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+        await self._send_monitor_card(chat_id, "\n".join(lines), keyboard, message_id=message_id)
 
     @rate_limited
     @error_handled
     @typing_context
     async def _handle_memory_cmd(
-        self, chat_id: int, user_id: int, metadata: MessageMetadata
+        self,
+        chat_id: int,
+        user_id: int,
+        metadata: MessageMetadata,
+        message_id: int | None = None,
     ) -> None:
         """Rich memory usage card (/memory)."""
         host_name, _server_config, is_local = self._mon_host_ctx()
@@ -6459,13 +6505,17 @@ class TelegramCommandsMixin:
                 {"text": "🕐 Uptime", "callback_data": "slash:uptime"},
             ],
         ]
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+        await self._send_monitor_card(chat_id, "\n".join(lines), keyboard, message_id=message_id)
 
     @rate_limited
     @error_handled
     @typing_context
     async def _handle_cpu_cmd(
-        self, chat_id: int, user_id: int, metadata: MessageMetadata
+        self,
+        chat_id: int,
+        user_id: int,
+        metadata: MessageMetadata,
+        message_id: int | None = None,
     ) -> None:
         """Rich CPU & load card (/cpu /top)."""
         import platform as _pf
@@ -6557,13 +6607,17 @@ class TelegramCommandsMixin:
                 {"text": "⚙️ Services", "callback_data": "slash:services"},
             ],
         ]
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+        await self._send_monitor_card(chat_id, "\n".join(lines), keyboard, message_id=message_id)
 
     @rate_limited
     @error_handled
     @typing_context
     async def _handle_uptime_cmd(
-        self, chat_id: int, user_id: int, metadata: MessageMetadata
+        self,
+        chat_id: int,
+        user_id: int,
+        metadata: MessageMetadata,
+        message_id: int | None = None,
     ) -> None:
         """Server uptime card (/uptime)."""
         host_name, _server_config, is_local = self._mon_host_ctx()
@@ -6628,13 +6682,17 @@ class TelegramCommandsMixin:
                 {"text": "💽 Disk", "callback_data": "slash:disk"},
             ],
         ]
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+        await self._send_monitor_card(chat_id, "\n".join(lines), keyboard, message_id=message_id)
 
     @rate_limited
     @error_handled
     @typing_context
     async def _handle_services_cmd(
-        self, chat_id: int, user_id: int, metadata: MessageMetadata
+        self,
+        chat_id: int,
+        user_id: int,
+        metadata: MessageMetadata,
+        message_id: int | None = None,
     ) -> None:
         """Running services card (/services)."""
         import platform as _pf
@@ -6707,13 +6765,17 @@ class TelegramCommandsMixin:
                 {"text": "💽 Disk", "callback_data": "slash:disk"},
             ],
         ]
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+        await self._send_monitor_card(chat_id, "\n".join(lines), keyboard, message_id=message_id)
 
     @rate_limited
     @error_handled
     @typing_context
     async def _handle_ports_cmd(
-        self, chat_id: int, user_id: int, metadata: MessageMetadata
+        self,
+        chat_id: int,
+        user_id: int,
+        metadata: MessageMetadata,
+        message_id: int | None = None,
     ) -> None:
         """Listening ports card (/ports)."""
         host_name, _server_config, is_local = self._mon_host_ctx()
@@ -6773,7 +6835,7 @@ class TelegramCommandsMixin:
                 {"text": "🧠 Memory", "callback_data": "slash:memory"},
             ],
         ]
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+        await self._send_monitor_card(chat_id, "\n".join(lines), keyboard, message_id=message_id)
 
     # -- Briefing / deck -------------------------------------------------------
 
