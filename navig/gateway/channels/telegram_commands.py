@@ -3013,7 +3013,7 @@ class TelegramCommandsMixin:
                 prov_name_disp = manifest.display_name if manifest else provider_id
                 await self.send_message(
                     chat_id,
-                    f"✅ API key for <b>{prov_name_disp}</b> saved. Use /provider to activate it.",
+                    f"✅ API key for <b>{html.escape(prov_name_disp)}</b> saved. Use /provider to activate it.",
                     parse_mode="HTML",
                 )
         except Exception as exc:  # noqa: BLE001
@@ -3666,7 +3666,7 @@ class TelegramCommandsMixin:
             logger.debug("Failed to read LLM mode router for tier summary", exc_info=True)
 
         lines = [
-            f"📝 <b>Models — {emoji} {name}</b>",
+            f"📝 <b>Models — {emoji} {html.escape(name)}</b>",
             "",
             f"⚡ Small: <code>{current['small']}</code>",
             f"🧠 Big: <code>{current['big']}</code>",
@@ -3800,7 +3800,7 @@ class TelegramCommandsMixin:
         page_models = models[start : start + PAGE_SIZE]
 
         lines = [
-            f"📝 <b>{tier_label} — {emoji} {name}</b>",
+            f"📝 <b>{tier_label} — {emoji} {html.escape(name)}</b>",
             "",
             f"Page {page + 1}/{total_pages} · {len(models)} models",
             "",
@@ -4250,7 +4250,7 @@ class TelegramCommandsMixin:
             return m.split("/")[-1].split(":")[-1] if m else "—"
 
         lines = [
-            f"✅ <b>{emoji} {name} activated!</b>",
+            f"✅ <b>{emoji} {html.escape(name)} activated!</b>",
             "",
             f"⚡ Small: <code>{_short(defaults.get('small', ''))}</code>",
             f"🧠 Big: <code>{_short(defaults.get('big', ''))}</code>",
@@ -4846,7 +4846,7 @@ class TelegramCommandsMixin:
         if total_pages > 1:
             _viewing_header += f" ({page + 1}/{total_pages})"
         lines = [
-            f"<b>{emoji} {name}</b> — assign model to tier",
+            f"<b>{emoji} {html.escape(name)}</b> — assign model to tier",
             "",
         ]
         if _key_missing:
@@ -5699,7 +5699,7 @@ class TelegramCommandsMixin:
                 pass  # best-effort; failure is non-critical
 
         lines.append(
-            f"<b>Session</b> - tier: <code>{tier_label}</code> - host: <code>{active_host}</code> - voice: <code>{voice_label}</code>"
+            f"<b>Session</b> - tier: <code>{tier_label}</code> - host: <code>{html.escape(active_host)}</code> - voice: <code>{voice_label}</code>"
         )
         lines.append(SEP)
 
