@@ -3557,7 +3557,7 @@ class TelegramCommandsMixin:
     ) -> None:
         """Show a compact provider picker when /models has no active provider."""
         lines = [
-            "📝 *Configure Models*",
+            "📝 <b>Configure Models</b>",
             "",
             "No provider is active yet.",
             "Choose a provider to start:",
@@ -6034,7 +6034,7 @@ class TelegramCommandsMixin:
                     return True
             return False
 
-        lines = ["\U0001f3a4 *Voice API Providers*", ""]
+        lines = ["\U0001f3a4 <b>Voice API Providers</b>", ""]
         lines.append("STT \u2014 Speech to Text  |  TTS \u2014 Text to Speech")
         lines.append("")
 
@@ -6991,12 +6991,12 @@ class TelegramCommandsMixin:
                 skill_name = index[skill_id].name
             elif not command:
                 available = "\n".join(
-                    f"  `{s.id}` - {s.name}"
+                    f"  <code>{s.id}</code> - {s.name}"
                     for s in sorted(index.values(), key=lambda x: x.id)[:20]
                 )
                 await self.send_message(
                     chat_id,
-                    f"- Skill `{skill_id}` not found.\n\nAvailable:\n{available}",
+                    f"❌ Skill <code>{skill_id}</code> not found.\n\nAvailable:\n{available}",
                 )
                 return
         except Exception:  # noqa: BLE001
@@ -7026,8 +7026,8 @@ class TelegramCommandsMixin:
                 else:
                     output_text = str(result.output or "")
 
-                header = f"- **{skill_name}**" + (f" - `{command}`" if command else "")
-                msg = f"{header}\n\n{output_text[:3800]}" if output_text else f"{header}\n- Done."
+                header = f"<b>{skill_name}</b>" + (f" › <code>{command}</code>" if command else "")
+                msg = f"{header}\n\n{output_text[:3800]}" if output_text else f"{header}\n✅ Done."
                 await self.send_message(chat_id, msg)
             else:
                 await self.send_message(chat_id, f"- Skill error:\n{result.error}", parse_mode=None)
@@ -7288,11 +7288,11 @@ class TelegramCommandsMixin:
     async def _handle_about(self, chat_id: int) -> None:
         """Learn about NAVIG."""
         msg = (
-            "🧭 *NAVIG*\n\n"
+            "🧭 <b>NAVIG</b>\n\n"
             "Operational intelligence layer for your infrastructure.\n\n"
             "Connects SSH hosts, databases, Docker containers, and AI models "
             "through a unified command surface — CLI, Telegram bot, and MCP server.\n\n"
-            "Use `/help` to explore all capabilities."
+            "Use <code>/help</code> to explore all capabilities."
         )
         await self.send_message(chat_id, msg)
 
@@ -7461,11 +7461,11 @@ class TelegramCommandsMixin:
             )
             await self.send_message(
                 chat_id,
-                f"▶️ Autonomous continuation *enabled* (profile `{profile}`)."
+                f"▶️ Autonomous continuation <b>enabled</b> (profile <code>{profile}</code>)."
                 + f"\nPolicy: cooldown={policy.cooldown_seconds}s, max_turns={policy.max_turns}, "
                 + f"suppression(wait={windows.get('wait', 0)}s, blocked={windows.get('blocked', 0)}s), "
                 + f"decision={sensitivity}"
-                + (f"\nSpace focus: `{preferred_space}`" if preferred_space else ""),
+                + (f"\nSpace focus: <code>{preferred_space}</code>" if preferred_space else ""),
             )
         except Exception as e:
             logger.error("Failed to enable continuation: %s", e)
@@ -7547,9 +7547,9 @@ class TelegramCommandsMixin:
             try:
                 from navig.personas.contracts import BUILTIN_PERSONAS
 
-                roles = "\n".join(f"• `{p}`" for p in BUILTIN_PERSONAS)
+                roles = "\n".join(f"• <code>{p}</code>" for p in BUILTIN_PERSONAS)
             except Exception:
-                roles = "• `default`\n• `assistant`\n• `tyler`\n• `storyteller`\n• `philosopher`\n• `teacher`"
+                roles = "• <code>default</code>\n• <code>assistant</code>\n• <code>tyler</code>\n• <code>storyteller</code>\n• <code>philosopher</code>\n• <code>teacher</code>"
             await self.send_message(
                 chat_id,
                 f"🎭 <b>Available AI Personas:</b>\n\n{roles}\n\nUse <code>/persona &lt;name&gt;</code> to switch.",
@@ -7843,7 +7843,7 @@ class TelegramCommandsMixin:
         if not arg:
             await self.send_message(
                 chat_id,
-                "Usage: `/cancelreminder <id>` or `/cancelreminder all`",
+                "Usage: <code>/cancelreminder &lt;id&gt;</code> or <code>/cancelreminder all</code>",
                 parse_mode="HTML",
             )
             return
@@ -7871,7 +7871,7 @@ class TelegramCommandsMixin:
         if not arg.isdigit():
             await self.send_message(
                 chat_id,
-                "Usage: `/cancelreminder <id>` or `/cancelreminder all`",
+                "Usage: <code>/cancelreminder &lt;id&gt;</code> or <code>/cancelreminder all</code>",
                 parse_mode="HTML",
             )
             return
@@ -7895,7 +7895,7 @@ class TelegramCommandsMixin:
         if not args:
             await self.send_message(
                 chat_id,
-                "Usage: `/choice pizza or burger`  — also accepts `,` or `|` as separators.",
+                "Usage: <code>/choice pizza or burger</code>  — also accepts <code>,</code> or <code>|</code> as separators.",
                 parse_mode="HTML",
             )
             return
@@ -7909,7 +7909,7 @@ class TelegramCommandsMixin:
         if len(choices) < 2:
             await self.send_message(
                 chat_id,
-                "Please give me at least two options. Example: `/choice tea or coffee`",
+                "Please give me at least two options. Example: <code>/choice tea or coffee</code>",
                 parse_mode="HTML",
             )
             return
@@ -7919,7 +7919,7 @@ class TelegramCommandsMixin:
         target = text[len("/kick") :].strip()
         await self.send_message(
             chat_id,
-            f"👢 Core restriction: Bot requires channel Admin rights to ban `{target}`.",
+            f"👢 Core restriction: Bot requires channel Admin rights to ban <code>{target}</code>.",
             parse_mode="HTML",
         )
 
@@ -7927,7 +7927,7 @@ class TelegramCommandsMixin:
         target = text[len("/mute") :].strip()
         await self.send_message(
             chat_id,
-            f"🔇 Core restriction: Bot requires channel Admin rights to restrict `{target}`.",
+            f"🔇 Core restriction: Bot requires channel Admin rights to restrict <code>{target}</code>.",
             parse_mode="HTML",
         )
 
@@ -7935,7 +7935,7 @@ class TelegramCommandsMixin:
         target = text[len("/unmute") :].strip()
         await self.send_message(
             chat_id,
-            f"🔊 Core restriction: Bot requires channel Admin rights to pardon `{target}`.",
+            f"🔊 Core restriction: Bot requires channel Admin rights to pardon <code>{target}</code>.",
             parse_mode="HTML",
         )
 

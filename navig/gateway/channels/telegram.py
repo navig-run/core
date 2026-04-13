@@ -1734,7 +1734,7 @@ class TelegramChannel:
 
         # Only append model footer in debug/trace mode — keep normal replies clean
         model_name = self._resolve_model_name(metadata) if self._is_debug_mode(user_id) else ""
-        footer = f"\n\n`· {model_name}`" if model_name else ""
+        footer = f"\n\n<code>· {model_name}</code>" if model_name else ""
         final_text = f"{response}{footer}"
         final_text = self._strip_internal_tags(final_text)
 
@@ -3744,7 +3744,7 @@ class TelegramChannel:
         import os
         import sys
 
-        lines = ["🛠 *Debug*\n"]
+        lines = ["🛠 <b>Debug</b>\n"]
         lines.append(f"Python: <code>{sys.version.split()[0]}</code>")
         try:
             import navig as _navig_pkg
@@ -3819,7 +3819,7 @@ class TelegramChannel:
 
         SEP = "━━━━━━━━━━━━━━━━━━━━━━"
         now_utc = _dt.now(_tz.utc).strftime("%H:%M UTC")
-        lines: list = [f"🔍 *Recent Trace* — {now_utc}", SEP]
+        lines: list = [f"🔍 <b>Recent Trace</b> — {now_utc}", SEP]
 
         # ── Active Backend ─────────────────────────────────────────────────────
         # Check Bridge (VS Code MCP) first
@@ -4242,9 +4242,9 @@ class TelegramChannel:
         """Set focus mode and persist to UserStateTracker."""
         valid_modes = ("work", "deep-focus", "planning", "creative", "relax", "sleep")
         if not mode_arg or mode_arg not in valid_modes:
-            modes_list = ", ".join(f"`{m}`" for m in valid_modes)
+            modes_list = ", ".join(f"<code>{m}</code>" for m in valid_modes)
             await self.send_message(
-                chat_id, f"🎯 Available modes: {modes_list}\n\nUsage: `/mode work`"
+                chat_id, f"🎯 Available modes: {modes_list}\n\nUsage: <code>/mode work</code>"
             )
             return
         # Persist mode in UserStateTracker
@@ -4330,7 +4330,7 @@ class TelegramChannel:
 
             now = _dt.now(_tz.utc)
             lines: list = [
-                f"📊 *System Briefing* — {now.strftime('%H:%M UTC, %d %b')}",
+                f"📊 <b>System Briefing</b> — {now.strftime('%H:%M UTC, %d %b')}",
                 "━" * 22,
             ]
 
@@ -4511,12 +4511,12 @@ class TelegramChannel:
             elif not command:
                 # Unknown skill — show help
                 available = "\n".join(
-                    f"  `{s.id}` — {s.name}"
+                    f"  <code>{s.id}</code> — {s.name}"
                     for s in sorted(index.values(), key=lambda x: x.id)[:20]
                 )
                 await self.send_message(
                     chat_id,
-                    f"❓ Skill `{skill_id}` not found.\n\nAvailable:\n{available}",
+                    f"❓ Skill <code>{skill_id}</code> not found.\n\nAvailable:\n{available}",
                 )
                 return
         except Exception:  # noqa: BLE001
@@ -4548,7 +4548,7 @@ class TelegramChannel:
                 else:
                     output_text = str(result.output or "")
 
-                header = f"🧩 **{skill_name}**" + (f" › `{command}`" if command else "")
+                header = f"🧩 <b>{skill_name}</b>" + (f" › <code>{command}</code>" if command else "")
                 msg = f"{header}\n\n{output_text[:3800]}" if output_text else f"{header}\n✅ Done."
                 await self.send_message(chat_id, msg)
             else:
@@ -4582,9 +4582,9 @@ class TelegramChannel:
         for skill in sorted(skills, key=lambda s: (s.category, s.id)):
             by_cat.setdefault(skill.category, []).append(skill)
 
-        lines: list[str] = ["🧩 **Available Skills**\n"]
+        lines: list[str] = ["🧩 <b>Available Skills</b>\n"]
         for cat, cat_skills in sorted(by_cat.items()):
-            lines.append(f"\n**{cat.title()}**")
+            lines.append(f"\n<b>{cat.title()}</b>")
             for s in cat_skills:
                 safety_icon = {"safe": "🟢", "elevated": "🟡", "destructive": "🔴"}.get(
                     s.safety, "⚪"
