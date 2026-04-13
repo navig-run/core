@@ -197,3 +197,46 @@ async def test_stfix_callback_routes_to_channel_handler(monkeypatch):
     )
 
     assert called == [("cb-stfix", "stfix:host-missing", 700, 42)]
+
+
+async def test_slash_callback_passes_message_id_for_inplace_refresh(monkeypatch):
+    channel = TelegramChannel(
+        bot_token="123:FAKE",
+        allowed_users=[42],
+        on_message=lambda *args, **kwargs: None,
+    )
+
+    async def _api_ok(method, payload):
+        return {"ok": True}
+
+    monkeypatch.setattr(channel, "_api_call", _api_ok)
+
+    captured: dict[str, int | None] = {"message_id": None, "chat_id": None, "user_id": None}
+
+    async def _disk(
+        self,
+        chat_id: int,
+        user_id: int,
+        metadata=None,
+        message_id: int | None = None,
+    ):
+        captured["chat_id"] = chat_id
+        captured["user_id"] = user_id
+        captured["message_id"] = message_id
+
+    from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+    monkeypatch.setattr(TelegramCommandsMixin, "_handle_disk_cmd", _disk)
+
+    await channel._process_update(
+        {
+            "callback_query": {
+                "id": "cb-slash-1",
+                "data": "slash:disk",
+                "from": {"id": 42},
+                "message": {"message_id": 777, "chat": {"id": 700, "type": "private"}},
+            }
+        }
+    )
+
+    assert captured == {"chat_id": 700, "user_id": 42, "message_id": 777}

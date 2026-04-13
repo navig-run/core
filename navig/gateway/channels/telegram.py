@@ -4728,6 +4728,9 @@ class TelegramChannel:
         keyboard: list[list[dict]] | None = None,
     ) -> dict | None:
         """Send a message to a chat."""
+        if parse_mode == "HTML":
+            text = self._auto_markdown_to_html(text)
+
         data = {
             "chat_id": chat_id,
             "text": text,
@@ -4746,6 +4749,37 @@ class TelegramChannel:
             retry_data = {k: v for k, v in data.items() if k != "parse_mode"}
             result = await self._api_call("sendMessage", retry_data)
         return result
+
+    @staticmethod
+    def _auto_markdown_to_html(text: str) -> str:
+        """Convert Markdown-like text to HTML when no HTML tags are present.
+
+        This prevents raw ``**bold**`` / ``_italic_`` markers from leaking to
+        Telegram when upstream content is generated in Markdown.
+        """
+        src = str(text or "")
+        if not src:
+            return src
+
+        # Keep explicit HTML payloads untouched.
+        if re.search(r"<\s*/?\s*[a-zA-Z][^>]*>", src):
+            return src
+
+        markdownish = re.search(
+            r"(\*\*|__|~~|`|^\s{0,3}#{1,6}\s|^\s*[-*+]\s|\[[^\]]+\]\([^)]+\)|(?<!\w)_[^_\n]+_(?!\w))",
+            src,
+            flags=re.MULTILINE,
+        )
+        if not markdownish:
+            return src
+
+        try:
+            from navig.gateway.channels.telegram_html import md_to_html
+
+            converted = md_to_html(src)
+            return converted or src
+        except Exception:
+            return src
 
     async def send_typing(self, chat_id: int):
         """Send typing indicator."""

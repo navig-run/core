@@ -133,3 +133,43 @@ async def test_send_response_normalizes_double_star_bold(monkeypatch):
         "_send_response must normalise **bold** before sending"
     )
     assert "Bold Header" in sent_texts[0]
+
+
+def test_auto_markdown_to_html_converts_markdown_without_html_tags():
+    from navig.gateway.channels.telegram import TelegramChannel
+
+    src = "**Monday Evening Summary**\n_Week 1 of 5 complete._"
+    out = TelegramChannel._auto_markdown_to_html(src)
+    assert "**" not in out
+    assert "<b>Monday Evening Summary</b>" in out
+    assert "<i>Week 1 of 5 complete.</i>" in out
+
+
+def test_auto_markdown_to_html_preserves_existing_html_payload():
+    from navig.gateway.channels.telegram import TelegramChannel
+
+    src = "📊 <b>Monday Evening Summary</b>\n<i>Week 1 of 5 complete.</i>"
+    out = TelegramChannel._auto_markdown_to_html(src)
+    assert out == src
+
+
+async def test_send_message_auto_converts_markdown_in_html_mode():
+    from navig.gateway.channels.telegram import TelegramChannel
+
+    ch = TelegramChannel(bot_token="123:FAKE")
+    captured: dict = {}
+
+    async def _api(method, data):
+        captured["method"] = method
+        captured["data"] = data
+        return {"message_id": 1}
+
+    ch._api_call = _api
+
+    await ch.send_message(100, "**Header**\n_italic_", parse_mode="HTML")
+
+    assert captured["method"] == "sendMessage"
+    payload = captured["data"]
+    assert payload.get("parse_mode") == "HTML"
+    assert "**Header**" not in payload["text"]
+    assert "<b>Header</b>" in payload["text"]

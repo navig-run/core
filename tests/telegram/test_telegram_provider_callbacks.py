@@ -599,3 +599,54 @@ async def test_task_callback_expired_card_shows_expired_toast():
     assert any("expired" in t.lower() for t in answer_texts), (
         f"Expected expired toast for missing task view, got: {answer_texts}"
     )
+
+
+async def test_provider_vision_callback_data_respects_64_byte_limit(monkeypatch):
+    from types import SimpleNamespace
+    from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+    class _VisionChannel(_FakeChannel):
+        def __init__(self):
+            super().__init__()
+            self.sent = []
+
+        async def send_message(self, chat_id, text, parse_mode=None, **kwargs):
+            self.sent.append((chat_id, text, parse_mode, kwargs))
+            return {"ok": True}
+
+        async def edit_message(self, *args, **kwargs):
+            return None
+
+    channel = _VisionChannel()
+
+    long_provider = "provider_with_really_long_identifier_name"
+    long_model = "model/with/a/very/long/name/that/exceeds/telegram/callback/data/limits/by-a-lot"
+
+    models = [
+        SimpleNamespace(
+            provider_id=long_provider,
+            name=long_model,
+            capability_label="vision",
+        )
+    ]
+
+    monkeypatch.setattr(
+        "navig.providers.discovery.list_available_models",
+        lambda capability=None, connected_only=True: models,
+    )
+    monkeypatch.setattr(
+        "navig.providers.discovery.resolve_vision_model",
+        lambda session_overrides=None: None,
+    )
+
+    await TelegramCommandsMixin._handle_provider_vision(channel, chat_id=101, user_id=202)
+
+    assert channel.sent, "Vision picker should send a message"
+    keyboard = channel.sent[0][3].get("keyboard")
+    assert keyboard, "Vision picker must include keyboard"
+
+    vis_buttons = [btn for row in keyboard for btn in row if btn.get("callback_data", "").startswith("vis_")]
+    assert vis_buttons, "Expected at least one vis_ callback button"
+
+    for btn in vis_buttons:
+        assert len(btn["callback_data"].encode("utf-8")) <= 64
