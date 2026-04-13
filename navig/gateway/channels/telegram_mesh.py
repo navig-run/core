@@ -22,6 +22,7 @@ but reply with a disabled notice.
 from __future__ import annotations
 
 import json
+import html
 import re
 from typing import TYPE_CHECKING
 
@@ -108,7 +109,7 @@ class TelegramMeshMixin:
 
             is_me = " *(this node)*" if my_role == "leader" else ""
             msg = (
-                f"<b>current leader:</b> <code>{leader}</code>{is_me}\n"
+                f"<b>current leader:</b> <code>{html.escape(leader)}</code>{is_me}\n"
                 f"<b>epoch:</b> {epoch}"
             )
             await self.send_message(chat_id, msg, parse_mode="HTML")

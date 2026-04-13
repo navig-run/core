@@ -30,6 +30,7 @@ Key design decisions:
 from __future__ import annotations
 
 import asyncio
+import html
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -648,12 +649,12 @@ class AutoHealMixin:
             "🔍 <b>Diagnostic Report</b>",
             "",
             f"<b>Class:</b> {_CLASS_BADGE[ctx.failure_class]}",
-            f"<b>Host:</b> <code>{ctx.host or 'unknown'}</code>",
+            f"<b>Host:</b> <code>{html.escape(ctx.host or 'unknown')}</code>",
             f"<b>Exit code:</b> <code>{ctx.exit_code}</code>",
-            f"<b>Command:</b> <code>{ctx.original_cmd[:120]}</code>",
+            f"<b>Command:</b> <code>{html.escape(ctx.original_cmd[:120])}</code>",
             "",
             "─── <b>Error output</b> ───",
-            f"<pre>{ctx.stderr[:600]}</pre>",
+            f"<pre>{html.escape(ctx.stderr[:600])}</pre>",
         ]
 
         # Optionally enrich with ErrorResolution analysis
@@ -664,7 +665,7 @@ class AutoHealMixin:
             if solutions:
                 lines += ["", "─── <b>Suggested solutions</b> ───"]
                 for sol in solutions[:3]:
-                    lines.append(f"• {getattr(sol, 'description', str(sol))}")
+                    lines.append(f"• {html.escape(getattr(sol, 'description', str(sol)))}")
         except Exception:
             pass  # Best-effort enrichment — never block the report
 
@@ -684,7 +685,7 @@ class AutoHealMixin:
                 healer = SSHHealer()
                 reachable = await healer._tcp_probe(ctx.host, 22)
                 ssh_status = "✅ reachable" if reachable else "❌ unreachable"
-                lines += ["", f"<b>SSH port 22 on <code>{ctx.host}</code>:</b> {ssh_status}"]
+                lines += ["", f"<b>SSH port 22 on <code>{html.escape(ctx.host)}</code>:</b> {ssh_status}"]
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 

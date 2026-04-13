@@ -26,6 +26,7 @@ Usage::
 from __future__ import annotations
 
 import json
+import html
 import logging
 import re
 import textwrap
@@ -192,7 +193,7 @@ def _card_header(idx: int, total: int, topic: str) -> str:
     topic_short = textwrap.shorten(topic, width=40, placeholder="…") if topic else ""
     header = f"<b>{'💭 ' if topic_short else ''}思 Card {idx + 1} of {total}</b>"
     if topic_short:
-        header = f"<b>💭 {topic_short}</b> — card {idx + 1}/{total}"
+        header = f"<b>💭 {html.escape(topic_short)}</b> — card {idx + 1}/{total}"
     return header
 
 
