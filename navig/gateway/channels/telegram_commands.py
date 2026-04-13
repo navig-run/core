@@ -6926,7 +6926,7 @@ class TelegramCommandsMixin:
                             role = e.get("role") or e.get("type", "")
                             content = str(e.get("content") or e.get("text") or "")[:60]
                             if role in ("user", "human") and content.startswith("/"):
-                                recent.append(f"  - <code>{content}</code>")
+                                recent.append(f"  - <code>{html.escape(content)}</code>")
                         except Exception:  # noqa: BLE001
                             pass  # best-effort; failure is non-critical
             except Exception:  # noqa: BLE001
@@ -7003,7 +7003,7 @@ class TelegramCommandsMixin:
                 )
                 await self.send_message(
                     chat_id,
-                    f"❌ Skill <code>{skill_id}</code> not found.\n\nAvailable:\n{available}",
+                    f"❌ Skill <code>{html.escape(skill_id)}</code> not found.\n\nAvailable:\n{available}",
                 )
                 return
         except Exception:  # noqa: BLE001
@@ -7033,8 +7033,9 @@ class TelegramCommandsMixin:
                 else:
                     output_text = str(result.output or "")
 
-                header = f"<b>{skill_name}</b>" + (f" › <code>{command}</code>" if command else "")
-                msg = f"{header}\n\n{output_text[:3800]}" if output_text else f"{header}\n✅ Done."
+                header = f"<b>{html.escape(skill_name)}</b>" + (f" › <code>{html.escape(command)}</code>" if command else "")
+                safe_output = html.escape(output_text[:3800])
+                msg = f"{header}\n\n<pre>{safe_output}</pre>" if output_text else f"{header}\n✅ Done."
                 await self.send_message(chat_id, msg)
             else:
                 await self.send_message(chat_id, f"- Skill error:\n{result.error}", parse_mode=None)
