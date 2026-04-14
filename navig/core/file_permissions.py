@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
+
+_logger = logging.getLogger(__name__)
 
 
 def set_owner_only_file_permissions(path: str | Path) -> None:
@@ -25,7 +28,11 @@ def set_owner_only_file_permissions(path: str | Path) -> None:
     try:
         import getpass
         import subprocess
+    except ImportError:
+        _logger.debug("Windows ACL setup skipped because required modules are unavailable")
+        return
 
+    try:
         username = getpass.getuser()
         subprocess.run(
             ["icacls", target, "/inheritance:r"],
@@ -45,5 +52,5 @@ def set_owner_only_file_permissions(path: str | Path) -> None:
             check=False,
             text=True,
         )
-    except Exception:
-        pass
+    except (OSError, PermissionError, subprocess.SubprocessError):
+        _logger.debug("Windows ACL setup failed for %s", target, exc_info=True)
