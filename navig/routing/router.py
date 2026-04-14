@@ -29,6 +29,7 @@ from navig.routing.capabilities import (
     MODE_MODEL_PREFERENCE,
     ModeProfile,
 )
+from navig._llm_defaults import _DEFAULT_MAX_TOKENS, _DEFAULT_TEMPERATURE
 from navig.routing.detect import detect_mode
 from navig.routing.trace import RouteTrace, log_trace
 
@@ -74,8 +75,8 @@ class RouteRequest:
         self,
         messages: list[dict[str, str]],
         text: str = "",
-        temperature: float = 0.7,
-        max_tokens: int = 4096,
+        temperature: float = _DEFAULT_TEMPERATURE,
+        max_tokens: int = _DEFAULT_MAX_TOKENS,
         tier_override: str = "",
         model_override: str = "",
         entrypoint: str = "",
@@ -114,8 +115,8 @@ class RouteDecision:
         provider: str = "",
         model: str = "",
         purpose: str = "",
-        max_tokens: int = 4096,
-        temperature: float = 0.7,
+        max_tokens: int = _DEFAULT_MAX_TOKENS,
+        temperature: float = _DEFAULT_TEMPERATURE,
         capabilities: ModeProfile | None = None,
     ):
         self.mode = mode

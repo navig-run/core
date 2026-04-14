@@ -20,6 +20,7 @@ from .clients import (
     create_client,
 )
 from .types import BUILTIN_PROVIDERS, ProviderConfig
+from navig._llm_defaults import _DEFAULT_MAX_TOKENS, _DEFAULT_TEMPERATURE
 
 T = TypeVar("T")
 
@@ -425,8 +426,8 @@ async def complete_with_fallback(
     messages: list[dict[str, str]],
     model: str = "gpt-4o-mini",
     fallback_models: list[str] | None = None,
-    temperature: float = 0.7,
-    max_tokens: int = 4096,
+    temperature: float = _DEFAULT_TEMPERATURE,
+    max_tokens: int = _DEFAULT_MAX_TOKENS,
     tools: list[dict] | None = None,
 ) -> FallbackResult:
     """

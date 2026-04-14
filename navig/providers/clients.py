@@ -23,6 +23,7 @@ except ImportError:
     HTTPX_AVAILABLE = False
 
 from .types import BUILTIN_PROVIDERS, ModelApi, ModelDefinition, ProviderConfig
+from navig._llm_defaults import _DEFAULT_MAX_TOKENS, _DEFAULT_TEMPERATURE
 
 
 @dataclass
@@ -70,8 +71,8 @@ class CompletionRequest:
 
     messages: list[Message]
     model: str
-    temperature: float = 0.7
-    max_tokens: int = 4096
+    temperature: float = _DEFAULT_TEMPERATURE
+    max_tokens: int = _DEFAULT_MAX_TOKENS
     tools: list[ToolDefinition] | None = None
     tool_choice: str | None = None  # "auto", "none", or specific tool name
     stream: bool = False

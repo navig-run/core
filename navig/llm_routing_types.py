@@ -21,6 +21,8 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
+from navig._llm_defaults import _DEFAULT_MAX_TOKENS, _DEFAULT_TEMPERATURE
+
 logger = logging.getLogger("navig.llm_routing_types")
 
 
@@ -33,8 +35,8 @@ class ModelSelection:
 
     provider_name: str
     model_name: str
-    temperature: float = 0.7
-    max_tokens: int = 4096
+    temperature: float = _DEFAULT_TEMPERATURE
+    max_tokens: int = _DEFAULT_MAX_TOKENS
     base_url: str = ""
     api_key_env: str = ""
     tier: str = ""
@@ -152,8 +154,8 @@ class LLMClientProtocol(Protocol):
         self,
         messages: list[dict[str, str]],
         model: str,
-        temperature: float = 0.7,
-        max_tokens: int = 4096,
+        temperature: float = _DEFAULT_TEMPERATURE,
+        max_tokens: int = _DEFAULT_MAX_TOKENS,
         **kwargs: Any,
     ) -> LLMResult:
         """Send messages to provider and return result."""
@@ -163,8 +165,8 @@ class LLMClientProtocol(Protocol):
         self,
         messages: list[dict[str, str]],
         model: str,
-        temperature: float = 0.7,
-        max_tokens: int = 4096,
+        temperature: float = _DEFAULT_TEMPERATURE,
+        max_tokens: int = _DEFAULT_MAX_TOKENS,
         **kwargs: Any,
     ) -> AsyncIterator[LLMChunk]:
         """Stream responses from the provider, yields LLMChunk objects."""
@@ -192,7 +194,7 @@ class LLMProviderAdapter:
     def __init__(self, provider):
         self._provider = provider
 
-    async def complete(self, messages, model, temperature=0.7, max_tokens=4096, **kwargs):
+    async def complete(self, messages, model, temperature=_DEFAULT_TEMPERATURE, max_tokens=_DEFAULT_MAX_TOKENS, **kwargs):
         resp = await self._provider.chat(
             model=model,
             messages=messages,
@@ -211,7 +213,7 @@ class LLMProviderAdapter:
             raw=resp.raw,
         )
 
-    async def stream(self, messages, model, temperature=0.7, max_tokens=4096, **kwargs):
+    async def stream(self, messages, model, temperature=_DEFAULT_TEMPERATURE, max_tokens=_DEFAULT_MAX_TOKENS, **kwargs):
         raise NotImplementedError(
             "Streaming is not available for this provider adapter yet. "
             "Use non-streaming completion or switch to a provider client with stream support."
@@ -230,7 +232,7 @@ class ProviderClientAdapter:
     def __init__(self, client):
         self._client = client
 
-    async def complete(self, messages, model, temperature=0.7, max_tokens=4096, **kwargs):
+    async def complete(self, messages, model, temperature=_DEFAULT_TEMPERATURE, max_tokens=_DEFAULT_MAX_TOKENS, **kwargs):
         from navig.providers.clients import CompletionRequest, Message
 
         msgs = [Message(role=m["role"], content=m["content"]) for m in messages]
@@ -250,7 +252,7 @@ class ProviderClientAdapter:
             finish_reason=resp.finish_reason or "",
         )
 
-    async def stream(self, messages, model, temperature=0.7, max_tokens=4096, **kwargs):
+    async def stream(self, messages, model, temperature=_DEFAULT_TEMPERATURE, max_tokens=_DEFAULT_MAX_TOKENS, **kwargs):
         raise NotImplementedError(
             "Streaming is not available for this provider client adapter yet. "
             "Use non-streaming completion or integrate a streaming-capable adapter."
