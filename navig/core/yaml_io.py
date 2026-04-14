@@ -23,6 +23,9 @@ from navig.platform.paths import config_dir
 
 logger = logging.getLogger(__name__)
 
+ATOMIC_REPLACE_RETRIES = 3
+ATOMIC_REPLACE_BACKOFF_BASE_SECONDS = 0.05
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Shadow Execution Logging
 # ─────────────────────────────────────────────────────────────────────────────
@@ -113,14 +116,14 @@ def atomic_write_yaml(data: Any, filepath: Path, allow_unicode: bool = False) ->
         # On Windows, antivirus scanners can briefly lock a newly-written
         # file, causing os.replace() to raise PermissionError (WinError 5).
         # Retry up to 3 times with a short back-off before giving up.
-        for attempt in range(3):
+        for attempt in range(ATOMIC_REPLACE_RETRIES):
             try:
                 os.replace(tmp_path, filepath)
                 break
             except PermissionError:
-                if attempt == 2 or sys.platform != "win32":
+                if attempt == (ATOMIC_REPLACE_RETRIES - 1) or sys.platform != "win32":
                     raise
-                time.sleep(0.05 * (attempt + 1))
+                time.sleep(ATOMIC_REPLACE_BACKOFF_BASE_SECONDS * (attempt + 1))
     except Exception:
         try:
             tmp_path.unlink(missing_ok=True)

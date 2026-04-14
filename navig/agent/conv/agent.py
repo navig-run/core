@@ -935,8 +935,8 @@ class ConversationalAgent:
             _config_default_provider = (
                 (_gcm().global_config or {}).get("ai") or {}
             ).get("default_provider", "")
-        except Exception:  # noqa: BLE001
-            pass
+        except (ImportError, AttributeError, RuntimeError, TypeError, ValueError) as exc:
+            logger.debug("default_provider probe failed: %s", exc)
 
         _legacy_provider = getattr(self._ai_client, "provider", "")
         _skip_stream = bool(

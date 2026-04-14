@@ -14,6 +14,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from navig.core.yaml_io import ATOMIC_REPLACE_BACKOFF_BASE_SECONDS, ATOMIC_REPLACE_RETRIES
+
 _logger = logging.getLogger("navig.memory")
 
 
@@ -25,14 +27,14 @@ def _atomic_write_text(path: Path, content: str) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(content)
-        for attempt in range(3):
+        for attempt in range(ATOMIC_REPLACE_RETRIES):
             try:
                 os.replace(tmp_path, path)
                 break
             except PermissionError:
-                if attempt == 2 or sys.platform != "win32":
+                if attempt == (ATOMIC_REPLACE_RETRIES - 1) or sys.platform != "win32":
                     raise
-                time.sleep(0.05 * (attempt + 1))
+                time.sleep(ATOMIC_REPLACE_BACKOFF_BASE_SECONDS * (attempt + 1))
     except Exception:
         try:
             tmp_path.unlink(missing_ok=True)

@@ -524,8 +524,13 @@ def _resolve_api_key(provider: str) -> str | None:
                     key = vault.get_api_key(var_lower)
                     if key:
                         return key
-                except Exception:  # noqa: BLE001
-                    pass
+                except (KeyError, AttributeError, TypeError, ValueError, RuntimeError) as exc:
+                    logger.debug(
+                        "Vault API key label lookup failed for %s via %s: %s",
+                        provider,
+                        var_lower,
+                        exc,
+                    )
                 try:
                     key = vault.get_secret(var_lower)
                     if key:
