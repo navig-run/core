@@ -871,9 +871,12 @@ class TelegramChannel:
         except Exception as e:
             logger.debug("Unable to read ai_state for user %s: %s", user_id, e)
 
+        pre_start_last_active: str | None = None
         if HAS_SESSIONS:
             session_manager = get_session_manager()
             session = session_manager.get_session(chat_id, user_id, is_group)
+            if session is not None and not is_group and text.strip().lower() == "/start":
+                pre_start_last_active = str(getattr(session, "last_active", "") or "")
 
             # Mention gating for groups
             if is_group and hasattr(self, "_bot_username"):
@@ -929,7 +932,15 @@ class TelegramChannel:
             metadata["context_messages"] = session.get_context_messages(limit=10)
             try:
                 import time as _time
-                _lang_max_age = 12 * 3600  # 12 h — match ConversationHistory boundary
+                try:
+                    from navig.config import get_config_manager as _get_cfg_tlang
+                    _lang_max_age = float(
+                        _get_cfg_tlang().get(
+                            "telegram.language_cache_max_age_hours", 12
+                        ) or 12
+                    ) * 3600
+                except Exception:
+                    _lang_max_age = 12 * 3600  # fallback: 12 h
                 persisted_lang = session_manager.get_session_metadata(
                     chat_id,
                     user_id,
@@ -1090,7 +1101,12 @@ class TelegramChannel:
                     await self._handle_status(chat_id, user_id)
                     return
                 if cmd == "/start":
-                    await self._handle_start(chat_id, username, user_id=user_id)
+                    await self._handle_start(
+                        chat_id,
+                        username,
+                        user_id=user_id,
+                        prior_last_active=pre_start_last_active,
+                    )
                     return
                 if cmd == "/help" or cmd.startswith("/help "):
                     _help_topic = cmd[len("/help "):].strip() if cmd.startswith("/help ") else None
@@ -3907,6 +3923,7 @@ class TelegramChannel:
         import os as _os
         from datetime import datetime as _dt
         from datetime import timezone as _tz
+        from navig.platform.paths import msg_trace_path as _msg_trace_path
 
         SEP = "━━━━━━━━━━━━━━━━━━━━━━"
         now_utc = _dt.now(_tz.utc).strftime("%H:%M UTC")
@@ -3997,7 +4014,7 @@ class TelegramChannel:
 
         # msg_trace.jsonl last resort
         if not session_messages:
-            trace_file = _os.path.expanduser("~/.navig/msg_trace.jsonl")
+            trace_file = str(_msg_trace_path())
             if _os.path.exists(trace_file):
                 try:
                     with open(trace_file, encoding="utf-8") as _f:
@@ -4233,7 +4250,13 @@ class TelegramChannel:
             keyboard=keyboard_rows,
         )
 
-    async def _handle_start(self, chat_id: int, username: str, user_id: int = 0):
+    async def _handle_start(
+        self,
+        chat_id: int,
+        username: str,
+        user_id: int = 0,
+        prior_last_active: str | None = None,
+    ):
         """Delegate to canonical /start flow with nav reset + main screen."""
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
@@ -4242,6 +4265,7 @@ class TelegramChannel:
             chat_id=chat_id,
             username=username,
             user_id=user_id,
+            prior_last_active=prior_last_active,
         )
 
     async def _handle_help(self, chat_id: int, topic: str | None = None):
@@ -4415,6 +4439,7 @@ class TelegramChannel:
         import os as _os
         import socket as _sock
         import subprocess as _sp
+        from navig.platform.paths import msg_trace_path as _msg_trace_path
 
         typing_task = asyncio.create_task(self._keep_typing(chat_id))
         try:
@@ -4520,7 +4545,7 @@ class TelegramChannel:
 
             # ── Recent slash commands from trace ──
             recent: list = []
-            trace_file = _os.path.expanduser("~/.navig/msg_trace.jsonl")
+            trace_file = str(_msg_trace_path())
             if _os.path.exists(trace_file):
                 try:
                     with open(trace_file, encoding="utf-8") as _tf:
