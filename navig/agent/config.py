@@ -18,6 +18,7 @@ from typing import Any
 
 import yaml
 
+from navig._daemon_defaults import _DAEMON_PORT
 from navig.core.security import substitute_env_vars as _substitute_env_vars_impl
 from navig.platform.paths import config_dir
 
@@ -88,7 +89,7 @@ class MCPConfig:
     """MCP server configuration."""
 
     enabled: bool = True
-    port: int = 8765
+    port: int = _DAEMON_PORT
     host: str = "127.0.0.1"
 
     @classmethod

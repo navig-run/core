@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
+from navig._daemon_defaults import _OAUTH_REDIRECT_PORT
+
 try:
     import httpx
 
@@ -117,7 +119,7 @@ class OAuthProviderConfig:
     token_url: str
     client_id: str
     client_secret: str | None = None
-    redirect_uri: str = "http://127.0.0.1:1455/auth/callback"
+    redirect_uri: str = f"http://127.0.0.1:{_OAUTH_REDIRECT_PORT}/auth/callback"
     scopes: list[str] = field(default_factory=list)
     userinfo_url: str | None = None
 
@@ -212,7 +214,7 @@ class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
 class OAuthCallbackServer:
     """Local HTTP server for OAuth callbacks."""
 
-    def __init__(self, port: int = 1455, timeout: float = 120.0):
+    def __init__(self, port: int = _OAUTH_REDIRECT_PORT, timeout: float = 120.0):
         self.port = port
         self.timeout = timeout
         self.server = None

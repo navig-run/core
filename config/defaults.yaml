@@ -118,9 +118,16 @@ telegram:
   typing_mode: instant
   # Seconds between typing-indicator heartbeats (Telegram clears after ~5s)
   typing_interval_seconds: 4
+  # How long (hours) a language hint stored in the session is considered fresh.
+  # After this window NAVIG re-detects the language from the next message.
+  language_cache_max_age_hours: 12
 
 # Daemon / host process settings
 daemon:
+  # WebSocket port the NAVIG IPC daemon listens on.
+  # Used by: navig bridge, navig agent (MCP server), tray app
+  # Override in ~/.navig/config.yaml: daemon.port
+  port: 8765
   # TCP port the NAVIG browser automation daemon listens on.
   # Also used by: navig webhook, navig integrations browser_orchestrator
   # Override in ~/.navig/config.yaml: daemon.browser_port
@@ -163,6 +170,9 @@ proactive:
 oauth:
   # Local redirect URI used by all OAuth flows
   redirect_uri: "http://127.0.0.1:1455/auth/callback"
+  # Port component of redirect_uri (extracted for code references).
+  # Override both together when changing the callback port.
+  redirect_port: 1455
 
 # Deploy system
 deploy:
@@ -223,3 +233,17 @@ update:
 #     staging: [web-staging, db-staging]
 #     prod:    [web-prod-1, web-prod-2, db-primary]
 groups: {}
+
+# Memory / conversation management
+memory:
+  # Hours of inactivity before /start shows a session recap (away summary).
+  # Set to 0 to disable the away summary feature entirely.
+  away_summary_gap_hours: 4
+  # How many recent messages the recap LLM sees when building the summary.
+  away_summary_message_window: 30
+  # Minimum message count before `navig memory compact` is useful.
+  # Commands returns early with a hint when below this threshold.
+  compact_threshold_messages: 20
+  # Effort level used for the compaction summarization LLM call.
+  # One of: low, medium, high, max, ultra
+  compact_summary_effort: "low"

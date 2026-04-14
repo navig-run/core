@@ -9,6 +9,7 @@ import secrets
 
 import typer
 
+from navig._daemon_defaults import _DAEMON_PORT
 from navig.core.yaml_io import safe_load_yaml
 from navig.lazy_loader import lazy_import
 from navig.platform.paths import config_dir
@@ -24,7 +25,7 @@ bridge_app = typer.Typer(
 
 @bridge_app.command("connect")
 def bridge_connect(
-    port: int = typer.Option(8765, "--port", "-p", help="Gateway port to forward"),
+    port: int = typer.Option(_DAEMON_PORT, "--port", "-p", help="Gateway port to forward"),
     bind: str = typer.Option(
         "0.0.0.0",
         "--bind",

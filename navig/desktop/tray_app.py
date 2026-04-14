@@ -38,6 +38,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
+from navig._daemon_defaults import _DAEMON_PORT
 from navig.platform import paths
 
 # Fix console encoding on Windows
@@ -91,7 +92,7 @@ class TraySettings:
     start_gateway_on_launch: bool = False
     start_agent_on_launch: bool = False
     python_exe: str = ""
-    gateway_port: int = 8765
+    gateway_port: int = _DAEMON_PORT
 
     def save(self):
         SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
