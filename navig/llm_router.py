@@ -47,6 +47,7 @@ import re
 import threading
 from typing import Any
 
+from navig.providers._local_defaults import _LLAMACPP_BASE_URL, _OLLAMA_BASE_URL
 from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 from navig.providers.source_scan import PROVIDER_ENV_KEYS
 
@@ -172,8 +173,8 @@ PROVIDER_BASE_URLS: dict[str, str] = {
     "cohere": "https://api.cohere.ai/v1",
     "together": "https://api.together.xyz/v1",
     "github_models": "https://models.inference.ai.azure.com",
-    "ollama": "http://127.0.0.1:11434/v1",
-    "llamacpp": "http://127.0.0.1:8080/v1",
+    "ollama": f"{_OLLAMA_BASE_URL}/v1",
+    "llamacpp": f"{_LLAMACPP_BASE_URL}/v1",
     "mcp_bridge": f"ws://127.0.0.1:{BRIDGE_DEFAULT_PORT}",
 }
 
@@ -414,7 +415,7 @@ _ollama_model_cache: dict[str, bool] | None = None
 _ollama_cache_ts: float = 0.0
 
 
-def _check_ollama_models(base_url: str = "http://127.0.0.1:11434") -> dict[str, bool]:
+def _check_ollama_models(base_url: str = _OLLAMA_BASE_URL) -> dict[str, bool]:
     """Query Ollama /api/tags and return {model_name: True} for installed models."""
     global _ollama_model_cache, _ollama_cache_ts
     import time

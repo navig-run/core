@@ -27,6 +27,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from navig.providers._local_defaults import _LLAMACPP_BASE_URL
+
 _log = logging.getLogger(__name__)
 
 from navig.core.file_permissions import set_owner_only_file_permissions
@@ -441,7 +443,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
 
     def _local_default_url(provider_id: str) -> str:
         defaults = {
-            "llamacpp": "http://127.0.0.1:8080",
+            "llamacpp": _LLAMACPP_BASE_URL,
         }
         url = defaults.get(provider_id, "")
         try:
@@ -709,7 +711,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             api_key = "local"
             key_source = "local"
             if pid == "llamacpp":
-                default_url = _local_default_url(pid) or "http://127.0.0.1:8080"
+                default_url = _local_default_url(pid) or _LLAMACPP_BASE_URL
                 try:
                     configured_base_url = typer.prompt(
                         "  llama.cpp URL",

@@ -23,6 +23,7 @@ from typing import NamedTuple
 
 from loguru import logger
 
+from navig.providers._local_defaults import _OLLAMA_BASE_URL as _OLLAMA_BASE
 from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 
 # ---------------------------------------------------------------------------
@@ -75,8 +76,6 @@ Set keys in `~/.navig/config.yaml` or as environment variables.
 # ---------------------------------------------------------------------------
 # T0 — Ollama
 # ---------------------------------------------------------------------------
-
-_OLLAMA_BASE = "http://127.0.0.1:11434"
 
 
 async def _probe_ollama() -> ProbeResult | None:

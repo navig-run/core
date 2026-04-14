@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from navig.platform.paths import config_dir
+from navig.providers._local_defaults import _OLLAMA_USER_BASE_URL
 from navig.workspace_ownership import USER_WORKSPACE_DIR
 
 # ---------------------------------------------------------------------------
@@ -48,7 +49,7 @@ class NavigConfig:
 
     # Step 3 — Runtime
     local_runtime_enabled: bool = False
-    local_runtime_host: str = "http://localhost:11434"
+    local_runtime_host: str = _OLLAMA_USER_BASE_URL
 
     # Step 4 — Packs
     capability_packs: list[str] = field(default_factory=list)
@@ -177,7 +178,7 @@ def check_config_dir_writable() -> bool:
         return False
 
 
-def check_ollama_reachable(host: str = "http://localhost:11434") -> bool:
+def check_ollama_reachable(host: str = _OLLAMA_USER_BASE_URL) -> bool:
     """True if Ollama HTTP endpoint responds within 2 s."""
     try:
         import httpx  # already a core dep

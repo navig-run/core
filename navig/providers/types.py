@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
 
+from navig.providers._local_defaults import _OLLAMA_BASE_URL
+
 
 class ModelApi(str, Enum):
     """Supported API types for different providers."""
@@ -347,7 +349,7 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
     ),
     "ollama": ProviderConfig(
         name="ollama",
-        base_url="http://127.0.0.1:11434/v1",
+        base_url=f"{_OLLAMA_BASE_URL}/v1",
         api=ModelApi.OPENAI_COMPLETIONS,
         auth_header=False,  # Ollama doesn't need auth
         models=[],  # Discovered dynamically
