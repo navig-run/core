@@ -307,10 +307,17 @@ class TelegramMessagingMixin:
                 await self.send_message(chat_id, "Message body cannot be empty.")
                 return
         except ValueError:
-            # No explicit thread_id — reply to most recent open thread
-            recent = store.list_threads(status="open", limit=1)
+            # No explicit thread_id — only auto-select when exactly one open thread exists
+            recent = store.list_threads(status="open", limit=2)
             if not recent:
                 await self.send_message(chat_id, "No open threads to reply to.")
+                return
+            if len(recent) > 1:
+                await self.send_message(
+                    chat_id,
+                    "Multiple open threads found. Use <code>/threads</code> then reply with an explicit ID, e.g. <code>/reply 42 your message</code>.",
+                    parse_mode="HTML",
+                )
                 return
             thread_id = recent[0].id
             body = " ".join(args)
