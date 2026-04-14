@@ -565,24 +565,6 @@ class UnifiedRouter:
         except Exception:  # noqa: BLE001
             pass  # best-effort
 
-        # 4. Vault-discovered AI providers — any provider that has a vault entry is treated
-        #    as available so that `navig vault add xai --key ...` is sufficient to activate
-        #    it without also requiring `navig config set ai.default_provider xai`.
-        try:
-            from navig.vault import get_vault  # noqa: PLC0415
-
-            _ROUTABLE_PROVIDERS = {
-                "xai", "openai", "anthropic", "groq", "nvidia",
-                "mistral", "cerebras", "google", "openrouter",
-                "github_models", "deepseek", "cohere",
-            }
-            for cred_info in get_vault().list_creds():
-                prov = (cred_info.provider or "").strip().lower()
-                if prov in _ROUTABLE_PROVIDERS:
-                    _add(prov)
-        except Exception:  # noqa: BLE001
-            pass  # vault unavailable at startup is non-fatal
-
         return providers
 
     def _get_provider_instance(self, name: str):
