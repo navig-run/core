@@ -111,6 +111,14 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Module-level retry / timing constants
+# ---------------------------------------------------------------------------
+_API_CALL_MAX_RETRIES: int = 3       # Telegram API: max retries on HTTP 429
+_REMINDER_MAX_RETRIES: int = 3       # Reminder poller: max delivery attempts
+_REMINDER_RETRY_DELAY_SEC: int = 60  # Reminder poller: backoff seconds per retry
+
+
 
 @dataclass
 class TelegramMessage:
@@ -425,16 +433,15 @@ class TelegramChannel:
             return None
 
         url = f"{self.base_url}/{method}"
-        _MAX_RETRIES = 3
 
         try:
             async with self._session.post(url, json=data or {}) as resp:
                 # Handle rate limiting (HTTP 429)
                 if resp.status == 429:
-                    if _retry_count >= _MAX_RETRIES:
+                    if _retry_count >= _API_CALL_MAX_RETRIES:
                         logger.error(
                             "Telegram API rate limited after %d retries: %s",
-                            _MAX_RETRIES,
+                            _API_CALL_MAX_RETRIES,
                             method,
                         )
                         return None
@@ -449,7 +456,7 @@ class TelegramChannel:
                         "Telegram API rate limited on %s — retry %d/%d in %ds",
                         method,
                         _retry_count + 1,
-                        _MAX_RETRIES,
+                        _API_CALL_MAX_RETRIES,
                         retry_after,
                     )
                     await asyncio.sleep(retry_after)
@@ -494,8 +501,6 @@ class TelegramChannel:
 
     async def _poll_due_reminders(self):
         """Deliver due reminders from RuntimeStore in the background."""
-        _MAX_RETRIES = 3  # BUG-1: give up after this many failed send attempts
-        _RETRY_DELAY_SEC = 60  # push remind_at forward on each retry
         poll_interval_sec = 15
         try:
             from navig.config import get_config_manager
@@ -580,7 +585,7 @@ class TelegramChannel:
                     else:
                         # BUG-1: handle send failure with capped retry logic
                         if reminder_id:
-                            if retry_count >= _MAX_RETRIES:
+                            if retry_count >= _REMINDER_MAX_RETRIES:
                                 store.fail_reminder(reminder_id)
                                 logger.warning(
                                     "Reminder id=%s permanently failed after %d retries "
@@ -591,13 +596,13 @@ class TelegramChannel:
                                     msg[:60],
                                 )
                             else:
-                                store.increment_reminder_retry(reminder_id, _RETRY_DELAY_SEC)
+                                store.increment_reminder_retry(reminder_id, _REMINDER_RETRY_DELAY_SEC)
                                 logger.debug(
                                     "Reminder id=%s send failed (retry %d/%d), rescheduled +%ds",
                                     reminder_id,
                                     retry_count + 1,
-                                    _MAX_RETRIES,
-                                    _RETRY_DELAY_SEC,
+                                    _REMINDER_MAX_RETRIES,
+                                    _REMINDER_RETRY_DELAY_SEC,
                                 )
             except asyncio.CancelledError:
                 break

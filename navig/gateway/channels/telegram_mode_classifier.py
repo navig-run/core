@@ -96,6 +96,12 @@ def _contains_title_marker(text: str) -> bool:
     return bool(_TITLE_MARKER.search(text))
 
 
+# Minimum fraction of alphabetic chars that must be non-Latin to classify a
+# text as non-Latin-dominant.  Kept as a named constant so it is tunable in
+# one place and self-documents the 30 % design decision.
+_NON_LATIN_DOMINANCE_THRESHOLD: float = 0.30
+
+
 def _is_non_latin_dominant(text: str) -> bool:
     """Return True when >30% of alphabetic chars are from non-Latin Unicode scripts.
 
@@ -125,7 +131,7 @@ def _is_non_latin_dominant(text: str) -> bool:
         )
 
     non_latin_count = sum(1 for c in alpha_chars if _non_latin(c))
-    return non_latin_count / len(alpha_chars) > 0.30
+    return non_latin_count / len(alpha_chars) > _NON_LATIN_DOMINANCE_THRESHOLD
 
 
 # ── Mid-sentence capitalisation — proper-noun probe ────────────────────────
