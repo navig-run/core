@@ -83,8 +83,8 @@ class TelegramMeshMixin:
                 is_self = " <i>(you)</i>" if p.get("is_self") else ""
                 capabilities = ", ".join(p.get("capabilities", []) or []) or "—"
                 lines.append(
-                    f"{role_symbol} <code>{host}</code>{is_self} — "
-                    f"load {load:.0%} — {capabilities}"
+                    f"{role_symbol} <code>{html.escape(str(host))}</code>{is_self} — "
+                    f"load {load:.0%} — {html.escape(capabilities)}"
                 )
 
             await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
@@ -139,7 +139,7 @@ class TelegramMeshMixin:
                 await self.send_message(
                     chat_id,
                     f"{icon} mesh <b>{'enabled' if enabled else 'disabled'}</b> — "
-                    f"role: <code>{role}</code> — peers: {peers}",
+                    f"role: <code>{html.escape(str(role))}</code> — peers: {html.escape(str(peers))}",
                     parse_mode="HTML",
                 )
                 return
@@ -150,7 +150,7 @@ class TelegramMeshMixin:
                 status = resp.get("status", "ok")
                 await self.send_message(
                     chat_id,
-                    f"mesh <b>{'enabled' if enabled else 'disabled'}</b> — {status}",
+                    f"mesh <b>{'enabled' if enabled else 'disabled'}</b> — {html.escape(str(status))}",
                     parse_mode="HTML",
                 )
                 return
@@ -190,7 +190,7 @@ class TelegramMeshMixin:
             if accepted:
                 await self.send_message(
                     chat_id,
-                    f"✅ handoff requested → <code>{target_out}</code>\n"
+                    f"✅ handoff requested → <code>{html.escape(str(target_out))}</code>\n"
                     "<i>new leader will activate within 15s</i>",
                     parse_mode="HTML",
                 )
@@ -198,7 +198,7 @@ class TelegramMeshMixin:
                 reason = resp.get("reason", "unknown")
                 await self.send_message(
                     chat_id,
-                    f"❌ handoff rejected: {reason}",
+                    f"❌ handoff rejected: {html.escape(str(reason))}",
                     parse_mode="HTML",
                 )
 

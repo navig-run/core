@@ -17,6 +17,7 @@ injected by the ``_SLASH_REGISTRY`` dispatcher (``chat_id``, ``user_id``,
 
 from __future__ import annotations
 
+import html
 import logging
 from typing import Any
 
@@ -82,9 +83,9 @@ class TelegramMessagingMixin:
         try:
             receipt = await self._messaging_dispatch(target, body, network=network)
             if receipt.ok:
-                status = f"✅ Sent via <b>{receipt.adapter or 'adapter'}</b>"
+                status = f"✅ Sent via <b>{html.escape(receipt.adapter or 'adapter')}</b>"
                 if receipt.message_id:
-                    status += f" (<code>{receipt.message_id}</code>)"
+                    status += f" (<code>{html.escape(str(receipt.message_id))}</code>)"
                 await self.send_message(chat_id, status, parse_mode="HTML")
             else:
                 await self.send_message(chat_id, f"❌ Send failed: {receipt.error}")
@@ -176,11 +177,11 @@ class TelegramMessagingMixin:
 
             lines = [
                 f"🧵 <b>Thread #{thread.id}</b>",
-                f"  Adapter: <code>{thread.adapter}</code>",
-                f"  Remote: <code>{thread.remote_conversation_id}</code>",
-                f"  Contact: {thread.contact_alias or '(none)'}",
-                f"  Status: {thread.status}",
-                f"  Last active: {thread.last_active}",
+                f"  Adapter: <code>{html.escape(str(thread.adapter))}</code>",
+                f"  Remote: <code>{html.escape(str(thread.remote_conversation_id))}</code>",
+                f"  Contact: {html.escape(str(thread.contact_alias or '(none)'))}",
+                f"  Status: {html.escape(str(thread.status))}",
+                f"  Last active: {html.escape(str(thread.last_active))}",
             ]
             await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
         else:
@@ -206,8 +207,10 @@ class TelegramMessagingMixin:
 
         lines = ["🧵 <b>Active Threads</b>\n"]
         for t in threads:
-            alias_str = f"@{t.contact_alias}" if t.contact_alias else "(unknown)"
-            lines.append(f"  <code>#{t.id}</code> [{t.adapter}] {alias_str} — {t.status}")
+            alias_str = f"@{html.escape(t.contact_alias)}" if t.contact_alias else "(unknown)"
+            lines.append(
+                f"  <code>#{t.id}</code> [{html.escape(str(t.adapter))}] {alias_str} — {html.escape(str(t.status))}"
+            )
         await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
 
     # ── /contact @alias ───────────────────────────────────────
@@ -233,16 +236,18 @@ class TelegramMessagingMixin:
             return
 
         lines = [
-            f"👤 <b>@{contact.alias}</b>",
-            f"  Name: {contact.display_name or '(none)'}",
-            f"  Default: {contact.default_network or '(auto)'}",
+            f"👤 <b>@{html.escape(contact.alias)}</b>",
+            f"  Name: {html.escape(str(contact.display_name or '(none)'))}",
+            f"  Default: {html.escape(str(contact.default_network or '(auto)'))}",
         ]
         if contact.routes:
             lines.append("  Routes:")
             for r in contact.routes:
-                lines.append(f"    • {r.network}: <code>{r.address}</code> (pri={r.priority})")
+                lines.append(
+                    f"    • {html.escape(str(r.network))}: <code>{html.escape(str(r.address))}</code> (pri={html.escape(str(r.priority))})"
+                )
         if contact.fallbacks:
-            lines.append(f"  Fallbacks: {', '.join(contact.fallbacks)}")
+            lines.append(f"  Fallbacks: {html.escape(', '.join(contact.fallbacks))}")
         await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
 
     # ── /contacts ─────────────────────────────────────────────
@@ -267,7 +272,9 @@ class TelegramMessagingMixin:
         lines = ["👥 <b>Contacts</b>\n"]
         for c in contacts:
             nets = ", ".join(r.network for r in c.routes) or "no routes"
-            lines.append(f"  @{c.alias} — {c.display_name or '(unnamed)'} [{nets}]")
+            lines.append(
+                f"  @{html.escape(c.alias)} — {html.escape(str(c.display_name or '(unnamed)'))} [{html.escape(nets)}]"
+            )
         await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
 
     # ── /reply [thread_id] message ────────────────────────────
@@ -318,7 +325,7 @@ class TelegramMessagingMixin:
             if receipt.ok:
                 await self.send_message(
                     chat_id,
-                    f"✅ Reply sent to <code>#{thread_id}</code> via <b>{thread.adapter}</b>",
+                    f"✅ Reply sent to <code>#{thread_id}</code> via <b>{html.escape(str(thread.adapter))}</b>",
                     parse_mode="HTML",
                 )
             else:
