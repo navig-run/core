@@ -68,8 +68,11 @@ CANONICAL_MODES = {"small_talk", "big_tasks", "coding", "summarize", "research"}
 # ─────────────────────────────────────────────────────────────
 # Router defaults — single source of truth for tunable literals
 # ─────────────────────────────────────────────────────────────
-_DEFAULT_TEMPERATURE: float = 0.7       # Base temperature for new mode configs and resolved routes
-_DEFAULT_MAX_TOKENS: int = 4_096        # Base max-tokens fallback for new mode configs and resolved routes
+# Re-exported from the zero-dependency leaf so all LLM consumers share one
+# definition without hitting circular-import issues (llm_router imports from
+# navig.providers, so providers/types.py cannot import back from here).
+from navig._llm_defaults import _DEFAULT_MAX_TOKENS, _DEFAULT_TEMPERATURE  # noqa: F401
+
 _OLLAMA_CACHE_TTL: float = 300.0        # Seconds before Ollama model cache expires
 _OLLAMA_PROBE_TIMEOUT: float = 3.0      # HTTP timeout (seconds) for Ollama availability probe
 

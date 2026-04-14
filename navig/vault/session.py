@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 
 __all__ = ["VaultSession", "SessionStore"]
 
-_DEFAULT_TTL = 1800  # 30 minutes
+from navig.vault._constants import _DEFAULT_TTL  # noqa: E402
 
 
 @dataclass(slots=True)

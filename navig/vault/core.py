@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 
 __all__ = ["Vault", "get_vault"]
 
-_DEFAULT_TTL = 1800  # 30 minutes — session idle timeout
+from navig.vault._constants import _DEFAULT_TTL  # noqa: E402 — leaf module, no circular risk
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Internal helpers

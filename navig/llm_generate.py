@@ -33,8 +33,9 @@ logger = logging.getLogger("navig.llm_generate")
 # ─────────────────────────────────────────────────────────────
 # Module constants — single source of truth for llm_generate defaults
 # ─────────────────────────────────────────────────────────────
-_LLM_DEFAULT_TEMPERATURE: float = 0.7   # Fallback generation temperature
-_LLM_DEFAULT_MAX_TOKENS: int = 4_096    # Fallback max output tokens
+from navig._llm_defaults import _DEFAULT_MAX_TOKENS as _LLM_DEFAULT_MAX_TOKENS  # noqa: F401
+from navig._llm_defaults import _DEFAULT_TEMPERATURE as _LLM_DEFAULT_TEMPERATURE  # noqa: F401
+
 _LLM_DEFAULT_TIMEOUT: float = 120.0     # Default HTTP timeout (seconds)
 
 
