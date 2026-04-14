@@ -22,6 +22,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_EXEC_RETRY_BASE_DELAY_SECONDS = 1.0
+_EXEC_RETRY_JITTER_MAX_SECONDS = 0.5
+_EXEC_RETRY_MAX_DELAY_SECONDS = 30.0
+_REFLECTION_REMEDIATION_CONFIDENCE_THRESHOLD = 70
+_MAX_REMEDIATION_STEPS = 2
+
 
 class TaskStatus(Enum):
     PENDING = auto()
@@ -94,6 +100,14 @@ class TaskExecutor:
         self._loc: LocalizationStore = localization or LocalizationStore()
         self._max_attempts = max(1, max_attempts)
         self.current_task: Task | None = None
+
+    @staticmethod
+    def _compute_retry_delay(attempt: int) -> float:
+        return min(
+            _EXEC_RETRY_BASE_DELAY_SECONDS * (2**attempt)
+            + random.uniform(0.0, _EXEC_RETRY_JITTER_MAX_SECONDS),
+            _EXEC_RETRY_MAX_DELAY_SECONDS,
+        )
 
     async def execute_plan(self, plan_data: dict[str, Any]) -> str:
         """Build a ``Task`` from a validated plan dict and execute or stage it.
@@ -193,7 +207,7 @@ class TaskExecutor:
                         )
                     )
                     if attempt < self._max_attempts - 1:
-                        delay = min(1.0 * (2**attempt) + random.uniform(0.0, 0.5), 30.0)
+                        delay = self._compute_retry_delay(attempt)
                         await asyncio.sleep(delay)
             if last_err is not None:
                 step.status, step.error = "failed", str(last_err)
@@ -235,7 +249,7 @@ class TaskExecutor:
                 confidence: int = int(reflection_data.get("confidence", 100))
                 reflection_confidence = confidence
 
-                if not achieved and confidence < 70:
+                if not achieved and confidence < _REFLECTION_REMEDIATION_CONFIDENCE_THRESHOLD:
                     task.status = TaskStatus.EXECUTING
                     from navig.agent.conv.planner import FallbackPlanner  # lazy
 
@@ -246,7 +260,7 @@ class TaskExecutor:
                             description=s.get("description", ""),
                             params=s.get("params", {}),
                         )
-                        for s in remediation_plan.get("plan", [])[:2]
+                        for s in remediation_plan.get("plan", [])[:_MAX_REMEDIATION_STEPS]
                     ]
                     rem_any_failed = False
                     for rem_step in remediation_steps:
@@ -290,10 +304,7 @@ class TaskExecutor:
                                     )
                                 )
                                 if attempt < self._max_attempts - 1:
-                                    delay = min(
-                                        1.0 * (2**attempt) + random.uniform(0.0, 0.5),
-                                        30.0,
-                                    )
+                                    delay = self._compute_retry_delay(attempt)
                                     await asyncio.sleep(delay)
                         if last_rem_err is not None:
                             rem_step.status, rem_step.error = "failed", str(last_rem_err)

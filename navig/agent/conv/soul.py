@@ -26,6 +26,8 @@ _SOUL_CANDIDATES: list[tuple[Path, str]] = [
     (Path(__file__).parent.parent / "context" / "SOUL.md", "context"),
 ]
 
+_SOUL_POLL_INTERVAL_SECONDS = 5.0
+
 # ── Identity constants ───────────────────────────────────────────────────────
 
 _RICH_IDENTITY = (
@@ -296,7 +298,7 @@ class SoulLoader:
     def _poll_fallback(self) -> None:
         """stdlib polling fallback (5-second interval) when watchfiles is unavailable.
 
-        Uses ``threading.Event.wait(timeout=5.0)`` instead of ``time.sleep(5)``
+        Uses ``threading.Event.wait(timeout=_SOUL_POLL_INTERVAL_SECONDS)`` instead of ``time.sleep(5)``
         so the daemon thread exits promptly when ``_stop_poll`` is set (e.g. on
         process shutdown or in tests), instead of blocking for up to 5 seconds.
         """
@@ -304,7 +306,7 @@ class SoulLoader:
             last_mtime = os.stat(SOUL_MD_PATH).st_mtime
         except OSError:
             return
-        while not self._stop_poll.wait(timeout=5.0):
+        while not self._stop_poll.wait(timeout=_SOUL_POLL_INTERVAL_SECONDS):
             try:
                 mtime = os.stat(SOUL_MD_PATH).st_mtime
             except OSError:
