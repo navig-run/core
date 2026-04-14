@@ -71,6 +71,11 @@ _SENSITIVE_PATTERNS: list[re.Pattern[str]] = [
 # Max characters sent per file — keeps token counts reasonable.
 _MAX_FILE_CHARS = 8_000
 
+# Scan LLM settings — a single authoritative location for every caller.
+_DEFAULT_MIN_CONFIDENCE: float = 0.80
+_SCAN_TEMPERATURE: float = 0.1
+_SCAN_MAX_TOKENS: int = 2_048
+
 
 class ScanFinding(BaseModel):
     """A single code-quality issue found during a self-heal scan.
@@ -227,7 +232,7 @@ def scan_files(
     from navig.llm_generate import llm_generate  # noqa: PLC0415
 
     cfg: dict = config or {}
-    min_confidence: float = float(cfg.get("min_confidence", 0.80))
+    min_confidence: float = float(cfg.get("min_confidence", _DEFAULT_MIN_CONFIDENCE))
 
     py_files = _collect_py_files(install_path)
     logger.info("Scanning {} Python files (min_confidence={})", len(py_files), min_confidence)
@@ -254,8 +259,8 @@ def scan_files(
                     {"role": "user", "content": user_msg},
                 ],
                 mode="coding",
-                max_tokens=2048,
-                temperature=0.1,
+                max_tokens=_SCAN_MAX_TOKENS,
+                temperature=_SCAN_TEMPERATURE,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("LLM call failed for {}: {}", rel_path, exc)

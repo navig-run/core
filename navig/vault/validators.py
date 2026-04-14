@@ -9,6 +9,10 @@ from abc import ABC, abstractmethod
 
 from .types import Credential, TestResult
 
+# Timeouts for outbound HTTP health-check calls.
+_VALIDATOR_DEFAULT_TIMEOUT: int = 10
+_VALIDATOR_EXTENDED_TIMEOUT: int = 15
+
 
 class CredentialValidator(ABC):
     """
@@ -46,7 +50,7 @@ class OpenAIValidator(CredentialValidator):
             response = httpx.get(
                 "https://api.openai.com/v1/models",
                 headers={"Authorization": f"Bearer {api_key}"},
-                timeout=10,
+                timeout=_VALIDATOR_DEFAULT_TIMEOUT,
             )
             if response.status_code == 200:
                 models = response.json().get("data", [])
@@ -98,7 +102,7 @@ class AnthropicValidator(CredentialValidator):
                     "max_tokens": 1,
                     "messages": [{"role": "user", "content": "hi"}],
                 },
-                timeout=15,
+                timeout=_VALIDATOR_EXTENDED_TIMEOUT,
             )
             if response.status_code in (200, 201):
                 return TestResult(success=True, message="Anthropic API key is valid")
@@ -132,7 +136,7 @@ class OpenRouterValidator(CredentialValidator):
             response = httpx.get(
                 "https://openrouter.ai/api/v1/auth/key",
                 headers={"Authorization": f"Bearer {api_key}"},
-                timeout=10,
+                timeout=_VALIDATOR_DEFAULT_TIMEOUT,
             )
             if response.status_code == 200:
                 data = response.json().get("data", {})
@@ -169,7 +173,7 @@ class GroqValidator(CredentialValidator):
             response = httpx.get(
                 "https://api.groq.com/openai/v1/models",
                 headers={"Authorization": f"Bearer {api_key}"},
-                timeout=10,
+                timeout=_VALIDATOR_DEFAULT_TIMEOUT,
             )
             if response.status_code == 200:
                 models = response.json().get("data", [])
@@ -206,7 +210,7 @@ class GitHubValidator(CredentialValidator):
                     "Authorization": f"Bearer {token}",
                     "Accept": "application/vnd.github+json",
                 },
-                timeout=10,
+                timeout=_VALIDATOR_DEFAULT_TIMEOUT,
             )
             if response.status_code == 200:
                 user = response.json()
@@ -246,7 +250,7 @@ class GitLabValidator(CredentialValidator):
             response = httpx.get(
                 f"{base_url}/api/v4/user",
                 headers={"PRIVATE-TOKEN": token},
-                timeout=10,
+                timeout=_VALIDATOR_DEFAULT_TIMEOUT,
             )
             if response.status_code == 200:
                 user = response.json()
@@ -350,7 +354,7 @@ class JiraValidator(CredentialValidator):
                     "Authorization": f"Basic {auth_bytes}",
                     "Accept": "application/json",
                 },
-                timeout=10,
+                timeout=_VALIDATOR_DEFAULT_TIMEOUT,
             )
             if response.status_code == 200:
                 user = response.json()
@@ -409,7 +413,7 @@ class TelegramValidator(CredentialValidator):
         try:
             import httpx
 
-            response = httpx.get(f"https://api.telegram.org/bot{token}/getMe", timeout=10)
+            response = httpx.get(f"https://api.telegram.org/bot{token}/getMe", timeout=_VALIDATOR_DEFAULT_TIMEOUT)
             payload = (
                 response.json()
                 if response.headers.get("content-type", "").startswith("application/json")
@@ -450,7 +454,7 @@ class DeepgramValidator(CredentialValidator):
             response = httpx.get(
                 "https://api.deepgram.com/v1/projects",
                 headers={"Authorization": f"Token {api_key}"},
-                timeout=10,
+                timeout=_VALIDATOR_DEFAULT_TIMEOUT,
             )
             if response.status_code == 200:
                 projects = response.json().get("projects", [])
@@ -485,7 +489,7 @@ class ElevenLabsValidator(CredentialValidator):
             response = httpx.get(
                 "https://api.elevenlabs.io/v1/user",
                 headers={"xi-api-key": api_key},
-                timeout=10,
+                timeout=_VALIDATOR_DEFAULT_TIMEOUT,
             )
             if response.status_code == 200:
                 data = response.json()
@@ -523,7 +527,7 @@ class XAIValidator(CredentialValidator):
             response = httpx.get(
                 "https://api.x.ai/v1/models",
                 headers={"Authorization": f"Bearer {api_key}"},
-                timeout=10,
+                timeout=_VALIDATOR_DEFAULT_TIMEOUT,
             )
             if response.status_code == 200:
                 models = response.json().get("data", [])
@@ -558,7 +562,7 @@ class NvidiaValidator(CredentialValidator):
             response = httpx.get(
                 "https://integrate.api.nvidia.com/v1/models",
                 headers={"Authorization": f"Bearer {api_key}"},
-                timeout=10,
+                timeout=_VALIDATOR_DEFAULT_TIMEOUT,
             )
             if response.status_code == 200:
                 models = response.json().get("data", [])
@@ -606,7 +610,7 @@ class GitHubModelsValidator(CredentialValidator):
                     "messages": [{"role": "user", "content": "ping"}],
                     "max_tokens": 1,
                 },
-                timeout=15,
+                timeout=_VALIDATOR_EXTENDED_TIMEOUT,
             )
             if response.status_code == 200:
                 data = response.json()

@@ -39,6 +39,11 @@ from typing import Any
 
 logger = logging.getLogger("navig.voice.session_manager")
 
+# Pipeline step timeouts — single authoritative location.
+_STT_TIMEOUT: float = 30.0
+_LLM_TIMEOUT: float = 60.0
+_TTS_TIMEOUT: float = 30.0
+
 
 # ---------------------------------------------------------------------------
 # Session State Machine
@@ -405,7 +410,7 @@ class VoiceSessionManager:
             transcript = None
             if self._stt_fn and audio_data:
                 try:
-                    transcript = await asyncio.wait_for(self._stt_fn(session), timeout=30.0)
+                    transcript = await asyncio.wait_for(self._stt_fn(session), timeout=_STT_TIMEOUT)
                     session.transcript = transcript
                 except asyncio.TimeoutError:
                     logger.error("Session %s: STT timeout", session_id)
@@ -415,7 +420,7 @@ class VoiceSessionManager:
             response_text: str | None = None
             if transcript and self._llm_fn:
                 try:
-                    response_text = await asyncio.wait_for(self._llm_fn(transcript), timeout=60.0)
+                    response_text = await asyncio.wait_for(self._llm_fn(transcript), timeout=_LLM_TIMEOUT)
                     session.response_text = response_text
                 except asyncio.TimeoutError:
                     logger.error("Session %s: LLM timeout", session_id)
@@ -431,7 +436,7 @@ class VoiceSessionManager:
 
             if response_text and self._tts_fn:
                 try:
-                    audio_path = await asyncio.wait_for(self._tts_fn(response_text), timeout=30.0)
+                    audio_path = await asyncio.wait_for(self._tts_fn(response_text), timeout=_TTS_TIMEOUT)
                     session.audio_path = audio_path
                 except asyncio.TimeoutError:
                     logger.error("Session %s: TTS timeout", session_id)
