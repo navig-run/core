@@ -220,6 +220,12 @@ class RoutingConfig:
                 elif provider_id == "openai":
                     slot.api_key = os.environ.get("OPENAI_API_KEY", "")
 
+            # Keep openrouter/openai deterministic in this routing layer:
+            # do not fall through to generic provider key resolution (vault or
+            # alternate env aliases) when explicit provider sources are empty.
+            if provider_id in ("openrouter", "openai"):
+                continue
+
             # Keep explicit config-token preference for GitHub Models.
             if provider_id in ("github_models", "github") and not slot.api_key:
                 gh_token = str((global_cfg.get("github_models") or {}).get("token", "")).strip()
