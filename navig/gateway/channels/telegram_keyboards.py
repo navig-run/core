@@ -199,28 +199,49 @@ class CallbackStore:
     """
 
     def __init__(self, max_entries: int = 500, ttl_seconds: int = 86400):
-        self._store: dict[str, CallbackEntry] = {}
+        self._store: dict[str, dict[str, Any]] = {}
         self._max = max_entries
         self._ttl = ttl_seconds
 
-    def put(self, key: str, entry: CallbackEntry) -> None:
+    def put(self, key: str, entry: Any, ttl: int | None = None) -> None:
         self._expire_old()
         if len(self._store) >= self._max:
-            items = sorted(self._store.items(), key=lambda kv: kv[1].created_at)
+            def _created_at_value(item: tuple[str, Any]) -> float:
+                value = item[1]
+                if isinstance(value, dict):
+                    return float(value.get("created_at", 0.0))
+                return float(getattr(value, "created_at", 0.0))
+
+            items = sorted(self._store.items(), key=_created_at_value)
             to_remove = len(items) // 5 or 1
             for k, _ in items[:to_remove]:
                 del self._store[k]
-        self._store[key] = entry
+        self._store[key] = {
+            "value": entry,
+            "created_at": time.time(),
+            "ttl": int(ttl if ttl is not None else self._ttl),
+        }
 
-    def get(self, key: str) -> CallbackEntry | None:
-        entry = self._store.get(key)
-        if entry is None:
+    def get(self, key: str) -> Any | None:
+        payload = self._store.get(key)
+        if payload is None:
             return None
+
+        # Backward compatibility: legacy direct storage of CallbackEntry/Any
+        if not isinstance(payload, dict):
+            created_at = float(getattr(payload, "created_at", 0.0))
+            if time.time() - created_at > self._ttl:
+                del self._store[key]
+                return None
+            return payload
+
         # Check TTL
-        if time.time() - entry.created_at > self._ttl:
+        created_at = float(payload.get("created_at", 0.0))
+        ttl = int(payload.get("ttl", self._ttl))
+        if time.time() - created_at > ttl:
             del self._store[key]
             return None
-        return entry
+        return payload.get("value")
 
     def remove(self, key: str) -> None:
         self._store.pop(key, None)
@@ -228,7 +249,17 @@ class CallbackStore:
     def _expire_old(self) -> None:
         """Remove entries older than TTL."""
         now = time.time()
-        expired = [k for k, v in self._store.items() if now - v.created_at > self._ttl]
+        expired: list[str] = []
+        for k, v in self._store.items():
+            if isinstance(v, dict):
+                created_at = float(v.get("created_at", 0.0))
+                ttl = int(v.get("ttl", self._ttl))
+                is_expired = now - created_at > ttl
+            else:
+                created_at = float(getattr(v, "created_at", 0.0))
+                is_expired = now - created_at > self._ttl
+            if is_expired:
+                expired.append(k)
         for k in expired:
             del self._store[k]
 
@@ -725,6 +756,38 @@ class CallbackHandler:
             # ── Model switcher callbacks (ms_*) — no store needed ──
             if cb_data.startswith("task:"):
                 await self._handle_task_callback(cb_id, cb_data, chat_id, message_id, user_id)
+                return
+
+            # ── Card navigator callbacks (card:*) ──
+            if cb_data.startswith("card:"):
+                try:
+                    from navig.gateway.channels.telegram_navigator import handle_card_callback
+
+                    await handle_card_callback(self.channel, callback_query, self.store)
+                except Exception as _nav_err:
+                    logger.warning(
+                        "Card navigator callback error: chat_id=%s callback=%s err=%s",
+                        chat_id,
+                        cb_data,
+                        _nav_err,
+                    )
+                    await self._answer(cb_id, "⚠️ Card action error")
+                return
+
+            # ── Refiner callbacks (rfn:*) ──
+            if cb_data.startswith("rfn:"):
+                try:
+                    from navig.gateway.channels.telegram_refiner import handle_rfn_callback
+
+                    await handle_rfn_callback(self.channel, callback_query, self.store)
+                except Exception as _rfn_err:
+                    logger.warning(
+                        "Refiner callback error: chat_id=%s callback=%s err=%s",
+                        chat_id,
+                        cb_data,
+                        _rfn_err,
+                    )
+                    await self._answer(cb_id, "⚠️ Refine action error")
                 return
 
             if cb_data.startswith("ms_"):

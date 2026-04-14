@@ -293,6 +293,13 @@ class TestCallbackStore:
         s2 = get_callback_store()
         assert s1 is s2
 
+    def test_put_custom_ttl_expires_entry(self):
+        store = CallbackStore(max_entries=10, ttl_seconds=1000)
+        entry = CallbackEntry(action="ttl", user_message="u", ai_response="a", category="chat")
+        store.put("ttl_key", entry, ttl=1)
+        store._store["ttl_key"]["created_at"] = time.time() - 5
+        assert store.get("ttl_key") is None
+
 
 # ────────────────────────────────────────────────────────────
 # CallbackEntry
@@ -470,6 +477,52 @@ class TestCallbackHandlerDispatch:
 
         await handler.handle(cb_query)
         # Just verify no crash
+
+    async def test_handle_card_prefix_delegates_to_navigator(self, monkeypatch):
+        ch = _MinimalChannel()
+        handler = CallbackHandler(ch)
+        called: dict[str, bool] = {"ok": False}
+
+        async def _fake_nav(channel, callback_query, cb_store):
+            called["ok"] = True
+            assert channel is ch
+            assert cb_store is handler.store
+            assert callback_query["data"].startswith("card:")
+
+        monkeypatch.setattr("navig.gateway.channels.telegram_navigator.handle_card_callback", _fake_nav)
+
+        cb_query = {
+            "id": "q_card",
+            "from": {"id": 123},
+            "message": {"message_id": 10, "chat": {"id": 456}},
+            "data": "card:next:nav_test",
+        }
+
+        await handler.handle(cb_query)
+        assert called["ok"] is True
+
+    async def test_handle_rfn_prefix_delegates_to_refiner(self, monkeypatch):
+        ch = _MinimalChannel()
+        handler = CallbackHandler(ch)
+        called: dict[str, bool] = {"ok": False}
+
+        async def _fake_rfn(channel, callback_query, cb_store):
+            called["ok"] = True
+            assert channel is ch
+            assert cb_store is handler.store
+            assert callback_query["data"].startswith("rfn:")
+
+        monkeypatch.setattr("navig.gateway.channels.telegram_refiner.handle_rfn_callback", _fake_rfn)
+
+        cb_query = {
+            "id": "q_rfn",
+            "from": {"id": 123},
+            "message": {"message_id": 10, "chat": {"id": 456}},
+            "data": "rfn:yes:rfn_test",
+        }
+
+        await handler.handle(cb_query)
+        assert called["ok"] is True
 
 
 class TestCallbackHandlerModelSwitch:

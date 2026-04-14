@@ -298,20 +298,21 @@ class CardNavigator:
                     session.message_id,
                     text,
                     parse_mode="HTML",
-                    reply_markup={"inline_keyboard": keyboard},
+                    keyboard=keyboard,
                 )
                 return
             except Exception as exc:
                 logger.warning("CardNavigator.go_to edit failed: %s", exc)
 
         # Fallback: send new
-        msg_id = await self.channel.send_message(
+        msg = await self.channel.send_message(
             session.chat_id,
             text,
             parse_mode="HTML",
-            reply_markup={"inline_keyboard": keyboard},
+            keyboard=keyboard,
         )
-        session.message_id = msg_id
+        if isinstance(msg, dict):
+            session.message_id = msg.get("message_id")
 
     # ── Internal ─────────────────────────────────────────────────
 
@@ -323,7 +324,7 @@ class CardNavigator:
                 session.chat_id,
                 text,
                 parse_mode="HTML",
-                reply_markup={"inline_keyboard": keyboard},
+                keyboard=keyboard,
             )
             if isinstance(result, dict):
                 return result.get("message_id")
@@ -354,17 +355,41 @@ async def handle_card_callback(
       ``card:accept:<KEY>``
       ``card:refine:<KEY>``
     """
-    cb_id = getattr(callback_query, "id", None) or ""
-    cb_data: str = ""
-    if hasattr(callback_query, "data"):
-        cb_data = callback_query.data or ""
+    def _cb_get(obj: Any, key: str, default: Any = None) -> Any:
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        return getattr(obj, key, default)
+
+    async def _answer_callback(callback_id: str, text: str = "") -> None:
+        if not callback_id:
+            return
+        answer_fn = getattr(channel, "answer_callback_query", None)
+        if callable(answer_fn):
+            try:
+                await answer_fn(callback_id, text)
+                return
+            except Exception:
+                pass
+        api_call = getattr(channel, "_api_call", None)
+        if callable(api_call):
+            try:
+                await api_call(
+                    "answerCallbackQuery",
+                    {"callback_query_id": callback_id, "text": text, "show_alert": False},
+                )
+            except Exception:
+                pass
+
+    cb_id = _cb_get(callback_query, "id", "") or ""
+    cb_data: str = _cb_get(callback_query, "data", "") or ""
     chat_id: int = 0
     message_id: int | None = None
 
-    msg = getattr(callback_query, "message", None)
+    msg = _cb_get(callback_query, "message", None)
     if msg:
-        chat_id = getattr(getattr(msg, "chat", None), "id", 0) or 0
-        message_id = getattr(msg, "message_id", None)
+        chat = _cb_get(msg, "chat", None)
+        chat_id = _cb_get(chat, "id", 0) or 0
+        message_id = _cb_get(msg, "message_id", None)
 
     # Parse: card:<action>:<key>[:<extra>]
     parts = cb_data.split(":", 3)
@@ -378,7 +403,7 @@ async def handle_card_callback(
     entry = cb_store.get(session_key)
     if not entry:
         try:
-            await channel.answer_callback_query(cb_id, "⚠️ Session expired")
+            await _answer_callback(cb_id, "⚠️ Session expired")
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
         return
@@ -387,7 +412,7 @@ async def handle_card_callback(
         session = CardSession.deserialise(entry.get("session", "{}"))
     except Exception as exc:
         logger.warning("handle_card_callback: deserialise error: %s", exc)
-        await channel.answer_callback_query(cb_id, "⚠️ Session error")
+        await _answer_callback(cb_id, "⚠️ Session error")
         return
 
     nav = CardNavigator(channel, cb_store)
@@ -411,7 +436,7 @@ async def handle_card_callback(
     elif action == "copy":
         full_text = "\n\n───\n\n".join(session.cards)
         await channel.send_message(chat_id, full_text)
-        await channel.answer_callback_query(cb_id, "📋 Full text sent")
+        await _answer_callback(cb_id, "📋 Full text sent")
 
     elif action == "accept":
         # Edit card to accepted state
@@ -422,12 +447,12 @@ async def handle_card_callback(
                 session.message_id or message_id,
                 text,
                 parse_mode="HTML",
-                reply_markup={"inline_keyboard": []},
+                keyboard=[],
             )
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
         cb_store.remove(session_key)
-        await channel.answer_callback_query(cb_id, "✅ Accepted")
+        await _answer_callback(cb_id, "✅ Accepted")
 
     elif action == "refine":
         # Hand off to RefinementEngine
@@ -436,7 +461,7 @@ async def handle_card_callback(
 
             full_text = "\n\n".join(session.cards)
             refiner = RefinementEngine(channel, cb_store)
-            await channel.answer_callback_query(cb_id, "♻️ Starting refinement…")
+            await _answer_callback(cb_id, "♻️ Starting refinement…")
             await refiner.start(
                 chat_id=session.chat_id,
                 user_id=session.user_id,
@@ -445,6 +470,6 @@ async def handle_card_callback(
             )
         except Exception as exc:
             logger.error("handle_card_callback refine error: %s", exc)
-            await channel.answer_callback_query(cb_id, "⚠️ Refine error")
+            await _answer_callback(cb_id, "⚠️ Refine error")
     else:
-        await channel.answer_callback_query(cb_id, "")
+        await _answer_callback(cb_id, "")

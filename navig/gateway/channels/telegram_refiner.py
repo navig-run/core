@@ -376,7 +376,7 @@ class RefinementEngine:
             session.chat_id,
             f"✨ <b>Refined Result:</b>\n\n{_html.escape(refined)}",
             parse_mode="HTML",
-            reply_markup={"inline_keyboard": keyboard},
+            keyboard=keyboard,
         )
 
         # Send diff summary
@@ -457,7 +457,7 @@ class RefinementEngine:
             session.chat_id,
             text,
             parse_mode="HTML",
-            reply_markup={"inline_keyboard": keyboard},
+            keyboard=keyboard,
         )
         if isinstance(msg, dict):
             session.message_id = msg.get("message_id")
@@ -478,7 +478,7 @@ class RefinementEngine:
             session.chat_id,
             text,
             parse_mode="HTML",
-            reply_markup={"inline_keyboard": keyboard},
+            keyboard=keyboard,
         )
 
 
@@ -503,8 +503,33 @@ async def handle_rfn_callback(
       ``rfn:revert:<KEY>``    — send original text back
       ``rfn:skip:<KEY>``      — skip current question
     """
-    cb_id = getattr(callback_query, "id", None) or ""
-    cb_data: str = getattr(callback_query, "data", "") or ""
+    def _cb_get(obj: Any, key: str, default: Any = None) -> Any:
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        return getattr(obj, key, default)
+
+    async def _answer_callback(callback_id: str, text: str = "") -> None:
+        if not callback_id:
+            return
+        answer_fn = getattr(channel, "answer_callback_query", None)
+        if callable(answer_fn):
+            try:
+                await answer_fn(callback_id, text)
+                return
+            except Exception:
+                pass
+        api_call = getattr(channel, "_api_call", None)
+        if callable(api_call):
+            try:
+                await api_call(
+                    "answerCallbackQuery",
+                    {"callback_query_id": callback_id, "text": text, "show_alert": False},
+                )
+            except Exception:
+                pass
+
+    cb_id = _cb_get(callback_query, "id", "") or ""
+    cb_data: str = _cb_get(callback_query, "data", "") or ""
 
     parts = cb_data.split(":", 2)
     if len(parts) < 3:
@@ -515,7 +540,7 @@ async def handle_rfn_callback(
     entry = cb_store.get(session_key)
     if not entry:
         try:
-            await channel.answer_callback_query(cb_id, "⚠️ Session expired")
+            await _answer_callback(cb_id, "⚠️ Session expired")
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
         return
@@ -524,13 +549,13 @@ async def handle_rfn_callback(
         session = ClarifySession.deserialise(entry.get("session", "{}"))
     except Exception as exc:
         logger.warning("handle_rfn_callback deserialise error: %s", exc)
-        await channel.answer_callback_query(cb_id, "⚠️ Session error")
+        await _answer_callback(cb_id, "⚠️ Session error")
         return
 
     engine = RefinementEngine(channel, cb_store)
 
     if action == "yes":
-        await channel.answer_callback_query(cb_id, "♻️ Refining…")
+        await _answer_callback(cb_id, "♻️ Refining…")
         await engine.refine(session)
 
     elif action == "edit":
@@ -548,7 +573,7 @@ async def handle_rfn_callback(
                 ttl=engine._SESSION_TTL,
             )
             await engine._ask_question(session)
-        await channel.answer_callback_query(cb_id, "✏️ Re-asking…")
+        await _answer_callback(cb_id, "✏️ Re-asking…")
 
     elif action == "skip":
         # Treat skip as empty answer then advance
@@ -561,7 +586,7 @@ async def handle_rfn_callback(
         else:
             cb_store.put(session_key, {"session": session.serialise()}, ttl=engine._SESSION_TTL)
             await engine._ask_question(session)
-        await channel.answer_callback_query(cb_id, "⏭ Skipped")
+        await _answer_callback(cb_id, "⏭ Skipped")
 
     elif action == "accept":
         refined = session.refined_text or session.original_text
@@ -575,11 +600,11 @@ async def handle_rfn_callback(
             pass  # best-effort; failure is non-critical
         cb_store.remove(session_key)
         cb_store.remove(f"rfn_pending:{session.user_id}:{session.chat_id}")
-        await channel.answer_callback_query(cb_id, "✅ Accepted")
+        await _answer_callback(cb_id, "✅ Accepted")
 
     elif action == "rerefine":
         base = session.refined_text or session.original_text
-        await channel.answer_callback_query(cb_id, "♻️ Starting new round…")
+        await _answer_callback(cb_id, "♻️ Starting new round…")
         await engine.start(
             chat_id=session.chat_id,
             user_id=session.user_id,
@@ -596,7 +621,7 @@ async def handle_rfn_callback(
         )
         cb_store.remove(session_key)
         cb_store.remove(f"rfn_pending:{session.user_id}:{session.chat_id}")
-        await channel.answer_callback_query(cb_id, "⏪ Reverted")
+        await _answer_callback(cb_id, "⏪ Reverted")
 
     else:
-        await channel.answer_callback_query(cb_id, "")
+        await _answer_callback(cb_id, "")
