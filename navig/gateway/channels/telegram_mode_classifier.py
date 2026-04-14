@@ -65,6 +65,19 @@ _TALK_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# ── Opinion / preference / casual-sharing phrases → TALK ─────────────────
+_OPINION_PATTERNS = re.compile(
+    r"\b(do you know|have you (?:seen|heard|watched|read)|do you (?:like|watch|think|enjoy)|"
+    r"my favou?rite|it'?s my favou?rite|is my favou?rite|"
+    r"i (?:love|like|enjoy|hate|miss|remember|saw|watched|read)|"
+    r"me too|have you ever|what do you think|how about you|"
+    r"pretty (?:good|cool|nice|bad)|not bad|you know (?:what|that)|"
+    r"did you (?:know|see|hear|watch|read)|just (?:saw|watched|read|finished)|"
+    r"just (?:found|discovered|tried)|makes sense|"
+    r"that'?s (?:great|nice|cool|awesome|good|bad|sad|funny))\b",
+    re.IGNORECASE,
+)
+
 # ── Language-agnostic structural signals ──────────────────────────────────
 # Title/entity markers — detected regardless of surrounding language.
 # Covers: guillemets «», curly quotes \u201c\u201d, straight-quoted multi-word,
@@ -134,6 +147,25 @@ def _has_mid_sentence_cap(text: str) -> bool:
         clean = tok.lstrip("'\"\u2018\u201c\u00ab([{-")
         if len(clean) >= 5 and _LATIN_UPPER.match(clean):
             return True
+    return False
+
+
+def _has_strong_entity_names(text: str) -> bool:
+    """Return True when >=2 non-first tokens are uppercase-initial Latin words of 5+ chars.
+
+    Requires *two or more* such tokens to reduce false positives on sentencces
+    like "Good, do you know Fight Club?" where "Fight" alone triggered REASON.
+    Multi-word proper nouns (e.g. "Breaking Bad", "Pulp Fiction") reliably have
+    2+ capitalised tokens and still route correctly.
+    """
+    tokens = text.split()
+    count = 0
+    for tok in tokens[1:]:
+        clean = tok.lstrip("'\"\u2018\u201c\u00ab([{-")
+        if len(clean) >= 5 and _LATIN_UPPER.match(clean):
+            count += 1
+            if count >= 2:
+                return True
     return False
 
 
@@ -232,10 +264,9 @@ def classify_mode(text: str) -> Mode:
     if _contains_title_marker(stripped):
         return "REASON"
 
-    # 2. Mid-sentence capital: a non-first word with uppercase initial + ≥5 chars
-    #    is almost certainly a proper noun (film, person, place) in any Latin-script
-    #    language.  Catches "j'ai vu Inception hier" where no «» are present.
-    if _has_mid_sentence_cap(stripped):
+    # 2. Mid-sentence capital catches single-entity references (e.g. Inception).
+    #    Strong entity names catches multi-token proper nouns with better precision.
+    if _has_mid_sentence_cap(stripped) or _has_strong_entity_names(stripped):
         return "REASON"
 
     # 3. Cross-script mixing: Cyrillic + Latin in the same message signals an
@@ -250,8 +281,12 @@ def classify_mode(text: str) -> Mode:
     if _is_non_latin_dominant(stripped) and word_count >= 3:
         return "REASON"
 
+    # Opinion / preference / casual-sharing phrases are conversational.
+    if _OPINION_PATTERNS.search(stripped):
+        return "TALK"
+
     # Default for medium-length unclassified messages.
-    # Lowered from 8 to 5: a 5-word Latin sentence is substantive, not chat.
+    # Keep 5-word fallback for compatibility with existing routing expectations.
     if word_count >= 5:
         return "REASON"
 

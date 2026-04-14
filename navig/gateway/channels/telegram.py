@@ -4856,6 +4856,14 @@ class TelegramChannel:
         """Remove LLM internal reasoning tags from response text."""
         import re as _re
 
+        # Strip reasoning model chain-of-thought tags (<think>, <thinking>, etc.)
+        text = _re.sub(
+            r"<(think|thinking|reasoning|thought)>.*?</(think|thinking|reasoning|thought)>",
+            "",
+            text,
+            flags=_re.DOTALL | _re.IGNORECASE,
+        )
+
         # Strip search-quality reflection/score and raw search tags
         text = _re.sub(
             r"<searchquality(?:reflection|score)[^>]*>.*?</searchquality(?:reflection|score)[^>]*>",

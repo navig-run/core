@@ -4529,8 +4529,22 @@ class TelegramCommandsMixin:
             return {"small": small, "big": big, "coder_big": coder}
 
         if prov_id == "nvidia":
+            # Vision/multimodal models cannot handle plain text chat — exclude them
+            # from the text-chat slots to prevent empty responses and fallback to
+            # the reasoning model (dracarys) which leaks <think> chains to users.
+            _VISION_TOKENS = ("fuyu", "clip", "llava", "blip", "visual", "flamingo", "neva")
+
+            def _pick_text(preferred: tuple[str, ...], fallback: str = "") -> str:
+                """Like _pick but excludes vision/multimodal models."""
+                text_models = [(r, l) for r, l in lowered if not any(vt in l for vt in _VISION_TOKENS)]
+                for raw, low in text_models:
+                    if any(token in low for token in preferred):
+                        return raw
+                # Fallback: first non-vision model, or fallback arg, or first model overall
+                return text_models[0][0] if text_models else (fallback or models[0])
+
             big = _pick(("70b",), models[0])
-            small = _pick(("8b",), models[-1])
+            small = _pick_text(("8b", "7b"), models[-1])
             coder = _pick(("deepseek",), big)
             return {"small": small, "big": big, "coder_big": coder}
 
