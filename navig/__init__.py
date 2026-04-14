@@ -31,19 +31,12 @@ def _resolve_version() -> str:
     """Resolve the package version.
 
     Preference order:
-    1. Installed package metadata (fast path — used in wheel/site-packages installs).
-    2. Source-checkout ``pyproject.toml`` adjacent to this file.
+    1. Source-checkout ``pyproject.toml`` adjacent to this file.
+    2. Installed package metadata (fast path — used in wheel/site-packages installs).
     3. Safe semver fallback so CLI version output never goes blank.
     """
-    # Fast path: installed wheel / editable install with metadata
-    try:
-        from importlib.metadata import PackageNotFoundError, version
-
-        return version("navig")
-    except Exception:
-        pass
-
-    # Slow path: running from a source checkout without an editable install
+    # Source checkout path: prefer pyproject so local version stays in sync,
+    # even when an older editable-install metadata entry is present.
     project_file = Path(__file__).resolve().parents[1] / "pyproject.toml"
     if project_file.exists():
         try:
@@ -58,6 +51,14 @@ def _resolve_version() -> str:
                 return version_str.strip()
         except Exception:
             pass  # pyproject.toml unreadable or missing version field
+
+    # Installed wheel / editable install metadata fallback
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+
+        return version("navig")
+    except PackageNotFoundError:
+        pass
 
     return "0.0.0"
 
