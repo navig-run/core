@@ -22,6 +22,8 @@ from navig.platform.paths import config_dir
 
 _log = logging.getLogger(__name__)
 
+_WIZARD_HTTP_TIMEOUT: int = 10  # Short validation checks during wizard setup
+
 # Try questionary first, fall back to simple prompts
 try:
     import questionary
@@ -261,14 +263,14 @@ class SetupWizard:
                 resp = httpx.get(
                     "https://openrouter.ai/api/v1/models",
                     headers={"Authorization": f"Bearer {api_key}"},
-                    timeout=10,
+                    timeout=_WIZARD_HTTP_TIMEOUT,
                 )
                 return resp.status_code == 200
             elif provider == "openai":
                 resp = httpx.get(
                     "https://api.openai.com/v1/models",
                     headers={"Authorization": f"Bearer {api_key}"},
-                    timeout=10,
+                    timeout=_WIZARD_HTTP_TIMEOUT,
                 )
                 return resp.status_code == 200
             # Add more providers as needed
@@ -428,7 +430,7 @@ class SetupWizard:
         try:
             import httpx
 
-            resp = httpx.get(f"https://api.telegram.org/bot{token}/getMe", timeout=10)
+            resp = httpx.get(f"https://api.telegram.org/bot{token}/getMe", timeout=_WIZARD_HTTP_TIMEOUT)
             return resp.status_code == 200 and resp.json().get("ok")
         except Exception:
             return False

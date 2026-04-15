@@ -15,6 +15,8 @@ class SourceError(Exception):
     """Raised when a source cannot determine the latest version."""
 
 
+_HTTP_FETCH_TIMEOUT: int = 10  # Network timeout for all update source HTTP calls
+
 # ---------------------------------------------------------------------------
 # Base
 # ---------------------------------------------------------------------------
@@ -52,7 +54,7 @@ class PyPISource(_BaseSource):
 
         url = f"https://pypi.org/pypi/{self._package}/json"
         try:
-            with urllib.request.urlopen(url, timeout=10) as resp:
+            with urllib.request.urlopen(url, timeout=_HTTP_FETCH_TIMEOUT) as resp:
                 data = json.loads(resp.read())
         except Exception as exc:
             raise SourceError(f"PyPI request failed: {exc}") from exc
@@ -115,7 +117,7 @@ class GitHubSource(_BaseSource):
         if self._token:
             req.add_header("Authorization", f"Bearer {self._token}")
         try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=_HTTP_FETCH_TIMEOUT) as resp:
                 data = json.loads(resp.read())
         except Exception as exc:
             raise SourceError(f"GitHub request failed: {exc}") from exc
@@ -189,7 +191,7 @@ class ArtifactURLSource(_BaseSource):
         import urllib.request
 
         try:
-            with urllib.request.urlopen(self._url, timeout=10) as resp:
+            with urllib.request.urlopen(self._url, timeout=_HTTP_FETCH_TIMEOUT) as resp:
                 body = resp.read().decode("utf-8", errors="replace")
         except Exception as exc:
             raise SourceError(f"URL request failed: {exc}") from exc

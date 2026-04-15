@@ -18,6 +18,8 @@ except ImportError:
 
     _logger = _log.getLogger(__name__)
 
+_GW_REQUEST_TIMEOUT: int = 5  # Default timeout for all gateway HTTP/subprocess calls
+
 
 def _gw_base_url() -> str:
     """Return the local gateway base URL from config (gateway.port / gateway.host)."""
@@ -163,7 +165,7 @@ def gateway_stop():
                         result = subprocess.run(
                             ["taskkill", "/PID", str(pid), "/F"],
                             capture_output=True,
-                            timeout=5,
+                            timeout=_GW_REQUEST_TIMEOUT,
                         )
                         killed = result.returncode == 0
                     else:
@@ -216,7 +218,7 @@ def gateway_stop():
             response = requests.post(
                 f"{_base}/shutdown",
                 headers=_gateway_request_headers(),
-                timeout=5,
+                timeout=_GW_REQUEST_TIMEOUT,
             )
             if response.status_code == 200:
                 ch.success("Gateway shutdown signal sent")
@@ -287,7 +289,7 @@ def gateway_status(
             import urllib.request
 
             tok = tg_cfg["bot_token"]
-            with urllib.request.urlopen(f"https://api.telegram.org/bot{tok}/getMe", timeout=5) as r:
+            with urllib.request.urlopen(f"https://api.telegram.org/bot{tok}/getMe", timeout=_GW_REQUEST_TIMEOUT) as r:
                 tg_online = _j.load(r).get("ok", False)
         except Exception:  # noqa: BLE001
             pass
@@ -540,7 +542,7 @@ def gateway_session(
             response = requests.get(
                 f"{_base}/sessions",
                 headers=_gateway_request_headers(),
-                timeout=5,
+                timeout=_GW_REQUEST_TIMEOUT,
             )
             if response.status_code == 200:
                 sessions = response.json().get("sessions", [])
@@ -557,7 +559,7 @@ def gateway_session(
             response = requests.get(
                 f"{_base}/sessions/{session_key}",
                 headers=_gateway_request_headers(),
-                timeout=5,
+                timeout=_GW_REQUEST_TIMEOUT,
             )
             if response.status_code == 200:
                 session = response.json()
@@ -570,7 +572,7 @@ def gateway_session(
             response = requests.delete(
                 f"{_base}/sessions/{session_key}",
                 headers=_gateway_request_headers(),
-                timeout=5,
+                timeout=_GW_REQUEST_TIMEOUT,
             )
             if response.status_code == 200:
                 ch.success(f"Session cleared: {session_key}")
@@ -840,7 +842,7 @@ def heartbeat_status():
     import requests
 
     try:
-        response = _gw_request("GET", "/status", timeout=5)
+        response = _gw_request("GET", "/status", timeout=_GW_REQUEST_TIMEOUT)
         if response.status_code == 200:
             data = response.json()
             hb = data.get("heartbeat", {})
@@ -921,7 +923,7 @@ def heartbeat_history(
     import requests
 
     try:
-        response = _gw_request("GET", f"/heartbeat/history?limit={limit}", timeout=5)
+        response = _gw_request("GET", f"/heartbeat/history?limit={limit}", timeout=_GW_REQUEST_TIMEOUT)
         if response.status_code == 200:
             history = response.json().get("history", [])
             if history:
@@ -999,7 +1001,7 @@ def approve_list():
     import requests
 
     try:
-        response = _gw_request("GET", "/approval/pending", timeout=5)
+        response = _gw_request("GET", "/approval/pending", timeout=_GW_REQUEST_TIMEOUT)
         if response.status_code == 200:
             data = response.json()
             pending = data.get("pending", [])
@@ -1041,7 +1043,7 @@ def approve_yes(
             "POST",
             f"/approval/{request_id}/respond",
             json={"approved": True, "reason": reason},
-            timeout=5,
+            timeout=_GW_REQUEST_TIMEOUT,
         )
         if response.status_code == 200:
             ch.success(f"Request {request_id} approved")
@@ -1068,7 +1070,7 @@ def approve_no(
             "POST",
             f"/approval/{request_id}/respond",
             json={"approved": False, "reason": reason},
-            timeout=5,
+            timeout=_GW_REQUEST_TIMEOUT,
         )
         if response.status_code == 200:
             ch.success(f"Request {request_id} denied")
@@ -1143,7 +1145,7 @@ def queue_list(
         if status:
             params["status"] = status
 
-        response = _gw_request("GET", "/tasks", params=params, timeout=5)
+        response = _gw_request("GET", "/tasks", params=params, timeout=_GW_REQUEST_TIMEOUT)
         if response.status_code == 200:
             data = response.json()
             tasks = data.get("tasks", [])
@@ -1203,7 +1205,7 @@ def queue_add(
                 "params": task_params,
                 "priority": priority,
             },
-            timeout=5,
+            timeout=_GW_REQUEST_TIMEOUT,
         )
         if response.status_code == 200:
             data = response.json()
@@ -1228,7 +1230,7 @@ def queue_show(
     import requests
 
     try:
-        response = _gw_request("GET", f"/tasks/{task_id}", timeout=5)
+        response = _gw_request("GET", f"/tasks/{task_id}", timeout=_GW_REQUEST_TIMEOUT)
         if response.status_code == 200:
             data = response.json()
             ch.info(f"Task: {data.get('name', 'unknown')}")
@@ -1260,7 +1262,7 @@ def queue_cancel(
     import requests
 
     try:
-        response = _gw_request("POST", f"/tasks/{task_id}/cancel", timeout=5)
+        response = _gw_request("POST", f"/tasks/{task_id}/cancel", timeout=_GW_REQUEST_TIMEOUT)
         if response.status_code == 200:
             ch.success(f"Task {task_id} cancelled")
         elif response.status_code == 404:
@@ -1281,7 +1283,7 @@ def queue_stats():
     import requests
 
     try:
-        response = _gw_request("GET", "/tasks/stats", timeout=5)
+        response = _gw_request("GET", "/tasks/stats", timeout=_GW_REQUEST_TIMEOUT)
         if response.status_code == 200:
             data = response.json()
 

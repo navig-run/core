@@ -9,6 +9,8 @@ from navig.lazy_loader import lazy_import
 
 ch = lazy_import("navig.console_helper")
 
+_BROWSER_REQUEST_TIMEOUT: int = 30  # Browser automation calls can take a few seconds
+
 browser_app = typer.Typer(
     name="browser",
     help="Browser automation via the NAVIG gateway",
@@ -69,7 +71,7 @@ def browser_open(
             f"{gateway_base_url()}/browser/navigate",
             headers=gateway_request_headers(),
             json={"url": url},
-            timeout=30,
+            timeout=_BROWSER_REQUEST_TIMEOUT,
         )
         if response.status_code == 200:
             ch.success(f"Navigated to: {url}")
@@ -96,7 +98,7 @@ def browser_screenshot(
             f"{gateway_base_url()}/browser/screenshot",
             headers=gateway_request_headers(),
             json={"path": path, "full_page": full_page},
-            timeout=30,
+            timeout=_BROWSER_REQUEST_TIMEOUT,
         )
         if response.status_code == 200:
             data = response.json()
@@ -123,7 +125,7 @@ def browser_click(
             f"{gateway_base_url()}/browser/click",
             headers=gateway_request_headers(),
             json={"selector": selector},
-            timeout=30,
+            timeout=_BROWSER_REQUEST_TIMEOUT,
         )
         if response.status_code == 200:
             ch.success(f"Clicked: {selector}")
@@ -150,7 +152,7 @@ def browser_fill(
             f"{gateway_base_url()}/browser/fill",
             headers=gateway_request_headers(),
             json={"selector": selector, "value": value},
-            timeout=30,
+            timeout=_BROWSER_REQUEST_TIMEOUT,
         )
         if response.status_code == 200:
             ch.success(f"Filled: {selector}")

@@ -12,6 +12,8 @@ from navig.lazy_loader import lazy_import
 
 ch = lazy_import("navig.console_helper")
 
+_CRON_REQUEST_TIMEOUT: int = 5  # Short timeout for local gateway cron API calls
+
 cron_app = typer.Typer(
     name="cron",
     help="Persistent job scheduling",
@@ -37,7 +39,7 @@ def cron_list():
     try:
         import requests
 
-        response = requests.get("http://localhost:8789/cron/jobs", timeout=5)
+        response = requests.get("http://localhost:8789/cron/jobs", timeout=_CRON_REQUEST_TIMEOUT)
         if response.status_code == 200:
             jobs = response.json().get("jobs", [])
             if jobs:
@@ -96,7 +98,7 @@ def cron_add(
                 "command": command,
                 "enabled": not disabled,
             },
-            timeout=5,
+            timeout=_CRON_REQUEST_TIMEOUT,
         )
         if response.status_code == 200:
             job = response.json()
@@ -124,7 +126,7 @@ def cron_remove(
     try:
         import requests
 
-        response = requests.delete(f"http://localhost:8789/cron/jobs/{job_id}", timeout=5)
+        response = requests.delete(f"http://localhost:8789/cron/jobs/{job_id}", timeout=_CRON_REQUEST_TIMEOUT)
         if response.status_code == 200:
             ch.success(f"Removed job: {job_id}")
         else:
@@ -172,7 +174,7 @@ def cron_enable(
     try:
         import requests
 
-        response = requests.post(f"http://localhost:8789/cron/jobs/{job_id}/enable", timeout=5)
+        response = requests.post(f"http://localhost:8789/cron/jobs/{job_id}/enable", timeout=_CRON_REQUEST_TIMEOUT)
         if response.status_code == 200:
             ch.success(f"Enabled job: {job_id}")
         else:
@@ -192,7 +194,7 @@ def cron_disable(
     try:
         import requests
 
-        response = requests.post(f"http://localhost:8789/cron/jobs/{job_id}/disable", timeout=5)
+        response = requests.post(f"http://localhost:8789/cron/jobs/{job_id}/disable", timeout=_CRON_REQUEST_TIMEOUT)
         if response.status_code == 200:
             ch.success(f"Disabled job: {job_id}")
         else:
@@ -210,7 +212,7 @@ def cron_status():
     try:
         import requests
 
-        response = requests.get("http://localhost:8789/status", timeout=5)
+        response = requests.get("http://localhost:8789/status", timeout=_CRON_REQUEST_TIMEOUT)
         if response.status_code == 200:
             data = response.json()
             cron = data.get("cron", {})
