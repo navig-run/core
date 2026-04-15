@@ -41,7 +41,7 @@ def test_ask_ai_handles_non_utf8_tasklist_output():
         "host": "localhost",
     }
     fake_assistant = MagicMock()
-    fake_assistant.ask.side_effect = lambda q, ctx, model_override=None: (
+    fake_assistant.ask.side_effect = lambda q, ctx, model_override=None, **kwargs: (
         captured_context.update(ctx) or "mocked answer"
     )
 

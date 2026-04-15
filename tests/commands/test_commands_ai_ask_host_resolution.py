@@ -37,7 +37,7 @@ def test_ask_ai_uses_global_active_host_when_runtime_empty(monkeypatch):
         def __init__(self, _cfg):
             pass
 
-        def ask(self, question, context, model_override=None):
+        def ask(self, question, context, model_override=None, **kwargs):
             captured["question"] = question
             return "ok"
 
@@ -100,7 +100,7 @@ def test_ask_ai_missing_key_error_is_host_aware(monkeypatch):
         def __init__(self, _cfg):
             pass
 
-        def ask(self, question, context, model_override=None):
+        def ask(self, question, context, model_override=None, **kwargs):
             raise ValueError("OpenRouter API key not configured. Checked source chain.")
 
     class _Remote:
@@ -158,7 +158,7 @@ def test_ask_ai_accepts_none_options(monkeypatch):
         def __init__(self, _cfg):
             pass
 
-        def ask(self, question, context, model_override=None):
+        def ask(self, question, context, model_override=None, **kwargs):
             return "ok"
 
     class _Remote:

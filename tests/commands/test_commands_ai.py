@@ -15,7 +15,7 @@ def test_ask_ai_windows_tasklist_decode_fallback(monkeypatch):
         def __init__(self, config_manager):
             self.config_manager = config_manager
 
-        def ask(self, question, context, model_override=None):
+        def ask(self, question, context, model_override=None, **kwargs):
             captured["question"] = question
             captured["context"] = context
             captured["model"] = model_override
