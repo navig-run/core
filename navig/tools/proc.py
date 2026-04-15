@@ -36,6 +36,10 @@ from typing import Literal
 
 logger = logging.getLogger("navig.tools.proc")
 
+# Post-kill drain: how long to wait for a terminated process to flush remaining
+# stdout/stderr before abandoning the stream.
+_DRAIN_TIMEOUT: float = 2.0
+
 # ── Types ────────────────────────────────────────────────────────────────────
 
 Termination = Literal["exit", "timeout", "no_output_timeout", "signal"]
@@ -340,7 +344,7 @@ async def run_process(
             pass  # process already gone; expected
         # Drain remaining output
         try:
-            await asyncio.wait_for(asyncio.shield(communicate_task), timeout=2.0)
+            await asyncio.wait_for(asyncio.shield(communicate_task), timeout=_DRAIN_TIMEOUT)
         except (asyncio.TimeoutError, asyncio.CancelledError):
             pass  # output drain timed out or cancelled; expected
     finally:
@@ -358,7 +362,7 @@ async def run_process(
             with contextlib.suppress(ProcessLookupError, Exception):
                 proc.kill()
             with contextlib.suppress(asyncio.TimeoutError, Exception):
-                await asyncio.wait_for(proc.wait(), timeout=2.0)
+                await asyncio.wait_for(proc.wait(), timeout=_DRAIN_TIMEOUT)
 
         if proc.stdin and not proc.stdin.is_closing():
             with contextlib.suppress(Exception):

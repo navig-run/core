@@ -58,6 +58,10 @@ _BASH_HEAD = 500
 _BASH_TAIL = 200
 _TRUNCATION_MARKER = "\n[...truncated...]\n"
 
+# LLM summarisation call parameters — low temperature for stable summaries.
+_SUMMARISE_TEMPERATURE: float = 0.2
+_SUMMARISE_MAX_TOKENS: int = 800
+
 
 def _estimate_tokens(text: str) -> int:
     """Rough token count from character length (conservative 3.5 chars/token)."""
@@ -295,8 +299,8 @@ class ContextCompressor:
 
             result = run_llm(
                 prompt=template,
-                temperature=0.2,
-                max_tokens=800,
+                temperature=_SUMMARISE_TEMPERATURE,
+                max_tokens=_SUMMARISE_MAX_TOKENS,
             )
             if result and result.content:
                 return result.content.strip()
@@ -526,7 +530,7 @@ def _default_summarizer(digest: str) -> str:
     try:
         from navig.llm_generate import run_llm
 
-        result = run_llm(prompt=prompt, temperature=0.2, max_tokens=800)
+        result = run_llm(prompt=prompt, temperature=_SUMMARISE_TEMPERATURE, max_tokens=_SUMMARISE_MAX_TOKENS)
         if result and result.content:
             return result.content.strip()
     except Exception as exc:

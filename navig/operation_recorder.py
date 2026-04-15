@@ -24,6 +24,10 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# "Read everything" sentinel: used by export_json/export_csv/count when no
+# row limit is wanted. Caps at a value well above any realistic history size.
+_UNBOUNDED_SCAN_LIMIT: int = 100_000
+
 
 class OperationType(str, Enum):
     """Categories of operations for filtering and undo logic."""
@@ -492,7 +496,7 @@ class OperationRecorder:
         Returns:
             Number of operations exported
         """
-        operations = list(self.iter_operations(limit=100000, **filters))
+        operations = list(self.iter_operations(limit=_UNBOUNDED_SCAN_LIMIT, **filters))
 
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump([op.to_dict() for op in operations], f, indent=2)
@@ -508,7 +512,7 @@ class OperationRecorder:
         """
         import csv
 
-        operations = list(self.iter_operations(limit=100000, **filters))
+        operations = list(self.iter_operations(limit=_UNBOUNDED_SCAN_LIMIT, **filters))
 
         if not operations:
             return 0
@@ -562,7 +566,7 @@ class OperationRecorder:
 
     def count(self, **filters) -> int:
         """Count operations matching filters."""
-        return sum(1 for _ in self.iter_operations(limit=100000, **filters))
+        return sum(1 for _ in self.iter_operations(limit=_UNBOUNDED_SCAN_LIMIT, **filters))
 
 
 # Singleton instance

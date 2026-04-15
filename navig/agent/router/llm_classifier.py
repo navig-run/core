@@ -63,6 +63,10 @@ CACHE_TTL_SECONDS: int = 3_600  # 1 hour
 CACHE_MAX_ENTRIES: int = 1_000  # LRU-by-age eviction at this limit
 DEFAULT_CONFIDENCE_THRESHOLD: float = 0.7
 
+# Ultra-cheap LLM call: minimal output, zero temperature for maximum determinism.
+_CLASSIFIER_MAX_TOKENS: int = 10
+_CLASSIFIER_TEMPERATURE: float = 0
+
 # Tier scan priority: longest/rarest first to avoid false matches.
 # e.g. "needs COMPLEX reasoning" must not short-circuit to "MEDIUM".
 _TIER_SCAN_ORDER: tuple[RequestTier, ...] = (
@@ -200,8 +204,8 @@ async def _call_llm(prompt: str) -> RequestTier:
         raw: str = await client.complete(
             truncated,
             system_prompt=_SYSTEM_PROMPT,
-            max_tokens=10,
-            temperature=0,
+            max_tokens=_CLASSIFIER_MAX_TOKENS,
+            temperature=_CLASSIFIER_TEMPERATURE,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("llm_classifier: LLM call failed, defaulting to MEDIUM — {}", exc)
