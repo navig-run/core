@@ -69,7 +69,8 @@ class TestProviderChain:
         from navig.routing.router import UnifiedRouter
 
         router = UnifiedRouter(config={})
-        chain = router._get_provider_chain()
+        with patch.object(router, "_discover_user_providers", return_value=[]):
+            chain = router._get_provider_chain()
         assert chain == ["mcp_bridge", "openrouter", "github_models", "ollama"]
 
     def test_chain_prepends_default_provider(self):

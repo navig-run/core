@@ -11,7 +11,7 @@ if ($PSVersionTable.PSVersion.Major -lt 5) {
 }
 #
 # Environment:
-#   NAVIG_VERSION      Pin version (e.g. "2.4.14")
+#   NAVIG_VERSION      Pin version (e.g. "2.7.0")
 #   NAVIG_ACTION       install (default) | uninstall | reinstall
 #   NO_COLOR           Disable color output
 
@@ -211,7 +211,7 @@ Usage:
     .\install.ps1 [OPTIONS]
 
 Options:
-  -Version <ver>   Install specific version (e.g. 2.4.14)
+  -Version <ver>   Install specific version (e.g. 2.7.0)
   -Action <mode>   install (default) | uninstall | reinstall
   -NoConfirm       Skip interactive prompts
   -DryRun          Preview actions without executing

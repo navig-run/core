@@ -247,3 +247,99 @@ memory:
   # Effort level used for the compaction summarization LLM call.
   # One of: low, medium, high, max, ultra
   compact_summary_effort: "low"
+  # Enable the 4-type structured memory taxonomy guidance (user/feedback/project/reference).
+  # When true, the memory system prompt is enriched with per-type scope guidance.
+  taxonomy_enabled: true
+  # ── Auto-compact (adapted from Claude Code) ────────────────────────────────
+  # Enable automatic compaction when the context window approaches capacity.
+  auto_compact_enabled: true
+  # How many tokens to keep as headroom before triggering auto-compact.
+  auto_compact_buffer_tokens: 13000
+  # Circuit-breaker: disable auto-compact after this many consecutive failures.
+  auto_compact_max_failures: 3
+  # Minimum number of AI turns before auto-compact can trigger.
+  auto_compact_min_turns: 3
+  # ── Background session memory extraction (adapted from Claude Code) ────────
+  # Enable periodic background extraction of structured notes.
+  extraction_enabled: true
+  # Extract notes every N tool calls.
+  extraction_interval_tool_calls: 10
+  # Effort level for the extraction LLM call.
+  extraction_effort: "low"
+
+# LLM cost / token tracking
+cost_tracker:
+  # Enable session cost accumulation and `navig cost` reporting.
+  enabled: true
+  # Persist per-session totals to ~/.navig/session_costs.jsonl on exit.
+  persist: true
+  # Maximum entries kept in session_costs.jsonl before rotation.
+  history_keep: 100
+  # Per-model pricing table (USD per 1 000 tokens).
+  # Keys are matched against the model string returned by the provider.
+  # Pricing last updated 2025-01. Adjust to your contracted rates.
+  model_pricing:
+    # ── OpenAI ────────────────────────────────────────────────────────────────
+    gpt-4o:           {input: 0.0025,  output: 0.0100, cache_read: 0.00125}
+    gpt-4o-mini:      {input: 0.000150, output: 0.000600, cache_read: 0.000075}
+    gpt-4-turbo:      {input: 0.0100,  output: 0.0300,  cache_read: 0.0}
+    gpt-3.5-turbo:    {input: 0.000500, output: 0.001500, cache_read: 0.0}
+    # ── Anthropic ─────────────────────────────────────────────────────────────
+    claude-3-5-sonnet-20241022: {input: 0.003,   output: 0.015,  cache_read: 0.0003}
+    claude-3-5-haiku-20241022:  {input: 0.00080, output: 0.00400, cache_read: 0.00008}
+    claude-3-opus-20240229:     {input: 0.015,   output: 0.075,  cache_read: 0.0015}
+    # ── DeepSeek ──────────────────────────────────────────────────────────────
+    deepseek-chat:    {input: 0.000140, output: 0.000280, cache_read: 0.000014}
+    deepseek-coder:   {input: 0.000140, output: 0.000280, cache_read: 0.0}
+    # ── Google ────────────────────────────────────────────────────────────────
+    gemini-1.5-pro:   {input: 0.00125, output: 0.00500, cache_read: 0.0003125}
+    gemini-1.5-flash: {input: 0.000075, output: 0.000300, cache_read: 0.00001875}
+    # ── Local / open-weights — effectively free at inference cost ─────────────
+    default:          {input: 0.0, output: 0.0, cache_read: 0.0}
+
+# Output styles — user-defined AI response format profiles
+output_styles:
+  # Active style name (null = no style override).
+  # Set with `navig output-style use <name>`.
+  active: null
+  # Directories scanned for style .md files (evaluated in order; project wins).
+  # Relative to the current working directory for project directory.
+  project_dir: ".navig/output-styles"
+  user_dir: "~/.navig/output-styles"
+
+# Token budget — diminishing-returns continuation guard
+token_budget:
+  # Maximum number of LLM continuation turns per request.
+  max_continuations: 8
+  # Minimum number of continuations before diminishing-returns check activates.
+  min_continuation_count: 3
+  # If the last N turns each added fewer than this many tokens, stop.
+  min_delta_tokens: 500
+  # How many consecutive low-delta turns trigger a stop.
+  consecutive_low_delta: 2
+
+# Lifecycle hooks — run external scripts on AI agent events (adapted from Claude Code)
+hooks:
+  # Enable the hooks system.
+  enabled: true
+  # Default subprocess timeout for hook commands (seconds).
+  timeout_seconds: 30
+  # Allow hook commands to make outbound network requests.
+  # Private/loopback addresses are always blocked regardless.
+  allow_network: false
+
+# File history — checkpoint files before agent-driven edits (adapted from Claude Code)
+file_history:
+  # Enable pre-write file snapshots. Off by default (writes to disk on every edit).
+  enabled: false
+  # Maximum number of snapshots kept per session before oldest are evicted.
+  max_snapshots_per_session: 100
+  # Override the snapshot cache root directory. null = ~/.navig/file-cache.
+  cache_dir: null
+
+# Agent plan mode (adapted from Claude Code)
+agent:
+  # Number of parallel sub-agent explorations in Phase 2 of `navig plan new`.
+  plan_explore_agents: 3
+  # Maximum clarifying questions asked in Phase 1 of `navig plan new`.
+  plan_max_interview_questions: 5

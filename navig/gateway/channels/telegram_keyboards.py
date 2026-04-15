@@ -894,6 +894,11 @@ class CallbackHandler:
                 await self._handle_audio_file_callback(cb_id, cb_data, chat_id, message_id, user_id)
                 return
 
+            # ── Evening summary action buttons (eve:*) — no store needed ──
+            if cb_data.startswith("eve:"):
+                await self._handle_evening_callback(cb_id, cb_data, chat_id, message_id, user_id)
+                return
+
             entry = self.store.get(cb_data)
             if not entry:
                 await self._answer(cb_id, "⏳ Button expired")
@@ -2763,6 +2768,110 @@ class CallbackHandler:
                 await self.channel.send_message(chat_id, "⚠️ Language detection failed.")
             return
 
+        await self._answer(cb_id, "")
+
+    async def _handle_evening_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        """Handle evening summary inline action buttons (eve:{action}).
+
+        Actions
+        -------
+        log_shipped   — prompts user to briefly log what was completed today
+        plan_tomorrow — prompts user to set their top priority for tomorrow
+        backup_check  — runs ``navig backup show`` in-process and replies
+        dnd_on        — activates DND / quiet mode for the rest of the night
+        """
+        import asyncio as _asyncio
+
+        action = cb_data.split(":", 1)[1] if ":" in cb_data else cb_data
+
+        if action == "log_shipped":
+            await self._answer(cb_id, "✅ What shipped?")
+            await self.channel.send_message(
+                chat_id,
+                (
+                    "📦 <b>What shipped today?</b>\n\n"
+                    "Reply with a quick line — one sentence per item is enough.\n"
+                    "<i>e.g. Fixed login bug · Deployed v2.3 · Reviewed 4 PRs</i>"
+                ),
+                parse_mode="HTML",
+            )
+            return
+
+        if action == "plan_tomorrow":
+            await self._answer(cb_id, "🎯 Set your priority")
+            await self.channel.send_message(
+                chat_id,
+                (
+                    "🎯 <b>What's the top priority for tomorrow?</b>\n\n"
+                    "Reply with a single sentence — I'll log it as your morning anchor.\n"
+                    "<i>e.g. Ship the auth refactor · Unblock the design review</i>"
+                ),
+                parse_mode="HTML",
+            )
+            return
+
+        if action == "backup_check":
+            await self._answer(cb_id, "💾 Checking...")
+            try:
+                import subprocess as _subprocess
+
+                result = await _asyncio.to_thread(
+                    lambda: _subprocess.run(
+                        ["navig", "backup", "show", "--plain"],
+                        capture_output=True,
+                        text=True,
+                        timeout=15,
+                    )
+                )
+                out = (result.stdout or "").strip()
+                err = (result.stderr or "").strip()
+                body = out or err or "No backup data found."
+                # Truncate to stay inside Telegram limits
+                if len(body) > 3500:
+                    body = body[:3500] + "\n…(truncated)"
+                await self.channel.send_message(
+                    chat_id,
+                    f"💾 <b>Backup status</b>\n\n<pre>{html.escape(body)}</pre>",
+                    parse_mode="HTML",
+                )
+            except Exception as exc:
+                logger.warning("eve:backup_check error: %s", exc)
+                await self.channel.send_message(
+                    chat_id,
+                    "⚠️ Could not retrieve backup status. Run <code>navig backup show</code> manually.",
+                    parse_mode="HTML",
+                )
+            return
+
+        if action == "dnd_on":
+            await self._answer(cb_id, "🌑 Going dark")
+            try:
+                from navig.agent.proactive.user_state import get_user_state_tracker
+
+                tracker = get_user_state_tracker()
+                tracker.set_dnd(True)
+                await self.channel.send_message(
+                    chat_id,
+                    "🌑 <b>DND activated.</b>  Notifications suppressed until morning.\n"
+                    "<i>Send any message to wake me up early.</i>",
+                    parse_mode="HTML",
+                )
+            except Exception as exc:
+                logger.warning("eve:dnd_on error: %s", exc)
+                await self.channel.send_message(
+                    chat_id,
+                    "🌑 DND activated. Notifications will be suppressed.",
+                )
+            return
+
+        # Unknown action — acknowledge silently
         await self._answer(cb_id, "")
 
     async def _handle_heard_callback(

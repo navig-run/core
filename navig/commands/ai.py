@@ -197,7 +197,8 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
 
     # Get AI response
     try:
-        response = ai.ask(question, context, model_override=model)
+        effort = (options or {}).get("effort")
+        response = ai.ask(question, context, model_override=model, effort=effort)
 
         # Render as markdown using console_helper
         ch.print_markdown(response)
@@ -421,7 +422,6 @@ def ai_models(
         navig ai models --provider airllm
         navig ai models --provider openai
     """
-    from rich.console import Console
     from rich.table import Table
 
     console = get_console()
@@ -495,7 +495,6 @@ def ai_providers(
     test: str | None = typer.Option(None, "--test", "-t", help="Test provider connection"),
 ):
     """Manage AI providers and API keys."""
-    from rich.console import Console
     from rich.table import Table
 
     console = get_console()
@@ -652,7 +651,6 @@ def ai_airllm(
         navig ai airllm --configure --compression 4bit --max-vram 8
         navig ai airllm --test
     """
-    from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
 
@@ -833,7 +831,6 @@ def ai_login(
     headless: bool = typer.Option(False, "--headless", help="Headless mode (no browser auto-open)"),
 ):
     """Login to an AI provider using OAuth (e.g., OpenAI Codex)."""
-    from rich.console import Console
 
     console = get_console()
 
@@ -940,7 +937,6 @@ def ai_logout(
     provider: str = typer.Argument(..., help="Provider to logout from"),
 ):
     """Remove OAuth credentials for a provider."""
-    from rich.console import Console
 
     console = get_console()
 
@@ -993,7 +989,6 @@ def memory_callback(ctx: typer.Context):
 
 def _memory_show():
     """Display current user profile."""
-    from rich.console import Console
 
     console = get_console()
     try:
@@ -1017,9 +1012,7 @@ def memory_show():
 def memory_edit():
     """Open user profile in your default editor."""
     import os
-    from pathlib import Path
 
-    from rich.console import Console
 
     console = get_console()
 
@@ -1062,7 +1055,6 @@ def memory_add(
     category: str = typer.Option("user_note", "--category", "-c", help="Note category"),
 ):
     """Add a note to NAVIG's memory about you."""
-    from rich.console import Console
 
     console = get_console()
     try:
@@ -1085,7 +1077,6 @@ def memory_search(
     limit: int = typer.Option(10, "--limit", "-n", help="Max results"),
 ):
     """Search NAVIG's memory about you."""
-    from rich.console import Console
 
     console = get_console()
     try:
@@ -1111,7 +1102,6 @@ def memory_clear(
     confirm: bool = typer.Option(False, "--confirm", help="Confirm clearing all memory"),
 ):
     """Clear all memory (requires --confirm)."""
-    from rich.console import Console
 
     console = get_console()
     if not confirm:
@@ -1142,7 +1132,6 @@ def memory_set(
     value: str = typer.Argument(..., help="Value to set"),
 ):
     """Set a specific profile field."""
-    from rich.console import Console
 
     console = get_console()
     try:

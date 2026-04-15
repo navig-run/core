@@ -40,9 +40,17 @@ class Notification:
     priority: NotificationPriority = NotificationPriority.NORMAL
     created_at: datetime = field(default_factory=datetime.now)
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Inline keyboard rows sent alongside the message (Telegram inline_keyboard format).
+    keyboard: list[list[dict]] | None = field(default=None)
+    # When True, ``message`` is already fully formatted — skip the title/emoji wrapper.
+    raw_message: bool = False
 
     def to_telegram_message(self) -> str:
         """Format for Telegram."""
+        if self.raw_message:
+            # Message already carries its own header — emit as-is.
+            return self.message
+
         emoji_map = {
             "alert": "🚨",
             "briefing": "📊",
@@ -355,7 +363,11 @@ class TelegramNotifier(ChannelNotifier):
                 logger.debug("Suppressed notification (quiet hours/DND): %s", notification.title)
                 return
             message = notification.to_telegram_message()
-            await self.channel.send_message(self.chat_id, message)
+            await self.channel.send_message(
+                self.chat_id,
+                message,
+                keyboard=notification.keyboard or None,
+            )
         except Exception as e:
             logger.error("Failed to send notification: %s", e)
 
@@ -458,7 +470,7 @@ class TelegramNotifier(ChannelNotifier):
         )
 
     async def _evening_summary(self) -> Notification | None:
-        """Generate evening summary — NAVIG lore-flavored, day/hour-aware."""
+        """Evening summary — single-header, inline action buttons, no duplicate text."""
         import random
 
         now = datetime.now()
@@ -466,54 +478,67 @@ class TelegramNotifier(ChannelNotifier):
         weekday = now.weekday()  # 0 = Monday, 6 = Sunday
         day_name = now.strftime("%A")
 
-        # --- Dynamic opening line ---
-        if hour < 19:
-            shift_label = "evening shift begins"
-        elif hour < 22:
-            shift_label = "graveyard watch is close"
-        else:
-            shift_label = "deep cycle approaching"
+        shift_label = (
+            "Evening Shift"
+            if hour < 19
+            else "Graveyard Watch"
+            if hour < 22
+            else "Deep Cycle"
+        )
 
-        day_context = {
+        day_context: dict[int, str] = {
             0: "Week 1 of 5 complete. Momentum counts.",
             1: "Tuesday through. Keep the streak.",
-            2: "Midweek. The servers don't sleep — you can.",
-            3: "Thursday hold. One more push before the weekend.",
-            4: "Friday wind-down. Let the daemons run overnight.",
-            5: "Saturday ops. Respect the craft, even on weekends.",
+            2: "Midweek. Servers don't sleep — you can.",
+            3: "Thursday hold. One more push.",
+            4: "Friday wind-down. Let the daemons run.",
+            5: "Saturday ops. Respect the craft.",
             6: "Sunday. Systems quiet. Mind should be too.",
-        }.get(weekday, "Another day logged in the graveyard.")
+        }
+        context = day_context.get(weekday, "Another day logged in the graveyard.")
 
-        # --- Dynamic closing line ---
         closings = [
-            "The graveyard is quiet. Keep it that way. 🪦",
-            "No admin visible. Systems nominal. Sleep well. 🌑",
+            "Stack's green. Logs can wait until morning. 📋",
+            "No admin visible. Systems nominal. 🌑",
             "Daemons running. You're allowed to rest. 🫀",
             "The watch is handed off. Go dark. 🔦",
             "Servers alive. Admin invisible. Mission holding. 🕹️",
-            "Stack's green. Logs can wait until morning. 📋",
+            "The graveyard is quiet. Keep it that way. 🪦",
         ]
         closing = random.choice(closings)
 
-        lines = [
-            f"📊 <b>{day_name} Evening — {shift_label.title()}</b>",
+        message = "\n".join([
+            f"🌙 <b>{day_name} Evening</b>  ·  <i>{shift_label}</i>",
             "",
-            f"<i>{day_context}</i>",
+            f"<i>{context}</i>",
             "",
-            "<b>Shutdown Checklist:</b>",
-            "• Review what shipped today",
+            "<b>Close out the day:</b>",
+            "• Review what shipped",
             "• Lock in tomorrow's top priority",
-            "• Confirm backups completed",
+            "• Confirm backups ran",
             "• Close what can be closed",
             "",
-            closing,
+            f"<i>{closing}</i>",
+        ])
+
+        keyboard = [
+            [
+                {"text": "✅ Log what shipped", "callback_data": "eve:log_shipped"},
+                {"text": "🎯 Set tomorrow", "callback_data": "eve:plan_tomorrow"},
+            ],
+            [
+                {"text": "💾 Backup check", "callback_data": "eve:backup_check"},
+                {"text": "🌑 Go dark", "callback_data": "eve:dnd_on"},
+            ],
         ]
 
         return Notification(
             type="briefing",
-            title=f"{day_name} Evening Summary",
-            message="\n".join(lines),
+            title=f"{day_name} Evening",
+            message=message,
             priority=NotificationPriority.LOW,
+            keyboard=keyboard,
+            raw_message=True,
         )
 
     async def _heartbeat_check(self) -> Notification | None:

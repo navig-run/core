@@ -1394,7 +1394,13 @@ class TelegramCommandsMixin:
 
     # -- Core slash handlers ---------------------------------------------------
 
-    async def _handle_start(self, chat_id: int, username: str, user_id: int = 0) -> None:
+    async def _handle_start(
+        self,
+        chat_id: int,
+        username: str,
+        user_id: int = 0,
+        prior_last_active: str | None = None,
+    ) -> None:
         """Send a conversational context card — no navigation menus."""
         # Active reminder count
         active_count = 0
@@ -1429,6 +1435,45 @@ class TelegramCommandsMixin:
         )
         keyboard = [[{"text": "📋 What can I do?", "callback_data": "helpme"}]]
         await self.send_message(chat_id, text, parse_mode="HTML", keyboard=keyboard)
+
+        # Away summary — show a brief context recap when the user returns after
+        # a long absence.  The feature is gated by memory.away_summary_gap_hours
+        # (0 = disabled) and applies only to DM sessions with prior history.
+        try:
+            from navig.config import get_config_manager as _gcm_start
+            from navig.gateway.channels.away_summary import build_away_summary
+            from navig.gateway.channels.telegram_sessions import (
+                get_session_manager as _getsm_start,
+            )
+
+            _cfg_start = _gcm_start()
+            _gap_hours = float(_cfg_start.get("memory.away_summary_gap_hours", 4) or 4)
+            if _gap_hours > 0:
+                _sm_start = _getsm_start()
+                _sess_start = _sm_start.get_session(chat_id, user_id, is_group=False)
+                if _sess_start and _sess_start.messages:
+                    _last_active_raw = prior_last_active or _sess_start.last_active
+                    _last_active = datetime.fromisoformat(_last_active_raw)
+                    _gap_secs = (
+                        datetime.now() - _last_active.replace(tzinfo=None)
+                    ).total_seconds()
+                    if _gap_secs >= _gap_hours * 3600:
+                        _window = int(
+                            _cfg_start.get("memory.away_summary_message_window", 30) or 30
+                        )
+                        _history = [
+                            {"role": m.role, "content": m.content}
+                            for m in _sess_start.messages[-_window:]
+                        ]
+                        _summary = await build_away_summary(_history, config=_cfg_start)
+                        if _summary:
+                            await self.send_message(
+                                chat_id,
+                                f"💭 <b>Last time:</b> {html.escape(_summary)}",
+                                parse_mode="HTML",
+                            )
+        except Exception as _away_exc:
+            logger.debug("away_summary skipped (non-fatal): %s", _away_exc)  # /start must not block
 
         # Onboarding handoff progress block (text only, no navigation buttons)
         try:

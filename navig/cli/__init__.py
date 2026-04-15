@@ -1114,16 +1114,32 @@ def ask_compat(
         "--execute",
         help="With --plan, execute after preview; without --plan, no behavior change",
     ),
+    effort: str | None = typer.Option(
+        None,
+        "--effort",
+        "-e",
+        help="Reasoning depth: low, medium, high, max, ultra  [default: auto]",
+    ),
 ):
     """Ask AI about server/configuration."""
+    from navig.agent.effort import resolve_effort
     from navig.commands.ai import ask_ai
     from navig.routing.detect import detect_mode
+
+    if effort is not None:
+        try:
+            resolve_effort(effort)
+        except ValueError as exc:
+            ch.error(str(exc))
+            raise typer.Exit(2) from exc
 
     mode, confidence, reasons = detect_mode(question)
     opts = dict(ctx.obj or {})
     opts["ask_detected_mode"] = mode
     opts["ask_detected_confidence"] = confidence
     opts["ask_detected_reasons"] = reasons
+    if effort is not None:
+        opts["effort"] = effort
 
     if plan:
         ch.dim(f"Intent route: {mode} (confidence={confidence:.2f}; reasons={', '.join(reasons)})")

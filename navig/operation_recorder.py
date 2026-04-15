@@ -611,6 +611,8 @@ class RecordedOperation:
         args: dict[str, Any] | None = None,
         reversible: bool = False,
         tags: list[str] | None = None,
+        filepath: str | None = None,
+        session_id: str | None = None,
     ):
         self.command = command
         self.op_type = op_type
@@ -619,6 +621,9 @@ class RecordedOperation:
         self.args = args
         self.reversible = reversible
         self.tags = tags
+        # Optional: path of the file being written/modified — triggers file history checkpoint
+        self.filepath = filepath
+        self.session_id = session_id
 
         # Results (can be set during execution)
         self.success: bool | None = None
@@ -645,6 +650,23 @@ class RecordedOperation:
             reversible=self.reversible,
             tags=self.tags,
         )
+
+        # File history checkpoint — snapshot the file before any write/modify
+        if self.filepath and self.op_type in (
+            OperationType.FILE_MODIFY,
+            OperationType.FILE_CREATE,
+        ):
+            try:
+                from navig.file_history import get_file_history_store
+                session_id = self.session_id or self._record.id
+                backup = get_file_history_store().checkpoint(
+                    self.filepath, session_id, turn_id=self._record.id
+                )
+                if backup and self.undo_data is None:
+                    self.undo_data = {"file_history_backup": str(backup)}
+            except Exception as _fh_exc:  # noqa: BLE001
+                logger.debug("file_history checkpoint skipped: %s", _fh_exc)
+
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):

@@ -812,6 +812,23 @@ class ConversationalAgent:
         budget = IterationBudget(max_iterations=max_iterations)
         _tracker: CostTracker = cost_tracker if cost_tracker is not None else CostTracker()
 
+        # Diminishing-returns token budget (ported from .lab/claude/token-budget.ts)
+        try:
+            from navig.token_budget import (  # noqa: PLC0415
+                StopDecision as _TokStop,
+                check_budget as _chk_tok,
+                create_budget_tracker as _mk_tok,
+                update_tracker as _upd_tok,
+            )
+            _tok_budget = _mk_tok()
+            _tok_total_tokens = 0
+            _tok_budget_active = True
+        except Exception as _tb_init_err:
+            logger.debug("token_budget unavailable (non-fatal): %s", _tb_init_err)
+            _tok_budget = None
+            _tok_total_tokens = 0
+            _tok_budget_active = False
+
         # ── Approval policy ──
         if approval_policy is not None:
             try:
@@ -1033,6 +1050,24 @@ class ConversationalAgent:
                 )
             except Exception as exc:
                 logger.debug("Exception suppressed: %s", exc)
+
+            # Check diminishing-returns token budget (stops early if output is plateauing)
+            if _tok_budget_active and _tok_budget is not None:
+                try:
+                    _tok_total_tokens += (
+                        usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+                    )
+                    _tok_budget = _upd_tok(_tok_budget, _tok_total_tokens)
+                    _tok_decision = _chk_tok(_tok_budget)
+                    if isinstance(_tok_decision, _TokStop):
+                        logger.info("Diminishing-returns stop: %s", _tok_decision.reason)
+                        final_response = response.content or (
+                            "[Response truncated: diminishing token returns detected. "
+                            f"Reason: {_tok_decision.reason}]"
+                        )
+                        break
+                except Exception as _tb_err:
+                    logger.debug("token_budget check skipped: %s", _tb_err)
 
             # Model produced a final answer (no tool calls pending)
             if not response.tool_calls:

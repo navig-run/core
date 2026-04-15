@@ -127,6 +127,9 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "s": ("navig.commands.server", "server_app"),
     "db": ("navig.commands.db", "db_app"),
     "database": ("navig.commands.db", "db_app"),
+    # ── LLM cost tracking and output-style profiles ───────────────────────
+    "cost": ("navig.commands.cost", "cost_app"),
+    "output-style": ("navig.commands.output_style", "output_style_app"),
     # ── Phase 2: Links database ───────────────────────────────────────────
     "links": ("navig.commands.links", "links_app"),
     # ── Phase 3: Knowledge graph ──────────────────────────────────────────
@@ -186,6 +189,8 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     # ── Work: lifecycle/stage tracker for leads, projects, tasks, etc. ────────
     "work": ("navig.commands.work", "work_app"),
     "plans": ("navig.commands.plans", "plans_app"),
+    # ── AI-guided planning wizard (plan new / list / show / run) ─────────────
+    "plan": ("navig.commands.plan_mode", "app"),
     # ── Formerly eager-loaded inline — now lazy via this map ─────────────────
     "origin": ("navig.commands.origin", "origin_app"),
     "user": ("navig.commands.user", "user_app"),

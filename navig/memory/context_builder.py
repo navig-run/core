@@ -500,6 +500,7 @@ class ContextBuilder:
         ctx: dict[str, Any] = {
             "conversation_history": [],
             "key_facts": "",
+            "memory_guidance": "",
             "workspace_notes": [],
             "kb_snippets": [],
             "project_files": [],
@@ -531,6 +532,22 @@ class ContextBuilder:
             if kf_text:
                 ctx["key_facts"] = kf_text
                 budget -= len(kf_text)
+
+        # -- 2c. memory taxonomy guidance (structured memory type hints) -----
+        if budget > 0:
+            try:
+                from navig.memory.taxonomy import (  # noqa: PLC0415
+                    build_memory_guidance,
+                    is_taxonomy_enabled,
+                )
+
+                if is_taxonomy_enabled():
+                    guidance = build_memory_guidance()
+                    if guidance:
+                        ctx["memory_guidance"] = guidance
+                        budget -= len(guidance)
+            except Exception as _tax_err:
+                logger.debug("memory taxonomy injection skipped: %s", _tax_err)
 
         # -- 3. kb_snippets -------------------------------------------------
         enable_kb = caller_info.get("enable_kb", True)
@@ -622,6 +639,7 @@ class ContextBuilder:
 
         # Trim workspace_notes first, then key_facts, then project_files, then kb_snippets, then history
         for key in (
+            "memory_guidance",
             "workspace_notes",
             "key_facts",
             "project_files",

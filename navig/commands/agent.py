@@ -316,6 +316,12 @@ def agent_run(
     json_output: bool = typer.Option(False, "--json", help="JSON output"),
     plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
     timeout: float = typer.Option(30.0, "--timeout", help="Timeout in seconds"),
+    effort: str | None = typer.Option(
+        None,
+        "--effort",
+        "-e",
+        help="Reasoning depth: low, medium, high, max, ultra  [default: auto]",
+    ),
 ):
     """Run a single formation agent on a task.
 
@@ -332,7 +338,15 @@ def agent_run(
     from concurrent.futures import ThreadPoolExecutor
     from concurrent.futures import TimeoutError as FuturesTimeout
 
+    from navig.agent.effort import resolve_effort
     from navig.formations.loader import get_active_formation
+
+    if effort is not None:
+        try:
+            resolve_effort(effort)
+        except ValueError as exc:
+            ch.error(str(exc))
+            raise typer.Exit(2) from exc
 
     formation = get_active_formation()
     if formation is None:
@@ -355,7 +369,7 @@ def agent_run(
         from navig.ai import ask_ai_with_context
 
         def _run():
-            return ask_ai_with_context(task, system_prompt=agent.system_prompt)
+            return ask_ai_with_context(task, system_prompt=agent.system_prompt, effort=effort)
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(_run)

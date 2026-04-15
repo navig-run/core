@@ -142,6 +142,31 @@ def require_human_confirmation_if_destructive(
         logger.debug("Guard pass (empty action)")
         return True
 
+    # ── Structured permission rules (evaluated before regex patterns) ──────
+    # Rules loaded from ~/.navig/settings.yaml and .navig/settings.yaml.
+    # An explicit allow rule short-circuits to True (bypasses regex checks).
+    # An explicit deny rule short-circuits to False (block without prompting).
+    try:
+        from navig.permissions import check_permission
+        _perm = check_permission(tool="bash", input_text=action_text)
+        if _perm.denied:
+            logger.warning(
+                "Guard BLOCKED by permission rule: %s | action='%s'",
+                _perm.reason,
+                _truncate(action_text),
+            )
+            return False
+        if _perm.matching_rule is not None:
+            # Explicit allow rule — skip remaining regex checks
+            logger.debug(
+                "Guard ALLOWED by permission rule: %s(%s)",
+                _perm.matching_rule.tool,
+                _perm.matching_rule.pattern,
+            )
+            return True
+    except Exception as _perm_exc:  # noqa: BLE001
+        logger.debug("permission check skipped (unavailable): %s", _perm_exc)  # fall through to regex
+
     # Check for destructive patterns for uncensored-model gating.
     match = DESTRUCTIVE_PATTERNS.search(action_text)
 

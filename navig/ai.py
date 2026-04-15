@@ -120,6 +120,7 @@ class AIAssistant:
         context: dict[str, Any],
         model_override: str | None = None,
         use_fallback: bool = True,
+        effort: str | None = None,
     ) -> str:
         """
         Ask AI a question with server context.
@@ -217,6 +218,19 @@ class AIAssistant:
 
         # Build context string
         context_str = self._build_context_string(context)
+
+        # Effort mode — use run_llm for full thinking-param pipeline.
+        # Memory enrichment (system_prompt) is preserved; only the dispatch
+        # path changes.  effort=None falls through to the normal provider path.
+        if effort is not None:
+            from navig.llm_generate import run_llm
+
+            _messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"{context_str}\n\nUSER QUESTION: {question}"},
+            ]
+            _result = run_llm(_messages, model_override=model_override, effort=effort)
+            return _result.content or ""
 
         # Try the new provider system first if available
         fallback_mgr = self._get_fallback_manager() if use_fallback else None
@@ -501,6 +515,7 @@ def ask_ai_with_context(
     system_prompt: str = "",
     history: list[dict[str, str]] = None,
     model: str | None = None,
+    effort: str | None = None,
 ) -> str:
     """
     Simple function to ask AI with context - used by gateway server.
@@ -510,6 +525,7 @@ def ask_ai_with_context(
         system_prompt: System instructions
         history: Previous conversation messages
         model: Model to use (optional)
+        effort: Reasoning depth (low/medium/high/max/ultra). None = auto.
 
     Returns:
         AI response text
@@ -524,4 +540,4 @@ def ask_ai_with_context(
         messages.extend(history)
     messages.append({"role": "user", "content": prompt})
 
-    return llm_generate(messages=messages, model_override=model)
+    return llm_generate(messages=messages, model_override=model, effort=effort)

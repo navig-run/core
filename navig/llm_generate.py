@@ -50,6 +50,7 @@ def llm_generate(
     provider_override: str | None = None,
     stream: bool = False,
     timeout: float = _LLM_DEFAULT_TIMEOUT,
+    effort: str | None = None,
 ) -> str:
     """
     Unified LLM generation — routes through llm_router then dispatches.
@@ -75,6 +76,24 @@ def llm_generate(
     Returns:
         Generated text content.
     """
+    # When effort is specified, delegate to run_llm for full thinking-param
+    # handling.  run_llm already resolves effort → thinking_params per provider;
+    # we return .content to preserve the str return-type contract.
+    if effort is not None:
+        result = run_llm(
+            messages=messages,
+            mode=mode,
+            user_input=user_input,
+            prefer_uncensored=prefer_uncensored,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            model_override=model_override,
+            provider_override=provider_override,
+            timeout=timeout,
+            effort=effort,
+        )
+        return result.content or ""
+
     if model_override:
         # Direct model specification — skip router
         provider, model = _parse_model_spec(model_override, provider_override)
@@ -319,6 +338,19 @@ def _call_and_wrap(
                 )
             except Exception as tracker_err:
                 logger.debug("CostTracker.record failed (non-fatal): %s", tracker_err)
+
+        # Wire session-level persistent cost tracking (cross-invocation, saved to JSONL)
+        try:
+            from navig.cost_tracker import get_session_tracker  # noqa: PLC0415
+
+            get_session_tracker().record(
+                model=selection.model_name,
+                input_tokens=prompt_tokens,
+                output_tokens=completion_tokens,
+                cache_read_tokens=extra.get("cache_read_tokens", 0),
+            )
+        except Exception as _sct_err:
+            logger.debug("session cost_tracker.record failed (non-fatal): %s", _sct_err)
 
         return LLMResult(
             content=content,

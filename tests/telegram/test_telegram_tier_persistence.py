@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -196,3 +197,51 @@ async def test_tier_command_with_bot_mention_uses_dynamic_registry(tmp_path: Pat
 
     assert channel._get_user_tier_pref(42, 42) == "big"
     assert any("Big" in msg for msg in sent)
+
+
+async def test_start_passes_prior_last_active_to_handler(tmp_path: Path, monkeypatch):
+    storage = tmp_path / "sessions"
+    sm = SessionManager(storage_dir=storage)
+
+    monkeypatch.setattr("navig.gateway.channels.telegram.HAS_SESSIONS", True)
+    monkeypatch.setattr("navig.gateway.channels.telegram.get_session_manager", lambda: sm)
+
+    channel = TelegramChannel(
+        bot_token="123:FAKE",
+        allowed_users=[42],
+        on_message=lambda *args, **kwargs: None,
+    )
+
+    # Seed a prior session and force last_active far in the past.
+    sm.add_user_message(
+        chat_id=42,
+        user_id=42,
+        text="previous context",
+        message_id=1,
+        is_group=False,
+        username="tester",
+    )
+    seeded = sm.get_session(42, 42, False)
+    assert seeded is not None
+    old_iso = (datetime.now() - timedelta(hours=6)).isoformat()
+    seeded.last_active = old_iso
+    sm._save_session(seeded)
+
+    captured: dict[str, str | None] = {"prior": None}
+
+    async def _fake_handle_start(chat_id, username, user_id=0, prior_last_active=None):
+        captured["prior"] = prior_last_active
+
+    channel._handle_start = _fake_handle_start
+
+    update = {
+        "message": {
+            "chat": {"id": 42, "type": "private"},
+            "from": {"id": 42, "username": "tester"},
+            "text": "/start",
+            "message_id": 200,
+        }
+    }
+
+    await channel._process_update(update)
+    assert captured["prior"] == old_iso

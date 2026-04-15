@@ -386,6 +386,94 @@ class ConversationStore(BaseStore):
             _debug_log(f"Deleted session {session_key}")
         return deleted
 
+    def compact_session(self, session_key: str, summary: str) -> int:
+        """
+        Replace all messages in a session with a single summary message.
+
+        Atomically deletes the existing message history and inserts one
+        ``system``-role message containing the provided summary.  The session
+        token count is recalculated from the summary length.
+
+        FTS5 triggers handle the cascade: deleted messages are removed from the
+        full-text index automatically, and the inserted summary is indexed.
+
+        Args:
+            session_key: Session to compact.
+            summary:     Summary text to store as the sole remaining message.
+
+        Returns:
+            Number of original messages deleted (0 when session is not found
+            or already has no messages).
+        """
+        import json as _json_compact
+
+        conn = self._get_conn()
+        now = datetime.now().isoformat()
+
+        with self._lock:
+            old_iso = conn.isolation_level
+            try:
+                conn.isolation_level = None
+                conn.execute("BEGIN IMMEDIATE")
+
+                # Count existing messages before deletion
+                count_row = conn.execute(
+                    "SELECT COUNT(*) FROM messages WHERE session_key = ?",
+                    (session_key,),
+                ).fetchone()
+                deleted_count: int = count_row[0] if count_row else 0
+
+                if deleted_count == 0:
+                    conn.execute("ROLLBACK")
+                    return 0
+
+                # Remove all current messages (FTS5 DELETE trigger cascades)
+                conn.execute("DELETE FROM messages WHERE session_key = ?", (session_key,))
+
+                # Estimate token count: ~4 chars per token (rough)
+                summary_tokens = max(1, len(summary) // 4)
+                summary_id = str(uuid.uuid4())
+
+                # Insert a canonical compact-source system message
+                conn.execute(
+                    """
+                    INSERT INTO messages
+                        (id, session_key, role, content, timestamp, metadata, token_count)
+                    VALUES (?, ?, 'system', ?, ?, ?, ?)
+                    """,
+                    (
+                        summary_id,
+                        session_key,
+                        summary,
+                        now,
+                        _json_compact.dumps({"source": "compact"}),
+                        summary_tokens,
+                    ),
+                )
+
+                # Recalculate session totals
+                conn.execute(
+                    "UPDATE sessions SET total_tokens = ?, updated_at = ? WHERE session_key = ?",
+                    (summary_tokens, now, session_key),
+                )
+
+                conn.execute("COMMIT")
+                _debug_log(
+                    f"Compacted session {session_key}: {deleted_count} → 1 messages"
+                )
+                return deleted_count
+
+            except Exception:
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception as rollback_exc:
+                    _debug_log(
+                        f"compact_session rollback failed (non-fatal): {rollback_exc}"
+                    )
+                raise
+            finally:
+                conn.isolation_level = old_iso
+
     def clear_old_messages(
         self,
         session_key: str,

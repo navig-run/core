@@ -6,7 +6,7 @@
 #   bash install.sh [OPTIONS]
 #
 # Options:
-#   -v | --version <ver>   Pin version (e.g. 2.4.14)
+#   -v | --version <ver>   Pin version (e.g. 2.7.0)
 #   -a | --action <mode>   install (default) | uninstall | reinstall
 #   -y | --yes             Skip interactive prompts
 #        --verbose         Verbose output

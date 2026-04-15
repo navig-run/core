@@ -195,6 +195,154 @@ def memory_clear(
         ch.error(f"Error: {e}")
 
 
+@memory_app.command("compact")
+def memory_compact(
+    session: str | None = typer.Argument(
+        None, help="Session key to compact (default: most recent)"
+    ),
+    instructions: str | None = typer.Option(
+        None,
+        "--instructions",
+        "-i",
+        help="Custom summarization instructions appended to the condensing prompt",
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
+):
+    """Compress a session's history into a single AI-generated summary.
+
+    Replaces the full message history with a compact summary so the
+    session context remains meaningful without occupying your entire
+    context window on future queries.
+
+    Examples:
+        navig memory compact
+        navig memory compact telegram:user:12345
+        navig memory compact --instructions "Focus on action items"
+        navig memory compact --yes --plain
+    """
+    from pathlib import Path
+
+    try:
+        from navig.llm_generate import run_llm
+        from navig.memory import ConversationStore
+
+        config = _get_config()
+        db_path = Path(config.global_config_dir) / "memory" / "memory.db"
+
+        if not db_path.exists():
+            ch.info("No conversation history found")
+            return
+
+        store = ConversationStore(db_path)
+
+        # Resolve target session
+        if session:
+            target_key = session
+            session_info = store.get_session(target_key)
+            if session_info is None:
+                ch.error(f"Session '{target_key}' not found")
+                store.close()
+                raise typer.Exit(1)
+        else:
+            sessions = store.list_sessions(limit=1)
+            if not sessions:
+                ch.info("No conversation sessions found")
+                store.close()
+                return
+            target_key = sessions[0].session_key
+            session_info = sessions[0]
+
+        msg_count = session_info.message_count
+        threshold = int(config.get("memory.compact_threshold_messages", 20) or 20)
+
+        if msg_count < threshold:
+            if plain:
+                print(f"skip: {msg_count} messages (threshold={threshold})")
+            else:
+                ch.info(
+                    f"Nothing to compact — session has only {msg_count} message"
+                    f"{'s' if msg_count != 1 else ''} (threshold: {threshold})"
+                )
+            store.close()
+            return
+
+        if not plain:
+            ch.info(f"Session: {target_key}")
+            ch.info(f"Messages: {msg_count} → will compress to 1 summary")
+
+        if not yes:
+            if not typer.confirm(f"Compact {msg_count} messages into a summary?"):
+                raise typer.Abort()
+
+        # Fetch full history for summarisation
+        messages = store.get_history(target_key, limit=msg_count)
+        if not messages:
+            ch.info("Session is already empty")
+            store.close()
+            return
+
+        # Build summarisation prompt
+        effort_level = str(config.get("memory.compact_summary_effort", "low") or "low")
+        system_instruction = (
+            "You are a concise summariser.  Read the conversation below and produce a "
+            "clear, specific 3–6 sentence summary that captures: what was discussed, "
+            "key decisions made, and the most important next step.  Be concrete — name "
+            "specific technologies, commands, or files mentioned."
+        )
+        if instructions:
+            system_instruction += f"\n\nAdditional focus: {instructions}"
+
+        history_text = "\n".join(
+            f"{m.role.upper()}: {m.content[:500]}"
+            for m in messages[-100:]  # cap at last 100 for the LLM call
+        )
+        llm_messages = [
+            {"role": "system", "content": system_instruction},
+            {"role": "user", "content": history_text},
+        ]
+
+        if not plain:
+            ch.dim("Generating summary...")
+
+        result = run_llm(llm_messages, mode="summary", effort=effort_level)
+        summary = (result.content or "").strip()
+
+        if not summary:
+            ch.error("LLM returned an empty summary — session unchanged")
+            store.close()
+            raise typer.Exit(1)
+
+        # Atomically replace history with the summary
+        deleted = store.compact_session(target_key, summary)
+        store.close()
+
+        if plain:
+            print(f"compacted: {deleted} messages")
+            print(summary)
+        else:
+            from rich.panel import Panel
+
+            ch.console.print()
+            ch.console.print(
+                Panel(
+                    summary,
+                    title=f"[bold green]Session summary[/bold green]  "
+                    f"[dim]({deleted} messages → 1)[/dim]",
+                    border_style="green",
+                    padding=(1, 2),
+                )
+            )
+            ch.success(f"Compacted {deleted} messages into 1 summary")
+
+    except typer.Abort:
+        ch.info("Cancelled")
+    except typer.Exit:
+        raise
+    except Exception as e:
+        ch.error(f"Error: {e}")
+
+
 @memory_app.command("knowledge")
 def memory_knowledge(
     action: str = typer.Argument("list", help="list, add, search, clear"),
