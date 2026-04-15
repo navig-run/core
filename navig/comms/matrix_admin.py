@@ -13,6 +13,9 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Timeout for all Matrix homeserver admin API calls.
+_MATRIX_API_TIMEOUT: float = 10.0
+
 
 class MatrixAdminClient:
     """
@@ -169,7 +172,7 @@ class MatrixAdminClient:
             expiry_ms = self._parse_duration_ms(expiry)
 
             try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
+                async with httpx.AsyncClient(timeout=_MATRIX_API_TIMEOUT) as client:
                     data: dict[str, Any] = {}
                     if uses_allowed:
                         data["uses_allowed"] = uses_allowed
@@ -198,7 +201,7 @@ class MatrixAdminClient:
 
         if server == "synapse":
             try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
+                async with httpx.AsyncClient(timeout=_MATRIX_API_TIMEOUT) as client:
                     resp = await client.get(
                         f"{self.homeserver_url}/_synapse/admin/v1/registration_tokens",
                         headers=self._auth_headers(),
@@ -217,7 +220,7 @@ class MatrixAdminClient:
 
         if server == "synapse":
             try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
+                async with httpx.AsyncClient(timeout=_MATRIX_API_TIMEOUT) as client:
                     resp = await client.delete(
                         f"{self.homeserver_url}/_synapse/admin/v1/registration_tokens/{token}",
                         headers=self._auth_headers(),
@@ -237,7 +240,7 @@ class MatrixAdminClient:
 
         if server == "synapse":
             try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
+                async with httpx.AsyncClient(timeout=_MATRIX_API_TIMEOUT) as client:
                     resp = await client.get(
                         f"{self.homeserver_url}/_synapse/admin/v2/users",
                         headers=self._auth_headers(),
@@ -251,7 +254,7 @@ class MatrixAdminClient:
         if server == "conduit":
             # Conduit has limited admin API — try via /_conduit/admin
             try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
+                async with httpx.AsyncClient(timeout=_MATRIX_API_TIMEOUT) as client:
                     resp = await client.get(
                         f"{self.homeserver_url}/_conduit/admin/users",
                         headers=self._auth_headers(),
@@ -273,7 +276,7 @@ class MatrixAdminClient:
 
         if server == "synapse":
             try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
+                async with httpx.AsyncClient(timeout=_MATRIX_API_TIMEOUT) as client:
                     resp = await client.get(
                         f"{self.homeserver_url}/_synapse/admin/v2/users/{mxid}",
                         headers=self._auth_headers(),
@@ -292,7 +295,7 @@ class MatrixAdminClient:
 
         if server == "synapse":
             try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
+                async with httpx.AsyncClient(timeout=_MATRIX_API_TIMEOUT) as client:
                     resp = await client.post(
                         f"{self.homeserver_url}/_synapse/admin/v1/deactivate/{mxid}",
                         headers=self._auth_headers(),
@@ -311,7 +314,7 @@ class MatrixAdminClient:
 
         if server == "synapse":
             try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
+                async with httpx.AsyncClient(timeout=_MATRIX_API_TIMEOUT) as client:
                     resp = await client.put(
                         f"{self.homeserver_url}/_synapse/admin/v1/reset_password/{mxid}",
                         headers=self._auth_headers(),

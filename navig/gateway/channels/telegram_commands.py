@@ -51,6 +51,9 @@ from navig.ui.icons import icon as _ni
 
 logger = logging.getLogger(__name__)
 
+# Short timeout for non-critical probes and system commands (bridge ping, uptime, df).
+_SHORT_CMD_TIMEOUT: float = 2.0
+
 # -- Optional keyboard / session / audio-menu deps ----------------------------
 try:
     from navig.gateway.channels.telegram_keyboards import (
@@ -1856,7 +1859,7 @@ class TelegramCommandsMixin:
 
         # Bridge status (non-blocking, 2 s timeout)
         try:
-            bridge_ok, bridge_url = await _asyncio.wait_for(self._probe_bridge_grid(), timeout=2.0)
+            bridge_ok, bridge_url = await _asyncio.wait_for(self._probe_bridge_grid(), timeout=_SHORT_CMD_TIMEOUT)
             bridge_status = f"🟢 {bridge_url}" if bridge_ok else "🔴 offline"
         except Exception:
             bridge_status = "❔ unknown"
@@ -6990,7 +6993,7 @@ class TelegramCommandsMixin:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 ),
-                timeout=2.0,
+                timeout=_SHORT_CMD_TIMEOUT,
             )
             stdout, _ = await p.communicate()
             lines.append(f"- <b>Server:</b> {stdout.decode().strip()}")
@@ -7020,7 +7023,7 @@ class TelegramCommandsMixin:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 ),
-                timeout=2.0,
+                timeout=_SHORT_CMD_TIMEOUT,
             )
             stdout, _ = await p.communicate()
             dfl = stdout.decode().strip().splitlines()
