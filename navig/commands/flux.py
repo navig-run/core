@@ -51,6 +51,8 @@ def _flux_callback(ctx: typer.Context) -> None:
 
 
 _GW = "http://127.0.0.1:8789"
+_FLUX_READ_TIMEOUT: int = 5   # Fast reads / deletes against the local mesh daemon
+_FLUX_WRITE_TIMEOUT: int = 10  # Mutations (POST) may take longer
 
 
 # ─────────────────────────── helpers ─────────────────────────────────────────
@@ -72,13 +74,13 @@ def _get(path: str) -> dict:
         import urllib.request
 
         try:
-            with urllib.request.urlopen(f"{_GW}{path}", timeout=5) as r:
+            with urllib.request.urlopen(f"{_GW}{path}", timeout=_FLUX_READ_TIMEOUT) as r:
                 return json.loads(r.read())
         except OSError as e:
             typer.echo(_daemon_offline_msg(), err=True)
             raise SystemExit(1) from e
     try:
-        r = httpx.get(f"{_GW}{path}", timeout=5)
+        r = httpx.get(f"{_GW}{path}", timeout=_FLUX_READ_TIMEOUT)
         r.raise_for_status()
         return r.json()
     except httpx.ConnectError as _exc:
@@ -98,13 +100,13 @@ def _post(path: str, payload: dict) -> dict:
             req = urllib.request.Request(
                 f"{_GW}{path}", data=data, headers={"Content-Type": "application/json"}
             )
-            with urllib.request.urlopen(req, timeout=10) as r:
+            with urllib.request.urlopen(req, timeout=_FLUX_WRITE_TIMEOUT) as r:
                 return json.loads(r.read())
         except OSError as e:
             typer.echo(_daemon_offline_msg(), err=True)
             raise SystemExit(1) from e
     try:
-        r = httpx.post(f"{_GW}{path}", json=payload, timeout=10)
+        r = httpx.post(f"{_GW}{path}", json=payload, timeout=_FLUX_WRITE_TIMEOUT)
         r.raise_for_status()
         return r.json()
     except httpx.ConnectError as _exc:
@@ -257,12 +259,12 @@ def clear() -> None:
     """Clear the routing target — commands run locally."""
     try:
         if _HTTPX:
-            httpx.delete(f"{_GW}/mesh/target", timeout=5)
+            httpx.delete(f"{_GW}/mesh/target", timeout=_FLUX_READ_TIMEOUT)
         else:
             import urllib.request
 
             req = urllib.request.Request(f"{_GW}/mesh/target", method="DELETE")
-            urllib.request.urlopen(req, timeout=5)
+            urllib.request.urlopen(req, timeout=_FLUX_READ_TIMEOUT)
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
     typer.echo("🔄 Routing target cleared — commands will run locally.")

@@ -73,6 +73,7 @@ PYTHON_EXE = sys.executable
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 NAVIG_DIR = paths.config_dir()
 SETTINGS_FILE = NAVIG_DIR / "tray_settings.json"
+_PROC_GRACEFUL_TIMEOUT: int = 5  # Seconds to wait for a process to exit cleanly
 HEALTH_INTERVAL = 15  # seconds
 
 
@@ -131,7 +132,7 @@ class ProcessState:
             try:
                 self.process.terminate()
                 try:
-                    self.process.wait(timeout=5)
+                    self.process.wait(timeout=_PROC_GRACEFUL_TIMEOUT)
                 except subprocess.TimeoutExpired:
                     self.process.kill()
                     self.process.wait(timeout=3)
@@ -291,7 +292,7 @@ class NavigTray:
                     subprocess.run(
                         ["taskkill", "/F", "/PID", str(pid)],
                         capture_output=True,
-                        timeout=5,
+                        timeout=_PROC_GRACEFUL_TIMEOUT,
                         creationflags=subprocess.CREATE_NO_WINDOW,
                     )
                     log.info("Killed orphan bot process PID %s", pid)
@@ -388,7 +389,7 @@ class NavigTray:
                     subprocess.run(
                         ["taskkill", "/F", "/PID", str(daemon_pid), "/T"],
                         capture_output=True,
-                        timeout=5,
+                        timeout=_PROC_GRACEFUL_TIMEOUT,
                         creationflags=subprocess.CREATE_NO_WINDOW,
                     )
                 except Exception:  # noqa: BLE001

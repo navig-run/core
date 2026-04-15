@@ -22,6 +22,7 @@ _ch = lazy_import("navig.console_helper")
 webhook_app = typer.Typer(name="webhook", help="Manage NAVIG inbound/outbound webhooks")
 
 _DAEMON_BASE = "http://127.0.0.1:7421"
+_WEBHOOK_REQUEST_TIMEOUT: int = 5  # Short timeout for local daemon API calls
 
 
 def _api(method: str, path: str, json=None):
@@ -31,11 +32,11 @@ def _api(method: str, path: str, json=None):
     url = f"{_DAEMON_BASE}{path}"
     try:
         if method == "GET":
-            r = httpx.get(url, timeout=5)
+            r = httpx.get(url, timeout=_WEBHOOK_REQUEST_TIMEOUT)
         elif method == "POST":
-            r = httpx.post(url, json=json, timeout=5)
+            r = httpx.post(url, json=json, timeout=_WEBHOOK_REQUEST_TIMEOUT)
         elif method == "DELETE":
-            r = httpx.delete(url, timeout=5)
+            r = httpx.delete(url, timeout=_WEBHOOK_REQUEST_TIMEOUT)
         else:
             raise ValueError(f"Unknown method: {method}")
         if r.status_code >= 400:

@@ -40,6 +40,7 @@ NAVIG_HOME = paths.config_dir()
 DAEMON_DIR = NAVIG_HOME / "daemon"
 PID_FILE = DAEMON_DIR / "supervisor.pid"
 STATE_FILE = DAEMON_DIR / "state.json"
+_PROC_GRACEFUL_TIMEOUT: int = 5  # Seconds to wait for a process to exit cleanly
 
 
 def _resolve_log_dir() -> Path:
@@ -164,7 +165,7 @@ class ChildProcess:
                 subprocess.run(
                     ["taskkill", "/PID", str(pid), "/T", "/F"],
                     capture_output=True,
-                    timeout=5,
+                    timeout=_PROC_GRACEFUL_TIMEOUT,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                 )
                 self.process.wait(timeout=timeout)
@@ -176,7 +177,7 @@ class ChildProcess:
             logger.warning("Force-killing %s (pid=%d)", self.name, pid)
             self.process.kill()
             try:
-                self.process.wait(timeout=5)
+                self.process.wait(timeout=_PROC_GRACEFUL_TIMEOUT)
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
         except Exception as exc:
@@ -386,7 +387,7 @@ class NavigDaemon:
                     ],
                     capture_output=True,
                     text=True,
-                    timeout=5,
+                    timeout=_PROC_GRACEFUL_TIMEOUT,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                 )
                 cmdline = result.stdout.strip()

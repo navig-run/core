@@ -17,6 +17,7 @@ from navig.core.connection import _resolve_ssh_bin
 
 # For backward compatibility
 HAS_PARAMIKO = True  # Will be checked at runtime
+_DISCOVERY_SSH_TIMEOUT: int = 30  # SSH execute and subprocess timeout for discovery
 
 
 class ServerDiscovery:
@@ -120,7 +121,7 @@ class ServerDiscovery:
 
             pool = SSHConnectionPool.get_instance()
             conn = pool.get_connection(ssh_config)
-            success, stdout_text, stderr_text = conn.execute(command, timeout=30)
+            success, stdout_text, stderr_text = conn.execute(command, timeout=_DISCOVERY_SSH_TIMEOUT)
 
             duration_ms = (time.time() - start_time) * 1000
 
@@ -169,7 +170,7 @@ class ServerDiscovery:
 
         try:
             ssh_cmd = self._build_ssh_command(command)
-            result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=_DISCOVERY_SSH_TIMEOUT)
 
             success = result.returncode == 0
             stdout_text = result.stdout.strip()

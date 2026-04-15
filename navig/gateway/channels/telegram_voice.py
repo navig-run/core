@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 # Populated in _handle_audio_file_message; read by the audmsg: callback handler.
 _af_cache: dict = {}
 
+_VOICE_HTTP_TIMEOUT: int = 30  # TTS provider request timeout (audio synthesis can be slow)
+
 # ── Audio classifier helpers ─────────────────────────────────────────────────
 
 # Keywords in title/filename that strongly suggest a speech recording
@@ -603,7 +605,7 @@ class TelegramVoiceMixin:
                 try:
                     import httpx
 
-                    async with httpx.AsyncClient(timeout=30) as client:
+                    async with httpx.AsyncClient(timeout=_VOICE_HTTP_TIMEOUT) as client:
                         resp = await client.post(
                             "https://api.deepgram.com/v1/speak?model=aura-asteria-en",
                             headers={
@@ -661,7 +663,7 @@ class TelegramVoiceMixin:
             try:
                 import httpx
 
-                async with httpx.AsyncClient(timeout=30) as client:
+                async with httpx.AsyncClient(timeout=_VOICE_HTTP_TIMEOUT) as client:
                     resp = await client.post(
                         "https://api.openai.com/v1/audio/speech",
                         headers={"Authorization": f"Bearer {api_key}"},
