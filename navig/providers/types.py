@@ -16,6 +16,8 @@ from navig.providers._local_defaults import _OLLAMA_BASE_URL
 _STANDARD_MAX_OUTPUT_TOKENS: int = 8192
 # Compact maximum output token limit used by older/constrained models.
 _COMPACT_MAX_OUTPUT_TOKENS: int = 4096
+# Extended output limit for newer large-context models (GPT-4o series).
+_LARGE_MAX_OUTPUT_TOKENS: int = 16384
 
 
 class ModelApi(str, Enum):
@@ -258,7 +260,7 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
                 name="GPT-4o",
                 input=[ModelInput.TEXT, ModelInput.IMAGE],
                 context_window=128000,
-                max_tokens=16384,
+                max_tokens=_LARGE_MAX_OUTPUT_TOKENS,
                 cost=ModelCost(input=2.5, output=10, cache_read=1.25, cache_write=2.5),
             ),
             ModelDefinition(
@@ -266,7 +268,7 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
                 name="GPT-4o Mini",
                 input=[ModelInput.TEXT, ModelInput.IMAGE],
                 context_window=128000,
-                max_tokens=16384,
+                max_tokens=_LARGE_MAX_OUTPUT_TOKENS,
                 cost=ModelCost(input=0.15, output=0.6, cache_read=0.075, cache_write=0.15),
             ),
             ModelDefinition(
@@ -329,7 +331,7 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
                 name="GPT-4o (OpenRouter)",
                 input=[ModelInput.TEXT, ModelInput.IMAGE],
                 context_window=128000,
-                max_tokens=16384,
+                max_tokens=_LARGE_MAX_OUTPUT_TOKENS,
             ),
             ModelDefinition(
                 id="google/gemini-pro-1.5",

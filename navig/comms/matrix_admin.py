@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 # Timeout for all Matrix homeserver admin API calls.
 _MATRIX_API_TIMEOUT: float = 10.0
+_MATRIX_STATUS_TIMEOUT: float = 5.0  # Short timeout for server-type probes
 
 
 class MatrixAdminClient:
@@ -48,7 +49,7 @@ class MatrixAdminClient:
 
         # Try Conduit
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=_MATRIX_STATUS_TIMEOUT) as client:
                 resp = await client.get(f"{self.homeserver_url}/_conduit/server_version")
                 if resp.status_code == 200:
                     self._server_type = "conduit"
@@ -58,7 +59,7 @@ class MatrixAdminClient:
 
         # Try Synapse admin
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=_MATRIX_STATUS_TIMEOUT) as client:
                 resp = await client.get(
                     f"{self.homeserver_url}/_synapse/admin/v1/server_version",
                     headers=self._auth_headers(),
@@ -91,7 +92,7 @@ class MatrixAdminClient:
 
         if server == "synapse":
             try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
+                async with httpx.AsyncClient(timeout=_MATRIX_STATUS_TIMEOUT) as client:
                     await client.get(
                         f"{self.homeserver_url}/_synapse/admin/v1/registration_tokens",
                         headers=self._auth_headers(),
