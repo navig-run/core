@@ -17,6 +17,9 @@ from navig.installer.contracts import Action, InstallerContext, ModuleState, Res
 name = "service"
 description = "Register NAVIG daemon as a system service"
 
+# Seconds allowed for sc/systemctl probe subprocess calls.
+_SERVICE_CMD_TIMEOUT: int = 5
+
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -34,7 +37,7 @@ def _service_installed() -> bool:
             r = subprocess.run(
                 ["sc", "query", "NavigDaemon"],
                 capture_output=True,
-                timeout=5,
+                timeout=_SERVICE_CMD_TIMEOUT,
             )
             return r.returncode == 0
         elif sys.platform == "linux":
@@ -43,7 +46,7 @@ def _service_installed() -> bool:
             r = subprocess.run(
                 ["systemctl", "is-enabled", "navig"],
                 capture_output=True,
-                timeout=5,
+                timeout=_SERVICE_CMD_TIMEOUT,
             )
             return r.returncode == 0
     except Exception:  # noqa: BLE001

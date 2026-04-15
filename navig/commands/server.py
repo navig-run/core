@@ -12,6 +12,9 @@ from navig.discovery import ServerDiscovery
 
 config_manager = get_config_manager()
 
+# Seconds for docker restart/stop operations via server command.
+_DOCKER_OP_TIMEOUT: int = 10
+
 
 def list_servers(options: dict[str, Any]):
     """List all configured servers."""
@@ -596,11 +599,11 @@ def server_run(
     elif restart:
         from navig.commands.docker import docker_restart
 
-        docker_restart(restart, ctx.obj, timeout=10)
+        docker_restart(restart, ctx.obj, timeout=_DOCKER_OP_TIMEOUT)
     elif stop:
         from navig.commands.docker import docker_stop
 
-        docker_stop(stop, ctx.obj, timeout=10)
+        docker_stop(stop, ctx.obj, timeout=_DOCKER_OP_TIMEOUT)
     elif start:
         from navig.commands.docker import docker_start
 

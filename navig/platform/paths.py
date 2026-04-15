@@ -485,6 +485,9 @@ def ensure_dirs() -> None:
 
 # ── Dependency checks ─────────────────────────────────────────────────────────
 
+# Seconds for the docker version-probe subprocess calls.
+_DOCKER_PROBE_TIMEOUT: int = 5
+
 
 def check_docker() -> dict[str, Any]:
     """Check Docker availability and return a status dict.
@@ -507,7 +510,7 @@ def check_docker() -> dict[str, Any]:
             ["docker", "--version"],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=_DOCKER_PROBE_TIMEOUT,
         )
         if proc.returncode == 0:
             result["available"] = True
@@ -525,7 +528,7 @@ def check_docker() -> dict[str, Any]:
                 ["docker", "compose", "version"],
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=_DOCKER_PROBE_TIMEOUT,
             )
             if proc.returncode == 0:
                 result["compose"] = True

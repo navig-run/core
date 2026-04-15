@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 MAX_CONCURRENT = 10
 OUTPUT_DIR = config_dir() / "bg_tasks"
+_PROC_GRACEFUL_TIMEOUT: float = 5.0  # seconds to wait for process termination before SIGKILL
 
 
 # ─────────────────────────────────────────────────────────────
@@ -230,10 +231,10 @@ class BackgroundTaskManager:
         try:
             proc.terminate()
             try:
-                await asyncio.wait_for(proc.wait(), timeout=5.0)
+                await asyncio.wait_for(proc.wait(), timeout=_PROC_GRACEFUL_TIMEOUT)
             except asyncio.TimeoutError:
                 proc.kill()
-                await asyncio.wait_for(proc.wait(), timeout=5.0)
+                await asyncio.wait_for(proc.wait(), timeout=_PROC_GRACEFUL_TIMEOUT)
         except (ProcessLookupError, OSError) as exc:
             logger.debug("Error killing task #%d: %s", task_id, exc)
             # Mark completed anyway

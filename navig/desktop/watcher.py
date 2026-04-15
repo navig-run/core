@@ -11,6 +11,9 @@ from navig.debug_logger import get_debug_logger
 
 logger = get_debug_logger()
 
+# Seconds to wait for a watchdog observer thread to join on stop.
+_OBSERVER_JOIN_TIMEOUT: int = 5
+
 # Lazy import
 _watchdog = None
 
@@ -303,7 +306,7 @@ class FileWatcher:
 
         if observer:
             observer.stop()
-            observer.join(timeout=5)
+            observer.join(timeout=_OBSERVER_JOIN_TIMEOUT)
             logger.info("Stopped watching: %s", path)
 
     async def start(self):
@@ -327,7 +330,7 @@ class FileWatcher:
             observer.stop()
 
         for observer in self._observers.values():
-            observer.join(timeout=5)
+            observer.join(timeout=_OBSERVER_JOIN_TIMEOUT)
 
         self._observers.clear()
         self._handlers.clear()

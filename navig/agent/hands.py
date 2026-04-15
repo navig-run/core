@@ -28,6 +28,9 @@ from navig.agent.component import Component
 from navig.agent.config import HandsConfig
 from navig.agent.nervous_system import EventPriority, EventType, NervousSystem
 
+# Seconds to wait for a subprocess to exit cleanly before sending SIGKILL.
+_PROC_GRACEFUL_TIMEOUT: float = 5.0
+
 
 class CommandStatus(Enum):
     """Command execution status."""
@@ -162,7 +165,7 @@ class Hands(Component):
         for _cmd_id, process in list(self._running_commands.items()):
             try:
                 process.terminate()
-                await asyncio.wait_for(process.wait(), timeout=5.0)
+                await asyncio.wait_for(process.wait(), timeout=_PROC_GRACEFUL_TIMEOUT)
             except asyncio.TimeoutError:
                 process.kill()
             except Exception:  # noqa: BLE001
@@ -426,7 +429,7 @@ class Hands(Component):
         process.terminate()
 
         try:
-            await asyncio.wait_for(process.wait(), timeout=5.0)
+            await asyncio.wait_for(process.wait(), timeout=_PROC_GRACEFUL_TIMEOUT)
         except asyncio.TimeoutError:
             process.kill()
 

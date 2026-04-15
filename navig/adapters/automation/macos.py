@@ -7,6 +7,9 @@ import sys
 
 from navig.adapters.automation.types import ExecutionResult, WindowInfo
 
+# Seconds for osascript / shell-command subprocesses.
+_MACOS_SCRIPT_TIMEOUT: int = 10
+
 
 class MacOSAdapter:
     """Automation adapter for macOS using AppleScript and cliclick."""
@@ -40,7 +43,7 @@ class MacOSAdapter:
         """Execute AppleScript."""
         try:
             result = subprocess.run(
-                ["osascript", "-e", script], capture_output=True, text=True, timeout=10
+                ["osascript", "-e", script], capture_output=True, text=True, timeout=_MACOS_SCRIPT_TIMEOUT
             )
             return ExecutionResult(
                 success=result.returncode == 0,
@@ -56,7 +59,7 @@ class MacOSAdapter:
     def _run_command(self, cmd: list) -> ExecutionResult:
         """Run shell command."""
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=_MACOS_SCRIPT_TIMEOUT)
             return ExecutionResult(
                 success=result.returncode == 0,
                 stdout=result.stdout,

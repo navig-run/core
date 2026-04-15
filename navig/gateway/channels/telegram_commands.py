@@ -53,6 +53,8 @@ logger = logging.getLogger(__name__)
 
 # Short timeout for non-critical probes and system commands (bridge ping, uptime, df).
 _SHORT_CMD_TIMEOUT: float = 2.0
+# Generic 5-second timeout for HTTP fetches and subprocess probes.
+_PROBE_TIMEOUT: int = 5
 
 # -- Optional keyboard / session / audio-menu deps ----------------------------
 try:
@@ -4533,7 +4535,7 @@ class TelegramCommandsMixin:
             if endpoint:
                 async with (
                     aiohttp.ClientSession() as session,
-                    session.get(endpoint, headers=headers, timeout=5) as response,
+                    session.get(endpoint, headers=headers, timeout=_PROBE_TIMEOUT) as response,
                 ):
                     data = await response.json()
                     live = [m["id"] for m in data.get("data", []) if m.get("id")]
@@ -6805,7 +6807,7 @@ class TelegramCommandsMixin:
                         ],
                         capture_output=True,
                         text=True,
-                        timeout=5,
+                        timeout=_PROBE_TIMEOUT,
                     )
                     svc_lines = [
                         ln.split()[0]
