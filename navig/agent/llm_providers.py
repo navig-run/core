@@ -30,6 +30,12 @@ from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
 
 logger = logging.getLogger(__name__)
 
+# Provider-level call defaults — used as method-signature defaults throughout.
+# Callers can override per-call via kwargs.
+_PROVIDER_DEFAULT_TEMPERATURE: float = 0.7
+_PROVIDER_CHAT_MAX_TOKENS: int = 512
+_PROVIDER_STREAM_MAX_TOKENS: int = 4096
+
 # Lazy aiohttp import
 _aiohttp = None
 
@@ -133,7 +139,7 @@ class OllamaProvider(LLMProvider):
     def __init__(self, base_url: str = "", **kwargs):
         super().__init__(base_url=base_url or _OLLAMA_USER_BASE_URL, **kwargs)
 
-    async def chat(self, model, messages, temperature=0.7, max_tokens=512, **kw):
+    async def chat(self, model, messages, temperature=_PROVIDER_DEFAULT_TEMPERATURE, max_tokens=_PROVIDER_CHAT_MAX_TOKENS, **kw):
         session = await self._get_session()
         url = f"{self.base_url}/v1/chat/completions"
         payload = {
@@ -191,7 +197,7 @@ class OpenRouterProvider(LLMProvider):
             **kwargs,
         )
 
-    async def chat(self, model, messages, temperature=0.7, max_tokens=512, **kw):
+    async def chat(self, model, messages, temperature=_PROVIDER_DEFAULT_TEMPERATURE, max_tokens=_PROVIDER_CHAT_MAX_TOKENS, **kw):
         if not self.api_key:
             raise RuntimeError("OpenRouter API key not set")
 
@@ -253,7 +259,7 @@ class OpenAIProvider(LLMProvider):
             **kwargs,
         )
 
-    async def chat(self, model, messages, temperature=0.7, max_tokens=512, **kw):
+    async def chat(self, model, messages, temperature=_PROVIDER_DEFAULT_TEMPERATURE, max_tokens=_PROVIDER_CHAT_MAX_TOKENS, **kw):
         if not self.api_key:
             raise RuntimeError("OpenAI API key not set")
 
@@ -309,7 +315,7 @@ class LlamaCppProvider(LLMProvider):
     def __init__(self, base_url: str = "", **kwargs):
         super().__init__(base_url=base_url or _LLAMACPP_USER_BASE_URL, **kwargs)
 
-    async def chat(self, model, messages, temperature=0.7, max_tokens=512, **kw):
+    async def chat(self, model, messages, temperature=_PROVIDER_DEFAULT_TEMPERATURE, max_tokens=_PROVIDER_CHAT_MAX_TOKENS, **kw):
         session = await self._get_session()
         url = f"{self.base_url}/v1/chat/completions"
         payload = {
@@ -695,7 +701,7 @@ class GitHubModelsProvider(LLMProvider):
         # Put rate-limited models at the end (they might have recovered)
         return available + rate_limited
 
-    async def chat(self, model, messages, temperature=0.7, max_tokens=4096, **kw):
+    async def chat(self, model, messages, temperature=_PROVIDER_DEFAULT_TEMPERATURE, max_tokens=_PROVIDER_STREAM_MAX_TOKENS, **kw):
         if not self.api_key:
             raise RuntimeError(
                 "GitHub token not set. "
@@ -745,7 +751,7 @@ class GitHubModelsProvider(LLMProvider):
             f"All GitHub Models exhausted for chain starting at {model}. Last error: {last_error}"
         )
 
-    async def _chat_single(self, model: str, messages, temperature=0.7, max_tokens=4096, **kw):
+    async def _chat_single(self, model: str, messages, temperature=_PROVIDER_DEFAULT_TEMPERATURE, max_tokens=_PROVIDER_STREAM_MAX_TOKENS, **kw):
         """Make a single chat request to one specific model."""
         session = await self._get_session()
         url = f"{self.base_url}/chat/completions"
@@ -845,7 +851,7 @@ class AnthropicProvider(OpenAIProvider):
             **kwargs,
         )
 
-    async def chat(self, model, messages, temperature=0.7, max_tokens=512, **kw):
+    async def chat(self, model, messages, temperature=_PROVIDER_DEFAULT_TEMPERATURE, max_tokens=_PROVIDER_CHAT_MAX_TOKENS, **kw):
         if not self.api_key:
             raise RuntimeError("Anthropic API key not set (ANTHROPIC_API_KEY or CLAUDE_API_KEY)")
         session = await self._get_session()

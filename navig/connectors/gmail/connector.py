@@ -39,6 +39,9 @@ except ImportError:
 
 logger = logging.getLogger("navig.connectors.gmail")
 
+# Google API request timeout in seconds.
+_GOOGLE_API_TIMEOUT: float = 15.0
+
 _API_BASE = "https://gmail.googleapis.com/gmail/v1"
 
 
@@ -82,7 +85,7 @@ class GmailConnector(BaseConnector):
         """GET request to Gmail API with error handling."""
         if not HTTPX_AVAILABLE:
             raise ImportError("httpx is required. Install: pip install httpx")
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=_GOOGLE_API_TIMEOUT) as client:
             resp = await client.get(
                 f"{_API_BASE}{path}",
                 headers=self._headers(),
@@ -96,7 +99,7 @@ class GmailConnector(BaseConnector):
         """POST request to Gmail API."""
         if not HTTPX_AVAILABLE:
             raise ImportError("httpx is required. Install: pip install httpx")
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=_GOOGLE_API_TIMEOUT) as client:
             resp = await client.post(
                 f"{_API_BASE}{path}",
                 headers=self._headers(),

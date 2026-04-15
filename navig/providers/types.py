@@ -11,6 +11,10 @@ from typing import Any, Literal
 
 from navig.providers._local_defaults import _OLLAMA_BASE_URL
 
+# Standard maximum output token limit shared by many modern LLMs.
+# Individual models with different capacities should override this explicitly.
+_STANDARD_MAX_OUTPUT_TOKENS: int = 8192
+
 
 class ModelApi(str, Enum):
     """Supported API types for different providers."""
@@ -75,7 +79,7 @@ class ModelDefinition:
     input: list[ModelInput] = field(default_factory=lambda: [ModelInput.TEXT])
     cost: ModelCost = field(default_factory=ModelCost)
     context_window: int = 128000
-    max_tokens: int = 8192
+    max_tokens: int = _STANDARD_MAX_OUTPUT_TOKENS
     headers: dict[str, str] = field(default_factory=dict)
     compat: ModelCompatConfig | None = None
 

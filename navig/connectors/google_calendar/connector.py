@@ -37,6 +37,9 @@ except ImportError:
 
 logger = logging.getLogger("navig.connectors.google_calendar")
 
+# Google API request timeout in seconds.
+_GOOGLE_API_TIMEOUT: float = 15.0
+
 _API_BASE = "https://www.googleapis.com/calendar/v3"
 
 
@@ -74,7 +77,7 @@ class GoogleCalendarConnector(BaseConnector):
     async def _api_get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         if not HTTPX_AVAILABLE:
             raise ImportError("httpx is required. Install: pip install httpx")
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=_GOOGLE_API_TIMEOUT) as client:
             resp = await client.get(
                 f"{_API_BASE}{path}",
                 headers=self._headers(),
@@ -87,7 +90,7 @@ class GoogleCalendarConnector(BaseConnector):
     async def _api_post(self, path: str, json_body: dict[str, Any] | None = None) -> dict[str, Any]:
         if not HTTPX_AVAILABLE:
             raise ImportError("httpx is required. Install: pip install httpx")
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=_GOOGLE_API_TIMEOUT) as client:
             resp = await client.post(
                 f"{_API_BASE}{path}",
                 headers=self._headers(),
@@ -100,7 +103,7 @@ class GoogleCalendarConnector(BaseConnector):
     async def _api_put(self, path: str, json_body: dict[str, Any] | None = None) -> dict[str, Any]:
         if not HTTPX_AVAILABLE:
             raise ImportError("httpx is required. Install: pip install httpx")
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=_GOOGLE_API_TIMEOUT) as client:
             resp = await client.put(
                 f"{_API_BASE}{path}",
                 headers=self._headers(),
@@ -113,7 +116,7 @@ class GoogleCalendarConnector(BaseConnector):
     async def _api_delete(self, path: str) -> None:
         if not HTTPX_AVAILABLE:
             raise ImportError("httpx is required. Install: pip install httpx")
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=_GOOGLE_API_TIMEOUT) as client:
             resp = await client.delete(
                 f"{_API_BASE}{path}",
                 headers=self._headers(),
