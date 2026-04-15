@@ -32,6 +32,7 @@ from .clients import (
     ProviderError,
 )
 from .types import ModelApi, ModelDefinition, ProviderConfig
+from navig._llm_defaults import _DEFAULT_MAX_TOKENS
 
 # API Endpoints
 PERPLEXITY_DIRECT_URL = "https://api.perplexity.ai"
@@ -48,7 +49,7 @@ PERPLEXITY_MODELS = [
         id="sonar",
         name="Sonar",
         context_window=127000,
-        max_tokens=4096,
+        max_tokens=_DEFAULT_MAX_TOKENS,
     ),
     ModelDefinition(
         id="sonar-pro",
@@ -60,7 +61,7 @@ PERPLEXITY_MODELS = [
         id="sonar-reasoning",
         name="Sonar Reasoning",
         context_window=127000,
-        max_tokens=4096,
+        max_tokens=_DEFAULT_MAX_TOKENS,
         reasoning=True,
     ),
 ]

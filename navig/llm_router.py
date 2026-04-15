@@ -254,7 +254,7 @@ if PYDANTIC_OK:
                 fallback_model="qwen2.5:7b-instruct",
                 fallback_provider="ollama",
                 temperature=0.5,
-                max_tokens=4096,
+                max_tokens=_DEFAULT_MAX_TOKENS,
                 use_uncensored=False,
             )
         )
@@ -266,7 +266,7 @@ if PYDANTIC_OK:
                 fallback_model="qwen2.5:7b-instruct",
                 fallback_provider="ollama",
                 temperature=0.2,
-                max_tokens=4096,
+                max_tokens=_DEFAULT_MAX_TOKENS,
                 use_uncensored=False,
             )
         )
@@ -290,7 +290,7 @@ if PYDANTIC_OK:
                 fallback_model="qwen2.5:7b-instruct",
                 fallback_provider="ollama",
                 temperature=0.4,
-                max_tokens=4096,
+                max_tokens=_DEFAULT_MAX_TOKENS,
                 use_uncensored=False,
             )
         )

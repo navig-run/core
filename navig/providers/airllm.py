@@ -19,6 +19,7 @@ from .clients import (
     ProviderError,
 )
 from .types import ModelApi, ModelCost, ModelDefinition, ProviderConfig
+from navig._llm_defaults import _DEFAULT_MAX_TOKENS
 
 # Check if AirLLM is available
 try:
@@ -404,35 +405,35 @@ class AirLLMClient(BaseProviderClient):
                 id="meta-llama/Llama-3.3-70B-Instruct",
                 name="Llama 3.3 70B Instruct",
                 context_window=128000,
-                max_tokens=4096,
+                max_tokens=_DEFAULT_MAX_TOKENS,
                 cost=ModelCost(input=0, output=0),  # Free (local)
             ),
             ModelDefinition(
                 id="Qwen/Qwen2.5-72B-Instruct",
                 name="Qwen 2.5 72B Instruct",
                 context_window=32768,
-                max_tokens=4096,
+                max_tokens=_DEFAULT_MAX_TOKENS,
                 cost=ModelCost(input=0, output=0),
             ),
             ModelDefinition(
                 id="mistralai/Mixtral-8x7B-Instruct-v0.1",
                 name="Mixtral 8x7B Instruct",
                 context_window=32768,
-                max_tokens=4096,
+                max_tokens=_DEFAULT_MAX_TOKENS,
                 cost=ModelCost(input=0, output=0),
             ),
             ModelDefinition(
                 id="deepseek-ai/deepseek-coder-33b-instruct",
                 name="DeepSeek Coder 33B",
                 context_window=16384,
-                max_tokens=4096,
+                max_tokens=_DEFAULT_MAX_TOKENS,
                 cost=ModelCost(input=0, output=0),
             ),
             ModelDefinition(
                 id="meta-llama/Llama-3.1-405B",
                 name="Llama 3.1 405B",
                 context_window=128000,
-                max_tokens=4096,
+                max_tokens=_DEFAULT_MAX_TOKENS,
                 cost=ModelCost(input=0, output=0),
             ),
         ]
