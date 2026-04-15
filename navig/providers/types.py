@@ -14,6 +14,8 @@ from navig.providers._local_defaults import _OLLAMA_BASE_URL
 # Standard maximum output token limit shared by many modern LLMs.
 # Individual models with different capacities should override this explicitly.
 _STANDARD_MAX_OUTPUT_TOKENS: int = 8192
+# Compact maximum output token limit used by older/constrained models.
+_COMPACT_MAX_OUTPUT_TOKENS: int = 4096
 
 
 class ModelApi(str, Enum):
@@ -248,7 +250,7 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
                 id="gpt-4-turbo-preview",
                 name="GPT-4 Turbo Preview",
                 context_window=128000,
-                max_tokens=4096,
+                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
                 cost=ModelCost(input=10, output=30, cache_read=2.5, cache_write=10),
             ),
             ModelDefinition(
@@ -271,7 +273,7 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
                 id="gpt-3.5-turbo",
                 name="GPT-3.5 Turbo",
                 context_window=16385,
-                max_tokens=4096,
+                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
                 cost=ModelCost(input=0.5, output=1.5),
             ),
         ],
@@ -303,7 +305,7 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
                 name="Claude 3 Opus",
                 input=[ModelInput.TEXT, ModelInput.IMAGE],
                 context_window=200000,
-                max_tokens=4096,
+                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
                 cost=ModelCost(input=15, output=75, cache_read=1.5, cache_write=18.75),
             ),
         ],
@@ -390,21 +392,21 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
                 id="meta-llama/Llama-3.3-70B-Instruct",
                 name="Llama 3.3 70B (AirLLM)",
                 context_window=128000,
-                max_tokens=4096,
+                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
                 cost=ModelCost(input=0, output=0),  # Free (local)
             ),
             ModelDefinition(
                 id="Qwen/Qwen2.5-72B-Instruct",
                 name="Qwen 2.5 72B (AirLLM)",
                 context_window=32768,
-                max_tokens=4096,
+                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
                 cost=ModelCost(input=0, output=0),
             ),
             ModelDefinition(
                 id="deepseek-ai/deepseek-coder-33b-instruct",
                 name="DeepSeek Coder 33B (AirLLM)",
                 context_window=16384,
-                max_tokens=4096,
+                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
                 cost=ModelCost(input=0, output=0),
             ),
         ],
@@ -419,19 +421,19 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
                 id="meta/llama-3.3-70b-instruct",
                 name="Llama 3.3 70B (NVIDIA NIM)",
                 context_window=128000,
-                max_tokens=4096,
+                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
             ),
             ModelDefinition(
                 id="mistralai/mistral-7b-instruct-v0.3",
                 name="Mistral 7B (NVIDIA NIM)",
                 context_window=32768,
-                max_tokens=4096,
+                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
             ),
             ModelDefinition(
                 id="nvidia/llama-3.1-nemotron-70b-instruct",
                 name="Nemotron 70B (NVIDIA NIM)",
                 context_window=128000,
-                max_tokens=4096,
+                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
             ),
         ],
         priority=35,
@@ -445,14 +447,14 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
                 id="grok-2-1212",
                 name="Grok 2",
                 context_window=131072,
-                max_tokens=4096,
+                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
             ),
             ModelDefinition(
                 id="grok-2-vision-1212",
                 name="Grok 2 Vision",
                 input=[ModelInput.TEXT, ModelInput.IMAGE],
                 context_window=32768,
-                max_tokens=4096,
+                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
             ),
         ],
         priority=35,
@@ -467,13 +469,13 @@ BUILTIN_PROVIDERS: dict[str, ProviderConfig] = {
                 id="mistral-large-latest",
                 name="Mistral Large",
                 context_window=131072,
-                max_tokens=4096,
+                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
             ),
             ModelDefinition(
                 id="codestral-latest",
                 name="Codestral",
                 context_window=262144,
-                max_tokens=4096,
+                max_tokens=_COMPACT_MAX_OUTPUT_TOKENS,
             ),
         ],
         priority=45,
