@@ -168,6 +168,13 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     ),
     SlashCommandEntry("briefing", "Today's summary", handler="_handle_briefing", category="core"),
     SlashCommandEntry(
+        "pin",
+        "Pin the last bot message (group chats)",
+        handler="_handle_pin_cmd",
+        category="utilities",
+        usage="/pin",
+    ),
+    SlashCommandEntry(
         "deck",
         "Open the command deck",
         handler="_handle_deck",
@@ -1408,8 +1415,8 @@ class TelegramCommandsMixin:
             from navig.store.runtime import get_runtime_store
 
             active_count = len(get_runtime_store().get_user_reminders(user_id) or [])
-        except Exception:
-            pass  # best-effort: reminder count is non-critical for /status display
+        except Exception as _rc_exc:  # noqa: BLE001
+            logger.debug("reminder count skipped: %s", _rc_exc)  # non-critical for /start display
 
         # Current model tier preference
         tier_raw = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
@@ -1844,8 +1851,8 @@ class TelegramCommandsMixin:
 
             active_count = len(get_runtime_store().get_user_reminders(user_id) or [])
             lines.append(f"Reminders: <code>{active_count} active</code>")
-        except Exception:
-            pass  # best-effort: reminder count is non-critical for /status display
+        except Exception as _rc2_exc:  # noqa: BLE001
+            logger.debug("reminder count for /status skipped: %s", _rc2_exc)
 
         # Bridge status (non-blocking, 2 s timeout)
         try:
@@ -5578,8 +5585,8 @@ class TelegramCommandsMixin:
             cfg = load_config()
             active_host = (cfg.get("active_host") or "—") if cfg else "—"
             lines.append(f"Active host: <code>{active_host}</code>")
-        except Exception:
-            pass  # best-effort: active host is non-critical for /debug output
+        except Exception as _host_exc:  # noqa: BLE001
+            logger.debug("active host lookup skipped for /debug: %s", _host_exc)
 
         # Platform
         import platform
@@ -7070,10 +7077,129 @@ class TelegramCommandsMixin:
             if space_lines:
                 lines.append("-" * 22)
                 lines.extend(space_lines)
-        except Exception:
-            pass  # best-effort: spaces briefing is non-critical
+        except Exception as _spaces_exc:  # noqa: BLE001
+            logger.debug("spaces briefing section skipped: %s", _spaces_exc)
 
-        await self.send_message(chat_id, "\n".join(lines))
+        result = await self.send_message(chat_id, "\n".join(lines))
+
+        # Auto-pin briefing in group chats when enabled
+        await self._auto_pin_briefing(chat_id, user_id, result)
+
+    async def _auto_pin_briefing(
+        self, chat_id: int, user_id: int, send_result: dict | None
+    ) -> None:
+        """Pin the just-sent briefing message in group chats (best-effort).
+
+        Unpins the previous briefing before pinning the new one so the pinned
+        slot doesn't pile up.  Stores the message_id in session metadata so we
+        can unpin it next time.
+        """
+        if not send_result or not isinstance(send_result, dict):
+            return
+        msg_id = send_result.get("message_id")
+        if not msg_id:
+            return
+
+        # Check config
+        try:
+            from navig.config import get_config_manager
+
+            tg = get_config_manager().get("telegram") or {}
+            if not tg.get("auto_pin_briefings", True):
+                return
+        except Exception:  # noqa: BLE001
+            pass  # default: enabled
+
+        # Only pin in group / supergroup chats
+        try:
+            from navig.gateway.channels.telegram import TelegramChannel
+
+            if not TelegramChannel._is_group_chat_id(chat_id):
+                return
+        except Exception:  # noqa: BLE001
+            if chat_id >= 0:
+                return  # positive chat_ids are DMs
+
+        # Unpin previous briefing if tracked
+        try:
+            from navig.gateway.channels.telegram_sessions import get_session_manager
+
+            sm = get_session_manager()
+            prev_id = sm.get_session_metadata(chat_id, 0, "pinned_briefing_msg_id", is_group=True)
+            if prev_id:
+                await self._api_call("unpinChatMessage", {"chat_id": chat_id, "message_id": prev_id})
+        except Exception:  # noqa: BLE001
+            pass  # best-effort
+
+        # Pin the new briefing
+        try:
+            pin_result = await self._api_call(
+                "pinChatMessage",
+                {"chat_id": chat_id, "message_id": msg_id, "disable_notification": True},
+            )
+            if pin_result is not None:
+                from navig.gateway.channels.telegram_sessions import get_session_manager
+
+                sm = get_session_manager()
+                sm.set_session_metadata(
+                    chat_id, 0, "pinned_briefing_msg_id", msg_id, is_group=True
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("auto_pin_briefing failed for chat=%s: %s", chat_id, exc)
+
+    async def _handle_pin_cmd(
+        self, chat_id: int, user_id: int, metadata: "MessageMetadata"
+    ) -> None:
+        """/pin — pin the last bot message in this group chat."""
+        try:
+            from navig.gateway.channels.telegram import TelegramChannel
+
+            is_group = TelegramChannel._is_group_chat_id(chat_id)
+        except Exception:  # noqa: BLE001
+            is_group = chat_id < 0
+
+        if not is_group:
+            await self.send_message(
+                chat_id,
+                "📌 <code>/pin</code> works in group and supergroup chats only.",
+                parse_mode="HTML",
+            )
+            return
+
+        # Find the most recent assistant message_id from session
+        try:
+            from navig.gateway.channels.telegram_sessions import get_session_manager
+
+            sm = get_session_manager()
+            session = sm.get_or_create_session(chat_id, user_id, is_group=True)
+            msg_id = None
+            for msg in reversed(session.messages):
+                if msg.role == "assistant" and msg.message_id:
+                    msg_id = msg.message_id
+                    break
+        except Exception:  # noqa: BLE001
+            msg_id = None
+
+        if not msg_id:
+            await self.send_message(
+                chat_id,
+                "📌 No recent bot message found to pin. Reply directly to pin a message.",
+                parse_mode=None,
+            )
+            return
+
+        pin_result = await self._api_call(
+            "pinChatMessage",
+            {"chat_id": chat_id, "message_id": msg_id, "disable_notification": True},
+        )
+        if pin_result is not None:
+            await self.send_message(chat_id, "📌 Pinned.", parse_mode=None)
+        else:
+            await self.send_message(
+                chat_id,
+                "📌 Could not pin — check that I have admin rights in this group.",
+                parse_mode=None,
+            )
 
     async def _handle_deck(self, chat_id: int) -> None:
         """Send a WebApp button to open the Deck (/deck)."""
@@ -7320,7 +7446,13 @@ class TelegramCommandsMixin:
                         _log.getLogger(__name__).exception(
                             "autoheal: _heal_failure raised unexpectedly"
                         )
-                        await self.send_message(chat_id, response[:3950], parse_mode=None)
+                        _raw_fallback = response[:3950]
+                        _rendered = (
+                            self._md_to_html(_raw_fallback)
+                            if hasattr(self, "_md_to_html")
+                            else _raw_fallback
+                        )
+                        await self.send_message(chat_id, _rendered, parse_mode="HTML")
                     return
                 # -- Normal path ---------------------------------------------
                 if len(response) > 4000:
@@ -7356,7 +7488,10 @@ class TelegramCommandsMixin:
                 ):
                     self._mark_chat_onboarding_step("first-host")
 
-                await self.send_message(chat_id, response, parse_mode=None)
+                rendered_response = (
+                    self._md_to_html(response) if hasattr(self, "_md_to_html") else response
+                )
+                await self.send_message(chat_id, rendered_response, parse_mode="HTML")
             else:
                 await self.send_message(chat_id, "-no output.", parse_mode=None)
         else:

@@ -38,9 +38,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-
-def _mdv2_escape(text: str) -> str:
-    return re.sub(r"([_\*\[\]\(\)~`>#+\-=|{}.!\\])", r"\\\1", str(text))
+from navig.gateway.channels.telegram_utils import escape_mdv2 as _mdv2_escape  # noqa: E402
 
 # ─────────────────────────────────────────────────────────────────
 # State machine

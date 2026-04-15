@@ -38,9 +38,7 @@ MAX_ROWS = 2
 MAX_BUTTON_TEXT = 28
 MAX_CALLBACK_DATA = 64  # Telegram limit
 
-
-def _mdv2_escape(text: str) -> str:
-    return re.sub(r"([_\*\[\]\(\)~`>#+\-=|{}.!\\])", r"\\\1", str(text))
+from navig.gateway.channels.telegram_utils import escape_mdv2 as _mdv2_escape  # noqa: E402
 
 
 class ContentCategory(str, Enum):
@@ -434,8 +432,8 @@ class ResponseKeyboardBuilder:
 
         Row 1 adapts to content:
           CODE  → [Explain] [Copy code]
-          HOWTO → [Summarize] [Show steps]
-          Other → [Summarize] [Go deeper]
+          HOWTO → [Go Deeper] [Show steps]
+          Other → [Go Deeper] [Rephrase]
         Row 2 → [👍] [👎] (always)
         """
         # Minimal language detection check based on cyrillic characters
@@ -462,8 +460,8 @@ class ResponseKeyboardBuilder:
         elif category == ContentCategory.HOWTO:
             row1 = [
                 self._make_button(
-                    "📋 Кратко" if is_ru else "📋 Summarize",
-                    "summarize",
+                    "� Глубже" if is_ru else "📖 Go Deeper",
+                    "dig_deeper",
                     msg_hash,
                     user_message,
                     ai_response,
@@ -496,15 +494,15 @@ class ResponseKeyboardBuilder:
         else:
             row1 = [
                 self._make_button(
-                    "📋 Кратко" if is_ru else "📋 Summarize",
-                    "summarize",
+                    "� Глубже" if is_ru else "📖 Go Deeper",
+                    "dig_deeper",
                     msg_hash,
                     user_message,
                     ai_response,
                 ),
                 self._make_button(
-                    "🔍 Подробнее" if is_ru else "🔍 Go deeper",
-                    "elaborate",
+                    "🔄 Перефраз" if is_ru else "🔄 Rephrase",
+                    "rephrase",
                     msg_hash,
                     user_message,
                     ai_response,
@@ -538,18 +536,44 @@ class ResponseKeyboardBuilder:
 # CallbackHandler
 # ────────────────────────────────────────────────────────────────
 
+# ── Dig Deeper — prompt/regex constants (no inline literals in methods) ──────
+#
+# The LLM is asked to append a follow-up question using a fixed marker line so
+# it can be stripped from the displayed text and stored for the ↗️ button.
+_DIG_DEEPER_FOLLOWUP_MARKER: str = "FOLLOW_UP_QUESTION:"
+_DIG_DEEPER_PROMPT: str = (
+    'The user asked: "{user_message}"\n\n'
+    'Your initial answer was:\n"""\n{ai_response}\n"""\n\n'
+    "Go significantly deeper. Expand with additional context, nuance, examples, "
+    "edge cases, or a different angle the user may not have considered. "
+    "After your expanded answer, on a NEW LINE write exactly:\n"
+    f"{_DIG_DEEPER_FOLLOWUP_MARKER} <one natural follow-up question the user is likely to have>"
+)
+_REPHRASE_PROMPT: str = (
+    'The user asked: "{user_message}"\n\n'
+    'Your answer was:\n"""\n{ai_response}\n"""\n\n'
+    "Rephrase the answer using a different structure, tone, or level of detail "
+    "to make the information clearer or more engaging."
+)
+# Matches the marker + the follow-up question appended by the LLM.
+_FOLLOWUP_EXTRACT_RE = re.compile(
+    r"\n+" + re.escape(_DIG_DEEPER_FOLLOWUP_MARKER) + r"\s*(.+)$",
+    re.DOTALL,
+)
+# Store key prefix for follow-up questions keyed by msg_hash.
+_FOLLOWUP_STORE_PREFIX: str = "followup:"
+# Label prefix shown on the inline button.
+_FOLLOWUP_BTN_LABEL: str = "\u2197\ufe0f Ask this"  # ↗️ Ask this
+# Action prefix embedded in callback_data for follow-up buttons.
+_FOLLOWUP_CB_PREFIX: str = "ask_followup:"
+
 _ACTION_PROMPTS: dict[str, str] = {
     "regen": (
         'The user asked: "{user_message}"\n'
         "Your previous answer was not satisfactory. "
         "Provide a better, more complete answer."
     ),
-    "summarize": ("Summarize the following in 2-3 concise sentences:\n\n{ai_response}"),
-    "elaborate": (
-        'The user asked: "{user_message}"\n'
-        'Your answer was: "{ai_response_short}"\n'
-        "Elaborate with more detail, examples, and depth."
-    ),
+    "rephrase": _REPHRASE_PROMPT,
     "explain": ("Explain the following code clearly and concisely:\n\n{ai_response}"),
     "show_steps": ("Rewrite the following as a clear numbered step-by-step:\n\n{ai_response}"),
     "table_fmt": ("Reformat the following comparison into a clear table:\n\n{ai_response}"),
@@ -562,7 +586,8 @@ _ACTION_PROMPTS: dict[str, str] = {
         "Your previous answer was rated poorly. "
         "Provide a significantly improved answer."
     ),
-    # Special handlers (no prompt template)
+    # Special handlers (no prompt template — handled in CallbackHandler directly)
+    "dig_deeper": None,
     "copy_code": None,
     "approve": None,
     "alternative": None,
@@ -899,6 +924,16 @@ class CallbackHandler:
                 await self._handle_evening_callback(cb_id, cb_data, chat_id, message_id, user_id)
                 return
 
+            # ── Ask this (follow-up question routed as new user message) ──
+            if cb_data.startswith(_FOLLOWUP_CB_PREFIX):
+                await self._handle_ask_followup_callback(
+                    cb_id=cb_id,
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    followup_key=_FOLLOWUP_STORE_PREFIX + cb_data[len(_FOLLOWUP_CB_PREFIX):],
+                )
+                return
+
             entry = self.store.get(cb_data)
             if not entry:
                 await self._answer(cb_id, "⏳ Button expired")
@@ -951,6 +986,17 @@ class CallbackHandler:
                     await self.channel.send_message(chat_id, f"<pre>{html.escape(code_text[:3900])}</pre>", parse_mode="HTML")
                 else:
                     await self._answer(cb_id, "No code blocks found")
+                return
+
+            # ── Go Deeper — AI expansion + follow-up question button ──
+            if action == "dig_deeper":
+                await self._handle_dig_deeper_callback(
+                    cb_id=cb_id,
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    cb_key=cb_data,
+                    entry=entry,
+                )
                 return
 
             # ── AI-routed actions ──
@@ -3065,6 +3111,106 @@ class CallbackHandler:
             )
         except Exception as exc:
             logger.debug("Audio settings refresh failed: %s", exc)
+
+    async def _handle_dig_deeper_callback(
+        self,
+        cb_id: str,
+        chat_id: int,
+        user_id: int,
+        cb_key: str,
+        entry: "CallbackEntry",
+    ) -> None:
+        """
+        Run the LLM with _DIG_DEEPER_PROMPT, extract an AI-generated follow-up
+        question from the response (via _FOLLOWUP_EXTRACT_RE), strip the marker
+        line from the displayed text, and attach an ↗️ Ask this button.
+        """
+        await self._answer(cb_id, "📖 Going deeper…")
+        typing_task = asyncio.create_task(self.channel._keep_typing(chat_id))
+        try:
+            prompt = _DIG_DEEPER_PROMPT.format(
+                user_message=entry.user_message,
+                ai_response=entry.ai_response[:2500],
+            )
+            response = await self._get_ai_response(prompt, user_id)
+            if not response:
+                await self.channel.send_message(chat_id, "❌ Couldn't generate a deeper response.")
+                return
+
+            # Extract and strip the follow-up question from the response.
+            followup_question: str | None = None
+            display_response = response
+            match = _FOLLOWUP_EXTRACT_RE.search(response)
+            if match:
+                followup_question = match.group(1).strip()
+                display_response = response[: match.start()].rstrip()
+
+            # Build keyboard from the expanded response.
+            builder = ResponseKeyboardBuilder(self.store)
+            keyboard = builder.build(
+                ai_response=display_response,
+                user_message=entry.user_message,
+                message_id=0,
+            )
+
+            # Append ↗️ Ask this button if a follow-up question was extracted.
+            if followup_question:
+                followup_cb = _FOLLOWUP_CB_PREFIX + cb_key
+                if len(followup_cb) <= MAX_CALLBACK_DATA:
+                    self.store.put(
+                        _FOLLOWUP_STORE_PREFIX + cb_key,
+                        followup_question,
+                    )
+                    followup_row = [{"text": _FOLLOWUP_BTN_LABEL, "callback_data": followup_cb}]
+                    if keyboard and "inline_keyboard" in (keyboard or {}):
+                        keyboard["inline_keyboard"].append(followup_row)
+                    else:
+                        keyboard = {"inline_keyboard": [followup_row]}
+
+            await self.channel.send_message(chat_id, display_response, keyboard=keyboard)
+        finally:
+            typing_task.cancel()
+            try:
+                await typing_task
+            except asyncio.CancelledError as exc:
+                logger.debug("Exception suppressed (typing task cancelled): %s", exc)
+
+    async def _handle_ask_followup_callback(
+        self,
+        cb_id: str,
+        chat_id: int,
+        user_id: int,
+        followup_key: str,
+    ) -> None:
+        """
+        Retrieve the stored follow-up question and route it through on_message()
+        as if the user typed it, then send the result back to the chat.
+        """
+        question = self.store.get(followup_key)
+        if not question:
+            await self._answer(cb_id, "⏳ Question expired")
+            return
+
+        await self._answer(cb_id, "")
+        typing_task = asyncio.create_task(self.channel._keep_typing(chat_id))
+        try:
+            response = await self._get_ai_response(str(question), user_id)
+            if response:
+                builder = ResponseKeyboardBuilder(self.store)
+                keyboard = builder.build(
+                    ai_response=response,
+                    user_message=str(question),
+                    message_id=0,
+                )
+                await self.channel.send_message(chat_id, response, keyboard=keyboard)
+            else:
+                await self.channel.send_message(chat_id, "❌ Couldn't answer the follow-up question.")
+        finally:
+            typing_task.cancel()
+            try:
+                await typing_task
+            except asyncio.CancelledError as exc:
+                logger.debug("Exception suppressed (typing task cancelled): %s", exc)
 
     async def _get_ai_response(self, prompt: str, user_id: int) -> str | None:
         if self.channel.on_message:
