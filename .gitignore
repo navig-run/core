@@ -187,6 +187,7 @@ htmlcov/                    # HTML coverage reports
 coverage.xml                # Coverage XML report
 *.cover                     # Coverage files
 .hypothesis/                # Hypothesis test data
+pytest*.txt                 # ad-hoc pytest text logs (store under .dev/)
 
 # ===============================================
 # Documentation Build Artifacts
@@ -284,8 +285,7 @@ import_times.log
 test_out*.txt
 test_results*.txt
 test_failures*.txt
-pytest_out*.txt
-pytest_fail*.txt
+pytest_*.txt
 test_run.log
 test_vault.log
 failed_test*.txt
