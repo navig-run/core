@@ -134,9 +134,11 @@ def get_active_space() -> str:
 
 def _set_active_space(name: str) -> None:
     """Persist *name* as the active space (cache file + best-effort config.yaml)."""
+    from navig.core.yaml_io import atomic_write_text
+
     cache_file = _active_space_cache_file()
     cache_file.parent.mkdir(parents=True, exist_ok=True)
-    cache_file.write_text(name, encoding="utf-8")
+    atomic_write_text(cache_file, name)
 
     # Best-effort: mirror into ~/.navig/config.yaml so `navig config show` reflects it
     try:

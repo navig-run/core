@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from navig.core.file_permissions import set_owner_only_file_permissions
+from navig.core.yaml_io import atomic_write_text
 
 from .crypto import CryptoEngine, CryptoError
 from .session import SessionStore, VaultSession
@@ -864,7 +865,7 @@ class Vault:
         profile_file = self.vault_dir / "active_profile.txt"
         try:
             self.vault_dir.mkdir(parents=True, exist_ok=True)
-            profile_file.write_text(profile_id or "default", encoding="utf-8")
+            atomic_write_text(profile_file, profile_id or "default")
         except OSError:
             pass
 

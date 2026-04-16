@@ -22,7 +22,7 @@ from typing import Any
 
 import yaml
 
-from navig.core.yaml_io import atomic_write_yaml
+from navig.core.yaml_io import atomic_write_text, atomic_write_yaml
 from navig.platform.paths import config_dir
 
 
@@ -302,7 +302,7 @@ class ConfigSingleton:
                 # Write to cache file for quick switching
                 self._ensure_dirs()
                 cache_file = self.cache_dir / "active_host.txt"
-                cache_file.write_text(host, encoding="utf-8")
+                atomic_write_text(cache_file, host)
 
     def get_active_app(self) -> tuple[str | None, str]:
         """
@@ -345,7 +345,7 @@ class ConfigSingleton:
             else:
                 self._ensure_dirs()
                 cache_file = self.cache_dir / "active_app.txt"
-                cache_file.write_text(app_name, encoding="utf-8")
+                atomic_write_text(cache_file, app_name)
 
     # =========================================================================
     # Plugin Configuration
