@@ -175,7 +175,7 @@ class CryptoEngine:
         - **macOS**   : ``IOPlatformUUID`` from ``ioreg -rd1 -c
           IOPlatformExpertDevice`` — survives OS upgrades, unique per logic-board.
         - **Windows** : ``MachineGuid`` from
-          ``HKLM\SOFTWARE\Microsoft\Cryptography`` opened with
+          ``HKLM\\SOFTWARE\\Microsoft\\Cryptography`` opened with
           ``KEY_WOW64_64KEY`` so that 32-bit Python on a 64-bit OS bypasses
           WOW64 registry redirection and reads the same value as 64-bit Python.
 
