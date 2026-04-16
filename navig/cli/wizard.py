@@ -503,9 +503,10 @@ class SetupWizard:
                         existing[key] = value
                 self.config = existing
 
-        # Write config
-        with open(self.config_file, "w", encoding="utf-8") as f:
-            yaml.dump(self.config, f, default_flow_style=False, sort_keys=False)
+        # Write config atomically (guards against partial-write on crash/antivirus lock)
+        from navig.core.yaml_io import atomic_write_yaml
+
+        atomic_write_yaml(self.config, self.config_file)
 
         print(f"  ✅ Configuration saved to {self.config_file}")
 
