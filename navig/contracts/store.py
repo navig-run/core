@@ -17,6 +17,7 @@ from navig.contracts.capability import TrustScore
 from navig.contracts.execution_receipt import ExecutionReceipt, ReceiptOutcome
 from navig.contracts.mission import Mission, MissionStatus
 from navig.contracts.node import Node, NodeStatus
+from navig.core.yaml_io import atomic_write_text as _atomic_write_text
 from navig.debug_logger import get_debug_logger
 from navig.platform.paths import config_dir
 
@@ -221,7 +222,7 @@ class RuntimeStore:
 
     def _write_file(self, name: str, data) -> None:
         path = self._dir / name
-        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        _atomic_write_text(path, json.dumps(data, indent=2))
 
     def _read_file(self, name: str) -> list:
         path = self._dir / name

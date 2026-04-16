@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from navig.console_helper import get_console
+from navig.core.yaml_io import atomic_write_text as _atomic_write_text
 
 if TYPE_CHECKING:
     from navig.settings.resolver import SettingsResolver
@@ -296,7 +297,7 @@ def _reset_key(key: str, layer: str, resolver: SettingsResolver) -> None:  # typ
         flat = _flatten(raw)
         flat.pop(key, None)
         nested = _unflatten(flat)
-        path.write_text(json.dumps(nested, indent=2, ensure_ascii=False), encoding="utf-8")
+        _atomic_write_text(path, json.dumps(nested, indent=2, ensure_ascii=False))
         resolver._cache = None  # noqa: SLF001
     except Exception:  # noqa: BLE001
         pass
