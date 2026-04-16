@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
+from navig.core.dict_utils import now_iso
+
 # ── Enums ──────────────────────────────────────────────────────────────────────
 
 
@@ -63,7 +65,7 @@ class ExecutionReceipt:
     error: str | None = None
     artifacts: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
-    recorded_at: str = field(default_factory=lambda: _now_iso())
+    recorded_at: str = field(default_factory=lambda: now_iso())
 
     # ── Factory method ───────────────────────────────────────────────
 
@@ -137,6 +139,3 @@ class ExecutionReceipt:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-
-def _now_iso() -> str:
-    return datetime.now(tz=timezone.utc).isoformat()

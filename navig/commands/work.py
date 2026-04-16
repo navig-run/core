@@ -63,6 +63,7 @@ _STAGE_ORDER = {s: i for i, s in enumerate(VALID_STAGES)}
 
 # Root of NAVIG data directory. Overridable in tests via monkeypatch.
 # Respects NAVIG_CONFIG_DIR env var for non-default install paths.
+from navig.core.dict_utils import now_iso
 from navig.platform.paths import config_dir as _config_dir
 
 _NAVIG_ROOT: Path = _config_dir()
@@ -145,15 +146,12 @@ def _unique_slug(conn, base_slug: str) -> str:
     return slug
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
 
 def _record_event(conn, work_item_id: int, event_type: str, payload: dict) -> None:
     conn.execute(
         "INSERT INTO work_events (work_item_id, event_type, payload_json, created_at) "
         "VALUES (?, ?, ?, ?)",
-        (work_item_id, event_type, json.dumps(payload), _now_iso()),
+        (work_item_id, event_type, json.dumps(payload), now_iso()),
     )
 
 
@@ -240,7 +238,7 @@ def cmd_add(
     conn = _get_conn()
     base_slug = _slugify(title)
     slug = _unique_slug(conn, base_slug)
-    now = _now_iso()
+    now = now_iso()
 
     notes_path: str | None = None
     if not no_wiki:
@@ -426,7 +424,7 @@ def cmd_move(
         raise typer.Exit(code=1)
 
     old_stage = row["stage"]
-    now = _now_iso()
+    now = now_iso()
 
     archived_at = now if target == "archived" else row["archived_at"]
 
@@ -515,7 +513,7 @@ def cmd_update(
         ch.warning("Nothing to update — pass at least one option.")
         raise typer.Exit(code=0)
 
-    updates["updated_at"] = _now_iso()
+    updates["updated_at"] = now_iso()
     set_clause = ", ".join(f"{k} = ?" for k in updates)
     values = list(updates.values()) + [row["id"]]
     conn.execute(f"UPDATE work_items SET {set_clause} WHERE id = ?", values)
@@ -555,7 +553,7 @@ def cmd_archive(
         ch.warning(f"{row['slug']!r} is already archived.")
         raise typer.Exit(code=0)
 
-    now = _now_iso()
+    now = now_iso()
     conn.execute(
         "UPDATE work_items SET stage = 'archived', updated_at = ?, archived_at = ? WHERE id = ?",
         (now, now, row["id"]),

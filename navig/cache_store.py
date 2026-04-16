@@ -18,11 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from navig.core.dict_utils import utc_now
 from navig.platform import paths
-
-
-def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def _to_iso_z(dt: datetime) -> str:
@@ -75,7 +72,7 @@ def read_json_cache(
         if cached_at_dt is None:
             return CacheReadResult(hit=False, expired=False, data=None, cached_at=None)
 
-        age_seconds = int((_utc_now() - cached_at_dt.astimezone(timezone.utc)).total_seconds())
+        age_seconds = int((utc_now() - cached_at_dt.astimezone(timezone.utc)).total_seconds())
         if ttl_seconds >= 0 and age_seconds > ttl_seconds:
             return CacheReadResult(hit=True, expired=True, data=None, cached_at=cached_at_raw)
 
@@ -95,7 +92,7 @@ def write_json_cache(filename: str, data: Any) -> Path:
     cache_path = cache_dir / filename
     tmp_path = cache_dir / (filename + ".tmp")
 
-    payload = {"cached_at": _to_iso_z(_utc_now()), "data": data}
+    payload = {"cached_at": _to_iso_z(utc_now()), "data": data}
 
     tmp_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     tmp_path.replace(cache_path)

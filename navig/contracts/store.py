@@ -17,6 +17,7 @@ from navig.contracts.capability import TrustScore
 from navig.contracts.execution_receipt import ExecutionReceipt, ReceiptOutcome
 from navig.contracts.mission import Mission, MissionStatus
 from navig.contracts.node import Node, NodeStatus
+from navig.core.dict_utils import now_iso
 from navig.core.yaml_io import atomic_write_text as _atomic_write_text
 from navig.debug_logger import get_debug_logger
 from navig.platform.paths import config_dir
@@ -149,7 +150,7 @@ class RuntimeStore:
             title=mission.title,
             capability=mission.capability,
             outcome=outcome,
-            completed_at=mission.completed_at or _now_iso(),
+            completed_at=mission.completed_at or now_iso(),
             started_at=mission.started_at,
             duration_secs=mission.duration_secs,
             error=mission.error,
@@ -267,6 +268,3 @@ def reset_runtime_store(store_dir: Path | None = None) -> RuntimeStore:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-
-def _now_iso() -> str:
-    return datetime.now(tz=timezone.utc).isoformat()

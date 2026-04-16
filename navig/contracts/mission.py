@@ -21,6 +21,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
+from navig.core.dict_utils import now_iso
+
 # ── Enums ──────────────────────────────────────────────────────────────────────
 
 
@@ -114,7 +116,7 @@ class Mission:
     error: str | None = None
 
     # Timestamps
-    created_at: str = field(default_factory=lambda: _now_iso())
+    created_at: str = field(default_factory=lambda: now_iso())
     queued_at: str | None = None
     started_at: str | None = None
     completed_at: str | None = None
@@ -138,31 +140,31 @@ class Mission:
     def start(self) -> None:
         """Begin execution."""
         self._transition(MissionStatus.RUNNING)
-        self.started_at = _now_iso()
+        self.started_at = now_iso()
 
     def succeed(self, result: Any = None) -> None:
         """Mark as successfully completed."""
         self._transition(MissionStatus.SUCCEEDED)
         self.result = result
-        self.completed_at = _now_iso()
+        self.completed_at = now_iso()
 
     def fail(self, error: str) -> None:
         """Mark as failed with an error message."""
         self._transition(MissionStatus.FAILED)
         self.error = error
-        self.completed_at = _now_iso()
+        self.completed_at = now_iso()
 
     def cancel(self, reason: str = "operator request") -> None:
         """Cancel from queued or running state."""
         self._transition(MissionStatus.CANCELLED)
         self.error = reason
-        self.completed_at = _now_iso()
+        self.completed_at = now_iso()
 
     def timeout(self) -> None:
         """Mark as timed out."""
         self._transition(MissionStatus.TIMED_OUT)
         self.error = "Execution exceeded timeout limit"
-        self.completed_at = _now_iso()
+        self.completed_at = now_iso()
 
     def retry(self) -> None:
         """Re-queue a failed or timed-out mission."""
@@ -171,7 +173,7 @@ class Mission:
         self.result = None
         self.started_at = None
         self.completed_at = None
-        self.queued_at = _now_iso()
+        self.queued_at = now_iso()
 
     @property
     def is_terminal(self) -> bool:
@@ -212,6 +214,3 @@ class Mission:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-
-def _now_iso() -> str:
-    return datetime.now(tz=timezone.utc).isoformat()

@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
+from navig.core.dict_utils import now_iso
+
 # ── Enums ─────────────────────────────────────────────────────────────────────
 
 
@@ -72,8 +74,8 @@ class Node:
     trust_score: float = 1.0
     gateway_url: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
-    created_at: str = field(default_factory=lambda: _now_iso())
-    last_seen: str = field(default_factory=lambda: _now_iso())
+    created_at: str = field(default_factory=lambda: now_iso())
+    last_seen: str = field(default_factory=lambda: now_iso())
 
     # ── Lifecycle transitions ─────────────────────────────────────────
 
@@ -105,7 +107,7 @@ class Node:
 
     def touch(self) -> None:
         """Update last_seen to now."""
-        self.last_seen = _now_iso()
+        self.last_seen = now_iso()
 
     # ── Capability helpers ────────────────────────────────────────────
 
@@ -147,6 +149,3 @@ class Node:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-
-def _now_iso() -> str:
-    return datetime.now(tz=timezone.utc).isoformat()
