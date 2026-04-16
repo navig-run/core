@@ -81,10 +81,7 @@ except ImportError:
 # Mode classifier
 try:
     from navig.gateway.channels.telegram_mode_classifier import (  # noqa: F401
-        _contains_title_marker,
-        _has_mid_sentence_cap,
-        _has_script_mixing,
-        _is_non_latin_dominant,
+        _has_entity_signal,
         _match_system_intent,
         classify_mode,
         extract_url,
@@ -109,6 +106,38 @@ try:
 except ImportError:
     HAS_VOICE = False
 
+# Reaction Intelligence — message_reaction → AI actions
+try:
+    from navig.gateway.channels.telegram_reactions import TelegramReactionsMixin as _TelegramReactionsMixin  # noqa: F401
+
+    HAS_REACTIONS = True
+except ImportError:
+    HAS_REACTIONS = False
+
+# Inline mode — @botname query in any chat
+try:
+    from navig.gateway.channels.telegram_inline import TelegramInlineMixin as _TelegramInlineMixin  # noqa: F401
+
+    HAS_INLINE = True
+except ImportError:
+    HAS_INLINE = False
+
+# Smart reply — auto-convert list responses to native checklists
+try:
+    from navig.gateway.channels.telegram_checklist import TelegramChecklistMixin as _TelegramChecklistMixin  # noqa: F401
+
+    HAS_CHECKLIST = True
+except ImportError:
+    HAS_CHECKLIST = False
+
+# Forum topic auto-router — route to supergroup topics
+try:
+    from navig.gateway.channels.telegram_forum import TelegramForumMixin as _TelegramForumMixin  # noqa: F401
+
+    HAS_FORUM = True
+except ImportError:
+    HAS_FORUM = False
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -117,6 +146,21 @@ logger = logging.getLogger(__name__)
 _API_CALL_MAX_RETRIES: int = 3       # Telegram API: max retries on HTTP 429
 _REMINDER_MAX_RETRIES: int = 3       # Reminder poller: max delivery attempts
 _REMINDER_RETRY_DELAY_SEC: int = 60  # Reminder poller: backoff seconds per retry
+
+# ---------------------------------------------------------------------------
+# Reasoning-mode live progress phases
+# Each entry: (sleep_seconds_before_showing_this_phase, display_label)
+# All user-visible strings live here — single source of truth, never inline.
+# ---------------------------------------------------------------------------
+_REASON_PLACEHOLDER: str = "\U0001f9e0 Reasoning\u2026"
+_REASON_PHASES: tuple[tuple[float, str], ...] = (
+    (2.0, "\U0001f9e0 Reasoning  \u00b7  \U0001f4d6 Reading"),
+    (2.5, "\U0001f9e0 Reasoning  \u00b7  \U0001f50e Analyzing"),
+    (2.5, "\U0001f9e0 Reasoning  \u00b7  \u270d\ufe0f Composing"),
+    (3.0, "\U0001f9e0 Reasoning  \u00b7  \U0001f504 Refining\u2026"),
+)
+# After all phases are exhausted the final label is re-emitted every N seconds.
+_TICKER_HOLD_INTERVAL_SEC: float = 10.0
 
 
 
@@ -484,7 +528,7 @@ class TelegramChannel:
                     {
                         "offset": self._last_update_id + 1,
                         "timeout": 30,
-                        "allowed_updates": ["message", "callback_query"],
+                        "allowed_updates": ["message", "callback_query", "message_reaction", "inline_query"],
                     },
                 )
 
@@ -617,7 +661,7 @@ class TelegramChannel:
         """Register the webhook URL with Telegram and delete any pending updates."""
         params: dict[str, Any] = {
             "url": self.webhook_url,
-            "allowed_updates": ["message", "callback_query"],
+            "allowed_updates": ["message", "callback_query", "message_reaction", "inline_query"],
             "drop_pending_updates": True,
         }
         if self.webhook_secret:
@@ -664,6 +708,34 @@ class TelegramChannel:
 
     async def _process_update(self, update: dict):
         """Process a single update from Telegram."""
+        # ── Handle message reactions (👍 👎 🔥 🤔 💯) ──────────────────────
+        if reaction_update := update.get("message_reaction"):
+            if HAS_REACTIONS:
+                try:
+                    import functools
+
+                    fn = functools.partial(
+                        _TelegramReactionsMixin._on_message_reaction, self
+                    )
+                    await fn(reaction_update)
+                except Exception as _rxn_exc:  # noqa: BLE001
+                    logger.warning("Reaction dispatch failed: %s", _rxn_exc)
+            return
+
+        # ── Handle inline queries (@botname query) ──────────────────────────
+        if iq := update.get("inline_query"):
+            if HAS_INLINE:
+                try:
+                    import functools
+
+                    fn = functools.partial(
+                        _TelegramInlineMixin._on_inline_query, self
+                    )
+                    await fn(iq)
+                except Exception as _iq_exc:  # noqa: BLE001
+                    logger.warning("Inline query dispatch failed: %s", _iq_exc)
+            return
+
         # ── Handle callback queries (inline button presses) ──
         callback_query = update.get("callback_query")
         if callback_query:
@@ -816,6 +888,10 @@ class TelegramChannel:
                     await self._handle_photo_vision(chat_id, user_id, is_group, message)
                 except Exception as exc:  # noqa: BLE001
                     logger.debug("Captioned photo analysis failed: %s", exc)
+
+        # Media captions are conversational payloads for media flows and should
+        # not be consumed by pending API-key intake handlers.
+        is_media_caption = bool(message.get("caption")) and not bool(message.get("text"))
 
         # Check if replying to a bot message
         is_reply_to_bot = False
@@ -1009,7 +1085,9 @@ class TelegramChannel:
                 # ── Parse tier override from /big /small /coder prefix ──
                 tier_override = ""
                 clean_text = text
-                is_slash_command = text.strip().startswith("/")
+                stripped_text = text.strip()
+                is_slash_command = stripped_text.startswith("/")
+                word_count = len(stripped_text.split())
                 for prefix, tier in (
                     ("/big ", "big"),
                     ("/small ", "small"),
@@ -1057,48 +1135,43 @@ class TelegramChannel:
                     except Exception:  # noqa: BLE001
                         pass  # best-effort; session overrides are optional
 
-                try:
+                if not is_media_caption:
                     if await self._handle_pending_api_key_input(
                         chat_id=chat_id,
                         user_id=user_id,
                         text=text,
                     ):
                         return
-                except AttributeError:
-                    pass  # best-effort: attribute absent; skip
-                try:
-                    if await self._handle_nl_pending_reply(
+                if await self._handle_nl_pending_reply(
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    text=text,
+                ):
+                    return
+                if await self._handle_intake_reply(
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    text=text,
+                ):
+                    return
+                # NL command intent detection: skip for very short messages (1-2
+                # words) — genuine NL command intents ("set reminder", "run disk
+                # check") always use 3+ words; single-word and two-word casual
+                # turns avoid 3 serial async store round-trips here.
+                # Exception: media captions are already context-rich and should
+                # still pass NL intent resolution even when short.
+                if not is_slash_command and (word_count >= 3 or is_media_caption):
+                    if await self._handle_natural_language_request(
                         chat_id=chat_id,
                         user_id=user_id,
                         text=text,
+                        is_group=is_group,
+                        username=username,
+                        metadata=metadata,
                     ):
                         return
-                except AttributeError:
-                    pass  # best-effort: attribute absent; skip
-                try:
-                    if await self._handle_intake_reply(
-                        chat_id=chat_id,
-                        user_id=user_id,
-                        text=text,
-                    ):
-                        return
-                except AttributeError:
-                    pass  # best-effort: attribute absent; skip
-                if not text.strip().startswith("/"):
-                    try:
-                        if await self._handle_natural_language_request(
-                            chat_id=chat_id,
-                            user_id=user_id,
-                            text=text,
-                            is_group=is_group,
-                            username=username,
-                            metadata=metadata,
-                        ):
-                            return
-                    except AttributeError:
-                        pass  # best-effort: attribute absent; skip
                 # ── Slash command routing ──
-                cmd = text.strip().lower()
+                cmd = stripped_text.lower()
                 if cmd in ("/models", "/model") or cmd.startswith(("/models ", "/model ")):
                     await self._handle_models_command(chat_id, user_id, text=text)
                     return
@@ -1291,6 +1364,12 @@ class TelegramChannel:
                     return
 
                 # ── Cinematic mode dispatch ──
+                # Fire one typing indicator immediately before mode dispatch —
+                # gives the user instant visual feedback (~1 Telegram RTT) while
+                # classify_mode() and the LLM call are warming up.
+                # _keep_typing / _reasoning_ticker carry it forward from inside
+                # each handler.
+                await self.send_typing(chat_id)
                 await self._dispatch_by_mode(
                     tg_msg=telegram_msg,
                     clean_text=clean_text,
@@ -1370,6 +1449,37 @@ class TelegramChannel:
         except asyncio.CancelledError:
             pass  # task cancelled; expected during shutdown
 
+    async def _reasoning_ticker(self, chat_id: int, placeholder_id: int) -> None:
+        """Edit the reasoning placeholder through _REASON_PHASES while the LLM runs.
+
+        Phases and labels are defined in _REASON_PHASES — never hardcoded here.
+        After the last phase is exhausted the final label is re-emitted every
+        _TICKER_HOLD_INTERVAL_SEC seconds until the task is cancelled by
+        _handle_reason() when the LLM response arrives.
+
+        All edit failures are silently swallowed — this is purely cosmetic.
+        """
+        if not placeholder_id:
+            return
+        last_label = _REASON_PHASES[-1][1] if _REASON_PHASES else _REASON_PLACEHOLDER
+        try:
+            for sleep_secs, label in _REASON_PHASES:
+                await asyncio.sleep(sleep_secs)
+                try:
+                    await self.edit_message(chat_id, placeholder_id, label, parse_mode=None)
+                    last_label = label
+                except Exception:  # noqa: BLE001
+                    pass  # cosmetic — never surface ticker errors
+            # All phases done; hold last label until response arrives
+            while True:
+                await asyncio.sleep(_TICKER_HOLD_INTERVAL_SEC)
+                try:
+                    await self.edit_message(chat_id, placeholder_id, last_label, parse_mode=None)
+                except Exception:  # noqa: BLE001
+                    pass
+        except asyncio.CancelledError:
+            pass  # expected — cancelled by _handle_reason() on LLM completion
+
     async def _keep_recording(
         self, chat_id: int, interval: float = 4.0, max_duration: float = 120.0
     ):
@@ -1441,8 +1551,10 @@ class TelegramChannel:
 
         if HAS_CLASSIFIER:
             mode = classify_mode(clean_text)
+            entity_signal = _has_entity_signal(clean_text)
         else:
             mode = "TALK"
+            entity_signal = False
 
         if mode == "ACT" and HAS_RENDERER:
             await self._handle_act(
@@ -1465,16 +1577,11 @@ class TelegramChannel:
                 is_group,
             )
         elif mode == "REASON":
-            # When a quoted entity or non-Latin statement is detected, inject a
+            # When structural named-entity signals are detected, inject a
             # language-agnostic grounding hint so the LLM acknowledges uncertainty
             # rather than confabulating. The hint is script-neutral — the model
             # will compose its response in whatever language the user wrote.
-            if HAS_CLASSIFIER and (
-                _contains_title_marker(clean_text)
-                or _has_mid_sentence_cap(clean_text)
-                or _has_script_mixing(clean_text)
-                or _is_non_latin_dominant(clean_text)
-            ):
+            if HAS_CLASSIFIER and entity_signal:
                 metadata = {
                     **metadata,
                     "llm_hint": (
@@ -1492,6 +1599,7 @@ class TelegramChannel:
                 session,
                 session_manager,
                 is_group,
+                entity_signal=entity_signal,
             )
         else:
             await self._handle_talk(
@@ -1502,6 +1610,7 @@ class TelegramChannel:
                 session,
                 session_manager,
                 is_group,
+                entity_signal=entity_signal,
             )
 
     # ── Language persistence helper ──────────────────────────────────────
@@ -1556,17 +1665,13 @@ class TelegramChannel:
         session,
         session_manager,
         is_group: bool,
+        entity_signal: bool = False,
     ) -> None:
         """TALK mode — direct reply, no decorations, ≤3 lines, ≤2s."""
         # Universal safety net: even short messages that slipped past the
         # classifier may reference a named entity.  Inject an honesty hint
         # so the LLM never invents details it cannot verify.
-        if HAS_CLASSIFIER and (
-            _contains_title_marker(text)
-            or _has_mid_sentence_cap(text)
-            or _has_script_mixing(text)
-            or _is_non_latin_dominant(text)
-        ):
+        if HAS_CLASSIFIER and entity_signal:
             metadata = {
                 **metadata,
                 "llm_hint": (
@@ -1780,24 +1885,21 @@ class TelegramChannel:
         session,
         session_manager,
         is_group: bool,
+        entity_signal: bool = False,
     ) -> None:
         """REASON mode — send placeholder, fill with numbered CoT + bold conclusion."""
-        placeholder = await self.send_message(chat_id, "🧠 Reasoning...", parse_mode=None)
+        placeholder = await self.send_message(chat_id, _REASON_PLACEHOLDER, parse_mode=None)
         placeholder_id = (placeholder or {}).get("message_id")
 
         typing_task = asyncio.create_task(self._keep_typing(chat_id))
+        ticker_task = asyncio.create_task(self._reasoning_ticker(chat_id, placeholder_id or 0))
 
         # Entity enrichment: silently fetch web context for named title/person references
         # before sending to the LLM.  Uses the same entity-signal checks as
         # select_tools_for_text() but avoids a full ACT pipeline — just prepends
         # the top-3 search snippets so the model can ground its response in facts.
         _enriched_text = text
-        if HAS_CLASSIFIER and (
-            _contains_title_marker(text)
-            or _has_mid_sentence_cap(text)
-            or _has_script_mixing(text)
-            or _is_non_latin_dominant(text)  # catch pure Cyrillic/Arabic/CJK entity queries
-        ):
+        if HAS_CLASSIFIER and entity_signal:
             try:
                 from navig.tools import get_pipeline_registry as _get_pipeline_registry
 
@@ -1832,8 +1934,13 @@ class TelegramChannel:
             )
         finally:
             typing_task.cancel()
+            ticker_task.cancel()
             try:
                 await typing_task
+            except asyncio.CancelledError:
+                pass  # task cancelled; expected during shutdown
+            try:
+                await ticker_task
             except asyncio.CancelledError:
                 pass  # task cancelled; expected during shutdown
 
@@ -1866,8 +1973,8 @@ class TelegramChannel:
                 await self.edit_message(
                     chat_id,
                     placeholder_id,
-                    final_text,
-                    parse_mode=None,
+                    self._md_to_html(final_text),
+                    parse_mode="HTML",
                     keyboard=keyboard,
                 )
                 return
@@ -1926,7 +2033,12 @@ class TelegramChannel:
 
         if intro_id:
             try:
-                await self.edit_message(chat_id, intro_id, final_text, parse_mode=None)
+                await self.edit_message(
+                    chat_id,
+                    intro_id,
+                    self._md_to_html(final_text),
+                    parse_mode="HTML",
+                )
                 return
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
@@ -3105,25 +3217,42 @@ class TelegramChannel:
             else:
                 keyboard = {"inline_keyboard": [extra_krow]}
 
+        last_result: dict | None = None
         if parts and len(parts) > 1:
             for i, part in enumerate(parts):
                 is_last = i == len(parts) - 1
-                await self._send_html_with_fallback(
+                r = await self._send_html_with_fallback(
                     chat_id,
                     part,
                     keyboard=keyboard if is_last else None,
                 )
+                if is_last:
+                    last_result = r
         elif len(response) > 4000:
             chunks = [response[i : i + 4000] for i in range(0, len(response), 4000)]
             for i, chunk in enumerate(chunks):
                 is_last = i == len(chunks) - 1
-                await self._send_html_with_fallback(
+                r = await self._send_html_with_fallback(
                     chat_id,
                     chunk,
                     keyboard=keyboard if is_last else None,
                 )
+                if is_last:
+                    last_result = r
         else:
-            await self._send_html_with_fallback(chat_id, response, keyboard=keyboard)
+            last_result = await self._send_html_with_fallback(
+                chat_id, response, keyboard=keyboard
+            )
+
+        # Record (sent_msg_id → original_query, reply_text) for reaction lookups
+        if HAS_SESSIONS and last_result and isinstance(last_result, dict) and original_text:
+            _sent_mid = last_result.get("message_id")
+            if _sent_mid:
+                try:
+                    _sm = get_session_manager()
+                    _sm.record_bot_reply(chat_id, int(_sent_mid), original_text, response)
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
         # Voice reply — non-fatal; user already has the text
         await self._maybe_send_voice(chat_id, user_id, is_group, response)
@@ -3755,7 +3884,20 @@ class TelegramChannel:
 
         return TelegramCommandsMixin._has_host_connectivity_confirmation(response)
 
-    # ── Core message-flow handlers (BUGs 18-20: were guarded by AttributeError) ───
+    # ── Core message-flow handlers (BUGs 18-21: were guarded by AttributeError) ───
+
+    async def _handle_pending_api_key_input(
+        self,
+        chat_id: int,
+        user_id: int,
+        text: str,
+    ) -> bool:
+        """Delegate pending API-key onboarding input handling."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return await TelegramCommandsMixin._handle_pending_api_key_input(
+            self, chat_id, user_id, text
+        )
 
     async def _handle_nl_pending_reply(
         self,
@@ -3804,6 +3946,18 @@ class TelegramChannel:
             username=username,
             metadata=metadata,
         )
+
+    def _infer_nl_space_intent(self, text: str) -> tuple[str | None, str | None]:
+        """Delegate natural-language space/intake intent inference."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._infer_nl_space_intent(self, text)
+
+    def _detect_space_from_text(self, text: str) -> str | None:
+        """Delegate space-name detection from natural language text."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._detect_space_from_text(self, text)
 
     # ── Voice toggle handlers (BUGs 16-17: hardcoded slash route, no guard) ───────
 
@@ -4426,7 +4580,11 @@ class TelegramChannel:
                     # Truncate very long outputs for Telegram (4096 char limit)
                     if len(response) > 4000:
                         response = response[:3950] + "\n…(truncated)"
-                    await self.send_message(chat_id, response, parse_mode=None)
+                    await self.send_message(
+                        chat_id,
+                        self._md_to_html(response),
+                        parse_mode="HTML",
+                    )
                 else:
                     await self.send_message(chat_id, "…no output.", parse_mode=None)
             else:
@@ -4746,7 +4904,7 @@ class TelegramChannel:
                 os.path.expanduser("~/.navig/config.yaml"),
             ]:
                 if os.path.exists(cfg_path):
-                    with open(cfg_path) as f:
+                    with open(cfg_path, encoding='utf-8') as f:
                         cfg = yaml.safe_load(f) or {}
                     url = (cfg.get("telegram", {}) or {}).get("deck_url")
                     if url:
@@ -4942,13 +5100,14 @@ class TelegramChannel:
         chat_id: int,
         text: str,
         keyboard: dict | None = None,
-    ) -> None:
+    ) -> dict | None:
         """Send *text* with HTML formatting.
 
         ``send_message`` already contains parse-mode fallback logic (HTML -> plain),
         so this helper intentionally performs a single call to avoid duplicate retries.
+        Returns the Telegram message dict (contains ``message_id``) or ``None``.
         """
-        await self.send_message(chat_id, text, parse_mode="HTML", keyboard=keyboard)
+        return await self.send_message(chat_id, text, parse_mode="HTML", keyboard=keyboard)
 
     async def _send_md_with_fallback(
         self,

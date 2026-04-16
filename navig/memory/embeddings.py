@@ -338,7 +338,7 @@ class CachedEmbeddingProvider(EmbeddingProvider):
         cache_file = self._cache_file()
         if cache_file.exists():
             try:
-                with open(cache_file) as f:
+                with open(cache_file, encoding='utf-8') as f:
                     self._cache = json.load(f)
                 _debug_log(f"Loaded {len(self._cache)} cached embeddings")
             except Exception as e:

@@ -17,6 +17,7 @@ from typing import Any, ClassVar
 
 import requests
 
+from navig._llm_defaults import _DEFAULT_MAX_TOKENS, _DEFAULT_TEMPERATURE
 from navig import console_helper as ch
 from navig.ai_context import get_ai_context_manager
 from navig.platform import paths
@@ -287,8 +288,8 @@ class AIAssistant:
         request = CompletionRequest(
             messages=messages,
             model=model,
-            temperature=0.7,
-            max_tokens=4096,
+            temperature=_DEFAULT_TEMPERATURE,
+            max_tokens=_DEFAULT_MAX_TOKENS,
         )
 
         # Run with fallback (async)

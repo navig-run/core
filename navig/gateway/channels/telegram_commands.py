@@ -7547,7 +7547,7 @@ class TelegramCommandsMixin:
         ]:
             if os.path.exists(cfg_path):
                 try:
-                    with open(cfg_path) as f:
+                    with open(cfg_path, encoding='utf-8') as f:
                         cfg = yaml.safe_load(f) or {}
                     url = (cfg.get("telegram", {}) or {}).get("deck_url")
                     if url:

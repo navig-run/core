@@ -18,6 +18,7 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Any
 
+from navig._llm_defaults import _DEFAULT_MAX_TOKENS, _DEFAULT_TEMPERATURE
 from navig.memory.key_facts import KeyFact, get_key_fact_store
 
 logger = logging.getLogger(__name__)
@@ -873,8 +874,8 @@ class ConversationalAgent:
         # ── Resolve provider / model via router ──
         provider_name = "openrouter"
         model_name = "openai/gpt-4o"
-        temperature = 0.7
-        max_tokens = 4096
+        temperature = _DEFAULT_TEMPERATURE
+        max_tokens = _DEFAULT_MAX_TOKENS
         base_url: str | None = None
         try:
             from navig.llm_router import resolve_llm

@@ -35,7 +35,7 @@ def status_cmd(ctx_obj: dict[str, Any]):
     # Command history
     history_file = assistant.ai_context_dir / "command_history.json"
     if history_file.exists():
-        with open(history_file) as f:
+        with open(history_file, encoding='utf-8') as f:
             history = json.load(f)
         ch.dim(f"  Commands Logged: {len(history)}")
 
@@ -52,7 +52,7 @@ def status_cmd(ctx_obj: dict[str, Any]):
     # Active issues
     issues_file = assistant.ai_context_dir / "detected_issues.json"
     if issues_file.exists():
-        with open(issues_file) as f:
+        with open(issues_file, encoding='utf-8') as f:
             issues = json.load(f)
         active_issues = [i for i in issues if i.get("status") == "active"]
         ch.dim(f"  Active Issues: {len(active_issues)}")
@@ -117,7 +117,7 @@ def analyze_cmd(ctx_obj: dict[str, Any]):
         try:
             issues_file = assistant.ai_context_dir / "detected_issues.json"
             if issues_file.exists():
-                with open(issues_file) as f:
+                with open(issues_file, encoding='utf-8') as f:
                     issues = json.load(f)
                 active_issues = [i for i in issues if i.get("status") == "active"]
 

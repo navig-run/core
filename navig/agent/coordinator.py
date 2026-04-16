@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from navig._llm_defaults import _DEFAULT_MAX_TOKENS
+
 logger = logging.getLogger(__name__)
 
 # ── Model constants ──────────────────────────────────────────
@@ -395,7 +397,7 @@ class CoordinatorAgent:
             messages=messages,
             model_override=model,
             temperature=0.4,
-            max_tokens=4096,
+            max_tokens=_DEFAULT_MAX_TOKENS,
             timeout=float(timeout),
         )
 

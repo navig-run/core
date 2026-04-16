@@ -260,7 +260,7 @@ def restore_database(file: Path, options: dict[str, Any]):
 
     if metadata_file.exists():
         try:
-            with open(metadata_file) as f:
+            with open(metadata_file, encoding='utf-8') as f:
                 metadata = json.load(f)
                 # Find checksum for this file
                 for db_info in metadata.get("databases", []):
@@ -329,7 +329,7 @@ def restore_database(file: Path, options: dict[str, Any]):
         ]
 
         try:
-            with open(file) as f:
+            with open(file, encoding='utf-8') as f:
                 result = subprocess.run(mysql_cmd, stdin=f, capture_output=True, text=True)
 
             if result.returncode == 0:

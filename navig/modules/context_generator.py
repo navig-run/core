@@ -179,7 +179,7 @@ class ContextGenerator:
             if not history_file.exists():
                 return []
 
-            with open(history_file) as f:
+            with open(history_file, encoding='utf-8') as f:
                 history = json.load(f)
 
             # Return last N entries
@@ -196,7 +196,7 @@ class ContextGenerator:
             if not issues_file.exists():
                 return []
 
-            with open(issues_file) as f:
+            with open(issues_file, encoding='utf-8') as f:
                 issues = json.load(f)
 
             # Filter for active issues from last 24 hours

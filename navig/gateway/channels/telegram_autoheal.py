@@ -869,7 +869,16 @@ class AutoHealMixin:
                             metadata=None,
                         )
                         if response:
-                            await self.send_message(ctx.chat_id, response, parse_mode=None)
+                            rendered_response = (
+                                self._md_to_html(response)
+                                if hasattr(self, "_md_to_html")
+                                else response
+                            )
+                            await self.send_message(
+                                ctx.chat_id,
+                                rendered_response,
+                                parse_mode="HTML",
+                            )
                     except Exception:
                         logger.exception("autoheal: retry failed")
                         await self.send_message(

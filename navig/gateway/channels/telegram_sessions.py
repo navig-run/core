@@ -20,6 +20,10 @@ from navig.platform import paths
 
 logger = logging.getLogger(__name__)
 
+# Max number of (bot_msg_id → query/reply) entries kept per chat.
+# In-memory only — reactions on very old messages are not expected.
+_REPLY_RING_MAX: int = 100
+
 
 @dataclass
 class SessionMessage:
@@ -172,6 +176,9 @@ class SessionManager:
         self._sessions: dict[str, TelegramSession] = {}
         self._lock = threading.RLock()  # Protects _sessions dict and file I/O
         self._load_sessions()
+        # In-memory ring buffer: {chat_id: {msg_id: (original_query, reply_text)}}
+        # Used by reaction handlers to resolve message_id → original query/reply text.
+        self._reply_ring: dict[int, dict[int, tuple[str, str]]] = {}
 
     def _get_session_key(self, chat_id: int, user_id: int, is_group: bool) -> str:
         """Generate session key."""
@@ -273,6 +280,37 @@ class SessionManager:
             session.add_message("assistant", text, message_id)
             self._save_session(session)
             return session
+
+    # ── Reaction ring-buffer helpers ────────────────────────────────────────
+    # Pure in-memory, not persisted. Bounded to _REPLY_RING_MAX per chat.
+
+    def record_bot_reply(
+        self,
+        chat_id: int,
+        msg_id: int,
+        original_query: str,
+        reply_text: str,
+    ) -> None:
+        """Record a bot reply so reaction handlers can look up queries/text later.
+
+        Uses insertion-order eviction (Python 3.7+ dict is ordered) to keep the
+        ring bounded at ``_REPLY_RING_MAX`` entries per chat.
+        """
+        ring = self._reply_ring.setdefault(chat_id, {})
+        ring[msg_id] = (original_query, reply_text)
+        if len(ring) > _REPLY_RING_MAX:
+            oldest = next(iter(ring))
+            del ring[oldest]
+
+    def get_query_for_bot_reply(self, chat_id: int, msg_id: int) -> str | None:
+        """Return the original user query that produced bot message *msg_id*."""
+        pair = self._reply_ring.get(chat_id, {}).get(msg_id)
+        return pair[0] if pair else None
+
+    def get_reply_text_for_msg(self, chat_id: int, msg_id: int) -> str | None:
+        """Return the stored reply text of bot message *msg_id*."""
+        pair = self._reply_ring.get(chat_id, {}).get(msg_id)
+        return pair[1] if pair else None
 
     def get_session(
         self, chat_id: int, user_id: int, is_group: bool = False

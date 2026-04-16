@@ -154,7 +154,7 @@ class MCPManager:
             return
 
         try:
-            with open(self.servers_file) as f:
+            with open(self.servers_file, encoding='utf-8') as f:
                 servers_config = json.load(f)
 
             for name, config in servers_config.items():

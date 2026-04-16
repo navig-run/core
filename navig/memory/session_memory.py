@@ -33,6 +33,8 @@ import asyncio
 import logging
 from pathlib import Path
 
+from navig.core.yaml_io import atomic_write_text
+
 logger = logging.getLogger("navig.memory.session_memory")
 
 # ── Module-level constants ────────────────────────────────────────────────────
@@ -230,8 +232,9 @@ class SessionMemoryExtractor:
         if path is None:
             return
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(notes, encoding="utf-8")
+            # atomic_write_text creates parent dirs and uses tmp→replace to
+            # prevent partial writes on crash or concurrent access.
+            atomic_write_text(path, notes)
         except OSError as exc:
             logger.debug("session_memory._sync_write_notes: %s", exc)
 

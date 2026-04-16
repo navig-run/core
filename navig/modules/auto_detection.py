@@ -60,7 +60,7 @@ class AutoDetection:
         try:
             # Load existing history
             if history_file.exists():
-                with open(history_file) as f:
+                with open(history_file, encoding='utf-8') as f:
                     history = json.load(f)
             else:
                 history = []
@@ -181,7 +181,7 @@ class AutoDetection:
 
         try:
             if patterns_file.exists():
-                with open(patterns_file) as f:
+                with open(patterns_file, encoding='utf-8') as f:
                     return json.load(f)
         except Exception:  # noqa: BLE001
             ch.dim("auto_detection: failed to load error_patterns.json")  # best-effort; failure is non-critical
@@ -202,7 +202,7 @@ class AutoDetection:
         try:
             # Load existing issues
             if issues_file.exists():
-                with open(issues_file) as f:
+                with open(issues_file, encoding='utf-8') as f:
                     issues = json.load(f)
             else:
                 issues = []
@@ -332,7 +332,7 @@ class AutoDetection:
         try:
             # Load existing baseline
             if baseline_file.exists():
-                with open(baseline_file) as f:
+                with open(baseline_file, encoding='utf-8') as f:
                     baseline = json.load(f)
             else:
                 baseline = {

@@ -36,7 +36,7 @@ def detect_linux_distro() -> str | None:
         Distribution name or None if not Linux/unknown
     """
     try:
-        with open("/etc/os-release") as f:
+        with open("/etc/os-release", encoding='utf-8') as f:
             for line in f:
                 if line.startswith("ID="):
                     return line.strip().split("=")[1].strip('"')

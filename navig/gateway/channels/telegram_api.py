@@ -78,3 +78,53 @@ class TelegramApiMixin:
         except Exception as exc:
             logger.warning("Multipart API call %s failed: %s", method, exc)
             return None
+
+    # ------------------------------------------------------------------
+    # Convenience wrappers — added for checklist, pin, and inline features
+    # ------------------------------------------------------------------
+
+    async def _pin_message(
+        self,
+        chat_id: int,
+        message_id: int,
+        *,
+        disable_notification: bool = True,
+    ) -> bool:
+        """Pin *message_id* in *chat_id*.  Returns True on success."""
+        result = await self._api_call(
+            "pinChatMessage",
+            {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "disable_notification": disable_notification,
+            },
+        )
+        return result is not None
+
+    async def _unpin_message(self, chat_id: int, message_id: int) -> bool:
+        """Unpin *message_id* in *chat_id*.  Returns True on success."""
+        result = await self._api_call(
+            "unpinChatMessage",
+            {"chat_id": chat_id, "message_id": message_id},
+        )
+        return result is not None
+
+    async def _answer_inline_query(
+        self,
+        inline_query_id: str,
+        results: list[dict],
+        *,
+        cache_time: int = 30,
+        is_personal: bool = True,
+    ) -> bool:
+        """Answer an inline query.  Returns True on success."""
+        result = await self._api_call(
+            "answerInlineQuery",
+            {
+                "inline_query_id": inline_query_id,
+                "results": results,
+                "cache_time": cache_time,
+                "is_personal": is_personal,
+            },
+        )
+        return result is not None

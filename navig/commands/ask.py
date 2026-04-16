@@ -13,6 +13,7 @@ Usage:
 
 import typer
 
+from navig._llm_defaults import _DEFAULT_MAX_TOKENS
 from navig.commands._async_utils import run_sync as _run
 from navig.lazy_loader import lazy_import
 from navig.providers.bridge_grid_reader import BRIDGE_DEFAULT_PORT
@@ -71,7 +72,11 @@ async def _chat(messages: list, model: str = "") -> str:
         ch.info("    3. bridge.mcp_url / bridge.token in ~/.navig/config.yaml are correct")
         raise typer.Exit(1)
     try:
-        resp = await provider.chat(model=model, messages=messages, max_tokens=4096)
+        resp = await provider.chat(
+            model=model,
+            messages=messages,
+            max_tokens=_DEFAULT_MAX_TOKENS,
+        )
         return resp.content
     finally:
         await provider.close()
@@ -149,7 +154,7 @@ def copilot_explain(
         elif os.path.isfile(target):
             # Read local file
             try:
-                with open(target, errors="replace") as f:
+                with open(target, errors="replace", encoding='utf-8') as f:
                     file_lines = f.readlines()
                 tail = file_lines[-lines:] if len(file_lines) > lines else file_lines
                 content = f"File: {target} (last {lines} lines)\n```\n{''.join(tail)}```"
@@ -238,7 +243,7 @@ def copilot_review(
         raise typer.Exit(1)
 
     try:
-        with open(file_path, errors="replace") as f:
+        with open(file_path, errors="replace", encoding='utf-8') as f:
             code = f.read()
     except Exception as e:
         ch.error(f"Cannot read file: {e}")

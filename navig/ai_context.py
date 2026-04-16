@@ -90,7 +90,7 @@ class AIContextManager:
             return
 
         try:
-            with open(self.error_log_file) as f:
+            with open(self.error_log_file, encoding='utf-8') as f:
                 data = json.load(f)
 
             self.error_logs = [ErrorLog.from_dict(entry) for entry in data]

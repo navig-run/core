@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -30,3 +31,13 @@ def truncate_output(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[:limit] + f"\n... [truncated — {len(text)} chars total]"
+
+
+def utc_now() -> datetime:
+    """Return the current UTC datetime (timezone-aware)."""
+    return datetime.now(timezone.utc)
+
+
+def now_iso() -> str:
+    """Return the current UTC time as an ISO-8601 string (e.g. ``2024-01-15T10:30:45.123456+00:00``)."""
+    return datetime.now(timezone.utc).isoformat()

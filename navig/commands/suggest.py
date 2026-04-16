@@ -423,7 +423,7 @@ def add_quick_action(name: str, command: str, description: str = "") -> bool:
     if quick_file.exists():
         import yaml
 
-        with open(quick_file) as f:
+        with open(quick_file, encoding='utf-8') as f:
             actions = yaml.safe_load(f) or {}
 
     # Add new action
@@ -465,7 +465,7 @@ def list_quick_actions() -> list[dict[str, Any]]:
 
     import yaml
 
-    with open(quick_file) as f:
+    with open(quick_file, encoding='utf-8') as f:
         actions = yaml.safe_load(f) or {}
 
     return [{"name": name, **data} for name, data in actions.items()]

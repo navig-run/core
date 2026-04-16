@@ -1,19 +1,18 @@
 """
 navig/cli/middleware.py
+=======================
 
-Main-callback middleware helpers extracted from __init__.py.
+Cross-cutting middleware helpers that run on **every** CLI invocation via the
+``@app.callback`` (main) handler in ``cli/__init__.py``.
 
-Each function handles one cross-cutting concern that runs on *every* CLI
-invocation via the @app.callback (main) handler.  Keeping them here:
-  • reduces main() in __init__.py to ~130 lines of glue code
-  • makes each concern testable in isolation
-  • keeps __init__.py from becoming a monolith again
+Each function handles exactly one concern, making them independently testable
+and keeping ``__init__.py`` from growing into a monolith.
 
-Entry points (called from main() in __init__.py):
-  init_operation_recorder(ctx, host, app, verbose)
-  init_debug_logger(ctx, debug_log, host, app, verbose, quiet, dry_run)
-  register_fact_extraction()
-  init_proactive_assistant(ctx, quiet)
+Entry points (called from main() in cli/__init__.py):
+    init_operation_recorder(ctx, host, app, verbose)
+    init_debug_logger(ctx, debug_log, host, app, verbose, quiet, dry_run)
+    register_fact_extraction()
+    init_proactive_assistant(ctx, quiet)
 """
 
 from __future__ import annotations
@@ -31,10 +30,23 @@ from navig.cli.registration import extract_non_global_tokens
 
 _log = logging.getLogger(__name__)
 
+# Meta-commands whose invocation should skip operation recording / fact
+# extraction (avoids polluting history with internal bookkeeping calls).
+_SKIP_RECORD_KEYWORDS: frozenset[str] = frozenset([
+    "history ", "help", "--help", "-h", "--version", "-v",
+    "insights ", "dashboard", "suggest",
+    "trigger test", "trigger history",
+])
+_SKIP_FACT_CMDS: frozenset[str] = frozenset([
+    "memory", "kg", "index", "history", "version", "help",
+    "--help", "--version",
+])
 
-# ============================================================================
+
+# =============================================================================
 # 1. OPERATION RECORDER
-# ============================================================================
+# =============================================================================
+
 
 def init_operation_recorder(
     ctx: typer.Context,
@@ -46,66 +58,25 @@ def init_operation_recorder(
 
     Stores ``_operation_record``, ``_operation_start``, and
     ``_operation_recorder`` in ``ctx.obj`` if recording proceeds.
-
-    Silently skips for meta commands (help, history, version, …).
+    Silently skips meta-commands (help, history, version, …).
     """
-    # Lazy import so startup isn't slowed by DB/IO init on every invocation.
     ch = _lazy_ch()
 
     try:
         from navig.operation_recorder import OperationType, get_operation_recorder
 
         recorder = get_operation_recorder()
-        command_str = " ".join(sys.argv[1:])  # Exclude 'python -m navig'; full string for op-type detection
+        command_str = " ".join(sys.argv[1:])
 
-        # Build a global-flag-stripped command string for the skip check so that
-        # short-form flags like "-h" (help) don't false-match substrings in
-        # "--host" or "-v" in "--verbose"/"--version".
-        _non_global = extract_non_global_tokens(sys.argv[1:])
-        _cmd_str_for_skip = " ".join(_non_global)
+        # Use non-global-stripped tokens to avoid matching short flags like
+        # "-h" inside "--host" or "-v" inside "--verbose".
+        non_global = extract_non_global_tokens(sys.argv[1:])
+        cmd_str_for_skip = " ".join(non_global)
 
-        # Determine operation type from command
-        op_type = OperationType.LOCAL_COMMAND
-        if any(kw in command_str for kw in ["exec ", "ssh ", "tunnel "]):
-            op_type = OperationType.REMOTE_COMMAND
-        elif any(kw in command_str for kw in ["db ", "database "]):
-            op_type = OperationType.DATABASE_QUERY
-        elif any(kw in command_str for kw in ["upload ", "download ", "get ", "put "]):
-            op_type = (
-                OperationType.FILE_UPLOAD
-                if "upload" in command_str or "put" in command_str
-                else OperationType.FILE_DOWNLOAD
-            )
-        elif any(kw in command_str for kw in ["docker ", "container "]):
-            op_type = OperationType.DOCKER_COMMAND
-        elif any(kw in command_str for kw in ["workflow run"]):
-            op_type = OperationType.WORKFLOW_RUN
-        elif "host use" in command_str or "host switch" in command_str:
-            op_type = OperationType.HOST_SWITCH
-        elif "service" in command_str:
-            op_type = OperationType.SERVICE_RESTART
+        op_type = _classify_operation_type(command_str)
 
-        # Skip recording for certain meta commands.  Use the non-global token
-        # string so that short flags like "-h" / "-v" are checked against the
-        # actual command words, not substrings inside "--host" or "--verbose".
-        skip_record = any(
-            kw in _cmd_str_for_skip
-            for kw in [
-                "history ",
-                "help",
-                "--help",
-                "-h",
-                "--version",
-                "-v",
-                "insights ",
-                "dashboard",
-                "suggest",
-                "trigger test",
-                "trigger history",
-            ]
-        )
-
-        if not skip_record and command_str.strip():
+        skip = any(kw in cmd_str_for_skip for kw in _SKIP_RECORD_KEYWORDS)
+        if not skip and command_str.strip():
             record = recorder.start_operation(
                 command=f"navig {command_str}",
                 operation_type=op_type,
@@ -116,21 +87,42 @@ def init_operation_recorder(
             ctx.obj["_operation_start"] = time.time()
             ctx.obj["_operation_recorder"] = recorder
 
-    except Exception as e:
-        # Silently skip recording on failure
+    except Exception as exc:
         if verbose:
-            ch.dim(f"→ Operation recording skipped: {e}")
+            ch.dim(f"→ Operation recording skipped: {exc}")
 
-    # Register atexit completion handler (safe to call even if no record was stored)
     if "_operation_record" in ctx.obj:
         _register_operation_complete_atexit(ctx)
 
 
-def _register_operation_complete_atexit(ctx: typer.Context) -> None:
-    """Register an atexit handler that completes the current operation record."""
+def _classify_operation_type(command_str: str):
+    """Derive the OperationType from the raw command string."""
+    from navig.operation_recorder import OperationType
 
-    def record_operation_on_exit() -> None:
-        def _do_record() -> None:
+    if any(kw in command_str for kw in ("exec ", "ssh ", "tunnel ")):
+        return OperationType.REMOTE_COMMAND
+    if any(kw in command_str for kw in ("db ", "database ")):
+        return OperationType.DATABASE_QUERY
+    if "upload" in command_str or "put" in command_str:
+        return OperationType.FILE_UPLOAD
+    if any(kw in command_str for kw in ("download ", "get ")):
+        return OperationType.FILE_DOWNLOAD
+    if any(kw in command_str for kw in ("docker ", "container ")):
+        return OperationType.DOCKER_COMMAND
+    if "workflow run" in command_str:
+        return OperationType.WORKFLOW_RUN
+    if "host use" in command_str or "host switch" in command_str:
+        return OperationType.HOST_SWITCH
+    if "service" in command_str:
+        return OperationType.SERVICE_RESTART
+    return OperationType.LOCAL_COMMAND
+
+
+def _register_operation_complete_atexit(ctx: typer.Context) -> None:
+    """Register an atexit handler that persists the current operation record."""
+
+    def _on_exit() -> None:
+        def _write() -> None:
             try:
                 record = ctx.obj.get("_operation_record")
                 recorder = ctx.obj.get("_operation_recorder")
@@ -138,40 +130,37 @@ def _register_operation_complete_atexit(ctx: typer.Context) -> None:
 
                 if record and recorder:
                     duration_ms = (time.time() - start_time) * 1000
-                    # Determine success from the active exception context, if any.
-                    # sys.exc_info() returns non-None during exception-driven exits.
-                    import sys as _sys
-
-                    _exc_type, _exc_val, _ = _sys.exc_info()
-                    if _exc_type is None:
-                        _success = True
-                    elif issubclass(_exc_type, SystemExit):
-                        _code = getattr(_exc_val, "code", 0)
-                        _success = _code in (0, None)
+                    exc_type, exc_val, _ = sys.exc_info()
+                    if exc_type is None:
+                        success = True
+                    elif issubclass(exc_type, SystemExit):
+                        code = getattr(exc_val, "code", 0)
+                        success = code in (0, None)
                     else:
-                        _success = False
+                        success = False
 
                     recorder.complete_operation(
                         record=record,
-                        success=_success,
+                        success=success,
                         output="",
                         duration_ms=duration_ms,
                     )
-            except Exception as _e:
-                _log.debug("operation recorder write failed: %s", _e)
+            except Exception as exc:
+                _log.debug("operation recorder write failed: %s", exc)
 
-        # daemon=False so the write completes before process exits.
-        # join(1.0) caps CLI exit delay to ≤1 second even on slow DB.
-        t = threading.Thread(target=_do_record, daemon=False)
+        # daemon=False so the write completes before the process exits.
+        # join(1.0) caps exit delay to ≤1 s even on a slow DB.
+        t = threading.Thread(target=_write, daemon=False)
         t.start()
         t.join(timeout=1.0)
 
-    atexit.register(record_operation_on_exit)
+    atexit.register(_on_exit)
 
 
-# ============================================================================
+# =============================================================================
 # 2. DEBUG LOGGER
-# ============================================================================
+# =============================================================================
+
 
 def init_debug_logger(
     ctx: typer.Context,
@@ -182,75 +171,35 @@ def init_debug_logger(
     quiet: bool,
     dry_run: bool,
 ) -> None:
-    """Initialise the DebugLogger (or no-op) and store it in ``ctx.obj``.
+    """Initialise :class:`~navig.debug_logger.DebugLogger` and store it in ``ctx.obj``.
 
     Reads the ``debug_log`` / ``debug_log_path`` / ``debug_log_max_size_mb``
     / ``debug_log_max_files`` / ``debug_log_truncate_output_kb`` keys from the
-    global config YAML, using a fast-path that avoids a full config load if the
-    `ConfigManager` has not been initialised yet.
+    global config YAML via a fast-path that avoids a full :class:`ConfigManager`
+    load when the manager has not been initialised yet.
     """
     ch = _lazy_ch()
+    ctx.obj["debug_logger"] = None  # Always present so subcommands can read safely
 
-    # Ensure the key is always present so subcommands can safely access it.
-    ctx.obj["debug_logger"] = None
-
-    # Performance: read debug settings from raw YAML without full config load.
-    _debug_raw_cfg = None
-    debug_log_enabled = debug_log
-    if not debug_log_enabled:
-        try:
-            from navig.cli import _get_config_manager  # late import to avoid circular
-
-            _cm = _get_config_manager()
-            if _cm._global_config_loaded:
-                debug_log_enabled = _cm.global_config.get("debug_log", False)
-            else:
-                # Fast-path: read just the debug_log key from the YAML file
-                # without triggering full config load + migrations + validation
-                import yaml
-
-                _gc_file = _cm.global_config_dir / "config.yaml"
-                if _gc_file.exists():
-                    with open(_gc_file, encoding="utf-8") as _f:
-                        _debug_raw_cfg = yaml.safe_load(_f) or {}
-                    debug_log_enabled = _debug_raw_cfg.get("debug_log", False)
-        except Exception:
-            debug_log_enabled = False
-
+    debug_log_enabled, raw_cfg = _resolve_debug_log_flag(debug_log)
     if not debug_log_enabled:
         return
 
     try:
         from navig.debug_logger import DebugLogger
 
-        # Reuse raw YAML dict if available; fall back to full config only if needed
-        try:
-            from navig.cli import _get_config_manager as _gcm
-
-            _cm = _gcm()
-            _dgc = _debug_raw_cfg or (
-                _cm.global_config if _cm._global_config_loaded else {}
-            )
-        except Exception:
-            _dgc = _debug_raw_cfg or {}
-
-        log_path = _dgc.get("debug_log_path")
-        max_size_mb = _dgc.get("debug_log_max_size_mb", 10)
-        max_files = _dgc.get("debug_log_max_files", 5)
-        truncate_kb = _dgc.get("debug_log_truncate_output_kb", 10)
-
+        cfg = raw_cfg or {}
+        log_path_str = cfg.get("debug_log_path")
         debug_logger = DebugLogger(
-            log_path=Path(log_path) if log_path else None,
-            max_size_mb=max_size_mb,
-            max_files=max_files,
-            truncate_output_kb=truncate_kb,
+            log_path=Path(log_path_str) if log_path_str else None,
+            max_size_mb=cfg.get("debug_log_max_size_mb", 10),
+            max_files=cfg.get("debug_log_max_files", 5),
+            truncate_output_kb=cfg.get("debug_log_truncate_output_kb", 10),
         )
         ctx.obj["debug_logger"] = debug_logger
 
-        # Log command start
-        command_str = " ".join(sys.argv)
         debug_logger.log_command_start(
-            command_str,
+            " ".join(sys.argv),
             {
                 "host": host,
                 "app": app,
@@ -260,123 +209,144 @@ def init_debug_logger(
             },
         )
 
-        # Register atexit handler to log command end
-        def log_command_end_on_exit() -> None:
-            debug_logger.log_command_end(True)
-
-        atexit.register(log_command_end_on_exit)
+        atexit.register(lambda: debug_logger.log_command_end(success=True))
 
         if verbose:
             ch.dim(f"→ Debug logging enabled: {debug_logger.log_path}")
 
-    except Exception as e:
+    except Exception as exc:
         if verbose:
-            ch.warning(f"Failed to initialize debug logger: {e}")
+            ch.warning(f"Failed to initialise debug logger: {exc}")
 
 
-# ============================================================================
+def _resolve_debug_log_flag(flag: bool) -> tuple[bool, dict | None]:
+    """Return ``(enabled, raw_config_dict)`` without triggering a full config load."""
+    if flag:
+        return True, None
+
+    try:
+        from navig.cli import _get_config_manager
+
+        cm = _get_config_manager()
+        if cm._global_config_loaded:
+            return bool(cm.global_config.get("debug_log", False)), cm.global_config
+        # Fast path: read only the YAML file directly.
+        import yaml
+
+        gc_file = cm.global_config_dir / "config.yaml"
+        if gc_file.exists():
+            raw = yaml.safe_load(gc_file.read_text(encoding="utf-8")) or {}
+            return bool(raw.get("debug_log", False)), raw
+    except Exception:
+        pass
+
+    return False, None
+
+
+# =============================================================================
 # 3. FACT EXTRACTION
-# ============================================================================
+# =============================================================================
+
 
 def register_fact_extraction() -> None:
     """Register an atexit daemon thread that extracts CLI facts into memory.
 
-    Silently skips meta commands (memory, kg, index, history, version, help).
+    Skips meta-commands (memory, kg, index, history, version, help).
     Never surfaces errors to the user.
     """
-    _SKIP_FACT_CMDS = frozenset(["memory", "kg", "index", "history", "version", "help"])
-    _non_global_tokens = extract_non_global_tokens(sys.argv[1:])
-    _invoked_cmd = _non_global_tokens[0] if _non_global_tokens else ""
+    non_global = extract_non_global_tokens(sys.argv[1:])
+    first_cmd = non_global[0] if non_global else ""
 
-    if _invoked_cmd in _SKIP_FACT_CMDS or _invoked_cmd in ("", "--help", "--version"):
+    if first_cmd in _SKIP_FACT_CMDS or not first_cmd:
         return
 
-    def _extract_facts_on_exit() -> None:
-        def _do_extract() -> None:
+    def _on_exit() -> None:
+        def _extract() -> None:
             try:
-                command_str = " ".join(sys.argv[1:])
-                if not command_str.strip():
+                command_str = " ".join(sys.argv[1:]).strip()
+                if not command_str:
                     return
-                # Guard using normalized (non-global) tokens so prefixed globals
-                # don't prevent accurate skip detection.
-                _cmd_tokens = extract_non_global_tokens(sys.argv[1:])
-                _first_cmd = _cmd_tokens[0] if _cmd_tokens else ""
-                _skip_cmds = {"memory", "kg", "index", "--help", "--version"}
-                if _first_cmd in _skip_cmds:
+                # Re-check skip using the normalised token list (guards against
+                # prefixed global flags hiding the actual command).
+                tokens = extract_non_global_tokens(sys.argv[1:])
+                if (tokens[0] if tokens else "") in _SKIP_FACT_CMDS:
                     return
+
                 from navig.memory.manager import get_memory_manager
 
-                _mgr = get_memory_manager()
-                if hasattr(_mgr, "record_command"):
-                    _mgr.record_command(command_str)
-                elif hasattr(_mgr, "fact_extractor") and _mgr.fact_extractor:
-                    _result = _mgr.fact_extractor.extract_from_text(
-                        f"User ran: {command_str}",
-                        source="cli",
+                mgr = get_memory_manager()
+                if hasattr(mgr, "record_command"):
+                    mgr.record_command(command_str)
+                elif hasattr(mgr, "fact_extractor") and mgr.fact_extractor:
+                    result = mgr.fact_extractor.extract_from_text(
+                        f"User ran: {command_str}", source="cli"
                     )
-                    if _result and hasattr(_mgr, "store_facts"):
-                        _mgr.store_facts(_result)
-            except Exception as _e:
-                _log.debug("fact extraction failed: %s", _e)
+                    if result and hasattr(mgr, "store_facts"):
+                        mgr.store_facts(result)
+            except Exception as exc:
+                _log.debug("fact extraction failed: %s", exc)
 
-        threading.Thread(target=_do_extract, daemon=True).start()
+        threading.Thread(target=_extract, daemon=True).start()
 
-    atexit.register(_extract_facts_on_exit)
+    atexit.register(_on_exit)
 
 
-# ============================================================================
+# =============================================================================
 # 4. PROACTIVE ASSISTANT
-# ============================================================================
+# =============================================================================
+
 
 def init_proactive_assistant(ctx: typer.Context, quiet: bool) -> None:
-    """Start ProactiveAssistant in a background daemon thread (non-blocking).
+    """Start :class:`ProactiveAssistant` in a background daemon thread.
 
     Stores ``get_assistant`` (callable) and ``assistant_enabled`` (bool) in
-    ``ctx.obj``.  The callable waits up to ``timeout`` seconds for the
-    background thread to finish loading.
+    ``ctx.obj``.  The callable waits up to *timeout* seconds for the background
+    thread to finish loading before returning ``None``.
 
-    Performance: skips entirely for scripting flags (--plain, --raw, --json, -q)
-    to avoid loading AI dependencies on every automated invocation.
+    Skipped entirely for scripting flags (``--plain``, ``--raw``, ``--json``,
+    ``-q``) to avoid loading AI dependencies on every automated invocation.
     """
-    _skip_assistant = quiet or any(a in sys.argv for a in ("--plain", "--raw", "--json"))
+    _SCRIPTING_FLAGS = ("--plain", "--raw", "--json")
+    skip = quiet or any(flag in sys.argv for flag in _SCRIPTING_FLAGS)
 
-    if _skip_assistant:
+    if skip:
         ctx.obj["get_assistant"] = lambda timeout=0.5: None
         ctx.obj["assistant_enabled"] = False
         return
 
-    _assistant_holder: dict = {"instance": None, "error": None}
-    _assistant_ready = threading.Event()
+    holder: dict[str, object] = {"instance": None, "error": None}
+    ready = threading.Event()
 
-    def _load_assistant_bg() -> None:
+    def _load() -> None:
         try:
             from navig.config import get_config_manager as _gcm
-            from navig.proactive_assistant import ProactiveAssistant as _PA
+            from navig.proactive_assistant import ProactiveAssistant
 
-            _cfg = _gcm()
-            _inst = _PA(_cfg)
-            _assistant_holder["instance"] = _inst
-        except Exception as _e:
-            _assistant_holder["error"] = _e
+            cfg = _gcm()
+            holder["instance"] = ProactiveAssistant(cfg)
+        except Exception as exc:
+            holder["error"] = exc
         finally:
-            _assistant_ready.set()
+            ready.set()
 
-    threading.Thread(target=_load_assistant_bg, daemon=True).start()
+    threading.Thread(target=_load, daemon=True).start()
 
-    def _get_assistant(timeout: float = 0.5):
-        """Retrieve the ProactiveAssistant, waiting up to ``timeout`` seconds."""
-        _assistant_ready.wait(timeout=timeout)
-        return _assistant_holder.get("instance")
+    def _get_assistant(timeout: float = 0.5) -> object | None:
+        """Wait up to *timeout* seconds then return the assistant or ``None``."""
+        ready.wait(timeout=timeout)
+        return holder.get("instance")
 
     ctx.obj["get_assistant"] = _get_assistant
-    ctx.obj["assistant_enabled"] = True  # optimistic — set False if disabled
+    ctx.obj["assistant_enabled"] = True
 
 
-# ============================================================================
-# PRIVATE HELPERS
-# ============================================================================
+# =============================================================================
+# Private helpers
+# =============================================================================
+
 
 def _lazy_ch():
-    """Return console_helper lazily (avoids rich.* import at module load time)."""
+    """Return ``console_helper`` lazily to avoid rich.* import at module load."""
     from navig.lazy_loader import lazy_import
+
     return lazy_import("navig.console_helper")

@@ -146,7 +146,7 @@ class ErrorResolution:
         try:
             # Load existing log
             if error_log_file.exists():
-                with open(error_log_file) as f:
+                with open(error_log_file, encoding='utf-8') as f:
                     error_log = json.load(f)
             else:
                 error_log = []
@@ -194,7 +194,7 @@ class ErrorResolution:
             if not solutions_file.exists():
                 return []
 
-            with open(solutions_file) as f:
+            with open(solutions_file, encoding='utf-8') as f:
                 solutions_db = json.load(f)
 
             matched_solutions = []
@@ -242,7 +242,7 @@ class ErrorResolution:
         try:
             # Load solutions database
             if solutions_file.exists():
-                with open(solutions_file) as f:
+                with open(solutions_file, encoding='utf-8') as f:
                     solutions_db = json.load(f)
             else:
                 solutions_db = []
@@ -370,7 +370,7 @@ class ErrorResolution:
             if not error_log_file.exists():
                 return {"total_errors": 0}
 
-            with open(error_log_file) as f:
+            with open(error_log_file, encoding='utf-8') as f:
                 error_log = json.load(f)
 
             # Filter by time

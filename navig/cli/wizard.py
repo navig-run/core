@@ -493,7 +493,7 @@ class SetupWizard:
 
         # Load existing config if reconfiguring
         if self.reconfigure and self.config_file.exists():
-            with open(self.config_file) as f:
+            with open(self.config_file, encoding='utf-8') as f:
                 existing = yaml.safe_load(f) or {}
                 # Merge new config into existing
                 for key, value in self.config.items():

@@ -793,7 +793,7 @@ def list_backups_cmd(options: dict[str, Any]):
         for backup in backups:
             metadata_file = backup / "metadata.json"
             if metadata_file.exists():
-                with open(metadata_file) as f:
+                with open(metadata_file, encoding='utf-8') as f:
                     metadata = json.load(f)
                     metadata["name"] = backup.name
                     metadata["path"] = str(backup)
@@ -810,7 +810,7 @@ def list_backups_cmd(options: dict[str, Any]):
             metadata_file = backup / "metadata.json"
 
             if metadata_file.exists():
-                with open(metadata_file) as f:
+                with open(metadata_file, encoding='utf-8') as f:
                     metadata = json.load(f)
                     backup_type = metadata.get("type", "unknown")
                     timestamp = metadata.get("timestamp", "unknown")
@@ -846,7 +846,7 @@ def restore_backup_cmd(backup_name: str, component: str | None, options: dict[st
 
     metadata_file = backup_dir / "metadata.json"
     if metadata_file.exists():
-        with open(metadata_file) as f:
+        with open(metadata_file, encoding='utf-8') as f:
             metadata = json.load(f)
     else:
         metadata = {"type": "unknown"}

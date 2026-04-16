@@ -640,7 +640,7 @@ def agent_config_cmd(
 
     if set_key and value:
         # Set a configuration value
-        with open(config_path) as f:
+        with open(config_path, encoding='utf-8') as f:
             data = yaml.safe_load(f) or {}
 
         # Navigate to nested key
@@ -728,7 +728,7 @@ def agent_logs(
             pass  # user interrupted; clean exit
     else:
         # Show last N lines
-        with open(log_file) as f:
+        with open(log_file, encoding='utf-8') as f:
             all_lines = f.readlines()
 
         output_lines = all_lines[-lines:]
@@ -816,7 +816,7 @@ def agent_personality(
             ch.error("Agent not installed")
             raise typer.Exit(1)
 
-        with open(config_path) as f:
+        with open(config_path, encoding='utf-8') as f:
             data = yaml.safe_load(f) or {}
 
         data.setdefault("agent", {}).setdefault("personality", {})["profile"] = name

@@ -97,7 +97,7 @@ def proactive_setup(
     cm = get_config_manager()
     global_config_file = cm.global_config_dir / "config.yaml"
 
-    with open(global_config_file) as f:
+    with open(global_config_file, encoding='utf-8') as f:
         config = yaml.safe_load(f) or {}
 
     if "proactive" not in config:

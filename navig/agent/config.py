@@ -317,7 +317,7 @@ class PersonalityConfig:
             profile_path = builtin_dir / f"{profile_name}.yaml"
 
         if profile_path.exists():
-            with open(profile_path) as f:
+            with open(profile_path, encoding='utf-8') as f:
                 data = yaml.safe_load(f)
             config = cls.from_dict(data)
             config.profile = profile_name

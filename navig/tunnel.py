@@ -92,7 +92,7 @@ class TunnelManager:
             return {}
 
         try:
-            with self._lock_tunnels_file(), open(self.tunnels_file) as f:
+            with self._lock_tunnels_file(), open(self.tunnels_file, encoding='utf-8') as f:
                 return json.load(f)
         except (json.JSONDecodeError, FileNotFoundError):
             return {}

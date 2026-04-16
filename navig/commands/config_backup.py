@@ -198,7 +198,7 @@ def _redact_secrets_in_dir(dir_path: Path):
 
     for yaml_file in dir_path.rglob("*.yaml"):
         try:
-            with open(yaml_file) as f:
+            with open(yaml_file, encoding='utf-8') as f:
                 data = yaml.safe_load(f)
 
             if data and isinstance(data, dict):
@@ -495,7 +495,7 @@ def import_config(options: dict[str, Any]):
         # Determine format
         if input_file.suffix == ".json":
             # JSON format
-            with open(input_file) as f:
+            with open(input_file, encoding='utf-8') as f:
                 data = json.load(f)
 
             hosts_data = data.get("hosts", {})
@@ -513,7 +513,7 @@ def import_config(options: dict[str, Any]):
                 hosts_dir = extract_path / "hosts"
                 if hosts_dir.exists():
                     for yaml_file in hosts_dir.glob("*.yaml"):
-                        with open(yaml_file) as f:
+                        with open(yaml_file, encoding='utf-8') as f:
                             hosts_data[yaml_file.stem] = yaml.safe_load(f)
 
                 # Load apps
@@ -524,7 +524,7 @@ def import_config(options: dict[str, Any]):
                         if host_dir.is_dir():
                             apps_data[host_dir.name] = {}
                             for yaml_file in host_dir.glob("*.yaml"):
-                                with open(yaml_file) as f:
+                                with open(yaml_file, encoding='utf-8') as f:
                                     apps_data[host_dir.name][yaml_file.stem] = yaml.safe_load(f)
 
         # Confirm import
@@ -690,7 +690,7 @@ def inspect_export(options: dict[str, Any]):
 
         # Read contents
         if input_file.suffix == ".json" or str(input_file).endswith(".json"):
-            with open(input_file) as f:
+            with open(input_file, encoding='utf-8') as f:
                 data = json.load(f)
         else:
             # Archive format
@@ -704,7 +704,7 @@ def inspect_export(options: dict[str, Any]):
                 manifest_path = extract_path / "manifest.json"
                 manifest = {}
                 if manifest_path.exists():
-                    with open(manifest_path) as f:
+                    with open(manifest_path, encoding='utf-8') as f:
                         manifest = json.load(f)
 
                 # Collect data from files
@@ -718,7 +718,7 @@ def inspect_export(options: dict[str, Any]):
                 hosts_dir = extract_path / "hosts"
                 if hosts_dir.exists():
                     for yaml_file in hosts_dir.glob("*.yaml"):
-                        with open(yaml_file) as f:
+                        with open(yaml_file, encoding='utf-8') as f:
                             data["hosts"][yaml_file.stem] = yaml.safe_load(f)
 
                 apps_dir = extract_path / "apps"
@@ -727,7 +727,7 @@ def inspect_export(options: dict[str, Any]):
                         if host_dir.is_dir():
                             data["apps"][host_dir.name] = {}
                             for yaml_file in host_dir.glob("*.yaml"):
-                                with open(yaml_file) as f:
+                                with open(yaml_file, encoding='utf-8') as f:
                                     data["apps"][host_dir.name][yaml_file.stem] = yaml.safe_load(f)
 
         if json_output:

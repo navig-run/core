@@ -284,7 +284,7 @@ class Eyes(Component):
                         continue
 
                     try:
-                        with open(path, errors="ignore") as f:
+                        with open(path, errors="ignore", encoding='utf-8') as f:
                             # Seek to last known position
                             if str(path) in positions:
                                 f.seek(positions[str(path)])

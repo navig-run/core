@@ -1,12 +1,14 @@
 """
 NAVIG CLI Command Registration
+===============================
 
-Lazy command registration for external modules. Extracted from __init__.py
-to reduce module complexity (P1-14 CLI decomposition).
+Lazy command registration for external modules.  Extracted from
+``cli/__init__.py`` to reduce complexity (P1-14 CLI decomposition).
 
-This module owns:
-- _EXTERNAL_CMD_MAP: mapping of command names to (module_path, attr_name)
-- _register_external_commands(): registers commands on the Typer app
+Responsibilities:
+  - ``_EXTERNAL_CMD_MAP``: mapping of CLI name → (module_path, attr_name)
+  - ``_register_external_commands()``: register sub-apps on the Typer app
+  - ``extract_non_global_tokens()``: strip global flags from argv for skip-checks
 """
 
 from __future__ import annotations
@@ -19,14 +21,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import typer
 
-# ============================================================================
-# EXTERNAL COMMAND MAP
-# ============================================================================
-# Commands whose sub-app needs an external module import.
-# Format: name → (module_path, attr_name)
+# =============================================================================
+# External command map — name → (module_path, attr_name)
+# =============================================================================
 
 _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
-    # ── QUANTUM VELOCITY K4: bridge/farmore/copilot moved here from module-level ──
     "bridge": ("navig.commands.bridge", "bridge_app"),
     "farmore": ("navig.commands.farmore", "farmore_app"),
     "copilot": ("navig.commands.ask", "copilot_app"),
@@ -48,70 +47,62 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "voice": ("navig.commands.voice", "voice_app"),
     "crash": ("navig.commands.crash", "crash_app"),
     "telegram": ("navig.commands.telegram", "telegram_app"),
-    "tg": ("navig.commands.telegram", "telegram_app"),
+    "tg": ("navig.commands.telegram", "telegram_app"),        # hidden alias
     "matrix": ("navig.commands.matrix", "matrix_app"),
-    "mx": ("navig.commands.matrix", "matrix_app"),
+    "mx": ("navig.commands.matrix", "matrix_app"),            # hidden alias
     "store": ("navig.commands.store", "store_app"),
     "vault": ("navig.commands.vault", "vault_app"),
-    # ── Deprecated vault aliases — kept for backward compat; runtime warning via main.py ──
-    "cred": ("navig.commands.vault", "cred_app"),          # deprecated → navig vault
+    "cred": ("navig.commands.vault", "cred_app"),             # deprecated → navig vault
     "cred-profile": ("navig.commands.vault", "profile_app"),  # deprecated → navig vault profile
-    # Operating-mode profiles (node / builder / operator / architect)
-    # Credential profiles are now `navig vault profile list/use`
     "profile": ("navig.commands.profile", "profile_app"),
     "flux": ("navig.commands.flux", "flux_app"),
-    "fx": ("navig.commands.flux", "flux_app"),
-    # ── AI sub-app extraction ─────────────────────────────────────────────────
+    "fx": ("navig.commands.flux", "flux_app"),                # hidden alias
     "ai": ("navig.commands.ai", "ai_app"),
-    "brain": ("navig.commands.brain", "brain_app"),  # prompt-file management
-    # ── Batch extraction: backup, tunnel, skills ──────────────────────────────
+    "brain": ("navig.commands.brain", "brain_app"),
     "backup": ("navig.commands.backup", "backup_app"),
     "tunnel": ("navig.commands.tunnel", "tunnel_app"),
-    "t": ("navig.commands.tunnel", "tunnel_app"),
+    "t": ("navig.commands.tunnel", "tunnel_app"),             # hidden alias
     "skills": ("navig.commands.skills", "skills_app"),
     "skill": ("navig.commands.skills", "skills_app"),
-    # ── Batch extraction: history, trigger, insights, server-template ─────────
     "history": ("navig.commands.history", "history_app"),
-    "hist": ("navig.commands.history", "history_app"),
+    "hist": ("navig.commands.history", "history_app"),        # hidden alias
     "trigger": ("navig.commands.triggers", "trigger_app"),
     "insights": ("navig.commands.insights", "insights_app"),
     "server-template": ("navig.commands.server_template", "server_template_app"),
-    # ── Phase 2a: gateway extracted from inline block ─────────────────────────
     "gateway": ("navig.commands.gateway", "gateway_app"),
     "bot": ("navig.commands.gateway", "bot_app"),
     "heartbeat": ("navig.commands.gateway", "heartbeat_app"),
     "approve": ("navig.commands.gateway", "approve_app"),
     "queue": ("navig.commands.gateway", "queue_app"),
-    # ── Phase 2b: task, install, quick, hosts ─────────────────────────────────
     "task": ("navig.commands.workflow", "task_app"),
     "install": ("navig.commands.install", "install_app"),
     "quick": ("navig.commands.suggest", "quick_app"),
-    "q": ("navig.commands.suggest", "quick_app"),
+    "q": ("navig.commands.suggest", "quick_app"),             # hidden alias
     "hosts": ("navig.commands.local", "hosts_app"),
     "cortex": ("navig.commands.cortex", "cortex_app"),
     "desktop": ("navig.commands.desktop", "desktop_app"),
     "net": ("navig.commands.net", "net_app"),
     "host": ("navig.commands.host", "host_app"),
-    "h": ("navig.commands.host", "host_app"),
+    "h": ("navig.commands.host", "host_app"),                 # hidden alias
     "context": ("navig.commands.context", "context_app"),
-    "ctx": ("navig.commands.context", "context_app"),
+    "ctx": ("navig.commands.context", "context_app"),         # hidden alias
     "index": ("navig.commands.index", "index_app"),
     "flow": ("navig.commands.flow", "flow_app"),
     "scaffold": ("navig.commands.scaffold", "scaffold_app"),
     "app": ("navig.commands.app", "app_app"),
-    "a": ("navig.commands.app", "app_app"),
+    "a": ("navig.commands.app", "app_app"),                   # hidden alias
     "file": ("navig.commands.files", "file_app"),
-    "f": ("navig.commands.files", "file_app"),
+    "f": ("navig.commands.files", "file_app"),                # hidden alias
     "log": ("navig.commands.log", "log_app"),
     "logs": ("navig.commands.log", "log_app"),
-    "l": ("navig.commands.log", "log_app"),
+    "l": ("navig.commands.log", "log_app"),                   # hidden alias
     "local": ("navig.commands.local", "local_app"),
     "software": ("navig.commands.local", "software_app"),
     "config": ("navig.commands.config", "config_app"),
     "web": ("navig.commands.webserver", "web_app"),
     "stats": ("navig.commands.stats", "stats_app"),
     "health": ("navig.commands.stack", "stack_app"),
-    # Top-level compatibility aliases for common ops nouns
+    # Compatibility aliases
     "cert": ("navig.commands.webserver", "web_app"),
     "key": ("navig.commands.host", "host_app"),
     "firewall": ("navig.commands.local", "local_app"),
@@ -119,79 +110,50 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "port": ("navig.commands.local", "local_app"),
     "proxy": ("navig.commands.tunnel", "tunnel_app"),
     "env": ("navig.commands.config", "config_app"),
-    "secret": ("navig.commands.vault", "vault_app"),  # deprecated → navig vault
+    "secret": ("navig.commands.vault", "vault_app"),          # deprecated → navig vault
     "job": ("navig.commands.flow", "flow_app"),
     "wiki": ("navig.commands.wiki", "wiki_app"),
     "alias": ("navig.commands.script", "script_app"),
     "server": ("navig.commands.server", "server_app"),
-    "s": ("navig.commands.server", "server_app"),
+    "s": ("navig.commands.server", "server_app"),             # hidden alias
     "db": ("navig.commands.db", "db_app"),
     "database": ("navig.commands.db", "db_app"),
-    # ── LLM cost tracking and output-style profiles ───────────────────────
     "cost": ("navig.commands.cost", "cost_app"),
     "output-style": ("navig.commands.output_style", "output_style_app"),
-    # ── Phase 2: Links database ───────────────────────────────────────────
     "links": ("navig.commands.links", "links_app"),
-    # ── Phase 3: Knowledge graph ──────────────────────────────────────────
     "kg": ("navig.commands.kg", "kg_app"),
     "knowledge": ("navig.commands.kg", "kg_app"),
-    # ── Phase 4: Webhooks ─────────────────────────────────────────────────
     "webhook": ("navig.commands.webhook", "webhook_app"),
     "webhooks": ("navig.commands.webhook", "webhook_app"),
-    # ── Phase 3: Go cron daemon CLI ───────────────────────────────────────
-    # (navig.commands.cron is the existing gateway-based CLI;
-    #  navig.commands.cron_local targets the new Go YAML daemon directly)
     "cron": ("navig.commands.cron", "cron_app"),
-    # ── P1-15: Self-diagnostics ───────────────────────────────────────────────
     "doctor": ("navig.commands.doctor", "doctor_app"),
-    # ── QUANTUM VELOCITY A: docker lazy dispatch ──────────────────────────────
-    # Moved from 175-line inline block → navig/commands/docker.py :: docker_app
-    # Saves parsing Typer decorators on every non-docker cold start.
     "docker": ("navig.commands.docker", "docker_app"),
-    # ── Prompts: agent system-prompt management (.navig/store/prompts/) ───────
     "prompts": ("navig.commands.prompts", "prompts_app"),
-    # ── Browser: Playwright/gateway web automation ────────────────────────────
-    # Extracted from inline definition → navig/commands/browser.py :: browser_app
     "browser": ("navig.commands.browser", "browser_app"),
-    # ── Universal import engine ───────────────────────────────────────────────
     "import": ("navig.commands.import_cmd", "import_app"),
-    # ── Multi-network reliable dispatch (Phase 0/1/2) ─────────────────────────
     "dispatch": ("navig.commands.dispatch", "dispatch_app"),
     "contacts": ("navig.commands.dispatch", "contacts_app"),
-    "ct": ("navig.commands.dispatch", "contacts_app"),
-    # ── System paths inspection & MCP server registration ──────────────────────
+    "ct": ("navig.commands.dispatch", "contacts_app"),        # hidden alias
     "paths": ("navig.commands.paths_cmd", "paths_app"),
     "mcp": ("navig.commands.mcp_cmd", "mcp_app"),
-    # ── Generic mention & keyword tracker ─────────────────────────────────────
     "radar": ("navig.commands.radar", "radar_app"),
-    # ── Unified event observation system ──────────────────────────────────────
     "watch": ("navig.commands.watch_cmd", "watch_app"),
-    # ── Flux Mesh: peer management, config sync, remote upgrade ───────────────
     "mesh": ("navig.commands.mesh", "mesh_app"),
-    # ── Debug / observability: toggle debug mode, show log sizes ─────────────
     "debug": ("navig.commands.debug_cmd", "debug_app"),
-    # ── Spaces context (legacy alias) now routed to unified `space` command ─────
     "spaces": ("navig.commands.space", "space_app"),
-    # ── PERF: commands migrated from main.py unconditional try/except blocks ─
-    # Were imported on EVERY CLI invocation; now dispatched lazily via this map.
     "telemetry": ("navig.commands.telemetry", "telemetry_app"),
     "wut": ("navig.commands.wut", "app"),
     "eval": ("navig.commands.eval", "app"),
     "agents": ("navig.commands.agents", "app"),
     "webdash": ("navig.commands.webdash", "app"),
-    # "explain" removed — all sub-commands were unimplemented stubs (AI surface cleanup)
     "snapshot": ("navig.commands.snapshot", "app"),
     "replay": ("navig.commands.replay", "app"),
     "cloud": ("navig.commands.cloud", "app"),
     "benchmark": ("navig.commands.benchmark", "app"),
-    # ── Finance: beancount double-entry accounting (pip install navig[finance]) ──
     "finance": ("navig.commands.finance", "finance_app"),
-    # ── Work: lifecycle/stage tracker for leads, projects, tasks, etc. ────────
     "work": ("navig.commands.work", "work_app"),
     "plans": ("navig.commands.plans", "plans_app"),
-    # ── AI-guided planning wizard (plan new / list / show / run) ─────────────
     "plan": ("navig.commands.plan_mode", "app"),
-    # ── Formerly eager-loaded inline — now lazy via this map ─────────────────
     "origin": ("navig.commands.origin", "origin_app"),
     "user": ("navig.commands.user", "user_app"),
     "node": ("navig.commands.node", "node_app"),
@@ -202,60 +164,56 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "portable": ("navig.commands.portable", "portable_app"),
     "migrate": ("navig.commands.migrate", "migrate_app"),
     "system": ("navig.commands.system_cmd", "system_app"),
-    # ── Mount: NTFS junction registry + PowerShell helper generation ──────────
     "mount": ("navig.commands.mount", "mount_app"),
-    # ── Phase 5 modularization ────────────────────────────────────────────────
     "update": ("navig.commands.update", "update_app"),
     "proactive": ("navig.commands.proactive", "proactive_app"),
-    # ── Packages replacement for Packs ────────────────────────────────────────
     "package": ("navig.commands.package", "package_app"),
     "pack": ("navig.commands.package", "package_app"),
     "packs": ("navig.commands.package", "package_app"),
-    # ── P1-14: memory extracted from inline block ─────────────────────────────
     "memory": ("navig.commands.memory", "memory_app"),
-    # ── Connector engine: unified service integrations ────────────────────────
     "connector": ("navig.commands.connector_cmd", "connector_app"),
 }
 
-# Hidden command aliases (short forms and deprecated names)
+# Commands that should be hidden from `--help` output (short forms, deprecated names).
 _HIDDEN_COMMANDS: frozenset[str] = frozenset({
-    "tg", "mx", "fx", "h", "a", "f", "l", "s", "database", "hist", "ctx"
+    "tg", "mx", "fx", "h", "a", "f", "l", "s", "t", "q",
+    "database", "hist", "ctx", "ct",
 })
 
-# Track which commands have already been registered per app instance so that
-# calling _register_external_commands() multiple times (e.g. in tests) does not
-# add duplicate add_typer() entries and corrupt the Click group routing.
-_registered_app_cmds: dict[int, set[str]] = {}
-_registration_lock = threading.Lock()
+# =============================================================================
+# Global-flag stripping
+# =============================================================================
 
+# Flags that consume the following token as their value.
 _VALUE_CONSUMING_GLOBAL_FLAGS: frozenset[str] = frozenset({"--host", "-h", "--app", "-p"})
+
+# All top-level global flags (value-consuming and bare).
 _GLOBAL_FLAGS: frozenset[str] = frozenset({
-    "--host",
-    "-h",
-    "--app",
-    "-p",
+    "--host", "-h",
+    "--app", "-p",
     "--verbose",
-    "--quiet",
-    "-q",
+    "--quiet", "-q",
     "--dry-run",
-    "--yes",
-    "-y",
-    "--confirm",
-    "-c",
+    "--yes", "-y",
+    "--confirm", "-c",
     "--raw",
     "--json",
     "--debug-log",
     "--no-cache",
-    "--version",
-    "-v",
+    "--version", "-v",
     "--help",
 })
 
 
 def extract_non_global_tokens(args: list[str]) -> list[str]:
-    """Return argv tokens with global flags and consumed values removed."""
-    skip_next = False
+    """Return *args* with global flags and their consumed values stripped.
+
+    Used by skip-lists in middleware and fact-extraction to examine only the
+    actual command tokens without being confused by flag values like
+    ``--host myserver`` (where ``myserver`` must not be treated as a command).
+    """
     tokens: list[str] = []
+    skip_next = False
     for token in args:
         if skip_next:
             skip_next = False
@@ -270,35 +228,48 @@ def extract_non_global_tokens(args: list[str]) -> list[str]:
 
 
 def _first_non_global_token(args: list[str]) -> str | None:
-    """Return first non-global token from argv tail."""
+    """Return the first non-global token from *args*, or ``None``."""
     tokens = extract_non_global_tokens(args)
     return tokens[0] if tokens else None
 
 
 def _resolve_cli_target_from_argv(argv: list[str] | None = None) -> str | None:
-    """Resolve top-level CLI command target from argv when argv belongs to NAVIG.
+    """Resolve the top-level CLI command name from *argv*.
 
-    When this function is called in embedded contexts (tests, in-process
-    invocations), ``sys.argv`` usually belongs to the host process (e.g.
-    ``pytest``). In that case, we intentionally return ``None`` so callers can
-    use safe fallback behavior instead of misrouting based on unrelated args.
+    Returns ``None`` when:
+    - argv is empty or has no subcommand.
+    - argv[0] does not look like ``navig`` (e.g. when called inside pytest).
+
+    The sentinel check prevents misrouting in embedded / test contexts where
+    ``sys.argv[0]`` is ``pytest`` or ``python``.
     """
     active_argv = argv if argv is not None else sys.argv
     if len(active_argv) <= 1:
         return None
 
     argv0 = str(active_argv[0])
-    executable = Path(argv0).name.lower()
-    if "navig" not in executable and "navig" not in argv0.lower():
+    if "navig" not in Path(argv0).name.lower() and "navig" not in argv0.lower():
         return None
 
     return _first_non_global_token(active_argv[1:])
 
 
-def _clear_registration_cache(target_app: "typer.Typer | None" = None) -> None:
-    """Clear the idempotency cache for a given app (or all apps if None).
+# =============================================================================
+# Idempotency cache
+# =============================================================================
 
-    Called by tests that need a completely fresh registration state.
+# Maps id(app) → set of already-registered command names.  Prevents duplicate
+# add_typer() calls when _register_external_commands() is invoked more than
+# once for the same app (e.g. in tests).
+_registered_app_cmds: dict[int, set[str]] = {}
+_registration_lock = threading.Lock()
+
+
+def _clear_registration_cache(target_app: typer.Typer | None = None) -> None:  # type: ignore[name-defined]
+    """Clear the registration idempotency cache.
+
+    Pass *target_app* to clear only that app; pass ``None`` to clear all.
+    Intended for test isolation — not for production use.
     """
     with _registration_lock:
         if target_app is None:
@@ -307,121 +278,122 @@ def _clear_registration_cache(target_app: "typer.Typer | None" = None) -> None:
             _registered_app_cmds.pop(id(target_app), None)
 
 
+# =============================================================================
+# Command registration
+# =============================================================================
+
+
 def _register_external_commands(
     *,
     register_all: bool = False,
-    target_app: typer.Typer | None = None,
+    target_app: typer.Typer | None = None,  # type: ignore[name-defined]
 ) -> None:
-    """Register external command sub-apps.
+    """Register external command sub-apps on *target_app*.
 
-    Called once from main.py after fast-path check. Uses ``sys.argv``
-    to decide *which* commands need importing:
-
-    * If argv[1] is recognised as an inline command (defined in
-      cli/__init__.py), **no external modules are imported at all**.
-    * If argv[1] is an external command, only *that* module is loaded.
-    * If we cannot decide (e.g. ``navig --help`` fell through), we
-      import everything so the help screen is complete.
+    Dispatch strategy:
+    - **Known external command** in argv → import only that module (fast path).
+    - **Inline command or unknown flag** → skip external imports entirely.
+    - **No args / ``--help`` / ``register_all=True``** → import everything.
 
     Args:
-        register_all: If True, skip argv heuristic and register every
-                      external command. Useful for tests and tooling.
-        target_app: Optional Typer app to register commands on.
-                    If None, imports from navig.cli (late import).
+        register_all: Force registration of all external commands (useful for
+                      ``--help`` and tooling).
+        target_app:   Typer app to register on.  Defaults to ``navig.cli.app``.
     """
     import importlib
 
-    # Late import to avoid circular dependency
     if target_app is None:
         from navig.cli import app
         target_app = app
 
-    # Idempotency cache — prevents duplicate add_typer() calls on the same app
     app_key = id(target_app)
     with _registration_lock:
-        if app_key not in _registered_app_cmds:
-            _registered_app_cmds[app_key] = set()
-        _already: set[str] = _registered_app_cmds[app_key]
+        already = _registered_app_cmds.setdefault(app_key, set())
 
-    if register_all:
-        target = None  # triggers fallback path below
-    else:
-        target = _resolve_cli_target_from_argv()
+    target = None if register_all else _resolve_cli_target_from_argv()
 
     # ------------------------------------------------------------------
     # Fast path: target is a known external command → import only it
     # ------------------------------------------------------------------
     if target in _EXTERNAL_CMD_MAP:
-        if target not in _already:
-            mod_path, attr = _EXTERNAL_CMD_MAP[target]
-            try:
-                mod = importlib.import_module(mod_path)
-                target_app.add_typer(
-                    getattr(mod, attr),
-                    name=target,
-                    hidden=(target in _HIDDEN_COMMANDS),
-                )
-                _already.add(target)
-            except Exception as _ie:
-                sys.stderr.write(
-                    f"[navig] \u26a0 command '{target}' unavailable (registration failed: {_ie})\n"
-                )
-        return
-
-    # AHK sub-app (Windows only)
-    if target == "ahk" and sys.platform == "win32":
-        if "ahk" not in _already:
-            try:
-                from navig.commands.ahk import ahk_app
-
-                target_app.add_typer(ahk_app, name="ahk")
-                _already.add("ahk")
-            except ImportError:
-                pass  # optional dependency not installed; feature disabled
+        _try_register_one(target_app, target, already)
         return
 
     # ------------------------------------------------------------------
-    # If target is an inline command (or a flag like --debug), skip
-    # external imports entirely for maximum startup speed.
+    # Windows-only AHK command
+    # ------------------------------------------------------------------
+    if target == "ahk" and sys.platform == "win32":
+        _try_register_ahk(target_app, already)
+        return
+
+    # ------------------------------------------------------------------
+    # Inline command or a flag-like token → no external imports needed
     # ------------------------------------------------------------------
     if target is not None and not target.startswith("-"):
-        # Likely an inline command – no external imports needed.
         return
 
     # ------------------------------------------------------------------
-    # Fallback: register everything (e.g. bare ``navig`` with no args)
+    # Fallback: register everything (bare `navig`, `--help`, etc.)
     # ------------------------------------------------------------------
-    for cmd_name, (mod_path, attr) in _EXTERNAL_CMD_MAP.items():
-        if cmd_name in _already:
-            continue
-        try:
-            mod = importlib.import_module(mod_path)
-            target_app.add_typer(
-                getattr(mod, attr),
-                name=cmd_name,
-                hidden=(cmd_name in _HIDDEN_COMMANDS),
-            )
-            _already.add(cmd_name)
-        except Exception as _ie:
-            sys.stderr.write(
-                f"[navig] \u26a0 command '{cmd_name}' unavailable (registration failed: {_ie})\n"
-            )
+    for cmd_name in _EXTERNAL_CMD_MAP:
+        _try_register_one(target_app, cmd_name, already)
 
-    if sys.platform == "win32" and "ahk" not in _already:
-        try:
-            from navig.commands.ahk import ahk_app
+    if sys.platform == "win32":
+        _try_register_ahk(target_app, already)
 
-            target_app.add_typer(ahk_app, name="ahk")
-            _already.add("ahk")
-        except ImportError:
-            pass  # optional dependency not installed; feature disabled
+
+def _try_register_one(
+    target_app: typer.Typer,  # type: ignore[name-defined]
+    cmd_name: str,
+    already: set[str],
+) -> None:
+    """Register a single external command if not already registered."""
+    if cmd_name in already:
+        return
+    import importlib
+
+    mod_path, attr = _EXTERNAL_CMD_MAP[cmd_name]
+    try:
+        mod = importlib.import_module(mod_path)
+        target_app.add_typer(
+            getattr(mod, attr),
+            name=cmd_name,
+            hidden=(cmd_name in _HIDDEN_COMMANDS),
+        )
+        already.add(cmd_name)
+    except Exception as exc:
+        sys.stderr.write(
+            f"[navig] ⚠ command '{cmd_name}' unavailable"
+            f" (registration failed: {exc})\n"
+        )
+
+
+def _try_register_ahk(
+    target_app: typer.Typer,  # type: ignore[name-defined]
+    already: set[str],
+) -> None:
+    """Register the optional Windows AHK sub-app if not already registered."""
+    if "ahk" in already:
+        return
+    try:
+        from navig.commands.ahk import ahk_app
+
+        target_app.add_typer(ahk_app, name="ahk")
+        already.add("ahk")
+    except ImportError:
+        pass  # Optional dependency not installed — silently disabled.
+
+
+# =============================================================================
+# Public helpers
+# =============================================================================
 
 
 def get_external_commands() -> list[str]:
-    """Return list of external command names."""
+    """Return the list of all registered external command names."""
     return list(_EXTERNAL_CMD_MAP.keys())
 
 
 def is_external_command(name: str) -> bool:
-    """Check if a command name is an external command."""
+    """Return ``True`` if *name* is a registered external command."""
     return name in _EXTERNAL_CMD_MAP

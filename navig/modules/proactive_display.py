@@ -203,7 +203,7 @@ class ProactiveDisplay:
             if not history_file.exists():
                 return []
 
-            with open(history_file) as f:
+            with open(history_file, encoding='utf-8') as f:
                 all_history = json.load(f)
 
             # Filter for recent entries

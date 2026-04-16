@@ -98,8 +98,14 @@ class SyncManager:
     async def start(self) -> None:
         """Start the background sync loop."""
         self._running = True
-        self._state = self._build_local_state()
-        self._state_hash = self._hash_state(self._state)
+        restored = self._load_persisted_state() if self._sqlite_path else None
+        if restored:
+            self._state = restored["state"]
+            self._state_hash = restored["hash"]
+            logger.info("[sync] Restored persisted state (hash=%s)", self._state_hash[:8])
+        else:
+            self._state = self._build_local_state()
+            self._state_hash = self._hash_state(self._state)
         self._task = asyncio.create_task(self._loop(), name="sync_manager")
         logger.info("[sync] SyncManager started (interval=%ds)", self._broadcast_interval_s)
 
@@ -312,10 +318,80 @@ class SyncManager:
         except Exception:
             return ""
 
+    @staticmethod
+    def _ensure_persist_table(conn: Any) -> None:
+        """Ensure the SQLite table for persisted sync state exists."""
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mesh_sync_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                state_json TEXT NOT NULL,
+                state_hash TEXT NOT NULL,
+                updated_at REAL NOT NULL
+            )
+            """
+        )
+
+    def _load_persisted_state(self) -> dict[str, Any] | None:
+        """Load persisted state from SQLite, returning None when unavailable."""
+        if not self._sqlite_path:
+            return None
+        try:
+            from navig.storage.engine import get_engine
+
+            engine = get_engine()
+            conn = engine.connect(self._sqlite_path)
+            with engine.write_lock(self._sqlite_path):
+                self._ensure_persist_table(conn)
+                row = conn.execute(
+                    "SELECT state_json, state_hash FROM mesh_sync_state WHERE id = 1"
+                ).fetchone()
+
+            if not row:
+                return None
+
+            state_json = row["state_json"]
+            state = json.loads(state_json)
+            if not isinstance(state, dict):
+                return None
+
+            saved_hash = str(row["state_hash"] or "")
+            return {
+                "state": state,
+                "hash": saved_hash or self._hash_state(state),
+            }
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[sync] Persisted state restore failed: %s", exc)
+            return None
+
     def _persist_state(self) -> None:
-        """Phase 2 stub — write state to SQLite via storage/engine.py."""
-        # TODO: implement via storage/engine.py when optional_sqlite_path is provided.
-        pass
+        """Persist the latest sync state to SQLite via storage/engine.py."""
+        if not self._sqlite_path:
+            return
+        try:
+            from navig.storage.engine import get_engine
+
+            engine = get_engine()
+            conn = engine.connect(self._sqlite_path)
+            payload = json.dumps(self._state, sort_keys=True)
+            now = time.time()
+
+            with engine.write_lock(self._sqlite_path):
+                self._ensure_persist_table(conn)
+                conn.execute(
+                    """
+                    INSERT INTO mesh_sync_state (id, state_json, state_hash, updated_at)
+                    VALUES (1, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        state_json = excluded.state_json,
+                        state_hash = excluded.state_hash,
+                        updated_at = excluded.updated_at
+                    """,
+                    (payload, self._state_hash, now),
+                )
+                conn.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[sync] State persistence failed: %s", exc)
 
     # ── State accessor (for GET /mesh/sync/state endpoint) ───────────────────
 

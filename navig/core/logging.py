@@ -3,14 +3,17 @@ Structured logging subsystem for NAVIG.
 
 Provides per-subsystem loggers with:
 - Automatic sensitive-data redaction in messages *and* format args.
+- Optional session-tag correlation injected via a log-record factory.
 - RichHandler console output (gracefully falls back to StreamHandler).
-- RotatingFileHandler file output.
+- RotatingFileHandler file output with RedactingFormatter.
+- Component-prefix filters for fine-grained output routing.
 - Structured JSON event helper.
 
 Usage::
 
-    from navig.core.logging import get_logger
+    from navig.core.logging import get_logger, set_session_context
 
+    set_session_context("abc123")
     logger = get_logger("database")
     logger.info("Connecting to %s", host)
     logger.structured(logging.INFO, "query_complete", rows=42)
@@ -21,27 +24,117 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import threading
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+# ---------------------------------------------------------------------------
+# Redaction + RedactingFormatter — sourced from security module when available
+# ---------------------------------------------------------------------------
+
 try:
-    from navig.core.security import redact_sensitive_text
+    from navig.core.security import RedactingFormatter, redact_sensitive_text
 except ImportError:
     def redact_sensitive_text(text: str) -> str:  # type: ignore[misc]
         return text
 
-# Registry of already-created subsystem loggers.
+    class RedactingFormatter(logging.Formatter):  # type: ignore[no-redef]
+        """No-op fallback when the security module is unavailable."""
+
+        def format(self, record: logging.LogRecord) -> str:  # noqa: A003
+            return super().format(record)
+
+
+# ---------------------------------------------------------------------------
+# Module-level state
+# ---------------------------------------------------------------------------
+
+# Registry of already-created subsystem loggers (logger_name → StructuredLogger).
 _LOGGERS: dict[str, StructuredLogger] = {}
 
-# Whether the "navig" root logger has been configured at least once.
+# Guard against repeated root-logger configuration.
 _ROOT_CONFIGURED = False
 
-LOG_FORMAT = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
+# Log format including the optional session tag injected by the record factory.
+LOG_FORMAT = "%(asctime)s [%(name)s]%(session_tag)s %(levelname)s: %(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
-# Rotating file handler config
+# Rotating file-handler defaults.
 _FILE_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 _FILE_BACKUP_COUNT = 5
+
+
+# ---------------------------------------------------------------------------
+# Session-correlated logging
+# ---------------------------------------------------------------------------
+
+_session_context: threading.local = threading.local()
+
+
+def set_session_context(session_id: str | None) -> None:
+    """Associate the current thread with *session_id* for log correlation.
+
+    After calling this, every log record emitted from the same thread carries
+    a ``session_tag`` attribute (e.g. ``" [abc123ef]"``) that appears in the
+    formatted log line.  Call with ``None`` to clear.
+    """
+    _session_context.session_id = session_id
+
+
+def clear_session_context() -> None:
+    """Remove the session identifier from the current thread."""
+    _session_context.session_id = None
+
+
+def _install_session_record_factory() -> None:
+    """Wrap the log-record factory to inject ``session_tag`` on every record.
+
+    Idempotent — detected by a sentinel attribute on the factory so the chain
+    is never doubled even if this module is imported multiple times (e.g. in
+    tests that reload modules).
+    """
+    current_factory = logging.getLogRecordFactory()
+    if getattr(current_factory, "_navig_session_injector", False):
+        return
+
+    def _factory(*args, **kwargs) -> logging.LogRecord:
+        record = current_factory(*args, **kwargs)
+        sid = getattr(_session_context, "session_id", None)
+        record.session_tag = f" [{sid}]" if sid else ""  # type: ignore[attr-defined]
+        return record
+
+    _factory._navig_session_injector = True  # type: ignore[attr-defined]
+    logging.setLogRecordFactory(_factory)
+
+
+# ---------------------------------------------------------------------------
+# Component-prefix filter
+# ---------------------------------------------------------------------------
+
+COMPONENT_PREFIXES: dict[str, tuple[str, ...]] = {
+    "gateway": ("navig.gateway",),
+    "commands": ("navig.commands",),
+    "memory": ("navig.memory",),
+    "ai": ("navig.ai", "navig.llm"),
+    "core": ("navig.core",),
+    "platform": ("navig.platform",),
+}
+
+
+class _ComponentFilter(logging.Filter):
+    """Pass only records whose logger name starts with one of *prefixes*."""
+
+    def __init__(self, prefixes: tuple[str, ...]) -> None:
+        super().__init__()
+        self._prefixes = prefixes
+
+    def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003
+        return record.name.startswith(self._prefixes)
+
+
+# ---------------------------------------------------------------------------
+# StructuredLogger
+# ---------------------------------------------------------------------------
 
 
 class StructuredLogger(logging.Logger):
@@ -58,11 +151,7 @@ class StructuredLogger(logging.Logger):
         stacklevel: int = 1,
     ) -> None:
         """Redact sensitive data from the message and any string format args."""
-        # Always pass a plain string to the underlying machinery.
-        if isinstance(msg, str):
-            msg = redact_sensitive_text(msg)
-        else:
-            msg = str(msg)
+        msg = redact_sensitive_text(msg) if isinstance(msg, str) else str(msg)
 
         if args:
             args = tuple(
@@ -77,7 +166,7 @@ class StructuredLogger(logging.Logger):
         Args:
             level: Logging level (e.g. ``logging.INFO``).
             event: Short event identifier.
-            **kwargs: Arbitrary key/value pairs merged into the JSON payload.
+            **kwargs: Arbitrary payload merged into the JSON object.
         """
         data: dict[str, object] = {
             "event": event,
@@ -91,24 +180,29 @@ class StructuredLogger(logging.Logger):
         self.log(level, json.dumps(safe))
 
 
+# ---------------------------------------------------------------------------
+# Root-logger configuration
+# ---------------------------------------------------------------------------
+
+
 def _configure_root_logger(
     log_file: Path | None = None,
     level: int = logging.INFO,
 ) -> None:
-    """Set up handlers on the ``navig`` root logger.
+    """Configure handlers on the ``navig`` root logger.
 
-    Safe to call multiple times — handlers are cleared first.
+    Safe to call multiple times — handlers are cleared before adding new ones.
     """
     root = logging.getLogger("navig")
     root.setLevel(level)
     root.propagate = False
     root.handlers.clear()
 
-    # 1. Console handler — stderr keeps stdout clean for structured output.
+    # 1. Console handler on stderr (keeps stdout clean for structured output).
     try:
-        # Skip RichHandler during pytest to avoid interfering with capsys/capfd.
+        # Suppress RichHandler during pytest — it interferes with capsys/capfd.
         if "pytest" in sys.modules:
-            raise ImportError("pytest active")
+            raise ImportError("pytest active — using plain StreamHandler")
         from rich.console import Console
         from rich.logging import RichHandler
 
@@ -129,7 +223,7 @@ def _configure_root_logger(
     console_handler.setLevel(level)
     root.addHandler(console_handler)
 
-    # 2. Optional rotating file handler.
+    # 2. Optional rotating file handler with secret redaction.
     if log_file is not None:
         log_file.parent.mkdir(parents=True, exist_ok=True)
         file_handler = RotatingFileHandler(
@@ -138,25 +232,28 @@ def _configure_root_logger(
             backupCount=_FILE_BACKUP_COUNT,
             encoding="utf-8",
         )
-        file_handler.setFormatter(
-            logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT)
-        )
-        # Always capture DEBUG to file so post-mortem analysis is possible.
+        file_handler.setFormatter(RedactingFormatter(LOG_FORMAT, datefmt=DATE_FORMAT))
+        # File handler always captures DEBUG so post-mortem analysis is possible.
         file_handler.setLevel(logging.DEBUG)
         root.addHandler(file_handler)
+
+
+# ---------------------------------------------------------------------------
+# Public factory
+# ---------------------------------------------------------------------------
 
 
 def get_logger(subsystem: str = "core") -> StructuredLogger:
     """Return a :class:`StructuredLogger` for *subsystem*.
 
-    The first call performs lazy root-logger configuration so startup cost is
-    zero when logging is not actually used.
+    Lazy-configures the root logger on first use so import-time cost is zero
+    when logging is not used.
 
     Args:
-        subsystem: Short name such as ``'auth'``, ``'db'``, or ``'ssh'``.
+        subsystem: Short subsystem name, e.g. ``'auth'``, ``'db'``, ``'ssh'``.
 
     Returns:
-        A :class:`StructuredLogger` instance named ``navig.<subsystem>``.
+        A :class:`StructuredLogger` named ``navig.<subsystem>``.
     """
     global _ROOT_CONFIGURED
 
@@ -165,8 +262,7 @@ def get_logger(subsystem: str = "core") -> StructuredLogger:
     if cached is not None:
         return cached
 
-    # Install our custom class only for the duration of this lookup so we do
-    # not permanently replace the global logger class.
+    # Swap in our custom class only for this lookup; restore immediately after.
     original_class = logging.getLoggerClass()
     logging.setLoggerClass(StructuredLogger)
     try:
@@ -174,7 +270,7 @@ def get_logger(subsystem: str = "core") -> StructuredLogger:
     finally:
         logging.setLoggerClass(original_class)
 
-    # Configure root lazily on first use.
+    # Lazy root-logger configuration on first ever get_logger() call.
     if not _ROOT_CONFIGURED:
         _ROOT_CONFIGURED = True
         try:
@@ -185,10 +281,9 @@ def get_logger(subsystem: str = "core") -> StructuredLogger:
         except Exception:
             _configure_root_logger()
 
-    # The logger retrieved above may be a plain Logger if logging already had
-    # a non-StructuredLogger cached for this name. Ensure correct type.
+    # logging.Manager may have returned a pre-existing plain Logger for this
+    # name.  Replace it to guarantee a StructuredLogger.
     if not isinstance(logger, StructuredLogger):
-        # Replace the cached instance with a properly typed one.
         logging.Logger.manager.loggerDict.pop(logger_name, None)
         logging.setLoggerClass(StructuredLogger)
         try:
@@ -197,8 +292,17 @@ def get_logger(subsystem: str = "core") -> StructuredLogger:
             logging.setLoggerClass(original_class)
 
     assert isinstance(logger, StructuredLogger), (
-        f"Expected StructuredLogger, got {type(logger).__name__}"
+        f"Expected StructuredLogger for '{logger_name}', got {type(logger).__name__}"
     )
 
     _LOGGERS[logger_name] = logger
     return logger
+
+
+# ---------------------------------------------------------------------------
+# Module-level boot
+# ---------------------------------------------------------------------------
+
+# Install the session-tag record factory at import time so every module that
+# imports navig.core.logging automatically benefits from session correlation.
+_install_session_record_factory()
