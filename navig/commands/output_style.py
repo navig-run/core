@@ -17,6 +17,7 @@ import typer
 from typing_extensions import Annotated
 
 from navig import console_helper as ch
+from navig.platform.paths import config_dir
 
 output_style_app = typer.Typer(
     name="output-style",
@@ -140,7 +141,7 @@ def style_create(
 ) -> None:
     """Scaffold a new output style file."""
     if global_:
-        target_dir = Path.home() / ".navig" / "output-styles"
+        target_dir = config_dir() / "output-styles"
     else:
         target_dir = Path.cwd() / ".navig" / "output-styles"
 

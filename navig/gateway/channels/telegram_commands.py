@@ -46,7 +46,7 @@ from navig.gateway.channels.utils.decorators import (
     rate_limited,
     typing_context,
 )
-from navig.platform.paths import global_config_path, msg_trace_path
+from navig.platform.paths import config_dir, global_config_path, msg_trace_path
 from navig.ui.icons import icon as _ni
 
 logger = logging.getLogger(__name__)
@@ -1497,7 +1497,7 @@ class TelegramCommandsMixin:
             handoff = consume_chat_onboarding_handoff_state()
             steps = get_chat_onboarding_step_progress()
             if not handoff:
-                home_navig_dir = Path.home() / ".navig"
+                home_navig_dir = config_dir()
                 handoff = consume_chat_onboarding_handoff_state(home_navig_dir)
                 if handoff:
                     steps = get_chat_onboarding_step_progress(home_navig_dir)

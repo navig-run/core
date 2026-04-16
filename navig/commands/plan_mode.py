@@ -34,6 +34,7 @@ import typer
 
 from navig.console_helper import get_console
 from navig.core.yaml_io import atomic_write_text as _atomic_write_text
+from navig.platform.paths import config_dir
 
 app = typer.Typer(help="AI-guided planning mode — draft, review, and execute plans", no_args_is_help=True)
 console = get_console()
@@ -224,7 +225,7 @@ def _plan_dir() -> Path:
 
 
 def _resolve_plan_path(slug: str) -> Path | None:
-    for directory in [Path(_PLAN_SUBDIR), Path.home() / ".navig" / _GLOBAL_PLAN_SUBDIR]:
+    for directory in [Path(_PLAN_SUBDIR), config_dir() / _GLOBAL_PLAN_SUBDIR]:
         candidate = directory / (slug + _PLAN_EXTENSION)
         if candidate.exists():
             return candidate
@@ -233,7 +234,7 @@ def _resolve_plan_path(slug: str) -> Path | None:
 
 def _load_all_plans() -> list[dict]:
     plans: list[dict] = []
-    for directory in [Path(_PLAN_SUBDIR), Path.home() / ".navig" / _GLOBAL_PLAN_SUBDIR]:
+    for directory in [Path(_PLAN_SUBDIR), config_dir() / _GLOBAL_PLAN_SUBDIR]:
         if not directory.exists():
             continue
         for p in sorted(directory.glob(f"*{_PLAN_EXTENSION}")):

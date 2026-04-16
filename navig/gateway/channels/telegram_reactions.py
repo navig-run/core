@@ -208,7 +208,9 @@ class TelegramReactionsMixin:
                 import time
                 from pathlib import Path
 
-                wiki_inbox = Path.home() / ".navig" / "wiki" / "inbox"
+                from navig.platform.paths import config_dir as _config_dir
+
+                wiki_inbox = _config_dir() / "wiki" / "inbox"
                 wiki_inbox.mkdir(parents=True, exist_ok=True)
                 ts = int(time.time())
                 note_path = wiki_inbox / f"reaction_bookmark_{ts}.md"
