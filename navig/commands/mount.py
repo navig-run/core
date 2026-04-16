@@ -389,7 +389,9 @@ def cmd_sync(
         return
 
     script_path.parent.mkdir(parents=True, exist_ok=True)
-    script_path.write_text(script_content, encoding="utf-8")
+    from navig.core.yaml_io import atomic_write_text
+
+    atomic_write_text(script_path, script_content)
     typer.secho(f"\n✓ Script written: {script_path}", fg=typer.colors.GREEN)
 
     if dead:

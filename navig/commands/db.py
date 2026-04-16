@@ -867,7 +867,9 @@ def db_dump_cmd(
     if success and stdout:
         # Save to local file
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(stdout, encoding="utf-8")
+        from navig.core.yaml_io import atomic_write_text
+
+        atomic_write_text(output, stdout)
         size_kb = output.stat().st_size / 1024
         ch.success(f"✓ Backup saved: {output}")
         ch.dim(f"  Size: {size_kb:.1f} KB")

@@ -1559,8 +1559,10 @@ def agent_soul(
 
         # Copy from default
         if default_soul.exists():
+            from navig.core.yaml_io import atomic_write_text
+
             content = default_soul.read_text(encoding="utf-8")
-            user_soul.write_text(content, encoding="utf-8")
+            atomic_write_text(user_soul, content)
             ch.success(f"Created: {user_soul}")
             ch.info("Edit this file to customize your agent's personality")
         else:
@@ -1593,7 +1595,9 @@ NAVIG stands for "No Admin Visible In Graveyard" — I keep your systems alive a
 2. Safety: Destructive actions require confirmation
 3. Transparency: I explain what I'm doing
 """
-            user_soul.write_text(template, encoding="utf-8")
+            from navig.core.yaml_io import atomic_write_text
+
+            atomic_write_text(user_soul, template)
             ch.success(f"Created: {user_soul}")
             ch.info("Edit this file to customize your agent's personality")
 
@@ -1606,8 +1610,10 @@ NAVIG stands for "No Admin Visible In Graveyard" — I keep your systems alive a
             ch.info("Creating user SOUL.md first...")
             user_soul.parent.mkdir(parents=True, exist_ok=True)
             if default_soul.exists():
+                from navig.core.yaml_io import atomic_write_text
+
                 content = default_soul.read_text(encoding="utf-8")
-                user_soul.write_text(content, encoding="utf-8")
+                atomic_write_text(user_soul, content)
             else:
                 ch.error("No default SOUL.md template found")
                 raise typer.Exit(1)

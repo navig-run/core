@@ -105,7 +105,9 @@ def _run_import(
 
     payload = engine.export_json(results)
     if output:
-        Path(output).write_text(payload, encoding="utf-8")
+        from navig.core.yaml_io import atomic_write_text
+
+        atomic_write_text(Path(output), payload)
         ch.success(f"Wrote import output: {output}")
 
     if persist_bookmarks:

@@ -512,8 +512,10 @@ def install_schemas(
 
     host_dst = target_dir / "navig-host.schema.json"
     app_dst = target_dir / "navig-app.schema.json"
-    host_dst.write_text(host_src.read_text(encoding="utf-8"), encoding="utf-8")
-    app_dst.write_text(app_src.read_text(encoding="utf-8"), encoding="utf-8")
+    from navig.core.yaml_io import atomic_write_text
+
+    atomic_write_text(host_dst, host_src.read_text(encoding="utf-8"))
+    atomic_write_text(app_dst, app_src.read_text(encoding="utf-8"))
 
     vscode_settings_written = False
     settings_path = Path.cwd() / ".vscode" / "settings.json"

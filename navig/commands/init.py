@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from navig import console_helper as ch
-from navig.core.yaml_io import atomic_write_yaml
+from navig.core.yaml_io import atomic_write_text, atomic_write_yaml
 from navig.platform.paths import config_dir, onboarding_json_path
 
 _CHAT_ONBOARDING_CANONICAL_STEPS: tuple[tuple[str, str, str], ...] = (
@@ -986,7 +986,7 @@ def mark_chat_onboarding_step_completed(step_id: str, navig_dir: Path | None = N
     payload["steps"] = steps
     try:
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
-        artifact_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        atomic_write_text(artifact_path, json.dumps(payload, indent=2))
         return True
     except OSError:
         return False
@@ -1011,7 +1011,7 @@ def write_chat_onboarding_handoff_state(
             "steps": get_chat_onboarding_step_progress(navig_dir),
             "created_at": datetime.now().isoformat() + "Z",  # utcnow() deprecated in Py3.12+
         }
-        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        atomic_write_text(path, json.dumps(payload, indent=2))
     except Exception:
         pass  # best-effort: handoff state file unwritable; non-critical
 
@@ -1028,7 +1028,7 @@ def consume_chat_onboarding_handoff_state(
             return None
         payload["pending"] = False
         payload["consumed_at"] = datetime.now().isoformat() + "Z"  # utcnow() deprecated in Py3.12+
-        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        atomic_write_text(path, json.dumps(payload, indent=2))
         return payload
     except Exception:
         return None

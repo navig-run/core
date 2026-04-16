@@ -166,7 +166,9 @@ For example:
 - Prefix code blocks with the language.
 """
     try:
-        target_file.write_text(template, encoding="utf-8")
+        from navig.core.yaml_io import atomic_write_text
+
+        atomic_write_text(target_file, template)
         ch.success(f"Created style file: {target_file}")
         ch.dim("  Edit it, then run: navig output-style use " + name)
     except OSError as exc:
