@@ -23,6 +23,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Any
 
+from navig.core.yaml_io import atomic_write_text as _atomic_write_text
 from navig.tools.registry import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -175,8 +176,7 @@ class MemoryStore:
                 }
                 for k, e in self._store.items()
             }
-            self._persist_path.parent.mkdir(parents=True, exist_ok=True)  # type: ignore[union-attr]
-            self._persist_path.write_text(json.dumps(data, indent=2, default=str))  # type: ignore[union-attr]
+            _atomic_write_text(self._persist_path, json.dumps(data, indent=2, default=str))  # type: ignore[union-attr]
         except Exception as exc:
             logger.warning("MemoryStore: failed to persist: %s", exc)
 

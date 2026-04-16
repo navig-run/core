@@ -17,6 +17,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from navig.core.yaml_io import atomic_write_text as _atomic_write_text
 from navig.plans.frontmatter import (
     FRONTMATTER_RE as _FRONTMATTER_RE,
 )
@@ -259,7 +260,7 @@ class CurrentPhaseManager:
         new_content = _render_frontmatter(fm) + body
 
         try:
-            path.write_text(new_content, encoding="utf-8")
+            _atomic_write_text(path, new_content)
         except OSError:
             logger.exception("Failed to update CURRENT_PHASE.md")
             return None

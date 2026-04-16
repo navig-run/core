@@ -8,39 +8,17 @@ across 9+ modules in this package.
 from __future__ import annotations
 
 import logging
-import os
-import sys
-import tempfile
-import time
 from pathlib import Path
 
-from navig.core.yaml_io import ATOMIC_REPLACE_BACKOFF_BASE_SECONDS, ATOMIC_REPLACE_RETRIES
+from navig.core.yaml_io import atomic_write_text as _atomic_write_text_impl
 
 _logger = logging.getLogger("navig.memory")
 
 
 def _atomic_write_text(path: Path, content: str) -> None:
-    """Write text to a file atomically using temp-file + replace."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".tmp_snapshot_", suffix=".jsonl")
-    tmp_path = Path(tmp_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(content)
-        for attempt in range(ATOMIC_REPLACE_RETRIES):
-            try:
-                os.replace(tmp_path, path)
-                break
-            except PermissionError:
-                if attempt == (ATOMIC_REPLACE_RETRIES - 1) or sys.platform != "win32":
-                    raise
-                time.sleep(ATOMIC_REPLACE_BACKOFF_BASE_SECONDS * (attempt + 1))
-    except Exception:
-        try:
-            tmp_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
+    """Write text to *path* atomically.  Delegates to the canonical
+    :func:`navig.core.yaml_io.atomic_write_text` implementation."""
+    _atomic_write_text_impl(path, content)
 
 
 def _debug_log(message: str) -> None:

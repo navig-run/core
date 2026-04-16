@@ -12,6 +12,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from navig.core.yaml_io import atomic_write_text as _atomic_write_text
 from navig.debug_logger import get_debug_logger
 
 logger = get_debug_logger()
@@ -465,7 +466,7 @@ class TaskQueue:
                 "tasks": {tid: t.to_dict() for tid, t in self._tasks.items()},
                 "completed": list(self._completed),
             }
-            self._persist_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            _atomic_write_text(self._persist_path, json.dumps(data, indent=2))
         except OSError as exc:
             logger.error("Failed to persist task queue: %s", exc)
 

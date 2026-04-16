@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from navig.core.yaml_io import atomic_write_text as _atomic_write_text
 from navig.platform.paths import cache_dir as _cache_dir
 
 
@@ -53,7 +54,7 @@ class UpdateHistory:
         # Keep the most recent N entries
         if len(existing) > self._keep:
             existing = existing[-self._keep :]
-        self._path.write_text("\n".join(existing) + "\n", encoding="utf-8")
+        _atomic_write_text(self._path, "\n".join(existing) + "\n")
 
     # ------------------------------------------------------------------
     # Read

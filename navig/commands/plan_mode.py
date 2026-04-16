@@ -33,6 +33,7 @@ from typing import Optional
 import typer
 
 from navig.console_helper import get_console
+from navig.core.yaml_io import atomic_write_text as _atomic_write_text
 
 app = typer.Typer(help="AI-guided planning mode — draft, review, and execute plans", no_args_is_help=True)
 console = get_console()
@@ -262,7 +263,7 @@ def _update_plan_status(plan_path: Path, status: str) -> None:
     try:
         content = plan_path.read_text(encoding="utf-8")
         content = re.sub(r"^(status:\s*).*$", rf"\g<1>{status}", content, flags=re.MULTILINE)
-        plan_path.write_text(content, encoding="utf-8")
+        _atomic_write_text(plan_path, content)
     except Exception:  # noqa: BLE001
         pass
 
@@ -347,7 +348,7 @@ def _run_plan_wizard(goal: str, effort: str | None, skip_interview: bool) -> Non
         ---
 
         """)
-    plan_path.write_text(front + plan_md, encoding="utf-8")
+    _atomic_write_text(plan_path, front + plan_md)
 
     ch.success(f"Plan saved → {plan_path}")
     console.print(f"\n  Run it with: [bold]navig plan run {final_slug}[/bold]")

@@ -23,6 +23,9 @@ from pathlib import Path
 from typing import Any
 
 from navig import console_helper as ch
+
+# Maximum PIN entry attempts before access is denied
+_MAX_PIN_ATTEMPTS = 3
 from navig.core.yaml_io import safe_load_yaml
 from navig.platform import paths
 
@@ -234,7 +237,7 @@ def prompt_pin(purpose: str = "switching to a privileged mode") -> bool:
     import getpass
 
     ch.info(f"\n🔐  PIN required for {purpose}.")
-    for attempt in range(3):
+    for attempt in range(_MAX_PIN_ATTEMPTS):
         try:
             pin = getpass.getpass("   Enter 4-digit PIN: ")
         except (KeyboardInterrupt, EOFError):
@@ -242,7 +245,7 @@ def prompt_pin(purpose: str = "switching to a privileged mode") -> bool:
             return False
         if verify_pin(pin):
             return True
-        remaining = 2 - attempt
+        remaining = _MAX_PIN_ATTEMPTS - 1 - attempt
         if remaining > 0:
             ch.warning(f"   ✗ Wrong PIN. {remaining} attempt(s) remaining.")
         else:
