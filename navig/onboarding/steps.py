@@ -1,4 +1,4 @@
-﻿"""
+"""
 Step registry — two-phase onboarding.
 
 Phase 1 — bootstrap (non-interactive, idempotent, safe in CI/automation):

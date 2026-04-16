@@ -1,4 +1,4 @@
-﻿"""Advanced Database Operation Commands - SECURE VERSION"""
+"""Advanced Database Operation Commands - SECURE VERSION"""
 
 import json
 import os

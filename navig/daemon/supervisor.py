@@ -1,4 +1,4 @@
-﻿"""
+"""
 NAVIG Daemon Supervisor
 
 A lightweight process supervisor that keeps NAVIG subsystems alive:

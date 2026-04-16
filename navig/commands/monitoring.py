@@ -1,4 +1,4 @@
-﻿"""
+"""
 Resource Monitoring and Health Check Module
 
 Provides comprehensive server monitoring including:
