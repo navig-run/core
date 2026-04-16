@@ -10,6 +10,7 @@ import logging
 import os
 import platform
 import subprocess
+import inspect
 from pathlib import Path
 from typing import Any
 
@@ -198,7 +199,36 @@ def ask_ai(question: str, model: str | None, options: dict[str, Any]):
     # Get AI response
     try:
         effort = (options or {}).get("effort")
-        response = ai.ask(question, context, model_override=model, effort=effort)
+
+        # Backward compatibility: some test doubles/legacy assistant adapters
+        # still expose ask(question, context, model_override=None) and reject
+        # unknown kwargs. Prefer passing effort when supported, but retry
+        # without it on signature mismatch.
+        ask_fn = ai.ask
+        try:
+            ask_sig = inspect.signature(ask_fn)
+            supports_effort = (
+                "effort" in ask_sig.parameters
+                or any(
+                    p.kind == inspect.Parameter.VAR_KEYWORD
+                    for p in ask_sig.parameters.values()
+                )
+            )
+        except (TypeError, ValueError):
+            supports_effort = True
+
+        if supports_effort:
+            try:
+                response = ask_fn(question, context, model_override=model, effort=effort)
+            except TypeError as exc:
+                # Conservative fallback only for kwarg/signature mismatches.
+                _msg = str(exc)
+                if "unexpected keyword" in _msg or "positional" in _msg:
+                    response = ask_fn(question, context, model_override=model)
+                else:
+                    raise
+        else:
+            response = ask_fn(question, context, model_override=model)
 
         # Render as markdown using console_helper
         ch.print_markdown(response)
