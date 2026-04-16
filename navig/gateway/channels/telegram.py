@@ -20,6 +20,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from navig.providers.bridge_grid_reader import (
+    BRIDGE_DEFAULT_PORT,  # noqa: F401  # re-exported; bridge port constant
+)
+
 # Lazy imports
 aiohttp = None
 try:
@@ -172,11 +176,12 @@ _TICKER_HOLD_INTERVAL_SEC: float = 10.0
 # Appended to REASON-mode LLM prompts so the model returns contextual explore
 # questions inline.  Stripped from display; surfaced as inline keyboard buttons.
 _EXPLORE_SUFFIX: str = (
-    "\n\nAt the very end of your response, on a NEW LINE, write EXACTLY this line "
-    "(and nothing else after it):\n"
-    "EXPLORE_Q: <question 1> | <question 2> | <question 3> | <question 4>\n"
-    "Write 2\u20134 short (\u22647 words each) natural follow-up questions the user "
-    "would logically want next. No preamble\u2014just that one line."
+    "\n\n\u26a0\ufe0f MANDATORY \u2014 your response MUST end with this line, "
+    "formatted exactly as shown (replace the placeholders):\n"
+    "EXPLORE_Q: [question 1] | [question 2] | [question 3] | [question 4]\n"
+    "Requirements: exactly 4 follow-up questions, each \u22647 words, "
+    "separated by ` | `, no period at end, no text after this line. "
+    "Omitting this line or writing fewer than 4 questions is an error."
 )
 
 

@@ -150,6 +150,7 @@ def test_wizard_save_config(wizard, mock_print):
         patch("pathlib.Path.exists", return_value=True),
         patch("builtins.open"),
         patch("os.chmod"),
+        patch("navig.core.yaml_io.atomic_write_yaml"),  # mock atomic write; dir doesn't exist on disk
     ):
         wizard.config = {"new": True}
         wizard._save_config()
