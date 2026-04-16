@@ -511,8 +511,8 @@ class ResponseKeyboardBuilder:
                     ai_response,
                 ),
                 self._make_button(
-                    "🔄 Перефраз" if is_ru else "🔄 Rephrase",
-                    "rephrase",
+                    "� Новые идеи" if is_ru else "🔁 Fresh Ideas",
+                    "new_ideas",
                     msg_hash,
                     user_message,
                     ai_response,
@@ -589,6 +589,17 @@ _REPHRASE_PROMPT: str = (
     "Rephrase the answer using a different structure, tone, or level of detail "
     "to make the information clearer or more engaging."
 )
+# Prompt used by the 🔁 Fresh Ideas button — generates new explore suggestions
+# (questions AND actions) without touching the response text.
+_NEW_IDEAS_PROMPT: str = (
+    'The user asked: "{user_message}"\n\n'
+    'You answered:\n"""\n{ai_response}\n"""\n\n'
+    "Generate 5 fresh follow-up ideas — a creative mix of questions and short action "
+    "prompts (e.g. 'List all films by this actor', 'Compare with similar works', "
+    "'Show timeline of events'). Each item must be ≤8 words. "
+    "Reply with ONLY a single line in this exact format, no other text:\n"
+    "EXPLORE_Q: [item 1] | [item 2] | [item 3] | [item 4] | [item 5]"
+)
 # Matches the marker + the follow-up question appended by the LLM.
 _FOLLOWUP_EXTRACT_RE = re.compile(
     r"\n+" + re.escape(_DIG_DEEPER_FOLLOWUP_MARKER) + r"\s*(.+)$",
@@ -610,12 +621,15 @@ _EXPLORE_Q_RE = re.compile(
     re.IGNORECASE,
 )
 _EXPLORE_Q_MIN: int = 2  # always show at least this many contextual follow-ups
-_EXPLORE_Q_MAX: int = 4  # max explore buttons rendered per response
+_EXPLORE_Q_MAX: int = 5  # max explore buttons rendered per response
 _EXPLORE_FALLBACKS: tuple[str, ...] = (
     "Want the key takeaways?",
     "Need a spoiler-free version?",
     "Should I explain it simpler?",
     "Want related recommendations?",
+    "List similar examples",
+    "Show me a quick summary",
+    "What should I know first?",
 )
 
 
@@ -659,6 +673,7 @@ _ACTION_PROMPTS: dict[str, str] = {
     ),
     # Special handlers (no prompt template — handled in CallbackHandler directly)
     "dig_deeper": None,
+    "new_ideas": None,  # 🔁 Fresh Ideas — re-generates explore buttons in-place
     "copy_code": None,
     "approve": None,
     "alternative": None,
@@ -1066,6 +1081,17 @@ class CallbackHandler:
                     chat_id=chat_id,
                     user_id=user_id,
                     cb_key=cb_data,
+                    entry=entry,
+                )
+                return
+
+            # ── Fresh Ideas — regenerate explore buttons in-place (no message edit) ──
+            if action == "new_ideas":
+                await self._handle_new_ideas_callback(
+                    cb_id=cb_id,
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    user_id=user_id,
                     entry=entry,
                 )
                 return
@@ -3182,6 +3208,57 @@ class CallbackHandler:
             )
         except Exception as exc:
             logger.debug("Audio settings refresh failed: %s", exc)
+
+    async def _handle_new_ideas_callback(
+        self,
+        cb_id: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+        entry: "CallbackEntry",
+    ) -> None:
+        """
+        Re-generate the contextual explore buttons (questions + action prompts)
+        and edit only the reply_markup of the original message in-place.
+        The response text is never touched.
+        """
+        await self._answer(cb_id, "💡 Generating fresh ideas…")
+        try:
+            prompt = _NEW_IDEAS_PROMPT.format(
+                user_message=entry.user_message,
+                ai_response=entry.ai_response[:2000],
+            )
+            raw = await self._get_ai_response(prompt, user_id)
+            if not raw:
+                return
+
+            _, new_qs = extract_explore_questions(raw)
+            if not new_qs:
+                # Fallback: try to parse a bare pipe-separated line
+                candidates = [q.strip() for q in raw.split("|") if q.strip()]
+                if candidates:
+                    new_qs = candidates[:_EXPLORE_Q_MAX]
+
+            if not new_qs:
+                return
+
+            # Rebuild the full keyboard (row1 action buttons + new explore rows)
+            builder = ResponseKeyboardBuilder(self.store)
+            new_keyboard = builder.build(
+                ai_response=entry.ai_response,
+                user_message=entry.user_message,
+                message_id=message_id,
+                explore_questions=new_qs,
+            )
+
+            # Edit only the reply_markup — the message text is unchanged
+            edit_markup = getattr(self.channel, "edit_message_reply_markup", None)
+            if edit_markup:
+                await edit_markup(chat_id, message_id, new_keyboard)
+            else:
+                logger.warning("edit_message_reply_markup not available on channel")
+        except Exception as exc:
+            logger.warning("new_ideas callback error: %s", exc)
 
     async def _handle_dig_deeper_callback(
         self,
