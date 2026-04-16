@@ -105,6 +105,6 @@ __all__ = [
 # patch("navig.voice.wake_word.WakeWordEngine.start") works in tests and
 # so callers can do ``from navig.voice import wake_word``.
 try:
-    from navig.voice import wake_word  # noqa: E402  (submodule exposure)
+    from navig.voice import wake_word  # noqa: E402,F401  (submodule exposure re-export)
 except ImportError:  # numpy or other optional dep unavailable
     pass

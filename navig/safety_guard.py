@@ -237,7 +237,7 @@ def classify_action_risk(action: str) -> str:
 def _prompt_confirmation(action: str, pattern: str) -> bool:
     """Prompt the user for YES confirmation on destructive actions."""
     try:
-        from rich.console import Console
+
         from rich.panel import Panel
 
         console = get_console()
