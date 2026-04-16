@@ -24,6 +24,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
+from navig.gateway.channels.telegram_utils import escape_mdv2 as _mdv2_escape
+
 if TYPE_CHECKING:
     from navig.gateway.channels.telegram import TelegramChannel
 
