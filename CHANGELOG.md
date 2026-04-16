@@ -10,6 +10,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Run: git log v2.7.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
 
 ### Fixed
+- **Fix 11 → 5 hardcoded `Path.home() / ".navig"` paths** in `cost_tracker.py`, `file_history.py`, `memory/session_memory.py`, `hooks/registry.py`, `permissions/loader.py`: replaced with `config_dir()` from `navig.platform.paths` so `NAVIG_CONFIG_DIR` env override and system-service mode are respected everywhere.
 - **Hardened 4 more non-atomic writes** in vault profile, shared-config cache, and space cache files: `vault/core.py` (`active_profile.txt`), `core/shared_config.py` (`active_host.txt`, `active_app.txt`), `commands/space.py` (active-space cache) — all now use `atomic_write_text()` to prevent partial writes on process crash.
 
 ### Added

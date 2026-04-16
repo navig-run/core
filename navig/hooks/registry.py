@@ -31,6 +31,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from navig.platform.paths import config_dir
+
 from .events import HookEvent
 
 logger = logging.getLogger("navig.hooks.registry")
@@ -69,7 +71,7 @@ class HookRegistry:
         global_dir: Path | None = None,
         project_dir: Path | None = None,
     ) -> None:
-        self._global_dir = global_dir or Path.home() / ".navig"
+        self._global_dir = global_dir or config_dir()
         self._project_dir = project_dir or Path(".navig")
         self._definitions: list[HookDefinition] = []
         self._enabled: bool = True

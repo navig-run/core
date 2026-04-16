@@ -29,6 +29,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from navig.platform.paths import config_dir
+
 logger = logging.getLogger("navig.cost_tracker")
 
 # ---------------------------------------------------------------------------
@@ -344,7 +346,7 @@ class SessionCostTracker:
 
             return USER_WORKSPACE_DIR / _HISTORY_FILE_NAME
         except ImportError:
-            return Path.home() / ".navig" / _HISTORY_FILE_NAME
+            return config_dir() / _HISTORY_FILE_NAME
 
     def _rotate(self, path: Path) -> None:
         """Keep only the last ``history_keep`` entries."""

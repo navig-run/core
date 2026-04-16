@@ -34,6 +34,7 @@ import logging
 from pathlib import Path
 
 from navig.core.yaml_io import atomic_write_text
+from navig.platform.paths import config_dir
 
 logger = logging.getLogger("navig.memory.session_memory")
 
@@ -141,7 +142,7 @@ class SessionMemoryExtractor:
             cfg = get_config_manager()
             base = Path(cfg.global_config_dir) / _NOTES_DIR_NAME
         except Exception:  # noqa: BLE001
-            base = Path.home() / ".navig" / _NOTES_DIR_NAME
+            base = config_dir() / _NOTES_DIR_NAME
         base.mkdir(parents=True, exist_ok=True)
         return base
 

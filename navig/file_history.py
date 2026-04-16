@@ -34,6 +34,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from navig.platform.paths import config_dir
+
 logger = logging.getLogger("navig.file_history")
 
 # ── Module-level constants ────────────────────────────────────────────────────
@@ -213,7 +215,7 @@ class FileHistoryStore:
                 return p
         except Exception:  # noqa: BLE001
             pass
-        root = Path.home() / ".navig" / _DEFAULT_CACHE_DIR_NAME
+        root = config_dir() / _DEFAULT_CACHE_DIR_NAME
         root.mkdir(parents=True, exist_ok=True)
         return root
 
