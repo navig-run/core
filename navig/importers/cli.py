@@ -5,15 +5,11 @@ from pathlib import Path
 
 from navig.console_helper import get_console
 
-from .core import UniversalImporter
+from .core import UniversalImporter, flatten_results
 
 
-def _flatten(results: dict[str, list]) -> list[dict]:
-    rows: list[dict] = []
-    for items in results.values():
-        for item in items:
-            rows.append(item.to_dict())
-    return rows
+def _flatten(results):  # backwards-compat alias (used in tests / scripts)
+    return flatten_results(results)
 
 
 def _print_plain_table(rows: list[dict]) -> None:

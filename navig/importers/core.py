@@ -111,3 +111,16 @@ class UniversalImporter:
             for source, items in results.items()
         }
         return json.dumps(payload, indent=2, ensure_ascii=False)
+
+
+def flatten_results(results: dict[str, list[ImportedItem]]) -> list[dict]:
+    """Flatten all import results into a single list of plain dicts.
+
+    Convenience helper shared by the argparse CLI (``importers/cli.py``) and the
+    Typer command (``commands/import_cmd.py``).
+    """
+    rows: list[dict] = []
+    for items in results.values():
+        for item in items:
+            rows.append(item.to_dict())
+    return rows

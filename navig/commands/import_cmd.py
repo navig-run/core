@@ -6,6 +6,7 @@ import typer
 
 from navig.console_helper import get_console
 from navig.importers.core import UniversalImporter
+from navig.importers.core import flatten_results as _flatten
 from navig.lazy_loader import lazy_import
 
 ch = lazy_import("navig.console_helper")
@@ -18,14 +19,6 @@ def _table() -> object:
     from rich.table import Table
 
     return Table(title="Import Results")
-
-
-def _flatten(results: dict[str, list]) -> list[dict]:
-    rows: list[dict] = []
-    for source_items in results.values():
-        for item in source_items:
-            rows.append(item.to_dict())
-    return rows
 
 
 def _persist_bookmarks(results: dict[str, list]) -> tuple[int, int]:
