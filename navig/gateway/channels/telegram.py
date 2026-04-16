@@ -159,6 +159,7 @@ logger = logging.getLogger(__name__)
 _API_CALL_MAX_RETRIES: int = 3       # Telegram API: max retries on HTTP 429
 _REMINDER_MAX_RETRIES: int = 3       # Reminder poller: max delivery attempts
 _REMINDER_RETRY_DELAY_SEC: int = 60  # Reminder poller: backoff seconds per retry
+_TALK_SLOW_LOG_MS: int = 2500        # TALK mode: warn when end-to-end latency exceeds this
 
 # ---------------------------------------------------------------------------
 # Reasoning-mode live progress phases
@@ -1738,6 +1739,15 @@ class TelegramChannel:
         entity_signal: bool = False,
     ) -> None:
         """TALK mode вЂ” direct reply, no decorations, в‰¤3 lines, в‰¤2s."""
+        turn_t0 = time.monotonic()
+
+        # TALK mode should stay low-latency by default. If caller didn't set an
+        # explicit tier override, steer to the small tier and mark the request
+        # latency-sensitive so the UnifiedRouter can prefer faster providers.
+        if not metadata.get("tier_override"):
+            metadata["tier_override"] = "small"
+        metadata.setdefault("latency_sensitive", True)
+
         # Universal safety net: even short messages that slipped past the
         # classifier may reference a named entity.  Inject an honesty hint
         # so the LLM never invents details it cannot verify.
@@ -1752,6 +1762,7 @@ class TelegramChannel:
                 ),
             }
         typing_task = asyncio.create_task(self._keep_typing(chat_id))
+        llm_t0 = time.monotonic()
         try:
             response = await self.on_message(
                 channel="telegram",
@@ -1765,6 +1776,8 @@ class TelegramChannel:
                 await typing_task
             except asyncio.CancelledError:
                 pass  # task cancelled; expected during shutdown
+
+        llm_ms = int((time.monotonic() - llm_t0) * 1000)
 
         if response:
             self._persist_updated_language(metadata, chat_id, user_id, session_manager, is_group)
@@ -1784,6 +1797,17 @@ class TelegramChannel:
                 is_group=is_group,
                 extra_krow=debug_krow,
             )
+
+            total_ms = int((time.monotonic() - turn_t0) * 1000)
+            if total_ms >= _TALK_SLOW_LOG_MS:
+                logger.warning(
+                    "Telegram TALK slow: chat_id=%s user_id=%s llm_ms=%s total_ms=%s text=%r",
+                    chat_id,
+                    user_id,
+                    llm_ms,
+                    total_ms,
+                    text[:120],
+                )
 
             await self._maybe_auto_continue(
                 chat_id=chat_id,

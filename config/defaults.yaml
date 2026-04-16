@@ -58,6 +58,53 @@ gateway:
   # Seconds between typing-indicator heartbeats (Telegram clears after 5s)
   # Kept for backward compat — canonical location is telegram.typing_interval_seconds
   typing_interval_seconds: 4
+  health_monitor:
+    # Seconds between liveness checks for each active channel
+    check_interval_s: 300
+    # Seconds of silence before a channel is considered stale
+    stale_threshold_s: 600
+    # Grace period after channel start before checks activate
+    startup_grace_s: 90
+    # Maximum automatic restarts allowed in a rolling 60-minute window
+    max_restarts_per_hour: 10
+    # Stable poll cycles required before the restart counter resets
+    cooldown_cycles: 2
+  approval:
+    # Seconds before an unanswered approval request auto-rejects
+    timeout_s: 120
+    # Telegram chat_id for the admin who receives approval DMs (empty = disabled)
+    admin_chat_id: ""
+  dedupe:
+    # Max in-memory entries in the update idempotency LRU
+    memory_max: 1000
+    # Max on-disk entries before pruning
+    file_max: 5000
+  hooks:
+    # Bearer auth token for incoming webhooks (required — boot fails if empty)
+    auth_token: ""
+    # URL prefix for all webhook routes (must start with '/' and not be '/')
+    base_path: "/hooks"
+    # Maximum request body size in bytes before the server rejects with 413
+    max_body_bytes: 262144
+    # Maximum length of the X-Idempotency-Key header value
+    idempotency_key_max_len: 256
+    # Allowlist of session-prefix strings; empty = all prefixes accepted
+    session_prefix_allowlist: []
+
+# Flow execution (navig flow run)
+flow:
+  # Where to route failure alerts (separate from the triggering session)
+  # Format: "<kind>:<id>" e.g. "channel:alerts" or "session:chat_42"
+  failure_destination: ""
+  # Maximum number of per-flow run log entries before pruning (JSONL)
+  run_log_max_entries: 100
+
+# Per-chat conversation memory
+memory:
+  # Days of history to keep as raw transcript before compaction
+  compact_after_days: 7
+  # Max tokens injected into the active prompt from memory
+  max_context_tokens: 4000
 
 # Telegram bot  [configure with: navig init — stores token in vault]
 messaging:
