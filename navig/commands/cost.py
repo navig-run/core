@@ -10,7 +10,7 @@ Commands:
 from __future__ import annotations
 
 import typer
-from typing_extensions import Annotated
+from typing import Annotated
 
 from navig import console_helper as ch
 

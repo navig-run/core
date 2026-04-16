@@ -28,7 +28,6 @@ Usage::
 from __future__ import annotations
 
 import abc
-from typing import Iterator, Optional, Sequence
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +66,7 @@ def utf16_safe_split(
     text: str,
     *,
     max_utf16: int = 4096,
-    max_chars: Optional[int] = None,
+    max_chars: int | None = None,
     prefer_newline: bool = True,
 ) -> list[str]:
     """Split *text* into chunks that fit within *max_utf16* UTF-16 code units.
@@ -164,8 +163,8 @@ class BasePlatformAdapter(abc.ABC):
         chat_id: str,
         text: str,
         *,
-        parse_mode: Optional[str] = None,
-        reply_to: Optional[str] = None,
+        parse_mode: str | None = None,
+        reply_to: str | None = None,
     ) -> str:
         """Send *text* to *chat_id* and return the delivered message id.
 
@@ -180,7 +179,7 @@ class BasePlatformAdapter(abc.ABC):
         message_id: str,
         new_text: str,
         *,
-        parse_mode: Optional[str] = None,
+        parse_mode: str | None = None,
     ) -> bool:
         """Edit an existing message.  Returns ``True`` on success."""
 

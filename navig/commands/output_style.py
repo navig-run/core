@@ -14,7 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
-from typing_extensions import Annotated
+from typing import Annotated
 
 from navig import console_helper as ch
 from navig.platform.paths import config_dir

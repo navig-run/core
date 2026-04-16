@@ -4,7 +4,7 @@ import json
 import os
 import re
 import subprocess
-from typing import Any, Dict
+from typing import Any
 
 from rich.table import Table
 
@@ -285,7 +285,7 @@ def optimize_table_cmd(table: str, options: dict[str, Any]):
                 pass  # Cleanup - file deletion may fail
 
 
-def repair_table_cmd(table: str, options: Dict[str, Any]):
+def repair_table_cmd(table: str, options: dict[str, Any]):
     """Repair database table.
 
     SECURITY:
@@ -378,7 +378,7 @@ def repair_table_cmd(table: str, options: Dict[str, Any]):
                 pass  # Cleanup - file deletion may fail
 
 
-def list_users_cmd(options: Dict[str, Any]):
+def list_users_cmd(options: dict[str, Any]):
     """List database users.
 
     SECURITY: No SQL injection risk - query has no user input.
@@ -466,7 +466,7 @@ def list_users_cmd(options: Dict[str, Any]):
                 pass  # Cleanup - file deletion may fail
 
 
-def list_tables_cmd(database: str, options: Dict[str, Any]):
+def list_tables_cmd(database: str, options: dict[str, Any]):
     """List tables in a database.
 
     SECURITY:

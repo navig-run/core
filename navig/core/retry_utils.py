@@ -33,7 +33,7 @@ import random
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Optional, Tuple, Type
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +130,7 @@ class RetryConfig:
     base_delay: float = 5.0
     max_delay: float = 120.0
     jitter_ratio: float = 0.5
-    retryable_exceptions: Tuple[Type[BaseException], ...] = field(
+    retryable_exceptions: tuple[type[BaseException], ...] = field(
         default_factory=lambda: (Exception,)
     )
     reraise_last: bool = True
@@ -141,9 +141,9 @@ class RetryConfig:
 # ---------------------------------------------------------------------------
 
 def async_retry(
-    config: Optional[RetryConfig] = None,
+    config: RetryConfig | None = None,
     *,
-    on_retry: Optional[Callable[[int, BaseException, float], None]] = None,
+    on_retry: Callable[[int, BaseException, float], None] | None = None,
 ) -> Callable:
     """Decorator that retries an ``async`` function according to *config*.
 
@@ -166,7 +166,7 @@ def async_retry(
     def decorator(fn: Callable) -> Callable:
         @functools.wraps(fn)
         async def wrapper(*args, **kwargs):
-            last_exc: Optional[BaseException] = None
+            last_exc: BaseException | None = None
             for attempt in range(cfg.max_attempts):
                 try:
                     return await fn(*args, **kwargs)
@@ -212,7 +212,7 @@ def async_retry(
 def retry_sync(
     fn: Callable,
     *args,
-    config: Optional[RetryConfig] = None,
+    config: RetryConfig | None = None,
     **kwargs,
 ):
     """Call *fn* with *args*/*kwargs*, retrying according to *config*.
@@ -222,7 +222,7 @@ def retry_sync(
         result = retry_sync(requests.get, url, timeout=5)
     """
     cfg = config or RetryConfig()
-    last_exc: Optional[BaseException] = None
+    last_exc: BaseException | None = None
 
     for attempt in range(cfg.max_attempts):
         try:

@@ -4,8 +4,8 @@ import os
 import socket
 import sys
 from collections import Counter
-from pathlib import Path
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING
+from collections.abc import Sequence
 
 from navig.platform.paths import config_dir
 

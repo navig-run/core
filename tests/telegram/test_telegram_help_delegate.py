@@ -62,3 +62,12 @@ def test_telegram_channel_has_nl_helper_delegates():
     )
     missing = [name for name in required if not hasattr(TelegramChannel, name)]
     assert not missing, f"TelegramChannel missing NL delegates: {missing}"
+
+
+def test_telegram_channel_delegated_nl_space_intent_works_without_nl_attrs():
+    """Delegated NL intent parsing must work on TelegramChannel without _NL_* attrs."""
+    channel = TelegramChannel(bot_token="123456:ABCDEF")
+    intent, space = channel._infer_nl_space_intent("switch to finance space")
+
+    assert intent == "space"
+    assert space == "finance"

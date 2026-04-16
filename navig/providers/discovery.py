@@ -11,13 +11,12 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any
 
 from navig.providers.capabilities import (
     Capability,
     capabilities_label,
     get_model_capabilities,
-    has_capability,
     list_vision_models,
 )
 from navig.providers.registry import (

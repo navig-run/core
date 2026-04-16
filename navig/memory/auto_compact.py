@@ -23,8 +23,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
-from typing import Sequence
+from dataclasses import dataclass
+from collections.abc import Sequence
 
 logger = logging.getLogger("navig.memory.auto_compact")
 
