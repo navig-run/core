@@ -1909,7 +1909,7 @@ class TelegramChannel:
             )
             await self._send_response(
                 chat_id,
-                f"в†ЄпёЏ {next_response}",
+                f"\u21AA\ufe0f {next_response}",
                 followup_prompt,
                 user_id=user_id,
                 is_group=is_group,
@@ -3415,6 +3415,8 @@ class TelegramChannel:
     async def _handle_spaces(
         self,
         chat_id: int,
+        user_id: int = 0,
+        text: str = "",
         message_id: int | None = None,
     ) -> None:
         """Delegate to canonical spaces screen handler used by menu navigation."""
@@ -3423,6 +3425,8 @@ class TelegramChannel:
         await TelegramCommandsMixin._handle_spaces(
             self,
             chat_id,
+            user_id=user_id,
+            text=text,
             message_id=message_id,
         )
 
@@ -3734,12 +3738,13 @@ class TelegramChannel:
         chat_id: int,
         user_id: int = 0,
         message_id: int | None = None,
+        text: str = "",
     ) -> None:
         """Delegate vision provider picker (pu_vision / vis_* callbacks)."""
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
         await TelegramCommandsMixin._handle_provider_vision(
-            self, chat_id, user_id, message_id=message_id
+            self, chat_id, user_id, message_id=message_id, text=text
         )
 
     async def _handle_provider_show(
@@ -3747,12 +3752,13 @@ class TelegramChannel:
         chat_id: int,
         user_id: int = 0,
         message_id: int | None = None,
+        text: str = "",
     ) -> None:
         """Delegate routing state view (pu_show callback)."""
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
         await TelegramCommandsMixin._handle_provider_show(
-            self, chat_id, user_id, message_id=message_id
+            self, chat_id, user_id, message_id=message_id, text=text
         )
 
     async def _handle_provider_reset(
@@ -3760,12 +3766,13 @@ class TelegramChannel:
         chat_id: int,
         user_id: int = 0,
         message_id: int | None = None,
+        text: str = "",
     ) -> None:
         """Delegate session override reset (pu_reset_session callback)."""
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
         await TelegramCommandsMixin._handle_provider_reset(
-            self, chat_id, user_id, message_id=message_id
+            self, chat_id, user_id, message_id=message_id, text=text
         )
 
     # в”Ђв”Ђ Slash command handlers missing from initial delegation pass в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
@@ -3998,6 +4005,19 @@ class TelegramChannel:
             metadata=metadata,
         )
 
+    @staticmethod
+    def _sniff_reminder_intent(text: str) -> str | None:
+        """Delegate multilingual reminder-intent sniffing used by NL flow."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._sniff_reminder_intent(text)
+
+    async def _handle_remindme(self, chat_id: int, user_id: int, text: str) -> None:
+        """Delegate /remindme execution used by NL short-circuit."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_remindme(self, chat_id, user_id, text)
+
     def _infer_nl_space_intent(self, text: str) -> tuple[str | None, str | None]:
         """Delegate natural-language space/intake intent inference."""
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
@@ -4109,105 +4129,6 @@ class TelegramChannel:
             delay_seconds=delay_seconds,
         )
 
-    @staticmethod
-    def _nl_phrase_aliases() -> dict[str, tuple[str, ...]]:
-        """Delegate NL phrase aliases map."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        return TelegramCommandsMixin._nl_phrase_aliases()
-
-    def _extract_nl_args(self, raw_text: str, phrase: str) -> str:
-        """Delegate NL argument extraction from matched phrase."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        return TelegramCommandsMixin._extract_nl_args(self, raw_text, phrase)
-
-    def _resolve_nl_command_intent(self, text: str) -> dict[str, Any] | None:
-        """Delegate NL command intent resolution."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        return TelegramCommandsMixin._resolve_nl_command_intent(self, text)
-
-    def _suggest_nl_commands(self, text: str, limit: int = 3) -> list[dict[str, str]]:
-        """Delegate NL command suggestions for ambiguous intents."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        return TelegramCommandsMixin._suggest_nl_commands(self, text, limit=limit)
-
-    def _nl_command_keyboard(
-        self,
-        commands: list[dict[str, Any]],
-        *,
-        limit: int = 3,
-    ) -> list[list[dict[str, str]]]:
-        """Delegate inline keyboard builder for NL command picks."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        return TelegramCommandsMixin._nl_command_keyboard(self, commands, limit=limit)
-
-    async def _queue_nl_risky_command_confirmation(
-        self,
-        chat_id: int,
-        user_id: int,
-        command: str,
-        args: str,
-    ) -> None:
-        """Delegate NL risky-command confirmation queueing."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        await TelegramCommandsMixin._queue_nl_risky_command_confirmation(
-            self,
-            chat_id,
-            user_id,
-            command,
-            args,
-        )
-
-    async def _execute_nl_registry_command(
-        self,
-        chat_id: int,
-        user_id: int,
-        command: str,
-        args: str,
-        text: str,
-        *,
-        is_group: bool = False,
-        username: str = "",
-        metadata: dict[str, Any] | None = None,
-    ) -> None:
-        """Delegate NL->registry command executor."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        await TelegramCommandsMixin._execute_nl_registry_command(
-            self,
-            chat_id,
-            user_id,
-            command,
-            args,
-            text,
-            is_group=is_group,
-            username=username,
-            metadata=metadata,
-        )
-
-    async def _execute_nl_pending_after_delay(
-        self,
-        chat_id: int,
-        user_id: int,
-        pending_id: str,
-        delay_seconds: int = 3,
-    ) -> None:
-        """Delegate delayed execution for NL pending intents."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        await TelegramCommandsMixin._execute_nl_pending_after_delay(
-            self,
-            chat_id,
-            user_id,
-            pending_id,
-            delay_seconds=delay_seconds,
-        )
-
     # в”Ђв”Ђ Voice toggle handlers (BUGs 16-17: hardcoded slash route, no guard) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
     async def _handle_voiceon_cmd(
@@ -4253,357 +4174,30 @@ class TelegramChannel:
         )
 
     async def _handle_debug(self, chat_id: int) -> None:
-        """Show daemon debug info (/debug)."""
-        import os
-        import sys
+        """Delegate /debug handler to canonical TelegramCommandsMixin."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
-        lines = ["рџ›  <b>Debug</b>\n"]
-        lines.append(f"Python: <code>{html.escape(sys.version.split()[0])}</code>")
-        try:
-            import navig as _navig_pkg
-
-            pkg_file = getattr(_navig_pkg, "__file__", "unknown")
-            pkg_ver = getattr(_navig_pkg, "__version__", "unknown")
-            lines.append(f"navig pkg: <code>{html.escape(str(pkg_file))}</code>")
-            lines.append(f"version: <code>{html.escape(str(pkg_ver))}</code>")
-        except Exception as e:
-            lines.append(f"navig: вќЊ <code>{html.escape(str(e))}</code>")
-        try:
-            from navig.platform import paths as _paths
-            from navig.vault import get_vault
-
-            _vpath = str(_paths.vault_dir())
-            v = get_vault()
-            items = v.list() if hasattr(v, "list") else []
-            count = len(items)
-            lines.append(f"vault: рџџў <code>{count} entries</code> ({html.escape(_vpath)})")
-        except Exception as e:
-            try:
-                from navig.platform import paths as _paths
-
-                _vpath = str(_paths.vault_dir())
-            except Exception:
-                _vpath = "?"
-            lines.append(
-                f"vault: вќЊ <code>{html.escape(str(e))}</code> вЂ” path: <code>{html.escape(_vpath)}</code>"
-            )
-        if HAS_SESSIONS:
-            try:
-                sm = get_session_manager()
-                s_list = sm.list_sessions() if hasattr(sm, "list_sessions") else []
-                lines.append(f"sessions: <code>{len(s_list)} loaded</code>")
-            except Exception:
-                lines.append("sessions: вќЊ")
-        lines.append(f"HAS_VOICE: <code>{HAS_VOICE}</code>")
-        lines.append(f"HAS_KEYBOARDS: <code>{HAS_KEYBOARDS}</code>")
-        lines.append(f"HAS_SESSIONS: <code>{HAS_SESSIONS}</code>")
-        pp = os.environ.get("PYTHONPATH", "(not set)")
-        lines.append(f"PYTHONPATH: <code>{html.escape(pp)}</code>")
-        dg = os.environ.get("DEEPGRAM_KEY") or os.environ.get("DEEPGRAM_API_KEY")
-        if not dg:
-            # Also check vault for deepgram key
-            try:
-                from navig.vault import get_vault
-
-                _v2 = get_vault()
-                if _v2 is not None:
-                    _store = _v2.store()
-                    for _lbl in ("deepgram", "DEEPGRAM_API_KEY", "DEEPGRAM_KEY"):
-                        try:
-                            _item = _store.get(_lbl)
-                            if _item is not None:
-                                dg = "(vault)"
-                                break
-                        except Exception:
-                            pass  # best-effort: vault item unreadable; skip
-            except Exception:
-                pass  # best-effort: vault unavailable; key shown as missing
-        lines.append(f"DEEPGRAM_KEY: <code>{'set' if dg else 'missing'}</code>")
-        await self.send_message(chat_id, "\n".join(lines))
+        await TelegramCommandsMixin._handle_debug(self, chat_id=chat_id)
 
     async def _handle_trace(self, chat_id: int, user_id: int) -> None:
-        """Show recent activity snapshot (/trace).
+        """Delegate /trace handler to canonical TelegramCommandsMixin."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
-        Distinct from /debug: *what happened*, not system state.
-        Covers: LLM bridges В· recent messages В· session state В· daemon warnings В· vault.
-        """
-        import json as _json
-        import os as _os
-        from datetime import datetime as _dt
-        from datetime import timezone as _tz
-
-        from navig.platform.paths import msg_trace_path as _msg_trace_path
-
-        SEP = "в”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓ"
-        now_utc = _dt.now(_tz.utc).strftime("%H:%M UTC")
-        lines: list = [f"рџ”Ќ <b>Recent Trace</b> вЂ” {now_utc}", SEP]
-
-        # в”Ђв”Ђ Active Backend в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
-        # Check Bridge (VS Code MCP) first
-        _bridge_active = False
-        try:
-            import socket as _sock
-
-            from navig.providers.bridge_grid_reader import (
-                BRIDGE_DEFAULT_PORT as _BRIDGE_PORT,
-            )
-
-            _s = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
-            _s.settimeout(0.3)
-            _bridge_active = _s.connect_ex(("127.0.0.1", _BRIDGE_PORT)) == 0
-            _s.close()
-        except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
-
-        lines.append("рџ”Њ <b>Routing</b>")
-        if _bridge_active:
-            lines.append("  рџџў Bridge (VS Code) вЂ” <b>connected</b>")
-        else:
-            lines.append("  вљ« Bridge вЂ” offline (using model router)")
-
-        # Model router slot assignments
-        try:
-            from navig.llm_router import get_llm_router
-
-            llm_router = get_llm_router()
-            _TIER_NAMES = {
-                "small_talk": ("вљЎ", "Small"),
-                "big_tasks": ("рџ§ ", "Big"),
-                "coding": ("рџ’»", "Code"),
-            }
-            if llm_router:
-                for mode_name, (icon, label) in _TIER_NAMES.items():
-                    mc = llm_router.modes.get_mode(mode_name)
-                    if not mc:
-                        continue
-                    provider = getattr(mc, "provider", "?")
-                    model = getattr(mc, "model", "?")
-                    lines.append(
-                        f"  {icon} {label} в†’ <code>{html.escape(str(provider))}:{html.escape(str(model))}</code>"
-                    )
-        except Exception:
-            lines.append("  <i>(model router unavailable)</i>")
-
-        lines.append(SEP)
-
-        # в”Ђв”Ђ Gather session messages в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
-        session_messages: list = []
-        all_sessions_count = 0
-
-        if HAS_SESSIONS:
-            try:
-                sm = get_session_manager()
-                all_sessions_count = len(sm.sessions)
-                sk = f"telegram:user:{user_id}"
-                # Prefer in-memory cache; fall back to disk load
-                raw_session = sm._sessions.get(sk)
-                if raw_session is None and sm._get_session_file(sk).exists():
-                    try:
-                        raw_session = sm.get_session(chat_id, user_id)
-                    except Exception:  # noqa: BLE001
-                        pass  # best-effort; failure is non-critical
-                if raw_session is not None:
-                    session_messages = list(raw_session.messages or [])
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
-
-        # Memory module fallback
-        if not session_messages:
-            try:
-                from navig.agent.memory import get_memory
-
-                mem = get_memory()
-                session_messages = (
-                    mem.get_recent(user_id=str(user_id), limit=8)
-                    if hasattr(mem, "get_recent")
-                    else []
-                )
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
-
-        # msg_trace.jsonl last resort
-        if not session_messages:
-            trace_file = str(_msg_trace_path())
-            if _os.path.exists(trace_file):
-                try:
-                    with open(trace_file, encoding="utf-8") as _f:
-                        for raw in _f.readlines()[-8:]:
-                            try:
-                                entry = _json.loads(raw)
-                                role = entry.get("role") or entry.get("type", "?")
-                                content = entry.get("content") or entry.get("text") or ""
-                                session_messages.append({"role": role, "content": content})
-                            except Exception:  # noqa: BLE001
-                                pass  # best-effort; failure is non-critical
-                except Exception:  # noqa: BLE001
-                    pass  # best-effort; failure is non-critical
-
-        # в”Ђв”Ђ Memory snapshot в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
-        lines.append(
-            f"рџ§  <b>Memory</b> вЂ” {len(session_messages)} msgs В· {all_sessions_count} session(s)"
+        await TelegramCommandsMixin._handle_trace(
+            self,
+            chat_id=chat_id,
+            user_id=user_id,
         )
-        lines.append(SEP)
-
-        # в”Ђв”Ђ Recent messages в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
-        lines.append("рџ’¬ <b>Recent</b>")
-        recent = session_messages[-8:]
-        if recent:
-            for msg in recent:
-                role = msg.get("role", "?")
-                raw_content = str(msg.get("content") or "").replace("\n", " ").strip()
-                preview = (
-                    raw_content
-                    if len(raw_content) <= 64
-                    else raw_content[:64].rsplit(" ", 1)[0] + "вЂ¦"
-                )
-                if not preview:
-                    preview = "<i>(empty)</i>"
-                arrow = "в¬…" if role in ("user", "human") else "вћЎ"
-                actor = "рџ‘¤" if role in ("user", "human") else "рџ¤–"
-                ts_raw = msg.get("timestamp") or msg.get("ts") or ""
-                ts_prefix = ""
-                if ts_raw:
-                    try:
-                        if isinstance(ts_raw, (int, float)):
-                            ts_prefix = _dt.utcfromtimestamp(ts_raw).strftime("%H:%M") + " "
-                        else:
-                            ts_prefix = str(ts_raw)[:5] + " "
-                    except Exception:  # noqa: BLE001
-                        pass  # best-effort; failure is non-critical
-                lines.append(f"  {ts_prefix}{arrow} {actor}: {preview}")
-        else:
-            lines.append("  <i>(no recent activity)</i>")
-
-        lines.append(SEP)
-
-        # в”Ђв”Ђ Session state в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
-        tier = self._get_user_tier_pref(chat_id, user_id)
-        tier_label = {
-            "small": "fast",
-            "big": "smart",
-            "coder_big": "coder",
-            "": "auto",
-        }.get(tier, tier)
-
-        active_host = "?"
-        try:
-            from navig.config import get_config_manager
-
-            _gcfg = get_config_manager().global_config or {}
-            active_host = _gcfg.get("active_host") or _gcfg.get("default_host") or "?"
-        except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
-
-        voice_label = "?"
-        if HAS_SESSIONS:
-            try:
-                sm = get_session_manager()
-                _sk = f"agent:default:telegram:default:dm:{user_id}"
-                _s = sm.sessions.get(_sk)
-                if _s is not None:
-                    voice_label = "on" if _s.metadata.get("voice_enabled", False) else "off"
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
-
-        lines.append(
-            f"вљ™пёЏ  <b>Session</b> вЂ” tier: <code>{html.escape(str(tier_label))}</code> В· host: <code>{html.escape(str(active_host))}</code> В· voice: <code>{html.escape(str(voice_label))}</code>"
-        )
-        lines.append(f"рџ›Ў  Voice pipeline: {'рџџў active' if HAS_VOICE else 'вљ« inactive'}")
-        lines.append(SEP)
-
-        # в”Ђв”Ђ Daemon log warnings в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
-        try:
-            from navig.platform.paths import debug_log_path as _debug_log_path
-
-            _primary_debug_log = str(_debug_log_path())
-        except Exception:  # noqa: BLE001
-            _primary_debug_log = _os.path.expanduser("~/.navig/debug.log")
-
-        _DAEMON_LOG_CANDIDATES = [
-            _primary_debug_log,
-            _os.path.expanduser("~/.navig/debug.log"),
-            "/var/log/navig/daemon.log",
-            "/var/log/navig-daemon.log",
-        ]
-        daemon_issues: list = []
-        for _log_path in _DAEMON_LOG_CANDIDATES:
-            if not _os.path.exists(_log_path):
-                continue
-            try:
-                with open(_log_path, encoding="utf-8", errors="replace") as fh:
-                    _tail = fh.readlines()[-50:]
-                _kw = (
-                    "warning",
-                    "error",
-                    "could not",
-                    "permission denied",
-                    "no such file",
-                    "failed",
-                    "critical",
-                )
-                daemon_issues = [ln.strip() for ln in _tail if any(kw in ln.lower() for kw in _kw)]
-                break
-            except OSError:
-                pass  # best-effort cleanup
-
-        if daemon_issues:
-            lines.append("рџ“‹ <b>Daemon Warnings</b>")
-            for issue in daemon_issues[-5:]:
-                display = issue if len(issue) <= 100 else issue[:97] + "вЂ¦"
-                lines.append(f"  вљ пёЏ  <code>{html.escape(display)}</code>")
-        else:
-            lines.append("рџ“‹ <b>Daemon</b> вЂ” вњ… no warnings")
-
-        # в”Ђв”Ђ Vault status в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
-        vault_ok = False
-        vault_msg = "unavailable"
-        try:
-            from navig.vault import get_vault
-
-            _v = get_vault()
-            _items = _v.list() if hasattr(_v, "list") else []
-            vault_ok = True
-            vault_msg = f"{len(_items)} entries"
-        except Exception as _ve:
-            vault_msg = str(_ve)[:60]
-
-        lines.append(f"рџ”ђ <b>Vault</b> вЂ” {'вњ…' if vault_ok else 'вќЊ'} {vault_msg}")
-        lines.append(SEP)
-
-        trace_keyboard = [
-            [
-                {"text": "рџ”„ Refresh", "callback_data": "trace_refresh"},
-                {"text": "рџ”Њ Providers", "callback_data": "trace_providers"},
-                {"text": "рџ§  Model", "callback_data": "trace_model"},
-            ],
-            [
-                {"text": "вќЊ Close", "callback_data": "trace_close"},
-            ],
-        ]
-        await self.send_message(chat_id, "\n".join(lines), keyboard=trace_keyboard)
 
     async def _handle_tier_command(self, chat_id: int, user_id: int, cmd: str) -> None:
-        """Handle /big /small /coder /auto вЂ” set or clear persistent model tier."""
-        tier_map = {
-            "/big": ("big", "рџ§  Big", "next messages will use the large smart model."),
-            "/small": (
-                "small",
-                "вљЎ Small",
-                "next messages will use the fast lightweight model.",
-            ),
-            "/coder": (
-                "coder_big",
-                "рџ’» Coder",
-                "next messages will use the coder model.",
-            ),
-            "/auto": ("", "рџ”„ Auto", "model selection is back on automatic."),
-        }
-        tier_key, label, note = tier_map[cmd]
-        self._set_user_tier_pref(chat_id, user_id, tier_key)
-        await self.send_message(
-            chat_id,
-            f"{label} вЂ” {note}\nSend your message normally now.",
-            parse_mode=None,
+        """Delegate tier command handling to canonical TelegramCommandsMixin."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_tier_command(
+            self,
+            chat_id=chat_id,
+            user_id=user_id,
+            cmd=cmd,
         )
 
     async def _handle_restart(
@@ -4613,38 +4207,16 @@ class TelegramChannel:
         metadata: dict,
         arg: str,
     ) -> None:
-        """/restart [target] вЂ” systemd daemon restart or docker container restart."""
-        import os as _os
-        import subprocess as _sp
+        """Delegate /restart handler to canonical TelegramCommandsMixin."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
-        DAEMON_ALIASES = {
-            "daemon",
-            "navig",
-            "navig-daemon",
-            "navig_daemon",
-            "svc",
-            "service",
-            "",
-        }
-        target = (arg or "").strip().lower()
-
-        if target in DAEMON_ALIASES:
-            # Self-restart: schedule via subprocess with delay so reply goes out first
-            await self.send_message(chat_id, "рџ”„ Restarting navig-daemon in 3sвЂ¦", parse_mode=None)
-            sudo_pass = _os.environ.get("SUDO_PASS", "")
-            if sudo_pass:
-                bash_cmd = f"sleep 3 && echo '{sudo_pass}' | sudo -S systemctl restart navig-daemon"
-            else:
-                bash_cmd = "sleep 3 && sudo systemctl restart navig-daemon"
-            _sp.Popen(
-                ["bash", "-c", bash_cmd],
-                stdout=_sp.DEVNULL,
-                stderr=_sp.DEVNULL,
-                start_new_session=True,
-            )
-        else:
-            # Docker container restart вЂ” route through CLI
-            await self._handle_cli_command(chat_id, user_id, metadata, f"docker restart {arg}")
+        await TelegramCommandsMixin._handle_restart(
+            self,
+            chat_id=chat_id,
+            user_id=user_id,
+            metadata=metadata,
+            arg=arg,
+        )
 
     async def _handle_settings_menu(
         self, chat_id: int, user_id: int, is_group: bool = False
@@ -4685,11 +4257,21 @@ class TelegramChannel:
             prior_last_active=prior_last_active,
         )
 
-    async def _handle_help(self, chat_id: int, topic: str | None = None):
+    async def _handle_help(
+        self,
+        chat_id: int,
+        message_id: int | None = None,
+        topic: str | None = None,
+    ):
         """Command reference (/help [topic]) from the slash registry."""
         from .telegram_commands import TelegramCommandsMixin
 
-        await TelegramCommandsMixin._handle_help(self, chat_id, topic=topic)
+        await TelegramCommandsMixin._handle_help(
+            self,
+            chat_id=chat_id,
+            message_id=message_id,
+            topic=topic,
+        )
 
     async def _handle_help_callback(self, cb_data: str, chat_id: int, message_id: int) -> None:
         """Delegate help encyclopedia callback routing to the mixin."""
@@ -4819,28 +4401,10 @@ class TelegramChannel:
         )
 
     async def _handle_deck(self, chat_id: int):
-        """Send a WebApp button to open the Deck."""
-        deck_url = self._get_deck_url()
-        if deck_url:
-            await self.send_message(
-                chat_id,
-                "вЂ¦opening the deck.",
-                parse_mode=None,
-                keyboard=[
-                    [
-                        {
-                            "text": "рџ¦‘ Open Deck",
-                            "web_app": {"url": deck_url},
-                        }
-                    ]
-                ],
-            )
-        else:
-            await self.send_message(
-                chat_id,
-                "вЂ¦deck not configured yet. set `telegram.deck_url` in config.",
-                parse_mode=None,
-            )
+        """Delegate /deck handler to canonical TelegramCommandsMixin."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_deck(self, chat_id=chat_id)
 
     async def _handle_skill(
         self,
@@ -4849,76 +4413,16 @@ class TelegramChannel:
         arg: str,
         metadata: dict,
     ) -> None:
-        """/skill [list | <id> | <id> <command> [args...]]"""
-        parts = arg.split()
+        """Delegate /skill handler to canonical TelegramCommandsMixin."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
-        # /skill (no args) or /skill list  в†’  list all skills
-        if not parts or parts[0].lower() in ("list", "ls", "help"):
-            await self._skill_list(chat_id)
-            return
-
-        skill_id = parts[0].lower()
-        command = parts[1] if len(parts) > 1 else ""
-        extra_args = parts[2:] if len(parts) > 2 else []
-
-        # Load skill metadata for context (non-fatal if missing)
-        skill_name = skill_id
-        try:
-            from navig.skills.loader import skills_by_id  # lazy
-
-            index = skills_by_id()
-            if skill_id in index:
-                skill_name = index[skill_id].name
-            elif not command:
-                # Unknown skill вЂ” show help
-                available = "\n".join(
-                    f"  <code>{s.id}</code> вЂ” {s.name}"
-                    for s in sorted(index.values(), key=lambda x: x.id)[:20]
-                )
-                await self.send_message(
-                    chat_id,
-                    f"вќ“ Skill <code>{html.escape(skill_id)}</code> not found.\n\nAvailable:\n{available}",
-                )
-                return
-        except Exception:  # noqa: BLE001
-            pass  # best-effort; failure is non-critical
-
-        # No command в†’ show skill info via SkillRunTool (info mode)
-        tool_args: dict = {
-            "skill_id": skill_id,
-            "command": command,
-            "extra_args": extra_args,
-        }
-
-        await self.send_typing(chat_id)
-
-        try:
-            from navig.tools.skill_runner import SkillRunTool  # lazy
-
-            collector: list[str] = []
-
-            async def _on_status(step: str, detail: str, progress: int) -> None:
-                collector.append(f"[{progress:3d}%] {step}: {detail}")
-
-            result = await SkillRunTool().run(tool_args, on_status=_on_status)
-
-            if result.success:
-                output_text = ""
-                if isinstance(result.output, dict):
-                    output_text = result.output.get("output") or result.output.get("info") or ""
-                else:
-                    output_text = str(result.output or "")
-
-                header = f"рџ§© <b>{html.escape(skill_name)}</b>" + (f" вЂє <code>{html.escape(command)}</code>" if command else "")
-                msg = f"{header}\n\n{html.escape(output_text[:3800])}" if output_text else f"{header}\nвњ… Done."
-                await self.send_message(chat_id, msg)
-            else:
-                await self.send_message(
-                    chat_id, f"вќЊ Skill error:\n{result.error}", parse_mode=None
-                )
-
-        except Exception as exc:  # noqa: BLE001
-            await self.send_message(chat_id, f"вќЊ /skill crashed: {exc}", parse_mode=None)
+        await TelegramCommandsMixin._handle_skill(
+            self,
+            chat_id=chat_id,
+            user_id=user_id,
+            arg=arg,
+            metadata=metadata,
+        )
 
     async def _skill_list(self, chat_id: int) -> None:
         """Send a paginated list of all available skills."""
