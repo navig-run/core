@@ -42,7 +42,7 @@ def _load_generated_manifest() -> dict[str, Any] | None:
         if isinstance(data, dict) and isinstance(data.get("commands"), list):
             return data
     except Exception:
-        pass
+        pass  # invalid/corrupt commands.json — fall through to runtime build
     return None
 
 
