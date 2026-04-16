@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from navig.core.yaml_io import atomic_write_text
+
 logger = logging.getLogger(__name__)
 
 # Maximum message body length to persist (prevent abuse)

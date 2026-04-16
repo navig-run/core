@@ -22,6 +22,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from navig.core.yaml_io import atomic_write_text
 from navig.spaces import get_default_space, normalize_space_name
 
 logger = logging.getLogger("navig.agents.inbox_router")
