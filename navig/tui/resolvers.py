@@ -13,7 +13,6 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from navig.core.yaml_io import safe_load_yaml
 from navig.platform.paths import config_dir
@@ -293,7 +292,6 @@ def resolve_mesh() -> StatusBadge:
 def resolve_scheduler() -> StatusBadge:
     """Check cron scheduler state."""
     try:
-        from pathlib import Path
 
         from navig.scheduler.cron_service import CronService  # type: ignore[import]
 

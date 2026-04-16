@@ -69,7 +69,6 @@ def ahk_install(
         navig ahk install
         navig ahk install --portable
     """
-    from rich.console import Console
     from rich.panel import Panel
 
     console = get_console()
@@ -119,7 +118,6 @@ def ahk_status(
         navig ahk status
         navig ahk status --json
     """
-    from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
 
@@ -199,7 +197,6 @@ def ahk_doctor():
     Example:
         navig ahk doctor
     """
-    from rich.console import Console
     from rich.table import Table
 
     console = get_console()
@@ -288,7 +285,6 @@ def ahk_run(
         navig ahk run my_script.ahk
         navig ahk run automation.ahk --args "arg1,arg2" --timeout 30
     """
-    from rich.console import Console
 
     console = get_console()
 
@@ -331,7 +327,6 @@ def ahk_exec(
         navig ahk exec "MsgBox('Hello')"
         navig ahk exec "Click 100, 100"
     """
-    from rich.console import Console
 
     console = get_console()
 
@@ -695,7 +690,6 @@ def ahk_windows(
         navig ahk windows --filter Chrome
         navig ahk windows --json
     """
-    from rich.console import Console
     from rich.table import Table
 
     console = get_console()
@@ -771,7 +765,6 @@ def ahk_clipboard(
         navig ahk clipboard --get
         navig ahk clipboard --set "Hello World"
     """
-    from rich.console import Console
 
     console = get_console()
 
@@ -820,7 +813,6 @@ def ahk_automate(
         navig ahk automate "open notepad and type hello" --dry-run
         navig ahk automate "close all Chrome windows" --force
     """
-    from rich.console import Console
     from rich.panel import Panel
 
     console = get_console()
@@ -981,7 +973,6 @@ def layout_restore(
 @layout_app.command("list")
 def layout_list():
     """List saved layouts."""
-    from rich.console import Console
 
     from navig.core.window_manager import WindowManager
 
@@ -1006,7 +997,6 @@ def library_list(
     limit: int = typer.Option(20, "--limit", "-l", help="Max scripts to list"),
 ):
     """List saved automation scripts."""
-    from rich.console import Console
     from rich.table import Table
 
     from navig.adapters.automation.evolution.library import ScriptLibrary
@@ -1044,7 +1034,6 @@ def library_show(
     script_id: str = typer.Argument(..., help="Script ID or Goal substring"),
 ):
     """Show content of a saved script."""
-    from rich.console import Console
     from rich.panel import Panel
     from rich.syntax import Syntax
 
@@ -1090,7 +1079,6 @@ def ahk_dashboard(
     import time
     from datetime import datetime
 
-    from rich.console import Console
     from rich.live import Live
     from rich.panel import Panel
     from rich.table import Table
@@ -1358,7 +1346,6 @@ def ahk_generate(
         navig ahk generate "open notepad and type hello"
         navig ahk generate "minimize all windows" --dry-run
     """
-    from rich.console import Console
     from rich.panel import Panel
     from rich.syntax import Syntax
 
@@ -1438,7 +1425,6 @@ def ahk_evolve(  # noqa: F811
         navig ahk evolve "open chrome and go to google.com"
         navig ahk evolve "arrange windows side by side" --retries 5
     """
-    from rich.console import Console
     from rich.panel import Panel
 
     from navig.adapters.automation.evolution.evolver import Evolver
@@ -1494,7 +1480,6 @@ def ahk_processes(
     """List all running processes."""
     import json
 
-    from rich.console import Console
     from rich.table import Table
 
     adapter = _get_adapter()
@@ -1574,7 +1559,6 @@ def ahk_monitors(
     """List all connected monitors."""
     import json
 
-    from rich.console import Console
     from rich.table import Table
 
     adapter = _get_adapter()
@@ -1651,7 +1635,6 @@ def ahk_window_state(
     """Get detailed window state."""
     import json
 
-    from rich.console import Console
     from rich.table import Table
 
     adapter = _get_adapter()
@@ -1687,7 +1670,6 @@ def ahk_active_window(
     """Get currently active window."""
     import json
 
-    from rich.console import Console
     from rich.panel import Panel
 
     adapter = _get_adapter()
@@ -1724,7 +1706,6 @@ def ahk_find(
     """Find windows matching criteria."""
     import json
 
-    from rich.console import Console
     from rich.table import Table
 
     adapter = _get_adapter()
@@ -1880,7 +1861,6 @@ def workflow_run(
 @workflow_app.command("list")
 def workflow_list():
     """List available workflows."""
-    from rich.console import Console
     from rich.table import Table
 
     from navig.core.automation_engine import WorkflowEngine

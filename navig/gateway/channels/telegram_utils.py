@@ -22,7 +22,6 @@ import random
 import re
 import threading
 import time
-from typing import Optional
 
 # ── MarkdownV2 escape ──────────────────────────────────────────────────────────
 
@@ -130,7 +129,7 @@ class TgErrorKind(enum.Enum):
     UNKNOWN = "unknown"              # Unclassifiable — retry with backoff
 
 
-def classify_tg_error(exc: BaseException, status_code: Optional[int] = None) -> TgErrorKind:
+def classify_tg_error(exc: BaseException, status_code: int | None = None) -> TgErrorKind:
     """Classify a Telegram channel exception into a ``TgErrorKind``.
 
     Ported from Hermes ``error_classifier`` but scoped to the simpler

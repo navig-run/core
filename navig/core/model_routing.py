@@ -37,7 +37,7 @@ All tunables come from config — no hardcoded literals per the single-source-of
 from __future__ import annotations
 
 import re
-from typing import Any, Optional
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Keyword signals for "complex" turns that should keep the primary model
@@ -160,8 +160,8 @@ def is_simple_turn(
 
 def choose_cheap_model_route(
     user_message: str,
-    routing_config: Optional[dict[str, Any]],
-) -> Optional[dict[str, Any]]:
+    routing_config: dict[str, Any] | None,
+) -> dict[str, Any] | None:
     """Return the cheap-model route dict when a message looks simple.
 
     If the message is not simple, or if the routing config is disabled or
@@ -208,7 +208,7 @@ def choose_cheap_model_route(
     return route
 
 
-def get_routing_config() -> Optional[dict[str, Any]]:
+def get_routing_config() -> dict[str, Any] | None:
     """Return the ``cheap_model_routing`` section from the active config.
 
     Returns ``None`` when the config manager is unavailable or the key is

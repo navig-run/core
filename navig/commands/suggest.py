@@ -16,7 +16,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from rich.console import Console
 from rich.table import Table
 
 from navig.console_helper import get_console

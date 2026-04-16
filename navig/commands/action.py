@@ -139,7 +139,6 @@ def action_list(
             print(a.get("name", ""))
         return
 
-    from rich.console import Console
     from rich.table import Table
 
     console = get_console()

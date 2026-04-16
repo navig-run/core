@@ -27,7 +27,7 @@ import os as _os
 import re
 import tempfile
 import textwrap
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 import typer

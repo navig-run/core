@@ -13,7 +13,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import yaml
 
 from navig import console_helper as ch
 from navig.core.yaml_io import atomic_write_yaml

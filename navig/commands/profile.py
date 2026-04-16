@@ -190,7 +190,6 @@ def profile_pin_clear(
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
 ):
     """Remove the stored PIN (disables PIN protection for all profiles)."""
-    from pathlib import Path
 
     from navig.modes import has_pin, prompt_pin
 

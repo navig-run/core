@@ -1,6 +1,5 @@
 """navig boot — boot sequence configuration and startup hooks."""
 import typer
-from rich.console import Console
 
 from navig.console_helper import get_console
 

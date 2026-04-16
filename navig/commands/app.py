@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from rich.console import Console
 
 from navig import console_helper as ch
 from navig.config import get_config_manager
@@ -1066,7 +1065,6 @@ from typing import Any
 import typer
 
 from navig.cli import show_subcommand_help
-from navig.console_helper import get_console
 from navig.deprecation import deprecation_warning
 
 app_app = typer.Typer(

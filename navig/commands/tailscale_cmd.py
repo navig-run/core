@@ -8,7 +8,6 @@ import asyncio
 import json
 
 import typer
-from rich.console import Console
 from rich.table import Table
 
 from navig.console_helper import get_console

@@ -1,10 +1,8 @@
 """navig debug — toggle debug mode, show log sizes, open log files."""
 from __future__ import annotations
 
-from pathlib import Path
 
 import typer
-from rich.console import Console
 
 from navig.console_helper import get_console
 from navig.platform.paths import config_dir

@@ -730,7 +730,7 @@ def reroute_cmd(
     """
     import json as _json  # noqa: PLC0415
 
-    from navig.inbox.router import ConflictStrategy, InboxRouter, RouteMode  # noqa: PLC0415
+    from navig.inbox.router import InboxRouter, RouteMode  # noqa: PLC0415
     from navig.inbox.routes_loader import load  # noqa: PLC0415
     from navig.inbox.space_scorer import (  # noqa: PLC0415
         check_exclude_rules,

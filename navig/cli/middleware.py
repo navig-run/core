@@ -63,7 +63,7 @@ def init_operation_recorder(
     ch = _lazy_ch()
 
     try:
-        from navig.operation_recorder import OperationType, get_operation_recorder
+        from navig.operation_recorder import get_operation_recorder
 
         recorder = get_operation_recorder()
         command_str = " ".join(sys.argv[1:])

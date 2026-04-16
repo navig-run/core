@@ -189,4 +189,3 @@ def check_ollama_reachable(host: str = _OLLAMA_USER_BASE_URL) -> bool:
         return False
 
 
-from navig.providers.source_scan import check_api_key_in_env  # noqa: PLC0415

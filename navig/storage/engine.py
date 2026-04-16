@@ -30,7 +30,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from navig.platform.paths import config_dir
 from navig.storage.pragma_profiles import PragmaProfile, profile_for_db
 from navig.storage.query_timer import QueryTimer, get_query_timer
 from navig.storage.write_batcher import WriteBatcher

@@ -38,7 +38,6 @@ MAX_ROWS = 2
 MAX_BUTTON_TEXT = 28
 MAX_CALLBACK_DATA = 64  # Telegram limit
 
-from navig.gateway.channels.telegram_utils import escape_mdv2 as _mdv2_escape  # noqa: E402
 
 
 class ContentCategory(str, Enum):

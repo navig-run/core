@@ -1,6 +1,5 @@
 """navig deck — manage slide decks and presentation materials."""
 import typer
-from rich.console import Console
 
 from navig.console_helper import get_console
 

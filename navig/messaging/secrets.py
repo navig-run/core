@@ -87,7 +87,6 @@ def _resolve_telegram_token_from_env_file() -> str:
     ``os.getenv()`` returns ``None`` even when the token is present there.
     This helper reads the file directly and returns the value.
     """
-    from pathlib import Path
 
     env_file = config_dir() / ".env"
     if not env_file.exists():
@@ -217,7 +216,6 @@ def _resolve_telegram_uid_from_legacy_store() -> str | None:
 
 def _resolve_telegram_uid_from_env_file() -> str | None:
     """Read NAVIG_TELEGRAM_UID from ~/.navig/.env (may not be in os.environ at CLI startup)."""
-    from pathlib import Path
 
     env_file = config_dir() / ".env"
     if not env_file.exists():

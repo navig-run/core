@@ -104,7 +104,6 @@ def show_history(
     # Rich output
     ch.header(f"Command History (last {len(operations)})")
 
-    from rich.console import Console
     from rich.table import Table
 
     console = get_console()
@@ -184,7 +183,6 @@ def show_operation_details(op_id: str, opts: dict[str, Any] = None) -> None:
     # Rich output
     ch.header(f"Operation Details: {op.id}")
 
-    from rich.console import Console
     from rich.panel import Panel
 
     console = get_console()
@@ -461,7 +459,6 @@ def history_stats(opts: dict[str, Any] = None) -> None:
 
     ch.header("History Statistics")
 
-    from rich.console import Console
     from rich.table import Table
 
     console = get_console()
@@ -598,7 +595,6 @@ def _undo_host_switch(op: OperationRecord) -> None:
 
 import typer  # noqa: E402
 
-from navig.cli._callbacks import show_subcommand_help  # noqa: E402
 from navig.console_helper import get_console
 
 history_app = typer.Typer(

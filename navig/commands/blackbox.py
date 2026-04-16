@@ -47,7 +47,6 @@ def _parse_hours(since_str: str) -> float:
 @blackbox_app.command("status")
 def blackbox_status():
     """Show blackbox recorder status and storage statistics."""
-    from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
 
@@ -264,7 +263,6 @@ def bundle_inspect(
     """Inspect the contents of a .navbox bundle."""
     import pathlib
 
-    from rich.console import Console
     from rich.panel import Panel
 
     from navig.blackbox.bundle import inspect_bundle
@@ -333,7 +331,6 @@ def blackbox_crashes(
     limit: int = typer.Option(10, "--limit", "-n", help="Number of crash reports to show"),
 ):
     """List recent crash reports."""
-    from rich.console import Console
 
     from navig.blackbox.crash import list_crashes
 

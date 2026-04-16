@@ -597,7 +597,6 @@ def discover_local_host(
     Returns:
         Created host configuration or None if cancelled/failed
     """
-    from rich.console import Console
     from rich.panel import Panel
     from rich.prompt import Confirm
     from rich.table import Table

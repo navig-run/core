@@ -1,6 +1,5 @@
 """navig spaces — personal / workspace / studio context switcher."""
 import typer
-from rich.console import Console
 
 from navig.console_helper import get_console
 

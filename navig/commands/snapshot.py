@@ -8,7 +8,6 @@ restore   Roll a file back to a specific prior version.
 """
 from __future__ import annotations
 
-from typing import Optional
 
 import typer
 
@@ -25,7 +24,7 @@ console = get_console()
 @app.command("versions")
 def snapshot_versions(
     filepath: str = typer.Argument(..., help="File path to inspect"),
-    session: Optional[str] = typer.Option(None, "--session", "-s", help="Session ID (default: latest)"),
+    session: str | None = typer.Option(None, "--session", "-s", help="Session ID (default: latest)"),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON"),
 ):
     """List all stored versions of a file."""
@@ -90,9 +89,9 @@ def snapshot_versions(
 @app.command("diff")
 def snapshot_diff(
     filepath: str = typer.Argument(..., help="File path to diff"),
-    from_turn: Optional[str] = typer.Option(None, "--from", help="Earlier turn ID (default: second-to-last version)"),
-    to_turn: Optional[str] = typer.Option(None, "--to", help="Later turn ID (default: latest version or live file)"),
-    session: Optional[str] = typer.Option(None, "--session", "-s", help="Session ID"),
+    from_turn: str | None = typer.Option(None, "--from", help="Earlier turn ID (default: second-to-last version)"),
+    to_turn: str | None = typer.Option(None, "--to", help="Later turn ID (default: latest version or live file)"),
+    session: str | None = typer.Option(None, "--session", "-s", help="Session ID"),
 ):
     """Show a unified diff between two stored versions of a file."""
     from rich.syntax import Syntax
@@ -156,8 +155,8 @@ def snapshot_diff(
 @app.command("restore")
 def snapshot_restore(
     filepath: str = typer.Argument(..., help="File path to restore"),
-    turn: Optional[str] = typer.Option(None, "--turn", "-t", help="Turn ID to restore to (default: last version)"),
-    session: Optional[str] = typer.Option(None, "--session", "-s", help="Session ID"),
+    turn: str | None = typer.Option(None, "--turn", "-t", help="Turn ID to restore to (default: last version)"),
+    session: str | None = typer.Option(None, "--session", "-s", help="Session ID"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
     """Roll back a file to a previously stored version."""

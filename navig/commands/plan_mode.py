@@ -28,7 +28,6 @@ import re
 import textwrap
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -54,8 +53,8 @@ _STATUS_CHOICES = ("draft", "ready", "running", "done", "abandoned")
 
 @app.command("new")
 def plan_new(
-    goal: Optional[str] = typer.Argument(None, help="High-level goal for the plan"),
-    effort: Optional[str] = typer.Option(None, "--effort", "-e", help="Effort level: low / medium / high"),
+    goal: str | None = typer.Argument(None, help="High-level goal for the plan"),
+    effort: str | None = typer.Option(None, "--effort", "-e", help="Effort level: low / medium / high"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip interactive interview (use goal text as-is)"),
 ):
     """Create a new AI-guided plan from a goal statement."""
@@ -81,7 +80,7 @@ def plan_new(
 
 @app.command("list")
 def plan_list(
-    status: Optional[str] = typer.Option(None, "--status", "-s", help="Filter by status"),
+    status: str | None = typer.Option(None, "--status", "-s", help="Filter by status"),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON"),
 ):
     """List all plans in the current workspace."""

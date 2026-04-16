@@ -1330,7 +1330,6 @@ def show_trigger_stats():
 
 import typer  # noqa: E402
 
-from navig.cli._callbacks import show_subcommand_help  # noqa: E402
 
 trigger_app = typer.Typer(
     help="Event-driven automation triggers",

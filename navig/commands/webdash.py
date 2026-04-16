@@ -1,6 +1,5 @@
 """navig webdash — launch the NAVIG web dashboard."""
 import typer
-from rich.console import Console
 
 from navig.console_helper import get_console
 

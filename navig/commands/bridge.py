@@ -50,7 +50,6 @@ def bridge_connect(
         navig bridge connect --port 8789
         navig bridge connect --json
     """
-    from pathlib import Path
 
     config_path = config_dir() / "config.yaml"
 
@@ -131,7 +130,6 @@ def bridge_status(
         navig bridge status
         navig bridge status --json
     """
-    from pathlib import Path
 
     config_path = config_dir() / "config.yaml"
 
@@ -189,7 +187,6 @@ def bridge_rotate_token(
         navig bridge rotate-token
         navig bridge rotate-token --json
     """
-    from pathlib import Path
 
     config_path = config_dir() / "config.yaml"
 

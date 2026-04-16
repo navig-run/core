@@ -16,7 +16,6 @@ import ipaddress
 import json
 import re
 
-from rich.console import Console
 from rich.progress import Progress
 from rich.table import Table
 

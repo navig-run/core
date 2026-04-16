@@ -4,7 +4,6 @@ from __future__ import annotations
 import platform
 
 import typer
-from rich.console import Console
 from rich.table import Table
 
 from navig.console_helper import get_console
@@ -50,7 +49,6 @@ def system_clean(
 ):
     """Clean NAVIG caches and temporary files."""
     import shutil
-    from pathlib import Path
 
     targets = [
         config_dir() / "cache",

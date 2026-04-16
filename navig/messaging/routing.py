@@ -17,10 +17,9 @@ is ``ComplianceMode.OFFICIAL``.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from navig.messaging.adapter import (
-    ComplianceMode,
     Contact,
     ResolvedTarget,
     Route,

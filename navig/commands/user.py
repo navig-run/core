@@ -1,6 +1,5 @@
 """navig user — user identity and profile management."""
 import typer
-from rich.console import Console
 
 from navig.console_helper import get_console
 

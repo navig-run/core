@@ -1,6 +1,5 @@
 """navig benchmark — run NAVIG performance benchmarks."""
 import typer
-from rich.console import Console
 
 from navig.console_helper import get_console
 

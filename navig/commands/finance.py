@@ -4,7 +4,6 @@ Install the optional finance extra to unlock full functionality:
     pip install navig[finance]
 """
 import typer
-from rich.console import Console
 
 from navig.console_helper import get_console
 

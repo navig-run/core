@@ -2488,7 +2488,7 @@ class TelegramCommandsMixin:
             if re.search(rf"\b{re.escape(alias)}\b", lowered):
                 return normalize_space_name(alias)
 
-        for hint, mapped in self._NL_DOMAIN_HINTS.items():
+        for hint, mapped in TelegramCommandsMixin._NL_DOMAIN_HINTS.items():
             if re.search(rf"\b{re.escape(hint)}\b", lowered):
                 return mapped
         return None
@@ -2499,8 +2499,12 @@ class TelegramCommandsMixin:
             return None, None
 
         detected_space = self._detect_space_from_text(lowered)
-        has_switch_signal = any(verb in lowered for verb in self._NL_SWITCH_VERBS)
-        has_intake_signal = any(verb in lowered for verb in self._NL_INTAKE_VERBS)
+        has_switch_signal = any(
+            verb in lowered for verb in TelegramCommandsMixin._NL_SWITCH_VERBS
+        )
+        has_intake_signal = any(
+            verb in lowered for verb in TelegramCommandsMixin._NL_INTAKE_VERBS
+        )
 
         if detected_space and has_switch_signal and not has_intake_signal:
             return "space", detected_space
@@ -2551,7 +2555,8 @@ class TelegramCommandsMixin:
             return None
 
         has_trigger = any(
-            re.search(rf"\b{re.escape(w)}\b", lowered) for w in self._NL_COMMAND_TRIGGERS
+            re.search(rf"\b{re.escape(w)}\b", lowered)
+            for w in TelegramCommandsMixin._NL_COMMAND_TRIGGERS
         )
         alias_map = self._nl_phrase_aliases()
 
@@ -2570,7 +2575,11 @@ class TelegramCommandsMixin:
                     continue
 
                 starts = lowered.startswith(phrase)
-                if command in self._NL_AMBIGUOUS_COMMANDS and not starts and not has_trigger:
+                if (
+                    command in TelegramCommandsMixin._NL_AMBIGUOUS_COMMANDS
+                    and not starts
+                    and not has_trigger
+                ):
                     continue
 
                 args = self._extract_nl_args(text, phrase)
@@ -2579,7 +2588,11 @@ class TelegramCommandsMixin:
                 candidate = {
                     "command": command,
                     "args": args,
-                    "risk": "risky" if command in self._NL_RISKY_COMMANDS else "safe",
+                    "risk": (
+                        "risky"
+                        if command in TelegramCommandsMixin._NL_RISKY_COMMANDS
+                        else "safe"
+                    ),
                     "usage": entry.usage or f"/{command}",
                     "score": score,
                 }
@@ -2605,7 +2618,7 @@ class TelegramCommandsMixin:
 
         command = str(best.get("command") or "")
         args = str(best.get("args") or "")
-        if command in self._NL_REQUIRED_ARGS_COMMANDS and not args:
+        if command in TelegramCommandsMixin._NL_REQUIRED_ARGS_COMMANDS and not args:
             best["missing_args"] = True
         return best
 
@@ -2725,7 +2738,7 @@ class TelegramCommandsMixin:
             return "⚠️ Command unavailable"
 
         usage = entry.usage or f"/{cmd}"
-        if cmd in self._NL_REQUIRED_ARGS_COMMANDS:
+        if cmd in TelegramCommandsMixin._NL_REQUIRED_ARGS_COMMANDS:
             await self.send_message(
                 chat_id,
                 f"This command needs arguments.\nUsage: <code>{usage}</code>",
@@ -2733,7 +2746,7 @@ class TelegramCommandsMixin:
             )
             return "ℹ️ Needs arguments"
 
-        if cmd in self._NL_RISKY_COMMANDS:
+        if cmd in TelegramCommandsMixin._NL_RISKY_COMMANDS:
             await self._queue_nl_risky_command_confirmation(
                 chat_id=chat_id,
                 user_id=user_id,
@@ -2885,7 +2898,8 @@ class TelegramCommandsMixin:
         if not resolved:
             lowered = (text or "").strip().lower()
             has_trigger = any(
-                re.search(rf"\b{re.escape(w)}\b", lowered) for w in self._NL_COMMAND_TRIGGERS
+                re.search(rf"\b{re.escape(w)}\b", lowered)
+                for w in TelegramCommandsMixin._NL_COMMAND_TRIGGERS
             )
             if has_trigger:
                 suggestions = self._suggest_nl_commands(text, limit=3)

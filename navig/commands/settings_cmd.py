@@ -193,7 +193,6 @@ def _display_rich(
     show_sources: bool,
     defaults: dict,
 ) -> None:
-    from rich.console import Console
     from rich.panel import Panel
     from rich.rule import Rule
     from rich.table import Table
@@ -305,7 +304,6 @@ def _reset_key(key: str, layer: str, resolver: SettingsResolver) -> None:  # typ
 
 def _err(msg: str, rich_available: bool) -> None:
     if rich_available:
-        from rich.console import Console
 
         get_console().print(f"[red]Error:[/red] {msg}")
     else:

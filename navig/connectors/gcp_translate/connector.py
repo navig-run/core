@@ -42,7 +42,6 @@ from navig.connectors.types import (
     ConnectorStatus,
     HealthStatus,
     Resource,
-    ResourceType,
 )
 
 logger = logging.getLogger("navig.connectors.gcp_translate")

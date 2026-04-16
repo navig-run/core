@@ -107,7 +107,6 @@ class CLIApprovalHandler:
 
         Returns True if approved.
         """
-        from rich.console import Console
         from rich.prompt import Confirm
 
         console = get_console()

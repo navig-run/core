@@ -1,6 +1,5 @@
 """navig portable — manage portable / offline NAVIG installations."""
 import typer
-from rich.console import Console
 
 from navig.console_helper import get_console
 

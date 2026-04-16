@@ -1077,7 +1077,6 @@ def generate_report(
 
 import typer  # noqa: E402
 
-from navig.cli._callbacks import show_subcommand_help  # noqa: E402
 
 insights_app = typer.Typer(
     help="Operations analytics and insights",

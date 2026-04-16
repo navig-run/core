@@ -300,7 +300,6 @@ def _register_external_commands(
                       ``--help`` and tooling).
         target_app:   Typer app to register on.  Defaults to ``navig.cli.app``.
     """
-    import importlib
 
     if target_app is None:
         from navig.cli import app

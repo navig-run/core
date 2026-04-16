@@ -504,7 +504,6 @@ def check_ollama_reachable(host: str = "http://localhost:11434") -> bool:
         return False
 
 
-from navig.providers.source_scan import check_api_key_in_env  # noqa: PLC0415
 
 # ---------------------------------------------------------------------------
 # Provider detection — runs all probes concurrently, finishes within timeout_ms

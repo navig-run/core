@@ -818,7 +818,6 @@ def list_packs(
             print(f"{pack.name}\t{pack.type.value}\t{status}\t{pack.description[:50]}")
         return
 
-    from rich.console import Console
     from rich.table import Table
 
     console = get_console()
@@ -873,7 +872,6 @@ def show_pack(name: str, plain: bool = False, json_out: bool = False):
         print(f"Steps: {len(pack.steps)}")
         return
 
-    from rich.console import Console
     from rich.panel import Panel
 
     console = get_console()

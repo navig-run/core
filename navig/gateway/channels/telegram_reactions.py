@@ -206,7 +206,6 @@ class TelegramReactionsMixin:
         if reply_text:
             try:
                 import time
-                from pathlib import Path
 
                 from navig.platform.paths import config_dir as _config_dir
 

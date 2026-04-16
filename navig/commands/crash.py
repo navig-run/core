@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import typer
-from rich.console import Console
 
 from navig.console_helper import get_console
 

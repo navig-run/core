@@ -241,6 +241,5 @@ def migrate_status_cmd() -> None:
     ch.heading("Migration Status")
     for name, description in MIGRATION_STEPS:
         mark = "[green]✓[/green]" if name in done else "[yellow]○[/yellow]"
-        from rich.console import Console  # noqa: PLC0415
 
         get_console().print(f"  {mark} {name:<16} {description}")

@@ -6,7 +6,6 @@ Handles package updates, cache cleaning, log rotation, and system cleanup
 import json
 import time
 
-from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table

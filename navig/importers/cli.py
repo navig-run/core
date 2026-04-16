@@ -45,7 +45,6 @@ def run_import(source: str, path: str | None, output: str | None) -> int:
     rows = _flatten(results)
 
     try:
-        from rich.console import Console
         from rich.table import Table
 
         table = Table(title="Universal Import Results")

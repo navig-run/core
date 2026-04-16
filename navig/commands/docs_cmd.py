@@ -138,7 +138,6 @@ def run_fetch(
     import json as jsonlib
 
     import typer
-    from rich.console import Console
     from rich.markdown import Markdown
 
     from navig import console_helper as ch
@@ -213,7 +212,6 @@ def run_search(
     import json as jsonlib
 
     import typer
-    from rich.console import Console
 
     from navig import console_helper as ch
 

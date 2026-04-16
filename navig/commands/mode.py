@@ -62,7 +62,6 @@ def mode_show(
 
 def _show_modes():
     """Render a Rich table of all LLM modes."""
-    from rich.console import Console
     from rich.table import Table
 
     from navig.llm_router import CANONICAL_MODES, _has_api_key, get_llm_router
@@ -142,7 +141,6 @@ def mode_set(
     ),
 ):
     """Update a mode's provider, model, or parameters."""
-    from rich.console import Console
 
     from navig.llm_router import get_llm_router
 
@@ -281,7 +279,6 @@ def mode_route_show(
         typer.echo(_json.dumps(slots, indent=2, sort_keys=True))
         return
 
-    from rich.console import Console
     from rich.table import Table
 
     console = get_console()
@@ -319,7 +316,6 @@ def mode_route_set(
 
     updated = _persist_hybrid_route_slot(normalized_tier, provider, model)
 
-    from rich.console import Console
 
     console = get_console()
     tier_label = {"small": "Small", "big": "Big", "coder_big": "Code"}[normalized_tier]
@@ -341,7 +337,6 @@ def mode_list(
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """List available models per provider, with uncensored status."""
-    from rich.console import Console
     from rich.table import Table
 
     from navig.llm_router import get_llm_router
@@ -404,7 +399,6 @@ def mode_detect(
     text: str = typer.Argument(..., help="Text to classify"),
 ):
     """Test mode detection on a piece of text."""
-    from rich.console import Console
 
     from navig.llm_router import get_llm_router
 

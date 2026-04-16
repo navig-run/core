@@ -1,6 +1,5 @@
 """navig eval — evaluate expressions / snippets against NAVIG context."""
 import typer
-from rich.console import Console
 
 from navig.console_helper import get_console
 

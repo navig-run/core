@@ -19,7 +19,6 @@ from typing import Any
 
 import typer
 import yaml
-from rich.console import Console
 from rich.table import Table
 
 from navig.console_helper import get_console

@@ -61,7 +61,6 @@ _SPEECH_INDICATORS = (
 # MIME types that are exclusively used for Telegram voice notes / speech
 _VOICE_MIMES = {"audio/ogg", "audio/opus", "audio/x-opus"}
 
-from navig.gateway.channels.telegram_utils import escape_mdv2 as _mdv2_escape  # noqa: E402
 
 
 def _classify_audio(audio: dict) -> dict:
@@ -466,7 +465,6 @@ class TelegramVoiceMixin:
     @staticmethod
     def _prepare_for_tts(text: str, max_chars: int = 500) -> str:
         """Strip markdown/code/URLs from *text* before sending to TTS."""
-        import re
 
         text = re.sub(r"```[\s\S]*?```", "", text)
         text = re.sub(r"`[^`]+`", "", text)

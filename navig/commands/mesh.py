@@ -20,7 +20,6 @@ def status() -> None:
     except Exception:  # noqa: BLE001
         peers = []
 
-    from rich.console import Console
 
     con = get_console()
 

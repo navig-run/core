@@ -89,7 +89,6 @@ def kg_recall(
     if not facts:
         _ch.warning(f"No facts found for '{subject}'.")
         return
-    from rich.console import Console
     from rich.table import Table
 
     table = Table(title=f"Facts: {subject}", show_lines=False)
@@ -122,7 +121,6 @@ def kg_search(
     if not facts:
         _ch.warning(f"No facts matching '{query}'.")
         return
-    from rich.console import Console
 
     con = get_console()
     con.print(f'[bold]Found {len(facts)} fact(s) for[/bold] "{query}":\n')
@@ -167,7 +165,6 @@ def kg_routines(
     if not routines:
         _ch.warning("No routines found.")
         return
-    from rich.console import Console
     from rich.table import Table
 
     table = Table(title="NAVIG Routines", show_lines=False)
@@ -189,7 +186,6 @@ def kg_status():
     con = kg._con
     fact_count = con.execute("SELECT COUNT(*) FROM facts").fetchone()[0]
     routine_count = con.execute("SELECT COUNT(*) FROM routines").fetchone()[0]
-    from rich.console import Console
 
     get_console().print(
         f"[bold]Knowledge Graph Status[/bold]\n"

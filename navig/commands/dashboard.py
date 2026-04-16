@@ -21,11 +21,9 @@ import sys
 import threading
 import time
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from rich.align import Align
-from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel

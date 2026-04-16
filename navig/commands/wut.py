@@ -1,6 +1,5 @@
 """navig wut — show what NAVIG thinks is happening right now."""
 import typer
-from rich.console import Console
 
 from navig.console_helper import get_console
 

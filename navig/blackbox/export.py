@@ -55,7 +55,6 @@ def export_bundle(
     except Exception as exc:
         # If encryption fails for any reason, return the unencrypted archive
         # with a warning — never silently lose the data
-        from rich.console import Console
 
         get_console().print(
             f"[yellow]Warning:[/yellow] Encryption failed ({exc}). "

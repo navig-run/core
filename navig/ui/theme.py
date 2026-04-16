@@ -24,7 +24,6 @@ from pathlib import Path
 
 from rich.console import Console
 
-from navig.console_helper import get_console
 
 
 # ── SAFE MODE detection ───────────────────────────────────────────────────

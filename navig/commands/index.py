@@ -7,7 +7,6 @@ Provides BM25/FTS-backed source indexing and search over workspace files.
 from pathlib import Path
 
 import typer
-from rich.console import Console
 
 from navig.console_helper import get_console
 from navig.memory.project_indexer import ProjectIndexer

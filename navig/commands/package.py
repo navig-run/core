@@ -535,7 +535,6 @@ def package_list(
             print(pkg_id)
         return
 
-    from rich.console import Console
     from rich.table import Table
 
     _con = get_console()

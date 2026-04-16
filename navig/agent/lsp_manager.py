@@ -12,11 +12,9 @@ import logging
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from navig.agent.lsp_client import (
     LSP_DIAGNOSTIC_WAIT,
-    LSP_SEVERITY_ERROR,
     LSP_SEVERITY_WARNING,
     LspClient,
     LspDiagnostic,

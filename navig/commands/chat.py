@@ -8,7 +8,6 @@ from navig.console_helper import get_console
 
 def run_ai_chat(initial_query: str | None = None, single_query: bool = False) -> None:
     """Run interactive AI chat or process a single query."""
-    from rich.console import Console
 
     console = get_console()
 

@@ -29,7 +29,6 @@ from __future__ import annotations
 import html as _html
 import json
 import logging
-import re
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -38,7 +37,6 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-from navig.gateway.channels.telegram_utils import escape_mdv2 as _mdv2_escape  # noqa: E402
 
 # ─────────────────────────────────────────────────────────────────
 # State machine

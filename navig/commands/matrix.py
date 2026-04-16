@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from rich.console import Console
 from rich.table import Table
 
 from navig.comms.matrix_features import (

@@ -19,7 +19,6 @@ def run_help(
     from pathlib import Path
 
     import typer
-    from rich.console import Console
     from rich.table import Table
 
     from navig.cli._callbacks import show_subcommand_help

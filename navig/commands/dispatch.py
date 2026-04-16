@@ -99,7 +99,6 @@ def dispatch_status(
     limit: int = typer.Option(10, "--limit", "-n", help="Number of recent deliveries"),
 ):
     """Show recent delivery statuses."""
-    from rich.console import Console
     from rich.table import Table
 
     from navig.messaging.delivery import get_delivery_tracker
@@ -139,7 +138,6 @@ def dispatch_threads(
     limit: int = typer.Option(20, "--limit", "-n"),
 ):
     """List active conversation threads."""
-    from rich.console import Console
     from rich.table import Table
 
     from navig.store.threads import get_thread_store
@@ -177,7 +175,6 @@ def contacts_list(
     plain: bool = typer.Option(False, "--plain", help="Tab-separated output"),
 ):
     """List saved contacts."""
-    from rich.console import Console
     from rich.table import Table
 
     from navig import console_helper as ch

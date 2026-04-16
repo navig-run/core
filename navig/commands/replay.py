@@ -1,6 +1,5 @@
 """navig replay — replay recorded command sessions."""
 import typer
-from rich.console import Console
 
 from navig.console_helper import get_console
 

@@ -23,11 +23,9 @@ from __future__ import annotations
 
 import json
 import html
-import re
 from typing import TYPE_CHECKING
 
 from navig.debug_logger import get_debug_logger
-from navig.gateway.channels.telegram_utils import escape_mdv2 as _mdv2_escape
 
 if TYPE_CHECKING:
     pass  # avoids circular; TelegramChannel is in the same package

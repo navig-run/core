@@ -17,7 +17,6 @@ import shutil
 from pathlib import Path
 
 import typer
-from rich.console import Console
 from rich.table import Table
 
 from navig import console_helper as ch
