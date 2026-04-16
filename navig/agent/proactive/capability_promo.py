@@ -4,7 +4,7 @@ Capability Promoter — Feature Discovery Engine
 Maintains a registry of NAVIG features and intelligently promotes
 underused or contextually relevant ones to the operator.
 
-Inspired by OpenClaw's skill self-installation pattern where skill files
+Skill self-installation pattern where skill files
 declare their own heartbeat entries. NAVIG adapts this: each feature
 group declares promotion metadata (description, when-to-suggest,
 prerequisites, example command).

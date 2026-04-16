@@ -1112,6 +1112,7 @@ class TelegramCommandsMixin:
         "pause",
         "skip",
         "profile",
+        "about",  # common English preposition; "tell me about X" must not match /about
     }
     _NL_RISKY_COMMANDS: set[str] = {
         "run",

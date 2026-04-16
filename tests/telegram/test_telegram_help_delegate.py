@@ -51,6 +51,8 @@ def test_telegram_channel_has_detect_space_from_text_delegate():
 def test_telegram_channel_has_nl_helper_delegates():
     """TelegramChannel must expose NL helper delegates used by mixin call-chain."""
     required = (
+        "_sniff_reminder_intent",
+        "_handle_remindme",
         "_nl_phrase_aliases",
         "_extract_nl_args",
         "_resolve_nl_command_intent",

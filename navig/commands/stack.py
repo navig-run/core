@@ -207,7 +207,7 @@ def stack_health():
 
     healthcheck = stack_path / "navig_healthcheck.sh"
     if healthcheck.exists():
-        result = subprocess.run(str(healthcheck), shell=True, check=False)
+        result = subprocess.run(str(healthcheck), shell=True, check=False)  # noqa: S602  # dynamic shell dispatch
         if result.returncode == 0:
             return
         ch.warning("Healthcheck script failed; running manual checks instead.")

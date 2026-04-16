@@ -162,8 +162,7 @@ def choose_profile(
     if len(ai_response) > 500 or category == ContentCategory.CODE:
         return KeyboardProfile.EXPAND
 
-    # Default → no buttons. Bare feedback (👍👎) is visual noise
-    # that adds no value without aggregation backend.
+    # Default → no buttons for short conversational replies.
     return KeyboardProfile.NONE
 
 
@@ -294,6 +293,7 @@ class ResponseKeyboardBuilder:
         *,
         profile_override: str | None = None,
         approval_actions: list[dict[str, str]] | None = None,
+        explore_questions: list[str] | None = None,
     ) -> list[list[dict[str, str]]] | None:
         """
         Build inline keyboard for an AI response.
@@ -331,7 +331,10 @@ class ResponseKeyboardBuilder:
                 msg_hash, user_message, ai_response, category, approval_actions
             )
         elif profile == KeyboardProfile.EXPAND:
-            rows = self._build_expand_rows(msg_hash, user_message, ai_response, category)
+            rows = self._build_expand_rows(
+                msg_hash, user_message, ai_response, category,
+                explore_questions=list(explore_questions or []),
+            )
         elif profile == KeyboardProfile.FEEDBACK:
             rows = self._build_feedback_rows(msg_hash, user_message, ai_response)
 
@@ -427,15 +430,16 @@ class ResponseKeyboardBuilder:
         user_message: str,
         ai_response: str,
         category: ContentCategory,
+        explore_questions: list[str] | None = None,
     ) -> list[list[dict[str, str]]]:
         """
-        Expand profile: context-aware row 1 + optional feedback row 2.
+        Expand profile: context-aware row 1 + optional explore row 2.
 
         Row 1 adapts to content:
           CODE  → [Explain] [Copy code]
           HOWTO → [Go Deeper] [Show steps]
           Other → [Go Deeper] [Rephrase]
-        Row 2 → [👍] [👎] (always)
+        Row 2 → contextual explore questions (replaces legacy 👍/👎 feedback).
         """
         # Minimal language detection check based on cyrillic characters
         is_ru = bool(re.search(r"[А-Яа-я]", ai_response))
@@ -510,13 +514,20 @@ class ResponseKeyboardBuilder:
                 ),
             ]
 
-        # Row 2 — feedback
-        row2 = [
-            self._make_button("👍", "fb_up", msg_hash, user_message, ai_response),
-            self._make_button("👎", "fb_down", msg_hash, user_message, ai_response),
-        ]
+        rows: list[list[dict[str, str]]] = [row1]
 
-        return [row1, row2]
+        # Row 2 — contextual explore questions (replaces legacy 👍/👎 feedback).
+        # Each question is stored in CallbackStore and rendered as a button that
+        # routes through _handle_ask_followup_callback like a user-typed message.
+        if explore_questions:
+            for idx, q in enumerate(explore_questions[:_EXPLORE_Q_MAX]):
+                q_key = f"eq{idx}:{msg_hash}"
+                self.store.put(_FOLLOWUP_STORE_PREFIX + q_key, q)
+                cb = _FOLLOWUP_CB_PREFIX + q_key
+                if len(cb) <= MAX_CALLBACK_DATA:
+                    rows.append([{"text": q[:MAX_BUTTON_TEXT], "callback_data": cb}])
+
+        return rows
 
     def _build_feedback_rows(
         self,
@@ -524,13 +535,8 @@ class ResponseKeyboardBuilder:
         user_message: str,
         ai_response: str,
     ) -> list[list[dict[str, str]]]:
-        """Feedback profile: just [👍] [👎]."""
-        return [
-            [
-                self._make_button("👍", "fb_up", msg_hash, user_message, ai_response),
-                self._make_button("👎", "fb_down", msg_hash, user_message, ai_response),
-            ]
-        ]
+        """Legacy feedback profile — 👍/👎 removed. Returns no buttons."""
+        return []
 
 
 # ────────────────────────────────────────────────────────────────
@@ -567,6 +573,36 @@ _FOLLOWUP_STORE_PREFIX: str = "followup:"
 _FOLLOWUP_BTN_LABEL: str = "\u2197\ufe0f Ask this"  # ↗️ Ask this
 # Action prefix embedded in callback_data for follow-up buttons.
 _FOLLOWUP_CB_PREFIX: str = "ask_followup:"
+
+# ── Explore questions (contextual follow-ups injected into REASON-mode responses)
+# The LLM appends a pipe-delimited list after a fixed marker line.
+# extract_explore_questions() strips it from display and returns the questions
+# so they can be rendered as inline 'explore' buttons (replacing legacy feedback).
+_EXPLORE_Q_RE = re.compile(
+    r"\n+EXPLORE_Q:\s*(.+)$",
+    re.DOTALL | re.IGNORECASE,
+)
+_EXPLORE_Q_MAX: int = 4  # max explore buttons rendered per response
+
+
+def extract_explore_questions(text: str) -> tuple[str, list[str]]:
+    """Strip EXPLORE_Q: marker and return (cleaned_text, [question, ...]).
+
+    The LLM appends a line like::
+
+        EXPLORE_Q: Who directed this? | Other Fincher films? | Full cast list?
+
+    This function strips that line from the visible text and returns the
+    questions so they can be shown as contextual explore inline buttons.
+    """
+    m = _EXPLORE_Q_RE.search(text)
+    if not m:
+        return text, []
+    cleaned = text[: m.start()].rstrip()
+    raw = m.group(1).strip()
+    questions = [q.strip() for q in raw.split("|") if q.strip()]
+    return cleaned, questions[:_EXPLORE_Q_MAX]
+
 
 _ACTION_PROMPTS: dict[str, str] = {
     "regen": (

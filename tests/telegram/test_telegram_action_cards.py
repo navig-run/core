@@ -92,8 +92,12 @@ async def test_handle_reason_edits_placeholder_with_generated_keyboard(
     channel = TelegramChannel(bot_token="123:FAKE", on_message=_on_message)
     channel._features = frozenset({"sessions"})
     channel._keep_typing = AsyncMock()
+    # send_message is called twice: once to create the placeholder, once to deliver
+    # the final answer (after the placeholder is deleted).
     channel.send_message = AsyncMock(return_value={"message_id": 321})
+    channel.delete_message = AsyncMock(return_value=True)
     channel.edit_message = AsyncMock(return_value={"ok": True})
+    channel._maybe_send_voice = AsyncMock(return_value=False)
     channel._record_assistant_msg = MagicMock()
     channel._is_debug_mode = MagicMock(return_value=False)
 
@@ -116,15 +120,17 @@ async def test_handle_reason_edits_placeholder_with_generated_keyboard(
         is_group=False,
     )
 
-    channel.edit_message.assert_awaited_once()
-    args = channel.edit_message.await_args.args
-    kwargs = channel.edit_message.await_args.kwargs
-    assert args[0] == 123
-    assert args[1] == 321
-    assert "searchqualityreflection" not in args[2]
-    assert "searchqualityscore" not in args[2]
-    assert "<search>" not in args[2]
-    assert kwargs["keyboard"] == [
+    # New behaviour: reasoning placeholder is deleted, answer sent as new message.
+    channel.delete_message.assert_awaited_once_with(123, 321)
+
+    # The final answer must arrive via send_message (second call; first was placeholder).
+    final_call = channel.send_message.await_args
+    sent_text = final_call.args[1]
+    sent_kwargs = final_call.kwargs
+    assert "searchqualityreflection" not in sent_text
+    assert "searchqualityscore" not in sent_text
+    assert "<search>" not in sent_text
+    assert sent_kwargs.get("keyboard") == [
         [{"text": "📰 Fetch CNN headlines", "callback_data": "card_exec:abc"}]
     ]
 

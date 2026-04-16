@@ -3,7 +3,7 @@
 NAVIG System Tray Application
 
 A Windows system tray launcher for NAVIG agent and gateway services.
-Inspired by OpenClaw Windows Hub — provides:
+Inspired by Windows Hub — provides:
   - System tray icon with status indicator
   - Start/stop NAVIG gateway and agent
   - Quick access to common commands

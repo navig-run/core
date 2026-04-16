@@ -7,7 +7,7 @@ Tracks operator state signals to enable context-aware proactive interactions:
 - Usage patterns (frequent commands, underused features, feature discovery)
 - Temporal context (time of day, day of week, work patterns)
 
-Inspired by OpenClaw's session-scoped context awareness and HEARTBEAT.md
+A session-scoped context awareness and HEARTBEAT.md
 operator health monitoring, adapted for NAVIG's persistent daemon model.
 """
 

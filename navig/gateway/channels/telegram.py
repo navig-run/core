@@ -162,14 +162,22 @@ _REMINDER_RETRY_DELAY_SEC: int = 60  # Reminder poller: backoff seconds per retr
 # ---------------------------------------------------------------------------
 _REASON_PLACEHOLDER: str = "\U0001f9e0 Reasoning\u2026"
 _REASON_PHASES: tuple[tuple[float, str], ...] = (
-    (2.0, "\U0001f9e0 Reasoning  \u00b7  \U0001f4d6 Reading"),
-    (2.5, "\U0001f9e0 Reasoning  \u00b7  \U0001f50e Analyzing"),
-    (2.5, "\U0001f9e0 Reasoning  \u00b7  \u270d\ufe0f Composing"),
-    (3.0, "\U0001f9e0 Reasoning  \u00b7  \U0001f504 Refining\u2026"),
+    (2.0, "\U0001f4d6 Reading\u2026"),
+    (2.5, "\U0001f50e Analyzing\u2026"),
+    (2.5, "\u270d\ufe0f Composing\u2026"),
+    (3.0, "\U0001f504 Refining\u2026"),
 )
 # After all phases are exhausted the final label is re-emitted every N seconds.
 _TICKER_HOLD_INTERVAL_SEC: float = 10.0
-
+# Appended to REASON-mode LLM prompts so the model returns contextual explore
+# questions inline.  Stripped from display; surfaced as inline keyboard buttons.
+_EXPLORE_SUFFIX: str = (
+    "\n\nAt the very end of your response, on a NEW LINE, write EXACTLY this line "
+    "(and nothing else after it):\n"
+    "EXPLORE_Q: <question 1> | <question 2> | <question 3> | <question 4>\n"
+    "Write 2\u20134 short (\u22647 words each) natural follow-up questions the user "
+    "would logically want next. No preamble\u2014just that one line."
+)
 
 
 @dataclass
@@ -1980,7 +1988,7 @@ class TelegramChannel:
             response = await self.on_message(
                 channel="telegram",
                 user_id=str(user_id),
-                message=_enriched_text,
+                message=_enriched_text + _EXPLORE_SUFFIX,
                 metadata=metadata,
             )
         finally:
@@ -2000,13 +2008,22 @@ class TelegramChannel:
 
         self._persist_updated_language(metadata, chat_id, user_id, session_manager, is_group)
 
-        # Only append model footer in debug/trace mode вЂ” keep normal replies clean
+        # Only append model footer in debug/trace mode — keep normal replies clean
         model_name = self._resolve_model_name(metadata) if self._is_debug_mode(user_id) else ""
-        footer = f"\n\n<code>В· {model_name}</code>" if model_name else ""
+        footer = f"\n\n<code>\u00b7 {model_name}</code>" if model_name else ""
         final_text = f"{response}{footer}"
         final_text = self._strip_internal_tags(final_text)
 
         self._record_assistant_msg(session, session_manager, chat_id, user_id, response, is_group)
+
+        # Extract contextual explore questions appended by the LLM.
+        explore_qs: list[str] = []
+        if HAS_KEYBOARDS:
+            try:
+                from navig.gateway.channels.telegram_keyboards import extract_explore_questions
+                final_text, explore_qs = extract_explore_questions(final_text)
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; never block the reply
 
         keyboard = None
         if self._kb_builder:
@@ -2015,23 +2032,24 @@ class TelegramChannel:
                     ai_response=final_text,
                     user_message=text,
                     message_id=placeholder_id or 0,
+                    explore_questions=explore_qs,
                 )
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
+        # Delete the reasoning placeholder so the answer appears as a fresh
+        # message — the reasoning phase vanishes cleanly rather than being
+        # edited in-place (jarring layout shift).
         if placeholder_id:
             try:
-                await self.edit_message(
-                    chat_id,
-                    placeholder_id,
-                    self._md_to_html(final_text),
-                    parse_mode="HTML",
-                    keyboard=keyboard,
-                )
-                return
+                await self.delete_message(chat_id, placeholder_id)
             except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
-        await self._send_response(chat_id, final_text, text, user_id=user_id, is_group=is_group)
+                pass  # cosmetic — never block the reply
+        await self._send_response(
+            chat_id, final_text, text,
+            user_id=user_id, is_group=is_group,
+            prebuilt_keyboard=keyboard,
+        )
 
     async def _handle_code(
         self,
@@ -3234,6 +3252,7 @@ class TelegramChannel:
         user_id: int = 0,
         is_group: bool = False,
         extra_krow: list | None = None,
+        prebuilt_keyboard: list | None = None,
     ) -> None:
         """Send a response with template limits, optional keyboard, and voice reply."""
         # Strip internal LLM reasoning tags before any further processing
@@ -3252,8 +3271,8 @@ class TelegramChannel:
             response = fmt.text
             parts = fmt.parts
 
-        keyboard = None
-        if self._kb_builder:
+        keyboard = prebuilt_keyboard  # caller may supply an already-built keyboard
+        if keyboard is None and self._kb_builder:
             try:
                 keyboard = self._kb_builder.build(
                     ai_response=response,
@@ -4425,42 +4444,10 @@ class TelegramChannel:
         )
 
     async def _skill_list(self, chat_id: int) -> None:
-        """Send a paginated list of all available skills."""
-        try:
-            from navig.skills.loader import load_all_skills  # lazy
+        """Delegate /skill list rendering to canonical TelegramCommandsMixin."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
-            skills = load_all_skills()
-        except Exception as exc:
-            await self.send_message(chat_id, f"вќЊ Could not load skills: {exc}", parse_mode=None)
-            return
-
-        if not skills:
-            await self.send_message(
-                chat_id,
-                "No skills found.\n\nInstall community skill packs or check your `.navig/skills/` folder.",
-                parse_mode=None,
-            )
-            return
-
-        # Group by category
-        by_cat: dict[str, list] = {}
-        for skill in sorted(skills, key=lambda s: (s.category, s.id)):
-            by_cat.setdefault(skill.category, []).append(skill)
-
-        lines: list[str] = ["рџ§© <b>Available Skills</b>\n"]
-        for cat, cat_skills in sorted(by_cat.items()):
-            lines.append(f"\n<b>{html.escape(cat.title())}</b>")
-            for s in cat_skills:
-                safety_icon = {"safe": "рџџў", "elevated": "рџџЎ", "destructive": "рџ”ґ"}.get(
-                    s.safety, "вљЄ"
-                )
-                lines.append(
-                    f"  {safety_icon} <code>{html.escape(str(s.id))}</code> вЂ” {html.escape(str(s.name))}"
-                )
-
-        lines.append("\n\nUsage: <code>/skill &lt;id&gt;</code> for info В· <code>/skill &lt;id&gt; &lt;command&gt;</code> to run")
-
-        await self.send_message(chat_id, "\n".join(lines))
+        await TelegramCommandsMixin._skill_list(self, chat_id=chat_id)
 
     async def _register_commands(self):
         """Register slash commands with Telegram via registry-backed mixin."""
@@ -4476,26 +4463,10 @@ class TelegramChannel:
         return member.get("status") in {"administrator", "creator"}
 
     def _get_deck_url(self) -> str | None:
-        """Resolve the Deck WebApp URL from config."""
-        try:
-            import os
+        """Delegate deck URL resolution to canonical TelegramCommandsMixin."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
-            import yaml
-
-            # Try project config first, then global
-            for cfg_path in [
-                ".navig/config.yaml",
-                os.path.expanduser("~/.navig/config.yaml"),
-            ]:
-                if os.path.exists(cfg_path):
-                    with open(cfg_path, encoding='utf-8') as f:
-                        cfg = yaml.safe_load(f) or {}
-                    url = (cfg.get("telegram", {}) or {}).get("deck_url")
-                    if url:
-                        return url
-        except Exception as e:
-            logger.debug("Could not read deck_url from config: %s", e)
-        return None
+        return TelegramCommandsMixin._get_deck_url(self)
 
     async def send_message(
         self,
@@ -4583,45 +4554,35 @@ class TelegramChannel:
             payload["reply_markup"] = {"inline_keyboard": keyboard}
         return await self._api_call("editMessageText", payload)
 
-    # -- Monitoring helpers (mirrors TelegramCommandsMixin; needed when handlers
-    # are dispatched as functools.partial and self is TelegramChannel) ----------
+    # -- Monitoring helpers -----------------------------------------------------
 
     @staticmethod
     def _mon_bar(pct: float, width: int = 14) -> str:
-        """Unicode progress bar."""
-        filled = int(round(pct / 100 * width))
-        return "в–€" * filled + "в–‘" * (width - filled)
+        """Delegate monitoring progress-bar helper to TelegramCommandsMixin."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._mon_bar(pct, width=width)
 
     @staticmethod
     def _mon_status_icon(pct: float, high: int = 80, med: int = 60) -> str:
-        if pct >= high:
-            return "рџ”ґ"
-        if pct >= med:
-            return "рџџЎ"
-        return "рџџў"
+        """Delegate monitoring status-icon helper to TelegramCommandsMixin."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._mon_status_icon(pct, high=high, med=med)
 
     @staticmethod
     def _mon_header(icon: str, title: str, subtitle: str = "") -> str:
-        import html as _html
+        """Delegate monitoring header helper to TelegramCommandsMixin."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
-        line = "в”Ѓ" * 26
-        sub = f"\n<i>{_html.escape(subtitle)}</i>" if subtitle else ""
-        return f"{line}\n{icon}  <b>{_html.escape(title)}</b>{sub}\n{line}"
+        return TelegramCommandsMixin._mon_header(icon, title, subtitle=subtitle)
 
     @staticmethod
     def _mon_host_ctx() -> tuple:
-        """Return (host_name, server_config_dict, is_local)."""
-        try:
-            from navig.config import get_config_manager
-            from navig.remote import is_local_host
+        """Delegate monitoring host-context helper to TelegramCommandsMixin."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
-            cfg = get_config_manager()
-            host_name = cfg.get_active_host() or "localhost"
-            server_config = cfg.load_server_config(host_name)
-            is_local = is_local_host(server_config)
-            return host_name, server_config, is_local
-        except Exception:
-            return "localhost", {"is_local": True}, True
+        return TelegramCommandsMixin._mon_host_ctx()
 
     @staticmethod
     def _strip_internal_tags(text: str) -> str:

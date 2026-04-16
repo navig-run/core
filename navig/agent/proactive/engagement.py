@@ -7,10 +7,10 @@ proactive actions to take based on:
 - Time of day / time since last interaction
 - Cooldown timers (prevent spamming)
 - Soul mood (personality-aware delivery)
-- HEARTBEAT.md-driven task list (OpenClaw pattern)
+- HEARTBEAT.md-driven task list 
 
-Architecture inspired by OpenClaw's heartbeat-runner + cron-service:
-- OpenClaw uses HEARTBEAT.md as an LLM-readable task list that the heartbeat
+Architecture heartbeat-runner + cron-service:
+- HEARTBEAT.md as an LLM-readable task list that the heartbeat
   feeds into the agent prompt on each tick — the LLM decides what to do.
 - NAVIG adapts this: the EngagementCoordinator runs on the existing
   HeartbeatRunner interval, evaluates UserStateTracker + cooldowns, and
@@ -109,7 +109,7 @@ class EngagementCoordinator:
     action should be taken. Uses probabilistic scheduling with
     cooldown enforcement to feel natural, not robotic.
 
-    Key design principle from OpenClaw: the proactive system should
+    Key design principle: the proactive system should
     feel like a thoughtful colleague who notices things and offers
     help — not a notification firehose.
     """
@@ -143,7 +143,7 @@ class EngagementCoordinator:
         Evaluates all potential proactive actions, picks the highest
         priority eligible one, and returns it (or None if nothing to do).
 
-        This is the equivalent of OpenClaw's heartbeat-runner tick that
+        This is the equivalent of heartbeat-runner tick that
         feeds HEARTBEAT.md tasks into the agent prompt.
         """
         if not self.config.enabled:

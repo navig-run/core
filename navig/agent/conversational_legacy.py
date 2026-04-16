@@ -2196,7 +2196,7 @@ class ConversationalAgent:
         elif action == "command":
             cmd_str = params.get("cmd", "")
 
-            result = subprocess.run(cmd_str, shell=True, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(cmd_str, shell=True, capture_output=True, text=True, timeout=60)  # noqa: S602  # dynamic shell dispatch
             if result.returncode != 0:
                 raise RuntimeError(result.stderr or f"Exit code: {result.returncode}")
             return result.stdout

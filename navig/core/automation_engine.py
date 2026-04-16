@@ -216,7 +216,7 @@ class WorkflowEngine:
         if action == "run_command":
             cmd = args.get("command")
             if cmd:
-                res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                res = subprocess.run(cmd, shell=True, capture_output=True, text=True)  # noqa: S602  # dynamic shell dispatch
                 if res.returncode == 0:
                     return res.stdout.strip()
             return ""

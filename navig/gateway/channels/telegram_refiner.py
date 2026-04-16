@@ -35,7 +35,11 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any
 
+from navig.gateway.channels.telegram_utils import escape_mdv2
+
 logger = logging.getLogger(__name__)
+
+_mdv2_escape = escape_mdv2
 
 
 # ─────────────────────────────────────────────────────────────────

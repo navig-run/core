@@ -129,12 +129,7 @@ Closes #N.
 5. **File references** use backtick-quoted paths: `` `navig/commands/init.py` ``.
 6. **Command examples** use inline code or fenced code blocks.
 
-### Encoding Guardrails (Hermes / Automated Pipelines)
-
-The normalization pipeline at `.lab/hermes-agent/gateway/platforms/webhook.py`
-(`_normalize_github_comment_content`) and
-`.lab/hermes-agent/hermes_cli/webhook.py`
-(`_normalize_prompt_template`) handle sanitization at the delivery layer.
+### Encoding Guardrails ( Automated Pipelines)
 
 When generating comment text in any agent/script/tool:
 - Build the body as a Python string with real `\n` characters.
@@ -217,6 +212,3 @@ Closing this issue.
 - Git workflow and branch naming: [git.instructions.md](git.instructions.md)
 - Exception handling policy: [exception-policy.instructions.md](exception-policy.instructions.md)
 - Copilot PR checklist: [../copilot-instructions.md](../copilot-instructions.md)
-- Comment normalization implementation:
-  - `.lab/hermes-agent/gateway/platforms/webhook.py` — `_normalize_github_comment_content()`
-  - `.lab/hermes-agent/hermes_cli/webhook.py` — `_normalize_prompt_template()`

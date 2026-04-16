@@ -194,7 +194,7 @@ def _register_core_actions(reg: ActionRegistry) -> None:
         )
         cmd_str = params.get("cmd", "")
 
-        res = subprocess.run(cmd_str, shell=True, capture_output=True, text=True, timeout=timeout)
+        res = subprocess.run(cmd_str, shell=True, capture_output=True, text=True, timeout=timeout)  # noqa: S602  # dynamic shell dispatch
         if res.returncode != 0:
             raise RuntimeError(res.stderr or f"Exit code: {res.returncode}")
         return res.stdout

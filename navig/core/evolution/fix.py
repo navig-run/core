@@ -85,7 +85,7 @@ Constraints:
                 cmd_str = self.check_command.replace("{file}", tmp_path)
 
                 info(f"Running validation: {cmd_str}")
-                result = subprocess.run(cmd_str, shell=True, capture_output=True, text=True)
+                result = subprocess.run(cmd_str, shell=True, capture_output=True, text=True)  # noqa: S602  # dynamic shell dispatch
 
                 if result.returncode != 0:
                     self.last_failure_summary = summarize_check_failure(

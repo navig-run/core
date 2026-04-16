@@ -4,7 +4,7 @@ Proactive Assistance Module
 Provides calendar, email, event-driven automation, and proactive
 user engagement for NAVIG.
 
-Engagement subsystem (inspired by OpenClaw patterns):
+Engagement subsystem:
 - UserStateTracker: Observes operator interaction patterns
 - EngagementCoordinator: Decides when/what proactive actions to take
 - CapabilityPromoter: Feature discovery engine

@@ -26,11 +26,14 @@ import json
 from typing import TYPE_CHECKING
 
 from navig.debug_logger import get_debug_logger
+from navig.gateway.channels.telegram_utils import escape_mdv2
 
 if TYPE_CHECKING:
     pass  # avoids circular; TelegramChannel is in the same package
 
 logger = get_debug_logger()
+
+_mdv2_escape = escape_mdv2
 
 # Local gateway base URL for mesh routes — resolved from navig config at call time
 # so it tracks config changes without requiring a restart.
