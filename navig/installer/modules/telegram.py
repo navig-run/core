@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from pathlib import Path
 
 from navig.core.file_permissions import set_owner_only_file_permissions
