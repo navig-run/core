@@ -898,9 +898,11 @@ def reroute_cmd(
 
                 # Write traceability sidecar
                 sidecar = dest_file.with_suffix(dest_file.suffix + ".redirected")
-                sidecar.write_text(
+                from navig.core.yaml_io import atomic_write_text
+
+                atomic_write_text(
+                    sidecar,
                     f"redirected_from: {f}\nrule_keywords: {rule.keywords[:6]}\n",
-                    encoding="utf-8",
                 )
 
                 entry["status"] = "redirected"

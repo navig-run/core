@@ -2728,7 +2728,9 @@ See documentation for enabling automated monitoring.
         file_path = canonical_workspace / filename
         if not file_path.exists():
             try:
-                file_path.write_text(content, encoding="utf-8")
+                from navig.core.yaml_io import atomic_write_text
+
+                atomic_write_text(file_path, content)
                 if console:
                     console.print(f"  [green]✓[/green] Created {filename}")
             except OSError as exc:

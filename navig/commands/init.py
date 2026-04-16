@@ -1091,7 +1091,7 @@ def _persist_telegram_bootstrap_token(token: str, navig_dir: Path | None = None)
         pass  # best-effort: config manager unavailable; try next storage path
 
     try:
-        (base / ".telegram_configured").write_text("1", encoding="utf-8")
+        atomic_write_text(base / ".telegram_configured", "1")
         wrote = True
     except Exception:
         pass  # best-effort: flag file unwritable; token still set in environment
