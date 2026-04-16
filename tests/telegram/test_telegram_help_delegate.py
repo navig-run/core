@@ -21,3 +21,44 @@ def test_telegram_channel_exposes_generate_help_delegate():
     assert "/settings" in text
     for hidden in ("/kick", "/mute", "/unmute", "/search", "/respect", "/stats_global"):
         assert hidden not in text
+
+
+def test_telegram_channel_has_pending_api_key_delegate():
+    """TelegramChannel must define _handle_pending_api_key_input delegate."""
+    assert hasattr(TelegramChannel, "_handle_pending_api_key_input"), (
+        "TelegramChannel is missing _handle_pending_api_key_input; "
+        "pending API-key flow will raise AttributeError"
+    )
+    assert inspect.iscoroutinefunction(TelegramChannel._handle_pending_api_key_input)
+
+
+def test_telegram_channel_has_infer_nl_space_intent_delegate():
+    """TelegramChannel must define _infer_nl_space_intent delegate."""
+    assert hasattr(TelegramChannel, "_infer_nl_space_intent"), (
+        "TelegramChannel is missing _infer_nl_space_intent; "
+        "NL routing will raise AttributeError"
+    )
+
+
+def test_telegram_channel_has_detect_space_from_text_delegate():
+    """TelegramChannel must define _detect_space_from_text delegate."""
+    assert hasattr(TelegramChannel, "_detect_space_from_text"), (
+        "TelegramChannel is missing _detect_space_from_text; "
+        "space detection in NL routing will raise AttributeError"
+    )
+
+
+def test_telegram_channel_has_nl_helper_delegates():
+    """TelegramChannel must expose NL helper delegates used by mixin call-chain."""
+    required = (
+        "_nl_phrase_aliases",
+        "_extract_nl_args",
+        "_resolve_nl_command_intent",
+        "_suggest_nl_commands",
+        "_nl_command_keyboard",
+        "_queue_nl_risky_command_confirmation",
+        "_execute_nl_registry_command",
+        "_execute_nl_pending_after_delay",
+    )
+    missing = [name for name in required if not hasattr(TelegramChannel, name)]
+    assert not missing, f"TelegramChannel missing NL delegates: {missing}"

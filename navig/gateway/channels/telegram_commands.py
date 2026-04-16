@@ -1501,6 +1501,12 @@ class TelegramCommandsMixin:
                 handoff = consume_chat_onboarding_handoff_state(home_navig_dir)
                 if handoff:
                     steps = get_chat_onboarding_step_progress(home_navig_dir)
+
+            if not handoff:
+                env_home_navig_dir = Path.home() / ".navig"
+                handoff = consume_chat_onboarding_handoff_state(env_home_navig_dir)
+                if handoff:
+                    steps = get_chat_onboarding_step_progress(env_home_navig_dir)
         except Exception:
             handoff = None
             steps = []
@@ -5780,15 +5786,18 @@ class TelegramCommandsMixin:
 
         # -- Daemon log warnings ------------------------------------------------
         try:
-            from navig.platform.paths import local_log_dir as _lldir
+            from navig.platform.paths import debug_log_path as _debug_log_path
 
-            _log_candidates = [
-                str(_lldir() / "debug.log"),
-                "/var/log/navig/daemon.log",
-                "/var/log/navig-daemon.log",
-            ]
+            _primary_debug_log = str(_debug_log_path())
         except Exception:
-            _log_candidates = ["/var/log/navig/daemon.log"]
+            _primary_debug_log = os.path.expanduser("~/.navig/debug.log")
+
+        _log_candidates = [
+            _primary_debug_log,
+            os.path.expanduser("~/.navig/debug.log"),
+            "/var/log/navig/daemon.log",
+            "/var/log/navig-daemon.log",
+        ]
 
         daemon_issues: list = []
         for _log_path in _log_candidates:

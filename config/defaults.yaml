@@ -121,6 +121,22 @@ telegram:
   # How long (hours) a language hint stored in the session is considered fresh.
   # After this window NAVIG re-detects the language from the next message.
   language_cache_max_age_hours: 12
+  # Reaction Intelligence: emoji reactions on bot messages trigger AI actions.
+  # 👍 save feedback · 👎 refine · 🔥 wiki bookmark · 🤔 elaborate · 💯 pin
+  reactions_enabled: true
+  # Inline mode: users can query the bot via @botname in any chat.
+  # Requires BotFather /setinline to be enabled on your bot first.
+  inline_mode_enabled: true
+  # Auto-convert AI task-list responses to native Telegram interactive checklists.
+  # Falls back to HTML checkboxes if the native API is unavailable.
+  checklist_enabled: true
+  # Forum topic auto-router: route commands to matching topics in supergroups.
+  # Default off — only useful when the group has Topics (forum mode) enabled.
+  forum_routing_enabled: false
+  # Auto-pin /briefing output in group chats (replaces previous briefing pin).
+  auto_pin_briefings: true
+  # Auto-pin /plans output in group chats.
+  auto_pin_plans: false
 
 # Daemon / host process settings
 daemon:
