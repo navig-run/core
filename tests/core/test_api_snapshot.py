@@ -911,10 +911,13 @@ class TestAtomicWriteText:
         from navig.memory.snapshot import _atomic_write_text
 
         target = tmp_path / "snap.jsonl"
+        # The retry logic lives in navig.core.yaml_io._atomic_replace, where
+        # `os` is a module-level import and `sys` is imported locally (so we
+        # patch the global `sys.platform` instead of a module attribute).
         with (
-            patch("navig.memory._util.sys.platform", "win32"),
+            patch("sys.platform", "win32"),
             patch(
-                "navig.memory._util.os.replace",
+                "navig.core.yaml_io.os.replace",
                 side_effect=[PermissionError("locked"), PermissionError("locked"), None],
             ) as replace_mock,
         ):
