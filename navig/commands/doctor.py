@@ -146,7 +146,7 @@ def check_cache_dir() -> list[tuple[str, bool, str]]:
 
     test_file = cache_dir / ".write_test"
     try:
-        test_file.write_text("ok")
+        test_file.write_text("ok", encoding="utf-8")
         test_file.unlink()
         results.append(_check("Cache dir", True, f"{cache_dir} (writable)"))
     except Exception as e:
