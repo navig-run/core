@@ -8,11 +8,16 @@ The ``GMAIL_OAUTH_CONFIG`` is registered into the global
 
 from __future__ import annotations
 
+from navig.connectors.google_oauth_constants import (
+    GOOGLE_AUTH_URL as _GOOGLE_AUTH_URL,
+)
+from navig.connectors.google_oauth_constants import (
+    GOOGLE_TOKEN_URL as _GOOGLE_TOKEN_URL,
+)
+from navig.connectors.google_oauth_constants import (
+    GOOGLE_USERINFO_URL as _GOOGLE_USERINFO_URL,
+)
 from navig.providers.oauth import OAuthProviderConfig
-
-# Google OAuth 2.0 endpoints (shared across Google APIs)
-_GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
-_GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 
 # Gmail-specific scopes
 # https://developers.google.com/gmail/api/auth/scopes
@@ -45,5 +50,5 @@ def build_gmail_oauth_config(
         client_id=client_id,
         client_secret=client_secret,
         scopes=GMAIL_SCOPES,
-        userinfo_url="https://www.googleapis.com/oauth2/v3/userinfo",
+        userinfo_url=_GOOGLE_USERINFO_URL,
     )

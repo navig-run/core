@@ -6,11 +6,16 @@ Scopes and endpoint URLs for Google Calendar API v3.
 
 from __future__ import annotations
 
+from navig.connectors.google_oauth_constants import (
+    GOOGLE_AUTH_URL as _GOOGLE_AUTH_URL,
+)
+from navig.connectors.google_oauth_constants import (
+    GOOGLE_TOKEN_URL as _GOOGLE_TOKEN_URL,
+)
+from navig.connectors.google_oauth_constants import (
+    GOOGLE_USERINFO_URL as _GOOGLE_USERINFO_URL,
+)
 from navig.providers.oauth import OAuthProviderConfig
-
-# Google OAuth 2.0 endpoints (shared)
-_GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
-_GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 
 # Calendar-specific scopes
 # https://developers.google.com/calendar/api/auth
@@ -40,5 +45,5 @@ def build_calendar_oauth_config(
         client_id=client_id,
         client_secret=client_secret,
         scopes=CALENDAR_SCOPES,
-        userinfo_url="https://www.googleapis.com/oauth2/v3/userinfo",
+        userinfo_url=_GOOGLE_USERINFO_URL,
     )

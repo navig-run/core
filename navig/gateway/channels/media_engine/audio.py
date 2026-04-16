@@ -38,10 +38,17 @@ try:
 except Exception:  # pragma: no cover
     _PRUL: dict = {}
 
-logger = logging.getLogger(__name__)
+from navig.gateway.channels.media_engine._retry import (
+    DEFAULT_RETRIES as _RETRIES,
+)
+from navig.gateway.channels.media_engine._retry import (
+    DEFAULT_TIMEOUT as _TIMEOUT,
+)
+from navig.gateway.channels.media_engine._retry import (
+    with_retry as _with_retry,
+)
 
-_TIMEOUT = 8.0
-_RETRIES = 2
+logger = logging.getLogger(__name__)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -79,8 +86,6 @@ async def _fetch_json(
         logger.debug("AudioEngine HTTP %s %s: %s", method.upper(), url, exc)
         return None
 
-
-from navig.gateway.channels.media_engine._retry import with_retry as _with_retry
 
 # ── Stage implementations ─────────────────────────────────────────────────────
 
