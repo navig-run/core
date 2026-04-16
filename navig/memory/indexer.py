@@ -47,7 +47,7 @@ class IndexResult:
     chunks_embedded: int = 0
     total_tokens: int = 0
     duration_seconds: float = 0.0
-    errors: list[str] = None
+    errors: list[str] | None = None
 
     def __post_init__(self):
         if self.errors is None:

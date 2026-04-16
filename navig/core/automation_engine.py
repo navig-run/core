@@ -36,7 +36,7 @@ class Workflow:
     name: str
     steps: list[WorkflowStep]
     description: str = ""
-    variables: dict[str, str] = None
+    variables: dict[str, str] | None = None
 
 
 class WorkflowEngine:

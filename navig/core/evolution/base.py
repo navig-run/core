@@ -8,7 +8,7 @@ class EvolutionResult:
     success: bool
     artifact: Any = None
     error: str = ""
-    history: list[str] = None
+    history: list[str] | None = None
     attempts: int = 0
 
 

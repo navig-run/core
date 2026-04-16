@@ -18,7 +18,7 @@ class EvolutionResult:
     script_id: str | None = None
     final_script: str = ""
     attempts: int = 0
-    history: list[str] = None
+    history: list[str] | None = None
 
 
 class Evolver:

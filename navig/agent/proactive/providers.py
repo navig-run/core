@@ -18,7 +18,7 @@ class CalendarEvent:
     end: datetime
     location: str | None = None
     description: str | None = None
-    attendees: list[str] = None
+    attendees: list[str] | None = None
 
 
 @dataclass

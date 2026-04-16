@@ -34,8 +34,8 @@ class InputMessage:
     content: str
     user_id: str | None = None
     channel_id: str | None = None
-    metadata: dict[str, Any] = None
-    timestamp: datetime = None
+    metadata: dict[str, Any] | None = None
+    timestamp: datetime | None = None
 
     def __post_init__(self):
         self.metadata = self.metadata or {}

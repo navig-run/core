@@ -58,7 +58,7 @@ class HeartbeatResult:
     timestamp: datetime
     suppressed: bool = False  # True if HEARTBEAT_OK
     error: str | None = None
-    issues_found: list[str] = None
+    issues_found: list[str] | None = None
 
     def __post_init__(self):
         if self.issues_found is None:
