@@ -242,9 +242,15 @@ class TestModeClassifier:
     def test_straight_quoted_movie_is_reason(self):
         assert self._classify('is "Inception" a good film') == "REASON"
 
-    def test_non_latin_three_words_is_reason(self):
-        # 4 Cyrillic words, no markers — non-Latin dominant path
-        assert self._classify("смотрю фильм Проект Мария") == "REASON"
+    def test_non_latin_statement_without_question_is_talk(self):
+        # Non-Latin statement with no question mark and no title marker should
+        # stay conversational.
+        assert self._classify("смотрю фильм проект мария") == "TALK"
+
+    def test_non_latin_question_routes_to_reason(self):
+        # Non-Latin dominant text now routes to REASON only when analytical
+        # intent is explicit (question mark here).
+        assert self._classify("смотрю фильм проект мария?") == "REASON"
 
     def test_title_cased_sequence_is_reason(self):
         assert self._classify("have you seen The Dark Knight Rises") == "REASON"
@@ -257,9 +263,9 @@ class TestModeClassifier:
         # Cyrillic sentence with a Latin proper noun — two script buckets
         assert self._classify("смотрю Inception сейчас") == "REASON"
 
-    def test_lowercase_latin_five_words_is_reason(self):
-        # All lowercase, no markers, 5 words — falls through to the ≥5 threshold
-        assert self._classify("i'm watching ave maria project") == "REASON"
+    def test_lowercase_latin_five_words_is_talk(self):
+        # All lowercase, no markers, no explicit analytical intent — keep TALK.
+        assert self._classify("i'm watching ave maria project") == "TALK"
 
 
 # ─── select_tools_for_text tests ──────────────────────────────────────────────

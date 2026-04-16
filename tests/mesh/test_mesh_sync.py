@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -282,3 +283,78 @@ def test_on_sync_packet_different_hash_outside_debounce_creates_task():
     with patch("asyncio.create_task") as mock_task:
         sm.on_sync_packet("sync_state", record, {"sync_hash": "xyz999"})
         mock_task.assert_called_once()
+
+
+# ── SQLite persistence (Phase 2) ─────────────────────────────────────────────
+
+
+def test_persist_state_roundtrip_sqlite(tmp_path: Path):
+    from navig.mesh.sync_manager import SyncManager
+
+    db_path = tmp_path / "mesh_sync.db"
+    sm = SyncManager(_make_registry(), _make_discovery(), optional_sqlite_path=db_path)
+
+    sm._state = {
+        "node_id": "persisted-node",
+        "hostname": "persisted.local",
+        "capabilities": ["llm"],
+        "heartbeat_interval_s": 10,
+        "cron_hash": "abc123",
+        "timestamp": 123.456,
+    }
+    sm._state_hash = sm._hash_state(sm._state)
+
+    sm._persist_state()
+    restored = sm._load_persisted_state()
+
+    assert restored is not None
+    assert restored["state"]["node_id"] == "persisted-node"
+    assert restored["hash"] == sm._state_hash
+
+
+def test_persist_state_swallows_errors():
+    from navig.mesh.sync_manager import SyncManager
+
+    sm = SyncManager(
+        _make_registry(),
+        _make_discovery(),
+        optional_sqlite_path=Path("mesh_sync.db"),
+    )
+    sm._state = {"node_id": "x", "timestamp": 1.0}
+    sm._state_hash = sm._hash_state(sm._state)
+
+    with patch("navig.storage.engine.get_engine", side_effect=RuntimeError("boom")):
+        sm._persist_state()  # no raise
+
+
+async def test_start_restores_persisted_state_when_available(tmp_path: Path):
+    from navig.mesh.sync_manager import SyncManager
+
+    db_path = tmp_path / "mesh_sync_restore.db"
+    seed = SyncManager(
+        _make_registry(is_leader=False),
+        _make_discovery(),
+        optional_sqlite_path=db_path,
+    )
+    seed._state = {
+        "node_id": "seed-node",
+        "hostname": "seed.local",
+        "capabilities": ["shell"],
+        "heartbeat_interval_s": 10,
+        "cron_hash": "seed",
+        "timestamp": 42.0,
+    }
+    seed._state_hash = seed._hash_state(seed._state)
+    seed._persist_state()
+
+    sm = SyncManager(
+        _make_registry(is_leader=False),
+        _make_discovery(),
+        optional_sqlite_path=db_path,
+    )
+    await sm.start()
+    try:
+        assert sm._state["node_id"] == "seed-node"
+        assert sm._state_hash == seed._state_hash
+    finally:
+        await sm.stop()
