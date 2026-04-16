@@ -337,7 +337,7 @@ class NavigDaemon:
     # -- PID management ----------------------------------------------------
 
     def _write_pid(self) -> None:
-        PID_FILE.write_text(str(os.getpid()))
+        PID_FILE.write_text(str(os.getpid()), encoding="utf-8")
 
     def _remove_pid(self) -> None:
         if PID_FILE.exists():
@@ -347,7 +347,7 @@ class NavigDaemon:
     def read_pid() -> int | None:
         if PID_FILE.exists():
             try:
-                return int(PID_FILE.read_text().strip())
+                return int(PID_FILE.read_text(encoding="utf-8").strip())
             except (ValueError, OSError):
                 return None
         return None
