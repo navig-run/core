@@ -40,8 +40,11 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-_DAEMON_BASE = "http://127.0.0.1:7421"
-_TASK_ENDPOINT = f"{_DAEMON_BASE}/api/v1/browser/task"
+def _daemon_base() -> str:
+    """Return the NAVIG host-daemon base URL, resolving port from config."""
+    from navig.config import get_config_manager
+    port = get_config_manager().get("daemon.browser_port", 7421)
+    return f"http://127.0.0.1:{port}"
 _TIMEOUT = 120  # seconds per task run
 
 
@@ -76,7 +79,7 @@ async def run_browser_task(
         # POST task to Go daemon
         try:
             async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-                resp = await client.post(_TASK_ENDPOINT, json=task_spec)
+                resp = await client.post(f"{_daemon_base()}/api/v1/browser/task", json=task_spec)
                 resp.raise_for_status()
                 result = resp.json()
         except httpx.HTTPError as exc:

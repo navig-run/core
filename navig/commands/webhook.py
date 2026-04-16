@@ -21,7 +21,11 @@ _ch = lazy_import("navig.console_helper")
 
 webhook_app = typer.Typer(name="webhook", help="Manage NAVIG inbound/outbound webhooks")
 
-_DAEMON_BASE = "http://127.0.0.1:7421"
+def _daemon_base() -> str:
+    """Return the NAVIG host-daemon base URL, resolving port from config."""
+    from navig.config import get_config_manager
+    port = get_config_manager().get("daemon.browser_port", 7421)
+    return f"http://127.0.0.1:{port}"
 _WEBHOOK_REQUEST_TIMEOUT: int = 5  # Short timeout for local daemon API calls
 
 
@@ -29,7 +33,7 @@ def _api(method: str, path: str, json=None):
     """Call the NAVIG host daemon REST API."""
     import httpx
 
-    url = f"{_DAEMON_BASE}{path}"
+    url = f"{_daemon_base()}{path}"
     try:
         if method == "GET":
             r = httpx.get(url, timeout=_WEBHOOK_REQUEST_TIMEOUT)
@@ -137,7 +141,7 @@ def webhook_add_inbound(
         f"\n[bold green]✅ Inbound webhook created[/bold green]\n"
         f"  ID:     [cyan]{wh.get('id')}[/cyan]\n"
         f"  Name:   {wh.get('name')}\n"
-        f"  URL:    [blue]POST {_DAEMON_BASE}/webhook/in/{wh.get('token')}[/blue]\n"
+        f"  URL:    [blue]POST {_daemon_base()}/webhook/in/{wh.get('token')}[/blue]\n"
         f"  Secret: [yellow]{wh.get('secret')}[/yellow] (sign payload with HMAC-SHA256)\n"
         f"\n  Add header: [dim]X-Navig-Signature: sha256=<hmac>[/dim]"
     )
