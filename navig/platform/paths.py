@@ -293,6 +293,11 @@ def ssh_key_dir() -> Path:
     return home_dir() / ".ssh"
 
 
+def media_budget_path() -> Path:
+    """Path to the media-engine monthly spend tracking file."""
+    return data_dir() / "media_budget.json"
+
+
 def temp_dir() -> Path:
     """Temporary directory for NAVIG operations."""
     import tempfile
