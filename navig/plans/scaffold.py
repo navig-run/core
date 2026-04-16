@@ -145,11 +145,11 @@ def scaffold_plans_structure(root: Path) -> list[Path]:
         (navig_dir / rel).mkdir(parents=True, exist_ok=True)
 
     # Create template files (never overwrite)
+    from navig.core.yaml_io import atomic_write_text
+
     for rel_path, (_, template_key) in _TEMPLATE_FILES.items():
         target = navig_dir / rel_path
         if not target.exists():
-            from navig.core.yaml_io import atomic_write_text
-
             atomic_write_text(
                 target,
                 _TEMPLATE_GENERATORS[template_key](),

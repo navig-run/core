@@ -43,6 +43,8 @@ def _plans_dir(path: str | None = None) -> Path:
 
 
 def _ensure_baseline_files(plans_dir: Path) -> None:
+    from navig.core.yaml_io import atomic_write_text
+
     inbox_dir = plans_dir / "inbox"
     inbox_dir.mkdir(parents=True, exist_ok=True)
 
@@ -52,8 +54,6 @@ def _ensure_baseline_files(plans_dir: Path) -> None:
 
     current_phase = plans_dir / "CURRENT_PHASE.md"
     if not current_phase.exists():
-        from navig.core.yaml_io import atomic_write_text
-
         atomic_write_text(
             current_phase,
             "---\ncompletion_pct: 0.0\nlast_updated: n/a\n---\n\n# Current Phase\n\n- [ ] Define initial milestone\n",

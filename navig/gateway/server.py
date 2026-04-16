@@ -222,6 +222,9 @@ class NavigGateway:
         # Start cron service
         await self._start_cron()
 
+        # Start channel health monitor
+        await self._start_health_monitor()
+
         # Start message queue processor
         self._queue_task = asyncio.create_task(self._process_message_queue())
 
@@ -413,6 +416,49 @@ class NavigGateway:
 
         self.heartbeat_runner = HeartbeatRunner(self, heartbeat_config)
         await self.heartbeat_runner.start()
+
+    async def _start_health_monitor(self):
+        """Start the channel health monitor background task."""
+        try:
+            from navig.gateway.health_monitor import ChannelHealthMonitor
+
+            hm_cfg: dict = (
+                (self.config_manager.global_config or {}).get("gateway", {}).get(
+                    "health_monitor", {}
+                )
+            )
+            self._health_monitor = ChannelHealthMonitor(
+                channels=self.channels,
+                restart_fn=self._restart_channel,
+                **{k: v for k, v in hm_cfg.items() if k in {
+                    "check_interval_s",
+                    "stale_threshold_s",
+                    "startup_grace_s",
+                    "max_restarts_per_hour",
+                    "cooldown_cycles",
+                }},
+            )
+            self._spawn_background_task(self._health_monitor.run())
+            logger.info("Channel health monitor started")
+        except Exception as exc:
+            logger.debug("Channel health monitor not started: %s", exc)
+
+    async def _restart_channel(self, name: str) -> None:
+        """Stop then restart a named channel (used by the health monitor)."""
+        channel = self.channels.get(name)
+        if channel is None:
+            logger.warning("_restart_channel: channel %r not found", name)
+            return
+        logger.info("_restart_channel: stopping %r", name)
+        try:
+            await channel.stop()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("_restart_channel: stop(%r) raised %r", name, exc)
+        logger.info("_restart_channel: starting %r", name)
+        try:
+            await channel.start()
+        except Exception as exc:  # noqa: BLE001
+            logger.error("_restart_channel: start(%r) failed: %r", name, exc)
 
     async def _start_cron(self):
         """Start cron service."""

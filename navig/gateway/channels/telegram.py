@@ -179,10 +179,11 @@ _TICKER_HOLD_INTERVAL_SEC: float = 10.0
 _EXPLORE_SUFFIX: str = (
     "\n\n\u26a0\ufe0f MANDATORY \u2014 your response MUST end with this line, "
     "formatted exactly as shown (replace the placeholders):\n"
-    "EXPLORE_Q: [question 1] | [question 2] | [question 3] | [question 4]\n"
-    "Requirements: exactly 4 follow-up questions, each \u22647 words, "
-    "separated by ` | `, no period at end, no text after this line. "
-    "Omitting this line or writing fewer than 4 questions is an error."
+    "EXPLORE_Q: [item 1] | [item 2] | [item 3] | [item 4] | [item 5]\n"
+    "Requirements: exactly 5 items. Each item is a short follow-up question OR an action "
+    "prompt (e.g. \"List all films by this director\", \"Compare with similar works\"). "
+    "Each item \u22648 words, separated by ` | `, no period at end, no text after this line. "
+    "Omitting this line or writing fewer than 5 items is an error."
 )
 
 
@@ -4563,6 +4564,23 @@ class TelegramChannel:
         if keyboard is not None:
             payload["reply_markup"] = {"inline_keyboard": keyboard}
         return await self._api_call("editMessageText", payload)
+
+    async def edit_message_reply_markup(
+        self,
+        chat_id: int,
+        message_id: int,
+        keyboard: dict | None,
+    ) -> dict | None:
+        """Edit only the inline keyboard of a message without changing its text."""
+        payload: dict = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+        }
+        if keyboard is not None:
+            payload["reply_markup"] = keyboard
+        else:
+            payload["reply_markup"] = {}
+        return await self._api_call("editMessageReplyMarkup", payload)
 
     # -- Monitoring helpers -----------------------------------------------------
 
