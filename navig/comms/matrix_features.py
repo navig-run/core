@@ -38,9 +38,9 @@ FEATURE_DESCRIPTIONS: dict[str, str] = {
 def _get_matrix_features_config() -> dict[str, Any]:
     """Load the features block from config, falling back to defaults."""
     try:
-        from navig.core.config import get_global_config
+        from navig.config import get_config_manager
 
-        cfg = get_global_config()
+        cfg = get_config_manager().get_global_config()
         return cfg.get("comms", {}).get("matrix", {}).get("features", {})
     except Exception:
         return {}
@@ -49,9 +49,9 @@ def _get_matrix_features_config() -> dict[str, Any]:
 def is_matrix_enabled() -> bool:
     """Check if Matrix is enabled at all."""
     try:
-        from navig.core.config import get_global_config
+        from navig.config import get_config_manager
 
-        cfg = get_global_config()
+        cfg = get_config_manager().get_global_config()
         return cfg.get("comms", {}).get("matrix", {}).get("enabled", False)
     except Exception:
         return False

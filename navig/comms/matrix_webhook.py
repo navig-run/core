@@ -52,9 +52,9 @@ async def push_matrix_stats(
     # Resolve endpoint / secret from config if not provided
     if not endpoint or not secret:
         try:
-            from navig.core.config import get_config
+            from navig.config import get_config_manager
 
-            cfg = get_config()
+            cfg = get_config_manager().get_global_config()
             matrix_cfg = cfg.get("comms", {}).get("matrix", {})
             endpoint = endpoint or matrix_cfg.get("stats_endpoint", "")
             secret = secret or matrix_cfg.get("stats_secret", "")

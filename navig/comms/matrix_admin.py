@@ -356,9 +356,9 @@ def get_admin_client() -> MatrixAdminClient:
         return _admin_client
 
     try:
-        from navig.core.config import get_global_config
+        from navig.config import get_config_manager
 
-        cfg = get_global_config()
+        cfg = get_config_manager().get_global_config()
         matrix_cfg = cfg.get("comms", {}).get("matrix", {})
         hs_cfg = matrix_cfg.get("homeserver", {})
         _admin_client = MatrixAdminClient(

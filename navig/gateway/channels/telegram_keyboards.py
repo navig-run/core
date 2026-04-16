@@ -1966,7 +1966,7 @@ class CallbackHandler:
         if cb_data == "hyb_enable":
             await self._answer(cb_id, "")
             try:
-                from navig.core.config_loader import get_config_manager
+                from navig.config import get_config_manager
 
                 cfg_mgr = get_config_manager()
                 cfg_mgr.update_global_config({"routing": {"enabled": True}})

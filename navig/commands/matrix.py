@@ -67,9 +67,9 @@ def _matrix_callback(ctx: typer.Context) -> None:
 def _get_config() -> dict:
     """Load comms.matrix config block."""
     try:
-        from navig.core.config import get_global_config
+        from navig.config import get_config_manager
 
-        cfg = get_global_config()
+        cfg = get_config_manager().get_global_config()
         return cfg.get("comms", {}).get("matrix", {})
     except Exception:
         return {}
@@ -294,9 +294,12 @@ def use_profile(
         pass  # optional dependency not installed; feature disabled
 
     try:
-        from navig.core.config import set_config_value
+        from navig.config import get_config_manager
 
-        set_config_value("comms.matrix.credential_id", profile)
+        _cm = get_config_manager()
+        _cfg = _cm.get_global_config()
+        _cfg.setdefault("comms", {}).setdefault("matrix", {})["credential_id"] = profile
+        _cm.update_global_config(_cfg)
         console.print(f"[green]✓[/] Active Matrix profile → [bold]{profile}[/]")
     except Exception as e:
         console.print(f"[red]✗[/] Failed to set profile: {e}")
