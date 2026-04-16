@@ -15,6 +15,7 @@ import yaml
 from navig import console_helper as ch
 from navig.config import ConfigManager, get_config_manager
 from navig.core.dict_utils import deep_merge
+from navig.core.yaml_io import atomic_write_yaml
 from navig.template_manager import TemplateManager
 
 
@@ -327,8 +328,7 @@ class ServerTemplateManager:
         current[keys[-1]] = value
 
         # Save custom config as YAML
-        with open(yaml_config_file, "w", encoding="utf-8") as f:
-            yaml.dump(custom_config, f, default_flow_style=False, sort_keys=False)
+        atomic_write_yaml(custom_config, yaml_config_file)
 
         # Mark as customized in server YAML
         server_config["templates"][template_name]["customized"] = True

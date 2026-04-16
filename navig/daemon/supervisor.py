@@ -24,13 +24,13 @@ import os
 import signal
 import subprocess
 import sys
-import tempfile
 import time
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
+from navig.core.yaml_io import atomic_write_text
 from navig.platform import paths
 
 # ---------------------------------------------------------------------------
@@ -411,17 +411,7 @@ class NavigDaemon:
             "children": [c.to_dict() for c in self.children],
         }
         try:
-            _tmp_path: Path | None = None
-            try:
-                _fd, _tmp = tempfile.mkstemp(dir=STATE_FILE.parent, suffix=".tmp")
-                _tmp_path = Path(_tmp)
-                with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
-                    _fh.write(json.dumps(state, indent=2))
-                os.replace(_tmp_path, STATE_FILE)
-                _tmp_path = None
-            finally:
-                if _tmp_path is not None:
-                    _tmp_path.unlink(missing_ok=True)
+            atomic_write_text(STATE_FILE, json.dumps(state, indent=2))
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 

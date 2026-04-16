@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 MAX_BUTTONS_PER_ROW = 3
 MAX_ROWS = 2
+MAX_EXPAND_ROWS = 5
 MAX_BUTTON_TEXT = 28
 MAX_CALLBACK_DATA = 64  # Telegram limit
 
@@ -338,7 +339,11 @@ class ResponseKeyboardBuilder:
         elif profile == KeyboardProfile.FEEDBACK:
             rows = self._build_feedback_rows(msg_hash, user_message, ai_response)
 
-        return rows[:MAX_ROWS] if rows else None
+        if not rows:
+            return None
+        if profile == KeyboardProfile.EXPAND:
+            return rows[:MAX_EXPAND_ROWS]
+        return rows[:MAX_ROWS]
 
     # ── Profile builders ──
 
@@ -520,7 +525,29 @@ class ResponseKeyboardBuilder:
         # Each question is stored in CallbackStore and rendered as a button that
         # routes through _handle_ask_followup_callback like a user-typed message.
         if explore_questions:
-            for idx, q in enumerate(explore_questions[:_EXPLORE_Q_MAX]):
+            normalized: list[str] = []
+            seen: set[str] = set()
+            for q in explore_questions:
+                q_clean = (q or "").strip()
+                if not q_clean:
+                    continue
+                q_key_norm = q_clean.lower()
+                if q_key_norm in seen:
+                    continue
+                seen.add(q_key_norm)
+                normalized.append(q_clean)
+
+            if len(normalized) < _EXPLORE_Q_MIN:
+                for fallback in _EXPLORE_FALLBACKS:
+                    fallback_key = fallback.lower()
+                    if fallback_key in seen:
+                        continue
+                    seen.add(fallback_key)
+                    normalized.append(fallback)
+                    if len(normalized) >= _EXPLORE_Q_MIN:
+                        break
+
+            for idx, q in enumerate(normalized[:_EXPLORE_Q_MAX]):
                 q_key = f"eq{idx}:{msg_hash}"
                 self.store.put(_FOLLOWUP_STORE_PREFIX + q_key, q)
                 cb = _FOLLOWUP_CB_PREFIX + q_key
@@ -582,7 +609,14 @@ _EXPLORE_Q_RE = re.compile(
     r"\n*EXPLORE_Q:\s*([^\n]+)",
     re.IGNORECASE,
 )
+_EXPLORE_Q_MIN: int = 2  # always show at least this many contextual follow-ups
 _EXPLORE_Q_MAX: int = 4  # max explore buttons rendered per response
+_EXPLORE_FALLBACKS: tuple[str, ...] = (
+    "Want the key takeaways?",
+    "Need a spoiler-free version?",
+    "Should I explain it simpler?",
+    "Want related recommendations?",
+)
 
 
 def extract_explore_questions(text: str) -> tuple[str, list[str]]:

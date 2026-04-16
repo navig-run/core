@@ -15,6 +15,7 @@ import html
 import logging
 import random
 import re
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -292,6 +293,9 @@ class TelegramChannel:
         self._running = False
         self._session: aiohttp.ClientSession | None = None
         self._last_update_id = 0
+        # Stamped with time.monotonic() on every received update; read by health
+        # monitor to detect stale (connected-but-silent) channel state.
+        self._last_event_at: float = 0.0
         self._poll_task: asyncio.Task | None = None
         self._reminder_task: asyncio.Task | None = None
         self._notifier = None
@@ -597,6 +601,7 @@ class TelegramChannel:
                 if updates:
                     for update in updates:
                         self._last_update_id = update["update_id"]
+                        self._last_event_at = time.monotonic()
                         await self._process_update(update)
 
             except asyncio.CancelledError:
