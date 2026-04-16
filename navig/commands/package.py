@@ -21,6 +21,7 @@ import typer
 
 from navig import console_helper as ch
 from navig.console_helper import get_console
+from navig.core.yaml_io import atomic_write_text
 from navig.platform.paths import config_dir
 
 # Module-level set: tracks which packs have been successfully loaded in this process.
@@ -172,7 +173,8 @@ def _build_manifest_template(pkg_id: str, pkg_type: str, entry: str) -> dict:
 
 def _write_scaffold_files(pkg_dir: Path, pkg_type: str) -> None:
     if pkg_type == "workflows":
-        (pkg_dir / "workflow.yaml").write_text(
+        atomic_write_text(
+            pkg_dir / "workflow.yaml",
             textwrap.dedent(
                 """\
                 name: Example Workflow
@@ -182,12 +184,12 @@ def _write_scaffold_files(pkg_dir: Path, pkg_type: str) -> None:
                     run: navig status
                 """
             ),
-            encoding="utf-8",
         )
         return
 
     if pkg_type == "commands":
-        (pkg_dir / "handler.py").write_text(
+        atomic_write_text(
+            pkg_dir / "handler.py",
             textwrap.dedent(
                 """\
                 from __future__ import annotations
@@ -210,11 +212,11 @@ def _write_scaffold_files(pkg_dir: Path, pkg_type: str) -> None:
                         pass  # best-effort: CommandRegistry unavailable at pack unload time
                 """
             ),
-            encoding="utf-8",
         )
         commands_dir = pkg_dir / "commands"
         commands_dir.mkdir(parents=True, exist_ok=True)
-        (commands_dir / "__init__.py").write_text(
+        atomic_write_text(
+            commands_dir / "__init__.py",
             textwrap.dedent(
                 """\
                 from .hello import handle as _hello
@@ -224,9 +226,9 @@ def _write_scaffold_files(pkg_dir: Path, pkg_type: str) -> None:
                 }
                 """
             ),
-            encoding="utf-8",
         )
-        (commands_dir / "hello.py").write_text(
+        atomic_write_text(
+            commands_dir / "hello.py",
             textwrap.dedent(
                 """\
                 from __future__ import annotations
@@ -237,11 +239,11 @@ def _write_scaffold_files(pkg_dir: Path, pkg_type: str) -> None:
                     return {"status": "ok", "message": f"hello {name}"}
                 """
             ),
-            encoding="utf-8",
         )
         return
 
-    (pkg_dir / "handler.py").write_text(
+    atomic_write_text(
+        pkg_dir / "handler.py",
         textwrap.dedent(
             """\
             from __future__ import annotations
@@ -255,11 +257,11 @@ def _write_scaffold_files(pkg_dir: Path, pkg_type: str) -> None:
                 return None
             """
         ),
-        encoding="utf-8",
     )
 
     if pkg_type == "telegram":
-        (pkg_dir / "tg_handlers.py").write_text(
+        atomic_write_text(
+            pkg_dir / "tg_handlers.py",
             textwrap.dedent(
                 """\
                 from __future__ import annotations
@@ -267,7 +269,6 @@ def _write_scaffold_files(pkg_dir: Path, pkg_type: str) -> None:
                 TELEGRAM_COMMANDS = {}
                 """
             ),
-            encoding="utf-8",
         )
 
 
@@ -791,9 +792,7 @@ def package_init(
     pkg_dir.mkdir(parents=True, exist_ok=True)
     entry = "workflow.yaml" if normalized_type == "workflows" else "handler.py"
     manifest = _build_manifest_template(name, normalized_type, entry)
-    (pkg_dir / "navig.package.json").write_text(
-        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
-    )
+    atomic_write_text(pkg_dir / "navig.package.json", json.dumps(manifest, indent=2) + "\n")
     _write_scaffold_files(pkg_dir, normalized_type)
 
     ch.success(f"Created package scaffold: {pkg_dir}")
@@ -979,7 +978,7 @@ def _write_autoload(ids: list[str]) -> None:
     p = _autoload_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     canonical_ids = [_canonical_package_id(pkg_id) for pkg_id in ids]
-    p.write_text(json.dumps(_iter_unique(canonical_ids), indent=2), encoding="utf-8")
+    atomic_write_text(p, json.dumps(_iter_unique(canonical_ids), indent=2))
 
 
 autoload_app = typer.Typer(
