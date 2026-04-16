@@ -32,8 +32,8 @@ import logging
 import random
 import threading
 import time
-from dataclasses import dataclass, field
 from collections.abc import Callable
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 

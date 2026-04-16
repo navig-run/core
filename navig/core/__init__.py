@@ -24,7 +24,6 @@ from navig.core.hosts import HostManager
 from navig.core.shared_config import Config
 from navig.core.yaml_io import atomic_write_yaml, log_shadow_anomaly
 
-
 # ---------------------------------------------------------------------------
 # Lazy accessors — keep optional heavy imports out of the hot import path
 # ---------------------------------------------------------------------------

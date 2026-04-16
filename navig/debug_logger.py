@@ -26,7 +26,6 @@ from typing import Any
 
 from navig.core.security import redact_sensitive_text
 
-
 # ---------------------------------------------------------------------------
 # DebugLogger — structured audit log written to a dedicated rotating file
 # ---------------------------------------------------------------------------

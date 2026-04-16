@@ -22,8 +22,9 @@ except ImportError:
     httpx = None
     HTTPX_AVAILABLE = False
 
-from .types import BUILTIN_PROVIDERS, ModelApi, ModelDefinition, ProviderConfig
 from navig._llm_defaults import _DEFAULT_MAX_TOKENS, _DEFAULT_TEMPERATURE
+
+from .types import BUILTIN_PROVIDERS, ModelApi, ModelDefinition, ProviderConfig
 
 
 @dataclass

@@ -1,7 +1,6 @@
 """navig debug — toggle debug mode, show log sizes, open log files."""
 from __future__ import annotations
 
-
 import typer
 
 from navig.console_helper import get_console

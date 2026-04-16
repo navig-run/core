@@ -108,7 +108,9 @@ except ImportError:
 
 # Reaction Intelligence вЂ” message_reaction в†’ AI actions
 try:
-    from navig.gateway.channels.telegram_reactions import TelegramReactionsMixin as _TelegramReactionsMixin  # noqa: F401
+    from navig.gateway.channels.telegram_reactions import (
+        TelegramReactionsMixin as _TelegramReactionsMixin,  # noqa: F401
+    )
 
     HAS_REACTIONS = True
 except ImportError:
@@ -116,7 +118,9 @@ except ImportError:
 
 # Inline mode вЂ” @botname query in any chat
 try:
-    from navig.gateway.channels.telegram_inline import TelegramInlineMixin as _TelegramInlineMixin  # noqa: F401
+    from navig.gateway.channels.telegram_inline import (
+        TelegramInlineMixin as _TelegramInlineMixin,  # noqa: F401
+    )
 
     HAS_INLINE = True
 except ImportError:
@@ -124,7 +128,9 @@ except ImportError:
 
 # Smart reply вЂ” auto-convert list responses to native checklists
 try:
-    from navig.gateway.channels.telegram_checklist import TelegramChecklistMixin as _TelegramChecklistMixin  # noqa: F401
+    from navig.gateway.channels.telegram_checklist import (
+        TelegramChecklistMixin as _TelegramChecklistMixin,  # noqa: F401
+    )
 
     HAS_CHECKLIST = True
 except ImportError:
@@ -132,7 +138,9 @@ except ImportError:
 
 # Forum topic auto-router вЂ” route to supergroup topics
 try:
-    from navig.gateway.channels.telegram_forum import TelegramForumMixin as _TelegramForumMixin  # noqa: F401
+    from navig.gateway.channels.telegram_forum import (
+        TelegramForumMixin as _TelegramForumMixin,  # noqa: F401
+    )
 
     HAS_FORUM = True
 except ImportError:
@@ -622,7 +630,8 @@ class TelegramChannel:
                     _stale = False
                     _overdue_hours = 0.0
                     try:
-                        from datetime import datetime, timezone as _tz
+                        from datetime import datetime
+                        from datetime import timezone as _tz
                         _due_dt = datetime.fromisoformat(
                             remind_at_str.rstrip("Z")
                         ).replace(tzinfo=_tz.utc)
@@ -805,8 +814,10 @@ class TelegramChannel:
                     import functools
 
                     from navig.gateway.channels.telegram_commands import (
-                        TelegramCommandsMixin,
                         _SLASH_REGISTRY as _sr,
+                    )
+                    from navig.gateway.channels.telegram_commands import (
+                        TelegramCommandsMixin,
                     )
 
                     _entry = next(
@@ -4320,6 +4331,7 @@ class TelegramChannel:
         import os as _os
         from datetime import datetime as _dt
         from datetime import timezone as _tz
+
         from navig.platform.paths import msg_trace_path as _msg_trace_path
 
         SEP = "в”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓв”Ѓ"

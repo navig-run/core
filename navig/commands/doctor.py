@@ -410,7 +410,6 @@ def doctor(
 
     try:
         from rich import print as rprint  # noqa: F401
-
         from rich.table import Table  # noqa: F401
 
         console = get_console()

@@ -93,7 +93,6 @@ def tools_list(
     # Default: Rich table
     try:
         from rich import box as rich_box
-
         from rich.table import Table
 
         console = get_console()

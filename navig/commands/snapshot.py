@@ -8,7 +8,6 @@ restore   Roll a file back to a specific prior version.
 """
 from __future__ import annotations
 
-
 import typer
 
 from navig.console_helper import get_console

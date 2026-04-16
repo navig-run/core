@@ -21,8 +21,8 @@ but reply with a disabled notice.
 
 from __future__ import annotations
 
-import json
 import html
+import json
 from typing import TYPE_CHECKING
 
 from navig.debug_logger import get_debug_logger

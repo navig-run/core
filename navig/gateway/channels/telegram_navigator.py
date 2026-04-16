@@ -25,8 +25,8 @@ Usage::
 
 from __future__ import annotations
 
-import json
 import html
+import json
 import logging
 import re
 import textwrap

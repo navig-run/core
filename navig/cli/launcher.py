@@ -26,7 +26,6 @@ if TYPE_CHECKING:
 
 from navig.cli.selector import CommandEntry, fzf_or_fallback
 
-
 # ---------------------------------------------------------------------------
 # Command introspection
 # ---------------------------------------------------------------------------

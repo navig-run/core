@@ -104,7 +104,6 @@ async def _act_noise() -> None:
 async def _act_sigil_assembly(entity: NaviEntity, primary: str, accent: str) -> None:
     try:
         from rich.align import Align
-
         from rich.live import Live
         from rich.text import Text
 

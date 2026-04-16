@@ -9,8 +9,9 @@ Commands:
 
 from __future__ import annotations
 
-import typer
 from typing import Annotated
+
+import typer
 
 from navig import console_helper as ch
 

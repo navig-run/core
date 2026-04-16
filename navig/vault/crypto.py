@@ -20,11 +20,11 @@ import platform
 import socket
 from pathlib import Path
 
-from navig.core.file_permissions import set_owner_only_file_permissions
-
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+from navig.core.file_permissions import set_owner_only_file_permissions
 
 # argon2-cffi is probed lazily on the first KDF call rather than at module
 # import time.  On some platforms (Windows / Python 3.14) the argon2-cffi C

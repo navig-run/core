@@ -5,12 +5,12 @@ Extracted from ``navig/cli/__init__.py`` during CLI decomposition.
 
 from __future__ import annotations
 
+import inspect
 import locale
 import logging
 import os
 import platform
 import subprocess
-import inspect
 from pathlib import Path
 from typing import Any
 

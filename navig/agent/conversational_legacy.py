@@ -817,8 +817,14 @@ class ConversationalAgent:
         try:
             from navig.token_budget import (  # noqa: PLC0415
                 StopDecision as _TokStop,
+            )
+            from navig.token_budget import (
                 check_budget as _chk_tok,
+            )
+            from navig.token_budget import (
                 create_budget_tracker as _mk_tok,
+            )
+            from navig.token_budget import (
                 update_tracker as _upd_tok,
             )
             _tok_budget = _mk_tok()

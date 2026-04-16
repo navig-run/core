@@ -1,7 +1,6 @@
 """navig prompts — agent system-prompt management in .navig/store/prompts/."""
 from __future__ import annotations
 
-
 import typer
 
 from navig.console_helper import get_console

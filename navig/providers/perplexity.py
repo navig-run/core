@@ -25,6 +25,8 @@ except ImportError:
     httpx = None  # type: ignore[assignment]
     HTTPX_AVAILABLE = False
 
+from navig._llm_defaults import _DEFAULT_MAX_TOKENS
+
 from .clients import (
     BaseProviderClient,
     CompletionRequest,
@@ -32,7 +34,6 @@ from .clients import (
     ProviderError,
 )
 from .types import ModelApi, ModelDefinition, ProviderConfig
-from navig._llm_defaults import _DEFAULT_MAX_TOKENS
 
 # API Endpoints
 PERPLEXITY_DIRECT_URL = "https://api.perplexity.ai"

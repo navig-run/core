@@ -11,6 +11,8 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
+from navig._llm_defaults import _DEFAULT_MAX_TOKENS
+
 from .clients import (
     BaseProviderClient,
     CompletionRequest,
@@ -19,7 +21,6 @@ from .clients import (
     ProviderError,
 )
 from .types import ModelApi, ModelCost, ModelDefinition, ProviderConfig
-from navig._llm_defaults import _DEFAULT_MAX_TOKENS
 
 # Check if AirLLM is available
 try:

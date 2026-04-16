@@ -7,7 +7,11 @@ from pathlib import Path
 
 from navig.plans.frontmatter import (
     _safe_read,
+)
+from navig.plans.frontmatter import (
     first_h1 as _first_h1,
+)
+from navig.plans.frontmatter import (
     parse_frontmatter as _parse_frontmatter_map,
 )
 from navig.spaces.resolver import discover_space_paths

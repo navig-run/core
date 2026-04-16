@@ -11,6 +11,8 @@ import time
 from dataclasses import dataclass
 from typing import TypeVar
 
+from navig._llm_defaults import _DEFAULT_MAX_TOKENS, _DEFAULT_TEMPERATURE
+
 from .auth import AuthProfileManager
 from .clients import (
     BaseProviderClient,
@@ -20,7 +22,6 @@ from .clients import (
     create_client,
 )
 from .types import BUILTIN_PROVIDERS, ProviderConfig
-from navig._llm_defaults import _DEFAULT_MAX_TOKENS, _DEFAULT_TEMPERATURE
 
 T = TypeVar("T")
 

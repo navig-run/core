@@ -24,12 +24,12 @@ import time
 import uuid
 from typing import Any
 
+from navig._llm_defaults import _DEFAULT_MAX_TOKENS, _DEFAULT_TEMPERATURE
 from navig.routing.capabilities import (
     MODE_CAPABILITIES,
     MODE_MODEL_PREFERENCE,
     ModeProfile,
 )
-from navig._llm_defaults import _DEFAULT_MAX_TOKENS, _DEFAULT_TEMPERATURE
 from navig.routing.detect import detect_mode
 from navig.routing.trace import RouteTrace, log_trace
 
