@@ -627,7 +627,6 @@ class TelegramChannel:
                         if reminder_id:
                             store.complete_reminder(reminder_id)
                     else:
-                        # BUG-1: handle send failure with capped retry logic
                         if reminder_id:
                             if retry_count >= _REMINDER_MAX_RETRIES:
                                 store.fail_reminder(reminder_id)
@@ -3959,6 +3958,204 @@ class TelegramChannel:
 
         return TelegramCommandsMixin._detect_space_from_text(self, text)
 
+    @staticmethod
+    def _nl_phrase_aliases() -> dict[str, tuple[str, ...]]:
+        """Delegate NL alias-map lookup for command phrase matching."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._nl_phrase_aliases()
+
+    def _extract_nl_args(self, raw_text: str, phrase: str) -> str:
+        """Delegate NL argument-tail extraction from matched phrase."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._extract_nl_args(self, raw_text, phrase)
+
+    def _resolve_nl_command_intent(self, text: str) -> dict[str, Any] | None:
+        """Delegate NL command intent resolution against slash registry."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._resolve_nl_command_intent(self, text)
+
+    def _suggest_nl_commands(self, text: str, limit: int = 3) -> list[dict[str, str]]:
+        """Delegate NL fallback suggestion ranking."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._suggest_nl_commands(self, text, limit=limit)
+
+    def _nl_command_keyboard(
+        self,
+        commands: list[dict[str, Any]],
+        *,
+        limit: int = 3,
+    ) -> list[list[dict[str, str]]]:
+        """Delegate NL suggestion keyboard rendering."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._nl_command_keyboard(self, commands, limit=limit)
+
+    async def _queue_nl_risky_command_confirmation(
+        self,
+        chat_id: int,
+        user_id: int,
+        command: str,
+        args: str,
+    ) -> None:
+        """Delegate risky NL command confirmation queueing."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._queue_nl_risky_command_confirmation(
+            self,
+            chat_id=chat_id,
+            user_id=user_id,
+            command=command,
+            args=args,
+        )
+
+    async def _execute_nl_registry_command(
+        self,
+        chat_id: int,
+        user_id: int,
+        command: str,
+        args: str,
+        text: str,
+        *,
+        is_group: bool = False,
+        username: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Delegate NL-resolved slash command execution."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._execute_nl_registry_command(
+            self,
+            chat_id=chat_id,
+            user_id=user_id,
+            command=command,
+            args=args,
+            text=text,
+            is_group=is_group,
+            username=username,
+            metadata=metadata,
+        )
+
+    async def _execute_nl_pending_after_delay(
+        self,
+        chat_id: int,
+        user_id: int,
+        pending_id: str,
+        delay_seconds: int = 3,
+    ) -> None:
+        """Delegate delayed NL pending-action execution."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._execute_nl_pending_after_delay(
+            self,
+            chat_id=chat_id,
+            user_id=user_id,
+            pending_id=pending_id,
+            delay_seconds=delay_seconds,
+        )
+
+    @staticmethod
+    def _nl_phrase_aliases() -> dict[str, tuple[str, ...]]:
+        """Delegate NL phrase aliases map."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._nl_phrase_aliases()
+
+    def _extract_nl_args(self, raw_text: str, phrase: str) -> str:
+        """Delegate NL argument extraction from matched phrase."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._extract_nl_args(self, raw_text, phrase)
+
+    def _resolve_nl_command_intent(self, text: str) -> dict[str, Any] | None:
+        """Delegate NL command intent resolution."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._resolve_nl_command_intent(self, text)
+
+    def _suggest_nl_commands(self, text: str, limit: int = 3) -> list[dict[str, str]]:
+        """Delegate NL command suggestions for ambiguous intents."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._suggest_nl_commands(self, text, limit=limit)
+
+    def _nl_command_keyboard(
+        self,
+        commands: list[dict[str, Any]],
+        *,
+        limit: int = 3,
+    ) -> list[list[dict[str, str]]]:
+        """Delegate inline keyboard builder for NL command picks."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return TelegramCommandsMixin._nl_command_keyboard(self, commands, limit=limit)
+
+    async def _queue_nl_risky_command_confirmation(
+        self,
+        chat_id: int,
+        user_id: int,
+        command: str,
+        args: str,
+    ) -> None:
+        """Delegate NL risky-command confirmation queueing."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._queue_nl_risky_command_confirmation(
+            self,
+            chat_id,
+            user_id,
+            command,
+            args,
+        )
+
+    async def _execute_nl_registry_command(
+        self,
+        chat_id: int,
+        user_id: int,
+        command: str,
+        args: str,
+        text: str,
+        *,
+        is_group: bool = False,
+        username: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Delegate NL->registry command executor."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._execute_nl_registry_command(
+            self,
+            chat_id,
+            user_id,
+            command,
+            args,
+            text,
+            is_group=is_group,
+            username=username,
+            metadata=metadata,
+        )
+
+    async def _execute_nl_pending_after_delay(
+        self,
+        chat_id: int,
+        user_id: int,
+        pending_id: str,
+        delay_seconds: int = 3,
+    ) -> None:
+        """Delegate delayed execution for NL pending intents."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._execute_nl_pending_after_delay(
+            self,
+            chat_id,
+            user_id,
+            pending_id,
+            delay_seconds=delay_seconds,
+        )
+
     # ── Voice toggle handlers (BUGs 16-17: hardcoded slash route, no guard) ───────
 
     async def _handle_voiceon_cmd(
@@ -4262,7 +4459,15 @@ class TelegramChannel:
         lines.append(SEP)
 
         # ── Daemon log warnings ────────────────────────────────────────────────
+        try:
+            from navig.platform.paths import debug_log_path as _debug_log_path
+
+            _primary_debug_log = str(_debug_log_path())
+        except Exception:  # noqa: BLE001
+            _primary_debug_log = _os.path.expanduser("~/.navig/debug.log")
+
         _DAEMON_LOG_CANDIDATES = [
+            _primary_debug_log,
             _os.path.expanduser("~/.navig/debug.log"),
             "/var/log/navig/daemon.log",
             "/var/log/navig-daemon.log",
@@ -4514,43 +4719,16 @@ class TelegramChannel:
             message_id=message_id,
         )
 
-    async def _handle_mode(self, chat_id: int, mode_arg: str):
-        """Set focus mode and persist to UserStateTracker."""
-        valid_modes = ("work", "deep-focus", "planning", "creative", "relax", "sleep")
-        if not mode_arg or mode_arg not in valid_modes:
-            modes_list = ", ".join(f"<code>{m}</code>" for m in valid_modes)
-            await self.send_message(
-                chat_id, f"🎯 Available modes: {modes_list}\n\nUsage: <code>/mode work</code>"
-            )
-            return
-        # Persist mode in UserStateTracker
-        try:
-            from navig.agent.proactive.user_state import get_user_state_tracker
+    async def _handle_mode(self, chat_id: int, text: str = "", user_id: int = 0) -> None:
+        """Delegate /mode handling to canonical TelegramCommandsMixin implementation."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
-            tracker = get_user_state_tracker()
-            tracker.set_preference("chat_mode", mode_arg)
-        except Exception as e:
-            logger.debug("Failed to persist mode: %s", e)
-        emoji_map = {
-            "work": "💼",
-            "deep-focus": "🎯",
-            "planning": "📋",
-            "creative": "🎨",
-            "relax": "☕",
-            "sleep": "🌙",
-        }
-        emoji = emoji_map.get(mode_arg, "🎯")
-        # Entity-style mode confirmations
-        mode_voice = {
-            "work": f"{emoji} shifting to work mode. focused.",
-            "deep-focus": f"{emoji} going deep. silencing everything except critical.",
-            "planning": f"{emoji} planning mode. thinking in structures.",
-            "creative": f"{emoji} creative space. looser constraints.",
-            "relax": f"{emoji} backing off. around if you need me.",
-            "sleep": f"{emoji} entering quiet state. only emergencies get through.",
-        }
-        text = mode_voice.get(mode_arg, f"{emoji} mode shifted.")
-        await self.send_message(chat_id, text, parse_mode=None)
+        await TelegramCommandsMixin._handle_mode(
+            self,
+            chat_id=chat_id,
+            text=text,
+            user_id=user_id,
+        )
 
     def _match_cli_command(self, text: str) -> str | None:
         """Match slash command to a navig CLI string via the registry."""
@@ -4565,178 +4743,27 @@ class TelegramChannel:
         metadata: dict,
         navig_cmd: str,
     ):
-        """Execute a navig CLI command with typing indicator and send output."""
-        typing_task = asyncio.create_task(self._keep_typing(chat_id))
-        try:
-            if self.on_message:
-                # Route through channel_router as "navig <cmd>" so it hits _execute_navig_command
-                response = await self.on_message(
-                    channel="telegram",
-                    user_id=str(user_id),
-                    message=f"navig {navig_cmd}",
-                    metadata=metadata,
-                )
-                if response:
-                    # Truncate very long outputs for Telegram (4096 char limit)
-                    if len(response) > 4000:
-                        response = response[:3950] + "\n…(truncated)"
-                    await self.send_message(
-                        chat_id,
-                        self._md_to_html(response),
-                        parse_mode="HTML",
-                    )
-                else:
-                    await self.send_message(chat_id, "…no output.", parse_mode=None)
-            else:
-                await self.send_message(chat_id, "…gateway not connected.", parse_mode=None)
-        finally:
-            typing_task.cancel()
-            try:
-                await typing_task
-            except asyncio.CancelledError:
-                pass  # task cancelled; expected during shutdown
+        """Delegate CLI command execution to canonical TelegramCommandsMixin implementation."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._handle_cli_command(
+            self,
+            chat_id=chat_id,
+            user_id=user_id,
+            metadata=metadata,
+            navig_cmd=navig_cmd,
+        )
 
     async def _handle_briefing(self, chat_id: int, user_id: int, metadata: dict):
-        """Real-data system briefing — no AI, no invented teams/sprints."""
-        import json as _json
-        import os as _os
-        import socket as _sock
-        import subprocess as _sp
-        from navig.platform.paths import msg_trace_path as _msg_trace_path
+        """Delegate /briefing to canonical TelegramCommandsMixin implementation."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
-        typing_task = asyncio.create_task(self._keep_typing(chat_id))
-        try:
-            from datetime import datetime as _dt
-            from datetime import timezone as _tz
-
-            now = _dt.now(_tz.utc)
-            lines: list = [
-                f"📊 <b>System Briefing</b> — {now.strftime('%H:%M UTC, %d %b')}",
-                "━" * 22,
-            ]
-
-            # ── Daemon status ──
-            try:
-                r = _sp.run(
-                    [
-                        "systemctl",
-                        "show",
-                        "navig-daemon",
-                        "--property=ActiveState,ActiveEnterTimestamp",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=3,
-                )
-                state, since = "unknown", ""
-                for ln in r.stdout.splitlines():
-                    if ln.startswith("ActiveState="):
-                        state = ln.split("=", 1)[1].strip()
-                    if ln.startswith("ActiveEnterTimestamp="):
-                        raw = ln.split("=", 1)[1].strip()
-                        if raw and raw != "n/a":
-                            since = f" — since {raw.split()[-2]}"
-                icon = "🟢" if state == "active" else "🔴"
-                lines.append(f"{icon} <b>Daemon:</b> {state}{since}")
-            except Exception:
-                lines.append("⚡ <b>Daemon:</b> status unavailable")
-
-            # ── Bridge ──
-            bridge_port = 42070
-            try:
-                from navig.providers.bridge_grid_reader import (
-                    BRIDGE_DEFAULT_PORT,
-                    get_llm_port,
-                )
-
-                bridge_port = get_llm_port() or BRIDGE_DEFAULT_PORT
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
-            try:
-                _s = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
-                _s.settimeout(0.8)
-                bridge_ok = _s.connect_ex(("127.0.0.1", bridge_port)) == 0
-                _s.close()
-            except Exception:
-                bridge_ok = False
-            lines.append(
-                f"\u26a1 <b>Bridge:</b> {'online (bridge_copilot)' if bridge_ok else 'offline'}"
-            )
-
-            # ── Vault ──
-            try:
-                from navig.vault import get_vault
-
-                v = get_vault()
-                key_count = len(v.list()) if hasattr(v, "list") else "?"
-                lines.append(f"🔑 <b>Vault:</b> {key_count} keys stored")
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
-
-            # ── Sessions ──
-            if HAS_SESSIONS:
-                try:
-                    sm = get_session_manager()
-                    lines.append(f"💬 <b>Sessions:</b> {len(sm.sessions)} active")
-                except Exception:  # noqa: BLE001
-                    pass  # best-effort; failure is non-critical
-
-            # ── Server uptime ──
-            try:
-                up = _sp.run(["uptime", "-p"], capture_output=True, text=True, timeout=2)
-                lines.append(f"⏱ <b>Server:</b> {up.stdout.strip()}")
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
-
-            # ── Disk ──
-            try:
-                df = _sp.run(
-                    ["df", "-h", "/", "--output=used,avail,pcent"],
-                    capture_output=True,
-                    text=True,
-                    timeout=2,
-                )
-                dfl = df.stdout.strip().splitlines()
-                if len(dfl) >= 2:
-                    parts = dfl[1].split()
-                    if len(parts) >= 3:
-                        lines.append(f"💾 <b>Disk:</b> {parts[0]} used, {parts[1]} free ({parts[2]})")
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
-
-            lines.append("━" * 22)
-
-            # ── Recent slash commands from trace ──
-            recent: list = []
-            trace_file = str(_msg_trace_path())
-            if _os.path.exists(trace_file):
-                try:
-                    with open(trace_file, encoding="utf-8") as _tf:
-                        for raw in _tf.readlines()[-20:]:
-                            try:
-                                e = _json.loads(raw)
-                                role = e.get("role") or e.get("type", "")
-                                content = str(e.get("content") or e.get("text") or "")[:60]
-                                if role in ("user", "human") and content.startswith("/"):
-                                    recent.append(f"  • <code>{html.escape(content)}</code>")
-                            except Exception:  # noqa: BLE001
-                                pass  # best-effort; failure is non-critical
-                except Exception:  # noqa: BLE001
-                    pass  # best-effort; failure is non-critical
-
-            if recent:
-                lines.append("<b>Recent commands:</b>")
-                lines.extend(recent[-5:])
-            else:
-                lines.append("<i>No recent command history.</i>")
-
-            await self.send_message(chat_id, "\n".join(lines))
-        finally:
-            typing_task.cancel()
-            try:
-                await typing_task
-            except asyncio.CancelledError:
-                pass  # task cancelled; expected during shutdown
+        await TelegramCommandsMixin._handle_briefing(
+            self,
+            chat_id=chat_id,
+            user_id=user_id,
+            metadata=metadata,
+        )
 
     async def _handle_deck(self, chat_id: int):
         """Send a WebApp button to open the Deck."""

@@ -553,7 +553,6 @@ class RuntimeStore(BaseStore):
             "last_active_at": row["last_active_at"] if "last_active_at" in keys else None,
             "session_expired": False,
         }
-        # BUG-7: enforce 24-hour TTL on active AI sessions
         if state["mode"] == "active" and state["last_active_at"]:
             try:
                 last_active = datetime.fromisoformat(
@@ -711,7 +710,6 @@ class RuntimeStore(BaseStore):
             (str(-interaction_days),),
         ).rowcount
         deleted["cache"] = self.cache_clear_expired()
-        # BUG-9: prune completed/failed reminders older than 30 days
         deleted["reminders"] = self._write(
             "DELETE FROM reminders WHERE completed = 1 AND remind_at < datetime('now', '-30 days')",
             (),
