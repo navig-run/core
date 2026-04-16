@@ -14,6 +14,7 @@ import shutil
 import sys
 from pathlib import Path
 
+from navig.core.yaml_io import atomic_write_text
 from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
 
 name = "shell_integration"
@@ -90,7 +91,7 @@ def rollback(action: Action, result: Result, ctx: InstallerContext) -> None:
         return
     try:
         content = rc.read_text(encoding="utf-8", errors="replace")
-        rc.write_text(content.replace(snippet, ""), encoding="utf-8")
+        atomic_write_text(rc, content.replace(snippet, ""))
     except OSError:
         pass  # best-effort: skip on IO error
 # ─────────────────────── helpers ──────────────────────────────────────────────

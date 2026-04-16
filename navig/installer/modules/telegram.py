@@ -22,6 +22,7 @@ import sys
 from pathlib import Path
 
 from navig.core.file_permissions import set_owner_only_file_permissions
+from navig.core.yaml_io import atomic_write_text
 from navig.installer.contracts import Action, InstallerContext, ModuleState, Result
 
 name = "telegram"
@@ -107,13 +108,13 @@ def apply(action: Action, ctx: InstallerContext) -> Result:
         existing = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
         lines = [ln for ln in existing.splitlines() if not ln.startswith("TELEGRAM_BOT_TOKEN=")]
         lines.append(f"TELEGRAM_BOT_TOKEN={token}")
-        env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        atomic_write_text(env_path, "\n".join(lines) + "\n")
         set_owner_only_file_permissions(env_path)
         writes.append(".env")
     except Exception:  # noqa: BLE001
         pass
 
-    _marker(ctx).write_text("1", encoding="utf-8")
+    atomic_write_text(_marker(ctx), "1")
 
     return Result(
         action_id=action.id,
@@ -141,6 +142,6 @@ def rollback(action: Action, result: Result, ctx: InstallerContext) -> None:
                 for ln in env_path.read_text(encoding="utf-8").splitlines()
                 if not ln.startswith("TELEGRAM_BOT_TOKEN=")
             ]
-            env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            atomic_write_text(env_path, "\n".join(lines) + "\n")
     except Exception:  # noqa: BLE001
         pass

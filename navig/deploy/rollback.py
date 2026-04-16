@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from navig.core.yaml_io import atomic_write_text
 from navig.deploy.models import BackupConfig, SnapshotRecord
 
 logger = logging.getLogger(__name__)
@@ -121,9 +122,9 @@ class RollbackManager:
     def save_state(self, record: SnapshotRecord) -> None:
         """Persist snapshot record locally for future rollback commands."""
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
-        self._state_path.write_text(
+        atomic_write_text(
+            self._state_path,
             json.dumps({"path": record.path, "created_at": record.created_at}),
-            encoding="utf-8",
         )
 
     def load_state(self) -> SnapshotRecord | None:

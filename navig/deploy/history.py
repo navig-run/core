@@ -12,6 +12,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from navig.core.yaml_io import atomic_write_text
+
 logger = logging.getLogger(__name__)
 
 _HISTORY_FILE = "deploy_history.jsonl"
@@ -76,9 +78,9 @@ class DeployHistory:
         try:
             lines = [ln for ln in self._path.read_text(encoding="utf-8").splitlines() if ln.strip()]
             if len(lines) > self._keep:
-                self._path.write_text(
+                atomic_write_text(
+                    self._path,
                     "\n".join(lines[-self._keep :]) + "\n",
-                    encoding="utf-8",
                 )
         except Exception as exc:
             logger.warning("Could not trim deploy history: %s", exc)
