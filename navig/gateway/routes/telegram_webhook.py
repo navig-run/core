@@ -3,7 +3,7 @@
 Receives updates pushed by Telegram when the bot is in webhook mode.
 Forwards each update to the TelegramChannel for processing.
 
-Hardenings (Hermes-style):
+Hardenings:
   - Payload size guard: requests >1 MB are rejected with 413 before parsing.
   - Update-ID idempotency: replayed update_ids are ACKed but not processed.
   - Channel-lookup failure is logged at DEBUG rather than silently swallowed.

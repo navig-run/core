@@ -239,7 +239,7 @@ class FilteringEngine:
             if self.on_change:
                 self.on_change(path)
             tmp_path = path.with_suffix(".tmp.md")
-            tmp_path.write_text(processed, encoding="utf-8")
+            atomic_write_text(tmp_path, processed)
             os.replace(tmp_path, path)
             result.changed = True
             logger.info(

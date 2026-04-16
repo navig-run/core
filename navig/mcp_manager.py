@@ -172,7 +172,7 @@ class MCPManager:
             servers_config = {name: server.config for name, server in self.servers.items()}
 
             tmp_path = self.servers_file.with_suffix(".tmp.json")
-            tmp_path.write_text(json.dumps(servers_config, indent=2), encoding="utf-8")
+            atomic_write_text(tmp_path, json.dumps(servers_config, indent=2))
             tmp_path.replace(self.servers_file)
 
             ch.dim(f"Saved {len(self.servers)} MCP server(s)")

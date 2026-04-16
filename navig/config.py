@@ -335,7 +335,7 @@ Context provided with each query:
         # AUDIT self-check: Correct implementation? yes - explicit UTF-8 prevents locale-dependent write failures.
         # AUDIT self-check: Break callers? no - output content/path are unchanged.
         # AUDIT self-check: Simpler alternative? yes - add encoding directly to write_text call.
-        self.ai_prompt_file.write_text(default_prompt.strip(), encoding="utf-8")
+        atomic_write_text(self.ai_prompt_file, default_prompt.strip())
 
     def ensure_local_host(self) -> Path:
         """

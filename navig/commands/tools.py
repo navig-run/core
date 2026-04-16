@@ -153,7 +153,7 @@ def tools_schema(
     if output:
         from pathlib import Path
 
-        Path(output).write_text(text, encoding="utf-8")
+        atomic_write_text(Path(output), text)
         typer.echo(f"Schema written to {output}")
     else:
         typer.echo(text)

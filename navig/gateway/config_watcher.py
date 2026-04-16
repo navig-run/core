@@ -406,7 +406,7 @@ Last updated: Never
         for filename, content in self.DEFAULT_FILES.items():
             file_path = self.base_path / filename
             if not file_path.exists():
-                file_path.write_text(content, encoding="utf-8")
+                atomic_write_text(file_path, content)
                 logger.info("Created workspace file: %s", filename)
 
     def read_file(self, filename: str) -> str:

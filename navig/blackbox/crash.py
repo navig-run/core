@@ -120,7 +120,7 @@ def record_crash(
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     out_path = crash_dir / f"crash-{ts}-{os.getpid()}.json"
-    out_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+    atomic_write_text(out_path, json.dumps(report.to_dict(), indent=2))
 
     return report
 

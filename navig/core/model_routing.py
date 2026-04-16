@@ -1,8 +1,6 @@
 """
 Cheap-turn model routing for NAVIG.
 
-Ported and adapted from hermes-agent ``agent/smart_model_routing.py``.
-
 For inexpensive conversational turns (short, plain-text, no code/tools), the
 router can redirect to a cheaper/faster model rather than always using the
 configured primary model.  This reduces latency and cost without sacrificing

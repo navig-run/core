@@ -323,9 +323,11 @@ class InboxRouter:
             self._dispatch(source_path, dest_file)
             # Write a small .redirected sidecar note so the origin is traceable
             sidecar = dest_file.with_suffix(dest_file.suffix + ".redirected")
-            sidecar.write_text(
+            from navig.core.yaml_io import atomic_write_text
+
+            atomic_write_text(
+                sidecar,
                 f"redirected_from: {source_path}\nreason: {reason}\n",
-                encoding="utf-8",
             )
         except Exception as exc:
             if rule.on_error == "log_and_skip":
@@ -398,7 +400,7 @@ class InboxRouter:
 
         try:
             dest_dir.mkdir(parents=True, exist_ok=True)
-            dest_file.write_text(content, encoding="utf-8")
+            atomic_write_text(dest_file, content)
         except Exception as exc:
             return RouteResult(
                 source=url,

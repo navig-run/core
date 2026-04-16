@@ -94,6 +94,6 @@ def write_json_cache(filename: str, data: Any) -> Path:
 
     payload = {"cached_at": _to_iso_z(utc_now()), "data": data}
 
-    tmp_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    atomic_write_text(tmp_path, json.dumps(payload, indent=2, sort_keys=True))
     tmp_path.replace(cache_path)
     return cache_path

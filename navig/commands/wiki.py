@@ -225,23 +225,23 @@ def init_wiki(wiki_path: Path, force: bool = False) -> bool:
     # config.yaml
     config_file = meta_path / "config.yaml"
     if not config_file.exists() or force:
-        config_file.write_text(DEFAULT_CONFIG, encoding="utf-8")
+        atomic_write_text(config_file, DEFAULT_CONFIG)
 
     # index.md
     index_file = meta_path / "index.md"
     if not index_file.exists() or force:
         content = DEFAULT_INDEX.format(date=datetime.now().strftime("%Y-%m-%d %H:%M"))
-        index_file.write_text(content, encoding="utf-8")
+        atomic_write_text(index_file, content)
 
     # glossary.md
     glossary_file = meta_path / "glossary.md"
     if not glossary_file.exists() or force:
-        glossary_file.write_text(DEFAULT_GLOSSARY, encoding="utf-8")
+        atomic_write_text(glossary_file, DEFAULT_GLOSSARY)
 
     # knowledge/.visibility
     visibility_file = wiki_path / "knowledge" / ".visibility"
     if not visibility_file.exists() or force:
-        visibility_file.write_text(DEFAULT_VISIBILITY, encoding="utf-8")
+        atomic_write_text(visibility_file, DEFAULT_VISIBILITY)
 
     return True
 
@@ -663,7 +663,7 @@ def update_index(wiki_path: Path):
 
     # Write index
     index_path = wiki_path / ".meta" / "index.md"
-    index_path.write_text("\n".join(lines), encoding="utf-8")
+    atomic_write_text(index_path, "\n".join(lines))
 
 
 # ============================================================================
@@ -896,8 +896,11 @@ def cmd_edit(
                 page_path = wiki_path / "knowledge" / "concepts" / f"{page}.md"
 
             page_path.parent.mkdir(parents=True, exist_ok=True)
-            page_path.write_text(
-                f"# {Path(page).stem.replace('-', ' ').title()}\n\n", encoding="utf-8"
+            from navig.core.yaml_io import atomic_write_text
+
+            atomic_write_text(
+                page_path,
+                f"# {Path(page).stem.replace('-', ' ').title()}\n\n",
             )
             ch.success(f"✓ Created: {page_path.relative_to(wiki_path)}")
         else:
@@ -1397,7 +1400,7 @@ def rag_add(
     if not file_content.strip().startswith("#"):
         file_content = f"# {title}\n\n{file_content}"
 
-    dest.write_text(file_content, encoding="utf-8")
+    atomic_write_text(dest, file_content)
 
     # Add to RAG index
     rag = get_wiki_rag(wiki_path)

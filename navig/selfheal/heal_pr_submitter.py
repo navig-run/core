@@ -167,7 +167,7 @@ class HealPRSubmitter:
             "patch_text": patch_text,
             "submitted": False,
         }
-        patch_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        atomic_write_text(patch_path, json.dumps(payload, indent=2))
         logger.info("heal_pr: stored pending patch → {}", patch_path)
         return patch_path
 

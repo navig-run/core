@@ -202,7 +202,7 @@ def _create_wiki_note(slug: str, title: str, kind: str, stage: str) -> str | Non
             - {today}: Created
             """
         )
-        note_path.write_text(frontmatter, encoding="utf-8")
+        atomic_write_text(note_path, frontmatter)
         return str(note_path.relative_to(data_root / "wiki"))
 
     except Exception:  # noqa: BLE001 — wiki is optional, never block work ops

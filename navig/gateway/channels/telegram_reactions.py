@@ -213,14 +213,16 @@ class TelegramReactionsMixin:
                 wiki_inbox.mkdir(parents=True, exist_ok=True)
                 ts = int(time.time())
                 note_path = wiki_inbox / f"reaction_bookmark_{ts}.md"
-                note_path.write_text(
+                from navig.core.yaml_io import atomic_write_text
+
+                atomic_write_text(
+                    note_path,
                     "---\n"
                     "source: telegram_reaction\n"
                     f"timestamp: {ts}\n"
                     f"chat_id: {chat_id}\n"
                     "---\n\n"
                     f"{reply_text}\n",
-                    encoding="utf-8",
                 )
                 await self.send_message(chat_id, "🔥 Added to wiki inbox.", parse_mode=None)
             except Exception as exc:  # noqa: BLE001

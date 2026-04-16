@@ -135,7 +135,7 @@ def _append_requirement(repo_path: Path, dep: str, reason: str) -> None:
         logger.debug("Dependency {} already in requirements.txt", dep)
         return
     addition = f"{dep}  # added by NAVIG self-heal: {reason}\n"
-    req_file.write_text(existing.rstrip("\n") + "\n" + addition, encoding="utf-8")
+    atomic_write_text(req_file, existing.rstrip("\n") + "\n" + addition)
     logger.info("Added {} to requirements.txt", dep)
 
 

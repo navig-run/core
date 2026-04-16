@@ -572,7 +572,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         if provider:
             api_key = _fast_path_key(provider)
             if api_key or provider in ("ollama", "llamacpp", "airllm", "mcp_bridge"):
-                marker.write_text(provider, encoding="utf-8")
+                atomic_write_text(marker, provider)
                 return StepResult(
                     status="completed",
                     output={"provider": provider, "keySource": "environment"},
@@ -845,7 +845,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
         if configured_base_url:
             base_url_saved = _persist_provider_url(pid, configured_base_url)
 
-        marker.write_text(pid, encoding="utf-8")
+        atomic_write_text(marker, pid)
         out: dict = {"provider": pid, "keySource": key_source}
         if configured_base_url:
             out["base_url"] = configured_base_url
@@ -1112,7 +1112,7 @@ def _step_voice_provider(navig_dir: Path) -> OnboardingStep:
                     break
 
         if auto_imported:
-            marker.write_text(",".join(auto_imported), encoding="utf-8")
+            atomic_write_text(marker, ",".join(auto_imported))
             return StepResult(
                 status="completed",
                 output={"imported": auto_imported, "source": "environment"},
@@ -1155,7 +1155,7 @@ def _step_voice_provider(navig_dir: Path) -> OnboardingStep:
             ch.warning("  Key validation failed — storing anyway (check connectivity).")
 
         source = _store_key(provider_id, api_key)
-        marker.write_text(provider_id, encoding="utf-8")
+        atomic_write_text(marker, provider_id)
         return StepResult(
             status="completed",
             output={"provider": provider_id, "keySource": source, "validated": valid},
@@ -1553,7 +1553,7 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
             existing = env_path.read_text(encoding="utf-8") if env_path.exists() else ""
             lines = [ln for ln in existing.splitlines() if not ln.startswith("TELEGRAM_BOT_TOKEN=")]
             lines.append(f"TELEGRAM_BOT_TOKEN={token}")
-            env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            atomic_write_text(env_path, "\n".join(lines) + "\n")
             set_owner_only_file_permissions(env_path)
             writes.append(".env")
         except Exception:  # noqa: BLE001
@@ -1591,14 +1591,14 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
                             if not ln.startswith("NAVIG_TELEGRAM_UID=")
                         ]
                         _lines.append(f"NAVIG_TELEGRAM_UID={uid_raw}")
-                        env_path.write_text("\n".join(_lines) + "\n", encoding="utf-8")
+                        atomic_write_text(env_path, "\n".join(_lines) + "\n")
                     except Exception:  # noqa: BLE001
                         pass
                     writes.append("uid")
         except Exception:  # noqa: BLE001
             pass  # UID capture is best-effort; do not fail the token step
 
-        marker.write_text("1", encoding="utf-8")
+        atomic_write_text(marker, "1")
         return StepResult(
             status="completed",
             output={"note": f"token saved ({', '.join(writes) or 'nowhere'})", "validated": True},
@@ -1643,7 +1643,7 @@ def _step_skills_activation(navig_dir: Path) -> OnboardingStep:
             pass
 
         if not available:
-            marker.write_text("none", encoding="utf-8")
+            atomic_write_text(marker, "none")
             return StepResult(status="skipped", output={"reason": "no packs configured"})
 
         import typer
@@ -1687,7 +1687,7 @@ def _step_skills_activation(navig_dir: Path) -> OnboardingStep:
         except Exception:  # noqa: BLE001
             pass
 
-        marker.write_text(",".join(chosen), encoding="utf-8")
+        atomic_write_text(marker, ",".join(chosen))
         return StepResult(
             status="completed",
             output={"activePacks": chosen},
@@ -1727,7 +1727,7 @@ def _step_sigil_genesis(navig_dir: Path, genesis: GenesisData) -> OnboardingStep
             pass
 
         marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text(getattr(genesis, "nodeId", ""), encoding="utf-8")
+        atomic_write_text(marker, getattr(genesis, "nodeId", ""))
         return StepResult(
             status="completed",
             output={"nodeId": getattr(genesis, "nodeId", "")},
@@ -1758,7 +1758,7 @@ def _step_core_navig(navig_dir: Path) -> OnboardingStep:
         for sub in ("state", "logs", "vault"):
             (navig_dir / sub).mkdir(parents=True, exist_ok=True)
 
-        marker.write_text("1", encoding="utf-8")
+        atomic_write_text(marker, "1")
 
         # Advisory: remind user to install fzf for the best picker experience.
         # readchar is now a hard dep so Tier 2 is always available post-install;
@@ -1818,7 +1818,7 @@ def _step_matrix(navig_dir: Path) -> OnboardingStep:
             homeserver_url = ""
 
         if not homeserver_url:
-            marker.write_text("skipped", encoding="utf-8")
+            atomic_write_text(marker, "skipped")
             return StepResult(status="skipped", output={"reason": "no homeserver URL provided"})
 
         try:
@@ -1830,7 +1830,7 @@ def _step_matrix(navig_dir: Path) -> OnboardingStep:
             access_token = ""
 
         if not access_token:
-            marker.write_text("skipped", encoding="utf-8")
+            atomic_write_text(marker, "skipped")
             return StepResult(status="skipped", output={"reason": "no access token provided"})
 
         # Validate — import here to avoid circular deps at module load
@@ -1870,7 +1870,7 @@ def _step_matrix(navig_dir: Path) -> OnboardingStep:
         except Exception:  # noqa: BLE001
             pass
 
-        marker.write_text("1", encoding="utf-8")
+        atomic_write_text(marker, "1")
         return StepResult(
             status="completed",
             output={
@@ -1913,7 +1913,7 @@ def _step_email(navig_dir: Path) -> OnboardingStep:
 
         smtp_host = typer.prompt("  SMTP host (or blank to skip)", default="").strip()
         if not smtp_host:
-            marker.write_text("skipped", encoding="utf-8")
+            atomic_write_text(marker, "skipped")
             return StepResult(status="skipped", output={"reason": "no SMTP host provided"})
 
         smtp_port_str = typer.prompt("  SMTP port", default="587").strip()
@@ -1943,7 +1943,7 @@ def _step_email(navig_dir: Path) -> OnboardingStep:
         except Exception:  # noqa: BLE001
             pass
 
-        marker.write_text("1", encoding="utf-8")
+        atomic_write_text(marker, "1")
         return StepResult(
             status="completed",
             output={"smtp_host": smtp_host, "smtp_port": smtp_port},
@@ -1982,10 +1982,10 @@ def _step_social_networks(navig_dir: Path) -> OnboardingStep:
 
         configure = typer.confirm("  Configure social network integrations?", default=False)
         if not configure:
-            marker.write_text("skipped", encoding="utf-8")
+            atomic_write_text(marker, "skipped")
             return StepResult(status="skipped", output={"reason": "user declined"})
 
-        marker.write_text("1", encoding="utf-8")
+        atomic_write_text(marker, "1")
         return StepResult(status="completed", output={})
 
     def verify() -> bool:
@@ -2074,7 +2074,7 @@ def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
                     should_emit_ai_update = _ai_provider_retroactive is None and is_ai_provider_key
                     if should_emit_ai_update:
                         provider_id = _AI_PROVIDER_ENV_MAP[env_var]
-                        _ai_provider_marker.write_text(provider_id, encoding="utf-8")
+                        atomic_write_text(_ai_provider_marker, provider_id)
                         _ai_provider_retroactive = {
                             "id": "ai-provider",
                             "status": "completed",
@@ -2104,7 +2104,7 @@ def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
                 should_emit_ai_update = _ai_provider_retroactive is None and is_ai_provider_key
                 if should_emit_ai_update:
                     provider_id = _AI_PROVIDER_ENV_MAP[env_var]
-                    _ai_provider_marker.write_text(provider_id, encoding="utf-8")
+                    atomic_write_text(_ai_provider_marker, provider_id)
                     _ai_provider_retroactive = {
                         "id": "ai-provider",
                         "status": "completed",
@@ -2142,7 +2142,7 @@ def _step_runtime_secrets(navig_dir: Path) -> OnboardingStep:
             except (ValueError, Exception):  # noqa: BLE001
                 pass
 
-        marker.write_text("1", encoding="utf-8")
+        atomic_write_text(marker, "1")
         out: dict[str, object] = {"importedFromEnv": imported}
         if _ai_provider_retroactive is not None:
             out["_retroactiveUpdates"] = [_ai_provider_retroactive]

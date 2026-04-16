@@ -63,9 +63,11 @@ def apply(action: Action, ctx: InstallerContext) -> Result:
         )
 
     try:
-        config_path.write_text(
+        from navig.core.yaml_io import atomic_write_text
+
+        atomic_write_text(
+            config_path,
             "# NAVIG MCP server registry\n# Add servers here or use: navig mcp install <name>\nservers: []\n",
-            encoding="utf-8",
         )
         return Result(
             action_id=action.id,

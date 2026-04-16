@@ -227,7 +227,7 @@ class SessionStore:
                 data = {k: ctx.to_dict() for k, ctx in self._contexts.items()}
             self._persist_path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._persist_path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            atomic_write_text(tmp, json.dumps(data, indent=2))
             tmp.replace(self._persist_path)  # atomic on POSIX; best-effort on Windows
         except Exception as exc:
             logger.warning("session_store: failed to persist: {}", exc)

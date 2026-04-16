@@ -38,7 +38,7 @@ def seal_bundle(
 
     blackbox_dir.mkdir(parents=True, exist_ok=True)
     marker = blackbox_dir / _SEAL_MARKER
-    marker.write_text(bundle.created_at.isoformat(), encoding="utf-8")
+    atomic_write_text(marker, bundle.created_at.isoformat())
 
     bundle.sealed = True
     return bundle

@@ -486,7 +486,7 @@ def check_config_dir_writable() -> bool:
         navig_dir = config_dir()
         navig_dir.mkdir(parents=True, exist_ok=True)
         probe = navig_dir / ".write_probe"
-        probe.write_text("ok", encoding="utf-8")
+        atomic_write_text(probe, "ok")
         probe.unlink()
         return True
     except OSError:

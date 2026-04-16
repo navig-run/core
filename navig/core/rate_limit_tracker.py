@@ -1,8 +1,6 @@
 """
 Rate-limit tracking for inference API responses.
 
-Ported from hermes-agent ``agent/rate_limit_tracker.py``.
-
 Captures ``x-ratelimit-*`` headers from provider HTTP responses and provides
 formatted display for the ``/usage`` slash command.  Currently supports the
 OpenAI-compatible header format (also used by OpenRouter, Nous Portal, and

@@ -90,7 +90,7 @@ def service_install(
     cfg["scheduler"] = scheduler
     cfg["health_port"] = health_port
     tmp_path = config_path.with_suffix(config_path.suffix + ".tmp")
-    tmp_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    atomic_write_text(tmp_path, json.dumps(cfg, indent=2))
     os.replace(tmp_path, config_path)
 
     ch.info("Installing NAVIG daemon...")

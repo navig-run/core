@@ -14,9 +14,11 @@ _SENTINEL = ".workspace_to_spaces.migrated"
 
 def _write_config(config_file: Path, data: dict) -> None:
     config_file.parent.mkdir(parents=True, exist_ok=True)
-    config_file.write_text(
+    from navig.core.yaml_io import atomic_write_text
+
+    atomic_write_text(
+        config_file,
         yaml.dump(data, default_flow_style=False, allow_unicode=True),
-        encoding="utf-8",
     )
 
 
@@ -145,7 +147,7 @@ def migrate_workspace_to_spaces(
         if config_changed or not config_file.exists():
             _write_config(config_file, cfg)
         cache_file.parent.mkdir(parents=True, exist_ok=True)
-        cache_file.write_text(active, encoding="utf-8")
+        atomic_write_text(cache_file, active)
 
         # Ensure default space files are always scaffolded (idempotent — never overwrites)
         try:
@@ -166,7 +168,7 @@ def migrate_workspace_to_spaces(
                 else:
                     notify(f"[navig] Removed empty legacy workspace directory: {old_workspace}")
 
-            sentinel.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+            atomic_write_text(sentinel, datetime.now(timezone.utc).isoformat())
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(
             f"Workspace→Spaces migration failed: {exc}\n"

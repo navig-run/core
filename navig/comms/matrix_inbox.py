@@ -170,7 +170,7 @@ class MatrixInboxBridge:
         file_path = self._inbox_dir / filename
 
         try:
-            file_path.write_text(md_content, encoding="utf-8")
+            atomic_write_text(file_path, md_content)
             logger.info("Matrix inbox: persisted %s", file_path.name)
         except Exception:
             logger.exception("Matrix inbox: failed to write %s", filename)
@@ -256,7 +256,7 @@ class MatrixInboxBridge:
         try:
             content = fp.read_text(encoding="utf-8")
             content = content.replace("status: unread", "status: read", 1)
-            fp.write_text(content, encoding="utf-8")
+            atomic_write_text(fp, content)
             return True
         except Exception:
             return False

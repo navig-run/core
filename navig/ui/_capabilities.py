@@ -44,9 +44,11 @@ def write_terminal_json(navig_dir: Path, **kwargs: Any) -> None:
         datetime.datetime.now(datetime.timezone.utc).isoformat()
     )
     navig_dir.mkdir(parents=True, exist_ok=True)
-    (navig_dir / _TERMINAL_JSON_NAME).write_text(
+    from navig.core.yaml_io import atomic_write_text
+
+    atomic_write_text(
+        navig_dir / _TERMINAL_JSON_NAME,
         json.dumps(existing, indent=2, ensure_ascii=False),
-        encoding="utf-8",
     )
 
 

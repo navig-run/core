@@ -40,7 +40,7 @@ def run_import(source: str, path: str | None, output: str | None) -> int:
 
     text = engine.export_json(results)
     if output:
-        Path(output).write_text(text, encoding="utf-8")
+        atomic_write_text(Path(output), text)
 
     rows = _flatten(results)
 

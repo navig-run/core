@@ -277,7 +277,7 @@ class WikiWriteTool(BaseTool):
 
         file_path = inbox / filename
         try:
-            file_path.write_text(header + content, encoding="utf-8")
+            atomic_write_text(file_path, header + content)
         except PermissionError:
             return ToolResult(
                 name=self.name,

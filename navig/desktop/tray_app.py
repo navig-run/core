@@ -97,7 +97,9 @@ class TraySettings:
 
     def save(self):
         SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        SETTINGS_FILE.write_text(json.dumps(self.__dict__, indent=2))
+        from navig.core.yaml_io import atomic_write_text
+
+        atomic_write_text(SETTINGS_FILE, json.dumps(self.__dict__, indent=2))
 
     @classmethod
     def load(cls) -> TraySettings:

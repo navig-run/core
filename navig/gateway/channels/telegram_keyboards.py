@@ -579,8 +579,8 @@ _FOLLOWUP_CB_PREFIX: str = "ask_followup:"
 # extract_explore_questions() strips it from display and returns the questions
 # so they can be rendered as inline 'explore' buttons (replacing legacy feedback).
 _EXPLORE_Q_RE = re.compile(
-    r"\n+EXPLORE_Q:\s*(.+)$",
-    re.DOTALL | re.IGNORECASE,
+    r"\n*EXPLORE_Q:\s*([^\n]+)",
+    re.IGNORECASE,
 )
 _EXPLORE_Q_MAX: int = 4  # max explore buttons rendered per response
 

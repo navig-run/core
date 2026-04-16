@@ -2192,20 +2192,22 @@ class TelegramCommandsMixin:
 
         vision = space_path / "VISION.md"
         if not vision.exists():
-            vision.write_text(
+            from navig.core.yaml_io import atomic_write_text
+
+            atomic_write_text(
+                vision,
                 f"---\ngoal: {space} goals\n---\n\n# {space.title()} Vision\n\n",
-                encoding="utf-8",
             )
 
         roadmap = space_path / "ROADMAP.md"
         if not roadmap.exists():
-            roadmap.write_text("# Roadmap\n\n", encoding="utf-8")
+            atomic_write_text(roadmap, "# Roadmap\n\n")
 
         current_phase = space_path / "CURRENT_PHASE.md"
         if not current_phase.exists():
-            current_phase.write_text(
+            atomic_write_text(
+                current_phase,
                 "---\ncompletion_pct: 0\n---\n\n# Current Phase\n\n",
-                encoding="utf-8",
             )
 
     async def _handle_spaces(

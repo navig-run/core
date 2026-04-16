@@ -783,7 +783,7 @@ def execute_plan(
 
     tmp_target = target.with_suffix(".tmp.md")
     try:
-        tmp_target.write_text(transformed, encoding="utf-8")
+        atomic_write_text(tmp_target, transformed)
         os.replace(tmp_target, target)
         result["status"] = "written"
         result["target"] = str(target)

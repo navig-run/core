@@ -357,7 +357,7 @@ def ensure_telegram_uid(
         existing = env_file.read_text(encoding="utf-8") if env_file.exists() else ""
         lines = [ln for ln in existing.splitlines() if not ln.startswith("NAVIG_TELEGRAM_UID=")]
         lines.append(f"NAVIG_TELEGRAM_UID={uid}")
-        env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        atomic_write_text(env_file, "\n".join(lines) + "\n")
         set_owner_only_file_permissions(env_file)
     except Exception:
         pass  # .env write is best-effort; vault write succeeded above

@@ -148,16 +148,18 @@ def scaffold_plans_structure(root: Path) -> list[Path]:
     for rel_path, (_, template_key) in _TEMPLATE_FILES.items():
         target = navig_dir / rel_path
         if not target.exists():
-            target.write_text(
+            from navig.core.yaml_io import atomic_write_text
+
+            atomic_write_text(
+                target,
                 _TEMPLATE_GENERATORS[template_key](),
-                encoding="utf-8",
             )
             created.append(target)
 
     # Ensure staging/reconciliation_queue.json exists
     queue_file = navig_dir / "staging" / "reconciliation_queue.json"
     if not queue_file.exists():
-        queue_file.write_text("", encoding="utf-8")
+        atomic_write_text(queue_file, "")
         created.append(queue_file)
 
     return created

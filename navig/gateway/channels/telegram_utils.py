@@ -3,13 +3,12 @@
 Centralises helpers that were previously duplicated across
 telegram_mesh.py, telegram_keyboards.py, telegram_refiner.py,
 and telegram_voice.py, and adds patterns ported from the
-Hermes agent:
+Agent:
 
 - ``escape_mdv2``         — canonical MarkdownV2 character escaper
 - ``sanitize_user_error`` — redact secrets before surfacing error text to users
 - ``classify_tg_error``   — lightweight Telegram/HTTP error taxonomy
-- ``jittered_backoff``    — decorrelated jittered-exponential backoff (from
-                            .lab/hermes-agent/agent/retry_utils.py)
+- ``jittered_backoff``    — decorrelated jittered-exponential backoff 
 
 All public names are importable at package level; internal helpers carry a
 ``_`` prefix and must not be called from outside this module.
@@ -82,7 +81,7 @@ _AUTH_HEADER_RE = re.compile(
 def sanitize_user_error(text: object) -> str:
     """Scrub secrets from an error string before surfacing it to users.
 
-    Ported from Hermes ``send_message_tool._sanitize_error_text``.  Applies
+    Ported from Agent ``send_message_tool._sanitize_error_text``.  Applies
     multiple redaction passes so that API keys, tokens, and auth headers that
     appear in aiohttp / httpx exception messages are replaced with ``***``.
 
@@ -131,9 +130,6 @@ class TgErrorKind(enum.Enum):
 
 def classify_tg_error(exc: BaseException, status_code: int | None = None) -> TgErrorKind:
     """Classify a Telegram channel exception into a ``TgErrorKind``.
-
-    Ported from Hermes ``error_classifier`` but scoped to the simpler
-    Telegram/aiohttp error surface only.
 
     Args:
         exc: The caught exception.
@@ -201,8 +197,7 @@ def jittered_backoff(
 ) -> float:
     """Compute a jittered exponential backoff delay.
 
-    Ported from Hermes ``retry_utils.jittered_backoff``.  Uses decorrelated
-    jitter so concurrent sessions hitting the same rate-limited Telegram slot
+    Uses decorrelatedjitter so concurrent sessions hitting the same rate-limited Telegram slot
     don't all retry at exactly the same instant (thundering-herd prevention).
 
     Args:

@@ -211,7 +211,7 @@ class DockerSandbox:
                 for filename, content in files.items():
                     filepath = Path(temp_dir) / filename
                     filepath.parent.mkdir(parents=True, exist_ok=True)
-                    filepath.write_text(content, encoding="utf-8")
+                    atomic_write_text(filepath, content)
 
             # Build docker run command
             docker_cmd = self._build_docker_command(

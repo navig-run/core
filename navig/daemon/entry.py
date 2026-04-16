@@ -72,7 +72,7 @@ def _write_config_atomic(config: dict) -> None:
     """Persist daemon config using atomic replace to avoid partial writes."""
     DAEMON_CONFIG.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = DAEMON_CONFIG.with_suffix(DAEMON_CONFIG.suffix + ".tmp")
-    tmp_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    atomic_write_text(tmp_path, json.dumps(config, indent=2))
     os.replace(tmp_path, DAEMON_CONFIG)
 
 

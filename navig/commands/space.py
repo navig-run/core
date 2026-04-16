@@ -174,15 +174,15 @@ def _ensure_default_space() -> None:
     # Only write each file if it does not exist — never overwrite user content
     index_file = default_dir / "index.md"
     if not index_file.exists():
-        index_file.write_text(_DEFAULT_INDEX_MD, encoding="utf-8")
+        atomic_write_text(index_file, _DEFAULT_INDEX_MD)
 
     vision_file = default_dir / "VISION.md"
     if not vision_file.exists():
-        vision_file.write_text(_DEFAULT_VISION_MD, encoding="utf-8")
+        atomic_write_text(vision_file, _DEFAULT_VISION_MD)
 
     phase_file = default_dir / "CURRENT_PHASE.md"
     if not phase_file.exists():
-        phase_file.write_text(_DEFAULT_PHASE_MD, encoding="utf-8")
+        atomic_write_text(phase_file, _DEFAULT_PHASE_MD)
 
 
 def _default_hint_file() -> Path:
@@ -208,7 +208,7 @@ def _maybe_show_default_hint() -> None:
         )
         try:
             hint_file.parent.mkdir(parents=True, exist_ok=True)
-            hint_file.write_text("shown", encoding="utf-8")
+            atomic_write_text(hint_file, "shown")
         except OSError:
             pass  # best-effort: skip on IO error
 

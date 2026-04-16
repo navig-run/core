@@ -107,9 +107,9 @@ class CrashHandler:
                 "system": sys_info,
             }
 
-            log_path.write_text(
-                json.dumps(crash_data, indent=2), encoding="utf-8"
-            )
+            from navig.core.yaml_io import atomic_write_text
+
+            atomic_write_text(log_path, json.dumps(crash_data, indent=2))
 
             self._cleanup_old_logs(log_dir)
             return log_path

@@ -1,7 +1,7 @@
 """
 Retry utilities for NAVIG — jittered exponential back-off with optional async support.
 
-Ported and extended from hermes-agent ``agent/retry_utils.py``.
+Ported and extended from``agent/retry_utils.py``.
 
 Key design choices:
 - Thread-safe jitter seeding (monotonic counter XOR'd with nanosecond timestamp).

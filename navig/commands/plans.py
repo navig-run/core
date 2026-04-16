@@ -48,13 +48,15 @@ def _ensure_baseline_files(plans_dir: Path) -> None:
 
     dev_plan = plans_dir / "DEV_PLAN.md"
     if not dev_plan.exists():
-        dev_plan.write_text("# DEV Plan\n\n## Added Goals\n", encoding="utf-8")
+        atomic_write_text(dev_plan, "# DEV Plan\n\n## Added Goals\n")
 
     current_phase = plans_dir / "CURRENT_PHASE.md"
     if not current_phase.exists():
-        current_phase.write_text(
+        from navig.core.yaml_io import atomic_write_text
+
+        atomic_write_text(
+            current_phase,
             "---\ncompletion_pct: 0.0\nlast_updated: n/a\n---\n\n# Current Phase\n\n- [ ] Define initial milestone\n",
-            encoding="utf-8",
         )
 
 
@@ -159,7 +161,7 @@ def plans_add(
     target_file = _target_plan_file(plans_dir, file)
     target_file.parent.mkdir(parents=True, exist_ok=True)
     if not target_file.exists():
-        target_file.write_text("# Plan\n\n## Added Goals\n", encoding="utf-8")
+        atomic_write_text(target_file, "# Plan\n\n## Added Goals\n")
 
     entry = f"- [ ] [{resolved_space}] {goal.strip()}"
     text = target_file.read_text(encoding="utf-8")

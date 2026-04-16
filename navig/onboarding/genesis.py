@@ -182,9 +182,11 @@ def load_or_create(navig_dir: Path, name: str) -> GenesisData:
     )
 
     navig_dir.mkdir(parents=True, exist_ok=True)
-    genesis_path.write_text(
+    from navig.core.yaml_io import atomic_write_text
+
+    atomic_write_text(
+        genesis_path,
         json.dumps(asdict(data), indent=2, ensure_ascii=False),
-        encoding="utf-8",
     )
     return data
 

@@ -182,6 +182,6 @@ def ping_install_if_first_time() -> None:
     # Write marker regardless of success or failure so we never ask again
     try:
         _PINGED_MARKER.parent.mkdir(parents=True, exist_ok=True)
-        _PINGED_MARKER.write_text("1", encoding="utf-8")
+        atomic_write_text(_PINGED_MARKER, "1")
     except Exception:  # noqa: BLE001
         pass

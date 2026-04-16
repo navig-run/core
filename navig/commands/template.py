@@ -571,7 +571,7 @@ def edit_template_cmd(name: str, options: dict[str, Any]):
     # Create skeleton file if it doesn't exist
     if not override_file.exists():
         skeleton = _generate_template_skeleton(template)
-        override_file.write_text(skeleton, encoding="utf-8")
+        atomic_write_text(override_file, skeleton)
         ch.success(f"Created new override file: {override_file}")
 
     # Get editor

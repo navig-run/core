@@ -369,7 +369,7 @@ def systemd_install(start_now: bool = True) -> tuple[bool, str]:
     try:
         if user_mode:
             # User-level service — no sudo needed
-            unit_path.write_text(unit_content, encoding="utf-8")
+            atomic_write_text(unit_path, unit_content)
             subprocess.run(
                 ["systemctl", "--user", "daemon-reload"],
                 check=True,
@@ -395,7 +395,7 @@ def systemd_install(start_now: bool = True) -> tuple[bool, str]:
             return True, f"User service '{SYSTEMD_UNIT}' installed (not started)"
         else:
             # System-wide service — running as root
-            unit_path.write_text(unit_content, encoding="utf-8")
+            atomic_write_text(unit_path, unit_content)
             subprocess.run(
                 ["systemctl", "daemon-reload"],
                 check=True,

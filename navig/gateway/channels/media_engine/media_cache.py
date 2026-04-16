@@ -82,7 +82,7 @@ class MediaCache:
         path = self._dir / f"{key}.json"
         tmp = path.with_suffix(".tmp")
         try:
-            tmp.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+            atomic_write_text(tmp, json.dumps(value, ensure_ascii=False))
             tmp.replace(path)
         except Exception as exc:
             logger.debug("MediaCache: write failed for %s: %s", key[:12], exc)

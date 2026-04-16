@@ -501,7 +501,7 @@ def _tool_agent_learning_run(server: Any, args: dict[str, Any]) -> dict[str, Any
     if export:
         output_path = config_dir() / "workspace" / "error-patterns.json"
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+        atomic_write_text(output_path, json.dumps(result, indent=2))
         result["exported_to"] = str(output_path)
 
     return result

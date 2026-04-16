@@ -248,7 +248,7 @@ class SessionManager:
         try:
             payload = json.dumps(data, indent=2, ensure_ascii=False)
             tmp = session_file.with_suffix(".tmp")
-            tmp.write_text(payload, encoding="utf-8")
+            atomic_write_text(tmp, payload)
             tmp.replace(session_file)  # atomic on POSIX; best-effort on Windows
             logger.debug("Saved session: %s", session.key)
         except Exception as e:

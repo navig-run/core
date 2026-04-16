@@ -83,7 +83,7 @@ class BudgetGuard:
     def _save(self, data: dict) -> None:
         try:
             tmp = self._path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            atomic_write_text(tmp, json.dumps(data, indent=2))
             tmp.replace(self._path)
         except Exception as exc:
             logger.warning("BudgetGuard: failed to save %s: %s", self._path, exc)
