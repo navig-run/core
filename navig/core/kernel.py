@@ -6,9 +6,27 @@ import re
 import yaml
 
 from .models import NavigCommand, NavigPack, SkillManifest
-from .plugin_manager import PluginManager
+
+try:
+    from .plugin_manager import PluginManager  # noqa: F401 — legacy module
+except ImportError:
+
+    class PluginManager:  # type: ignore[no-redef]
+        """Stub: navig.core.plugin_manager was removed; NavigKernel is unused."""
+
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def discover_and_load(self) -> None:
+            pass
+
+        @property
+        def plugins(self) -> dict:
+            return {}
+
 
 logger = logging.getLogger(__name__)
+
 
 
 class NavigKernel:
