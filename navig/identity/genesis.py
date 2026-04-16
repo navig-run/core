@@ -70,7 +70,7 @@ def play_genesis_animation_sync(entity: NaviEntity) -> None:
 
 async def _act_noise() -> None:
     try:
-        from rich.console import Console
+
         from rich.live import Live
         from rich.text import Text
     except ImportError:
@@ -104,7 +104,7 @@ async def _act_noise() -> None:
 async def _act_sigil_assembly(entity: NaviEntity, primary: str, accent: str) -> None:
     try:
         from rich.align import Align
-        from rich.console import Console
+
         from rich.live import Live
         from rich.text import Text
 

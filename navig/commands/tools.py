@@ -93,7 +93,7 @@ def tools_list(
     # Default: Rich table
     try:
         from rich import box as rich_box
-        from rich.console import Console
+
         from rich.table import Table
 
         console = get_console()
@@ -172,7 +172,7 @@ def tools_show(
         raise typer.Exit(1)
 
     try:
-        from rich.console import Console
+
         from rich.panel import Panel
 
         console = get_console()

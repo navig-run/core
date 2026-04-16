@@ -22,7 +22,7 @@ def run_whoami() -> None:
     data = load_entity()
     if not data:
         try:
-            from rich.console import Console
+
 
             get_console().print(
                 "\n[bold yellow]No entity found.[/bold yellow]  "

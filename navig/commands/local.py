@@ -32,7 +32,7 @@ def _get_local_ops():
 def _ensure_rich():
     """Ensure rich module is available."""
     try:
-        from rich.console import Console
+
         from rich.panel import Panel
         from rich.syntax import Syntax
         from rich.table import Table
