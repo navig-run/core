@@ -1,4 +1,4 @@
-﻿"""
+"""
 Telegram Channel Adapter for NAVIG Gateway
 
 Provides integration with Telegram Bot API for:
