@@ -779,7 +779,7 @@ def reroute_cmd(
         route_mode = RouteMode(mode)
     except ValueError:
         typer.secho(f"Invalid mode '{mode}'. Choose: move, copy, link", fg=typer.colors.RED)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     router = InboxRouter(project_root=space_root, mode=route_mode)
 
