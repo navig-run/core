@@ -26,7 +26,7 @@ from navig import console_helper as ch
 
 # Maximum PIN entry attempts before access is denied
 _MAX_PIN_ATTEMPTS = 3
-from navig.core.yaml_io import safe_load_yaml
+from navig.core.yaml_io import atomic_write_text, safe_load_yaml
 from navig.platform import paths
 
 _BUILTIN_YAML = Path(__file__).parent / "builtin.yaml"
@@ -162,7 +162,7 @@ def _write_mode_key_fallback(cfg: Path, name: str) -> None:
         lines = cfg.read_text(encoding="utf-8").splitlines()
     new_lines = [ln for ln in lines if not ln.startswith("active_mode:")]
     new_lines.append(f"active_mode: {name}")
-    cfg.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+    atomic_write_text(cfg, "\n".join(new_lines) + "\n")
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +209,7 @@ def set_pin(pin: str) -> None:
     if not pin.isdigit() or len(pin) != 4:
         raise ValueError("PIN must be exactly 4 digits.")
     _navig_home().mkdir(parents=True, exist_ok=True)
-    _pin_path().write_text(_hash_pin(pin), encoding="utf-8")
+    atomic_write_text(_pin_path(), _hash_pin(pin))
 
 
 def verify_pin(pin: str) -> bool:
@@ -221,7 +221,7 @@ def verify_pin(pin: str) -> bool:
         return False
     # Opportunistically upgrade legacy v1 (SHA-256) hashes to v2 (PBKDF2).
     if not stored.startswith("v2:"):
-        _pin_path().write_text(_hash_pin(pin), encoding="utf-8")
+        atomic_write_text(_pin_path(), _hash_pin(pin))
     return True
 
 

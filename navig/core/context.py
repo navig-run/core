@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-from navig.core.yaml_io import safe_load_yaml
+from navig.core.yaml_io import atomic_write_text, safe_load_yaml
 
 if TYPE_CHECKING:
     pass
@@ -280,7 +280,7 @@ class ContextManager:
 
         # Update global cache if applicable
         if local is not True:
-            self._config.active_host_file.write_text(host_name, encoding="utf-8")
+            atomic_write_text(self._config.active_host_file, host_name)
 
     def _set_active_host_local(self, host_name: str, local_navig_dir: Path):
         """
@@ -334,7 +334,7 @@ class ContextManager:
 
         # Update global cache if applicable
         if local is not True:
-            self._config.active_app_file.write_text(app_name, encoding="utf-8")
+            atomic_write_text(self._config.active_app_file, app_name)
 
     def set_active_app_local(self, app_name: str, directory: Path | None = None):
         """
