@@ -227,7 +227,7 @@ def send_email(
 
             email_body = sys.stdin.read()
 
-        from navig.agent.proactive.models import EmailMessage
+        from navig.agent.proactive.providers import EmailMessage
 
         message = EmailMessage(  # noqa: F841
             id="",

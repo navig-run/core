@@ -180,7 +180,7 @@ def add_event(
 
         end_dt = start_dt + timedelta(minutes=duration)
 
-        from navig.agent.proactive.models import CalendarEvent
+        from navig.agent.proactive.providers import CalendarEvent
 
         event = CalendarEvent(
             id="",  # Will be generated

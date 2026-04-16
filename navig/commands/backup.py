@@ -1003,7 +1003,7 @@ def backup_show(
 ):
     """Show backup details or list all backups (canonical command)."""
     if file:
-        from navig.commands.navig_backup import inspect_export
+        from navig.commands.config_backup import inspect_export
 
         inspect_export(
             {
@@ -1013,7 +1013,7 @@ def backup_show(
             }
         )
     else:
-        from navig.commands.navig_backup import list_exports
+        from navig.commands.config_backup import list_exports
 
         list_exports(
             {
