@@ -86,6 +86,7 @@ _SUMMARIZE_PATTERNS = re.compile(
 _RESEARCH_PATTERNS = re.compile(
     r"\b(research|analyze|analyse|analysis|compare|comparison|evaluate|"
     r"investigate|study|review|examine|assess|explore|deep\s*dive|"
+    r"differences?\s+between|"
     r"pros?\s+and\s+cons?|trade-?offs?|benchmark|survey)\b",
     re.IGNORECASE,
 )

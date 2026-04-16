@@ -955,23 +955,14 @@ MODE_TOOLSET_HINTS: dict[str, list[str]] = {
 
 
 def detect_mode(user_input: str) -> str:
-    """Backward-compatible mode detector returning the canonical mode string.
+    """Backward-compatible wrapper returning the canonical mode string.
 
-    DEPRECATION: This shim adds a "research" regex that is not in routing/detect.py.
-    Merge that pattern into routing/detect.py, then delete this function and
-    update all callers to use ``from navig.routing.detect import detect_mode``.
+    Delegates to :func:`navig.routing.detect.detect_mode`.  Call that
+    function directly when you need the ``(mode, confidence, reasons)`` tuple.
     """
-    text = (user_input or "").strip()
-    lower = text.lower()
-    if lower and re.search(
-        r"\b(research|analy[sz]e|compare|differences?\s+between|investigate)\b",
-        lower,
-    ):
-        return "research"
-
     from navig.routing.detect import detect_mode as _detect_canonical  # noqa: PLC0415
 
-    mode, _, _ = _detect_canonical(text)
+    mode, _, _ = _detect_canonical(user_input or "")
     return mode
 
 
