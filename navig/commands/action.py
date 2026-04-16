@@ -277,9 +277,9 @@ def action_run(
         return
 
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S602  # dynamic shell dispatch
             command,
-            shell=True,
+            shell=True,  # noqa: S602  # dynamic shell dispatch
             check=False,
         )
         if result.returncode != 0:

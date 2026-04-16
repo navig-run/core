@@ -685,9 +685,9 @@ class PackManager:
                 return result.returncode == 0
             else:
                 # Run as shell command safely
-                result = subprocess.run(
+                result = subprocess.run(  # noqa: S602  # dynamic shell dispatch
                     command,
-                    shell=True,
+                    shell=True,  # noqa: S602  # dynamic shell dispatch
                     capture_output=False,
                 )
                 return result.returncode == 0

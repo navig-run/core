@@ -554,9 +554,9 @@ def _invoke_navig(cli_args: str, options: dict[str, Any]) -> int:
 def _invoke_shell(command: str, cwd: Path) -> int:
     """Run a shell command safely in the skill's directory."""
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S602  # dynamic shell dispatch
             command,
-            shell=True,
+            shell=True,  # noqa: S602  # dynamic shell dispatch
             cwd=str(cwd),
             text=True,
         )

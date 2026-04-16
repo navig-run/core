@@ -51,11 +51,11 @@ def run_local_command(command: str, timeout: int = 10) -> tuple[bool, str, str]:
         # Do NOT pass text=True here — we decode manually so that non-UTF-8
         # bytes in output (e.g. accented chars from locale-specific paths)
         # don't crash the subprocess reader thread (UnicodeDecodeError).
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S602  # dynamic shell dispatch
             command,
             capture_output=True,
             timeout=timeout,
-            shell=True,
+            shell=True,  # noqa: S602  # dynamic shell dispatch
         )
 
         stdout = _decode_subprocess_output(result.stdout).strip()

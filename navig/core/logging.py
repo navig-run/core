@@ -291,7 +291,7 @@ def get_logger(subsystem: str = "core") -> StructuredLogger:
         finally:
             logging.setLoggerClass(original_class)
 
-    assert isinstance(logger, StructuredLogger), (
+    assert isinstance(logger, StructuredLogger), (  # noqa: S101
         f"Expected StructuredLogger for '{logger_name}', got {type(logger).__name__}"
     )
 

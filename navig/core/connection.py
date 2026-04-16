@@ -243,9 +243,9 @@ class LocalConnection(ConnectionAdapter):
                 )
             else:
                 # On Unix-like systems, use platform-default shell dispatch.
-                result = subprocess.run(
+                result = subprocess.run(  # noqa: S602  # dynamic shell dispatch
                     command,
-                    shell=True,
+                    shell=True,  # noqa: S602  # dynamic shell dispatch
                     capture_output=capture_output,
                     encoding="utf-8",
                     errors="replace",

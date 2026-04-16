@@ -364,7 +364,7 @@ class MCPClient:
         request = JSONRPCRequest(
             method=method.value, params=params, id=self._request_id
         )
-        assert self._transport is not None  # guarded by _assert_connected callers
+        assert self._transport is not None  # guarded by _assert_connected callers  # noqa: S101
         response_data = await self._transport.send(request.to_json())
         return JSONRPCResponse.from_json(response_data)
 
@@ -374,5 +374,5 @@ class MCPClient:
         request = JSONRPCRequest(
             method=method.value, params=params, id=None
         )
-        assert self._transport is not None
+        assert self._transport is not None  # noqa: S101
         await self._transport.send_notification(request.to_json())
