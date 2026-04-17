@@ -374,6 +374,25 @@ def _call_and_wrap(
         )
 
 
+def _prompt_cache_enabled() -> bool:
+    """Return True when Anthropic prompt caching is enabled in config (default: True).
+
+    Reads ``config.agent.prompt_cache``.  Defaults to *True* so caching is on
+    unless explicitly disabled.
+    """
+    try:
+        from navig.core.config_loader import load_config
+
+        config = load_config()
+        agent_cfg = getattr(config, "agent", None)
+        if agent_cfg is None:
+            return True
+        return bool(getattr(agent_cfg, "prompt_cache", True))
+    except Exception as exc:
+        logger.debug("_prompt_cache_enabled: config unavailable (%s)", exc)
+        return True
+
+
 def _load_fallback_chain() -> list[str]:
     """Read ``config.agent.fallback_chain`` from project/global config.
 
@@ -454,12 +473,20 @@ def _call_provider_rich(
         api_key, _ = auth_manager.resolve_auth(provider)
 
         msgs = [Message(role=m["role"], content=m["content"]) for m in messages]
+
+        # F-12: enable Anthropic prompt caching when configured
+        _use_cache_control = (
+            provider.lower() == "anthropic"
+            and _prompt_cache_enabled()
+        )
+
         request = CompletionRequest(
             messages=msgs,
             model=model,
             temperature=temperature,
             max_tokens=max_tokens,
             extra_body=thinking_params if thinking_params else None,
+            cache_control=_use_cache_control,
         )
         client = create_client(provider_cfg, api_key=api_key, timeout=timeout)
 
@@ -552,6 +579,7 @@ def _call_provider_rich_stream(
         max_tokens=max_tokens,
         stream=True,
         extra_body=thinking_params if thinking_params else None,
+        cache_control=(provider.lower() == "anthropic" and _prompt_cache_enabled()),
     )
     client = create_client(provider_cfg, api_key=api_key, timeout=timeout)
 

@@ -79,6 +79,7 @@ class CompletionRequest:
     stream: bool = False
     stop: list[str] | None = None
     extra_body: dict | None = None  # Provider-specific params (thinking budgets, etc.)
+    cache_control: bool = False  # F-12: inject Anthropic prompt-caching markers
 
 
 @dataclass
@@ -98,6 +99,8 @@ class CompletionResponse:
     tool_calls: list[ToolCall] | None = None
     finish_reason: str | None = None
     usage: dict[str, int] | None = None
+    cache_read_input_tokens: int = 0   # F-12: Anthropic prompt-cache read tokens
+    cache_creation_input_tokens: int = 0  # F-12: Anthropic prompt-cache write tokens
     model: str | None = None
     provider: str | None = None
 
@@ -423,6 +426,20 @@ class AnthropicClient(BaseProviderClient):
             else:
                 messages.append({"role": m.role, "content": m.content})
 
+        # F-12: inject Anthropic prompt-caching markers on system + first 2 user messages
+        if request.cache_control:
+            if system_content is not None:
+                system_content = [
+                    {"type": "text", "text": system_content, "cache_control": {"type": "ephemeral"}}
+                ]  # type: ignore[assignment]
+            user_count = 0
+            for msg in messages:
+                if msg["role"] == "user" and user_count < 2:
+                    msg["content"] = [
+                        {"type": "text", "text": msg["content"], "cache_control": {"type": "ephemeral"}}
+                    ]
+                    user_count += 1
+
         # Build request body
         body: dict[str, Any] = {
             "model": request.model,
@@ -485,6 +502,8 @@ class AnthropicClient(BaseProviderClient):
                         + data.get("usage", {}).get("output_tokens", 0)
                     ),
                 },
+                cache_read_input_tokens=data.get("usage", {}).get("cache_read_input_tokens", 0),
+                cache_creation_input_tokens=data.get("usage", {}).get("cache_creation_input_tokens", 0),
                 model=data.get("model"),
                 provider=self.name,
             )
