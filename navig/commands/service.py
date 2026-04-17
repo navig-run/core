@@ -23,6 +23,7 @@ import typer
 
 from navig.lazy_loader import lazy_import
 from navig.platform.paths import config_dir
+from navig.platform.paths import log_dir as _log_dir
 
 ch = lazy_import("navig.console_helper")
 
@@ -75,6 +76,7 @@ def service_install(
     # Save config
     import json
 
+    from navig.core.yaml_io import atomic_write_text
     from navig.daemon import service_manager as sm
     from navig.daemon.entry import DEFAULT_DAEMON_CONFIG, save_default_config
 
@@ -154,8 +156,9 @@ def service_start(
         daemon_main()
     else:
         import subprocess
+        import time
 
-        from navig.daemon.service_manager import _pythonw_exe
+        from navig.daemon.service_manager import _pythonw_exe, task_scheduler_enable
 
         # Use pythonw.exe on Windows — completely invisible, no console window
         exe = _pythonw_exe()
@@ -175,10 +178,13 @@ def service_start(
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-        import time
 
         time.sleep(2)
         if NavigDaemon.is_running():
+            # Re-enable the Task Scheduler task (may have been disabled by
+            # a prior 'navig service stop') so logon/failure-restart fires again.
+            if os.name == "nt":
+                task_scheduler_enable()  # silent if task not installed
             ch.success(f"Daemon started (pid={NavigDaemon.read_pid()})")
         else:
             ch.error("Daemon failed to start. Check logs: navig service logs")
@@ -194,14 +200,30 @@ def service_stop():
     Stop the running NAVIG daemon.
 
     Sends a graceful shutdown signal. Children are stopped first.
+    Also sweeps any orphan daemon generations left from prior restarts
+    so that all log-file handles are released.
 
     Examples:
         navig service stop
     """
+    from navig.daemon.service_manager import task_scheduler_disable
     from navig.daemon.supervisor import NavigDaemon
 
+    # Disable the Task Scheduler task *before* killing the process so that the
+    # RestartOnFailure policy (PT1M × 999) cannot respawn the daemon.
+    # schtasks /end only terminates the current run; /change /disable prevents
+    # ALL future triggers and failure-restart from firing until re-enabled.
+    if os.name == "nt":
+        task_scheduler_disable()  # silent if task doesn't exist
+
     if not NavigDaemon.is_running():
-        ch.info("Daemon is not running")
+        # PID file shows not running, but orphan generations from previous
+        # restarts may still hold open log-file handles.  Sweep them now.
+        swept = NavigDaemon._kill_orphan_daemons()
+        if swept:
+            ch.info(f"Swept {len(swept)} orphan daemon process(es): {swept}")
+        else:
+            ch.info("Daemon is not running")
         return
 
     pid = NavigDaemon.read_pid()
@@ -230,7 +252,17 @@ def service_restart():
     import subprocess
     import time
 
+    from navig.daemon.service_manager import (
+        _pythonw_exe,
+        task_scheduler_disable,
+        task_scheduler_enable,
+    )
     from navig.daemon.supervisor import NavigDaemon
+
+    # Disable the Task Scheduler task *before* killing so RestartOnFailure
+    # cannot respawn the daemon while we are mid-restart (Windows only).
+    if os.name == "nt":
+        task_scheduler_disable()  # silent if task not installed
 
     if NavigDaemon.is_running():
         ch.info("Stopping daemon...")
@@ -238,10 +270,14 @@ def service_restart():
             ch.error("Failed to stop existing daemon")
             raise typer.Exit(1)
         time.sleep(1)
+    else:
+        # Sweep any orphan generations even if PID file says not running
+        swept = NavigDaemon._kill_orphan_daemons()
+        if swept:
+            ch.info(f"Swept {len(swept)} orphan daemon process(es): {swept}")
+            time.sleep(1)
 
     ch.info("Starting daemon...")
-    from navig.daemon.service_manager import _pythonw_exe
-
     exe = _pythonw_exe()
     cmd = [exe, "-m", "navig.daemon.entry"]
     if sys.platform == "win32":
@@ -260,6 +296,9 @@ def service_restart():
         )
     time.sleep(2)
     if NavigDaemon.is_running():
+        # Re-enable the Task Scheduler task so logon/failure-restart works again.
+        if os.name == "nt":
+            task_scheduler_enable()  # silent if task not installed
         ch.success(f"Daemon restarted (pid={NavigDaemon.read_pid()})")
     else:
         ch.error("Daemon failed to start. Check: navig service logs")
@@ -362,7 +401,7 @@ def service_logs(
         navig service logs -n 100
         navig service logs --child children
     """
-    log_dir = config_dir() / "logs"
+    log_dir = _log_dir()
 
     if child:
         log_file = log_dir / f"{child}.log"

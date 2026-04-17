@@ -26,6 +26,7 @@ try:
 except ImportError:
     ctypes = None
 
+from navig.core.yaml_io import atomic_write_text
 from navig.platform import paths
 
 NAVIG_HOME = paths.config_dir()
@@ -264,6 +265,40 @@ def task_scheduler_install(start_now: bool = True) -> tuple[bool, str]:
                 "    navig service install --bot"
             )
         return False, f"Task Scheduler failed: {err}"
+
+
+def task_scheduler_disable() -> tuple[bool, str]:
+    """Disable the scheduled task so it cannot auto-restart the daemon.
+
+    Call this *before* killing the daemon process so that the
+    RestartOnFailure policy cannot relaunch it within the next minute.
+    """
+    try:
+        # /change /disable prevents triggers AND RestartOnFailure from firing.
+        r = subprocess.run(
+            ["schtasks", "/change", "/tn", TASK_NAME, "/disable"],
+            capture_output=True,
+        )
+        if r.returncode != 0:
+            # Task may not exist (not installed via task scheduler).
+            return False, (r.stderr or r.stdout or b"").decode("utf-8", errors="replace").strip()
+        return True, f"Task '{TASK_NAME}' disabled"
+    except Exception as e:
+        return False, str(e)
+
+
+def task_scheduler_enable() -> tuple[bool, str]:
+    """Re-enable the scheduled task after the daemon has been (re)started."""
+    try:
+        r = subprocess.run(
+            ["schtasks", "/change", "/tn", TASK_NAME, "/enable"],
+            capture_output=True,
+        )
+        if r.returncode != 0:
+            return False, (r.stderr or r.stdout or b"").decode("utf-8", errors="replace").strip()
+        return True, f"Task '{TASK_NAME}' enabled"
+    except Exception as e:
+        return False, str(e)
 
 
 def task_scheduler_uninstall() -> tuple[bool, str]:
