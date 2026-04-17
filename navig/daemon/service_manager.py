@@ -62,6 +62,45 @@ def _ensure_dirs() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Stop-intent flag
+# ---------------------------------------------------------------------------
+
+# Written by service_stop() before sweeping orphans.  Checked by
+# daemon/entry.py on startup: if the flag exists the daemon refuses to start
+# so that external "watchers" (tray apps, startup scripts) that call
+# `navig service start` or spawn the daemon directly are blocked until a
+# deliberate `navig service start` clears it.
+
+_STOP_FLAG_FILE = DAEMON_DIR / "stop_requested"
+
+
+def _stop_flag_path() -> Path:
+    return _STOP_FLAG_FILE
+
+
+def set_stop_flag() -> None:
+    """Create the stop-intent flag so the daemon refuses to auto-restart."""
+    try:
+        _STOP_FLAG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(_STOP_FLAG_FILE, "1")
+    except Exception:  # noqa: BLE001
+        pass  # best-effort; never block the stop path
+
+
+def clear_stop_flag() -> None:
+    """Remove the stop-intent flag so the daemon is allowed to start."""
+    try:
+        _STOP_FLAG_FILE.unlink(missing_ok=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def stop_flag_is_set() -> bool:
+    """Return True if a deliberate stop has been requested."""
+    return _STOP_FLAG_FILE.exists()
+
+
+# ---------------------------------------------------------------------------
 # Detection helpers
 # ---------------------------------------------------------------------------
 

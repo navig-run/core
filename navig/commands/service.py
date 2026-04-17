@@ -158,7 +158,15 @@ def service_start(
         import subprocess
         import time
 
-        from navig.daemon.service_manager import _pythonw_exe, task_scheduler_enable
+        # Clear any stop-intent flag left by a previous 'navig service stop' so
+        # that daemon/entry.py is allowed to start again.
+        from navig.daemon.service_manager import (
+            _pythonw_exe,
+            clear_stop_flag,
+            task_scheduler_enable,
+        )
+
+        clear_stop_flag()
 
         # Use pythonw.exe on Windows — completely invisible, no console window
         exe = _pythonw_exe()
@@ -208,8 +216,19 @@ def service_stop():
     """
     import time as _time
 
-    from navig.daemon.service_manager import task_scheduler_disable, task_scheduler_end
+    from navig.daemon.service_manager import (
+        clear_stop_flag,
+        set_stop_flag,
+        task_scheduler_disable,
+        task_scheduler_end,
+    )
     from navig.daemon.supervisor import NavigDaemon
+
+    # Step 0: write the stop-intent flag *before* killing anything.
+    # daemon/entry.py checks this flag on startup and refuses to run if it is
+    # present, so any external watcher (tray app, startup script) that tries
+    # to auto-restart the daemon after we sweep it will be blocked.
+    set_stop_flag()
 
     # Step 1: disable future restarts via Task Scheduler.
     # Step 2: end the currently-running task instance (kills the supervisor

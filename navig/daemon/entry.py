@@ -110,6 +110,23 @@ def save_default_config() -> Path:
 
 
 def main() -> None:
+    # Respect stop-intent flag written by `navig service stop`.
+    # Any external watcher (tray app, startup script, RestartOnFailure) that
+    # tries to spawn the daemon after a deliberate stop will hit this guard
+    # and exit immediately — keeping the daemon truly stopped until a
+    # deliberate `navig service start` clears the flag.
+    try:
+        from navig.daemon.service_manager import stop_flag_is_set
+        if stop_flag_is_set():
+            logger.info(
+                "Stop-intent flag is set (%s) — daemon start suppressed. "
+                "Run `navig service start` to clear the flag and restart.",
+                "~/.navig/daemon/stop_requested",
+            )
+            return
+    except Exception:  # noqa: BLE001
+        pass  # If anything goes wrong checking the flag, proceed normally.
+
     # Load .env if available (for TELEGRAM_BOT_TOKEN etc.)
     try:
         from dotenv import load_dotenv
