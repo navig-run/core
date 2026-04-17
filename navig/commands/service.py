@@ -32,45 +32,74 @@ ch = lazy_import("navig.console_helper")
 def _spawn_stop_watchdog(duration: int = 30) -> None:
     """Launch a detached process that kills new daemon spawns for *duration* seconds.
 
-    The watchdog reads a timestamp deadline from ``~/.navig/daemon/stop_watchdog_deadline``
-    and loops until that deadline expires or the file is deleted.  Using a separate
-    deadline file (instead of the stop-intent flag) means the watchdog keeps running
-    even if an external restarter calls ``navig service start`` (which only clears the
-    stop flag, not the deadline file).
+    The watchdog is written to a temporary ``.py`` file in the daemon directory
+    (``~/.navig/daemon/navig_wdog_XXXX.py``) so that its command line is
+    ``pythonw.exe /path/to/navig_wdog_XXXX.py`` — it does NOT contain the
+    string ``navig.daemon``.  Earlier versions used ``python -c "...navig.daemon..."``
+    which caused the watchdog to match its own ``*navig.daemon*`` kill-pattern
+    inside :meth:`NavigDaemon._kill_orphan_daemons` and immediately self-destruct
+    on the first 0.2 s tick.
 
-    Called from :func:`service_stop` after the main sweep.
+    The watchdog reads the deadline timestamp written by :func:`set_watchdog_deadline`
+    and loops, killing orphans every 0.2 s, until the deadline expires or the file
+    is deleted (which :func:`service_start` does when the user deliberately restarts).
     """
     import subprocess  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
 
-    # __file__ = navig/commands/service.py
-    # dirname x1 = navig/commands
-    # dirname x2 = navig          (package dir — WRONG if only 2 levels)
-    # dirname x3 = navig-core     (project root — CORRECT)
     navig_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from navig.daemon.service_manager import DAEMON_DIR  # noqa: PLC0415
+
+    deadline_file_str = str(DAEMON_DIR / "stop_watchdog_deadline")
     script = textwrap.dedent(f"""\
-        import sys, time
+        # navig stop-watchdog: kills orphan daemon processes until deadline.
+        # Launched as:  pythonw.exe <this_file>  -- no 'navig.daemon' in cmdline.
+        import sys, time, os
+        from pathlib import Path
         sys.path.insert(0, {navig_root!r})
+        deadline_file = Path({deadline_file_str!r})
+        try:
+            deadline = float(deadline_file.read_text(encoding='utf-8').strip())
+        except Exception:
+            sys.exit(0)
         try:
             from navig.daemon.supervisor import NavigDaemon
-            from navig.daemon.service_manager import _WATCHDOG_DEADLINE_FILE
-            try:
-                deadline = float(_WATCHDOG_DEADLINE_FILE.read_text(encoding='utf-8').strip())
-            except Exception:
-                sys.exit(0)
-            while time.time() < deadline:
-                if not _WATCHDOG_DEADLINE_FILE.exists():
-                    break
-                NavigDaemon._kill_orphan_daemons()
-                time.sleep(0.2)
+        except Exception:
+            sys.exit(0)
+        while time.time() < deadline:
+            if not deadline_file.exists():
+                break
+            NavigDaemon._kill_orphan_daemons()
+            time.sleep(0.2)
+        try:
+            os.unlink(__file__)
         except Exception:
             pass
     """)
+
+    try:
+        DAEMON_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=".py",
+            prefix="navig_wdog_",
+            dir=str(DAEMON_DIR),
+            delete=False,
+            encoding="utf-8",
+        )
+        tmp.write(script)
+        tmp.flush()
+        tmp.close()
+        watchdog_path = tmp.name
+    except Exception:  # noqa: BLE001
+        return  # can't write temp file — skip watchdog silently
+
     flags = 0
     if os.name == "nt":
         flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
     try:
         subprocess.Popen(
-            [sys.executable, "-c", script],
+            [sys.executable, watchdog_path],
             close_fds=True,
             creationflags=flags,
             stdout=subprocess.DEVNULL,
@@ -285,80 +314,58 @@ def service_stop():
     Examples:
         navig service stop
     """
-    import time as _time
+    import time
 
     from navig.daemon.service_manager import (
         set_stop_flag,
         set_watchdog_deadline,
         task_scheduler_disable,
-        task_scheduler_end,
     )
     from navig.daemon.supervisor import NavigDaemon
 
-    # Step 0: write the stop-intent flag *before* killing anything.
-    # daemon/entry.py checks this flag on startup and refuses to run if it is
-    # present, so any external watcher (tray app, startup script) that tries
-    # to auto-restart the daemon after we sweep it will be blocked.
+    # Step 0 — write stop guards BEFORE killing anything so that any external
+    # watcher (tray app, Task Scheduler RestartOnFailure, HKCU\Run script) that
+    # races to restart the daemon hits the entry.py guards.
     set_stop_flag()
-    # Write a 30-second watchdog deadline. The detached watchdog process
-    # (spawned below) reads this file and kills orphans every 0.2 s until the
-    # deadline expires or the file is deleted.  Using a separate file means the
-    # watchdog keeps running even if something clears the stop-intent flag.
     set_watchdog_deadline(30)
 
-    # Step 1: disable future restarts via Task Scheduler.
-    # Step 2: end the currently-running task instance (kills the supervisor
-    #          process directly via schtasks /end so the supervisor's own
-    #          restart loop cannot spawn new worker children after we sweep).
-    # Step 3: sweep any surviving orphan worker processes.
+    # Step 1 — disable Task Scheduler task so RestartOnFailure cannot fire.
     if os.name == "nt":
-        task_scheduler_disable()  # prevent future triggers / RestartOnFailure
-        task_scheduler_end()      # terminate the live task run (supervisor)
+        task_scheduler_disable()
 
-    if not NavigDaemon.is_running():
-        # PID file shows not running (or was just cleaned up by task_scheduler_end).
-        # Sweep any orphaned worker processes that outlived the supervisor.
-        # Sleep 3 s between iterations — longer than INITIAL_RESTART_DELAY (2 s)
-        # so that if the supervisor was alive and restarted workers just before
-        # task_scheduler_end() fired, those new workers also get caught.
-        all_swept: list[int] = []
-        for _ in range(6):
-            swept = NavigDaemon._kill_orphan_daemons()
-            all_swept.extend(swept)
-            if not swept:
-                break
-            _time.sleep(3.0)
-        if all_swept:
-            ch.info(f"Swept {len(all_swept)} orphan daemon process(es): {all_swept}")
-        else:
-            ch.info("Daemon is not running")
-        _spawn_stop_watchdog()
-        return
-
+    # Step 2 — stop the supervisor gracefully (SIGTERM → wait 10 s → force-kill).
+    # stop_running_daemon() handles the supervisor PID; on exit it sweeps orphan
+    # workers with exclude_pid set to the supervisor so workers are caught too.
+    # We do NOT call task_scheduler_end() first: schtasks /end sends TerminateProcess
+    # which bypasses the supervisor's _shutdown() and leaves workers orphaned;
+    # stop_running_daemon() uses taskkill which triggers the graceful exit path.
     pid = NavigDaemon.read_pid()
-    ch.info(f"Stopping daemon (pid={pid})...")
-    if NavigDaemon.stop_running_daemon():
-        # After stopping the main daemon, sweep any surviving worker children.
-        # Use the same 3 s inter-sweep sleep so new workers spawned by a
-        # still-dying supervisor are caught before we declare victory.
-        if os.name == "nt":
-            all_swept: list[int] = []
-            for _ in range(6):
-                swept = NavigDaemon._kill_orphan_daemons()
-                all_swept.extend(swept)
-                if not swept:
-                    break
-                _time.sleep(3.0)
-            if all_swept:
-                ch.info(f"Also swept {len(all_swept)} lingering orphan(s): {all_swept}")
-        _spawn_stop_watchdog()
+    if pid is not None:
+        ch.info(f"Stopping daemon (pid={pid})...")
+        if not NavigDaemon.stop_running_daemon():
+            if os.name == "nt":
+                ch.error("Failed to stop daemon. Try: taskkill /F /PID " + str(pid))
+            else:
+                ch.error("Failed to stop daemon. Try: kill -9 " + str(pid))
+            raise typer.Exit(1)
+
+    # Step 3 — single cleanup sweep: trap any workers that outlived shutdown or
+    # any orphan generations from prior incomplete stops.  The supervisor is now
+    # confirmed dead so nothing can respawn these; one pass is sufficient.
+    time.sleep(0.5)  # brief settle so any graceful child exits are complete
+    swept = NavigDaemon._kill_orphan_daemons()
+    if swept:
+        ch.info(f"Swept {len(swept)} orphan daemon process(es): {swept}")
+    elif pid is None:
+        ch.info("Daemon is not running")
+
+    # Step 4 — start the 30-second orphan-kill watchdog so any external restarter
+    # that ignores entry.py guards (e.g. directly spawning pythonw.exe) is still
+    # swept within 0.2 s of appearing.
+    _spawn_stop_watchdog()
+
+    if pid is not None:
         ch.success("Daemon stopped")
-    else:
-        if os.name == "nt":
-            ch.error("Failed to stop daemon. Try: taskkill /F /PID " + str(pid))
-        else:
-            ch.error("Failed to stop daemon. Try: kill -9 " + str(pid))
-        raise typer.Exit(1)
 
 
 # =========================================================================
