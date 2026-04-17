@@ -596,6 +596,17 @@ class ConversationalAgent:
         # ── Hoist dispatch helpers — defined once per call, not once per turn ───────────────
         sem = asyncio.Semaphore(_MAX_PARALLEL_TOOLS)
 
+        # Build a vault_injector for credential-secured tools (F-17)
+        def _vault_injector(keys: list[str]) -> dict[str, str]:
+            try:
+                from navig.vault import get_vault
+                v = get_vault()
+                if v is not None:
+                    return v.batch_get(keys)
+            except Exception:
+                pass
+            return {}
+
         async def _dispatch_single(tool_call_item):
             try:
                 args = (
@@ -635,7 +646,11 @@ class ConversationalAgent:
                 if spec is not None:
                     result_str = spec.execute(tool_call_item.name, args)
                 else:
-                    result_str = _AGENT_REGISTRY.dispatch(tool_call_item.name, args)
+                    result_str = _AGENT_REGISTRY.dispatch(
+                        tool_call_item.name,
+                        args,
+                        vault_injector=_vault_injector,
+                    )
             except Exception as exc:
                 result_str = f"[Tool error: {exc}]"
             return (tool_call_item.id, result_str)

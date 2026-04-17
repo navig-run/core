@@ -301,6 +301,17 @@ class PlanExecuteAgent:
         """Execute plan steps sequentially via the tool registry."""
         from navig.agent.agent_tool_registry import _AGENT_REGISTRY
 
+        # Build vault injector for credential-secured tools (F-17)
+        def _vault_injector(keys: list[str]) -> dict[str, str]:
+            try:
+                from navig.vault import get_vault
+                v = get_vault()
+                if v is not None:
+                    return v.batch_get(keys)
+            except Exception:
+                pass
+            return {}
+
         remaining = list(plan.steps)
         idx = 0
 
@@ -311,35 +322,35 @@ class PlanExecuteAgent:
 
             t0 = time.monotonic()
             try:
-                result = await _AGENT_REGISTRY.dispatch(step.tool, step.args)
+                # dispatch() is synchronous — run in executor to avoid blocking the event loop
+                result_str = await asyncio.to_thread(
+                    _AGENT_REGISTRY.dispatch,
+                    step.tool,
+                    step.args,
+                    _vault_injector,
+                )
                 step.elapsed_ms = (time.monotonic() - t0) * 1000
+                step.status = "success"
+                step.output = str(result_str)[:2000]
 
-                if result.success:
-                    step.status = "success"
-                    step.output = str(result.output or "")[:2000]
-                else:
-                    step.status = "failed"
-                    step.error = result.error or "Unknown error"
-                    logger.warning("Plan-execute: step %d failed — %s", idx + 1, step.error)
-
-                    # Attempt revision
-                    if max_retries > 0:
-                        revised = await self._revise_plan(
-                            idx + 1, step, remaining[idx + 1:], toolset
-                        )
-                        if revised:
-                            # Replace remaining steps with revision
-                            remaining = remaining[: idx + 1] + revised
-                            max_retries -= 1
             except Exception as exc:
                 step.elapsed_ms = (time.monotonic() - t0) * 1000
                 step.status = "failed"
                 step.error = str(exc)
-                logger.exception("Plan-execute: step %d exception", idx + 1)
+                logger.warning("Plan-execute: step %d failed — %s", idx + 1, step.error)
+
+                # Attempt revision of remaining steps
+                if max_retries > 0 and idx + 1 < len(remaining):
+                    revised = await self._revise_plan(
+                        idx + 1, step, remaining[idx + 1:], toolset
+                    )
+                    if revised:
+                        remaining = remaining[: idx + 1] + revised
+                        max_retries -= 1
 
             idx += 1
 
-        # Update plan.steps with the (possibly revised) remaining list
+        # Update plan.steps with the (possibly revised) list
         plan.steps = remaining
 
     async def _revise_plan(

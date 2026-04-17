@@ -1766,14 +1766,117 @@ def agent_transcribe(
 
 
 # ============================================================================
+# Plan-Execute Autonomous Agent (F-21)
+# ============================================================================
+
+
+@agent_app.command("plan")
+def agent_plan(
+    task: str = typer.Argument(..., help="Task description for the autonomous agent"),
+    toolsets: str = typer.Option(
+        "core,devops",
+        "--toolsets",
+        "-t",
+        help="Comma-separated toolset names (e.g. core,devops,memory)",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", "-n", help="Generate plan only; do not execute"
+    ),
+    auto_yes: bool = typer.Option(
+        False, "--yes", "-y", help="Auto-approve plan without interactive prompt"
+    ),
+    max_steps: int = typer.Option(
+        10, "--max-steps", help="Maximum number of plan steps to execute"
+    ),
+    plain: bool = typer.Option(False, "--plain", help="Plain text output"),
+    json_output: bool = typer.Option(False, "--json", help="JSON output"),
+):
+    """Run a two-tier autonomous plan-execute agent cycle.
+
+    The agent first generates a structured JSON execution plan, then (unless
+    --dry-run is set) executes each step sequentially using the registered
+    DevOps tools.  The run trace is saved to ~/.navig/plans/runs/.
+
+    Examples:
+        navig agent plan "restart nginx and verify it's healthy"
+        navig agent plan "check disk usage on all hosts" --dry-run
+        navig agent plan "backup all databases" --toolsets core,devops --yes
+    """
+    import asyncio
+    import json as _json
+
+    from navig.agent.plan_execute import PlanExecuteAgent, format_plan_report
+
+    # Build a minimal conversational agent shell to satisfy PlanExecuteAgent.__init__
+    class _MinimalAgent:
+        pass
+
+    agent = PlanExecuteAgent(_MinimalAgent())
+
+    effective_toolsets = [t.strip() for t in toolsets.split(",") if t.strip()]
+
+    if not plain and not json_output:
+        ch.info(f"Task: {task}")
+        if dry_run:
+            ch.dim("  Mode: dry-run (plan only)")
+        else:
+            ch.dim(f"  Mode: execute  toolsets={', '.join(effective_toolsets)}")
+        ch.console.print()
+
+    try:
+        plan = asyncio.run(
+            agent.run(
+                task,
+                toolset=effective_toolsets,
+                dry_run=dry_run,
+                auto_approve=auto_yes or dry_run,
+                max_retries=1,
+            )
+        )
+    except Exception as exc:
+        ch.error(f"Plan-execute failed: {exc}")
+        raise typer.Exit(1) from exc
+
+    if json_output:
+        ch.console.print(_json.dumps(plan.to_dict(), indent=2, default=str))
+        return
+
+    if plain:
+        for i, step in enumerate(plan.steps, 1):
+            status = step.status
+            print(f"{i}. [{status}] {step.tool}: {step.reason}")
+            if step.output:
+                print(f"   Output: {step.output[:200]}")
+            if step.error:
+                print(f"   Error: {step.error}")
+        return
+
+    # Rich formatted output
+    ch.console.print(format_plan_report(plan))
+
+    successes = sum(1 for s in plan.steps if s.status == "success")
+    failures = sum(1 for s in plan.steps if s.status == "failed")
+    total = len(plan.steps)
+
+    if dry_run:
+        ch.info(f"  Dry-run complete — {total} step(s) planned")
+    else:
+        if failures == 0:
+            ch.success(f"  Completed {successes}/{total} step(s) ✓")
+        else:
+            ch.warning(f"  Completed {successes}/{total} step(s) — {failures} failed")
+
+    if hasattr(plan, "total_elapsed_ms") and plan.total_elapsed_ms:
+        ch.dim(f"  Elapsed: {plan.total_elapsed_ms:.0f}ms")
+
+
+# ============================================================================
 # Interactive Menu Wrapper Functions
 # ============================================================================
 # These functions provide a consistent interface for the interactive menu system.
 # Each wrapper calls the underlying Typer command with appropriate defaults.
 
-from typing import Any
-
-from navig.platform.paths import config_dir
+from navig.platform.paths import config_dir  # noqa: E402
 
 
 def status_cmd(ctx: dict[str, Any]) -> None:

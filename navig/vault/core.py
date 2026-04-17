@@ -305,6 +305,27 @@ class Vault:
         else:
             return SecretStr(payload.decode("utf-8", errors="replace"))
 
+    def batch_get(self, keys: list[str]) -> dict[str, str]:
+        """Fetch multiple vault secrets by label, silently skipping missing keys.
+
+        Args:
+            keys: Vault item labels (or parameter names that map 1-to-1 to
+                  vault labels) to look up.
+
+        Returns:
+            Mapping of ``{key: plaintext_value}`` for every key found.
+            Keys that are not stored in the vault are omitted rather than
+            raising an exception — callers that need a strict check should
+            call :meth:`get_secret` directly.
+        """
+        result: dict[str, str] = {}
+        for key in keys:
+            try:
+                result[key] = self.get_secret(key).reveal()
+            except (KeyError, Exception):
+                pass
+        return result
+
     def delete(self, label_or_id: str) -> bool:
         """Delete item by label or UUID.  Returns True if deleted.
 

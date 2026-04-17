@@ -298,12 +298,15 @@ class NavigDbQueryTool(BaseTool):
                 return ToolResult(name=self.name, success=False, error="'database' is required")
 
             db_type = args.get("db_type", "mysql")
+            # db_password is injected from vault at dispatch time (F-17).
+            # It is never present in the LLM-facing schema.
+            db_password = args.get("db_password") or None
             host_name, host_config = _resolve_host()
             discovery = _get_discovery(host_config)
             await self._emit(on_status, "query", f"{database}@{host_name}", 10)
 
             from navig.commands.db import _build_db_command
-            cmd = _build_db_command(db_type, sql, "root", None, database, None)
+            cmd = _build_db_command(db_type, sql, "root", db_password, database, None)
             ok, stdout, stderr = await _run_sync(discovery._execute_ssh, cmd)
 
             output_parts = []
@@ -350,6 +353,9 @@ class NavigDbDumpTool(BaseTool):
                 return ToolResult(name=self.name, success=False, error="'output' is required")
 
             db_type = args.get("db_type", "mysql")
+            # db_password is injected from vault at dispatch time (F-17).
+            db_password = args.get("db_password") or None
+            pw_flag = f"-p{shlex.quote(db_password)}" if db_password else ""
             host_name, host_config = _resolve_host()
             discovery = _get_discovery(host_config)
             await self._emit(on_status, "dump", f"{database}@{host_name} → {output_path}", 10)
@@ -357,7 +363,7 @@ class NavigDbDumpTool(BaseTool):
             # Build dump command
             out_safe = shlex.quote(output_path)
             if db_type in ("mysql", "mariadb"):
-                cmd = f"mysqldump -u root {shlex.quote(database)}"
+                cmd = f"mysqldump -u root {pw_flag} {shlex.quote(database)}".strip()
             else:
                 cmd = f"pg_dump -U postgres {shlex.quote(database)}"
 
@@ -904,9 +910,17 @@ def register_devops_tools() -> None:
     """Register all DevOps tools under the ``"devops"`` toolset."""
     from navig.agent.agent_tool_registry import _AGENT_REGISTRY
 
+    # Vault keys per tool: credentials are injected at dispatch time (F-17).
+    # These key names are stripped from the LLM-facing schema automatically.
+    _TOOL_VAULT_KEYS: dict[str, list[str]] = {
+        "navig_db_query": ["db_password"],
+        "navig_db_dump": ["db_password"],
+    }
+
     for tool_cls in _ALL_DEVOPS_TOOLS:
         try:
-            _AGENT_REGISTRY.register(tool_cls(), toolset="devops")
+            vault_keys = _TOOL_VAULT_KEYS.get(tool_cls.name)
+            _AGENT_REGISTRY.register(tool_cls(), toolset="devops", vault_keys=vault_keys)
         except Exception as exc:  # noqa: BLE001
             logger.debug("Failed to register devops tool %s: %s", tool_cls.name, exc)
     logger.debug(

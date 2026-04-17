@@ -1119,6 +1119,17 @@ class ConversationalAgent:
 
             pending_calls = response.tool_calls or []
 
+            # Build a vault_injector for credential-secured tools (F-17)
+            def _vault_injector(keys: list[str]) -> dict[str, str]:
+                try:
+                    from navig.vault import get_vault
+                    v = get_vault()
+                    if v is not None:
+                        return v.batch_get(keys)
+                except Exception:
+                    pass
+                return {}
+
             async def _dispatch_single(tc_item: Any) -> tuple[str, str]:
                 """Run one tool call: approval check → dispatch → (tc_id, result)."""
                 try:
@@ -1161,7 +1172,11 @@ class ConversationalAgent:
                     if spec is not None:
                         result_str = spec.execute(tc_item.name, args)
                     else:
-                        result_str = _AGENT_REGISTRY.dispatch(tc_item.name, args)
+                        result_str = _AGENT_REGISTRY.dispatch(
+                            tc_item.name,
+                            args,
+                            vault_injector=_vault_injector,
+                        )
                 except Exception as exc:
                     result_str = f"[Tool error: {exc}]"
                 return (tc_item.id, result_str)
