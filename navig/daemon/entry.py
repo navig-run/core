@@ -116,12 +116,19 @@ def main() -> None:
     # and exit immediately — keeping the daemon truly stopped until a
     # deliberate `navig service start` clears the flag.
     try:
-        from navig.daemon.service_manager import stop_flag_is_set
+        from navig.daemon.service_manager import stop_flag_is_set, watchdog_deadline_active
         if stop_flag_is_set():
             logger.info(
                 "Stop-intent flag is set (%s) — daemon start suppressed. "
                 "Run `navig service start` to clear the flag and restart.",
                 "~/.navig/daemon/stop_requested",
+            )
+            return
+        if watchdog_deadline_active():
+            logger.info(
+                "Stop-watchdog deadline is active (%s) — daemon start suppressed. "
+                "Wait for the watchdog window to expire or run `navig service start`.",
+                "~/.navig/daemon/stop_watchdog_deadline",
             )
             return
     except Exception:  # noqa: BLE001

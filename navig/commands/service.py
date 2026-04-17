@@ -32,28 +32,38 @@ ch = lazy_import("navig.console_helper")
 def _spawn_stop_watchdog(duration: int = 30) -> None:
     """Launch a detached process that kills new daemon spawns for *duration* seconds.
 
-    The watchdog exits early if the stop-intent flag is cleared (i.e. the user
-    deliberately calls ``navig service start``).
-    This guards against external restarters (tray app, HKCU\\Run scripts) that
-    call ``navig service start`` or spawn the daemon directly right after a stop.
+    The watchdog reads a timestamp deadline from ``~/.navig/daemon/stop_watchdog_deadline``
+    and loops until that deadline expires or the file is deleted.  Using a separate
+    deadline file (instead of the stop-intent flag) means the watchdog keeps running
+    even if an external restarter calls ``navig service start`` (which only clears the
+    stop flag, not the deadline file).
+
+    Called from :func:`service_stop` after the main sweep.
     """
     import subprocess  # noqa: PLC0415
 
-    navig_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # __file__ = navig/commands/service.py
+    # dirname x1 = navig/commands
+    # dirname x2 = navig          (package dir — WRONG if only 2 levels)
+    # dirname x3 = navig-core     (project root — CORRECT)
+    navig_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     script = textwrap.dedent(f"""\
         import sys, time
         sys.path.insert(0, {navig_root!r})
         try:
             from navig.daemon.supervisor import NavigDaemon
-            from navig.daemon.service_manager import stop_flag_is_set
+            from navig.daemon.service_manager import _WATCHDOG_DEADLINE_FILE
+            try:
+                deadline = float(_WATCHDOG_DEADLINE_FILE.read_text(encoding='utf-8').strip())
+            except Exception:
+                sys.exit(0)
+            while time.time() < deadline:
+                if not _WATCHDOG_DEADLINE_FILE.exists():
+                    break
+                NavigDaemon._kill_orphan_daemons()
+                time.sleep(0.2)
         except Exception:
-            sys.exit(0)
-        deadline = time.monotonic() + {duration}
-        while time.monotonic() < deadline:
-            if not stop_flag_is_set():
-                break
-            NavigDaemon._kill_orphan_daemons()
-            time.sleep(1)
+            pass
     """)
     flags = 0
     if os.name == "nt":
@@ -201,15 +211,33 @@ def service_start(
         import subprocess
         import time
 
-        # Clear any stop-intent flag left by a previous 'navig service stop' so
-        # that daemon/entry.py is allowed to start again.
+        # Check the stop-intent flag.
+        # • If the flag is set and this is NOT an interactive terminal (e.g. a tray app
+        #   or startup script calling `navig service start` automatically), refuse to
+        #   start — honouring the deliberate user stop.
+        # • If the flag is set and the caller IS an interactive terminal (a human
+        #   explicitly typing `navig service start`), clear both the stop flag and the
+        #   watchdog deadline so the daemon is allowed to start immediately.
         from navig.daemon.service_manager import (
             _pythonw_exe,
             clear_stop_flag,
+            clear_watchdog_deadline,
+            stop_flag_is_set,
             task_scheduler_enable,
         )
 
-        clear_stop_flag()
+        if stop_flag_is_set():
+            if not sys.stdin.isatty():
+                ch.warning(
+                    "Daemon was stopped by user intent — auto-restart blocked. "
+                    "To restart interactively run:  navig service start"
+                )
+                return
+            # Interactive user override: lift the stop lock and the watchdog window.
+            clear_watchdog_deadline()
+            clear_stop_flag()
+        else:
+            clear_stop_flag()
 
         # Use pythonw.exe on Windows — completely invisible, no console window
         exe = _pythonw_exe()
@@ -260,8 +288,8 @@ def service_stop():
     import time as _time
 
     from navig.daemon.service_manager import (
-        clear_stop_flag,
         set_stop_flag,
+        set_watchdog_deadline,
         task_scheduler_disable,
         task_scheduler_end,
     )
@@ -272,6 +300,11 @@ def service_stop():
     # present, so any external watcher (tray app, startup script) that tries
     # to auto-restart the daemon after we sweep it will be blocked.
     set_stop_flag()
+    # Write a 30-second watchdog deadline. The detached watchdog process
+    # (spawned below) reads this file and kills orphans every 0.2 s until the
+    # deadline expires or the file is deleted.  Using a separate file means the
+    # watchdog keeps running even if something clears the stop-intent flag.
+    set_watchdog_deadline(30)
 
     # Step 1: disable future restarts via Task Scheduler.
     # Step 2: end the currently-running task instance (kills the supervisor

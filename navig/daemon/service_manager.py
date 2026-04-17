@@ -72,6 +72,7 @@ def _ensure_dirs() -> None:
 # deliberate `navig service start` clears it.
 
 _STOP_FLAG_FILE = DAEMON_DIR / "stop_requested"
+_WATCHDOG_DEADLINE_FILE = DAEMON_DIR / "stop_watchdog_deadline"
 
 
 def _stop_flag_path() -> Path:
@@ -98,6 +99,49 @@ def clear_stop_flag() -> None:
 def stop_flag_is_set() -> bool:
     """Return True if a deliberate stop has been requested."""
     return _STOP_FLAG_FILE.exists()
+
+
+# ---------------------------------------------------------------------------
+# Watchdog deadline helpers
+# ---------------------------------------------------------------------------
+
+def set_watchdog_deadline(seconds: int = 30) -> None:
+    """Write a UNIX-timestamp deadline for the orphan-kill watchdog.
+
+    The watchdog reads this file and loops until ``time.time()`` exceeds the
+    deadline OR the file is deleted.  Using a separate file (not the stop-intent
+    flag) means the watchdog is immune to external callers that clear the stop
+    flag via ``clear_stop_flag()``.
+    """
+    import time as _time
+
+    try:
+        _WATCHDOG_DEADLINE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_text(_WATCHDOG_DEADLINE_FILE, str(_time.time() + seconds))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def clear_watchdog_deadline() -> None:
+    """Delete the watchdog deadline file, causing the watchdog to exit on its next tick."""
+    try:
+        _WATCHDOG_DEADLINE_FILE.unlink(missing_ok=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def watchdog_deadline_active() -> bool:
+    """Return True if the stop-watchdog deadline is still in the future.
+
+    Used by ``daemon/entry.py`` to refuse auto-restarts during the watchdog window.
+    """
+    import time as _time
+
+    try:
+        val = float(_WATCHDOG_DEADLINE_FILE.read_text(encoding="utf-8").strip())
+        return _time.time() < val
+    except Exception:  # noqa: BLE001
+        return False
 
 
 # ---------------------------------------------------------------------------

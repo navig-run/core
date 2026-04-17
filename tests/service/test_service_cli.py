@@ -35,6 +35,8 @@ def _patch_daemon_start_failure(monkeypatch):
     monkeypatch.setattr("navig.daemon.service_manager._pythonw_exe", lambda: "python")
     monkeypatch.setattr("subprocess.Popen", DummyPopen)
     monkeypatch.setattr("time.sleep", lambda *_args, **_kwargs: None)
+    # Ensure the stop-intent flag never blocks the test regardless of on-disk state.
+    monkeypatch.setattr("navig.daemon.service_manager.stop_flag_is_set", lambda: False)
 
 
 def test_service_restart_failure_returns_exit_code_1(monkeypatch):
