@@ -25,8 +25,8 @@ from navig.core.apps import AppManager
 from navig.core.context import ContextManager
 from navig.core.execution import ExecutionSettings
 from navig.core.hosts import HostManager
+from navig.core.yaml_io import atomic_write_text, log_shadow_anomaly
 from navig.core.yaml_io import atomic_write_yaml as _atomic_write_yaml
-from navig.core.yaml_io import log_shadow_anomaly
 from navig.platform import paths
 
 logger = logging.getLogger(__name__)

@@ -206,6 +206,8 @@ def service_stop():
     Examples:
         navig service stop
     """
+    import time as _time
+
     from navig.daemon.service_manager import task_scheduler_disable
     from navig.daemon.supervisor import NavigDaemon
 
@@ -219,9 +221,17 @@ def service_stop():
     if not NavigDaemon.is_running():
         # PID file shows not running, but orphan generations from previous
         # restarts may still hold open log-file handles.  Sweep them now.
-        swept = NavigDaemon._kill_orphan_daemons()
-        if swept:
-            ch.info(f"Swept {len(swept)} orphan daemon process(es): {swept}")
+        # Loop up to 5 times to catch any process that RestartOnFailure
+        # had already launched in the gap before the task was disabled.
+        all_swept: list[int] = []
+        for _ in range(5):
+            swept = NavigDaemon._kill_orphan_daemons()
+            all_swept.extend(swept)
+            if not swept:
+                break
+            _time.sleep(0.8)
+        if all_swept:
+            ch.info(f"Swept {len(all_swept)} orphan daemon process(es): {all_swept}")
         else:
             ch.info("Daemon is not running")
         return
@@ -229,6 +239,18 @@ def service_stop():
     pid = NavigDaemon.read_pid()
     ch.info(f"Stopping daemon (pid={pid})...")
     if NavigDaemon.stop_running_daemon():
+        # After stopping the main daemon, do a final sweep loop to catch any
+        # RestartOnFailure-spawned process that raced ahead of the disable.
+        if os.name == "nt":
+            all_swept: list[int] = []
+            for _ in range(5):
+                swept = NavigDaemon._kill_orphan_daemons()
+                all_swept.extend(swept)
+                if not swept:
+                    break
+                _time.sleep(0.8)
+            if all_swept:
+                ch.info(f"Also swept {len(all_swept)} lingering orphan(s): {all_swept}")
         ch.success("Daemon stopped")
     else:
         if os.name == "nt":
