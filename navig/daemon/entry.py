@@ -12,11 +12,11 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 
 from navig.core.yaml_io import atomic_write_text
-from navig.debug_logger import get_debug_logger
 from navig.platform import paths
 
 NAVIG_HOME = paths.config_dir()
@@ -31,7 +31,11 @@ DEFAULT_DAEMON_CONFIG = {
     "engagement": True,
 }
 
-logger = get_debug_logger()
+# Use a lightweight standard logger at module level so that importing
+# navig.daemon.entry does NOT open a RotatingFileHandler on debug.log.
+# The DebugLogger file handle is opened only when the daemon actually
+# starts running (inside main() -> NavigDaemon.run()).
+logger: logging.Logger = logging.getLogger("navig.daemon.entry")
 
 
 def _as_bool(value: object, default: bool) -> bool:

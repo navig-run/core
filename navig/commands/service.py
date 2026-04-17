@@ -333,6 +333,15 @@ def service_stop():
     set_stop_flag()
     set_watchdog_deadline(30)
 
+    pid = NavigDaemon.read_pid()
+
+    # Fast path: nothing is running — report immediately without expensive
+    # subprocess/WMI calls (task_scheduler_disable + _kill_orphan_daemons
+    # together take 2-5 s on Windows due to PowerShell WMI querying).
+    if pid is None:
+        ch.info("Daemon is not running")
+        return
+
     # Step 1 — disable Task Scheduler task so RestartOnFailure cannot fire.
     if os.name == "nt":
         task_scheduler_disable()
@@ -343,15 +352,13 @@ def service_stop():
     # We do NOT call task_scheduler_end() first: schtasks /end sends TerminateProcess
     # which bypasses the supervisor's _shutdown() and leaves workers orphaned;
     # stop_running_daemon() uses taskkill which triggers the graceful exit path.
-    pid = NavigDaemon.read_pid()
-    if pid is not None:
-        ch.info(f"Stopping daemon (pid={pid})...")
-        if not NavigDaemon.stop_running_daemon():
-            if os.name == "nt":
-                ch.error("Failed to stop daemon. Try: taskkill /F /PID " + str(pid))
-            else:
-                ch.error("Failed to stop daemon. Try: kill -9 " + str(pid))
-            raise typer.Exit(1)
+    ch.info(f"Stopping daemon (pid={pid})...")
+    if not NavigDaemon.stop_running_daemon():
+        if os.name == "nt":
+            ch.error("Failed to stop daemon. Try: taskkill /F /PID " + str(pid))
+        else:
+            ch.error("Failed to stop daemon. Try: kill -9 " + str(pid))
+        raise typer.Exit(1)
 
     # Step 3 — single cleanup sweep: trap any workers that outlived shutdown or
     # any orphan generations from prior incomplete stops.  The supervisor is now
@@ -360,19 +367,13 @@ def service_stop():
     swept = NavigDaemon._kill_orphan_daemons()
     if swept:
         ch.info(f"Swept {len(swept)} orphan daemon process(es): {swept}")
-    elif pid is None:
-        ch.info("Daemon is not running")
 
     # Step 4 — start the 30-second orphan-kill watchdog so any external restarter
     # that ignores entry.py guards (e.g. directly spawning pythonw.exe) is still
-    # swept within 0.2 s of appearing.  Only needed when we actually killed a
-    # running daemon — skip when no daemon was running to avoid accumulating
-    # idle watchdog processes across repeated stop calls.
-    if pid is not None:
-        _spawn_stop_watchdog()
+    # swept within 0.2 s of appearing.
+    _spawn_stop_watchdog()
 
-    if pid is not None:
-        ch.success("Daemon stopped")
+    ch.success("Daemon stopped")
 
 
 # =========================================================================
