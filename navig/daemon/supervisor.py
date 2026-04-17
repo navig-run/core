@@ -674,6 +674,7 @@ class NavigDaemon:
                 r = subprocess.run(
                     ["taskkill", "/PID", str(pid), "/T"],
                     capture_output=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
                 )
                 # taskkill writes to stdout on Windows, not stderr
                 tk_out = (r.stdout + r.stderr).lower()
@@ -696,6 +697,7 @@ class NavigDaemon:
                 r = subprocess.run(
                     ["taskkill", "/F", "/PID", str(pid), "/T"],
                     capture_output=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
                 )
                 tk_out = (r.stdout + r.stderr).lower()
                 if r.returncode != 0 and b"not found" in tk_out:

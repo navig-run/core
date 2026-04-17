@@ -365,8 +365,11 @@ def service_stop():
 
     # Step 4 — start the 30-second orphan-kill watchdog so any external restarter
     # that ignores entry.py guards (e.g. directly spawning pythonw.exe) is still
-    # swept within 0.2 s of appearing.
-    _spawn_stop_watchdog()
+    # swept within 0.2 s of appearing.  Only needed when we actually killed a
+    # running daemon — skip when no daemon was running to avoid accumulating
+    # idle watchdog processes across repeated stop calls.
+    if pid is not None:
+        _spawn_stop_watchdog()
 
     if pid is not None:
         ch.success("Daemon stopped")

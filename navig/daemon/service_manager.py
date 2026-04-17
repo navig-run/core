@@ -383,6 +383,7 @@ def task_scheduler_disable() -> tuple[bool, str]:
         r = subprocess.run(
             ["schtasks", "/change", "/tn", TASK_NAME, "/disable"],
             capture_output=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,
         )
         if r.returncode != 0:
             # Task may not exist (not installed via task scheduler).
