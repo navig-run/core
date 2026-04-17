@@ -94,6 +94,113 @@ class TestProviderChain:
         assert chain[0] == "openrouter"
 
 
+class TestSmallTalkLatencyRouting:
+    def test_low_confidence_small_talk_does_not_failup(self):
+        from navig.routing.router import RouteRequest, UnifiedRouter
+
+        router = UnifiedRouter(config={})
+        with patch(
+            "navig.routing.router.detect_mode",
+            return_value=("small_talk", 0.55, ["medium_single_line"]),
+        ):
+            decision = router.route(
+                RouteRequest(
+                    messages=[{"role": "user", "content": "what are you doing?"}],
+                    text="what are you doing?",
+                )
+            )
+
+        assert decision.mode == "small_talk"
+        assert not any("failup" in r for r in decision.reasons)
+
+    @pytest.mark.asyncio
+    async def test_latency_sensitive_small_talk_prefers_fast_chain(self):
+        from navig.routing.router import RouteRequest, UnifiedRouter
+
+        router = UnifiedRouter(config={})
+
+        class _DummyProvider:
+            async def is_available(self):
+                return True
+
+        order: list[str] = []
+
+        async def _fake_execute(provider, provider_name, decision, request):
+            order.append(provider_name)
+            return f"Provider {provider_name} handled this request successfully."
+
+        with patch(
+            "navig.routing.router.detect_mode",
+            return_value=("small_talk", 0.8, ["short_question"]),
+        ):
+            with patch.object(
+                router,
+                "_get_provider_chain",
+                return_value=["mcp_bridge", "openrouter", "github_models", "ollama"],
+            ):
+                with patch.object(router, "_get_provider_instance", return_value=_DummyProvider()):
+                    with patch.object(router, "_execute", side_effect=_fake_execute):
+                        text, trace = await router.run(
+                            RouteRequest(
+                                messages=[{"role": "user", "content": "hi"}],
+                                text="hi",
+                                metadata={"latency_sensitive": True},
+                            )
+                        )
+
+        assert "handled this request successfully" in text
+        assert order and order[0] == "ollama"
+
+    @pytest.mark.asyncio
+    async def test_latency_sensitive_small_talk_ignores_llm_modes_override(self):
+        from navig.routing.router import RouteRequest, UnifiedRouter
+
+        router = UnifiedRouter(
+            config={
+                "llm_router": {
+                    "llm_modes": {
+                        "small_talk": {
+                            "provider": "openrouter",
+                            "model": "openai/gpt-4o-mini",
+                        }
+                    }
+                }
+            }
+        )
+
+        class _DummyProvider:
+            async def is_available(self):
+                return True
+
+        order: list[str] = []
+
+        async def _fake_execute(provider, provider_name, decision, request):
+            order.append(provider_name)
+            return "Quick response for latency-sensitive small talk."
+
+        with patch(
+            "navig.routing.router.detect_mode",
+            return_value=("small_talk", 0.8, ["short_question"]),
+        ):
+            with patch.object(
+                router,
+                "_get_provider_chain",
+                return_value=["mcp_bridge", "openrouter", "github_models", "ollama"],
+            ):
+                with patch.object(router, "_get_provider_instance", return_value=_DummyProvider()):
+                    with patch.object(router, "_execute", side_effect=_fake_execute):
+                        text, trace = await router.run(
+                            RouteRequest(
+                                messages=[{"role": "user", "content": "hi"}],
+                                text="hi",
+                                metadata={"latency_sensitive": True},
+                            )
+                        )
+
+        assert "latency-sensitive" in text
+        assert order and order[0] == "ollama"
+
+
 # ── 3. UnifiedRouter._discover_user_providers ─────────────────────────
 
 

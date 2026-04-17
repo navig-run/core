@@ -38,6 +38,14 @@ logger = logging.getLogger(__name__)
 # ── Confidence threshold for mini-classify / fail-up ────────────────
 
 CONFIDENCE_THRESHOLD = 0.6
+_SMALL_TALK_LOW_LATENCY_PROVIDERS: tuple[str, ...] = (
+    "ollama",
+    "github_models",
+    "openrouter",
+    "mcp_bridge",
+)
+_SMALL_TALK_PROVIDER_TIMEOUT_SEC: float = 12.0
+_SMALL_TALK_MAX_FALLBACK_MODELS: int = 2
 
 # ── Low-quality response patterns (from model_router.py) ───────────
 
@@ -281,8 +289,8 @@ class UnifiedRouter:
         # Detect mode
         mode, confidence, reasons = detect_mode(request.text)
 
-        # Confidence gate: fail up to big_tasks
-        if confidence < CONFIDENCE_THRESHOLD:
+        # Confidence gate: fail up to big_tasks (except small_talk)
+        if confidence < CONFIDENCE_THRESHOLD and mode != "small_talk":
             reasons.append(f"low_confidence({confidence:.2f})→failup")
             mode = "big_tasks"
 
@@ -340,6 +348,9 @@ class UnifiedRouter:
 
         # 2. Try providers in priority order
         provider_chain = self._get_provider_chain()
+        _latency_sensitive_small_talk = bool(
+            decision.mode == "small_talk" and (request.metadata or {}).get("latency_sensitive")
+        )
 
         # Prioritize session-override provider so we don't waste attempts
         # on providers that don't know the overridden model.
@@ -361,7 +372,7 @@ class UnifiedRouter:
         #     The provider is promoted to front-of-chain even when the stored
         #     model is empty — _execute() has a per-provider emergency default
         #     table that covers that case.
-        if not decision.model:
+        if not decision.model and not _latency_sensitive_small_talk:
             try:
                 _modes_cfg = (self._config.get("llm_router") or {}).get("llm_modes") or {}
                 _mode_data = _modes_cfg.get(decision.mode) or {}
@@ -389,6 +400,18 @@ class UnifiedRouter:
                         )
             except Exception:  # noqa: BLE001
                 pass  # best-effort; never block routing
+
+        # Latency-sensitive small_talk: prefer fast providers to avoid
+        # long waits from bridge/remote-first chains.
+        if _latency_sensitive_small_talk:
+            _preferred = list(_SMALL_TALK_LOW_LATENCY_PROVIDERS)
+            _fast_chain: list[str] = []
+            _seen_fast: set[str] = set()
+            for _p in _preferred + provider_chain:
+                if _p in provider_chain and _p not in _seen_fast:
+                    _fast_chain.append(_p)
+                    _seen_fast.add(_p)
+            provider_chain = _fast_chain
 
         response_text = ""
         last_error = ""
@@ -749,11 +772,17 @@ class UnifiedRouter:
                 model,
             )
 
+        chat_kwargs: dict[str, Any] = {}
+        if decision.mode == "small_talk" and (request.metadata or {}).get("latency_sensitive"):
+            chat_kwargs["timeout_total"] = _SMALL_TALK_PROVIDER_TIMEOUT_SEC
+            chat_kwargs["max_chain_len"] = _SMALL_TALK_MAX_FALLBACK_MODELS
+
         resp = await provider.chat(
             model=model,
             messages=request.messages,
             temperature=decision.temperature,
             max_tokens=decision.max_tokens,
+            **chat_kwargs,
         )
         if hasattr(resp, "content"):
             decision.model = getattr(resp, "model", model)

@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 _PROVIDER_DEFAULT_TEMPERATURE: float = 0.7
 _PROVIDER_CHAT_MAX_TOKENS: int = 512
 _PROVIDER_STREAM_MAX_TOKENS: int = 4096
+_PROVIDER_GITHUB_TIMEOUT_SEC: float = 60.0
 
 # Lazy aiohttp import
 _aiohttp = None
@@ -709,6 +710,12 @@ class GitHubModelsProvider(LLMProvider):
             )
 
         chain = self._get_fallback_chain(model or self.DEFAULT_MODEL)
+        try:
+            max_chain_len = int(kw.get("max_chain_len") or 0)
+        except Exception:  # noqa: BLE001
+            max_chain_len = 0
+        if max_chain_len > 0:
+            chain = chain[:max_chain_len]
         last_error = None
 
         for attempt_model in chain:
@@ -765,6 +772,10 @@ class GitHubModelsProvider(LLMProvider):
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        try:
+            timeout_total = float(kw.get("timeout_total", _PROVIDER_GITHUB_TIMEOUT_SEC))
+        except Exception:  # noqa: BLE001
+            timeout_total = _PROVIDER_GITHUB_TIMEOUT_SEC
 
         t0 = time.monotonic()
         aio = await _get_aiohttp()
@@ -772,7 +783,7 @@ class GitHubModelsProvider(LLMProvider):
             url,
             headers=headers,
             json=payload,
-            timeout=aio.ClientTimeout(total=60),
+            timeout=aio.ClientTimeout(total=timeout_total),
         ) as resp:
             if resp.status == 401:
                 raise RuntimeError(
