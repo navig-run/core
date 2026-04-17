@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import sys
+import textwrap
 
 import typer
 
@@ -26,6 +27,48 @@ from navig.platform.paths import config_dir
 from navig.platform.paths import log_dir as _log_dir
 
 ch = lazy_import("navig.console_helper")
+
+
+def _spawn_stop_watchdog(duration: int = 30) -> None:
+    """Launch a detached process that kills new daemon spawns for *duration* seconds.
+
+    The watchdog exits early if the stop-intent flag is cleared (i.e. the user
+    deliberately calls ``navig service start``).
+    This guards against external restarters (tray app, HKCU\\Run scripts) that
+    call ``navig service start`` or spawn the daemon directly right after a stop.
+    """
+    import subprocess  # noqa: PLC0415
+
+    navig_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    script = textwrap.dedent(f"""\
+        import sys, time
+        sys.path.insert(0, {navig_root!r})
+        try:
+            from navig.daemon.supervisor import NavigDaemon
+            from navig.daemon.service_manager import stop_flag_is_set
+        except Exception:
+            sys.exit(0)
+        deadline = time.monotonic() + {duration}
+        while time.monotonic() < deadline:
+            if not stop_flag_is_set():
+                break
+            NavigDaemon._kill_orphan_daemons()
+            time.sleep(1)
+    """)
+    flags = 0
+    if os.name == "nt":
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+    try:
+        subprocess.Popen(
+            [sys.executable, "-c", script],
+            close_fds=True,
+            creationflags=flags,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:  # noqa: BLE001
+        pass  # watchdog is best-effort; never block the stop path
+
 
 service_app = typer.Typer(
     name="service",
@@ -256,6 +299,7 @@ def service_stop():
             ch.info(f"Swept {len(all_swept)} orphan daemon process(es): {all_swept}")
         else:
             ch.info("Daemon is not running")
+        _spawn_stop_watchdog()
         return
 
     pid = NavigDaemon.read_pid()
@@ -274,6 +318,7 @@ def service_stop():
                 _time.sleep(3.0)
             if all_swept:
                 ch.info(f"Also swept {len(all_swept)} lingering orphan(s): {all_swept}")
+        _spawn_stop_watchdog()
         ch.success("Daemon stopped")
     else:
         if os.name == "nt":
