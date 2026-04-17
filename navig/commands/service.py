@@ -208,28 +208,31 @@ def service_stop():
     """
     import time as _time
 
-    from navig.daemon.service_manager import task_scheduler_disable
+    from navig.daemon.service_manager import task_scheduler_disable, task_scheduler_end
     from navig.daemon.supervisor import NavigDaemon
 
-    # Disable the Task Scheduler task *before* killing the process so that the
-    # RestartOnFailure policy (PT1M × 999) cannot respawn the daemon.
-    # schtasks /end only terminates the current run; /change /disable prevents
-    # ALL future triggers and failure-restart from firing until re-enabled.
+    # Step 1: disable future restarts via Task Scheduler.
+    # Step 2: end the currently-running task instance (kills the supervisor
+    #          process directly via schtasks /end so the supervisor's own
+    #          restart loop cannot spawn new worker children after we sweep).
+    # Step 3: sweep any surviving orphan worker processes.
     if os.name == "nt":
-        task_scheduler_disable()  # silent if task doesn't exist
+        task_scheduler_disable()  # prevent future triggers / RestartOnFailure
+        task_scheduler_end()      # terminate the live task run (supervisor)
 
     if not NavigDaemon.is_running():
-        # PID file shows not running, but orphan generations from previous
-        # restarts may still hold open log-file handles.  Sweep them now.
-        # Loop up to 5 times to catch any process that RestartOnFailure
-        # had already launched in the gap before the task was disabled.
+        # PID file shows not running (or was just cleaned up by task_scheduler_end).
+        # Sweep any orphaned worker processes that outlived the supervisor.
+        # Sleep 3 s between iterations — longer than INITIAL_RESTART_DELAY (2 s)
+        # so that if the supervisor was alive and restarted workers just before
+        # task_scheduler_end() fired, those new workers also get caught.
         all_swept: list[int] = []
-        for _ in range(5):
+        for _ in range(6):
             swept = NavigDaemon._kill_orphan_daemons()
             all_swept.extend(swept)
             if not swept:
                 break
-            _time.sleep(0.8)
+            _time.sleep(3.0)
         if all_swept:
             ch.info(f"Swept {len(all_swept)} orphan daemon process(es): {all_swept}")
         else:
@@ -239,16 +242,17 @@ def service_stop():
     pid = NavigDaemon.read_pid()
     ch.info(f"Stopping daemon (pid={pid})...")
     if NavigDaemon.stop_running_daemon():
-        # After stopping the main daemon, do a final sweep loop to catch any
-        # RestartOnFailure-spawned process that raced ahead of the disable.
+        # After stopping the main daemon, sweep any surviving worker children.
+        # Use the same 3 s inter-sweep sleep so new workers spawned by a
+        # still-dying supervisor are caught before we declare victory.
         if os.name == "nt":
             all_swept: list[int] = []
-            for _ in range(5):
+            for _ in range(6):
                 swept = NavigDaemon._kill_orphan_daemons()
                 all_swept.extend(swept)
                 if not swept:
                     break
-                _time.sleep(0.8)
+                _time.sleep(3.0)
             if all_swept:
                 ch.info(f"Also swept {len(all_swept)} lingering orphan(s): {all_swept}")
         ch.success("Daemon stopped")

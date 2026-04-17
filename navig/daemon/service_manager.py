@@ -267,6 +267,28 @@ def task_scheduler_install(start_now: bool = True) -> tuple[bool, str]:
         return False, f"Task Scheduler failed: {err}"
 
 
+def task_scheduler_end() -> tuple[bool, str]:
+    """Terminate the currently-running task instance via the Task Scheduler.
+
+    ``schtasks /end`` signals the scheduler service to call TerminateProcess
+    on the process it spawned for the task's current run.  This kills the
+    supervisor (daemon.entry) process directly.  It is a no-op when no
+    instance is running and succeeds (returncode 0) when the task is not
+    installed.
+    """
+    try:
+        r = subprocess.run(
+            ["schtasks", "/end", "/tn", TASK_NAME],
+            capture_output=True,
+        )
+        if r.returncode != 0:
+            # Task not installed or no running instance — treat as success.
+            return False, (r.stderr or r.stdout or b"").decode("utf-8", errors="replace").strip()
+        return True, f"Task '{TASK_NAME}' instance ended"
+    except Exception as e:
+        return False, str(e)
+
+
 def task_scheduler_disable() -> tuple[bool, str]:
     """Disable the scheduled task so it cannot auto-restart the daemon.
 
