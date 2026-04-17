@@ -361,17 +361,39 @@ class NavigDaemon:
         try:
             if sys.platform == "win32":
                 import ctypes
+                import ctypes.wintypes
 
                 kernel32 = ctypes.windll.kernel32
-                handle = kernel32.OpenProcess(0x100000, False, pid)  # SYNCHRONIZE
-                if handle:
+                PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+                handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+                if not handle:
+                    # Process does not exist — clean up stale PID file
+                    PID_FILE.unlink(missing_ok=True)
+                    return False
+                # Verify the process hasn't exited (STILL_ACTIVE = 259 = 0x103)
+                exit_code = ctypes.wintypes.DWORD()
+                kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+                if exit_code.value != 259:  # process has exited
                     kernel32.CloseHandle(handle)
-                    return True
-                return False
+                    PID_FILE.unlink(missing_ok=True)
+                    return False
+                # Verify the PID belongs to a Python process (not a reused PID)
+                # QueryFullProcessImageNameW is fast — no subprocess needed
+                buf = ctypes.create_unicode_buffer(1024)
+                buf_size = ctypes.wintypes.DWORD(1024)
+                kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(buf_size))
+                kernel32.CloseHandle(handle)
+                exe_name = Path(buf.value).name.lower() if buf.value else ""
+                if exe_name not in ("python.exe", "pythonw.exe", "python3.exe"):
+                    # PID reused by a non-Python process — stale PID file
+                    PID_FILE.unlink(missing_ok=True)
+                    return False
+                return True
             else:
                 os.kill(pid, 0)
                 return True
         except (OSError, ProcessLookupError):
+            PID_FILE.unlink(missing_ok=True)
             return False
 
     @staticmethod
@@ -470,6 +492,12 @@ class NavigDaemon:
                 self.logger.warning("Stale PID file (pid=%s) - removing and starting fresh", pid)
                 self._remove_pid()
 
+        # Sweep stale daemon generations from previous restarts before
+        # writing the new PID file so their log handles are released.
+        swept = self._kill_orphan_daemons(exclude_pid=os.getpid())
+        if swept:
+            self.logger.info("Swept %d orphan daemon PID(s): %s", len(swept), swept)
+
         self._running = True
         self._write_pid()
         self.logger.info("=== NAVIG Daemon starting (pid=%d) ===", os.getpid())
@@ -551,30 +579,135 @@ class NavigDaemon:
     # -- external control --------------------------------------------------
 
     @staticmethod
+    def _kill_orphan_daemons(exclude_pid: int | None = None) -> list[int]:
+        """Kill all pythonw/python processes that are navig daemon instances.
+
+        Finds every python process whose command line contains 'navig.daemon'
+        (or 'navig\\daemon\\entry') except *exclude_pid* and the current process,
+        then force-kills them with taskkill /F on Windows or SIGKILL on POSIX.
+
+        Returns the list of PIDs that were targeted.
+        """
+        current_pid = os.getpid()
+        killed: list[int] = []
+
+        if sys.platform == "win32":
+            try:
+                result = subprocess.run(
+                    [
+                        "powershell",
+                        "-NoProfile",
+                        "-Command",
+                        (
+                            "Get-CimInstance Win32_Process"
+                            " | Where-Object {"
+                            "  $_.CommandLine -and ("
+                            "    $_.CommandLine -like '*navig.daemon*' -or"
+                            "    $_.CommandLine -like '*navig\\\\daemon\\\\entry*'"
+                            "  )"
+                            " }"
+                            " | Select-Object -ExpandProperty ProcessId"
+                        ),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+                for token in result.stdout.split():
+                    try:
+                        found_pid = int(token.strip())
+                    except ValueError:
+                        continue
+                    if found_pid == current_pid:
+                        continue
+                    if exclude_pid is not None and found_pid == exclude_pid:
+                        continue
+                    killed.append(found_pid)
+                    subprocess.run(
+                        ["taskkill", "/F", "/PID", str(found_pid), "/T"],
+                        capture_output=True,
+                        creationflags=subprocess.CREATE_NO_WINDOW,
+                    )
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; never crash the stop path
+        else:
+            try:
+                import signal as _signal
+                result = subprocess.run(
+                    ["pgrep", "-f", "navig.daemon"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                for token in result.stdout.split():
+                    try:
+                        found_pid = int(token.strip())
+                    except ValueError:
+                        continue
+                    if found_pid == current_pid:
+                        continue
+                    if exclude_pid is not None and found_pid == exclude_pid:
+                        continue
+                    killed.append(found_pid)
+                    try:
+                        os.kill(found_pid, _signal.SIGKILL)
+                    except OSError:
+                        pass
+            except Exception:  # noqa: BLE001
+                pass  # best-effort
+
+        return killed
+
+    @staticmethod
     def stop_running_daemon() -> bool:
         """Send stop signal to a running daemon. Returns True if stopped."""
         pid = NavigDaemon.read_pid()
         if pid is None:
+            # No PID file, but there may still be orphan daemon processes —
+            # sweep them up before reporting not-running.
+            NavigDaemon._kill_orphan_daemons()
             return False
         try:
             if sys.platform == "win32":
                 # Use taskkill with /T (tree) for clean shutdown
-                subprocess.run(
+                r = subprocess.run(
                     ["taskkill", "/PID", str(pid), "/T"],
                     capture_output=True,
                 )
+                # taskkill writes to stdout on Windows, not stderr
+                tk_out = (r.stdout + r.stderr).lower()
+                if r.returncode != 0 and b"not found" in tk_out:
+                    # Process already gone — clean up stale PID file
+                    PID_FILE.unlink(missing_ok=True)
+                    NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
+                    return True
             else:
                 os.kill(pid, signal.SIGTERM)
             # Wait a moment for clean exit
             for _ in range(20):
                 time.sleep(0.5)
                 if not NavigDaemon.is_running():
-                    if PID_FILE.exists():
-                        PID_FILE.unlink(missing_ok=True)
+                    PID_FILE.unlink(missing_ok=True)
+                    NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
                     return True
             # Force kill
             if sys.platform == "win32":
-                subprocess.run(["taskkill", "/F", "/PID", str(pid), "/T"], capture_output=True)
+                r = subprocess.run(
+                    ["taskkill", "/F", "/PID", str(pid), "/T"],
+                    capture_output=True,
+                )
+                tk_out = (r.stdout + r.stderr).lower()
+                if r.returncode != 0 and b"not found" in tk_out:
+                    PID_FILE.unlink(missing_ok=True)
+                    NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
+                    return True
+                if r.returncode == 0:
+                    # Force-kill succeeded — process is gone
+                    time.sleep(0.5)
+                    PID_FILE.unlink(missing_ok=True)
+                    NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
+                    return True
             else:
                 force_signal = getattr(signal, "SIGKILL", signal.SIGTERM)
                 os.kill(pid, force_signal)
@@ -582,14 +715,16 @@ class NavigDaemon:
             for _ in range(10):
                 time.sleep(0.2)
                 if not NavigDaemon.is_running():
-                    if PID_FILE.exists():
-                        PID_FILE.unlink(missing_ok=True)
+                    PID_FILE.unlink(missing_ok=True)
+                    NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
                     return True
+            NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
             return False
         except ProcessLookupError:
             # Process already gone
             if PID_FILE.exists():
                 PID_FILE.unlink(missing_ok=True)
+            NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
             return True
         except PermissionError:
             return False
@@ -597,6 +732,7 @@ class NavigDaemon:
             if not NavigDaemon.is_running():
                 if PID_FILE.exists():
                     PID_FILE.unlink(missing_ok=True)
+                NavigDaemon._kill_orphan_daemons(exclude_pid=pid)
                 return True
             return False
 
