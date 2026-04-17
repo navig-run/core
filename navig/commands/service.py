@@ -96,7 +96,11 @@ def _spawn_stop_watchdog(duration: int = 30) -> None:
 
     flags = 0
     if os.name == "nt":
-        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
+        flags = (  # type: ignore[attr-defined]
+            subprocess.DETACHED_PROCESS
+            | subprocess.CREATE_NEW_PROCESS_GROUP
+            | subprocess.CREATE_NO_WINDOW
+        )
     try:
         subprocess.Popen(
             [sys.executable, watchdog_path],
