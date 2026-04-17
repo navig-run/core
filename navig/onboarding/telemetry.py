@@ -38,6 +38,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from navig.core.yaml_io import atomic_write_text
 from navig.platform.paths import config_dir
 
 # Public endpoint — can be overridden for self-hosted deployments

@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from navig.core.yaml_io import atomic_write_text
 from navig.tools.registry import BaseTool, StatusCallback, ToolResult
 
 logger = logging.getLogger(__name__)

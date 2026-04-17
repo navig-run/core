@@ -19,6 +19,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from navig.core.yaml_io import atomic_write_text
 from navig.debug_logger import get_debug_logger
 
 logger = get_debug_logger()

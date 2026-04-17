@@ -36,6 +36,8 @@ from typing import Any
 
 from loguru import logger
 
+from navig.core.yaml_io import atomic_write_text
+
 __all__ = [
     "SessionKey",
     "OperatorContext",

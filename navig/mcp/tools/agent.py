@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from navig.core.yaml_io import atomic_write_text
 from navig.platform.paths import config_dir
 
 

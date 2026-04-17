@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from navig.core.yaml_io import atomic_write_text
+
 __all__ = ["CrashReport", "record_crash", "install_crash_handler", "list_crashes"]
 
 

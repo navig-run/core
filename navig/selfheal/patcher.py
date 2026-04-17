@@ -22,6 +22,7 @@ from pathlib import Path
 
 from loguru import logger
 
+from navig.core.yaml_io import atomic_write_text
 from navig.selfheal.scanner import ScanFinding
 
 # ---------------------------------------------------------------------------

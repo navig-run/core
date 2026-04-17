@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from navig.core.yaml_io import atomic_write_text
 from navig.platform.paths import config_dir
 from navig.providers._local_defaults import _OLLAMA_USER_BASE_URL
 from navig.workspace_ownership import USER_WORKSPACE_DIR

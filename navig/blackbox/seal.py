@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from navig.core.yaml_io import atomic_write_text
+
 from .types import Bundle
 
 __all__ = ["seal_bundle", "is_sealed", "unseal"]

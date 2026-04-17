@@ -21,6 +21,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+from navig.core.yaml_io import atomic_write_text
 from navig.platform.paths import media_budget_path
 
 logger = logging.getLogger(__name__)

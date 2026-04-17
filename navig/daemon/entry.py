@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 
+from navig.core.yaml_io import atomic_write_text
 from navig.debug_logger import get_debug_logger
 from navig.platform import paths
 

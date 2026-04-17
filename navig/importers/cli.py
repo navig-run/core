@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from navig.console_helper import get_console
+from navig.core.yaml_io import atomic_write_text
 
 from .core import UniversalImporter, flatten_results
 

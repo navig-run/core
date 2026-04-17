@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from navig import console_helper as ch
+from navig.core.yaml_io import atomic_write_text
 from navig.platform import paths
 
 

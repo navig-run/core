@@ -20,6 +20,7 @@ import json
 import typer
 
 from navig.console_helper import get_console
+from navig.core.yaml_io import atomic_write_text
 
 tools_app = typer.Typer(
     name="tools",

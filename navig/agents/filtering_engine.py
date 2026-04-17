@@ -27,6 +27,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from navig.core.yaml_io import atomic_write_text
+
 logger = logging.getLogger(__name__)
 
 # ── Public constants ──────────────────────────────────────────────────────────

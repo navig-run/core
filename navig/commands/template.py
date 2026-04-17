@@ -8,6 +8,7 @@ from typing import Any
 
 from navig import console_helper as ch
 from navig.config import get_config_manager
+from navig.core.yaml_io import atomic_write_text
 from navig.template_manager import TemplateManager
 
 
