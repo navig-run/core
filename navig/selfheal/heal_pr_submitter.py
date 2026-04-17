@@ -23,6 +23,7 @@ from typing import Any
 
 from loguru import logger
 
+from navig.core.yaml_io import atomic_write_text
 from navig.platform.paths import config_dir as _navig_config_dir
 from navig.selfheal.git_manager import (
     UPSTREAM_REPO,
