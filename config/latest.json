@@ -1,7 +1,7 @@
 {
-  "version": "2.7.0",
+  "version": "2.8.0",
   "channel": "stable",
-  "download_url": "https://github.com/navig-run/core/releases/download/v2.7.0/navig-2.7.0.tar.gz",
+  "download_url": "https://github.com/navig-run/core/releases/download/v2.8.0/navig-2.8.0.tar.gz",
   "changelog_url": "https://github.com/navig-run/core/releases",
-  "released_at": "2026-04-12"
+  "released_at": "2026-04-18"
 }
