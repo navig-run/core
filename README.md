@@ -14,7 +14,7 @@
   <a href="https://pypi.org/project/navig/"><img src="https://img.shields.io/pypi/v/navig?style=flat-square&color=blue" alt="PyPI"></a>
   <img src="https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square" alt="Python 3.10+">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green?style=flat-square" alt="License"></a>
-  <a href="https://github.com/sponsors/miztizm"><img src="https://img.shields.io/badge/GitHub%20Sponsors-support-pink?style=flat-square" alt="Sponsor"></a>
+  <a href="https://github.com/sponsors/navig-run"><img src="https://img.shields.io/badge/GitHub%20Sponsors-support-pink?style=flat-square" alt="Sponsor"></a>
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey?style=flat-square" alt="Platform">
 </p>
 
@@ -390,7 +390,7 @@ navig/
 NAVIG is built by one person and released as open-source. If it saves you time, prevents mistakes, or earns a place in your workflow:
 
 <p align="center">
-  <a href="https://github.com/sponsors/miztizm"><img src="https://img.shields.io/badge/❤️_GitHub_Sponsors-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="GitHub Sponsors" height="40"></a>
+  <a href="https://github.com/sponsors/navig-run"><img src="https://img.shields.io/badge/❤️_GitHub_Sponsors-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="GitHub Sponsors" height="40"></a>
   &nbsp;&nbsp;
   <a href="https://buymeacoffee.com/navig-run"><img src="https://img.shields.io/badge/☕_Buy_Me_a_Coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy Me a Coffee" height="40"></a>
 </p>
