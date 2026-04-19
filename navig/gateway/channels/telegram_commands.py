@@ -6408,6 +6408,7 @@ class TelegramCommandsMixin:
     ) -> None:
         """/dns <domain> — cross-platform DNS lookup via stdlib + nslookup."""
         import asyncio
+        import re as _re
         import socket
         import subprocess
 
@@ -6421,7 +6422,8 @@ class TelegramCommandsMixin:
             )
             return
 
-        lines: list[str] = [f"🔎 <b>DNS</b>  <code>{html.escape(domain)}</code>", ""]
+        DIV = "  <code>─────────────────────────</code>"
+        lines: list[str] = [f"🔎  <b>DNS lookup</b>  —  <code>{html.escape(domain)}</code>", DIV]
 
         # ── A / AAAA via stdlib ───────────────────────────────────────────────
         ipv4: list[str] = []
@@ -6436,14 +6438,20 @@ class TelegramCommandsMixin:
                     if ip not in ipv4:
                         ipv4.append(ip)
         except socket.gaierror as exc:
-            lines.append(f"❌ Resolution failed: <i>{html.escape(str(exc))}</i>")
+            lines.append(f"❌  Resolution failed: <i>{html.escape(str(exc))}</i>")
             await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
             return
 
-        for ip in ipv4[:8]:
-            lines.append(f"  <b>A </b>   {html.escape(ip)}")
-        for ip in ipv6[:4]:
-            lines.append(f"  <b>AAAA</b>  {html.escape(ip)}")
+        if ipv4:
+            lines.append(f"  <b>A</b>")
+            for ip in ipv4[:8]:
+                lines.append(f"    <code>{html.escape(ip)}</code>")
+        if ipv6:
+            if ipv4:
+                lines.append("")
+            lines.append(f"  <b>AAAA</b>")
+            for ip in ipv6[:4]:
+                lines.append(f"    <code>{html.escape(ip)}</code>")
 
         # ── MX via nslookup ───────────────────────────────────────────────────
         try:
@@ -6453,21 +6461,43 @@ class TelegramCommandsMixin:
             )
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=8)
             out = stdout.decode(errors="replace")
-            mx: list[str] = []
+            mx_records: list[tuple[int, str]] = []
             for l in out.splitlines():
                 ll = l.strip()
                 if "mail exchanger" in ll.lower() or ("MX" in ll and "=" in ll):
-                    # Condense: "domain MX preference = 10, mail exchanger = smtp.x.com"
-                    # → "10  smtp.x.com"
-                    import re as _re
                     m = _re.search(r"preference\s*=\s*(\d+).*?exchanger\s*=\s*(\S+)", ll, _re.I)
                     if m:
-                        mx.append(f"  <b>MX </b>  {m.group(1):>3}  {html.escape(m.group(2))}")
-                    else:
-                        mx.append(f"  <b>MX </b>  {html.escape(ll)}")
-            if mx:
+                        mx_records.append((int(m.group(1)), m.group(2).rstrip(".")))
+            if mx_records:
+                mx_records.sort(key=lambda x: x[0])
                 lines.append("")
-                lines.extend(mx[:6])
+                lines.append("  <b>MX</b>")
+                for pref, exch in mx_records[:6]:
+                    lines.append(f"    <code>{pref:>3}</code>  {html.escape(exch)}")
+        except Exception:
+            pass
+
+        # ── TXT (SPF) via nslookup ────────────────────────────────────────────
+        try:
+            proc2 = await asyncio.create_subprocess_exec(
+                "nslookup", "-type=TXT", domain,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            stdout2, _ = await asyncio.wait_for(proc2.communicate(), timeout=8)
+            out2 = stdout2.decode(errors="replace")
+            txt_records: list[str] = []
+            for l in out2.splitlines():
+                ll = l.strip()
+                if "v=spf" in ll.lower() or ('"' in ll and "text" in ll.lower()):
+                    # strip quotes and label
+                    val = _re.sub(r'^.*?"(.*?)".*$', r"\1", ll)
+                    if val and val not in txt_records:
+                        txt_records.append(val[:80])
+            if txt_records:
+                lines.append("")
+                lines.append("  <b>TXT</b>")
+                for t in txt_records[:3]:
+                    lines.append(f"    <code>{html.escape(t)}</code>")
         except Exception:
             pass
 
@@ -6487,7 +6517,6 @@ class TelegramCommandsMixin:
         import ssl
 
         raw = text[len("/ssl"):].strip() if text.lower().startswith("/ssl") else text.strip()
-        # allow "domain:port" override
         part = raw.split()[0] if raw else ""
         if not part:
             await self.send_message(
@@ -6503,7 +6532,30 @@ class TelegramCommandsMixin:
         else:
             domain, port = part, 443
 
-        lines: list[str] = [f"🔐 <b>SSL</b>  <code>{html.escape(domain)}</code>  (port {port})", ""]
+        DIV = "  <code>─────────────────────────</code>"
+        port_label = f"port {port}" if port != 443 else "443"
+        lines: list[str] = [f"🔐  <b>SSL certificate</b>  —  <code>{html.escape(domain)}</code>  :{port_label}", DIV]
+
+        def _fmt_cert_date(s: str) -> str:
+            """'Mar 30 08:35:08 2026 GMT' → 'Mar 30, 2026'"""
+            try:
+                dt = datetime.datetime.strptime(s, "%b %d %H:%M:%S %Y %Z")
+                return dt.strftime("%b %-d, %Y")
+            except Exception:
+                try:
+                    dt = datetime.datetime.strptime(s, "%b %d %H:%M:%S %Y %Z")
+                    return s
+                except Exception:
+                    return s
+
+        # Windows strftime doesn't support %-d — use a small helper
+        def _fmt_cert_date(s: str) -> str:  # noqa: F811
+            try:
+                dt = datetime.datetime.strptime(s.strip(), "%b %d %H:%M:%S %Y %Z")
+                return f"{dt.strftime('%b')} {dt.day}, {dt.year}"
+            except Exception:
+                return s
+
         try:
             ctx = ssl.create_default_context()
             loop = asyncio.get_event_loop()
@@ -6517,47 +6569,55 @@ class TelegramCommandsMixin:
             cert = conn.getpeercert()
             conn.close()
 
-            subject = dict(x[0] for x in cert.get("subject", []))
-            issuer  = dict(x[0] for x in cert.get("issuer",  []))
+            subject    = dict(x[0] for x in cert.get("subject", []))
+            issuer     = dict(x[0] for x in cert.get("issuer",  []))
             not_before = cert.get("notBefore", "?")
             not_after  = cert.get("notAfter",  "?")
             san_all    = cert.get("subjectAltName", [])
+            dns_names  = [v for t, v in san_all if t == "DNS"]
 
-            lines.append(f"  <b>CN     </b>  {html.escape(subject.get('commonName', '?'))}")
-            lines.append(f"  <b>Issuer </b>  {html.escape(issuer.get('organizationName', '?'))}")
-            lines.append(f"  <b>Issued </b>  {html.escape(not_before)}")
-            lines.append(f"  <b>Expires</b>  {html.escape(not_after)}")
+            cn = subject.get("commonName", "?")
+            org_issuer = issuer.get("organizationName", issuer.get("commonName", "?"))
 
-            dns_names = [v for t, v in san_all if t == "DNS"]
+            lines.append(f"  🏷  <b>Common name</b>   <code>{html.escape(cn)}</code>")
+            lines.append(f"  🏛  <b>Issued by</b>     {html.escape(org_issuer)}")
+            lines.append("")
+            lines.append(f"  📅  <b>Valid from</b>    {html.escape(_fmt_cert_date(not_before))}")
+            lines.append(f"  📅  <b>Expires</b>       {html.escape(_fmt_cert_date(not_after))}")
+
             if dns_names:
-                shown = ", ".join(dns_names[:6])
-                more  = f" +{len(dns_names) - 6} more" if len(dns_names) > 6 else ""
-                lines.append(f"  <b>SANs   </b>  {html.escape(shown)}{html.escape(more)}")
+                shown = ", ".join(dns_names[:5])
+                more  = f"  <i>+{len(dns_names) - 5} more</i>" if len(dns_names) > 5 else ""
+                lines.append("")
+                lines.append(f"  🔗  <b>SANs</b>  ({len(dns_names)} names)")
+                lines.append(f"    <code>{html.escape(shown)}</code>{more}")
 
-            # Days-left banner
+            # ── Expiry banner ─────────────────────────────────────────────────
             try:
-                exp = datetime.datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z").replace(
+                exp = datetime.datetime.strptime(not_after.strip(), "%b %d %H:%M:%S %Y %Z").replace(
                     tzinfo=datetime.timezone.utc
                 )
                 days_left = (exp - datetime.datetime.now(datetime.timezone.utc)).days
                 lines.append("")
+                lines.append(DIV)
                 if days_left <= 0:
-                    lines.append("  ❌ <b>CERTIFICATE EXPIRED</b>")
+                    lines.append("  ❌  <b>CERTIFICATE EXPIRED</b>")
                 elif days_left <= 14:
-                    lines.append(f"  🚨 Expires in <b>{days_left} days</b> — renew immediately")
+                    lines.append(f"  🚨  <b>Expires in {days_left} days</b>  — renew immediately!")
                 elif days_left <= 30:
-                    lines.append(f"  ⚠️ Expires in <b>{days_left} days</b> — renew soon")
+                    lines.append(f"  ⚠️  <b>Expires in {days_left} days</b>  — renew soon")
                 else:
-                    lines.append(f"  ✅ Valid for <b>{days_left} more days</b>")
+                    lines.append(f"  ✅  Valid for <b>{days_left} more days</b>")
             except Exception:
                 pass
 
         except ssl.SSLCertVerificationError as exc:
-            lines.append(f"  ⚠️ Certificate verification failed\n  <i>{html.escape(str(exc))}</i>")
+            lines.append(f"  ⚠️  Verification failed")
+            lines.append(f"  <i>{html.escape(str(exc))}</i>")
         except ssl.SSLError as exc:
-            lines.append(f"  ❌ SSL error: <i>{html.escape(str(exc))}</i>")
+            lines.append(f"  ❌  SSL error: <i>{html.escape(str(exc))}</i>")
         except OSError as exc:
-            lines.append(f"  ❌ Connection failed: <i>{html.escape(str(exc))}</i>")
+            lines.append(f"  ❌  Connection failed: <i>{html.escape(str(exc))}</i>")
 
         await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
 
@@ -6570,6 +6630,8 @@ class TelegramCommandsMixin:
     ) -> None:
         """/whois <domain> — raw socket WHOIS (port 43), no external dependencies."""
         import asyncio
+        import datetime
+        import re as _re
         import socket as _socket
 
         raw = text[len("/whois"):].strip() if text.lower().startswith("/whois") else text.strip()
@@ -6634,21 +6696,41 @@ class TelegramCommandsMixin:
             )
             return
 
-        # ── Parse key fields for a clean summary ─────────────────────────────
-        import re as _re
-
+        # ── Parse key fields ──────────────────────────────────────────────────
         _FIELDS = [
-            ("Registrar",        r"(?:Registrar|Registrar Name)\s*:\s*(.+)"),
-            ("Registered",       r"(?:Creation Date|Created|Registered(?: On)?)\s*:\s*(.+)"),
+            ("Registered",       r"(?:Creation Date|Created(?: On)?|Registered(?: On)?)\s*:\s*(.+)"),
             ("Expires",          r"(?:Expiry Date|Expir(?:y|ation) Date|Registry Expiry Date)\s*:\s*(.+)"),
             ("Updated",          r"Updated Date\s*:\s*(.+)"),
-            ("Status",           r"Domain Status\s*:\s*(\S+)"),
+            ("Registrar",        r"(?:Registrar|Registrar Name)\s*:\s*(.+)"),
+            ("Status",           r"Domain Status\s*:\s*(\S+(?:https?://\S+)?)"),
             ("DNSSEC",           r"DNSSEC\s*:\s*(.+)"),
             ("Name servers",     r"Name Server\s*:\s*(.+)"),
-            ("Registrant Org",   r"Registrant Organization\s*:\s*(.+)"),
+            ("Registrant",       r"Registrant Organization\s*:\s*(.+)"),
             ("Registrant Email", r"Registrant Email\s*:\s*(.+)"),
-            ("Admin Email",      r"Admin Email\s*:\s*(.+)"),
         ]
+
+        _DATE_ICONS = {
+            "Registered": "📅",
+            "Expires":    "⏳",
+            "Updated":    "🔄",
+        }
+        _FIELD_ICONS = {
+            "Registrar":        "🏢",
+            "Status":           "🔒",
+            "DNSSEC":           "🛡",
+            "Name servers":     "🌐",
+            "Registrant":       "👤",
+            "Registrant Email": "📧",
+        }
+
+        def _fmt_whois_date(s: str) -> str:
+            """'1997-09-15T04:00:00Z' or '1997-09-15' → 'Sep 15, 1997'"""
+            s = s.strip().split("T")[0].split(" ")[0]
+            try:
+                dt = datetime.datetime.strptime(s, "%Y-%m-%d")
+                return f"{dt.strftime('%b')} {dt.day}, {dt.year}"
+            except Exception:
+                return s
 
         seen_keys: set[str] = set()
         summary: list[tuple[str, str]] = []
@@ -6659,22 +6741,71 @@ class TelegramCommandsMixin:
                 m = _re.search(pattern, line, _re.I)
                 if m:
                     val = m.group(1).strip()
-                    if not val or val in ("", "Not disclosed"):
+                    if not val or val in ("", "Not disclosed", "REDACTED FOR PRIVACY"):
                         continue
                     if label == "Name servers":
                         ns = val.lower().rstrip(".")
                         if ns not in name_servers:
                             name_servers.append(ns)
+                    elif label == "Status":
+                        # strip trailing URL like "https://icann.org/epp#..."
+                        val = _re.split(r"\s+https?://", val)[0].strip()
+                        if label not in seen_keys:
+                            seen_keys.add(label)
+                            summary.append((label, val))
                     elif label not in seen_keys:
                         seen_keys.add(label)
                         summary.append((label, val))
 
-        # Build output
-        out_lines: list[str] = [f"📋 <b>WHOIS</b>  <code>{html.escape(domain)}</code>", ""]
+        DIV = "  <code>─────────────────────────</code>"
+
+        # ── Calculate days until expiry ───────────────────────────────────────
+        expiry_banner = ""
+        for lbl, val in summary:
+            if lbl == "Expires":
+                try:
+                    ds = val.strip().split("T")[0]
+                    exp = datetime.datetime.strptime(ds, "%Y-%m-%d").replace(tzinfo=datetime.timezone.utc)
+                    days_left = (exp - datetime.datetime.now(datetime.timezone.utc)).days
+                    if days_left <= 0:
+                        expiry_banner = "❌  <b>DOMAIN EXPIRED</b>"
+                    elif days_left <= 30:
+                        expiry_banner = f"⚠️  <b>Expires in {days_left} days</b>  — renew soon!"
+                    elif days_left <= 90:
+                        expiry_banner = f"📆  Expires in <b>{days_left} days</b>"
+                    else:
+                        years = days_left // 365
+                        rem   = days_left % 365
+                        if years:
+                            expiry_banner = f"✅  Registered for <b>{years}y {rem}d</b> more"
+                        else:
+                            expiry_banner = f"✅  Registered for <b>{days_left} more days</b>"
+                except Exception:
+                    pass
+                break
+
+        # ── Build output ──────────────────────────────────────────────────────
+        out_lines: list[str] = [f"📋  <b>WHOIS</b>  —  <code>{html.escape(domain)}</code>", DIV]
+
         for label, val in summary:
-            out_lines.append(f"  <b>{html.escape(label):<18}</b> {html.escape(val[:80])}")
+            icon = _DATE_ICONS.get(label) or _FIELD_ICONS.get(label, "  ")
+            if label in _DATE_ICONS:
+                display = _fmt_whois_date(val)
+            else:
+                display = val[:80]
+            out_lines.append(f"  {icon}  <b>{html.escape(label)}</b>")
+            out_lines.append(f"      <code>{html.escape(display)}</code>")
+            out_lines.append("")
+
         if name_servers:
-            out_lines.append(f"  <b>{'Name servers':<18}</b> {html.escape(', '.join(name_servers[:4]))}")
+            out_lines.append(f"  🌐  <b>Name servers</b>")
+            for ns in name_servers[:6]:
+                out_lines.append(f"      <code>{html.escape(ns)}</code>")
+            out_lines.append("")
+
+        if expiry_banner:
+            out_lines.append(DIV)
+            out_lines.append(f"  {expiry_banner}")
 
         if len(out_lines) <= 2:
             # Nothing parsed — show raw (trimmed)
