@@ -6406,50 +6406,68 @@ class TelegramCommandsMixin:
         text: str = "",
         metadata: Any = None,
     ) -> None:
-        """/dns <domain> — cross-platform DNS lookup."""
+        """/dns <domain> — cross-platform DNS lookup via stdlib + nslookup."""
         import asyncio
-        import os
         import socket
         import subprocess
 
         raw = text[len("/dns"):].strip() if text.lower().startswith("/dns") else text.strip()
         domain = raw.split()[0] if raw else ""
         if not domain:
-            await self.send_message(chat_id, "Usage: <code>/dns &lt;domain&gt;</code>", parse_mode="HTML")
+            await self.send_message(
+                chat_id,
+                "Usage: <code>/dns &lt;domain&gt;</code>\nExample: <code>/dns github.com</code>",
+                parse_mode="HTML",
+            )
             return
 
-        lines: list[str] = [f"🔎 <b>DNS lookup</b>: <code>{html.escape(domain)}</code>\n"]
+        lines: list[str] = [f"🔎 <b>DNS</b>  <code>{html.escape(domain)}</code>", ""]
 
-        # ── A / AAAA records via stdlib (works everywhere) ──────────────────
+        # ── A / AAAA via stdlib ───────────────────────────────────────────────
+        ipv4: list[str] = []
+        ipv6: list[str] = []
         try:
-            results = socket.getaddrinfo(domain, None)
-            seen: set[str] = set()
-            for res in results:
+            for res in socket.getaddrinfo(domain, None):
                 ip = res[4][0]
-                if ip not in seen:
-                    seen.add(ip)
-                    fam = "A" if ":" not in ip else "AAAA"
-                    lines.append(f"  {fam}  {html.escape(ip)}")
+                if ":" in ip:
+                    if ip not in ipv6:
+                        ipv6.append(ip)
+                else:
+                    if ip not in ipv4:
+                        ipv4.append(ip)
         except socket.gaierror as exc:
-            lines.append(f"  ⚠ resolution failed: {html.escape(str(exc))}")
+            lines.append(f"❌ Resolution failed: <i>{html.escape(str(exc))}</i>")
+            await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
+            return
 
-        # ── MX via nslookup (available on Windows, Linux, macOS) ─────────────
+        for ip in ipv4[:8]:
+            lines.append(f"  <b>A </b>   {html.escape(ip)}")
+        for ip in ipv6[:4]:
+            lines.append(f"  <b>AAAA</b>  {html.escape(ip)}")
+
+        # ── MX via nslookup ───────────────────────────────────────────────────
         try:
-            if os.name == "nt":
-                cmd = ["nslookup", "-type=MX", domain]
-            else:
-                cmd = ["nslookup", "-type=MX", domain]
             proc = await asyncio.create_subprocess_exec(
-                *cmd,
+                "nslookup", "-type=MX", domain,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             )
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=8)
             out = stdout.decode(errors="replace")
-            mx_lines = [l for l in out.splitlines() if "mail exchanger" in l.lower() or "MX" in l]
-            if mx_lines:
-                lines.append("\n  <b>MX</b>")
-                for ml in mx_lines[:5]:
-                    lines.append(f"  {html.escape(ml.strip())}")
+            mx: list[str] = []
+            for l in out.splitlines():
+                ll = l.strip()
+                if "mail exchanger" in ll.lower() or ("MX" in ll and "=" in ll):
+                    # Condense: "domain MX preference = 10, mail exchanger = smtp.x.com"
+                    # → "10  smtp.x.com"
+                    import re as _re
+                    m = _re.search(r"preference\s*=\s*(\d+).*?exchanger\s*=\s*(\S+)", ll, _re.I)
+                    if m:
+                        mx.append(f"  <b>MX </b>  {m.group(1):>3}  {html.escape(m.group(2))}")
+                    else:
+                        mx.append(f"  <b>MX </b>  {html.escape(ll)}")
+            if mx:
+                lines.append("")
+                lines.extend(mx[:6])
         except Exception:
             pass
 
@@ -6462,25 +6480,37 @@ class TelegramCommandsMixin:
         text: str = "",
         metadata: Any = None,
     ) -> None:
-        """/ssl <domain> — check SSL certificate expiry using Python ssl module."""
+        """/ssl <domain> — inspect SSL certificate via Python ssl module."""
         import asyncio
-        import ssl
+        import datetime
         import socket
+        import ssl
 
         raw = text[len("/ssl"):].strip() if text.lower().startswith("/ssl") else text.strip()
-        domain = raw.split()[0] if raw else ""
-        if not domain:
-            await self.send_message(chat_id, "Usage: <code>/ssl &lt;domain&gt;</code>", parse_mode="HTML")
+        # allow "domain:port" override
+        part = raw.split()[0] if raw else ""
+        if not part:
+            await self.send_message(
+                chat_id,
+                "Usage: <code>/ssl &lt;domain&gt;</code>\nExample: <code>/ssl github.com</code>",
+                parse_mode="HTML",
+            )
             return
 
-        lines: list[str] = [f"🔐 <b>SSL certificate</b>: <code>{html.escape(domain)}</code>\n"]
+        if ":" in part:
+            domain, _, port_s = part.rpartition(":")
+            port = int(port_s) if port_s.isdigit() else 443
+        else:
+            domain, port = part, 443
+
+        lines: list[str] = [f"🔐 <b>SSL</b>  <code>{html.escape(domain)}</code>  (port {port})", ""]
         try:
             ctx = ssl.create_default_context()
             loop = asyncio.get_event_loop()
             conn = await loop.run_in_executor(
                 None,
                 lambda: ctx.wrap_socket(
-                    socket.create_connection((domain, 443), timeout=8),
+                    socket.create_connection((domain, port), timeout=8),
                     server_hostname=domain,
                 ),
             )
@@ -6491,39 +6521,43 @@ class TelegramCommandsMixin:
             issuer  = dict(x[0] for x in cert.get("issuer",  []))
             not_before = cert.get("notBefore", "?")
             not_after  = cert.get("notAfter",  "?")
-            san = cert.get("subjectAltName", [])
+            san_all    = cert.get("subjectAltName", [])
 
-            lines.append(f"  CN      : {html.escape(subject.get('commonName', '?'))}")
-            lines.append(f"  Issuer  : {html.escape(issuer.get('organizationName', '?'))}")
-            lines.append(f"  Valid   : {html.escape(not_before)}")
-            lines.append(f"  Expires : {html.escape(not_after)}")
-            if san:
-                dns_names = [v for t, v in san if t == "DNS"][:6]
-                if dns_names:
-                    lines.append(f"  SANs    : {html.escape(', '.join(dns_names))}")
+            lines.append(f"  <b>CN     </b>  {html.escape(subject.get('commonName', '?'))}")
+            lines.append(f"  <b>Issuer </b>  {html.escape(issuer.get('organizationName', '?'))}")
+            lines.append(f"  <b>Issued </b>  {html.escape(not_before)}")
+            lines.append(f"  <b>Expires</b>  {html.escape(not_after)}")
 
-            # Warn if expiring within 30 days
-            import datetime
+            dns_names = [v for t, v in san_all if t == "DNS"]
+            if dns_names:
+                shown = ", ".join(dns_names[:6])
+                more  = f" +{len(dns_names) - 6} more" if len(dns_names) > 6 else ""
+                lines.append(f"  <b>SANs   </b>  {html.escape(shown)}{html.escape(more)}")
+
+            # Days-left banner
             try:
                 exp = datetime.datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z").replace(
                     tzinfo=datetime.timezone.utc
                 )
                 days_left = (exp - datetime.datetime.now(datetime.timezone.utc)).days
+                lines.append("")
                 if days_left <= 0:
-                    lines.append(f"\n  ❌ <b>EXPIRED!</b>")
+                    lines.append("  ❌ <b>CERTIFICATE EXPIRED</b>")
+                elif days_left <= 14:
+                    lines.append(f"  🚨 Expires in <b>{days_left} days</b> — renew immediately")
                 elif days_left <= 30:
-                    lines.append(f"\n  ⚠ Expires in <b>{days_left} days</b> — renew soon")
+                    lines.append(f"  ⚠️ Expires in <b>{days_left} days</b> — renew soon")
                 else:
-                    lines.append(f"\n  ✅ Valid for {days_left} more days")
+                    lines.append(f"  ✅ Valid for <b>{days_left} more days</b>")
             except Exception:
                 pass
 
+        except ssl.SSLCertVerificationError as exc:
+            lines.append(f"  ⚠️ Certificate verification failed\n  <i>{html.escape(str(exc))}</i>")
         except ssl.SSLError as exc:
-            lines.append(f"  ❌ SSL error: {html.escape(str(exc))}")
+            lines.append(f"  ❌ SSL error: <i>{html.escape(str(exc))}</i>")
         except OSError as exc:
-            lines.append(f"  ❌ Connection failed: {html.escape(str(exc))}")
-        except Exception as exc:
-            lines.append(f"  ❌ {html.escape(str(exc))}")
+            lines.append(f"  ❌ Connection failed: <i>{html.escape(str(exc))}</i>")
 
         await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
 
@@ -6534,64 +6568,120 @@ class TelegramCommandsMixin:
         text: str = "",
         metadata: Any = None,
     ) -> None:
-        """/whois <domain> — cross-platform WHOIS lookup (subprocess whois on Linux/macOS,
-        python-whois fallback on all platforms)."""
+        """/whois <domain> — raw socket WHOIS (port 43), no external dependencies."""
         import asyncio
-        import os
-        import subprocess
-        import sys
+        import socket as _socket
 
         raw = text[len("/whois"):].strip() if text.lower().startswith("/whois") else text.strip()
         domain = raw.split()[0] if raw else ""
         if not domain:
-            await self.send_message(chat_id, "Usage: <code>/whois &lt;domain&gt;</code>", parse_mode="HTML")
+            await self.send_message(
+                chat_id,
+                "Usage: <code>/whois &lt;domain&gt;</code>\nExample: <code>/whois github.com</code>",
+                parse_mode="HTML",
+            )
             return
 
-        output: str = ""
+        # ── WHOIS server selection ────────────────────────────────────────────
+        tld = domain.rsplit(".", 1)[-1].lower() if "." in domain else "com"
+        _WHOIS_SERVERS: dict[str, str] = {
+            "com": "whois.verisign-grs.com",
+            "net": "whois.verisign-grs.com",
+            "org": "whois.pir.org",
+            "io":  "whois.nic.io",
+            "co":  "whois.nic.co",
+            "ai":  "whois.nic.ai",
+            "app": "whois.nic.google",
+            "dev": "whois.nic.google",
+            "uk":  "whois.nic.uk",
+            "de":  "whois.denic.de",
+            "fr":  "whois.afnic.fr",
+            "nl":  "whois.domain-registry.nl",
+            "eu":  "whois.eu",
+            "ru":  "whois.tcinet.ru",
+            "cn":  "whois.cnnic.cn",
+            "jp":  "whois.jprs.jp",
+            "au":  "whois.auda.org.au",
+            "ca":  "whois.cira.ca",
+            "br":  "whois.registro.br",
+            "in":  "whois.registry.in",
+        }
+        whois_server = _WHOIS_SERVERS.get(tld, "whois.iana.org")
 
-        # ── Try system whois binary on Linux/macOS ───────────────────────────
-        if os.name != "nt":
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    "whois", domain,
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                )
-                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=12)
-                raw_out = stdout.decode(errors="replace")
-                # Keep first 35 informative lines, skip comment/blank noise
-                kept = [l for l in raw_out.splitlines() if l.strip() and not l.startswith("#")][:35]
-                output = "\n".join(kept)
-            except Exception:
-                output = ""
+        def _raw_whois(host: str, query: str, timeout: int = 10) -> str:
+            with _socket.create_connection((host, 43), timeout=timeout) as s:
+                s.sendall((query + "\r\n").encode())
+                chunks: list[bytes] = []
+                while True:
+                    chunk = s.recv(4096)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+            return b"".join(chunks).decode(errors="replace")
 
-        # ── Fallback: python-whois library (works on all platforms) ──────────
-        if not output:
-            try:
-                import whois  # type: ignore[import]
-                w = await asyncio.get_event_loop().run_in_executor(None, whois.whois, domain)
-                parts: list[str] = []
-                for key in ("domain_name", "registrar", "creation_date", "expiration_date",
-                             "updated_date", "name_servers", "status", "emails"):
-                    val = getattr(w, key, None)
-                    if val:
-                        if isinstance(val, list):
-                            val = val[0] if len(val) == 1 else ", ".join(str(v) for v in val[:3])
-                        parts.append(f"  {key.replace('_', ' ').title()}: {val}")
-                output = "\n".join(parts) if parts else "No data returned."
-            except ImportError:
-                output = "⚠ <code>whois</code> binary not found and <code>python-whois</code> not installed.\nInstall with: <code>pip install python-whois</code>"
-            except Exception as exc:
-                output = f"⚠ Error: {html.escape(str(exc))}"
+        loop = asyncio.get_event_loop()
+        try:
+            raw_out = await asyncio.wait_for(
+                loop.run_in_executor(None, _raw_whois, whois_server, domain),
+                timeout=12,
+            )
+        except Exception as exc:
+            await self.send_message(
+                chat_id,
+                f"📋 <b>WHOIS</b>  <code>{html.escape(domain)}</code>\n\n"
+                f"❌ Query failed: <i>{html.escape(str(exc))}</i>",
+                parse_mode="HTML",
+            )
+            return
 
-        header = f"📋 <b>WHOIS</b>: <code>{html.escape(domain)}</code>\n"
-        # Telegram message size limit guard
-        if len(output) > 3500:
-            output = output[:3500] + "\n... (truncated)"
-        await self.send_message(
-            chat_id,
-            header + html.escape(output) if "<code>" not in output else header + output,
-            parse_mode="HTML",
-        )
+        # ── Parse key fields for a clean summary ─────────────────────────────
+        import re as _re
+
+        _FIELDS = [
+            ("Registrar",        r"(?:Registrar|Registrar Name)\s*:\s*(.+)"),
+            ("Registered",       r"(?:Creation Date|Created|Registered(?: On)?)\s*:\s*(.+)"),
+            ("Expires",          r"(?:Expiry Date|Expir(?:y|ation) Date|Registry Expiry Date)\s*:\s*(.+)"),
+            ("Updated",          r"Updated Date\s*:\s*(.+)"),
+            ("Status",           r"Domain Status\s*:\s*(\S+)"),
+            ("DNSSEC",           r"DNSSEC\s*:\s*(.+)"),
+            ("Name servers",     r"Name Server\s*:\s*(.+)"),
+            ("Registrant Org",   r"Registrant Organization\s*:\s*(.+)"),
+            ("Registrant Email", r"Registrant Email\s*:\s*(.+)"),
+            ("Admin Email",      r"Admin Email\s*:\s*(.+)"),
+        ]
+
+        seen_keys: set[str] = set()
+        summary: list[tuple[str, str]] = []
+        name_servers: list[str] = []
+
+        for line in raw_out.splitlines():
+            for label, pattern in _FIELDS:
+                m = _re.search(pattern, line, _re.I)
+                if m:
+                    val = m.group(1).strip()
+                    if not val or val in ("", "Not disclosed"):
+                        continue
+                    if label == "Name servers":
+                        ns = val.lower().rstrip(".")
+                        if ns not in name_servers:
+                            name_servers.append(ns)
+                    elif label not in seen_keys:
+                        seen_keys.add(label)
+                        summary.append((label, val))
+
+        # Build output
+        out_lines: list[str] = [f"📋 <b>WHOIS</b>  <code>{html.escape(domain)}</code>", ""]
+        for label, val in summary:
+            out_lines.append(f"  <b>{html.escape(label):<18}</b> {html.escape(val[:80])}")
+        if name_servers:
+            out_lines.append(f"  <b>{'Name servers':<18}</b> {html.escape(', '.join(name_servers[:4]))}")
+
+        if len(out_lines) <= 2:
+            # Nothing parsed — show raw (trimmed)
+            kept = [l for l in raw_out.splitlines() if l.strip() and not l.startswith("%")][:30]
+            out_lines.append("<pre>" + html.escape("\n".join(kept)) + "</pre>")
+
+        await self.send_message(chat_id, "\n".join(out_lines), parse_mode="HTML")
 
     async def _handle_docker_cmd(
         self,
