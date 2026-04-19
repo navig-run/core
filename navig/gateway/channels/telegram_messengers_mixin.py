@@ -243,7 +243,12 @@ class TelegramMessengersMixin:
         user_id: int,
     ) -> None:
         """Route ``msg:*`` callback data from inline button presses."""
-        await self._answer_callback(cb_id, "")  # type: ignore[attr-defined]
+        try:
+            await self._api_call(  # type: ignore[attr-defined]
+                "answerCallbackQuery", {"callback_query_id": cb_id}
+            )
+        except Exception:
+            pass
 
         if cb_data == "msg:close":
             try:

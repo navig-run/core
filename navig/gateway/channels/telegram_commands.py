@@ -4229,14 +4229,14 @@ class TelegramCommandsMixin:
 
         # ── Action shortcuts ────────────────────────────────────────────
         keyboard_rows.append(
-            [
-                {"text": "🔀 Hybrid", "callback_data": "pu_hybrid"},
-                {"text": "👁 Vision", "callback_data": "pu_vision"},
-                {"text": "🎙 Voice",  "callback_data": "pu_voice"},
-            ]
+            [{"text": "🔀 Hybrid", "callback_data": "pu_hybrid"}]
         )
         keyboard_rows.append(
-            [{"text": "📲 Messengers", "callback_data": "open_messengers"}]
+            [
+                {"text": "👁 Vision",      "callback_data": "pu_vision"},
+                {"text": "🎙 Voice",       "callback_data": "pu_voice"},
+                {"text": "📲 Messengers",  "callback_data": "open_messengers"},
+            ]
         )
         if session_overrides:
             keyboard_rows.append(
