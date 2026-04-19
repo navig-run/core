@@ -311,55 +311,52 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     SlashCommandEntry(
         "test",
         "Test SSH connectivity to active host",
-        cli_template="host test",
+        handler="_handle_host_test_cmd",
         category="tools",
         usage="/test  — verifies SSH connection",
     ),
     SlashCommandEntry(
         "use",
         "Switch active host (+ name)",
-        cli_template="host use {args}",
+        handler="_handle_use_cmd",
         category="tools",
         usage="/use <hostname>",
-        no_args_cli="host list",
     ),
     SlashCommandEntry(
         "apps",
         "List applications on current host",
-        cli_template="app list",
+        handler="_handle_apps_cmd",
         category="tools",
     ),
     SlashCommandEntry(
         "app",
         "Switch active app (+ name)",
-        cli_template="app use {args}",
+        handler="_handle_app_cmd",
         category="tools",
         usage="/app <app-name>",
-        no_args_cli="app list",
     ),
     SlashCommandEntry(
         "files",
         "List remote directory contents",
-        cli_template="file list {args}",
+        handler="_handle_files_cmd",
         category="tools",
         usage="/files [path]  — defaults to home dir",
-        default_args="~",
     ),
     SlashCommandEntry(
         "cat",
         "View remote file contents",
-        cli_template="file show {args}",
+        handler="_handle_cat_cmd",
         category="tools",
         usage="/cat <path> [--lines N]",
     ),
     SlashCommandEntry(
         "run",
         "Execute remote command",
-        cli_template='run "{args}"',
+        handler="_handle_run_cmd",
         category="tools",
         usage="/run <shell command>",
     ),
-    SlashCommandEntry("backup", "Backup status", cli_template="backup show", category="tools"),
+    SlashCommandEntry("backup", "Backup status", handler="_handle_backup_cmd", category="tools"),
     SlashCommandEntry(
         "tunnels",
         "List active SSH tunnels",
@@ -6968,6 +6965,520 @@ class TelegramCommandsMixin:
         now_str = datetime.now(timezone.utc).strftime("%H:%M UTC")
         body = f"{header}\n{result_line}\n\n<i>\u2500 {now_str} \u2500</i>"
         await TelegramCommandsMixin._send_monitor_card(self, chat_id, body, keyboard, message_id=message_id)
+
+    # -- /use  host switcher --------------------------------------------------
+
+    @rate_limited
+    @error_handled
+    @typing_context
+    async def _handle_use_cmd(
+        self,
+        chat_id: int,
+        user_id: int,
+        metadata: MessageMetadata,
+        message_id: int | None = None,
+        text: str = "",
+    ) -> None:
+        """/use [hostname] — switch active host or show host list with switch buttons."""
+        raw = (text or "").strip()
+        arg = ""
+        for prefix in ("/use ", "/use"):
+            if raw.lower().startswith(prefix):
+                arg = raw[len(prefix):].strip()
+                break
+
+        try:
+            from navig.config import get_config_manager
+            cfg = get_config_manager()
+        except Exception as exc:
+            await self.send_message(chat_id, f"❌ Config error: <i>{html.escape(str(exc))}</i>", parse_mode="HTML")
+            return
+
+        # ── Switch if arg given ───────────────────────────────────────────────
+        if arg:
+            import subprocess, sys as _sys
+            try:
+                proc = subprocess.run(
+                    [_sys.executable, "-m", "navig", "host", "use", arg],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if proc.returncode == 0:
+                    active = cfg.get_active_host() or arg
+                    header = TelegramCommandsMixin._mon_header("🔀", "Host Switched", active)
+                    now = datetime.now(timezone.utc).strftime("%H:%M UTC")
+                    body = f"{header}\n🟢 Now using <b>{html.escape(active)}</b>\n\n<i>─ {now} ─</i>"
+                else:
+                    err = (proc.stdout or proc.stderr or "unknown error").strip().split("\n")[0][:120]
+                    body = f"❌ <b>Could not switch to</b> <code>{html.escape(arg)}</code>\n<i>{html.escape(err)}</i>"
+            except Exception as exc:
+                body = f"❌ <i>{html.escape(str(exc))}</i>"
+            keyboard = [[
+                {"text": "🖥 Host List", "callback_data": "slash:hosts"},
+                {"text": "📡 Test Now", "callback_data": "slash:hosttest"},
+            ]]
+            await TelegramCommandsMixin._send_monitor_card(self, chat_id, body, keyboard, message_id=message_id)
+            return
+
+        # ── No arg → show host list with switch buttons ───────────────────────
+        await TelegramCommandsMixin._handle_hosts_cmd(self, chat_id=chat_id, user_id=user_id, metadata=metadata, message_id=message_id)
+
+    # -- /apps + /app  app list / switcher ------------------------------------
+
+    @rate_limited
+    @error_handled
+    @typing_context
+    async def _handle_apps_cmd(
+        self,
+        chat_id: int,
+        user_id: int,
+        metadata: MessageMetadata,
+        message_id: int | None = None,
+        text: str = "",
+    ) -> None:
+        """/apps — list configured apps with inline switch buttons."""
+        try:
+            from navig.config import get_config_manager
+            cfg = get_config_manager()
+            host_name = cfg.get_active_host() or "localhost"
+            apps = cfg.list_apps(host_name) if hasattr(cfg, "list_apps") else []
+            active_app = cfg.get_active_app(host_name) if hasattr(cfg, "get_active_app") else ""
+        except Exception:
+            apps, active_app, host_name = [], "", "localhost"
+
+        header = TelegramCommandsMixin._mon_header("📦", "Applications", host_name)
+        now = datetime.now(timezone.utc).strftime("%H:%M UTC")
+
+        if not apps:
+            body = (
+                f"{header}\n"
+                f"⚠️  <b>No apps configured</b> for <code>{html.escape(host_name)}</code>\n\n"
+                f"  To add an app:\n"
+                f"  <code>/run navig app add --host {html.escape(host_name)}</code>\n\n"
+                f"<i>─ {now} ─</i>"
+            )
+            keyboard = [[
+                {"text": "🔄 Refresh", "callback_data": "slash:apps"},
+                {"text": "🖥 Hosts", "callback_data": "slash:hosts"},
+            ]]
+            await TelegramCommandsMixin._send_monitor_card(self, chat_id, body, keyboard, message_id=message_id)
+            return
+
+        lines: list[str] = [header]
+        for app in apps:
+            is_active = app == active_app
+            icon = "🟢" if is_active else "🔵"
+            suffix = "  <i>← active</i>" if is_active else ""
+            lines.append(f"{icon} <b>{html.escape(app)}</b>{suffix}")
+
+        lines.append(f"\n<i>─ {now} ─</i>")
+
+        # 2-per-row switch buttons
+        keyboard: list[list[dict]] = []
+        row: list[dict] = []
+        for app in apps:
+            label = ("✓ " if app == active_app else "") + app
+            row.append({"text": label, "callback_data": f"app_use:{app}"})
+            if len(row) == 2:
+                keyboard.append(row)
+                row = []
+        if row:
+            keyboard.append(row)
+        keyboard.append([
+            {"text": "🔄 Refresh", "callback_data": "slash:apps"},
+            {"text": "🖥 Hosts", "callback_data": "slash:hosts"},
+        ])
+        await TelegramCommandsMixin._send_monitor_card(self, chat_id, "\n".join(lines), keyboard, message_id=message_id)
+
+    @rate_limited
+    @error_handled
+    @typing_context
+    async def _handle_app_cmd(
+        self,
+        chat_id: int,
+        user_id: int,
+        metadata: MessageMetadata,
+        message_id: int | None = None,
+        text: str = "",
+    ) -> None:
+        """/app [name] — switch active app or show app list."""
+        raw = (text or "").strip()
+        arg = ""
+        for prefix in ("/app ", "/app"):
+            if raw.lower().startswith(prefix):
+                arg = raw[len(prefix):].strip()
+                break
+
+        if arg:
+            import subprocess, sys as _sys
+            try:
+                proc = subprocess.run(
+                    [_sys.executable, "-m", "navig", "app", "use", arg],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if proc.returncode == 0:
+                    header = TelegramCommandsMixin._mon_header("📦", "App Switched", arg)
+                    now = datetime.now(timezone.utc).strftime("%H:%M UTC")
+                    body = f"{header}\n🟢 Now using app <b>{html.escape(arg)}</b>\n\n<i>─ {now} ─</i>"
+                else:
+                    err = (proc.stdout or proc.stderr or "unknown error").strip().split("\n")[0][:120]
+                    body = f"❌ <b>Could not switch to</b> <code>{html.escape(arg)}</code>\n<i>{html.escape(err)}</i>"
+            except Exception as exc:
+                body = f"❌ <i>{html.escape(str(exc))}</i>"
+            keyboard = [[
+                {"text": "📦 App List", "callback_data": "slash:apps"},
+                {"text": "🖥 Hosts", "callback_data": "slash:hosts"},
+            ]]
+            await TelegramCommandsMixin._send_monitor_card(self, chat_id, body, keyboard, message_id=message_id)
+            return
+
+        # No arg → show app list
+        await TelegramCommandsMixin._handle_apps_cmd(self, chat_id=chat_id, user_id=user_id, metadata=metadata, message_id=message_id, text=text)
+
+    # -- /files  directory listing --------------------------------------------
+
+    @rate_limited
+    @error_handled
+    @typing_context
+    async def _handle_files_cmd(
+        self,
+        chat_id: int,
+        user_id: int,
+        metadata: MessageMetadata,
+        message_id: int | None = None,
+        text: str = "",
+    ) -> None:
+        """/files [path] — cross-platform directory listing."""
+        import os
+        import pathlib
+        import subprocess, sys as _sys
+
+        raw = (text or "").strip()
+        arg = ""
+        for prefix in ("/files ", "/files"):
+            if raw.lower().startswith(prefix):
+                arg = raw[len(prefix):].strip()
+                break
+        target = arg or "~"
+
+        try:
+            from navig.config import get_config_manager
+            from navig.remote import is_local_host
+            cfg = get_config_manager()
+            host_name = cfg.get_active_host() or "localhost"
+            server_config = cfg.load_server_config(host_name)
+            is_local = is_local_host(server_config)
+        except Exception:
+            host_name, is_local = "localhost", True
+
+        header = TelegramCommandsMixin._mon_header("📁", "Files", host_name)
+        now = datetime.now(timezone.utc).strftime("%H:%M UTC")
+
+        if is_local:
+            # ── Local: use pathlib (cross-platform) ─────────────────────────
+            resolved = pathlib.Path(target).expanduser().resolve()
+            try:
+                entries = sorted(resolved.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
+            except PermissionError:
+                entries_err = f"⛔ Permission denied: <code>{html.escape(str(resolved))}</code>"
+                await TelegramCommandsMixin._send_monitor_card(
+                    self, chat_id,
+                    f"{header}\n{entries_err}\n\n<i>─ {now} ─</i>",
+                    [[{"text": "🏠 Home", "callback_data": "slash:files"}]], message_id=message_id
+                )
+                return
+            except Exception as exc:
+                await TelegramCommandsMixin._send_monitor_card(
+                    self, chat_id,
+                    f"{header}\n❌ {html.escape(str(exc))}\n\n<i>─ {now} ─</i>",
+                    [[{"text": "🏠 Home", "callback_data": "slash:files"}]], message_id=message_id
+                )
+                return
+
+            lines: list[str] = [header, f"  📂 <code>{html.escape(str(resolved))}</code>", ""]
+            shown = 0
+            for entry in entries[:50]:
+                if entry.is_dir():
+                    icon = "📂"
+                elif entry.suffix in (".log", ".txt"):
+                    icon = "📄"
+                elif entry.suffix in (".py", ".js", ".ts", ".sh", ".yaml", ".yml", ".json", ".toml"):
+                    icon = "🧩"
+                elif entry.suffix in (".zip", ".gz", ".tar", ".bz2"):
+                    icon = "📦"
+                else:
+                    icon = "📎"
+                try:
+                    size = entry.stat().st_size if entry.is_file() else None
+                    size_s = f"  <i>{TelegramCommandsMixin._fmt_size(size)}</i>" if size is not None else ""
+                except Exception:
+                    size_s = ""
+                lines.append(f"  {icon} {html.escape(entry.name)}{size_s}")
+                shown += 1
+
+            if len(list(resolved.iterdir())) > 50 if resolved.is_dir() else False:
+                lines.append(f"  <i>… and more</i>")
+            lines.append(f"\n<i>─ {now} ─</i>")
+        else:
+            # ── Remote: use navig file list ──────────────────────────────────
+            try:
+                proc = subprocess.run(
+                    [_sys.executable, "-m", "navig", "file", "list", target, "--plain"],
+                    capture_output=True, text=True, timeout=15,
+                )
+                out = (proc.stdout or proc.stderr or "").strip()
+            except Exception as exc:
+                out = str(exc)
+            lines = [header, f"  📂 <code>{html.escape(target)}</code>", "",
+                     f"<pre>{html.escape(out[:1500])}</pre>", f"\n<i>─ {now} ─</i>"]
+
+        parent = str(pathlib.Path(target).expanduser().parent) if is_local else "~"
+        keyboard = [
+            [
+                {"text": "🏠 Home", "callback_data": "slash:files"},
+                {"text": "⬆ Parent", "callback_data": f"slash:files:{html.escape(parent)}"},
+            ],
+            [
+                {"text": "🔄 Refresh", "callback_data": f"slash:files:{html.escape(target)}"},
+                {"text": "🖥 Hosts", "callback_data": "slash:hosts"},
+            ],
+        ]
+        await TelegramCommandsMixin._send_monitor_card(self, chat_id, "\n".join(lines), keyboard, message_id=message_id)
+
+    # -- /cat  file viewer ----------------------------------------------------
+
+    @rate_limited
+    @error_handled
+    @typing_context
+    async def _handle_cat_cmd(
+        self,
+        chat_id: int,
+        user_id: int,
+        metadata: MessageMetadata,
+        message_id: int | None = None,
+        text: str = "",
+    ) -> None:
+        """/cat <path> — view remote or local file contents."""
+        import pathlib
+        import subprocess, sys as _sys
+
+        raw = (text or "").strip()
+        arg = ""
+        for prefix in ("/cat ", "/cat"):
+            if raw.lower().startswith(prefix):
+                arg = raw[len(prefix):].strip()
+                break
+
+        if not arg:
+            DIV = "━" * 26
+            usage = (
+                f"{DIV}\n📄  <b>File Viewer</b>\n{DIV}\n\n"
+                f"  <b>Usage:</b>  <code>/cat &lt;path&gt;</code>\n\n"
+                f"  <b>Examples:</b>\n"
+                f"    <code>/cat /etc/hosts</code>\n"
+                f"    <code>/cat ~/.navig/config.yaml</code>\n"
+                f"    <code>/cat /var/log/nginx/error.log</code>"
+            )
+            keyboard = [[
+                {"text": "📁 Browse Files", "callback_data": "slash:files"},
+                {"text": "❌ Close", "callback_data": "slash:close"},
+            ]]
+            await TelegramCommandsMixin._send_monitor_card(self, chat_id, usage, keyboard, message_id=message_id)
+            return
+
+        try:
+            from navig.config import get_config_manager
+            from navig.remote import is_local_host
+            cfg = get_config_manager()
+            host_name = cfg.get_active_host() or "localhost"
+            server_config = cfg.load_server_config(host_name)
+            is_local = is_local_host(server_config)
+        except Exception:
+            host_name, is_local = "localhost", True
+
+        header = TelegramCommandsMixin._mon_header("📄", "File", arg)
+        now = datetime.now(timezone.utc).strftime("%H:%M UTC")
+
+        if is_local:
+            try:
+                p = pathlib.Path(arg).expanduser()
+                content = p.read_text(encoding="utf-8", errors="replace")
+                lines_c = content.splitlines()
+                shown = "\n".join(lines_c[:80])
+                suffix = f"\n\n<i>… {len(lines_c) - 80} more lines</i>" if len(lines_c) > 80 else ""
+                body = f"{header}\n<pre>{html.escape(shown)}</pre>{suffix}\n\n<i>─ {now} ─</i>"
+            except FileNotFoundError:
+                body = f"{header}\n❌ File not found: <code>{html.escape(arg)}</code>\n\n<i>─ {now} ─</i>"
+            except Exception as exc:
+                body = f"{header}\n❌ {html.escape(str(exc))}\n\n<i>─ {now} ─</i>"
+        else:
+            try:
+                proc = subprocess.run(
+                    [_sys.executable, "-m", "navig", "file", "show", arg, "--plain"],
+                    capture_output=True, text=True, timeout=15,
+                )
+                out = (proc.stdout or proc.stderr or "").strip()[:3000]
+            except Exception as exc:
+                out = str(exc)
+            body = f"{header}\n<pre>{html.escape(out)}</pre>\n\n<i>─ {now} ─</i>"
+
+        keyboard = [[
+            {"text": "📁 Browse", "callback_data": "slash:files"},
+            {"text": "🔄 Refresh", "callback_data": f"slash:cat:{html.escape(arg)}"},
+        ]]
+        await TelegramCommandsMixin._send_monitor_card(self, chat_id, body, keyboard, message_id=message_id)
+
+    # -- /run  remote command runner ------------------------------------------
+
+    @rate_limited
+    @error_handled
+    @typing_context
+    async def _handle_run_cmd(
+        self,
+        chat_id: int,
+        user_id: int,
+        metadata: MessageMetadata,
+        message_id: int | None = None,
+        text: str = "",
+    ) -> None:
+        """/run <command> — execute on active host with nice output card."""
+        import subprocess, sys as _sys
+
+        raw = (text or "").strip()
+        arg = ""
+        for prefix in ("/run ", "/run"):
+            if raw.lower().startswith(prefix):
+                arg = raw[len(prefix):].strip()
+                break
+
+        DIV = "━" * 26
+        if not arg:
+            usage = (
+                f"{DIV}\n⚡  <b>Remote Execute</b>\n{DIV}\n\n"
+                f"  <b>Usage:</b>  <code>/run &lt;command&gt;</code>\n\n"
+                f"  <b>Examples:</b>\n"
+                f"    <code>/run df -h</code>\n"
+                f"    <code>/run systemctl status nginx</code>\n"
+                f"    <code>/run ps aux | grep python</code>\n"
+                f"    <code>/run tail -n 50 /var/log/syslog</code>\n\n"
+                f"  <i>Runs on the active host via navig CLI.</i>"
+            )
+            keyboard = [[
+                {"text": "🖥 Hosts", "callback_data": "slash:hosts"},
+                {"text": "❌ Close", "callback_data": "slash:close"},
+            ]]
+            await TelegramCommandsMixin._send_monitor_card(self, chat_id, usage, keyboard, message_id=message_id)
+            return
+
+        try:
+            from navig.config import get_config_manager
+            cfg = get_config_manager()
+            host_name = cfg.get_active_host() or "localhost"
+        except Exception:
+            host_name = "localhost"
+
+        header = TelegramCommandsMixin._mon_header("⚡", f"Run on {host_name}", arg[:60])
+        now = datetime.now(timezone.utc).strftime("%H:%M UTC")
+
+        # Send placeholder immediately
+        if message_id is None:
+            ack = await self.send_message(
+                chat_id,
+                f"{header}\n⏳ <i>Executing…</i>",
+                parse_mode="HTML",
+            )
+            message_id = (ack or {}).get("message_id")
+
+        try:
+            proc = subprocess.run(
+                [_sys.executable, "-m", "navig", "run", arg, "--plain"],
+                capture_output=True, text=True, timeout=30,
+            )
+            out = (proc.stdout or "").strip() or (proc.stderr or "").strip()
+            rc_icon = "✅" if proc.returncode == 0 else "❌"
+            rc_line = f"\n{rc_icon} Exit <code>{proc.returncode}</code>  ·  <i>─ {now} ─</i>"
+            out_block = f"<pre>{html.escape(out[:2500])}</pre>" if out else "<i>(no output)</i>"
+        except subprocess.TimeoutExpired:
+            out_block = "⏱ <i>Command timed out after 30s</i>"
+            rc_line = f"\n❌ Timeout  ·  <i>─ {now} ─</i>"
+        except Exception as exc:
+            out_block = f"❌ <i>{html.escape(str(exc))}</i>"
+            rc_line = f"\n<i>─ {now} ─</i>"
+
+        body = f"{header}\n{out_block}{rc_line}"
+        keyboard = [[
+            {"text": "🔄 Re-run", "callback_data": f"slash:run:{html.escape(arg[:80])}"},
+            {"text": "🖥 Hosts", "callback_data": "slash:hosts"},
+        ]]
+        await TelegramCommandsMixin._send_monitor_card(self, chat_id, body, keyboard, message_id=message_id)
+
+    # -- /backup  status card -------------------------------------------------
+
+    @rate_limited
+    @error_handled
+    @typing_context
+    async def _handle_backup_cmd(
+        self,
+        chat_id: int,
+        user_id: int,
+        metadata: MessageMetadata,
+        message_id: int | None = None,
+        text: str = "",
+    ) -> None:
+        """/backup — show backup status with inline action buttons."""
+        import subprocess, sys as _sys
+
+        try:
+            from navig.config import get_config_manager
+            cfg = get_config_manager()
+            host_name = cfg.get_active_host() or "localhost"
+        except Exception:
+            host_name = "localhost"
+
+        header = TelegramCommandsMixin._mon_header("💾", "Backup Status", host_name)
+        now = datetime.now(timezone.utc).strftime("%H:%M UTC")
+
+        try:
+            proc = subprocess.run(
+                [_sys.executable, "-m", "navig", "backup", "show", "--plain"],
+                capture_output=True, text=True, timeout=15,
+            )
+            out = (proc.stdout or proc.stderr or "").strip()
+        except Exception as exc:
+            out = str(exc)
+
+        if not out or "no configuration exports found" in out.lower() or "no backup" in out.lower():
+            body = (
+                f"{header}\n\n"
+                f"📭  <b>No backups found</b>\n\n"
+                f"  <b>Run a backup:</b>\n"
+                f"    <code>/run navig backup run --all</code>\n\n"
+                f"  <b>Export NAVIG config:</b>\n"
+                f"    <code>/run navig backup export</code>\n\n"
+                f"<i>─ {now} ─</i>"
+            )
+        else:
+            body = f"{header}\n\n<pre>{html.escape(out[:2000])}</pre>\n\n<i>─ {now} ─</i>"
+
+        keyboard = [
+            [
+                {"text": "🔄 Refresh", "callback_data": "slash:backup"},
+                {"text": "▶ Run Backup", "callback_data": "slash:run:navig backup run --all"},
+            ],
+            [
+                {"text": "📤 Export Config", "callback_data": "slash:run:navig backup export"},
+                {"text": "🖥 Hosts", "callback_data": "slash:hosts"},
+            ],
+        ]
+        await TelegramCommandsMixin._send_monitor_card(self, chat_id, body, keyboard, message_id=message_id)
+
+    @staticmethod
+    def _fmt_size(n: int) -> str:
+        """Human-readable file size (bytes → KB/MB/GB)."""
+        for unit in ("B", "KB", "MB", "GB"):
+            if n < 1024:
+                return f"{n:.0f} {unit}"
+            n /= 1024
+        return f"{n:.1f} TB"
 
     # -- Monitoring helpers ----------------------------------------------------
 
