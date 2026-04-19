@@ -2308,8 +2308,7 @@ class TelegramCommandsMixin:
                 _target_plan_file,
             )
             from navig.spaces.contracts import normalize_space_name
-            from navig.commands.space import get_default_space
-            import os, tempfile
+            import os
 
             plans_dir = _plans_dir(None)
             _ensure_baseline_files(plans_dir)
@@ -7345,7 +7344,6 @@ class TelegramCommandsMixin:
         text: str = "",
     ) -> None:
         """/files [path] — cross-platform directory listing."""
-        import os
         import pathlib
         import subprocess, sys as _sys
 

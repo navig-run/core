@@ -70,6 +70,12 @@ def _spawn_stop_watchdog(duration: int = 30) -> None:
             if not deadline_file.exists():
                 break
             NavigDaemon._kill_orphan_daemons()
+            # Re-check after the kill call — service_start may have cleared the
+            # deadline while _kill_orphan_daemons() was running (WMI query can
+            # take several seconds).  This prevents a kill that was in-flight
+            # at the moment of the deadline clear from racing the new daemon.
+            if not deadline_file.exists():
+                break
             time.sleep(0.2)
         try:
             os.unlink(__file__)
@@ -271,6 +277,20 @@ def service_start(
             clear_stop_flag()
         else:
             clear_stop_flag()
+
+        # Guard against the stop-watchdog race: the watchdog process spawned by
+        # service_stop loops every 0.2 s calling _kill_orphan_daemons().  If we
+        # spawn the new daemon while the watchdog is still mid-call (WMI query
+        # can take several seconds), it will match and kill the new process.
+        # The watchdog self-deletes its script file on exit, so we poll for
+        # those files to disappear — up to 12 s before giving up.
+        from navig.daemon.service_manager import DAEMON_DIR  # noqa: PLC0415
+
+        for _wdog_wait in range(60):  # 60 * 0.2 s = 12 s max
+            wdog_files = list(DAEMON_DIR.glob("navig_wdog_*.py"))
+            if not wdog_files:
+                break
+            time.sleep(0.2)
 
         # Use pythonw.exe on Windows — completely invisible, no console window
         exe = _pythonw_exe()

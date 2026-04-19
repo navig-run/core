@@ -9,6 +9,16 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Add entries here until the next release, then move them under a new version heading. -->
 <!-- Run: git log v2.8.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
 
+### Added
+- **Vault-first messaging adapters + `/messengers` Telegram hub + `navig init --messaging` wizard**: Three interconnected improvements to the outbound messaging stack.
+  - `GatewayServer._resolve_adapter_config()` (server.py) — expands `vault:KEY` placeholders in adapter config dicts before construction; wired into `SmsAdapter`, `WhatsAppCloudAdapter`, and `DiscordMessagingAdapter` bootstrap so no adapter ever receives raw vault references.
+  - `RoutingEngine._build_decision()` (routing.py) — now raises `NoRouteError` immediately when the resolved adapter is not available/configured, with actionable message: "Run: `navig init --messaging` to configure messaging adapters."
+  - `TelegramMessengersMixin` (telegram_messengers_mixin.py) — new Telegram command handler for `/messengers`: shows live ✅/🔒/⚡/⏸ status per adapter (Telegram, SMS/Twilio, WhatsApp/Meta, Discord), per-adapter detail views with vault setup CLI steps, enable/disable callback buttons, and deep-links to `/contacts` and `/threads`. Registered via lazy mixin injection in telegram.py and `msg:` / `open_messengers` callback routing in telegram_keyboards.py.
+  - `/messengers` slash command + `📲 Messengers` button in `/providers` action row (telegram_commands.py).
+  - `run_messaging_wizard()` (commands/messaging_wizard.py) — interactive vault-first wizard for `navig init --messaging`; prompts for Twilio SID/token/phone, WhatsApp Cloud token/phone-number-id, Discord bot token; skips already-configured credentials; enables adapters in config after credential storage.
+  - `navig init --messaging` CLI flag wired in cli/__init__.py with direct delegation to `run_messaging_wizard()`.
+
+
 ## [2.8.0] - 2026-04-18
 
 ### Added
