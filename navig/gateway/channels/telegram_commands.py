@@ -1468,7 +1468,7 @@ class TelegramCommandsMixin:
                 f"{_ni('brain')} Model: <code>{tier}</code>",
                 "",
                 "Type naturally or use a command:",
-                "<code>/remindme</code> · <code>/myreminders</code> · <code>/status</code> · <code>/briefing</code>",
+                "<code>/remindme</code> · <code>/myreminders</code> · <code>/status</code> · <code>/briefing</code> · <code>/messengers</code>",
                 "",
                 "Need more? → /helpme",
             ]
@@ -4235,6 +4235,9 @@ class TelegramCommandsMixin:
                 {"text": "🎙 Voice",  "callback_data": "pu_voice"},
             ]
         )
+        keyboard_rows.append(
+            [{"text": "📲 Messengers", "callback_data": "open_messengers"}]
+        )
         if session_overrides:
             keyboard_rows.append(
                 [{"text": "🔄 Reset session", "callback_data": "pu_reset_session"}]
@@ -6535,7 +6538,7 @@ class TelegramCommandsMixin:
             else:
                 ip = server_config.get("host", host_name)
                 proc = subprocess.run(
-                    [_sys.executable, "-m", "navig", "host", "test", "--host", host_name, "--plain"],
+                    [_sys.executable, "-m", "navig", "host", "test", host_name],
                     capture_output=True, text=True, timeout=20,
                 )
                 out = (proc.stdout or "").strip() or (proc.stderr or "").strip()
