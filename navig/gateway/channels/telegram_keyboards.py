@@ -1365,7 +1365,46 @@ class CallbackHandler:
             await self.channel._handle_models_command(chat_id, user_id, message_id=message_id)
             return
 
-        await self._answer(cb_id, "⚠️ Unknown navigation")
+        if action == "space" and target:
+            await self._answer(cb_id, f"\u2713 Switched to {target}")
+            try:
+                from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+                import functools as _ft
+                await _ft.partial(TelegramCommandsMixin._handle_space, self.channel)(
+                    chat_id=chat_id, user_id=user_id, text=f"/space {target}"
+                )
+            except Exception as _sp_exc:
+                logger.warning("nav:space callback error: %s", _sp_exc)
+            return
+
+        if action == "cmd" and target:
+            await self._answer(cb_id, "")
+            try:
+                dispatcher = getattr(self.channel, "_match_cli_command", None)
+                if dispatcher:
+                    entry = dispatcher(target)
+                    if entry and getattr(entry, "handler", None):
+                        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+                        import functools as _ft, inspect as _inspect
+                        handler_fn = getattr(TelegramCommandsMixin, entry.handler, None)
+                        if handler_fn:
+                            sig = _inspect.signature(handler_fn)
+                            kw: dict = {"chat_id": chat_id, "user_id": user_id, "text": target}
+                            kw = {k: v for k, v in kw.items() if k in sig.parameters}
+                            await _ft.partial(handler_fn, self.channel)(**kw)
+                            return
+            except Exception as _cmd_exc:
+                logger.warning("nav:cmd dispatch error %r: %s", target, _cmd_exc)
+            # Fallback: route as CLI command text
+            try:
+                handle_cmd = getattr(self.channel, "_handle_cli_command", None)
+                if handle_cmd:
+                    await handle_cmd(chat_id=chat_id, user_id=user_id, text=target, metadata={})
+            except Exception as _fb_exc:
+                logger.warning("nav:cmd fallback error %r: %s", target, _fb_exc)
+            return
+
+        await self._answer(cb_id, "\u26a0\ufe0f Unknown navigation")
 
     async def _answer(self, callback_id: str, text: str, show_alert: bool = False) -> None:
         if not callback_id:

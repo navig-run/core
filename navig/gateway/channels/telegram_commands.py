@@ -379,12 +379,12 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         visible=False,
     ),
     SlashCommandEntry(
-        "plans", "Plans and spaces progress", cli_template="plans status", category="tools"
+        "plans", "Plans and spaces progress", handler="_handle_plans_cmd", category="tools"
     ),
     SlashCommandEntry(
         "plan",
         "Add a plan goal (+ text)",
-        cli_template="plans add {args}",
+        handler="_handle_plan_cmd",
         category="tools",
         usage="/plan <goal text>",
     ),
@@ -1319,7 +1319,27 @@ class TelegramCommandsMixin:
             )
             return
 
-        # Fallback recovery screen
+        if screen_name == "briefing":
+            try:
+                from navig.gateway.media import MessageMetadata
+            except ImportError:
+                MessageMetadata = dict  # type: ignore[misc,assignment]
+            await self._handle_briefing(
+                chat_id=chat_id, user_id=user_id, metadata=MessageMetadata()
+            )
+            return
+
+        if screen_name == "plans":
+            await self._handle_plans_cmd(
+                chat_id=chat_id, user_id=user_id, message_id=target_message_id
+            )
+            return
+
+        if screen_name == "plan":
+            await self._handle_plan_cmd(
+                chat_id=chat_id, user_id=user_id, message_id=target_message_id
+            )
+            return
         text = f"{_ni('warn')} Something went wrong while opening that screen."
         keyboard = [[{"text": "🏠 Home", "callback_data": "nav:home"}]]
         if target_message_id:
@@ -2180,6 +2200,161 @@ class TelegramCommandsMixin:
                 "---\ncompletion_pct: 0\n---\n\n# Current Phase\n\n",
             )
 
+    async def _handle_plans_cmd(
+        self,
+        chat_id: int,
+        user_id: int,
+        text: str = "",
+        message_id: int | None = None,
+    ) -> None:
+        """Rich /plans card — show Spaces progress with inline action buttons."""
+        from navig.commands.plans import collect_spaces_progress
+        from navig.commands.space import get_active_space
+
+        try:
+            spaces = collect_spaces_progress()
+        except Exception as exc:
+            await self.send_message(
+                chat_id,
+                f"\u274c Could not load spaces progress: <code>{html.escape(str(exc))}</code>",
+                parse_mode="HTML",
+            )
+            return
+
+        active = get_active_space()
+        lines = ["\U0001f5fa\ufe0f <b>Spaces Progress</b>", ""]
+        if not spaces:
+            lines.append("<i>No spaces found. Run <code>/intake</code> to set up your first space.</i>")
+        else:
+            for sp in spaces:
+                pct = sp.completion_pct or 0.0
+                bar_filled = int(pct / 10)
+                bar = "\u2588" * bar_filled + "\u2591" * (10 - bar_filled)
+                marker = "\u25b8" if sp.name == active else "\u2022"
+                scope_tag = f"<code>{sp.scope}</code>" if sp.scope and sp.scope != "global" else ""
+                goal_tag = f"<i>{html.escape(sp.goal)}</i>" if sp.goal else ""
+                meta = " \u00b7 ".join(x for x in [scope_tag, goal_tag, sp.last_updated] if x)
+                lines.append(
+                    f"{marker} <b>{html.escape(sp.name)}</b>  {bar} {pct:.0f}%"
+                )
+                if meta:
+                    lines.append(f"   {meta}")
+            lines.append("")
+            lines.append(f"Active: <code>{html.escape(active)}</code>")
+
+        keyboard: list[list[dict]] = [
+            [
+                {"text": "\U0001f9ed Start Intake", "callback_data": "nav:open:intake"},
+                {"text": "\U0001f4dd Add Goal", "callback_data": "nav:open:plan"},
+            ],
+            [
+                {"text": "\U0001f4cb Briefing", "callback_data": "nav:open:briefing"},
+                {"text": "\U0001f5c2\ufe0f Spaces", "callback_data": "nav:cmd:/spaces"},
+            ],
+        ]
+        if message_id:
+            keyboard.append([
+                {"text": "\U0001f519 Back", "callback_data": "nav:back"},
+                {"text": "\U0001f3e0 Home", "callback_data": "nav:home"},
+            ])
+            await self.edit_message(
+                chat_id, message_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard
+            )
+        else:
+            await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+
+    async def _handle_plan_cmd(
+        self,
+        chat_id: int,
+        user_id: int,
+        text: str = "",
+        message_id: int | None = None,
+    ) -> None:
+        """Handle /plan <goal> — add a plan goal with confirmation card."""
+        raw = (text or "").strip()
+        arg = raw[len("/plan"):].strip() if raw.lower().startswith("/plan") else raw
+
+        if not arg:
+            usage_lines = [
+                "\U0001f4dd <b>Add a Plan Goal</b>",
+                "",
+                "Use <code>/plan &lt;goal text&gt;</code> to record a goal in your active space.",
+                "",
+                "<b>Examples:</b>",
+                "  \u2022 <code>/plan Launch MVP by end of May</code>",
+                "  \u2022 <code>/plan Read 2 books this month</code>",
+                "  \u2022 <code>/plan Reduce cloud costs by 20%</code>",
+            ]
+            keyboard = [
+                [
+                    {"text": "\U0001f9ed Start Intake Instead", "callback_data": "nav:open:intake"},
+                    {"text": "\U0001f5fa\ufe0f Plans", "callback_data": "nav:cmd:/plans"},
+                ],
+            ]
+            await self.send_message(
+                chat_id, "\n".join(usage_lines), parse_mode="HTML", keyboard=keyboard
+            )
+            return
+
+        from navig.commands.space import get_active_space
+
+        active = get_active_space()
+        try:
+            # Replicate plans_add logic directly (Typer CLI fn cannot be called programmatically)
+            from navig.commands.plans import (
+                _ensure_baseline_files,
+                _insert_under_section,
+                _plans_dir,
+                _target_plan_file,
+            )
+            from navig.spaces.contracts import normalize_space_name
+            from navig.commands.space import get_default_space
+            import os, tempfile
+
+            plans_dir = _plans_dir(None)
+            _ensure_baseline_files(plans_dir)
+            resolved_space = normalize_space_name(active)
+            target_file = _target_plan_file(plans_dir, "DEV_PLAN.md")
+            target_file.parent.mkdir(parents=True, exist_ok=True)
+            if not target_file.exists():
+                target_file.write_text("# Plan\n\n## Added Goals\n", encoding="utf-8")
+
+            entry = f"- [ ] [{resolved_space}] {arg.strip()}"
+            text = target_file.read_text(encoding="utf-8")
+            duplicate = entry in text
+            if not duplicate:
+                updated = _insert_under_section(text, "## Added Goals", entry)
+                _tmp = target_file.parent / (target_file.name + ".tmp")
+                _tmp.write_text(updated, encoding="utf-8")
+                os.replace(_tmp, target_file)
+
+            if duplicate:
+                lines = [
+                    "\u26a0\ufe0f <b>Duplicate goal</b>",
+                    "",
+                    "<i>This goal is already in your plan.</i>",
+                ]
+            else:
+                lines = [
+                    "\u2705 <b>Goal added</b>",
+                    "",
+                    f"\U0001f4cc Space: <code>{html.escape(resolved_space)}</code>",
+                    f"\U0001f3af Goal: {html.escape(arg)}",
+                ]
+        except Exception as exc:
+            lines = [
+                "\u274c <b>Failed to add goal</b>",
+                f"<code>{html.escape(str(exc))}</code>",
+            ]
+
+        keyboard = [
+            [
+                {"text": "\U0001f4cb View Plans", "callback_data": "nav:cmd:/plans"},
+                {"text": "\u2795 Add Another", "callback_data": "nav:cmd:/plan"},
+            ],
+        ]
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+
     async def _handle_spaces(
         self, chat_id: int, user_id: int = 0, text: str = "", message_id: int | None = None
     ) -> None:
@@ -2193,29 +2368,35 @@ class TelegramCommandsMixin:
         from navig.spaces.contracts import CANONICAL_SPACES
 
         active = get_active_space()
-        lines = ["<b>Spaces</b>", f"Active: <code>{html.escape(active)}</code>", "", "Available:"]
+        lines = [
+            "\U0001f5c2\ufe0f <b>Spaces</b>",
+            f"Active: <code>{html.escape(active)}</code>",
+            "",
+            "Tap a space to switch:",
+        ]
+
+        # Build 2-column grid of space buttons
+        space_buttons: list[dict] = []
         for name in CANONICAL_SPACES:
-            marker = "•"
-            if name == active:
-                marker = "▸"
-            lines.append(f"{marker} <code>{html.escape(name)}</code>")
-        lines.append("\nUse <code>/space &lt;name&gt;</code> or choose below.")
-        keyboard = [[{"text": "🧭 Start Intake", "callback_data": "nav:open:intake"}]]
+            label = ("\u25b8 " if name == active else "") + name
+            space_buttons.append({"text": label, "callback_data": f"nav:space:{name}"})
+        rows: list[list[dict]] = []
+        for i in range(0, len(space_buttons), 2):
+            rows.append(space_buttons[i : i + 2])
+
+        keyboard = rows + [
+            [
+                {"text": "\U0001f9ed Intake", "callback_data": "nav:open:intake"},
+                {"text": "\U0001f5fa\ufe0f Plans", "callback_data": "nav:cmd:/plans"},
+            ],
+        ]
         if message_id:
-            keyboard.insert(
-                0,
-                [
-                    {"text": "🔙 Back", "callback_data": "nav:back"},
-                    {"text": "🏠 Home", "callback_data": "nav:home"},
-                ],
-            )
-        if message_id:
+            keyboard.append([
+                {"text": "\U0001f519 Back", "callback_data": "nav:back"},
+                {"text": "\U0001f3e0 Home", "callback_data": "nav:home"},
+            ])
             await self.edit_message(
-                chat_id,
-                message_id,
-                "\n".join(lines),
-                parse_mode="HTML",
-                keyboard=keyboard,
+                chat_id, message_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard
             )
             return
         await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
@@ -2245,14 +2426,19 @@ class TelegramCommandsMixin:
         _set_active_space(selected)
 
         kickoff = build_space_kickoff(selected, space_path, cwd=Path.cwd(), max_items=3)
-        lines = [f"✅ Active space: <code>{selected}</code>", f"Goal: {html.escape(kickoff.goal)}"]
+        lines = [
+            f"\u2705 <b>Active space: <code>{html.escape(selected)}</code></b>",
+            f"\U0001f3af Goal: <i>{html.escape(kickoff.goal)}</i>",
+        ]
         if kickoff.actions:
-            lines.append("Top next actions:")
+            lines.append("")
+            lines.append("<b>Top next actions:</b>")
             for index, action in enumerate(kickoff.actions, start=1):
                 lines.append(f"{index}. {html.escape(action)}")
         else:
-            lines.append("No next actions found yet.")
-            lines.append("Run <code>/intake</code> to build Vision/Roadmap/Current Phase quickly.")
+            lines.append("")
+            lines.append("<i>No next actions found yet.</i>")
+            lines.append("Run <code>/intake</code> to build Vision/Roadmap/Phase.")
 
         from navig.store.runtime import get_runtime_store
 
@@ -2264,7 +2450,17 @@ class TelegramCommandsMixin:
         context["continuation"] = continuation
         self._runtime_state_with_context(user_id, chat_id, context)
 
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
+        keyboard = [
+            [
+                {"text": "\U0001f9ed Intake", "callback_data": "nav:open:intake"},
+                {"text": "\U0001f4dd Add Goal", "callback_data": "nav:open:plan"},
+            ],
+            [
+                {"text": "\U0001f5c2\ufe0f All Spaces", "callback_data": "nav:cmd:/spaces"},
+                {"text": "\U0001f4cb Plans", "callback_data": "nav:cmd:/plans"},
+            ],
+        ]
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
 
     def _append_markdown_section(self, path: Path, heading: str, lines: list[str]) -> None:
         existing = ""
@@ -2375,7 +2571,7 @@ class TelegramCommandsMixin:
         }
         self._runtime_state_with_context(user_id, chat_id, context)
 
-        first_question = self._INTAKE_QUESTIONS[0][1]
+        first_question = TelegramCommandsMixin._INTAKE_QUESTIONS[0][1]
         text_payload = f"🧭 Intake started for <code>{html.escape(selected_space)}</code>.\n{first_question}"
         keyboard = [
             [
@@ -2410,21 +2606,22 @@ class TelegramCommandsMixin:
 
         step = int(intake.get("step") or 0)
         answers = dict(intake.get("answers") or {})
-        if step >= len(self._INTAKE_QUESTIONS):
+        _IQ = TelegramCommandsMixin._INTAKE_QUESTIONS
+        if step >= len(_IQ):
             context["intake"] = {"active": False}
             self._runtime_state_with_context(user_id, chat_id, context)
             return True
 
-        key, _ = self._INTAKE_QUESTIONS[step]
+        key, _ = _IQ[step]
         answers[key] = text.strip()
 
         next_step = step + 1
-        if next_step < len(self._INTAKE_QUESTIONS):
+        if next_step < len(_IQ):
             intake["step"] = next_step
             intake["answers"] = answers
             context["intake"] = intake
             self._runtime_state_with_context(user_id, chat_id, context)
-            await self.send_message(chat_id, self._INTAKE_QUESTIONS[next_step][1], parse_mode=None)
+            await self.send_message(chat_id, _IQ[next_step][1], parse_mode=None)
             return True
 
         space = str(intake.get("space") or "life")
@@ -8023,8 +8220,9 @@ class TelegramCommandsMixin:
         """Real-data system briefing - no AI, no invented content (/briefing)."""
         now = datetime.now(timezone.utc)
         lines: list = [
-            f"<b>System Briefing</b> - {now.strftime('%H:%M UTC, %d %b')}",
-            "-" * 22,
+            f"<b>\U0001f4cb System Briefing</b>",
+            f"<i>{now.strftime('%H:%M UTC, %d %b %Y')}</i>",
+            "\u2500" * 18,
         ]
 
         try:
@@ -8152,7 +8350,7 @@ class TelegramCommandsMixin:
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
-        lines.append("-" * 22)
+        lines.append("\u2500" * 18)
 
         recent: list = []
         trace_file = msg_trace_path()
@@ -8172,25 +8370,43 @@ class TelegramCommandsMixin:
                 pass  # best-effort; failure is non-critical
 
         if recent:
-            lines.append("<b>Recent commands:</b>")
+            lines.append("<b>\U0001f4e8 Recent commands:</b>")
             lines.extend(recent[-5:])
         else:
             lines.append("<i>No recent command history.</i>")
 
         try:
-            from navig.spaces.briefing import build_spaces_briefing_lines
+            from navig.commands.plans import collect_spaces_progress
+            from navig.commands.space import get_active_space
 
-            space_lines = build_spaces_briefing_lines(max_items=5)
-            if space_lines:
-                lines.append("-" * 22)
-                lines.extend(space_lines)
+            sp_rows = collect_spaces_progress()
+            if sp_rows:
+                lines.append("\u2500" * 18)
+                active_sp = get_active_space()
+                lines.append("<b>\U0001f5fa\ufe0f Spaces:</b>")
+                for sp in sp_rows[:5]:
+                    marker = "\u25b8" if sp.name == active_sp else "\u2022"
+                    lines.append(
+                        f"{marker} <code>{html.escape(sp.name)}</code> "
+                        f"({sp.scope}) \u2014 {sp.completion_pct:.0f}% \u00b7 <i>{html.escape(sp.goal)}</i>"
+                    )
         except Exception as _spaces_exc:  # noqa: BLE001
             logger.debug("spaces briefing section skipped: %s", _spaces_exc)
 
-        result = await self.send_message(chat_id, "\n".join(lines))
+        keyboard = [
+            [
+                {"text": "\U0001f504 Refresh", "callback_data": "nav:open:briefing"},
+                {"text": "\U0001f5fa\ufe0f Spaces", "callback_data": "nav:cmd:/spaces"},
+            ],
+            [
+                {"text": "\U0001f4cb Plans", "callback_data": "nav:cmd:/plans"},
+                {"text": "\U0001f3e0 Home", "callback_data": "nav:home"},
+            ],
+        ]
+        result = await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
 
         # Auto-pin briefing in group chats when enabled
-        await self._auto_pin_briefing(chat_id, user_id, result)
+        await TelegramCommandsMixin._auto_pin_briefing(self, chat_id, user_id, result)
 
     async def _auto_pin_briefing(
         self, chat_id: int, user_id: int, send_result: dict | None
