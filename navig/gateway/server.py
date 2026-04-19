@@ -862,11 +862,49 @@ class NavigGateway:
         except Exception as exc:
             logger.warning("Comms init failed: %s", exc)
 
+    @staticmethod
+    def _resolve_adapter_config(cfg: dict) -> dict:
+        """Expand ``vault:KEY`` placeholder strings in an adapter config dict.
+
+        Walks the dict one level deep and replaces any string value of the form
+        ``"vault:key_name"`` with the secret retrieved from the NAVIG vault.
+        Nested dicts (e.g. ``cfg["twilio"]``) are also expanded one level.
+        Non-vault values are returned unchanged.
+        """
+        try:
+            from navig.vault.core import get_vault
+
+            vault = get_vault()
+            if vault is None:
+                return cfg
+        except Exception:
+            return cfg
+
+        def _expand(d: dict) -> dict:
+            out: dict = {}
+            for k, v in d.items():
+                if isinstance(v, str) and v.startswith("vault:"):
+                    secret_key = v[len("vault:"):]
+                    try:
+                        resolved = (vault.get_secret(secret_key) or "").strip()
+                        out[k] = resolved if resolved else v
+                    except Exception:
+                        out[k] = v
+                elif isinstance(v, dict):
+                    out[k] = _expand(v)
+                else:
+                    out[k] = v
+            return out
+
+        return _expand(cfg)
+
     async def _init_messaging_adapters(self):
         """Register multi-network messaging adapters from config.
 
         Reads ``adapters:`` section from :file:`defaults.yaml` / user config
         and populates :func:`~navig.messaging.adapter_registry.get_adapter_registry`.
+        Vault placeholder strings (``vault:key_name``) in the adapter config are
+        resolved before the adapters are constructed.
         """
         try:
             from navig.messaging.adapter_registry import get_adapter_registry
@@ -905,7 +943,7 @@ class NavigGateway:
                 try:
                     from navig.messaging.adapters.sms import SmsAdapter
 
-                    adapter = SmsAdapter(config=sms_cfg)
+                    adapter = SmsAdapter(config=self._resolve_adapter_config(sms_cfg))
                     registry.register(adapter)
                     logger.debug("Messaging adapter registered: sms")
                 except Exception as exc:  # noqa: BLE001
@@ -917,7 +955,7 @@ class NavigGateway:
                 try:
                     from navig.messaging.adapters.whatsapp_cloud import WhatsAppCloudAdapter
 
-                    adapter = WhatsAppCloudAdapter(config=wa_cfg)
+                    adapter = WhatsAppCloudAdapter(config=self._resolve_adapter_config(wa_cfg))
                     registry.register(adapter)
                     logger.debug("Messaging adapter registered: whatsapp")
                 except Exception as exc:  # noqa: BLE001
@@ -929,7 +967,8 @@ class NavigGateway:
                 try:
                     from navig.messaging.adapters.discord_adapter import DiscordMessagingAdapter
 
-                    adapter = DiscordMessagingAdapter(config=discord_cfg)
+                    resolved_discord = self._resolve_adapter_config(discord_cfg)
+                    adapter = DiscordMessagingAdapter(config=resolved_discord)
                     # Client injection happens later when the discord.py bot connects
                     registry.register(adapter)
                     logger.debug("Messaging adapter registered: discord")

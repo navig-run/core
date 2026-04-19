@@ -917,6 +917,55 @@ class CallbackHandler:
                 await self._handle_provider_callback(cb_id, cb_data, chat_id, message_id, user_id)
                 return
 
+            # ── Messengers hub callbacks (msg:*) — no store needed ──
+            if cb_data.startswith("msg:") or cb_data == "open_messengers":
+                if cb_data == "open_messengers":
+                    # Redirect to messengers hub (may replace the providers message)
+                    cb_data_rerouted = "msg:refresh"
+                    try:
+                        from navig.gateway.channels.telegram_messengers_mixin import (
+                            TelegramMessengersMixin,
+                        )
+                        import functools
+                        handler = functools.partial(
+                            TelegramMessengersMixin._handle_messengers_callback, self.channel
+                        )
+                        await handler(
+                            cb_id=cb_id,
+                            cb_data=cb_data_rerouted,
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            user_id=user_id,
+                        )
+                    except Exception as _msgr_err:
+                        logger.debug("open_messengers delegation error: %s", _msgr_err)
+                        await self._answer(cb_id, "")
+                        handler_fn = getattr(self.channel, "_handle_messengers", None)
+                        if handler_fn:
+                            await handler_fn(
+                                chat_id=chat_id, user_id=user_id, message_id=message_id
+                            )
+                else:
+                    try:
+                        from navig.gateway.channels.telegram_messengers_mixin import (
+                            TelegramMessengersMixin,
+                        )
+                        import functools
+                        handler = functools.partial(
+                            TelegramMessengersMixin._handle_messengers_callback, self.channel
+                        )
+                        await handler(
+                            cb_id=cb_id,
+                            cb_data=cb_data,
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            user_id=user_id,
+                        )
+                    except Exception as _msgr_err:
+                        logger.debug("msg: callback error: %s", _msgr_err)
+                        await self._answer(cb_id, "⚠️ Messenger action unavailable")
+                return
+
             # ── Models flow callbacks (mdl_*) — no store needed ──
             if cb_data.startswith("mdl_"):
                 await self._handle_models_callback(cb_id, cb_data, chat_id, message_id, user_id)

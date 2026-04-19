@@ -118,6 +118,8 @@ class SlashCommandEntry:
     visible: bool = True  # include in /help and setMyCommands
     category: str = "general"  # section heading for /help
     usage: str = ""  # optional usage hint shown in /help (e.g. "/cmd [option]")
+    default_args: str = ""  # substituted for {args} when user sends no argument
+    no_args_cli: str = ""   # alternative CLI command used when user sends NO argument
 
 
 _SLASH_REGISTRY: list[SlashCommandEntry] = [
@@ -298,7 +300,14 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         usage="/query -d <db> <SQL>",
     ),
     # --- Tools ---------------------------------------------------------------
-    SlashCommandEntry("hosts", "Configured servers", cli_template="host list", category="tools"),
+    SlashCommandEntry("hosts", "\U0001f5a5\ufe0f Configured servers", handler="_handle_hosts_cmd", category="tools"),
+    SlashCommandEntry(
+        "hosttest",
+        "Test connectivity to active host",
+        handler="_handle_host_test_cmd",
+        category="tools",
+        usage="/hosttest  — verifies connectivity to active host",
+    ),
     SlashCommandEntry(
         "test",
         "Test SSH connectivity to active host",
@@ -312,6 +321,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         cli_template="host use {args}",
         category="tools",
         usage="/use <hostname>",
+        no_args_cli="host list",
     ),
     SlashCommandEntry(
         "apps",
@@ -325,13 +335,15 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         cli_template="app use {args}",
         category="tools",
         usage="/app <app-name>",
+        no_args_cli="app list",
     ),
     SlashCommandEntry(
         "files",
         "List remote directory contents",
         cli_template="file list {args}",
         category="tools",
-        usage="/files [path]  — defaults to current dir",
+        usage="/files [path]  — defaults to home dir",
+        default_args="~",
     ),
     SlashCommandEntry(
         "cat",
@@ -432,8 +444,9 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
     SlashCommandEntry(
         "ip",
         "Server public IP",
-        cli_template='run "curl -s ifconfig.me"',
+        handler="_handle_ip",
         category="utilities",
+        usage="/ip",
     ),
     SlashCommandEntry("time", "Server time", cli_template='run "date"', category="utilities"),
     SlashCommandEntry(
@@ -893,6 +906,20 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         handler="_handle_messaging_reply",
         category="messaging",
         usage="/reply [thread_id] message",
+    ),
+    SlashCommandEntry(
+        "messengers",
+        "Messaging Adapters Hub",
+        handler="_handle_messengers",
+        category="messaging",
+        usage="/messengers",
+    ),
+    SlashCommandEntry(
+        "messenger",
+        "Messaging Adapters Hub (alias)",
+        handler="_handle_messengers",
+        category="messaging",
+        visible=False,
     ),
 ]
 
@@ -1818,63 +1845,9 @@ class TelegramCommandsMixin:
             state = self._get_navigation_state(chat_id)
             state["message_id"] = sent.get("message_id")
 
-    async def _handle_ping(self, chat_id: int, user_id: int = 0) -> None:
-        """Live heartbeat card — version, host, space, tier, reminders, bridge (/ping)."""
-        import asyncio as _asyncio
-
-        lines = ["🏓 <b>pong</b> — NAVIG is live", ""]
-
-        # Version
-        try:
-            import navig as _navig_pkg
-
-            ver = getattr(_navig_pkg, "__version__", "unknown")
-        except Exception:
-            ver = "unknown"
-        lines.append(f"Version: <code>{ver}</code>")
-
-        # Active host
-        try:
-            from navig.config import load_config
-
-            cfg = load_config()
-            active_host = (cfg.get("active_host") or "—") if cfg else "—"
-        except Exception:
-            active_host = "—"
-        lines.append(f"Host: <code>{active_host}</code>")
-
-        # Active space
-        try:
-            from navig.commands.space import get_active_space
-
-            space = get_active_space() or "—"
-        except Exception:
-            space = "—"
-        lines.append(f"Space: <code>{space}</code>")
-
-        # Model tier
-        tier_raw = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
-        tier = str(tier_raw).capitalize() if tier_raw else "Auto"
-        lines.append(f"Model: <code>{tier}</code>")
-
-        # Active reminders
-        try:
-            from navig.store.runtime import get_runtime_store
-
-            active_count = len(get_runtime_store().get_user_reminders(user_id) or [])
-            lines.append(f"Reminders: <code>{active_count} active</code>")
-        except Exception as _rc2_exc:  # noqa: BLE001
-            logger.debug("reminder count for /status skipped: %s", _rc2_exc)
-
-        # Bridge status (non-blocking, 2 s timeout)
-        try:
-            bridge_ok, bridge_url = await _asyncio.wait_for(self._probe_bridge_grid(), timeout=_SHORT_CMD_TIMEOUT)
-            bridge_status = f"🟢 {bridge_url}" if bridge_ok else "🔴 offline"
-        except Exception:
-            bridge_status = "❔ unknown"
-        lines.append(f"Bridge: {bridge_status}")
-
-        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
+    async def _handle_ping(self, chat_id: int, **_: Any) -> None:
+        """Minimal alive heartbeat (/ping). Use /status for full diagnostics."""
+        await self.send_message(chat_id, "🏓 <b>pong</b> — NAVIG is live", parse_mode="HTML")
 
     async def _handle_status(
         self,
@@ -1971,8 +1944,8 @@ class TelegramCommandsMixin:
             for issue in status_fix_issues[:2]:
                 if not isinstance(issue, dict):
                     continue
-                summary = str(issue.get("summary") or "").strip()
-                command = str(issue.get("command") or "").strip()
+                summary = html.escape(str(issue.get("summary") or "").strip())
+                command = html.escape(str(issue.get("command") or "").strip())
                 if summary and command:
                     lines.append(f"  • {summary} → <code>{command}</code>")
             remaining = len(status_fix_issues) - 2
@@ -2578,6 +2551,12 @@ class TelegramCommandsMixin:
                     continue
 
                 starts = lowered.startswith(phrase)
+                # These commands overlap with common English prepositions/words and must
+                # ONLY match when the message explicitly starts with the command name —
+                # has_trigger must not override this. E.g. "tell me about X" ≠ /about.
+                _NL_STARTS_ONLY = {"about"}
+                if command in _NL_STARTS_ONLY and not starts:
+                    continue
                 if (
                     command in TelegramCommandsMixin._NL_AMBIGUOUS_COMMANDS
                     and not starts
@@ -2899,29 +2878,9 @@ class TelegramCommandsMixin:
 
         resolved = self._resolve_nl_command_intent(text)
         if not resolved:
-            lowered = (text or "").strip().lower()
-            has_trigger = any(
-                re.search(rf"\b{re.escape(w)}\b", lowered)
-                for w in TelegramCommandsMixin._NL_COMMAND_TRIGGERS
-            )
-            if has_trigger:
-                suggestions = self._suggest_nl_commands(text, limit=3)
-                if suggestions:
-                    lines = [
-                        "I couldn’t map that to one exact command.",
-                        "Tap a command below to run it.",
-                        "",
-                        "Try:",
-                    ]
-                    for item in suggestions:
-                        lines.append(f"• <code>{item['usage']}</code>")
-                    await self.send_message(
-                        chat_id,
-                        "\n".join(lines),
-                        parse_mode="HTML",
-                        keyboard=self._nl_command_keyboard(suggestions, limit=3),
-                    )
-                    return True
+            # No command matched — let the conversational AI handle it (web search,
+            # general knowledge, chitchat). Returning False falls through to
+            # _dispatch_by_mode which uses the configured LLM.
             return False
 
         if resolved.get("ambiguous"):
@@ -5608,11 +5567,10 @@ class TelegramCommandsMixin:
 
         # Active host
         try:
-            from navig.config import load_config
+            from navig.config import get_config_manager
 
-            cfg = load_config()
-            active_host = (cfg.get("active_host") or "—") if cfg else "—"
-            lines.append(f"Active host: <code>{active_host}</code>")
+            active_host = get_config_manager().get_active_host() or "—"
+            lines.append(f"Active host: <code>{html.escape(str(active_host))}</code>")
         except Exception as _host_exc:  # noqa: BLE001
             logger.debug("active host lookup skipped for /debug: %s", _host_exc)
 
@@ -5781,8 +5739,7 @@ class TelegramCommandsMixin:
         try:
             from navig.config import get_config_manager
 
-            _gcfg = get_config_manager().global_config or {}
-            active_host = _gcfg.get("active_host") or _gcfg.get("default_host") or "?"
+            active_host = get_config_manager().get_active_host() or "?"
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
@@ -6355,6 +6312,64 @@ class TelegramCommandsMixin:
             topic="",
         )
 
+    async def _handle_ip(self, chat_id: int, **_: Any) -> None:
+        """Return the server's public IP address."""
+        import asyncio
+        import socket
+
+        lines: list[str] = []
+
+        # Local hostname / internal IP
+        try:
+            hostname = socket.gethostname()
+            local_ip = socket.gethostbyname(hostname)
+            lines.append(f"<b>Hostname:</b> <code>{hostname}</code>")
+            lines.append(f"<b>Local IP:</b> <code>{local_ip}</code>")
+        except Exception:
+            pass
+
+        # Public IP — try multiple sources with a short timeout
+        public_ip: str | None = None
+        sources = [
+            "https://ifconfig.me/ip",
+            "https://api.ipify.org",
+            "https://checkip.amazonaws.com",
+        ]
+        try:
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                for url in sources:
+                    try:
+                        async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                            if resp.status == 200:
+                                public_ip = (await resp.text()).strip()
+                                break
+                    except Exception:
+                        continue
+        except ImportError:
+            # fallback: subprocess curl
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "curl", "-s", "--max-time", "5", sources[0],
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=8)
+                public_ip = (stdout or b"").decode().strip()
+            except Exception:
+                pass
+
+        if public_ip:
+            lines.append(f"<b>Public IP:</b> <code>{public_ip}</code>")
+        else:
+            lines.append("<b>Public IP:</b> <i>unavailable</i>")
+
+        await self.send_message(
+            chat_id,
+            "🌐 <b>Server IP Info</b>\n\n" + "\n".join(lines),
+            parse_mode="HTML",
+        )
+
     async def _handle_weather(
         self,
         chat_id: int,
@@ -6410,6 +6425,131 @@ class TelegramCommandsMixin:
             cli_cmd = f"docker logs {arg} -n 50"
 
         await self._handle_cli_command(chat_id, user_id, metadata or {}, cli_cmd)
+
+    # -- Host list card -------------------------------------------------------
+
+    @rate_limited
+    @error_handled
+    @typing_context
+    async def _handle_hosts_cmd(
+        self,
+        chat_id: int,
+        user_id: int,
+        metadata: MessageMetadata,
+        message_id: int | None = None,
+    ) -> None:
+        """Rich host list card with per-host inline switch buttons (/hosts)."""
+        try:
+            from navig.config import get_config_manager
+
+            cfg = get_config_manager()
+            host_names = cfg.list_hosts()
+            active = cfg.get_active_host() or ""
+        except Exception:
+            host_names = []
+            active = ""
+
+        sep = "\u2501" * 26
+        active_label = (
+            f"  \u2022 <i>active:</i> <code>{html.escape(active)}</code>" if active else ""
+        )
+        lines: list[str] = [
+            f"{sep}\n\U0001f5a5\ufe0f  <b>Configured Hosts</b>  ({len(host_names)}){active_label}\n{sep}",
+        ]
+
+        host_data: list[tuple[str, bool]] = []
+        for name in host_names:
+            try:
+                c = cfg.load_host_config(name)
+                ip = c.get("host", "")
+                user = c.get("user", "")
+            except Exception:
+                ip, user = "", ""
+            is_active = name == active
+            icon = "\U0001f7e2" if is_active else "\U0001f535"
+            ip_part = f"  <code>{html.escape(ip)}</code>" if ip else ""
+            user_part = f"  <i>{html.escape(user)}</i>" if user else ""
+            lines.append(f"{icon} <b>{html.escape(name)}</b>{ip_part}{user_part}")
+            host_data.append((name, is_active))
+
+        now_str = datetime.now(timezone.utc).strftime("%H:%M UTC")
+        lines.append(f"\n<i>\u2500 Updated {now_str} \u2500</i>")
+
+        # Per-host switch buttons (2 per row, check-mark for active)
+        keyboard: list[list[dict[str, str]]] = []
+        row: list[dict[str, str]] = []
+        for name, is_active in host_data:
+            label_btn = ("\u2713 " if is_active else "") + name
+            row.append({"text": label_btn, "callback_data": f"host_use:{name}"})
+            if len(row) == 2:
+                keyboard.append(row)
+                row = []
+        if row:
+            keyboard.append(row)
+        keyboard.append(
+            [
+                {"text": "\U0001f504 Refresh", "callback_data": "slash:hosts"},
+                {"text": "\U0001f4e1 Test Active", "callback_data": "slash:hosttest"},
+            ]
+        )
+
+        await TelegramCommandsMixin._send_monitor_card(
+            self, chat_id, "\n".join(lines), keyboard, message_id=message_id
+        )
+
+    @rate_limited
+    @error_handled
+    async def _handle_host_test_cmd(
+        self,
+        chat_id: int,
+        user_id: int,
+        metadata: MessageMetadata,
+        message_id: int | None = None,
+    ) -> None:
+        """Test connectivity to the active host and show result card."""
+        try:
+            from navig.config import get_config_manager
+            from navig.remote import is_local_host
+
+            cfg = get_config_manager()
+            host_name = cfg.get_active_host() or "localhost"
+            server_config = cfg.load_server_config(host_name)
+            is_local = is_local_host(server_config)
+        except Exception:
+            host_name, is_local = "localhost", True
+
+        sep = "\u2501" * 26
+        header = f"{sep}\n\U0001f4e1  <b>Connectivity Test</b>  <code>{html.escape(host_name)}</code>\n{sep}"
+        keyboard = [[{"text": "\U0001f504 Refresh", "callback_data": "slash:hosttest"},
+                     {"text": "\U0001f5a5\ufe0f Hosts", "callback_data": "slash:hosts"}]]
+
+        # Send or edit-in-place placeholder
+        if message_id is None:
+            ack = await self.send_message(chat_id, f"{header}\n\u23f3 <i>Testing\u2026</i>", parse_mode="HTML")
+            message_id = (ack or {}).get("message_id")
+
+        try:
+            import subprocess, sys as _sys
+            if is_local:
+                result_line = "\U0001f7e2 <b>localhost</b> \u2014 local host, no SSH needed"
+            else:
+                ip = server_config.get("host", host_name)
+                proc = subprocess.run(
+                    [_sys.executable, "-m", "navig", "host", "test", "--host", host_name, "--plain"],
+                    capture_output=True, text=True, timeout=20,
+                )
+                out = (proc.stdout or "").strip() or (proc.stderr or "").strip()
+                if proc.returncode == 0:
+                    result_line = f"\U0001f7e2 <b>{html.escape(host_name)}</b> <code>{html.escape(ip)}</code> \u2014 SSH OK"
+                else:
+                    first_err = out.split("\n")[0][:120] if out else "connection failed"
+                    result_line = f"\U0001f534 <b>{html.escape(host_name)}</b> \u2014 {html.escape(first_err)}"
+        except Exception as exc:
+            result_line = f"\U0001f534 Error: {html.escape(str(exc)[:100])}"
+
+        now_str = datetime.now(timezone.utc).strftime("%H:%M UTC")
+        body = f"{header}\n{result_line}\n\n<i>\u2500 {now_str} \u2500</i>"
+        await TelegramCommandsMixin._send_monitor_card(self, chat_id, body, keyboard, message_id=message_id)
 
     # -- Monitoring helpers ----------------------------------------------------
 
@@ -6485,6 +6625,13 @@ class TelegramCommandsMixin:
         """Rich disk usage card (/disk /df)."""
         host_name, _server_config, is_local = self._mon_host_ctx()
         lines: list = [self._mon_header("💽", "Disk Usage", host_name)]
+
+        # Send ⏳ placeholder immediately on fresh requests; refresh edits in-place
+        if message_id is None:
+            _ack = await self.send_message(
+                chat_id, "⏳ <i>Fetching disk info…</i>", parse_mode="HTML"
+            )
+            message_id = (_ack or {}).get("message_id")
 
         if is_local:
             try:
@@ -7376,6 +7523,12 @@ class TelegramCommandsMixin:
                 template = entry.cli_template
                 if "{args}" in template:
                     if not args:
+                        _no_args = getattr(entry, "no_args_cli", "")
+                        if _no_args:
+                            return _no_args
+                        _da = getattr(entry, "default_args", "")
+                        if _da:
+                            return template.replace("{args}", shlex.quote(_da))
                         return template.replace(" {args}", "").replace("{args}", "")
                     return template.replace("{args}", shlex.quote(args))
                 return template
@@ -7490,27 +7643,44 @@ class TelegramCommandsMixin:
                     response = response[:3950] + "\n-(truncated)"
 
                 # -- Natural Language Formatting -----------------------------
-                try:
-                    prompt = (
-                        f"I just executed the server command '{navig_cmd}' and got this raw output:\n"
-                        f"{response}\n\n"
-                        "Please summarize this naturally and concisely in 1-2 sentences. "
-                        "Talk like a helpful friend. Do not regurgitate the raw output block, just tell me what was achieved or what the status is."
-                    )
-                    nl_response = await self.on_message(
-                        channel="telegram",
-                        user_id=str(user_id),
-                        message=prompt,
-                        metadata=metadata,
-                    )
-                    if nl_response and not nl_response.startswith("Command exited with code"):
-                        response = nl_response
-                except Exception as _nl_err:
-                    import logging as _log
+                # Skip NL for structured list/table commands and for errors —
+                # raw formatted output is more useful and twice as fast.
+                _LIST_CMDS = (
+                    "host list", "app list",
+                    "file list", "db list", "db tables",
+                    "backup show", "tunnel list", "flow list",
+                    "host test", "web vhosts", "plans status",
+                )
+                _is_list_cmd = any(navig_cmd.strip().startswith(c) for c in _LIST_CMDS)
+                _is_error = (
+                    "Command exited with code" in response
+                    or "Missing argument" in response
+                    or "Error:" in response
+                    or "No such file" in response
+                    or "Permission denied" in response
+                )
+                if not _is_list_cmd and not _is_error:
+                    try:
+                        prompt = (
+                            f"I just executed the server command '{navig_cmd}' and got this raw output:\n"
+                            f"{response}\n\n"
+                            "Please summarize this naturally and concisely in 1-2 sentences. "
+                            "Talk like a helpful friend. Do not regurgitate the raw output block, just tell me what was achieved or what the status is."
+                        )
+                        nl_response = await self.on_message(
+                            channel="telegram",
+                            user_id=str(user_id),
+                            message=prompt,
+                            metadata=metadata,
+                        )
+                        if nl_response and not nl_response.startswith("Command exited with code"):
+                            response = nl_response
+                    except Exception as _nl_err:
+                        import logging as _log
 
-                    _log.getLogger(__name__).warning(
-                        "NLP formatting failed for cli command: %s", _nl_err
-                    )
+                        _log.getLogger(__name__).warning(
+                            "NLP formatting failed for cli command: %s", _nl_err
+                        )
 
                 if (
                     navig_cmd.strip().startswith("host use")
@@ -7585,15 +7755,20 @@ class TelegramCommandsMixin:
     # ── Bot Identity & Auto-Reply Features ─────────────────────────────────
 
     async def _handle_about(self, chat_id: int) -> None:
-        """Learn about NAVIG."""
+        """Learn about NAVIG (/about)."""
         msg = (
-            "🧭 <b>NAVIG</b>\n\n"
-            "Operational intelligence layer for your infrastructure.\n\n"
-            "Connects SSH hosts, databases, Docker containers, and AI models "
-            "through a unified command surface — CLI, Telegram bot, and MCP server.\n\n"
-            "Use <code>/help</code> to explore all capabilities."
+            "🧭 <b>NAVIG</b>  ·  Operational Intelligence\n\n"
+            "Your infrastructure, commands, and AI — unified in one surface.\n\n"
+            "<b>What it does</b>\n"
+            "• SSH into any server and run commands instantly\n"
+            "• Query databases, manage Docker containers\n"
+            "• Set reminders, search the web, explain anything\n"
+            "• Full AI assistant — talk naturally, get real results\n\n"
+            "<b>Where it works</b>\n"
+            "Telegram  ·  CLI  ·  MCP server\n\n"
+            "Type <code>/help</code> to explore — or just ask anything."
         )
-        await self.send_message(chat_id, msg)
+        await self.send_message(chat_id, msg, parse_mode="HTML")
 
     async def _handle_auto_start(self, chat_id: int, user_id: int, text: str) -> None:
         """Start AI conversational auto-reply using durable runtime state.
@@ -7816,18 +7991,19 @@ class TelegramCommandsMixin:
 
     async def _handle_persona(self, chat_id: int, user_id: int, text: str = "") -> None:
         """Route /persona subcommands: list, info, reset, or switch."""
+        _M = TelegramCommandsMixin
         arg = text[len("/persona") :].strip()
         if not arg or arg == "list":
-            await self._handle_personas(chat_id=chat_id, user_id=user_id)
+            await _M._handle_personas(self, chat_id=chat_id, user_id=user_id)
             return
         if arg == "info":
-            await self._handle_persona_info(chat_id, user_id)
+            await _M._handle_persona_info(self, chat_id, user_id)
             return
         if arg == "reset":
-            await self._handle_persona_reset(chat_id, user_id)
+            await _M._handle_persona_reset(self, chat_id, user_id)
             return
         # Treat anything else as a persona name to switch to
-        await self._handle_persona_switch(chat_id, user_id, arg)
+        await _M._handle_persona_switch(self, chat_id, user_id, arg)
 
     async def _handle_personas(self, chat_id: int, user_id: int = 0) -> None:
         """List all available personas, showing the currently active one."""
@@ -7895,7 +8071,7 @@ class TelegramCommandsMixin:
 
     async def _handle_persona_reset(self, chat_id: int, user_id: int) -> None:
         """Reset persona to the built-in default."""
-        await self._handle_persona_switch(chat_id, user_id, "default")
+        await TelegramCommandsMixin._handle_persona_switch(self, chat_id, user_id, "default")
 
     async def _handle_explain_ai(self, chat_id: int, user_id: int = 0, text: str = "") -> None:
         topic = (
@@ -7917,22 +8093,23 @@ class TelegramCommandsMixin:
                 "structured for a Telegram message:\n\nTopic: " + topic
             )
             # Route through the standard LLM path (same as /think)
-            if hasattr(self, "on_message"):
-                await self.on_message(
-                    chat_id,
-                    user_id or chat_id,
-                    prompt,
-                    system_override="You are an expert explainer.",
+            llm_text = ""
+            if self.on_message:
+                llm_text = await self.on_message(
+                    channel="telegram",
+                    user_id=str(user_id or chat_id),
+                    message=prompt,
+                    metadata={"system_override": "You are an expert explainer. Be clear, concise, and insightful."},
                 )
-            else:
+            if not llm_text:
                 # Minimal fallback: call llm_router directly
                 from navig.llm_router import get_llm_router
 
                 lr = get_llm_router()
                 if lr is None:
                     raise RuntimeError("LLM router not initialised")
-                result = await lr.route(prompt, tier="small")
-                await self.send_message(chat_id, str(result))
+                llm_text = await lr.route(prompt, tier="small")
+            await self.send_message(chat_id, str(llm_text))
         except Exception as e:  # noqa: BLE001
             await self.send_message(chat_id, f"❌ Failed to explain: {e}", parse_mode=None)
 
