@@ -491,12 +491,12 @@ def get_comms_router() -> CommsRouter:
     # ── 1. Matrix (primary) ───────────────────────────────────────────────────
     try:
         from navig.comms.matrix import get_matrix_bot
-        from navig.config import get_config
-
-        cfg = get_config()
+        from navig.config import get_config_manager
 
         # Get the default room from config or KG
-        matrix_room = getattr(cfg, "matrix_hitl_room", "") or ""
+        matrix_room: str = (
+            get_config_manager().global_config.get("matrix_hitl_room", "") or ""
+        )
         if not matrix_room:
             try:
                 from navig.memory.knowledge_graph import get_knowledge_graph

@@ -274,10 +274,9 @@ def get_links_db() -> LinksDB:
     if _db_instance is None:
         with _db_lock:
             if _db_instance is None:
-                from navig.config import get_config
+                from navig.platform import paths
 
-                cfg = get_config()
-                db_path = Path(cfg.data_dir) / "links.db"
+                db_path = paths.data_dir() / "links.db"
                 _db_instance = LinksDB(db_path)
     return _db_instance
 

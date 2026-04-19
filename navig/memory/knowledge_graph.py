@@ -404,10 +404,9 @@ def get_knowledge_graph() -> KnowledgeGraph:
     if _kg_instance is None:
         with _kg_lock:
             if _kg_instance is None:
-                from navig.config import get_config
+                from navig.platform import paths
 
-                cfg = get_config()
-                db_path = Path(cfg.data_dir) / "knowledge_graph.db"
+                db_path = paths.data_dir() / "knowledge_graph.db"
                 _kg_instance = KnowledgeGraph(db_path)
     return _kg_instance
 
