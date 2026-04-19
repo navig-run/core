@@ -2421,7 +2421,7 @@ class TelegramCommandsMixin:
 
         selected = normalize_space_name(arg)
         space_path = _spaces_dir() / selected
-        self._bootstrap_space_docs(selected, space_path)
+        TelegramCommandsMixin._bootstrap_space_docs(self, selected, space_path)
         _set_active_space(selected)
 
         kickoff = build_space_kickoff(selected, space_path, cwd=Path.cwd(), max_items=3)
@@ -2484,7 +2484,7 @@ class TelegramCommandsMixin:
         from navig.commands.space import _spaces_dir
 
         space_path = _spaces_dir() / space
-        self._bootstrap_space_docs(space, space_path)
+        TelegramCommandsMixin._bootstrap_space_docs(self, space, space_path)
         date_label = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         vision = space_path / "VISION.md"
@@ -2634,15 +2634,40 @@ class TelegramCommandsMixin:
         }
         self._runtime_state_with_context(user_id, chat_id, context)
 
-        lines = [
-            f"✅ Intake completed for `{space}`.",
-            f"Updated: {space_path / 'VISION.md'}, {space_path / 'ROADMAP.md'}, {space_path / 'CURRENT_PHASE.md'}",
+        esc = html.escape
+        parts = [
+            f"✅ <b>Intake complete — <code>{esc(space)}</code></b>",
+            "",
         ]
+        if answers.get("goal"):
+            parts += [f"<b>30-day goal:</b>", f"  {esc(answers['goal'])}", ""]
+        if answers.get("horizon"):
+            parts += [f"<b>Tomorrow's outcome:</b>", f"  {esc(answers['horizon'])}", ""]
+        detail_pairs = []
+        if answers.get("constraint"):
+            detail_pairs.append(f"<b>Constraint:</b> {esc(answers['constraint'])}")
+        if answers.get("assumption"):
+            detail_pairs.append(f"<b>Challenge:</b> {esc(answers['assumption'])}")
+        parts += detail_pairs
         if kickoff.actions:
-            lines.append("Top next actions:")
-            for index, action in enumerate(kickoff.actions, start=1):
-                lines.append(f"{index}. {action}")
-        await self.send_message(chat_id, "\n".join(lines), parse_mode=None)
+            parts += ["", "<b>Top next actions:</b>"]
+            for idx, action in enumerate(kickoff.actions, start=1):
+                parts.append(f"  {idx}. {esc(action)}")
+        parts += [
+            "",
+            "<i>📄 Docs updated: VISION · ROADMAP · CURRENT_PHASE</i>",
+        ]
+        keyboard = [
+            [
+                {"text": "📋 Briefing", "callback_data": "nav:open:briefing"},
+                {"text": "📊 Plans", "callback_data": "nav:open:plans"},
+            ],
+            [
+                {"text": "🗂️ Spaces", "callback_data": "nav:cmd:/spaces"},
+                {"text": "➕ Add Goal", "callback_data": "nav:open:plan"},
+            ],
+        ]
+        await self.send_message(chat_id, "\n".join(parts), parse_mode="HTML", keyboard=keyboard)
         return True
 
     def _detect_space_from_text(self, text: str) -> str | None:

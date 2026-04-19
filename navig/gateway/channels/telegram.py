@@ -1515,7 +1515,7 @@ class TelegramChannel:
                         f"ran into a problem. {e}",
                     ]
                 )
-                await self.send_message(chat_id, f"вќЊ {err_msg}", parse_mode=None)
+                await self.send_message(chat_id, f"❌ {err_msg}", parse_mode=None)
 
         else:
             # on_message handler not configured — respond contextually instead
