@@ -258,7 +258,7 @@ class TelegramMessengersMixin:
             return
 
         if cb_data in ("msg:back", "msg:refresh"):
-            await self._handle_messengers(chat_id, user_id, message_id)
+            await TelegramMessengersMixin._handle_messengers(self, chat_id, user_id, message_id)
             return
 
         if cb_data == "msg:contacts":
@@ -291,12 +291,12 @@ class TelegramMessengersMixin:
 
         if cb_data.startswith("msg:detail:"):
             name = cb_data[len("msg:detail:"):]
-            await self._show_messenger_detail(chat_id, message_id, user_id, name)
+            await TelegramMessengersMixin._show_messenger_detail(self, chat_id, message_id, user_id, name)
             return
 
         if cb_data.startswith("msg:enable:"):
             name = cb_data[len("msg:enable:"):]
-            await self._enable_messenger_adapter(chat_id, message_id, user_id, name)
+            await TelegramMessengersMixin._enable_messenger_adapter(self, chat_id, message_id, user_id, name)
             return
 
         # Unknown msg: callback — silently ignore

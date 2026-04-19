@@ -940,11 +940,15 @@ class CallbackHandler:
                     except Exception as _msgr_err:
                         logger.debug("open_messengers delegation error: %s", _msgr_err)
                         await self._answer(cb_id, "")
-                        handler_fn = getattr(self.channel, "_handle_messengers", None)
-                        if handler_fn:
-                            await handler_fn(
-                                chat_id=chat_id, user_id=user_id, message_id=message_id
+                        try:
+                            from navig.gateway.channels.telegram_messengers_mixin import (
+                                TelegramMessengersMixin,
                             )
+                            await TelegramMessengersMixin._handle_messengers(
+                                self.channel, chat_id, user_id, message_id
+                            )
+                        except Exception as _fb_err:
+                            logger.debug("open_messengers fallback error: %s", _fb_err)
                 else:
                     try:
                         from navig.gateway.channels.telegram_messengers_mixin import (
