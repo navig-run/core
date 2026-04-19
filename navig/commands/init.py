@@ -639,11 +639,18 @@ def show_init_status(*, render: bool = True) -> dict[str, Any]:
         navig_dir = home_navig_dir
 
     provider_marker = _read_marker_text(navig_dir / ".ai_provider_configured")
+    # Fall back to global dir when the project-local dir has no provider marker
+    if not provider_marker and navig_dir != home_navig_dir:
+        provider_marker = _read_marker_text(home_navig_dir / ".ai_provider_configured")
     env_provider = os.environ.get("NAVIG_LLM_PROVIDER", "").strip()
     active_provider = env_provider or provider_marker or "not configured"
 
     cfg = ConfigManager(config_dir=navig_dir)
     hosts_count = len(cfg.list_hosts())
+    # Fall back to global config hosts when the project-local config has none
+    if hosts_count == 0 and navig_dir != home_navig_dir:
+        global_cfg = ConfigManager(config_dir=home_navig_dir)
+        hosts_count = len(global_cfg.list_hosts())
 
     vault_status = "empty"
     try:
@@ -721,10 +728,22 @@ def show_init_status(*, render: bool = True) -> dict[str, Any]:
             navig_dir=navig_dir,
             cfg=cfg.global_config if isinstance(cfg.global_config, dict) else {},
         )
+        # If nothing found in project dir, also scan global dir
+        if not detected_provider_sources and navig_dir != home_navig_dir:
+            global_cfg_obj = ConfigManager(config_dir=home_navig_dir)
+            detected_provider_sources = scan_enabled_provider_sources(
+                navig_dir=home_navig_dir,
+                cfg=global_cfg_obj.global_config if isinstance(global_cfg_obj.global_config, dict) else {},
+            )
     except Exception:
         detected_provider_sources = {}
 
     providers_detected = sorted(detected_provider_sources.keys())
+
+    # If the .ai_provider_configured marker file is absent but a real provider
+    # was found via vault / config / env scan, honour the detected provider.
+    if active_provider == "not configured" and providers_detected:
+        active_provider = providers_detected[0]
 
     next_actions: list[str] = []
     readiness_issues: list[dict[str, str]] = []
@@ -737,7 +756,7 @@ def show_init_status(*, render: bool = True) -> dict[str, Any]:
             }
         )
         next_actions.append("navig init --provider")
-    if hosts_count == 0 or active_provider == "not configured":
+    if hosts_count == 0:
         readiness_issues.append(
             {
                 "code": "host-missing",
