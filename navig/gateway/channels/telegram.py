@@ -4630,10 +4630,9 @@ class TelegramChannel:
     ) -> dict | None:
         """Edit an existing message.
 
-        Returns the edited message dict on success, a truthy sentinel dict
-        ``{"not_modified": True}`` when Telegram says the message is identical
-        (so callers can treat it as success and avoid re-sending), or None on
-        a real failure.
+        Returns the edited message dict on success, or None on failure
+        (including when Telegram rejects with "message is not modified").
+        Routes through ``_api_call`` so rate-limit handling applies.
         """
         payload: dict = {
             "chat_id": chat_id,
@@ -4645,31 +4644,14 @@ class TelegramChannel:
         if keyboard is not None:
             payload["reply_markup"] = {"inline_keyboard": keyboard}
 
-        url = f"{self.base_url}/editMessageText"
-        try:
-            async with self._session.post(url, json=payload) as resp:
-                result = await resp.json()
-                if result.get("ok"):
-                    return result.get("result")
-                desc = result.get("description", "")
-                if "message is not modified" in desc.lower():
-                    # Content identical — treat as success; no need to re-send
-                    return {"not_modified": True}
-                if parse_mode:
-                    # Retry without parse_mode for genuine HTML parse errors
-                    retry_payload = {k: v for k, v in payload.items() if k != "parse_mode"}
-                    async with self._session.post(url, json=retry_payload) as resp2:
-                        result2 = await resp2.json()
-                        if result2.get("ok"):
-                            return result2.get("result")
-                        desc2 = result2.get("description", "")
-                        if "message is not modified" in desc2.lower():
-                            return {"not_modified": True}
-                logger.error("Telegram API error (editMessageText): %s", desc)
-                return None
-        except Exception as exc:
-            logger.error("edit_message failed: %s", exc)
-            return None
+        result = await self._api_call("editMessageText", payload)
+        if result is not None:
+            return result
+        if parse_mode:
+            # Retry without parse_mode for HTML parse errors
+            retry_payload = {k: v for k, v in payload.items() if k != "parse_mode"}
+            return await self._api_call("editMessageText", retry_payload)
+        return None
 
     async def edit_message_reply_markup(
         self,

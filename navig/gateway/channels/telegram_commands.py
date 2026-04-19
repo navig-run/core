@@ -2769,11 +2769,12 @@ class TelegramCommandsMixin:
                     continue
 
                 starts = lowered.startswith(phrase)
-                # These commands overlap with common English prepositions/words and must
-                # ONLY match when the message explicitly starts with the command name —
-                # has_trigger must not override this. E.g. "tell me about X" ≠ /about.
+                # These commands overlap with common English prepositions/words.
+                # Without an explicit trigger verb ("show", "check", etc.) they
+                # must ONLY match when the message starts with the command name.
+                # E.g. "tell me about X" ≠ /about, but "show about" = /about.
                 _NL_STARTS_ONLY = {"about"}
-                if command in _NL_STARTS_ONLY and not starts:
+                if command in _NL_STARTS_ONLY and not starts and not has_trigger:
                     continue
                 if (
                     command in TelegramCommandsMixin._NL_AMBIGUOUS_COMMANDS
