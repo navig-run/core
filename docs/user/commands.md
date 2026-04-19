@@ -252,3 +252,23 @@ HestiaCP control panel integration, nested under `navig web`.
 
 > **Note:** The deprecated `navig hestia` top-level alias still works but will be removed in v3.0.
 > Use `navig web hestia` going forward.
+
+---
+
+## Agent Runtime (`navig agent`)
+
+Autonomous agent mode — installation, lifecycle, configuration, and personality management.
+
+| Command | Description |
+|---------|-------------|
+| `agent install` | Initialize agent config and directory structure under `~/.navig/agent/` |
+| `agent start` | Start the autonomous agent process |
+| `agent stop` | Stop the running agent |
+| `agent status` | Show agent state, mode, and personality |
+| `agent config` | Edit agent configuration interactively |
+| `agent logs` | View agent log output |
+| `agent personality` | Manage and switch personality profiles |
+| `agent service` | Manage agent as an OS-registered system service |
+
+See [docs/agent/install.md](../agent/install.md) for the full `navig agent install` reference.
+
