@@ -154,7 +154,7 @@ class TelegramMessengersMixin:
         text: str = "",
     ) -> None:
         """Render the Messaging Adapters Hub inline keyboard."""
-        lines: list[str] = ["<b>📡 Messaging Adapters</b>", ""]
+        lines: list[str] = ["<b>📡 Messaging Adapters</b>"]
         keyboard_rows: list[list[dict[str, Any]]] = []
 
         any_active = False
@@ -178,29 +178,20 @@ class TelegramMessengersMixin:
                 any_active = True
                 status_icon = "✅"
                 status_text = "active"
-                btn_text = f"✅ {icon} {label}"
             elif vault_ok and not enabled:
                 status_icon = "⚡"
                 status_text = "credentials ready — disabled"
-                btn_text = f"⚡ {icon} {label}"
             elif missing:
                 status_icon = "🔒"
                 n = len(missing)
                 status_text = f"not configured — {n} credential{'s' if n != 1 else ''} missing"
-                btn_text = f"🔒 {icon} {label}"
             else:
                 status_icon = "⏸"
                 status_text = "disabled"
-                btn_text = f"⏸ {icon} {label}"
 
-            status_line = (
-                f"{status_icon} <b>{html.escape(label)}</b>"
-                f"  <i>{html.escape(status_text)}</i>"
-            )
-            lines.append(status_line)
+            btn_text = f"{icon}  {label}  {status_icon}"
+
             keyboard_rows.append([{"text": btn_text, "callback_data": f"msg:detail:{name}"}])
-
-        lines.append("")
 
         # ── Action row ────────────────────────────────────────────────────
         action_row: list[dict[str, Any]] = [
