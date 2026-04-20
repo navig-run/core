@@ -1,7 +1,7 @@
 # NAVIG Enhanced Installers - Master Index
 
-📅 **Created:** February 23, 2026
-🔖 **Version:** 2.0 - Remote Drive Integration Complete
+📅 **Updated:** April 20, 2026
+🔖 **Version:** 2.9.0
 ✅ **Status:** Ready for Production
 
 > **Looking for the main NAVIG CLI docs?**
@@ -122,7 +122,6 @@ navig-core/scripts/
 │   ├── 📄 QUICK_REFERENCE.md                  (Cheat sheet)
 │   ├── 📄 ENHANCED_INSTALLERS_GUIDE.md        (Complete guide)
 │   ├── 📄 REMOTE_DRIVES_GUIDE.md              (Cloud/Linux setup)
-│   ├── 📄 IMPLEMENTATION_SUMMARY.md           (Technical details)
 │   ├── 📄 INDEX.md                            (This file)
 │   └── 📄 (original installer scripts - unchanged)
 │
@@ -146,8 +145,7 @@ navig-core/scripts/
 │      Result: Understand all options
 │
 ├─ ADVANCED / DEVELOPER
-│  └─→ Read: IMPLEMENTATION_SUMMARY.md
-│      Review: navig_quick_setup.ps1 source
+│  └─→ Review: navig_quick_setup.ps1 source
 │      Result: Deep technical understanding
 │
 ├─ NEED CLOUD STORAGE SETUP

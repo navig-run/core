@@ -5,7 +5,7 @@ applyTo: '**'
 # NAVIG - AI-Optimized Command Reference Guide
 
 > **Primary Knowledge Base for AI Assistants**
-> Version: 2.8.0 | Last Updated: 2026-04-20
+> Version: 2.9.0 | Last Updated: 2026-04-20
 
 ---
 
@@ -2270,88 +2270,40 @@ navig restart all
 
 ### `navig health-check`
 
-Run comprehensive health check (resources, services, disk, network).
-
-**Examples:**
-```bash
-navig health-check
-```
-
-**Related Commands:** `navig health`, `navig monitor-resources`
+> **Deprecated alias.** Use `navig host monitor show` instead.
+> See [Deprecated Command Aliases](#deprecated-command-aliases) for the full migration table.
 
 ---
 
 ### `navig monitor-resources`
 
-Monitor real-time resource usage (CPU, RAM, disk, network).
-
-**Examples:**
-```bash
-navig monitor-resources
-```
-
-**Related Commands:** `navig monitor-disk`, `navig monitor-services`
+> **Deprecated alias.** Use `navig host monitor show --resources` instead.
 
 ---
 
 ### `navig monitor-disk`
 
-Monitor disk space with threshold alerts.
-
-**Parameters:**
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `--threshold`, `-t` | int | No | Alert threshold percentage (default: 80) |
-
-**Examples:**
-```bash
-# Monitor with default 80% threshold
-navig monitor-disk
-
-# Monitor with custom 90% threshold
-navig monitor-disk --threshold 90
-```
-
-**Related Commands:** `navig monitor-resources`, `navig health`
+> **Deprecated alias.** Use `navig host monitor show --disk` instead.
+>
+> The `--threshold` flag is not supported on the canonical command; configure alert thresholds in `config/defaults.yaml` under `monitoring.disk_threshold`.
 
 ---
 
 ### `navig monitor-services`
 
-Check health status of critical services.
-
-**Examples:**
-```bash
-navig monitor-services
-```
-
-**Related Commands:** `navig health`, `navig restart`
+> **Deprecated alias.** Use `navig host monitor show` instead (services are included in the overview output).
 
 ---
 
 ### `navig monitor-network`
 
-Monitor network statistics and connections.
-
-**Examples:**
-```bash
-navig monitor-network
-```
-
-**Related Commands:** `navig monitor-resources`, `navig audit-connections`
+> **Deprecated alias.** Use `navig host monitor show --resources` instead (network stats are included in the resources panel).
 
 ---
 
 ### `navig monitoring-report`
 
-Generate comprehensive monitoring report and save to file.
-
-**Examples:**
-```bash
-navig monitoring-report
-```
-
-**Related Commands:** `navig health-check`, `navig monitor-resources`
+> **Deprecated alias.** Use `navig host monitor show` and redirect output, or use `navig backup run --config` for full reports.
 
 ---
 

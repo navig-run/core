@@ -245,7 +245,6 @@ After installation:
 
 - **Complete Guide:** `ENHANCED_INSTALLERS_GUIDE.md`
 - **Remote Drives:** `REMOTE_DRIVES_GUIDE.md`
-- **Implementation:** `IMPLEMENTATION_SUMMARY.md`
 
 ---
 

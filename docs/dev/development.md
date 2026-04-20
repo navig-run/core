@@ -225,14 +225,14 @@ python -m compileall navig/
 
 ## Code Style
 
-### Formatting (Black)
+### Formatting (Ruff)
 ```bash
-black navig/ tests/
+ruff format navig/ tests/
 ```
 
-### Linting (Flake8)
+### Linting (Ruff)
 ```bash
-flake8 navig/ tests/
+ruff check navig/ tests/
 ```
 
 ### Type Checking (MyPy)
@@ -243,7 +243,7 @@ mypy navig/
 ### Pre-commit Checks
 ```bash
 # Run all checks
-black navig/ tests/ && flake8 navig/ && pytest
+ruff format navig tests && ruff check navig tests && pytest
 ```
 
 ## Project Structure

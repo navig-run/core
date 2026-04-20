@@ -127,7 +127,7 @@ sudo systemctl start navig
 
 **Verification:**
 ```bash
-navig --version          # Must print: navig 2.8.0 (or later)
+navig --version          # Must print: navig 2.9.0 (or later)
 navig status             # Must show: daemon running
 systemctl is-active navig   # Must print: active
 ```
@@ -268,8 +268,8 @@ python -m twine check dist/*
 
 Expected output:
 ```
-Checking dist/navig-2.8.0-py3-none-any.whl: PASSED
-Checking dist/navig-2.8.0.tar.gz: PASSED
+Checking dist/navig-2.9.0-py3-none-any.whl: PASSED
+Checking dist/navig-2.9.0.tar.gz: PASSED
 ```
 
 ### Test on TestPyPI first
@@ -279,8 +279,8 @@ twine upload --repository testpypi dist/*
 
 # Smoke test on a clean virtualenv
 python -m venv /tmp/navig-test-env
-/tmp/navig-test-env/bin/pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ navig==2.8.0
-/tmp/navig-test-env/bin/navig --version   # Must print 2.8.0
+/tmp/navig-test-env/bin/pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ navig==2.9.0
+/tmp/navig-test-env/bin/navig --version   # Must print 2.9.0
 ```
 
 ### Publish to production PyPI (automated)
@@ -300,7 +300,7 @@ twine upload dist/*
 
 Verify on a clean machine:
 ```bash
-pip install navig==2.8.0
+pip install navig==2.9.0
 navig --version
 ```
 
@@ -309,7 +309,7 @@ navig --version
 The `release.sh` script handles git tagging and pushing in one step:
 
 ```bash
-bash scripts/release.sh 2.8.0
+bash scripts/release.sh 2.9.0
 ```
 
 The script will:
@@ -327,7 +327,7 @@ The script will:
 |---|---|
 | PyPI package name | `navig` |
 | PyPI URL | `https://pypi.org/project/navig/` |
-| Current version | `2.8.0` |
+| Current version | `2.9.0` |
 | Ubuntu service user | `navig` |
 | Ubuntu systemd unit | `/etc/systemd/system/navig.service` |
 | Ubuntu data directory | `/opt/navig` / `~/.navig/` |
