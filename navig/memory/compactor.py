@@ -37,9 +37,9 @@ from pathlib import Path
 from typing import Callable, Protocol
 
 from navig.memory.chat_store import (
+    _DEFAULT_COMPACT_AFTER_DAYS,
     ChatMemoryStore,
     ConversationTurn,
-    _DEFAULT_COMPACT_AFTER_DAYS,
 )
 
 # ──────────────────────────────────────────────────────────────────────────────

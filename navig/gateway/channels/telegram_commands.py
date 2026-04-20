@@ -2301,6 +2301,8 @@ class TelegramCommandsMixin:
         active = get_active_space()
         try:
             # Replicate plans_add logic directly (Typer CLI fn cannot be called programmatically)
+            import os
+
             from navig.commands.plans import (
                 _ensure_baseline_files,
                 _insert_under_section,
@@ -2308,7 +2310,6 @@ class TelegramCommandsMixin:
                 _target_plan_file,
             )
             from navig.spaces.contracts import normalize_space_name
-            import os
 
             plans_dir = _plans_dir(None)
             _ensure_baseline_files(plans_dir)
@@ -7181,7 +7182,8 @@ class TelegramCommandsMixin:
             message_id = (ack or {}).get("message_id")
 
         try:
-            import subprocess, sys as _sys
+            import subprocess
+            import sys as _sys
             if is_local:
                 result_line = "\U0001f7e2 <b>localhost</b> \u2014 local host, no SSH needed"
             else:
@@ -7233,7 +7235,8 @@ class TelegramCommandsMixin:
 
         # ── Switch if arg given ───────────────────────────────────────────────
         if arg:
-            import subprocess, sys as _sys
+            import subprocess
+            import sys as _sys
             try:
                 proc = subprocess.run(
                     [_sys.executable, "-m", "navig", "host", "use", arg],
@@ -7346,7 +7349,8 @@ class TelegramCommandsMixin:
                 break
 
         if arg:
-            import subprocess, sys as _sys
+            import subprocess
+            import sys as _sys
             try:
                 proc = subprocess.run(
                     [_sys.executable, "-m", "navig", "app", "use", arg],
@@ -7386,7 +7390,8 @@ class TelegramCommandsMixin:
     ) -> None:
         """/files [path] — cross-platform directory listing."""
         import pathlib
-        import subprocess, sys as _sys
+        import subprocess
+        import sys as _sys
 
         raw = (text or "").strip()
         arg = ""
@@ -7449,7 +7454,7 @@ class TelegramCommandsMixin:
                 except Exception:
                     size_s = ""
                 lines.append(f"  {icon} {html.escape(entry.name)}{size_s}")
-                shown += 1
+                shown += 1  # noqa: SIM113
 
             if len(list(resolved.iterdir())) > 50 if resolved.is_dir() else False:
                 lines.append(f"  <i>… and more</i>")
@@ -7495,7 +7500,8 @@ class TelegramCommandsMixin:
     ) -> None:
         """/cat <path> — view remote or local file contents."""
         import pathlib
-        import subprocess, sys as _sys
+        import subprocess
+        import sys as _sys
 
         raw = (text or "").strip()
         arg = ""
@@ -7577,7 +7583,8 @@ class TelegramCommandsMixin:
         text: str = "",
     ) -> None:
         """/run <command> — execute on active host with nice output card."""
-        import subprocess, sys as _sys
+        import subprocess
+        import sys as _sys
 
         raw = (text or "").strip()
         arg = ""
@@ -7661,7 +7668,8 @@ class TelegramCommandsMixin:
         text: str = "",
     ) -> None:
         """/backup — show backup status with inline action buttons."""
-        import subprocess, sys as _sys
+        import subprocess
+        import sys as _sys
 
         try:
             from navig.config import get_config_manager

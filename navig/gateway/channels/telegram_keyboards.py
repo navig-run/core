@@ -923,10 +923,11 @@ class CallbackHandler:
                     # Redirect to messengers hub (may replace the providers message)
                     cb_data_rerouted = "msg:refresh"
                     try:
+                        import functools
+
                         from navig.gateway.channels.telegram_messengers_mixin import (
                             TelegramMessengersMixin,
                         )
-                        import functools
                         handler = functools.partial(
                             TelegramMessengersMixin._handle_messengers_callback, self.channel
                         )
@@ -951,10 +952,11 @@ class CallbackHandler:
                             logger.debug("open_messengers fallback error: %s", _fb_err)
                 else:
                     try:
+                        import functools
+
                         from navig.gateway.channels.telegram_messengers_mixin import (
                             TelegramMessengersMixin,
                         )
-                        import functools
                         handler = functools.partial(
                             TelegramMessengersMixin._handle_messengers_callback, self.channel
                         )
@@ -1368,8 +1370,9 @@ class CallbackHandler:
         if action == "space" and target:
             await self._answer(cb_id, f"\u2713 Switched to {target}")
             try:
-                from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
                 import functools as _ft
+
+                from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
                 await _ft.partial(TelegramCommandsMixin._handle_space, self.channel)(
                     chat_id=chat_id, user_id=user_id, text=f"/space {target}"
                 )
@@ -1384,8 +1387,10 @@ class CallbackHandler:
                 if dispatcher:
                     entry = dispatcher(target)
                     if entry and getattr(entry, "handler", None):
+                        import functools as _ft
+                        import inspect as _inspect
+
                         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-                        import functools as _ft, inspect as _inspect
                         handler_fn = getattr(TelegramCommandsMixin, entry.handler, None)
                         if handler_fn:
                             sig = _inspect.signature(handler_fn)

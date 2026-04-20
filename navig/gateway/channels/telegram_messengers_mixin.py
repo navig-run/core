@@ -254,8 +254,9 @@ class TelegramMessengersMixin:
 
         if cb_data == "msg:contacts":
             try:
-                from navig.gateway.channels.telegram_messaging_mixin import TelegramMessagingMixin
                 import functools
+
+                from navig.gateway.channels.telegram_messaging_mixin import TelegramMessagingMixin
                 handler = functools.partial(TelegramMessagingMixin._handle_messaging_contacts, self)
                 await handler(chat_id=chat_id, user_id=user_id, text="")
             except Exception as exc:
@@ -267,8 +268,9 @@ class TelegramMessengersMixin:
 
         if cb_data == "msg:threads":
             try:
-                from navig.gateway.channels.telegram_messaging_mixin import TelegramMessagingMixin
                 import functools
+
+                from navig.gateway.channels.telegram_messaging_mixin import TelegramMessagingMixin
                 handler = functools.partial(TelegramMessagingMixin._handle_messaging_threads, self)
                 await handler(chat_id=chat_id, user_id=user_id, text="")
             except Exception as exc:
