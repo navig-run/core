@@ -270,3 +270,89 @@ Autonomous agent mode — installation, lifecycle, configuration, and personalit
 
 See [docs/agent/install.md](../agent/install.md) for the full `navig agent install` reference.
 
+---
+
+## Flows (`navig flow`)
+
+Saved multi-step workflows for repeatable operations.
+
+| Command | Description |
+|---------|-------------|
+| `flow list` | List all saved flows |
+| `flow show <name>` | View flow steps |
+| `flow run <name>` | Execute a flow |
+| `flow run <name> --dry-run` | Preview without executing |
+| `flow test <name>` | Validate flow syntax |
+| `flow add <name>` | Create a new flow |
+| `flow edit <name>` | Edit flow YAML |
+| `flow remove <name>` | Delete a flow |
+| `flow template list` | List built-in flow templates |
+
+> Always run `--dry-run` before executing flows against production hosts.
+
+---
+
+## Wiki (`navig wiki`)
+
+Project knowledge base and documentation manager stored in `.navig/wiki/`.
+
+| Command | Description |
+|---------|-------------|
+| `wiki init` | Initialise project wiki |
+| `wiki init --global` | Initialise global wiki (`~/.navig/wiki/`) |
+| `wiki list` | List all pages |
+| `wiki list <folder>` | List pages in a folder |
+| `wiki show <page>` | View a page |
+| `wiki add <file>` | Add file to inbox |
+| `wiki add <file> --folder <folder>` | Add directly to a folder |
+| `wiki edit <page>` | Open page in editor |
+| `wiki remove <page>` | Archive a page |
+| `wiki search <query>` | Full-text search |
+| `wiki inbox` | List pending inbox items |
+| `wiki inbox process` | AI-categorise inbox items |
+| `wiki publish` | Export public wiki content |
+| `wiki links broken` | Find broken wiki links |
+
+See [docs/features/wiki.md](../features/wiki.md) for the full wiki module reference.
+
+---
+
+## Plans (`navig plans`)
+
+Space-aware planning and daily briefing.
+
+| Command | Description |
+|---------|-------------|
+| `plans status` | Show current planning status |
+| `plans next` | Show next recommended actions |
+| `plans briefing` | Generate today's briefing |
+| `plans add` | Add item to active plan |
+| `plans sync` | Sync plans across spaces |
+| `plans update` | Update plan data |
+
+---
+
+## Scaffold (`navig scaffold`)
+
+Generate project structures from YAML templates.
+
+| Command | Description |
+|---------|-------------|
+| `scaffold apply <template>` | Generate structure from template |
+| `scaffold apply <template> --dry-run` | Preview without creating files |
+| `scaffold validate <template>` | Validate template syntax |
+
+Options: `--host` (upload to remote), `--target-dir` (destination), `--set key=value` (override variables).
+
+---
+
+## Contacts (`navig contacts`)
+
+Contact address book for storing frequently used addresses.
+
+| Command | Description |
+|---------|-------------|
+| `contacts list` | List all contacts |
+| `contacts add` | Add a new contact |
+| `contacts import <file>` | Import contacts from file |
+
