@@ -254,6 +254,7 @@ navig <resource> <action> [options]
 | `navig flow` | Multi-step automation workflows |
 | `navig mcp` | MCP server for AI editor and tool integration |
 | `navig gateway` | Start and manage chat gateway (Telegram, Matrix) |
+| `navig agent` | Autonomous agent runtime — install, start, configure, manage |
 
 ### Organisation
 
@@ -265,6 +266,29 @@ navig <resource> <action> [options]
 | `navig mesh` | LAN peer discovery and command delegation |
 
 Run `navig help` or `navig help <topic>` for detailed usage. Every command also supports `--help`.
+
+---
+
+## Agent runtime
+
+NAVIG ships an autonomous agent layer that runs as a persistent background process.
+
+```bash
+# One-time setup: write ~/.navig/agent/config.yaml and create runtime directories
+navig agent install
+
+# Optional: register as an OS service (starts on boot)
+navig service install
+navig service start
+
+# Check state
+navig agent status
+```
+
+Operating modes: `supervised` (default, confirms actions), `autonomous` (executes without prompts), `observe-only` (reads and reports, no writes).
+Personality profiles: `friendly`, `professional`, `witty`, `paranoid`, `minimal`.
+
+See [`docs/agent/install.md`](docs/agent/install.md) for the full reference.
 
 ---
 
@@ -316,6 +340,7 @@ See [`docs/user/CONFIG_SCHEMA.md`](docs/user/CONFIG_SCHEMA.md) and [`docs/user/U
 | Handbook | [`docs/user/HANDBOOK.md`](docs/user/HANDBOOK.md) |
 | Troubleshooting | [`docs/user/troubleshooting.md`](docs/user/troubleshooting.md) |
 | Telegram setup | [`docs/features/TELEGRAM.md`](docs/features/TELEGRAM.md) |
+| Agent runtime (`agent install`) | [`docs/agent/install.md`](docs/agent/install.md) |
 | Production deployment | [`docs/dev/PRODUCTION_DEPLOYMENT.md`](docs/dev/PRODUCTION_DEPLOYMENT.md) |
 | Migration guide | [`docs/dev/MIGRATION_GUIDE.md`](docs/dev/MIGRATION_GUIDE.md) |
 | Plugin / pack development | [navig-community](https://github.com/navig-run/community) |
