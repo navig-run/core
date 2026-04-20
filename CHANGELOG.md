@@ -7,7 +7,9 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 <!-- Add entries here until the next release, then move them under a new version heading. -->
-<!-- Run: git log v2.8.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+<!-- Run: git log v2.9.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+
+## [2.9.0] - 2026-04-20
 
 ### Added
 - **Vault-first messaging adapters + `/messengers` Telegram hub + `navig init --messaging` wizard**: Three interconnected improvements to the outbound messaging stack.
