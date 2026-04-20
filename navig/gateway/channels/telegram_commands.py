@@ -1872,7 +1872,7 @@ class TelegramCommandsMixin:
         user_id: int = 0,
         message_id: int | None = None,
     ) -> None:
-        """System status summary for Telegram users (/status)."""
+        """Session dashboard for the current user — context, AI, readiness, progression (/status)."""
         from navig.spaces import get_default_space
         from navig.spaces.progress import (
             collect_spaces_progress,
@@ -1935,76 +1935,96 @@ class TelegramCommandsMixin:
             pass  # best-effort; init status may not be available
 
         # ── Assemble message ────────────────────────────────────────────────────
-        readiness_icon = "✅" if readiness_state == "ready" else "⚠️"
-        reminder_str = f"<code>{reminder_count} active</code>" if reminder_count is not None else "<code>—</code>"
+        from datetime import datetime, timezone as _tz
+        now_utc = datetime.now(_tz.utc).strftime("%H:%M UTC, %d %b %Y")
 
-        lines: list[str] = [
-            "🧭 <b>NAVIG Status</b>",
-            "",
-            "🖥  <b>Infrastructure</b>",
-            f"Host      <code>{active_host}</code>",
-            f"Space     <code>{selected_space}</code>",
-            "",
-            "🤖  <b>AI Session</b>",
-            f"Model     <code>{model_label}</code>",
-            f"Persona   <code>{persona}</code>",
-            "",
-            f"⏰  <b>Reminders</b>   {reminder_str}",
-            "",
-            f"{readiness_icon}  <b>Setup</b>   <code>{readiness_state}</code> ({readiness_score}%)",
-        ]
+        # Readiness progress bar (10 chars wide)
+        filled = round(readiness_score / 10)
+        bar = "█" * filled + "░" * (10 - filled)
+        readiness_icon = "✅" if readiness_state == "ready" else ("⚠️" if readiness_score >= 50 else "🔴")
+        reminder_str = str(reminder_count) if reminder_count is not None else "—"
+        reminder_dot = "🔔" if reminder_count else "🔕"
 
-        # Setup fix hints (max 2)
+        # Space progression summary
+        prog_lines: list[str] = []
+        if rows:
+            prog_lines = format_spaces_progress_lines(rows, max_items=3)
+        else:
+            prog_lines = ["   <i>No spaces yet — run /space to create one</i>"]
+
+        # Pending fix hints (max 2, compact)
+        fix_hint_lines: list[str] = []
         if status_fix_issues:
-            lines.append("")
-            lines.append("<b>Pending fixes:</b>")
             for issue in status_fix_issues[:2]:
                 if not isinstance(issue, dict):
                     continue
                 summary = html.escape(str(issue.get("summary") or "").strip())
                 command = str(issue.get("command") or "").strip()
                 if summary and command:
-                    lines.append(f"  • {summary} → <code>{command}</code>")
+                    fix_hint_lines.append(f"  ⚡ {summary} — <code>{command}</code>")
             remaining = len(status_fix_issues) - 2
             if remaining > 0:
-                lines.append(f"  • +{remaining} more — run <code>navig init --status</code>")
+                fix_hint_lines.append(f"  + {remaining} more issue(s)")
 
-        # Progression
-        lines.append("")
-        lines.append("📈  <b>Progression</b>")
-        if rows:
-            lines.extend(format_spaces_progress_lines(rows, max_items=5))
-        else:
-            lines.append("   <i>No spaces discovered yet.</i>")
+        # Compose the full card
+        msg_parts: list[str] = [
+            f"🧭 <b>NAVIG</b> — <i>Session Snapshot</i>",
+            f"<i>{now_utc}</i>",
+            "",
+            "<b>📍 Context</b>",
+            f"  Host     <code>{html.escape(active_host)}</code>",
+            f"  Space    <code>{html.escape(selected_space)}</code>",
+            "",
+            "<b>🤖 AI</b>",
+            f"  Model    <code>{html.escape(model_label)}</code>",
+            f"  Persona  <code>{html.escape(persona)}</code>",
+            "",
+            f"{reminder_dot} <b>Reminders</b>   <code>{reminder_str} active</code>",
+            "",
+            f"{readiness_icon} <b>Setup</b>   <code>{bar}</code>  {readiness_score}%",
+        ]
+        if fix_hint_lines:
+            msg_parts.extend(fix_hint_lines)
 
-        # ── Build fix buttons (shared between both send paths) ────────────────
+        msg_parts += [
+            "",
+            "<b>📈 Progression</b>",
+        ] + prog_lines
+
+        text = "\n".join(msg_parts)
+
+        # ── Inline keyboard ───────────────────────────────────────────────────
         fix_buttons: list[list[dict[str, str]]] = []
         for issue in status_fix_issues[:2]:
             code = str(issue.get("code") or "").strip()
-            summary = str(issue.get("summary") or "").strip()
+            label = str(issue.get("summary") or "Run fix").strip()
             if not code:
                 continue
-            title = summary or "Run setup fix"
-            if len(title) > 36:
-                title = title[:33] + "..."
-            fix_buttons.append([{"text": f"🛠 {title}", "callback_data": f"stfix:{code}"}])
+            if len(label) > 34:
+                label = label[:31] + "…"
+            fix_buttons.append([{"text": f"🛠 {label}", "callback_data": f"stfix:{code}"}])
 
-        text = "\n".join(lines)
+        nav_keyboard: list[list[dict[str, str]]] = fix_buttons + [
+            [
+                {"text": "🔄 Refresh", "callback_data": "nav:open:status"},
+                {"text": "🗺️ Spaces", "callback_data": "nav:cmd:/spaces"},
+                {"text": "📋 Briefing", "callback_data": "nav:open:briefing"},
+            ],
+            [
+                {"text": "🤖 Switch AI", "callback_data": "nav:models"},
+                {"text": "⏰ Reminders", "callback_data": "slash:/reminders"},
+                {"text": "🏠 Home", "callback_data": "nav:home"},
+            ],
+        ]
 
         # ── Deliver ───────────────────────────────────────────────────────────
         if message_id:
-            keyboard: list[list[dict[str, str]]] = fix_buttons + [
-                [
-                    {"text": "🔙 Back", "callback_data": "nav:back"},
-                    {"text": "🏠 Home", "callback_data": "nav:home"},
-                ],
-            ]
             await self.edit_message(
                 chat_id,
                 message_id,
                 text,
                 parse_mode="HTML",
-                keyboard=keyboard,
+                keyboard=nav_keyboard,
             )
             return
 
@@ -2012,7 +2032,7 @@ class TelegramCommandsMixin:
             chat_id,
             text,
             parse_mode="HTML",
-            keyboard=fix_buttons or None,
+            keyboard=nav_keyboard,
         )
 
     async def _handle_status_fix_callback(
@@ -8264,12 +8284,14 @@ class TelegramCommandsMixin:
     @error_handled
     @typing_context
     async def _handle_briefing(self, chat_id: int, user_id: int, metadata: MessageMetadata) -> None:
-        """Real-data system briefing - no AI, no invented content (/briefing)."""
+        """Live system-health briefing — infrastructure telemetry, no session data (/briefing)."""
         now = datetime.now(timezone.utc)
+        ts = now.strftime("%H:%M UTC, %d %b %Y")
         lines: list = [
-            f"<b>\U0001f4cb System Briefing</b>",
-            f"<i>{now.strftime('%H:%M UTC, %d %b %Y')}</i>",
-            "\u2500" * 18,
+            "📋 <b>System Briefing</b>",
+            f"<i>{ts}</i>",
+            "",
+            "<b>🔧 Infrastructure</b>",
         ]
 
         try:
@@ -8292,11 +8314,11 @@ class TelegramCommandsMixin:
                 if ln.startswith("ActiveEnterTimestamp="):
                     raw = ln.split("=", 1)[1].strip()
                     if raw and raw != "n/a":
-                        since = f" - since {raw.split()[-2]}"
-            icon = "✅" if state == "active" else "❌"
-            lines.append(f"{icon} <b>Daemon:</b> {state}{since}")
+                        since = f", since {raw.split()[-2]}"
+            icon = "🟢" if state == "active" else "🔴"
+            lines.append(f"  {icon} Daemon: <code>{state}{since}</code>")
         except Exception:
-            lines.append("- <b>Daemon:</b> status unavailable")
+            lines.append("  ❓ Daemon: status unavailable")
 
         try:
             from navig.providers.bridge_grid_reader import (
@@ -8316,21 +8338,23 @@ class TelegramCommandsMixin:
             _s.close()
         except Exception:
             bridge_ok = False
-        lines.append(f"- <b>LLM Bridge:</b> {'online (bridge_copilot)' if bridge_ok else 'offline'}")
+        bridge_icon = "🟢" if bridge_ok else "🔴"
+        bridge_label = "online" if bridge_ok else "offline"
+        lines.append(f"  {bridge_icon} LLM Bridge: <code>{bridge_label}</code>")
 
         try:
             from navig.vault import get_vault
 
             v = get_vault()
             key_count = len(v.list()) if hasattr(v, "list") else "?"
-            lines.append(f"- <b>Vault:</b> {key_count} keys stored")
+            lines.append(f"  🔑 Vault: <code>{key_count} keys</code>")
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
 
         if _HAS_SESSIONS:
             try:
                 sm = get_session_manager()
-                lines.append(f"- <b>Sessions:</b> {len(sm.sessions)} active")
+                lines.append(f"  👥 Sessions: <code>{len(sm.sessions)} active</code>")
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -8345,7 +8369,8 @@ class TelegramCommandsMixin:
                 timeout=_SHORT_CMD_TIMEOUT,
             )
             stdout, _ = await p.communicate()
-            lines.append(f"- <b>Server:</b> {stdout.decode().strip()}")
+            lines.append(f"\n<b>🖥️ Server</b>")
+            lines.append(f"  ⏱ Uptime: <code>{stdout.decode().strip()}</code>")
         except Exception:  # noqa: BLE001
             # Fallback for Windows (no `uptime` command)
             try:
@@ -8358,7 +8383,8 @@ class TelegramCommandsMixin:
                 _d, _r = divmod(int(_delta.total_seconds()), 86400)
                 _h, _r = divmod(_r, 3600)
                 _m = _r // 60
-                lines.append(f"- <b>Server:</b> up {_d}d {_h}h {_m}m ({_pf.system()})")
+                lines.append(f"\n<b>🖥️ Server</b>")
+                lines.append(f"  ⏱ Uptime: <code>{_d}d {_h}h {_m}m ({_pf.system()})</code>")
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
 
@@ -8379,7 +8405,9 @@ class TelegramCommandsMixin:
             if len(dfl) >= 2:
                 parts = dfl[1].split()
                 if len(parts) >= 3:
-                    lines.append(f"- <b>Disk:</b> {parts[0]} used, {parts[1]} free ({parts[2]})")
+                    _pct = int(parts[2].rstrip("%")) if parts[2].rstrip("%").isdigit() else 0
+                    _disk_icon = "🔴" if _pct >= 90 else ("🟡" if _pct >= 75 else "🟢")
+                    lines.append(f"  {_disk_icon} Disk: <code>{parts[0]} used · {parts[1]} free · {parts[2]}</code>")
         except Exception:  # noqa: BLE001
             # Fallback for Windows (no `df` command)
             try:
@@ -8391,13 +8419,12 @@ class TelegramCommandsMixin:
                 _du = _psutil.disk_usage(_root)
                 _used_gb = _du.used / (1024 ** 3)
                 _free_gb = _du.free / (1024 ** 3)
+                _disk_icon = "🔴" if _du.percent >= 90 else ("🟡" if _du.percent >= 75 else "🟢")
                 lines.append(
-                    f"- <b>Disk:</b> {_used_gb:.1f} GB used, {_free_gb:.1f} GB free ({_du.percent:.0f}%)"
+                    f"  {_disk_icon} Disk: <code>{_used_gb:.1f} GB used · {_free_gb:.1f} GB free · {_du.percent:.0f}%</code>"
                 )
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
-
-        lines.append("\u2500" * 18)
 
         recent: list = []
         trace_file = msg_trace_path()
@@ -8417,37 +8444,26 @@ class TelegramCommandsMixin:
                 pass  # best-effort; failure is non-critical
 
         if recent:
-            lines.append("<b>\U0001f4e8 Recent commands:</b>")
+            lines.append("")
+            lines.append("<b>📨 Recent Commands</b>")
             lines.extend(recent[-5:])
         else:
-            lines.append("<i>No recent command history.</i>")
+            lines.append("")
+            lines.append("<b>📨 Recent Commands</b>")
+            lines.append("  <i>No command history yet.</i>")
 
-        try:
-            from navig.commands.plans import collect_spaces_progress
-            from navig.commands.space import get_active_space
-
-            sp_rows = collect_spaces_progress()
-            if sp_rows:
-                lines.append("\u2500" * 18)
-                active_sp = get_active_space()
-                lines.append("<b>\U0001f5fa\ufe0f Spaces:</b>")
-                for sp in sp_rows[:5]:
-                    marker = "\u25b8" if sp.name == active_sp else "\u2022"
-                    lines.append(
-                        f"{marker} <code>{html.escape(sp.name)}</code> "
-                        f"({sp.scope}) \u2014 {sp.completion_pct:.0f}% \u00b7 <i>{html.escape(sp.goal)}</i>"
-                    )
-        except Exception as _spaces_exc:  # noqa: BLE001
-            logger.debug("spaces briefing section skipped: %s", _spaces_exc)
+        # NOTE: Spaces/progression data lives in /status — not repeated here
 
         keyboard = [
             [
-                {"text": "\U0001f504 Refresh", "callback_data": "nav:open:briefing"},
-                {"text": "\U0001f5fa\ufe0f Spaces", "callback_data": "nav:cmd:/spaces"},
+                {"text": "🔄 Refresh", "callback_data": "nav:open:briefing"},
+                {"text": "📊 Status", "callback_data": "nav:open:status"},
+                {"text": "🗺️ Spaces", "callback_data": "nav:cmd:/spaces"},
             ],
             [
-                {"text": "\U0001f4cb Plans", "callback_data": "nav:cmd:/plans"},
-                {"text": "\U0001f3e0 Home", "callback_data": "nav:home"},
+                {"text": "📋 Plans", "callback_data": "nav:cmd:/plans"},
+                {"text": "🤖 Switch AI", "callback_data": "nav:models"},
+                {"text": "🏠 Home", "callback_data": "nav:home"},
             ],
         ]
         result = await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
