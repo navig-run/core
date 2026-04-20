@@ -50,9 +50,9 @@ Ensure these are prepared:
 ```bash
 # Test all components
 navig agent status
-navig agent test-brain
-navig agent test-remediation
-navig agent test-learning
+navig agent status
+navig agent remediation
+navig agent learn
 
 # Test remote connections
 navig host list
@@ -60,7 +60,7 @@ navig host test <host-name>
 
 # Test database operations
 navig db list
-navig db test-connection
+navig db list
 ```
 
 ### 2. Verify Configuration
@@ -73,7 +73,7 @@ navig config validate
 navig config show | grep -E '(openrouter|telegram)'
 
 # Test Brain connection
-navig agent test-brain
+navig agent status
 ```
 
 ### 3. Backup Current State
@@ -243,7 +243,7 @@ navig agent service status
 
 ```bash
 # Test AI connection
-navig agent test-brain
+navig agent status
 
 # Expected: Response from OpenRouter API
 ```
@@ -444,7 +444,7 @@ navig agent service start
 navig config validate
 
 # 5. Check API keys
-navig agent test-brain
+navig agent status
 ```
 
 ### High Error Rate
@@ -579,7 +579,7 @@ navig config --set brain.openrouter_api_key "new-key-here"
 navig agent service restart
 
 # Verify new key works
-navig agent test-brain
+navig agent status
 ```
 
 ### 4. Audit Logging
@@ -680,7 +680,7 @@ navig config validate
 
 # 4. Test locally
 navig agent status
-navig agent test-brain
+navig agent status
 
 # 5. Restart service
 navig agent service start

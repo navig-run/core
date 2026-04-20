@@ -23,8 +23,7 @@ This document captures technical debt, deferred verification work, and test-cove
 
 ### 3. `pyproject.toml` setuptools License Metadata Deprecation
 
-- Status: Non-breaking; `python -m build` emits deprecation warnings only.
-- Gap: Will become a hard failure on a future setuptools cutover.
+- Status: ✅ Done — `pyproject.toml` now uses PEP 639 SPDX expression format.
 - Required follow-up: Migrate the `license` field to SPDX expression format per [PEP 639](https://peps.python.org/pep-0639/).
 
 ```toml

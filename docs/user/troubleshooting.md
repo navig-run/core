@@ -170,12 +170,12 @@ echo $HOME  # $HOME won't be expanded by PowerShell
 
 1. **Check tunnel status:**
    ```bash
-   navig tunnel status
+   navig tunnel show
    ```
 
 2. **Start tunnel if needed:**
    ```bash
-   navig tunnel start
+   navig tunnel run
    ```
 
 3. **Verify database credentials in app config:**

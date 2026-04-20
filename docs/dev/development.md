@@ -74,15 +74,15 @@ uv pip sync requirements.lock
 
 ### Option 2: rye (Full Project Manager)
 
-[rye](https://rye-up.com/) is an all-in-one Python project manager that handles Python versions, virtual environments, dependencies, and builds.
+[rye](https://rye.astral.sh/) is an all-in-one Python project manager that handles Python versions, virtual environments, dependencies, and builds.
 
 #### Installation
 ```bash
 # Windows (PowerShell)
-irm https://rye-up.com/get | iex
+irm https://rye.astral.sh/get | iex
 
 # Linux/macOS
-curl -sSf https://rye-up.com/get | bash
+curl -sSf https://rye.astral.sh/get | bash
 ```
 
 #### Usage
@@ -107,8 +107,8 @@ rye run pytest
 rye build
 ```
 
-#### rye.toml Configuration
-If using rye, it reads from `pyproject.toml`. No additional config needed.
+#### rye Configuration
+If using rye, it reads from `pyproject.toml`. No separate `rye.toml` is needed.
 
 ### Option 3: Traditional pip
 
@@ -283,7 +283,7 @@ navig/
 ### Using rye in GitHub Actions
 ```yaml
 - name: Install rye
-  run: curl -sSf https://rye-up.com/get | bash
+  run: curl -sSf https://rye.astral.sh/get | bash
 
 - name: Sync dependencies
   run: rye sync

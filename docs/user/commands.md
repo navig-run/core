@@ -65,9 +65,9 @@ Unified database management for MySQL/MariaDB/PostgreSQL.
 | `db file <file.sql>` | Execute SQL file |
 | `db dump <database> [-o file]` | Backup database to file |
 | `db restore <database> <file>` | Restore database from backup |
-| `db shell` | Open interactive database shell |
-| `db users` | List database users |
-| `db containers` | List Docker database containers |
+| `db shell` | Open interactive database shell _(internal/hidden)_ |
+| `db users` | List database users _(internal/hidden)_ |
+| `db containers` | List Docker database containers _(internal/hidden)_ |
 | `db optimize <db> <table>` | Optimize table |
 | `db repair <db> <table>` | Repair table |
 
@@ -86,8 +86,7 @@ Real-time server monitoring and health checks, nested under `navig host`.
 | `host monitor show --network` | Network statistics |
 | `host monitor show --process` | Top processes by CPU/memory |
 
-> **Note:** The deprecated `navig monitor` alias still works but will be removed in v3.0.
-> Use `navig host monitor show` going forward.
+> **Note:** The `navig monitor` flat alias has been removed. Use `navig host monitor show` directly.
 
 ---
 
@@ -103,8 +102,7 @@ Firewall, intrusion detection, and security auditing, nested under `navig host`.
 | `host security show --fail2ban` | Show Fail2Ban status |
 | `host security show --updates` | Check security updates |
 
-> **Note:** The deprecated `navig security` alias still works but will be removed in v3.0.
-> Use `navig host security show` going forward.
+> **Note:** The `navig security` flat alias has been removed. Use `navig host security show` directly.
 
 ---
 

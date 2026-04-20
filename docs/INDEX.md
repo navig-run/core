@@ -4,6 +4,10 @@
 🔖 **Version:** 2.0 - Remote Drive Integration Complete
 ✅ **Status:** Ready for Production
 
+> **Looking for the main NAVIG CLI docs?**
+> - Quick start: [`docs/user/quick-start.md`](user/quick-start.md)
+> - Full command reference: [`docs/user/HANDBOOK.md`](user/HANDBOOK.md)
+
 ---
 
 ## 📚 Documentation Index
@@ -25,14 +29,7 @@
 
 ### 📖 **DETAILED REFERENCE** (Deep Dive)
 
-3. **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)**
-   - What was built and why
-   - Technical architecture
-   - Integration points
-   - Testing checklist
-   - For developers and architects
-
-4. **[REMOTE_DRIVES_GUIDE.md](REMOTE_DRIVES_GUIDE.md)**
+3. **[REMOTE_DRIVES_GUIDE.md](REMOTE_DRIVES_GUIDE.md)**
    - Setting up cloud storage (Google Drive, Dropbox, etc.)
    - Mounting Linux servers (SSHFS + rclone)
    - SMB/CIFS shares from Windows

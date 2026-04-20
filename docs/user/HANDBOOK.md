@@ -5,7 +5,7 @@ applyTo: '**'
 # NAVIG - AI-Optimized Command Reference Guide
 
 > **Primary Knowledge Base for AI Assistants**
-> Version: 2.4.14 | Last Updated: 2026-03-20
+> Version: 2.8.0 | Last Updated: 2026-04-20
 
 ---
 

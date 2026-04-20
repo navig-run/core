@@ -64,7 +64,7 @@ navig --version
 ```
 
 **Expected output**: NAVIG version string — run `navig --version` to verify
-you see the current version printed (e.g. `NAVIG 2.4.14`).
+you see the current version printed (e.g. `NAVIG 2.8.0`).
 
 ### Cross-platform one-shot installers
 
@@ -150,7 +150,7 @@ navig = "navig.main:main"
 The `navig` command runs `main()` in `navig/main.py`.
 
 **Core Dependencies** (see `pyproject.toml` for the full authoritative list):
-- `typer[all]>=0.9.0` — CLI framework
+- `typer>=0.14.0` — CLI framework
 - `rich>=13.7.0` — Terminal UI and formatting
 - `pyyaml>=6.0` — Configuration files
 - `requests>=2.31.0` + `httpx>=0.27.0` + `aiohttp>=3.9.0` — HTTP

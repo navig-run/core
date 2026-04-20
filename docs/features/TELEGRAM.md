@@ -24,8 +24,6 @@ navig init
 
 ```bash
 navig start
-# or
-navig bot
 ```
 
 ## Runtime Behavior
