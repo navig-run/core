@@ -1962,7 +1962,7 @@ class TelegramCommandsMixin:
                 if not isinstance(issue, dict):
                     continue
                 summary = html.escape(str(issue.get("summary") or "").strip())
-                command = html.escape(str(issue.get("command") or "").strip())
+                command = str(issue.get("command") or "").strip()
                 if summary and command:
                     lines.append(f"  • {summary} → <code>{command}</code>")
             remaining = len(status_fix_issues) - 2
@@ -2373,6 +2373,9 @@ class TelegramCommandsMixin:
             "",
             "Tap a space to switch:",
         ]
+        for _sp_name in CANONICAL_SPACES:
+            _marker = "\u25b8 " if _sp_name == active else "  "
+            lines.append(f"{_marker}<code>{html.escape(_sp_name)}</code>")
 
         # Build 2-column grid of space buttons
         space_buttons: list[dict] = []
@@ -2636,7 +2639,7 @@ class TelegramCommandsMixin:
 
         esc = html.escape
         parts = [
-            f"✅ <b>Intake complete — <code>{esc(space)}</code></b>",
+            f"✅ <b>Intake completed — <code>{esc(space)}</code></b>",
             "",
         ]
         if answers.get("goal"):
@@ -3097,9 +3100,21 @@ class TelegramCommandsMixin:
 
         resolved = self._resolve_nl_command_intent(text)
         if not resolved:
-            # No command matched — let the conversational AI handle it (web search,
-            # general knowledge, chitchat). Returning False falls through to
-            # _dispatch_by_mode which uses the configured LLM.
+            # No command matched — show best-effort suggestions so the user
+            # knows what commands are available. If no suggestions can be
+            # generated, fall through to the conversational LLM.
+            suggestions = self._suggest_nl_commands(text, limit=3)
+            if suggestions:
+                sug_lines = ["\U0001f914 Not sure which command you mean.", "", "Try:"]
+                for _s in suggestions:
+                    sug_lines.append(f"\u2022 <code>{html.escape(_s['usage'])}</code>")
+                await self.send_message(
+                    chat_id,
+                    "\n".join(sug_lines),
+                    parse_mode="HTML",
+                    keyboard=self._nl_command_keyboard(suggestions, limit=3),
+                )
+                return True
             return False
 
         if resolved.get("ambiguous"):
