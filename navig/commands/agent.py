@@ -53,11 +53,22 @@ def _get_config_path() -> Path:
 
 def _detect_default_model() -> str:
     """Return provider:model matching the main NAVIG LLM config, or a safe fallback."""
+    import logging  # noqa: PLC0415
+
     try:
         from navig.llm_router import get_llm_router  # noqa: PLC0415
 
-        router = get_llm_router()
-        resolved = router.get_config("chat")
+        # Suppress the "Unknown provider" validator warning — we handle unknown
+        # providers gracefully and don't want noise on every config/install call.
+        _log = logging.getLogger("navig.llm_router")
+        _prev = _log.level
+        _log.setLevel(logging.ERROR)
+        try:
+            router = get_llm_router()
+            resolved = router.get_config("chat")
+        finally:
+            _log.setLevel(_prev)
+
         if resolved and resolved.provider and resolved.model:
             return f"{resolved.provider}:{resolved.model}"
     except Exception:
