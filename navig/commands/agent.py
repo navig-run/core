@@ -6,6 +6,7 @@ Commands for managing the autonomous agent mode.
 
 import sys
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -353,19 +354,21 @@ def agent_install(
         ch.console.print()
 
         # Show each field with auto-detect annotations
+        from rich.markup import escape as _escape
+
         _auto = "[dim](auto-detected)[/dim]"
         _explicit = ""
         ch.console.print(f"  Personality : {personality}")
         ch.console.print(f"  Mode        : {mode}")
         ch.console.print(
-            f"  AI model    : {detected_model}  {_auto}"
+            f"  AI model    : {_escape(detected_model)}  {_auto}"
         )
         if use_telegram and tg_from_env and not telegram:
             ch.console.print(
-                f"  Telegram    : enabled  [dim](detected running bot)[/dim]"
+                "  Telegram    : enabled  [dim](detected running bot)[/dim]"
             )
         elif use_telegram:
-            ch.console.print(f"  Telegram    : enabled")
+            ch.console.print("  Telegram    : enabled")
         else:
             ch.console.print(
                 "  Telegram    : disabled  [dim](no bot token found)[/dim]"
@@ -529,20 +532,34 @@ def agent_start(
             raise typer.Exit(1)
 
         if foreground:
-            # Run directly
-            ch.info("Starting agent in foreground...")
-            ch.console.print(f"  Personality: {agent_config.personality.profile}")
-            ch.console.print(f"  Mode: {agent_config.mode}")
+            # Show daemon relationship before blocking
+            try:
+                from navig.daemon.supervisor import NavigDaemon
+
+                daemon_running = NavigDaemon.is_running()
+            except Exception:  # noqa: BLE001
+                daemon_running = False
+
+            daemon_note = (
+                "[green]running[/green]" if daemon_running else "[yellow]stopped[/yellow]"
+            )
+            ch.info("Starting agent (foreground process)")
+            ch.console.print(f"  Personality : {agent_config.personality.profile}")
+            ch.console.print(f"  Mode        : {agent_config.mode}")
+            ch.console.print(f"  Daemon      : {daemon_note} (Telegram runs via daemon)")
             ch.console.print()
 
             import asyncio
 
             asyncio.run(run_agent(agent_config))
         else:
-            # Background mode - create a service or use subprocess
-            ch.info("Background mode - consider using 'navig agent service install'")
-            ch.info("For now, use: navig agent start --foreground &")
-            raise typer.Exit(1)
+            # --background is not yet implemented; direct users to the daemon
+            ch.warning(
+                "Background mode is not yet supported. "
+                "Use 'navig service start' to run Telegram/gateway as a background daemon."
+            )
+            ch.info("For a foreground session: navig agent start  (default)")
+            raise typer.Exit(0)
 
     except KeyboardInterrupt:
         ch.info("\nAgent stopped by user")
@@ -674,6 +691,24 @@ def agent_status(
             )
             ch.console.print(f"  Config: {config_path}")
 
+            # ---------- Daemon / Telegram section ----------
+            ch.console.print()
+            try:
+                from navig.daemon.supervisor import NavigDaemon
+
+                d_running = NavigDaemon.is_running()
+                d_pid = NavigDaemon.read_pid()
+                d_icon = "[green]Running[/green]" if d_running else "[red]Stopped[/red]"
+                ch.console.print(f"  Daemon (Telegram/gateway): {d_icon}")
+                if d_running and d_pid:
+                    ch.console.print(f"  Daemon PID: {d_pid}")
+                if not d_running:
+                    ch.console.print(
+                        "  [dim]Start daemon: navig service start[/dim]"
+                    )
+            except Exception:  # noqa: BLE001
+                ch.console.print("  Daemon: [dim]unknown[/dim]")
+
     except Exception as e:
         if plain:
             print(json.dumps({"error": str(e)}))
@@ -766,9 +801,12 @@ def agent_config_cmd(
         ch.console.print(f"  personality:  {config.personality.profile}")
 
         # brain.model — flag drift from live config
-        model_line = f"  brain.model:  {config.brain.model}"
+        from rich.markup import escape as _escape
+
+        model_val = _escape(config.brain.model)
+        model_line = f"  brain.model:  {model_val}"
         if config.brain.model != live_model:
-            model_line += f"  [dim](live: {live_model})[/dim]"
+            model_line += f"  [dim](live: {_escape(live_model)})[/dim]"
         ch.console.print(model_line)
 
         # telegram — flag when daemon has it live but config says False

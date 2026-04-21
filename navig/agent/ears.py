@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -237,6 +238,61 @@ class APIListener(InputListener):
         return web.json_response({"status": "healthy", "listener": "api"})
 
 
+class ConsoleListener(InputListener):
+    """
+    Console (stdin) listener for interactive foreground sessions.
+
+    Reads lines from stdin in a thread pool executor so it doesn't
+    block the asyncio event loop. Each line becomes an InputMessage
+    with source="console".
+    """
+
+    def __init__(self):
+        super().__init__("console")
+        self._task: asyncio.Task | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    async def start(self) -> None:
+        self._running = True
+        self._loop = asyncio.get_running_loop()
+        self._task = asyncio.create_task(self._read_loop())
+
+    async def stop(self) -> None:
+        self._running = False
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass  # task cancelled; expected during shutdown
+
+    async def _read_loop(self) -> None:
+        import concurrent.futures
+
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        loop = self._loop or asyncio.get_running_loop()
+
+        while self._running:
+            try:
+                line = await loop.run_in_executor(executor, sys.stdin.readline)
+                if not line:  # EOF
+                    break
+                text = line.strip()
+                if text:
+                    msg = InputMessage(
+                        source="console",
+                        content=text,
+                        user_id="local",
+                    )
+                    await self.on_message(msg)
+            except asyncio.CancelledError:
+                break
+            except Exception:  # noqa: BLE001
+                break
+
+        executor.shutdown(wait=False)
+
+
 class EmailListener(InputListener):
     """Email inbox listener using IMAP. Polls for unread messages."""
 
@@ -438,6 +494,13 @@ class Ears(Component):
             )
             webhook.set_callback(self._on_message_received)
             self._listeners["webhook"] = webhook
+
+        # Console listener — active in foreground when no other channel is live
+        # (always enabled; lets the user type directly into the terminal)
+        if getattr(self.config, "console_enabled", True):
+            console = ConsoleListener()
+            console.set_callback(self._on_message_received)
+            self._listeners["console"] = console
 
         # Email listeners (multi-account)
         for acct in getattr(self.config, "email_accounts", []):
