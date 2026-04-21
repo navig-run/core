@@ -253,6 +253,10 @@ class ConsoleListener(InputListener):
         self._loop: asyncio.AbstractEventLoop | None = None
 
     async def start(self) -> None:
+        if sys.stdin is None or getattr(sys.stdin, "closed", False):
+            return
+        if hasattr(sys.stdin, "isatty") and not sys.stdin.isatty():
+            return
         self._running = True
         self._loop = asyncio.get_running_loop()
         self._task = asyncio.create_task(self._read_loop())

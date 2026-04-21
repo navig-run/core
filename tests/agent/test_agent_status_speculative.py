@@ -36,6 +36,8 @@ def test_agent_status_plain_includes_speculative(monkeypatch, capsys, tmp_path: 
             "live": None,
         },
     )
+    monkeypatch.setattr("navig.daemon.supervisor.NavigDaemon.is_running", lambda: True)
+    monkeypatch.setattr("navig.daemon.supervisor.NavigDaemon.read_pid", lambda: 4242)
 
     agent_status(plain=True)
     out = capsys.readouterr().out.strip()
@@ -43,5 +45,7 @@ def test_agent_status_plain_includes_speculative(monkeypatch, capsys, tmp_path: 
 
     assert payload["installed"] is True
     assert payload["enabled"] is True
+    assert payload["daemon_running"] is True
+    assert payload["daemon_pid"] == 4242
     assert "speculative" in payload
     assert payload["speculative"]["enabled"] is True

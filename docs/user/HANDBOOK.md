@@ -5895,7 +5895,7 @@ NAVIG Agent Mode transforms your CLI tool into a living, autonomous entity that 
 # Install agent mode
 navig agent install --personality friendly
 
-# Start the agent
+# Start an interactive foreground session
 navig agent start
 
 # Check status
@@ -5904,6 +5904,10 @@ navig agent status
 # JSON output now includes speculative runtime telemetry
 navig agent status --plain
 ```
+
+`navig agent start` runs as a foreground process. If the `console` channel is active,
+you can type directly into the terminal and the agent replies inline. Telegram does
+not come from this foreground loop — it is managed by `navig service start`.
 
 ### 25.2 Architecture
 
@@ -5947,7 +5951,9 @@ navig agent service status
 navig agent service uninstall
 ```
 
-`navig agent status --plain` includes a `speculative` object with effective tuning values and live cache metrics (when a live speculative executor is initialized).
+`navig agent start --background` is currently a guidance-only path: it exits cleanly and tells you to use `navig service start` for daemon-backed Telegram/gateway workers.
+
+`navig agent status --plain` includes a `speculative` object with effective tuning values and live cache metrics (when a live speculative executor is initialized), plus `daemon_running` and `daemon_pid` fields so you can distinguish the foreground agent process from the background daemon.
 
 ### 25.4 Configuration
 

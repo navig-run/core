@@ -9,6 +9,9 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Add entries here until the next release, then move them under a new version heading. -->
 <!-- Run: git log v2.9.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
 
+### Fixed
+- **Clarify and repair `navig agent start` foreground UX** (`navig/agent/runner.py`, `navig/agent/ears.py`, `navig/commands/agent.py`): foreground agent sessions now write an `agent.pid` file so `navig agent status` / `navig agent stop` can track the live process; console stdin is wired through a new `ConsoleListener` so typing into `navig agent start` actually reaches the agent; console-sourced replies are printed back to the terminal; `navig agent start --background` now exits cleanly with guidance to use `navig service start`; and `navig agent status --plain` now includes `daemon_running` / `daemon_pid` so daemon-backed Telegram/gateway health is distinguishable from the foreground agent process.
+
 ## [2.9.0] - 2026-04-20
 
 ### Added

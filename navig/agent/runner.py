@@ -173,6 +173,10 @@ class Agent:
             # Format with personality
             formatted = self.soul.format_response(response)
 
+            if source == "console":
+                print(f"Agent: {formatted}", flush=True)
+                print(flush=True)
+
             # Emit response event
             await self.nervous_system.emit(
                 EventType.RESPONSE_GENERATED,
@@ -253,6 +257,8 @@ async def run_agent(config: AgentConfig | None = None) -> None:
         else:
             print()
             print("  Listening on active channels. Press Ctrl+C to stop.")
+            if "console" in active_channels:
+                print("  Console    : type a message and press Enter.")
         print()
 
         # Keep running until stopped

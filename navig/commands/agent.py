@@ -559,8 +559,10 @@ def agent_start(
                 "Use 'navig service start' to run Telegram/gateway as a background daemon."
             )
             ch.info("For a foreground session: navig agent start  (default)")
-            raise typer.Exit(0)
+            return
 
+    except typer.Exit:
+        raise
     except KeyboardInterrupt:
         ch.info("\nAgent stopped by user")
     except Exception as e:
@@ -657,6 +659,17 @@ def agent_status(
         speculative = get_speculative_runtime_snapshot()
 
         if plain:
+            daemon_running = False
+            daemon_pid = None
+            try:
+                from navig.daemon.supervisor import NavigDaemon
+
+                daemon_running = NavigDaemon.is_running()
+                daemon_pid = NavigDaemon.read_pid() if daemon_running else None
+            except Exception:  # noqa: BLE001
+                daemon_running = False
+                daemon_pid = None
+
             status = {
                 "installed": True,
                 "running": running,
@@ -664,6 +677,8 @@ def agent_status(
                 "enabled": config.enabled,
                 "mode": config.mode,
                 "personality": config.personality.profile,
+                "daemon_running": daemon_running,
+                "daemon_pid": daemon_pid,
                 "speculative": speculative,
             }
             print(json.dumps(status))

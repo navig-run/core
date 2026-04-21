@@ -4,8 +4,9 @@ Initializes the NAVIG agent runtime on the local machine. Creates the configurat
 directory structure under `~/.navig/agent/` and writes `config.yaml` with the
 specified personality, operating mode, and optional Telegram integration flag.
 
-Does **not** start the agent process. After install, use `navig agent start` or
-`navig service start` to launch the runtime.
+Does **not** start the agent process. After install, use `navig agent start` for
+a foreground interactive session, or `navig service start` for the background
+Telegram/gateway daemon.
 
 ---
 
@@ -95,8 +96,8 @@ The following directory structure is created:
 | Command | Purpose |
 |---------|---------|
 | `navig agent config` | Edit the installed configuration interactively |
-| `navig agent start` | Start the agent process (requires prior install) |
-| `navig agent status` | Show running state, mode, and personality |
+| `navig agent start` | Start the foreground agent process (requires prior install) |
+| `navig agent status` | Show foreground agent state plus daemon-backed Telegram/gateway state |
 | `navig agent personality` | Manage and switch personality profiles |
 | `navig service install` | Write daemon runtime files under `~/.navig/` |
-| `navig service start` | Launch the full daemon (includes agent + gateway) |
+| `navig service start` | Launch the background daemon for Telegram/gateway workers |
