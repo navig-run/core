@@ -23,7 +23,6 @@ import textwrap
 import typer
 
 from navig.lazy_loader import lazy_import
-from navig.platform.paths import config_dir
 from navig.platform.paths import log_dir as _log_dir
 
 ch = lazy_import("navig.console_helper")
@@ -107,9 +106,11 @@ def _spawn_stop_watchdog(duration: int = 30) -> None:
             | subprocess.CREATE_NEW_PROCESS_GROUP
             | subprocess.CREATE_NO_WINDOW
         )
+    from navig.daemon.service_manager import _pythonw_exe  # noqa: PLC0415
+
     try:
         subprocess.Popen(
-            [sys.executable, watchdog_path],
+            [_pythonw_exe(), watchdog_path],
             close_fds=True,
             creationflags=flags,
             stdout=subprocess.DEVNULL,
@@ -311,8 +312,18 @@ def service_start(
                 stderr=subprocess.DEVNULL,
             )
 
-        time.sleep(2)
-        if NavigDaemon.is_running():
+        # Poll for the daemon PID file instead of a fixed sleep — on slow
+        # Windows machines the daemon may take several seconds to write its
+        # PID file, causing a fixed 2 s wait to falsely report failure.
+        _POLL_INTERVAL = 1.0  # seconds between checks
+        _POLL_MAX = 10  # total attempts → up to 10 s
+        _started = False
+        for _attempt in range(_POLL_MAX):
+            time.sleep(_POLL_INTERVAL)
+            if NavigDaemon.is_running():
+                _started = True
+                break
+        if _started:
             # Re-enable the Task Scheduler task (may have been disabled by
             # a prior 'navig service stop') so logon/failure-restart fires again.
             if os.name == "nt":

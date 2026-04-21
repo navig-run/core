@@ -10,6 +10,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Run: git log v2.9.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
 
 ### Fixed
+- **Harden `navig service start` PID detection on slow Windows machines** (`navig/commands/service.py`): replaced the fixed `time.sleep(2)` + single `is_running()` check with a polling loop (up to 10 × 1 s) so the daemon is not falsely reported as failed when the PID file appears after the initial 2 s window. Also changed `_spawn_stop_watchdog()` to launch via `_pythonw_exe()` (i.e. `pythonw.exe` on Windows) instead of `sys.executable` (`python.exe`), eliminating the visible console window that would otherwise flash for up to 30 s during a stop sequence. Three regression tests added to `tests/service/test_service_cli.py`.
 - **Clarify and repair `navig agent start` foreground UX** (`navig/agent/runner.py`, `navig/agent/ears.py`, `navig/commands/agent.py`): foreground agent sessions now write an `agent.pid` file so `navig agent status` / `navig agent stop` can track the live process; console stdin is wired through a new `ConsoleListener` so typing into `navig agent start` actually reaches the agent; console-sourced replies are printed back to the terminal; `navig agent start --background` now exits cleanly with guidance to use `navig service start`; and `navig agent status --plain` now includes `daemon_running` / `daemon_pid` so daemon-backed Telegram/gateway health is distinguishable from the foreground agent process.
 
 ## [2.9.0] - 2026-04-20

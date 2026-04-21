@@ -181,6 +181,126 @@ def test_service_logs_rejects_zero_lines():
     assert result.exit_code != 0
 
 
+# ---------------------------------------------------------------------------
+# Regression tests added for Windows service reliability hardening
+# ---------------------------------------------------------------------------
+
+
+def test_service_start_polls_for_pid_on_slow_start(monkeypatch):
+    """service start must succeed even if the daemon PID file appears after
+    the first check — i.e., it polls rather than doing a single fixed wait."""
+    call_count = {"n": 0}
+
+    class SlowDaemon:
+        @staticmethod
+        def is_running():
+            call_count["n"] += 1
+            # Simulate: not running for first 3 polls, then appears.
+            return call_count["n"] >= 3
+
+        @staticmethod
+        def read_pid():
+            return 99999
+
+        @staticmethod
+        def stop_running_daemon():
+            return True
+
+    monkeypatch.setattr("navig.daemon.supervisor.NavigDaemon", SlowDaemon)
+    monkeypatch.setattr("navig.daemon.service_manager._pythonw_exe", lambda: "python")
+    monkeypatch.setattr("subprocess.Popen", lambda *a, **kw: None)
+    monkeypatch.setattr("time.sleep", lambda *_a, **_kw: None)
+    monkeypatch.setattr("navig.daemon.service_manager.stop_flag_is_set", lambda: False)
+    monkeypatch.setattr("navig.daemon.service_manager.task_scheduler_enable", lambda: None)
+
+    result = runner.invoke(service_app, ["start"])
+
+    assert result.exit_code == 0, result.output
+    assert "99999" in result.output
+    # Must have polled more than once
+    assert call_count["n"] >= 3
+
+
+def test_service_start_interactive_stop_flag_override_clears_both_guards(monkeypatch):
+    """An interactive user typing `navig service start` must clear both the
+    stop-intent flag and the watchdog deadline and proceed to start.
+
+    Note: uses direct function call instead of CliRunner because CliRunner
+    replaces sys.stdin with a non-interactive stream, defeating isatty()."""
+    import sys as _sys
+
+    cleared: dict[str, bool] = {"flag": False, "deadline": False}
+
+    class FakeDaemon:
+        _call = 0
+
+        @staticmethod
+        def is_running():
+            # First call: not running (allows start to proceed past the early-exit
+            # guard). Second call: running (the daemon has started).
+            FakeDaemon._call += 1
+            return FakeDaemon._call > 1
+
+        @staticmethod
+        def read_pid():
+            return 12345
+
+        @staticmethod
+        def stop_running_daemon():
+            return True
+
+    # Patch sys.stdin so isatty() returns True (simulates a real terminal).
+    monkeypatch.setattr(_sys, "stdin", type("FakeStdin", (), {"isatty": lambda self: True})())
+    monkeypatch.setattr("navig.daemon.supervisor.NavigDaemon", FakeDaemon)
+    monkeypatch.setattr("navig.daemon.service_manager._pythonw_exe", lambda: "python")
+    monkeypatch.setattr("subprocess.Popen", lambda *a, **kw: None)
+    monkeypatch.setattr("time.sleep", lambda *_a, **_kw: None)
+    monkeypatch.setattr("navig.daemon.service_manager.stop_flag_is_set", lambda: True)
+    monkeypatch.setattr(
+        "navig.daemon.service_manager.clear_stop_flag",
+        lambda: cleared.__setitem__("flag", True),
+    )
+    monkeypatch.setattr(
+        "navig.daemon.service_manager.clear_watchdog_deadline",
+        lambda: cleared.__setitem__("deadline", True),
+    )
+    monkeypatch.setattr("navig.daemon.service_manager.task_scheduler_enable", lambda: None)
+
+    from navig.commands.service import service_start
+
+    service_start(foreground=False)  # call directly — CliRunner would override sys.stdin
+
+    assert cleared["flag"] is True, "clear_stop_flag() must be called on interactive override"
+    assert cleared["deadline"] is True, "clear_watchdog_deadline() must be called on interactive override"
+
+
+def test_spawn_stop_watchdog_uses_pythonw_not_sys_executable(monkeypatch, tmp_path):
+    """_spawn_stop_watchdog must use _pythonw_exe() (pythonw.exe on Windows),
+    NOT sys.executable (python.exe), to avoid creating a visible console window."""
+    import sys
+    from navig.commands.service import _spawn_stop_watchdog
+
+    captured: dict[str, object] = {}
+
+    def _fake_popen(cmd, **kwargs):
+        captured["exe"] = cmd[0]
+
+    monkeypatch.setattr("navig.daemon.service_manager.DAEMON_DIR", tmp_path)
+    monkeypatch.setattr("navig.daemon.service_manager._pythonw_exe", lambda: "/fake/pythonw")
+    monkeypatch.setattr("subprocess.Popen", _fake_popen)
+    # Provide a fake deadline file so the watchdog script can be written
+    (tmp_path / "stop_watchdog_deadline").write_text("99999999999.0", encoding="utf-8")
+
+    _spawn_stop_watchdog(duration=1)
+
+    assert "exe" in captured, "Popen must have been called"
+    assert captured["exe"] == "/fake/pythonw", (
+        f"Watchdog must use _pythonw_exe(), got: {captured['exe']!r}"
+    )
+    # Must NOT use sys.executable directly
+    assert captured["exe"] != sys.executable
+
+
 def test_service_install_handles_malformed_existing_config(monkeypatch, tmp_path):
     bad_config = tmp_path / "daemon-config.json"
     bad_config.write_text("{bad-json", encoding="utf-8")
