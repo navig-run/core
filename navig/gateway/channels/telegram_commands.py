@@ -2485,7 +2485,8 @@ class TelegramCommandsMixin:
         ]
         await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
 
-    def _append_markdown_section(self, path: Path, heading: str, lines: list[str]) -> None:
+    @staticmethod
+    def _append_markdown_section(path: Path, heading: str, lines: list[str]) -> None:
         existing = ""
         if path.exists():
             existing = path.read_text(encoding="utf-8")
@@ -2512,7 +2513,7 @@ class TelegramCommandsMixin:
         date_label = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         vision = space_path / "VISION.md"
-        self._append_markdown_section(
+        TelegramCommandsMixin._append_markdown_section(
             vision,
             f"Intake {date_label}",
             [
@@ -2523,14 +2524,14 @@ class TelegramCommandsMixin:
         )
 
         roadmap = space_path / "ROADMAP.md"
-        self._append_markdown_section(
+        TelegramCommandsMixin._append_markdown_section(
             roadmap,
             f"Intake {date_label}",
             [f"- Outcome target (tomorrow): {answers.get('horizon', '')}"],
         )
 
         phase = space_path / "CURRENT_PHASE.md"
-        self._append_markdown_section(
+        TelegramCommandsMixin._append_markdown_section(
             phase,
             f"Intake {date_label}",
             [
