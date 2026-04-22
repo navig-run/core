@@ -46,6 +46,7 @@ from navig.gateway.channels.utils.decorators import (
     rate_limited,
     typing_context,
 )
+from navig.core.yaml_io import atomic_write_text
 from navig.platform.paths import config_dir, global_config_path, msg_trace_path
 from navig.ui.icons import icon as _ni
 
@@ -1968,7 +1969,7 @@ class TelegramCommandsMixin:
 
         # Compose the full card
         msg_parts: list[str] = [
-            f"🧭 <b>NAVIG</b> — <i>Session Snapshot</i>",
+            "🧭 <b>NAVIG Status</b> — <i>Session Snapshot</i>",
             f"<i>{now_utc}</i>",
             "",
             "<b>📍 Context</b>",
@@ -1981,9 +1982,10 @@ class TelegramCommandsMixin:
             "",
             f"{reminder_dot} <b>Reminders</b>   <code>{reminder_str} active</code>",
             "",
-            f"{readiness_icon} <b>Setup</b>   <code>{bar}</code>  {readiness_score}%",
+            f"{readiness_icon} <b>Setup</b>   <code>{bar}</code>  {readiness_score}%  <code>{html.escape(readiness_state)}</code>",
         ]
         if fix_hint_lines:
+            msg_parts.append("  <b>Pending fixes:</b>")
             msg_parts.extend(fix_hint_lines)
 
         msg_parts += [
@@ -2202,8 +2204,6 @@ class TelegramCommandsMixin:
 
         vision = space_path / "VISION.md"
         if not vision.exists():
-            from navig.core.yaml_io import atomic_write_text
-
             atomic_write_text(
                 vision,
                 f"---\ngoal: {space} goals\n---\n\n# {space.title()} Vision\n\n",
@@ -2664,9 +2664,9 @@ class TelegramCommandsMixin:
             "",
         ]
         if answers.get("goal"):
-            parts += [f"<b>30-day goal:</b>", f"  {esc(answers['goal'])}", ""]
+            parts += ["<b>30-day goal:</b>", f"  {esc(answers['goal'])}", ""]
         if answers.get("horizon"):
-            parts += [f"<b>Tomorrow's outcome:</b>", f"  {esc(answers['horizon'])}", ""]
+            parts += ["<b>Tomorrow's outcome:</b>", f"  {esc(answers['horizon'])}", ""]
         detail_pairs = []
         if answers.get("constraint"):
             detail_pairs.append(f"<b>Constraint:</b> {esc(answers['constraint'])}")
@@ -4833,7 +4833,7 @@ class TelegramCommandsMixin:
 
             def _pick_text(preferred: tuple[str, ...], fallback: str = "") -> str:
                 """Like _pick but excludes vision/multimodal models."""
-                text_models = [(r, l) for r, l in lowered if not any(vt in l for vt in _VISION_TOKENS)]
+                text_models = [(r, lw) for r, lw in lowered if not any(vt in lw for vt in _VISION_TOKENS)]
                 for raw, low in text_models:
                     if any(token in low for token in preferred):
                         return raw
@@ -6698,13 +6698,13 @@ class TelegramCommandsMixin:
             return
 
         if ipv4:
-            lines.append(f"  <b>A</b>")
+            lines.append("  <b>A</b>")
             for ip in ipv4[:8]:
                 lines.append(f"    <code>{html.escape(ip)}</code>")
         if ipv6:
             if ipv4:
                 lines.append("")
-            lines.append(f"  <b>AAAA</b>")
+            lines.append("  <b>AAAA</b>")
             for ip in ipv6[:4]:
                 lines.append(f"    <code>{html.escape(ip)}</code>")
 
@@ -6717,8 +6717,8 @@ class TelegramCommandsMixin:
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=8)
             out = stdout.decode(errors="replace")
             mx_records: list[tuple[int, str]] = []
-            for l in out.splitlines():
-                ll = l.strip()
+            for ln in out.splitlines():
+                ll = ln.strip()
                 if "mail exchanger" in ll.lower() or ("MX" in ll and "=" in ll):
                     m = _re.search(r"preference\s*=\s*(\d+).*?exchanger\s*=\s*(\S+)", ll, _re.I)
                     if m:
@@ -6741,8 +6741,8 @@ class TelegramCommandsMixin:
             stdout2, _ = await asyncio.wait_for(proc2.communicate(), timeout=8)
             out2 = stdout2.decode(errors="replace")
             txt_records: list[str] = []
-            for l in out2.splitlines():
-                ll = l.strip()
+            for ln in out2.splitlines():
+                ll = ln.strip()
                 if "v=spf" in ll.lower() or ('"' in ll and "text" in ll.lower()):
                     # strip quotes and label
                     val = _re.sub(r'^.*?"(.*?)".*$', r"\1", ll)
@@ -6792,19 +6792,7 @@ class TelegramCommandsMixin:
         lines: list[str] = [f"🔐  <b>SSL certificate</b>  —  <code>{html.escape(domain)}</code>  :{port_label}", DIV]
 
         def _fmt_cert_date(s: str) -> str:
-            """'Mar 30 08:35:08 2026 GMT' → 'Mar 30, 2026'"""
-            try:
-                dt = datetime.datetime.strptime(s, "%b %d %H:%M:%S %Y %Z")
-                return dt.strftime("%b %-d, %Y")
-            except Exception:
-                try:
-                    dt = datetime.datetime.strptime(s, "%b %d %H:%M:%S %Y %Z")
-                    return s
-                except Exception:
-                    return s
-
-        # Windows strftime doesn't support %-d — use a small helper
-        def _fmt_cert_date(s: str) -> str:  # noqa: F811
+            """'Mar 30 08:35:08 2026 GMT' → 'Mar 30, 2026' (cross-platform)."""
             try:
                 dt = datetime.datetime.strptime(s.strip(), "%b %d %H:%M:%S %Y %Z")
                 return f"{dt.strftime('%b')} {dt.day}, {dt.year}"
@@ -6867,7 +6855,7 @@ class TelegramCommandsMixin:
                 pass
 
         except ssl.SSLCertVerificationError as exc:
-            lines.append(f"  ⚠️  Verification failed")
+            lines.append("  ⚠️  Verification failed")
             lines.append(f"  <i>{html.escape(str(exc))}</i>")
         except ssl.SSLError as exc:
             lines.append(f"  ❌  SSL error: <i>{html.escape(str(exc))}</i>")
@@ -7053,7 +7041,7 @@ class TelegramCommandsMixin:
             out_lines.append("")
 
         if name_servers:
-            out_lines.append(f"  🌐  <b>Name servers</b>")
+            out_lines.append("  🌐  <b>Name servers</b>")
             for ns in name_servers[:6]:
                 out_lines.append(f"      <code>{html.escape(ns)}</code>")
             out_lines.append("")
@@ -7477,7 +7465,7 @@ class TelegramCommandsMixin:
                 shown += 1  # noqa: SIM113
 
             if len(list(resolved.iterdir())) > 50 if resolved.is_dir() else False:
-                lines.append(f"  <i>… and more</i>")
+                lines.append("  <i>… and more</i>")
             lines.append(f"\n<i>─ {now} ─</i>")
         else:
             # ── Remote: use navig file list ──────────────────────────────────
@@ -8369,7 +8357,7 @@ class TelegramCommandsMixin:
                 timeout=_SHORT_CMD_TIMEOUT,
             )
             stdout, _ = await p.communicate()
-            lines.append(f"\n<b>🖥️ Server</b>")
+            lines.append("\n<b>🖥️ Server</b>")
             lines.append(f"  ⏱ Uptime: <code>{stdout.decode().strip()}</code>")
         except Exception:  # noqa: BLE001
             # Fallback for Windows (no `uptime` command)
@@ -8383,7 +8371,7 @@ class TelegramCommandsMixin:
                 _d, _r = divmod(int(_delta.total_seconds()), 86400)
                 _h, _r = divmod(_r, 3600)
                 _m = _r // 60
-                lines.append(f"\n<b>🖥️ Server</b>")
+                lines.append("\n<b>🖥️ Server</b>")
                 lines.append(f"  ⏱ Uptime: <code>{_d}d {_h}h {_m}m ({_pf.system()})</code>")
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical

@@ -374,6 +374,31 @@ async def test_space_command_switches_and_prints_kickoff(monkeypatch, tmp_path):
     assert any("Top next actions:" in m[1] for m in bot.messages)
 
 
+async def test_space_command_bootstraps_missing_roadmap_when_vision_exists(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_store = FakeContinuationStore()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    repo = tmp_path / "repo"
+    plans_dir = repo / ".navig" / "plans"
+    plans_dir.mkdir(parents=True, exist_ok=True)
+    (plans_dir / "DEV_PLAN.md").write_text("- [ ] Prepare incident runbook\n", encoding="utf-8")
+    monkeypatch.chdir(repo)
+
+    space_dir = Path(fake_cfg.global_config_dir) / "spaces" / "devops"
+    space_dir.mkdir(parents=True, exist_ok=True)
+    (space_dir / "VISION.md").write_text("# Existing Vision\n", encoding="utf-8")
+    (space_dir / "CURRENT_PHASE.md").write_text("# Existing Phase\n", encoding="utf-8")
+
+    await bot._handle_space(123, 456, "/space devops")
+
+    assert (space_dir / "ROADMAP.md").exists()
+    assert any("Active space: <code>devops</code>" in m[1] for m in bot.messages)
+
+
 async def test_spaces_command_lists_devops_and_sysops(monkeypatch, tmp_path):
     bot = _make_dummy_bot()
     fake_cfg = _FakeConfigManager(tmp_path / "global")
@@ -563,6 +588,38 @@ async def test_intake_flow_writes_space_docs(monkeypatch, tmp_path):
     assert (health_dir / "ROADMAP.md").exists()
     assert (health_dir / "CURRENT_PHASE.md").exists()
     assert "Intake" in (health_dir / "VISION.md").read_text(encoding="utf-8")
+    assert any("Intake completed" in m[1] for m in bot.messages)
+
+
+async def test_intake_flow_handles_partial_space_docs(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    health_dir = Path(fake_cfg.global_config_dir) / "spaces" / "health"
+    health_dir.mkdir(parents=True, exist_ok=True)
+    (health_dir / "VISION.md").write_text("# Existing Vision\n", encoding="utf-8")
+    (health_dir / "CURRENT_PHASE.md").write_text("# Existing Phase\n", encoding="utf-8")
+
+    await bot._handle_intake(123, 456, "/intake health")
+    assert any("Intake started" in m[1] for m in bot.messages)
+
+    handled = await bot._handle_intake_reply(123, 456, "Improve sleep and recovery")
+    assert handled is True
+    handled = await bot._handle_intake_reply(
+        123, 456, "Have a repeatable bedtime routine by tomorrow"
+    )
+    assert handled is True
+    handled = await bot._handle_intake_reply(123, 456, "Late-night screen time")
+    assert handled is True
+    handled = await bot._handle_intake_reply(
+        123, 456, "I assume I can sleep well without planning evenings"
+    )
+    assert handled is True
+
+    assert (health_dir / "ROADMAP.md").exists()
     assert any("Intake completed" in m[1] for m in bot.messages)
 
 
