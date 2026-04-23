@@ -40,13 +40,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from navig.core.yaml_io import atomic_write_text
 from navig.gateway.channels.types import MessageMetadata
 from navig.gateway.channels.utils.decorators import (
     error_handled,
     rate_limited,
     typing_context,
 )
-from navig.core.yaml_io import atomic_write_text
 from navig.platform.paths import config_dir, global_config_path, msg_trace_path
 from navig.ui.icons import icon as _ni
 
@@ -1936,7 +1936,8 @@ class TelegramCommandsMixin:
             pass  # best-effort; init status may not be available
 
         # ── Assemble message ────────────────────────────────────────────────────
-        from datetime import datetime, timezone as _tz
+        from datetime import datetime
+        from datetime import timezone as _tz
         now_utc = datetime.now(_tz.utc).strftime("%H:%M UTC, %d %b %Y")
 
         # Readiness progress bar (10 chars wide)

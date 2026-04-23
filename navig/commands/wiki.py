@@ -24,6 +24,7 @@ import yaml
 
 from navig import console_helper as ch
 from navig.config import ConfigManager
+from navig.core.yaml_io import atomic_write_text
 from navig.platform.paths import config_dir
 
 # Wiki folder structure
@@ -896,8 +897,6 @@ def cmd_edit(
                 page_path = wiki_path / "knowledge" / "concepts" / f"{page}.md"
 
             page_path.parent.mkdir(parents=True, exist_ok=True)
-            from navig.core.yaml_io import atomic_write_text
-
             atomic_write_text(
                 page_path,
                 f"# {Path(page).stem.replace('-', ' ').title()}\n\n",

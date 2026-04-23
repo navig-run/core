@@ -125,7 +125,7 @@ async def handle_deck_vault_add(request: "web.Request") -> "web.Response":
                 "ok": True,
                 "id": cred_id,
                 "provider": provider,
-                "key_preview": _mask_key(api_key),
+                "key_preview": mask_secret(api_key, show_prefix=6),
             }
         )
     except Exception as e:

@@ -31,7 +31,6 @@ dependency on Telegram or any transport is taken at this layer.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import time

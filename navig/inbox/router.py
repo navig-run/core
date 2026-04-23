@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+from navig.core.yaml_io import atomic_write_text
 from navig.inbox.classifier import ClassifyResult
 
 logger = logging.getLogger("navig.inbox.router")

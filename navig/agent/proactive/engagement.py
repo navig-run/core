@@ -7,7 +7,7 @@ proactive actions to take based on:
 - Time of day / time since last interaction
 - Cooldown timers (prevent spamming)
 - Soul mood (personality-aware delivery)
-- HEARTBEAT.md-driven task list 
+- HEARTBEAT.md-driven task list
 
 Architecture heartbeat-runner + cron-service:
 - HEARTBEAT.md as an LLM-readable task list that the heartbeat

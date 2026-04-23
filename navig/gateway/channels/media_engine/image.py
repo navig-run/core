@@ -40,9 +40,6 @@ except Exception:  # pragma: no cover
     _PRUL: dict = {}
 
 from navig.gateway.channels.media_engine._retry import (
-    DEFAULT_RETRIES as _RETRIES,
-)
-from navig.gateway.channels.media_engine._retry import (
     DEFAULT_TIMEOUT as _TIMEOUT,
 )
 from navig.gateway.channels.media_engine._retry import (

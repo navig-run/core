@@ -9,6 +9,7 @@ import typer
 from rich.table import Table
 
 from navig.console_helper import get_console
+from navig.core.yaml_io import atomic_write_text
 from navig.plans.frontmatter import parse_frontmatter_with_body as _split_frontmatter
 from navig.plans.frontmatter import render_frontmatter
 from navig.spaces import get_default_space, normalize_space_name

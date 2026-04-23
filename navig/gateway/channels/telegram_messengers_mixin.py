@@ -177,17 +177,12 @@ class TelegramMessengersMixin:
             if is_active:
                 any_active = True
                 status_icon = "✅"
-                status_text = "active"
             elif vault_ok and not enabled:
                 status_icon = "⚡"
-                status_text = "credentials ready — disabled"
             elif missing:
                 status_icon = "🔒"
-                n = len(missing)
-                status_text = f"not configured — {n} credential{'s' if n != 1 else ''} missing"
             else:
                 status_icon = "⏸"
-                status_text = "disabled"
 
             btn_text = f"{icon}  {label}  {status_icon}"
 

@@ -91,7 +91,7 @@ def execute_tool(payload: dict):
     try:
         req, spec = validate_request(payload)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     with db_session() as session:
         tenant_id = _tenant_id(session, req.tenant_slug)

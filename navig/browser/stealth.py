@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from navig.browser.a11y import annotate_a11y_snapshot
 from navig.debug_logger import get_debug_logger
 
 logger = get_debug_logger()
@@ -308,30 +309,7 @@ class StealthController:
     async def get_a11y_snapshot_with_refs(self) -> tuple:
         """Annotate ARIA snapshot with numeric [ref] IDs."""
         raw = await self.get_a11y_tree()
-        if not raw:
-            return "", {}
-        ref_map: dict = {}
-        annotated_lines: list = []
-        ref_id = 0
-        import re as _re  # hoisted
-
-        for line in raw.splitlines():
-            stripped = line.lstrip()
-            if stripped.startswith("- /"):
-                annotated_lines.append(line)
-                continue
-            if stripped.startswith("- "):
-                rest = stripped[2:]
-                m = _re.match(r'(\w[\w\s]*)\s*(?:"([^"]*)"|\[([^\]]*)\])?', rest)
-                role = m.group(1).strip() if m else rest.split()[0] if rest.split() else ""
-                name = (m.group(2) or m.group(3) or "").strip() if m else ""
-                ref_map[ref_id] = {"role": role, "name": name, "raw_line": line}
-                indent = line[: len(line) - len(stripped)]
-                annotated_lines.append(f"{indent}- [{ref_id}] {rest}")
-                ref_id += 1
-            else:
-                annotated_lines.append(line)
-        return "\n".join(annotated_lines), ref_map
+        return annotate_a11y_snapshot(raw)
 
     async def get_interactive_elements_fast(self, limit: int = 50) -> list:
         """Single-JS-eval interactive element scan."""

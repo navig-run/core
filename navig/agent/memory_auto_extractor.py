@@ -106,17 +106,17 @@ class ExtractionConfig:
     def from_dict(cls, d: dict[str, Any] | None) -> ExtractionConfig:
         if not d:
             return cls()
-            
+
         try:
             interval = int(d.get("extraction_interval", MEMORY_EXTRACTION_INTERVAL))
         except (ValueError, TypeError):
             interval = MEMORY_EXTRACTION_INTERVAL
-            
+
         try:
             max_facts = int(d.get("max_facts_per_extraction", MAX_FACTS_PER_EXTRACTION))
         except (ValueError, TypeError):
             max_facts = MAX_FACTS_PER_EXTRACTION
-            
+
         try:
             min_confidence = float(d.get("min_confidence", MIN_CONFIDENCE))
         except (ValueError, TypeError):

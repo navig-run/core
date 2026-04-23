@@ -121,6 +121,8 @@ Constraints:
             code = match.group(1).strip() if match else artifact
 
             # Write new code atomically, then swap original to backup
+            backup_path = self.target_file.with_name(f"{self.target_file.name}.bak")
+            backup_created = False
             _tmp_path: Path | None = None
             try:
                 _fd, _tmp = tempfile.mkstemp(dir=self.target_file.parent, suffix=".tmp")
@@ -129,7 +131,9 @@ Constraints:
                     _fh.write(code)
                 # Only rename original after the new content is safely on-disk
                 if self.target_file.exists():
+                    backup_path.unlink(missing_ok=True)
                     self.target_file.rename(backup_path)
+                    backup_created = True
                 os.replace(_tmp_path, self.target_file)
                 _tmp_path = None
             finally:
@@ -137,6 +141,7 @@ Constraints:
                     _tmp_path.unlink(missing_ok=True)
 
             success(f"Fixed code saved to {self.target_file}")
-            info(f"Backup at {backup_path}")
+            if backup_created:
+                info(f"Backup at {backup_path}")
         except Exception as e:
             error(f"Failed to save fix: {e}")

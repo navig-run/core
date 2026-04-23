@@ -183,7 +183,7 @@ if PYDANTIC_AVAILABLE:
 
                 warnings.warn(
                     "API key appears to be hardcoded. "
-                    "Consider using environment variables: ${OPENROUTER_API_KEY}"
+                    "Consider using environment variables: ${OPENROUTER_API_KEY}", stacklevel=2
                 )
             return v
 
@@ -380,7 +380,7 @@ if PYDANTIC_AVAILABLE:
                 if not v.startswith("sk-or-"):
                     import warnings
 
-                    warnings.warn("OpenRouter API keys typically start with 'sk-or-'")
+                    warnings.warn("OpenRouter API keys typically start with 'sk-or-'", stacklevel=2)
             return v
 
     class HostConfig(BaseModel):
@@ -439,7 +439,7 @@ if PYDANTIC_AVAILABLE:
 
                 warnings.warn(
                     "Hardcoded password detected. "
-                    "Consider using SSH keys or ${SSH_PASSWORD} syntax."
+                    "Consider using SSH keys or ${SSH_PASSWORD} syntax.", stacklevel=2
                 )
             return v
 
@@ -451,7 +451,7 @@ if PYDANTIC_AVAILABLE:
 
                 warnings.warn(
                     "Key auth selected but no ssh_key specified. "
-                    "Will try default locations (~/.ssh/id_rsa, etc.)"
+                    "Will try default locations (~/.ssh/id_rsa, etc.)", stacklevel=2
                 )
             if self.auth_method == AuthMethod.PASSWORD and not self.password:
                 raise ValueError("Password auth selected but no password specified")
@@ -499,7 +499,7 @@ def validate_global_config(raw: dict[str, Any], strict: bool = False) -> GlobalC
         import warnings
 
         warnings.warn(
-            "Pydantic not installed. Config validation disabled. Install with: pip install pydantic"
+            "Pydantic not installed. Config validation disabled. Install with: pip install pydantic", stacklevel=2
         )
         return None
 

@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from navig.core.dict_utils import utc_now
+from navig.core.yaml_io import atomic_write_text
 from navig.platform import paths
 
 

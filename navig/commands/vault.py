@@ -1239,7 +1239,6 @@ def vault_check_all(
 
             result = TestResult(success=False, message=f"Unexpected error: {exc}")
 
-        status_icon = "\u2705" if result.success else "\u274c"
         if not result.success:
             any_failed = True
 

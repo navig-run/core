@@ -153,17 +153,17 @@ class ConversationHistory:
         """
         if not self._messages:
             return
-            
+
         cutoff = time.time() - self.SESSION_MAX_AGE_SECONDS
         active_msgs = []
         for m in self._messages:
             if m.get("ts", time.time()) >= cutoff:
                 active_msgs.append(m)
-                
+
         if not active_msgs and self._messages:
             # We just cleared the entire in-memory state because it was stale.
             self._session_is_fresh = True
-            
+
         self._messages = active_msgs
 
     def _truncate(self) -> None:

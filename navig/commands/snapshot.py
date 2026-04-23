@@ -200,7 +200,7 @@ def snapshot_restore(
     if ok:
         ch.success(f"Restored {filepath} from turn {target.turn_id}.")
     else:
-        ch.error(f"Restore failed — see debug log for details.")
+        ch.error("Restore failed — see debug log for details.")
         raise typer.Exit(1)
 
 

@@ -20,7 +20,6 @@ Design principles
 from __future__ import annotations
 
 import json
-import sys
 from typing import Any
 
 from navig import console_helper as ch
@@ -241,7 +240,7 @@ def run_messaging_wizard() -> None:
                 all_saved = False
 
         if not all_saved:
-            ch.warning(f"Some credentials could not be saved. Check vault access.")
+            ch.warning("Some credentials could not be saved. Check vault access.")
             ch.newline()
             continue
 

@@ -792,6 +792,10 @@ class ConversationalAgent:
             collected_results: list[tuple[str, str]] = []
 
             if parallel_batch:
+                par_results = await asyncio.gather(
+                    *[_dispatch_single(tool_call) for tool_call in parallel_batch],
+                    return_exceptions=True,
+                )
                 for idx, result in enumerate(par_results):
                     if isinstance(result, BaseException):
                         collected_results.append((parallel_batch[idx].id, f"[Tool error: {result}]"))

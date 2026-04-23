@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from navig.core.yaml_io import safe_load_yaml
+from navig.core.yaml_io import atomic_write_text, safe_load_yaml
 
 _SENTINEL = ".workspace_to_spaces.migrated"
 

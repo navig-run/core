@@ -84,7 +84,6 @@ class PluginMeta:
     version: str = "1.0.0"
 
     def __str__(self) -> str:
-        status_icon = ""  # filled in by the loader when rendering /plugins list
         return f"{self.name} v{self.version} — {self.description}"
 
 

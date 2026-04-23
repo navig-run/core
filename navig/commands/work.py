@@ -33,6 +33,7 @@ from pathlib import Path
 import typer
 
 from navig import console_helper as ch
+from navig.core.yaml_io import atomic_write_text
 
 _log = logging.getLogger(__name__)
 

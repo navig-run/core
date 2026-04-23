@@ -25,11 +25,11 @@ def format_checkdomain(result: dict[str, Any]) -> str:
     lines = [f"{icon} *{domain}*" if domain else f"{icon} *Unknown domain*"]
 
     if status == "available":
-        lines.append(f"This domain appears to be *available* for registration.")
+        lines.append("This domain appears to be *available* for registration.")
     elif status == "taken":
-        lines.append(f"This domain is *already registered*.")
+        lines.append("This domain is *already registered*.")
     else:
-        lines.append(f"Could not determine availability.")
+        lines.append("Could not determine availability.")
 
     if details:
         lines.append(f"\n_{details}_")

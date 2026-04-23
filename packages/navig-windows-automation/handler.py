@@ -106,6 +106,12 @@ def cmd_ahk_run(args: dict, ctx: Any = None) -> dict:
     try:
         adapter = _get_adapter()
         result = adapter.run_script(script)
+        if not result.get("success", False):
+            return {
+                "status": "error",
+                "message": result.get("stderr") or "AHK execution failed",
+                "data": result,
+            }
         return {"status": "ok", "data": result}
     except Exception as exc:
         return {"status": "error", "message": str(exc)}
@@ -127,7 +133,12 @@ def cmd_ahk_type(args: dict, ctx: Any = None) -> dict:
         return {"status": "error", "message": "Windows only"}
     try:
         adapter = _get_adapter()
-        adapter.send_input(text, window_title=window or None)
+        result = adapter.send_input(text, window_title=window or None)
+        if not result.success:
+            return {
+                "status": "error",
+                "message": result.stderr or "AHK input failed",
+            }
         return {"status": "ok", "data": {"typed": len(text)}}
     except Exception as exc:
         return {"status": "error", "message": str(exc)}
@@ -151,7 +162,12 @@ def cmd_ahk_click(args: dict, ctx: Any = None) -> dict:
         return {"status": "error", "message": "Windows only"}
     try:
         adapter = _get_adapter()
-        adapter.click(int(x), int(y), button=button)
+        result = adapter.click(int(x), int(y), button=button)
+        if not result.success:
+            return {
+                "status": "error",
+                "message": result.stderr or "AHK click failed",
+            }
         return {"status": "ok", "data": {"x": x, "y": y, "button": button}}
     except Exception as exc:
         return {"status": "error", "message": str(exc)}

@@ -32,6 +32,7 @@ from navig.core.file_permissions import set_owner_only_file_permissions
 from navig.core.yaml_io import atomic_write_text
 
 from .crypto import CryptoEngine, CryptoError
+from .secret_str import SecretStr
 from .session import SessionStore, VaultSession
 from .store import VaultStore
 from .types import (
@@ -271,8 +272,6 @@ class Vault:
         ------
         KeyError : Item not found.
         """
-        from navig.vault.secret_str import SecretStr  # noqa: PLC0415
-
         item = self._store.get(label)
         if item is None:
             raise KeyError(f"Vault item not found: {label!r}")

@@ -32,7 +32,7 @@ from navig.providers._local_defaults import _LLAMACPP_BASE_URL
 _log = logging.getLogger(__name__)
 
 from navig.core.file_permissions import set_owner_only_file_permissions
-from navig.core.yaml_io import safe_load_yaml
+from navig.core.yaml_io import atomic_write_text, safe_load_yaml
 
 from .engine import EngineConfig, OnboardingStep, StepResult
 from .genesis import GenesisData
@@ -532,6 +532,7 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
     def _detect_provider_key(provider_id: str) -> tuple[str, str]:
         """Return *(env_var_name, key_value)* for *provider_id*, or ('', '')."""
         try:
+            from navig.providers.registry import get_provider
             from navig.providers.source_scan import provider_env_key  # noqa: F401
 
             manifest = get_provider(provider_id)
@@ -613,12 +614,6 @@ def _step_ai_provider(navig_dir: Path) -> OnboardingStep:
             for pid_det, var_name in env_detected.items():
                 label_det = next((p.display_name for p in providers if p.id == pid_det), pid_det)
                 ch.dim(f"    · {var_name}  →  {label_det}")
-
-        default_idx = 1
-        for i, p in enumerate(providers, start=1):
-            if existing_vault.get(p.id, False):
-                default_idx = i
-                break
 
         try:
             current_provider = marker.read_text(encoding="utf-8").strip() if marker.exists() else ""

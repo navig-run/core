@@ -97,22 +97,22 @@ class ModelSlot:
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> ModelSlot:
         defaults = d.get("defaults", {})
-        
+
         try:
             max_tokens = int(defaults.get("max_tokens", d.get("max_tokens", 512)))
         except (ValueError, TypeError):
             max_tokens = 512
-            
+
         try:
             temperature = float(defaults.get("temperature", d.get("temperature", 0.7)))
         except (ValueError, TypeError):
             temperature = 0.7
-            
+
         try:
             num_ctx = int(defaults.get("num_ctx", d.get("num_ctx", 4096)))
         except (ValueError, TypeError):
             num_ctx = 4096
-            
+
         return cls(
             provider=d.get("provider", ""),
             model=d.get("model", ""),

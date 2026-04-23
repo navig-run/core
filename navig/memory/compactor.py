@@ -32,9 +32,8 @@ Usage::
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Callable, Protocol
+from dataclasses import dataclass
+from typing import Protocol
 
 from navig.memory.chat_store import (
     _DEFAULT_COMPACT_AFTER_DAYS,

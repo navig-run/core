@@ -6,6 +6,7 @@ from typing import Any
 
 from navig import console_helper as ch
 from navig.core.file_permissions import set_owner_only_file_permissions
+from navig.core.yaml_io import atomic_write_text
 from navig.platform.paths import config_dir
 
 logger = logging.getLogger(__name__)

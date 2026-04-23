@@ -425,17 +425,17 @@ class CacheStats:
         - ``cache_read_input_tokens``
         """
         self.api_calls += 1
-        
+
         try:
             self.total_input_tokens += int(usage.get("input_tokens", 0))
         except (ValueError, TypeError):
             pass
-            
+
         try:
             self.cache_creation_tokens += int(usage.get("cache_creation_input_tokens", 0))
         except (ValueError, TypeError):
             pass
-            
+
         try:
             self.cache_read_tokens += int(usage.get("cache_read_input_tokens", 0))
         except (ValueError, TypeError):
