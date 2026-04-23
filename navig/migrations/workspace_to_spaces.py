@@ -130,24 +130,32 @@ def migrate_workspace_to_spaces(
         space_cfg = cfg.get("space", {})
         if not isinstance(space_cfg, dict):
             space_cfg = {}
-        space_cfg["active"] = active
-        cfg["space"] = space_cfg
-        cfg["active_space"] = active
+        if space_cfg.get("active") != active:
+            space_cfg["active"] = active
+            config_changed = True
+        if cfg.get("space") != space_cfg:
+            cfg["space"] = space_cfg
+            config_changed = True
+        if cfg.get("active_space") != active:
+            cfg["active_space"] = active
+            config_changed = True
 
         legacy_spaces = cfg.get("spaces", {})
         if isinstance(legacy_spaces, dict):
             legacy_spaces.pop("active", None)
             if legacy_spaces:
-                cfg["spaces"] = legacy_spaces
-            else:
+                if cfg.get("spaces") != legacy_spaces:
+                    cfg["spaces"] = legacy_spaces
+                    config_changed = True
+            elif "spaces" in cfg:
                 cfg.pop("spaces", None)
-
-        config_changed = True
+                config_changed = True
 
         if config_changed or not config_file.exists():
             _write_config(config_file, cfg)
         cache_file.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(cache_file, active)
+        if not cache_file.exists() or cache_file.read_text(encoding="utf-8").strip() != active:
+            atomic_write_text(cache_file, active)
 
         # Ensure default space files are always scaffolded (idempotent — never overwrites)
         try:
