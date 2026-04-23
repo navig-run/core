@@ -3343,6 +3343,14 @@ class TelegramChannel:
         """Send a response with template limits, optional keyboard, and voice reply."""
         # Strip internal LLM reasoning tags before any further processing
         response = self._strip_internal_tags(response)
+        # Strip any EXPLORE_Q: marker the LLM may have leaked into non-REASON paths.
+        # (In REASON mode it is extracted earlier; this guards all other paths.)
+        if HAS_KEYBOARDS and "EXPLORE_Q:" in response:
+            try:
+                from navig.gateway.channels.telegram_keyboards import extract_explore_questions
+                response, _ = extract_explore_questions(response)
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; never block the reply
         # Convert standard Markdown (**bold**, ## heading) to Telegram HTML
         response = TelegramChannel._md_to_html(response)
         parts = None
