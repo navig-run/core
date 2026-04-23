@@ -2868,7 +2868,13 @@ class TelegramCommandsMixin:
                 overlap = len(tokens & p_tokens)
                 if overlap:
                     score = max(score, overlap)
-                if phrase and phrase.lower() in lowered:
+                # Only award the substring bonus when the phrase is present as a
+                # complete word (not as a prefix/suffix inside another word).
+                # e.g. "run" must NOT match inside "blade runner".
+                if phrase and re.search(
+                    r"(?<![a-z0-9_])" + re.escape(phrase.lower()) + r"(?![a-z0-9_])",
+                    lowered,
+                ):
                     score = max(score, 3)
 
             if score > 0:
@@ -2876,14 +2882,6 @@ class TelegramCommandsMixin:
 
         scored.sort(key=lambda row: (-row[0], row[1]))
         suggestions = [{"command": c, "usage": u} for _, c, u in scored[:limit]]
-
-        if not suggestions:
-            # Command-first fallback suggestions for action-oriented messages.
-            suggestions = [
-                {"command": "status", "usage": "/status"},
-                {"command": "help", "usage": "/help"},
-                {"command": "hosts", "usage": "/hosts"},
-            ][:limit]
         return suggestions
 
     def _nl_command_keyboard(
