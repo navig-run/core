@@ -17,6 +17,10 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+pytest.importorskip("telegram", reason="python-telegram-bot not installed")
+
 # ---------------------------------------------------------------------------
 # Make imports work from tests/ subdirectory
 # ---------------------------------------------------------------------------
