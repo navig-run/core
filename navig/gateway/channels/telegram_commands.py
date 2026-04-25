@@ -3320,6 +3320,56 @@ class TelegramCommandsMixin:
 
         return True
 
+    async def _handle_eve_pending_reply(self, chat_id: int, user_id: int, text: str) -> bool:
+        """Capture user replies to eve:log_shipped and eve:plan_tomorrow prompts.
+
+        Returns True when the reply was consumed (state cleared), False otherwise.
+        """
+        if not text or text.strip().startswith("/"):
+            return False
+
+        from navig.store.runtime import get_runtime_store
+
+        store = get_runtime_store()
+        state = store.get_ai_state(user_id) or {}
+        context = dict(state.get("context") or {})
+        pending = dict(context.get("eve_pending") or {})
+        if not pending.get("active"):
+            return False
+
+        entry_type = str(pending.get("type") or "")
+        lowered = text.strip().lower()
+
+        if lowered in {"cancel", "skip", "no", "stop"}:
+            context["eve_pending"] = {"active": False}
+            store.set_ai_state(user_id=user_id, channel="telegram", chat_id=str(chat_id), context=context)
+            await self.send_message(chat_id, "👌 Skipped.", parse_mode=None)
+            return True
+
+        # Persist the captured text
+        try:
+            from navig.agent.proactive.eve_log import save_shipped, save_priority
+
+            if entry_type == "shipped":
+                save_shipped(text.strip())
+                confirm = f"✅ <b>Logged:</b> <i>{text.strip()}</i>\n\n<i>Have a good evening.</i>"
+            elif entry_type == "priority":
+                save_priority(text.strip())
+                confirm = (
+                    f"📌 <b>Anchor set:</b> <i>{text.strip()}</i>\n\n"
+                    "<i>I'll remind you in the morning.</i>"
+                )
+            else:
+                confirm = "✅ Noted."
+        except Exception as exc:
+            logger.debug("eve_pending save failed: %s", exc)
+            confirm = "✅ Noted."
+
+        context["eve_pending"] = {"active": False}
+        store.set_ai_state(user_id=user_id, channel="telegram", chat_id=str(chat_id), context=context)
+        await self.send_message(chat_id, confirm, parse_mode="HTML")
+        return True
+
     async def _handle_nl_pending_reply(self, chat_id: int, user_id: int, text: str) -> bool:
         from navig.store.runtime import get_runtime_store
 

@@ -448,25 +448,54 @@ class TelegramNotifier(ChannelNotifier):
     # ========================================================================
 
     async def _morning_briefing(self) -> Notification | None:
-        """Generate morning briefing."""
+        """Generate morning briefing, surfacing last night's anchor if set."""
         now = datetime.now()
 
+        # Pull yesterday's priority anchor logged via eve:plan_tomorrow
+        anchor: str = ""
+        try:
+            from navig.agent.proactive.eve_log import get_yesterday
+            anchor = (get_yesterday().get("priority") or "").strip()
+        except Exception:
+            pass
+
         lines = [
-            f"Good morning! It's {now.strftime('%A, %B %d')}.",
+            f"☀️ <b>Good morning</b>  ·  <i>{now.strftime('%A, %B %d')}</i>",
             "",
-            "<b>Today's Focus:</b>",
-            "• Check your task list",
-            "• Review pending alerts",
-            "• Plan your top 3 priorities",
-            "",
-            "Have a productive day! 💪",
         ]
+
+        if anchor:
+            lines += [
+                f"📌 <b>Your anchor for today:</b>",
+                f"<i>{anchor}</i>",
+                "",
+            ]
+
+        lines += [
+            "<b>First moves:</b>",
+            "• Check your task list",
+            "• Review overnight alerts",
+            "• Lock in your top 3",
+            "",
+            "<i>Ship something worthy. 🚀</i>",
+        ]
+
+        keyboard: list[list[dict]] | None = None
+        if anchor:
+            keyboard = [
+                [
+                    {"text": "✅ Still my anchor", "callback_data": "morn:anchor_ok"},
+                    {"text": "🔄 Set a new one", "callback_data": "eve:plan_tomorrow"},
+                ]
+            ]
 
         return Notification(
             type="routine",
             title="Morning Briefing",
             message="\n".join(lines),
             priority=NotificationPriority.NORMAL,
+            keyboard=keyboard,
+            raw_message=True,
         )
 
     async def _evening_summary(self) -> Notification | None:
@@ -495,7 +524,7 @@ class TelegramNotifier(ChannelNotifier):
             5: "Saturday ops. Respect the craft.",
             6: "Sunday. Systems quiet. Mind should be too.",
         }
-        context = day_context.get(weekday, "Another day logged in the graveyard.")
+        context_line = day_context.get(weekday, "Another day logged in the graveyard.")
 
         closings = [
             "Stack's green. Logs can wait until morning. 📋",
@@ -507,30 +536,54 @@ class TelegramNotifier(ChannelNotifier):
         ]
         closing = random.choice(closings)
 
+        # Pull already-logged items so the briefing reflects reality.
+        already_shipped: str = ""
+        already_priority: str = ""
+        try:
+            from navig.agent.proactive.eve_log import get_today
+            today = get_today()
+            already_shipped = (today.get("shipped") or "").strip()
+            already_priority = (today.get("priority") or "").strip()
+        except Exception:
+            pass
+
+        checklist_lines = ["<b>Close out the day:</b>"]
+        if already_shipped:
+            checklist_lines.append(f"✅ <i>Shipped: {already_shipped}</i>")
+        else:
+            checklist_lines.append("• Review what shipped")
+        if already_priority:
+            checklist_lines.append(f"📌 <i>Anchor: {already_priority}</i>")
+        else:
+            checklist_lines.append("• Lock in tomorrow's top priority")
+        checklist_lines += [
+            "• Confirm backups ran",
+            "• Close what can be closed",
+        ]
+
         message = "\n".join([
             f"🌙 <b>{day_name} Evening</b>  ·  <i>{shift_label}</i>",
             "",
-            f"<i>{context}</i>",
+            f"<i>{context_line}</i>",
             "",
-            "<b>Close out the day:</b>",
-            "• Review what shipped",
-            "• Lock in tomorrow's top priority",
-            "• Confirm backups ran",
-            "• Close what can be closed",
+            *checklist_lines,
             "",
             f"<i>{closing}</i>",
         ])
 
-        keyboard = [
-            [
-                {"text": "✅ Log what shipped", "callback_data": "eve:log_shipped"},
-                {"text": "🎯 Set tomorrow", "callback_data": "eve:plan_tomorrow"},
-            ],
-            [
-                {"text": "💾 Backup check", "callback_data": "eve:backup_check"},
-                {"text": "🌑 Go dark", "callback_data": "eve:dnd_on"},
-            ],
+        # Keyboard: only show log/plan buttons when not yet captured
+        row1 = []
+        if not already_shipped:
+            row1.append({"text": "✅ Log what shipped", "callback_data": "eve:log_shipped"})
+        if not already_priority:
+            row1.append({"text": "🎯 Set tomorrow", "callback_data": "eve:plan_tomorrow"})
+
+        row2 = [
+            {"text": "💾 Backup check", "callback_data": "eve:backup_check"},
+            {"text": "🌑 Go dark", "callback_data": "eve:dnd_on"},
         ]
+
+        keyboard = [r for r in [row1, row2] if r]
 
         return Notification(
             type="briefing",

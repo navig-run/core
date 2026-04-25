@@ -1248,6 +1248,12 @@ class TelegramChannel:
                         text=text,
                     ):
                         return
+                if await self._handle_eve_pending_reply(
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    text=text,
+                ):
+                    return
                 if await self._handle_nl_pending_reply(
                     chat_id=chat_id,
                     user_id=user_id,
@@ -4070,6 +4076,19 @@ class TelegramChannel:
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
         return await TelegramCommandsMixin._handle_pending_api_key_input(
+            self, chat_id, user_id, text
+        )
+
+    async def _handle_eve_pending_reply(
+        self,
+        chat_id: int,
+        user_id: int,
+        text: str,
+    ) -> bool:
+        """Delegate evening-briefing captured reply (shipped / priority)."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return await TelegramCommandsMixin._handle_eve_pending_reply(
             self, chat_id, user_id, text
         )
 
