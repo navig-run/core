@@ -19,6 +19,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Ruff cleanup — unused loop variables + B904 chained raises** (50 files across `navig/`, `tests/`, `host/internal/desktop/`): `i` → `_i` in 30+ test files; `raise … from None` added in `host/internal/desktop/agent*.py` `TimeoutExpired` handlers (B904). `All checks passed.`
 
 ### Fixed
+- **Remove stale `Console` patch in `test_launch_menu_missing_rich`** (`tests/interactive/test_interactive.py`): `@patch("navig.commands.interactive.Console")` referenced a non-existent module attribute (`interactive.py` uses `console = get_console()` with no direct `Console` import). Removed the unused decorator and `mock_console_class` parameter; test now passes without error.
 - **Remove f-string without placeholder** (`navig/gateway/notifications.py` line 466): `f"📌 …"` → `"📌 …"`.
 - **Remove duplicate `first_h1` import** (`navig/plans/context.py`): duplicate `from navig.plans.frontmatter import first_h1 as _first_h1` removed.
 - **Remove unused loop variable** (`deploy/operational-factory/app/runtime.py`): `for agent_id, role in AGENTS.items()` → `for role in AGENTS.values()`.
