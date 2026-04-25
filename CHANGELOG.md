@@ -11,10 +11,12 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - **`memory_checkpoint` command (`packages/navig-memory/handler.py`, `packages/navig-memory/src/main.py`)**: New `cmd_memory_checkpoint()` creates a timestamped JSON snapshot at `~/.navig/store/memory/checkpoints/{id}.json` containing workspace root, memory store path, and latest conversation session (last 10 messages from `ConversationStore`). Exposed as `@plugin.command("checkpoint")` in the memory plugin. `session-checkpoint` slash alias registered in the kernel's memory skill command map. Tests: `tests/core/test_navig_kernel_memory_dispatch.py`, `tests/memory/test_navig_memory_handler.py`, `tests/memory/test_navig_memory_package_main.py`.
+- **Hermetic autonomous-agent contract tests** (`tests/agent/test_autonomous_agent_hermetic.py`): 17 in-process aiohttp tests covering `/health`, `/status`, `/cron/jobs` CRUD, `/heartbeat/trigger`, `/heartbeat/history`, AI config and workspace-file checks — all pass in 4s with no live gateway. Closes STABILIZATION_DEBT.md item #2. Added `pytest.mark.live` to `pytest.ini` and applied to the original live smoke tests so they can be excluded in CI with `-m 'not live'`.
 
 ### Changed
 - **`pass → return None` in abstract/no-op methods** (`navig/core/plugins.py`, `navig/core/evolution/base.py`, `navig/gateway/channels/base.py`, `navig/plugins/base.py`): explicit `return None` clarifies intent in abstract stubs and satisfies strict type checkers.
 - **Agent parallel tool dispatch** (`tests/agent/test_agent_parallel_tool_dispatch.py`): 3 tests covering parallel-safe tool batching, exception wrapping, and `NEVER_PARALLEL_TOOLS` isolation now verified green.
+- **Ruff cleanup — unused loop variables + B904 chained raises** (50 files across `navig/`, `tests/`, `host/internal/desktop/`): `i` → `_i` in 30+ test files; `raise … from None` added in `host/internal/desktop/agent*.py` `TimeoutExpired` handlers (B904). `All checks passed.`
 
 ### Fixed
 - **Remove f-string without placeholder** (`navig/gateway/notifications.py` line 466): `f"📌 …"` → `"📌 …"`.

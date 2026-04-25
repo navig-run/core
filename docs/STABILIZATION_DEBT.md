@@ -13,13 +13,13 @@ This document captures technical debt, deferred verification work, and test-cove
 
 ### 2. `tests/test_autonomous_agent.py` Non-Hermetic Smoke Test
 
-- Status: Skips gracefully when `http://localhost:8789` is unhealthy.
-- Gap: Provides no hermetic coverage; test results are environment-dependent.
+- Status: ✅ Done — `tests/agent/test_autonomous_agent_hermetic.py` added with 17 hermetic tests (commit `151ed5fb`).
+- Gap: ~~Provides no hermetic coverage; test results are environment-dependent.~~
 - Required follow-up:
-  1. Extract the business logic under test into a mockable interface.
-  2. Replace live gateway calls with a contract-tested stub.
-  3. Retain the live smoke test as an optional `@pytest.mark.live` gate, excluded from CI by default.
-- Done when: The test file passes in a clean CI environment with no external services running.
+  1. ~~Extract the business logic under test into a mockable interface.~~
+  2. ~~Replace live gateway calls with a contract-tested stub.~~
+  3. ~~Retain the live smoke test as an optional `@pytest.mark.live` gate, excluded from CI by default.~~
+- Done when: ✅ 17/17 hermetic tests pass in 4s with no live gateway. The original live tests remain as `@pytest.mark.live` and can be excluded with `-m 'not live'`.
 
 ### 3. `pyproject.toml` setuptools License Metadata Deprecation
 
