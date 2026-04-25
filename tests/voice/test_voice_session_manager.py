@@ -35,7 +35,7 @@ async def test_session_lifecycle(manager):
 
 
 async def test_timeout_handling(manager):
-    session = await manager.activate(keyword="echo", score=0.9)
+    await manager.activate(keyword="echo", score=0.9)
     # Let the background loop process timeout
     await asyncio.sleep(0.2)
     # Manager will transition it to IDLE since max timeout reached

@@ -82,8 +82,8 @@ class TestAHKAdapter(unittest.TestCase):
         # Test Set
         adapter.set_clipboard("new content")
         # Verify set call includes the content in the script
-        args, kwargs = mock_run.call_args
-        code_input = kwargs.get("input", "")
+        _, kwargs = mock_run.call_args
+        assert "new content" in kwargs.get("input", "")
 
     @patch("subprocess.run")
     def test_new_primitives(self, mock_run):

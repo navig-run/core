@@ -126,7 +126,7 @@ def benchmark_batch_writes():
 
             def old_batch():
                 data = []
-                for i in range(100):
+                for _i in range(100):
                     counter[0] += 1
                     data.append((f"key_{counter[0]}", f"value_{counter[0]}", time.time()))
                 old_store._write_many(
@@ -141,7 +141,7 @@ def benchmark_batch_writes():
 
             def new_batch():
                 data = []
-                for i in range(100):
+                for _i in range(100):
                     counter[0] += 1
                     data.append((f"key_{counter[0]}", f"value_{counter[0]}", time.time()))
                 new_store._write_many(
@@ -189,7 +189,7 @@ def benchmark_reads():
             def old_read():
                 counter[0] = (counter[0] + 1) % 1000
                 conn = old_store._get_conn()
-                rows = conn.execute(
+                conn.execute(
                     "SELECT * FROM test_data WHERE key = ?", (f"key_{counter[0]}",)
                 ).fetchall()
 
@@ -201,7 +201,7 @@ def benchmark_reads():
             def new_read():
                 counter[0] = (counter[0] + 1) % 1000
                 conn = new_store._get_conn()
-                rows = conn.execute(
+                conn.execute(
                     "SELECT * FROM test_data WHERE key = ?", (f"key_{counter[0]}",)
                 ).fetchall()
 

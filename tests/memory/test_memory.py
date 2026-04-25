@@ -252,7 +252,7 @@ class TestConversationStore:
 
     def test_get_token_count(self, store):
         """Test getting session token count."""
-        for i in range(3):
+        for _i in range(3):
             msg = Message(
                 session_key="session-1",
                 role="user",

@@ -256,8 +256,6 @@ class TestNavigDbQueryVaultIntegration:
 
         injected_args: list[dict] = []
 
-        original_run = None
-
         async def _mock_run(self, args, on_status=None):
             injected_args.append(dict(args))
             from navig.tools.registry import ToolResult

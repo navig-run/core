@@ -139,7 +139,6 @@ class TestHandoffQueue:
         item = q._queue[0]
         q._queue[0] = (item[0], item[1], time.monotonic() - 0.1)  # already expired
 
-        dropped_list = []
 
         async def fake_send(msg):
             pass

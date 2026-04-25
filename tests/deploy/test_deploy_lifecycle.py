@@ -119,7 +119,7 @@ class TestDeployEngineDryRun:
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-            result = engine.run(dry_run=True)
+            engine.run(dry_run=True)
 
         # In dry-run mode, rsync should never be called
         rsync_calls = [

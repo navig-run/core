@@ -318,7 +318,7 @@ def _method_run_script(params: _Params) -> _Result:
             "exit_code": proc.returncode,
         }
     except subprocess.TimeoutExpired:
-        raise RuntimeError("AppleScript timed out after 60 seconds")
+        raise RuntimeError("AppleScript timed out after 60 seconds") from None
 
 
 def _method_get_action_tree(params: _Params) -> _Result:

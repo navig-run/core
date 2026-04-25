@@ -148,7 +148,7 @@ class TestSettingsResolver:
             {"navig": {"isolation": True}},
         )
         # Without refresh — stale cache
-        stale = resolver.get("navig.isolation")
+        resolver.get("navig.isolation")
         # With refresh
         fresh = resolver.resolve(refresh=True)
         assert fresh["navig.isolation"] is True

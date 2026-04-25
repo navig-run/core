@@ -906,7 +906,6 @@ class TestEdgeCases:
                 name=f"w{i}", path=tmp_path / f"w{i}", branch=f"navig/w{i}"
             )
         removed = []
-        original_remove = mgr.remove
 
         async def tracking_remove(name, force=False):
             removed.append(name)

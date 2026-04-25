@@ -246,7 +246,7 @@ class TestRoutingProtocolOptimisation(unittest.TestCase):
         self.assertFalse(self.reg._peers["peer-X"].circuit_open)
 
     def test_circuit_open_peer_sorted_last(self):
-        for i in range(CIRCUIT_OPEN_AFTER_FAILURES):
+        for _i in range(CIRCUIT_OPEN_AFTER_FAILURES):
             self.reg.record_probe_failure("peer-X")
         good = _make_peer("peer-good")
         self.reg.upsert_peer(good)

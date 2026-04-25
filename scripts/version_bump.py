@@ -11,7 +11,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from _version_sync import run as _sync_manifests  # noqa: E402
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
 VERSION_PATTERN = re.compile(r'(?m)^(version\s*=\s*")(?P<v>\d+\.\d+\.\d+)(")\s*$')

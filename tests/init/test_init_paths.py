@@ -80,7 +80,7 @@ def test_windows_runtime_layout_migration_flattens_nested_platformdirs_tree(
     canonical_logs = tmp_path / "local" / "navig" / "logs"
     canonical_state = tmp_path / "local" / "navig" / "state"
     canonical_cache = tmp_path / "local" / "navig" / "cache"
-    log_dir = tmp_path / "logs"
+    tmp_path / "logs"
 
     (legacy_root / "Logs").mkdir(parents=True)
     (legacy_root / "memory").mkdir(parents=True)

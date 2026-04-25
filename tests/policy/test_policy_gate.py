@@ -231,7 +231,7 @@ class TestAuditLog(unittest.TestCase):
 
         def writer(n):
             try:
-                for i in range(10):
+                for _i in range(10):
                     self.log.record(
                         actor=f"thread-{n}",
                         action="concurrent.write",

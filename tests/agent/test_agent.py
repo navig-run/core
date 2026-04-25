@@ -237,7 +237,7 @@ class TestNervousSystem:
 
         ns.subscribe(EventType.SYSTEM_INFO, handler)
 
-        event = await ns.emit(EventType.SYSTEM_INFO, source="test", data={"msg": "hello"})
+        await ns.emit(EventType.SYSTEM_INFO, source="test", data={"msg": "hello"})
 
         # Allow async handlers to complete
         await asyncio.sleep(0.01)

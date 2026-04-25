@@ -122,7 +122,6 @@ class TestGmailConnector:
     @pytest.mark.skipif(not _has_httpx(), reason="httpx not installed")
     def test_search_honours_limit(self, connector):
         """search(limit=N) must request and return at most N results."""
-        list_response = {"messages": [{"id": f"m{i}"} for i in range(10)]}
         detail_response = {
             "id": "m0",
             "snippet": "snippet",

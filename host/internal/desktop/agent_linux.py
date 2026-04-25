@@ -300,7 +300,7 @@ def _method_run_script(params: _Params) -> _Result:
             "exit_code": proc.returncode,
         }
     except subprocess.TimeoutExpired:
-        raise RuntimeError("Script timed out after 60 seconds")
+        raise RuntimeError("Script timed out after 60 seconds") from None
     finally:
         try:
             os.unlink(tmp_path)

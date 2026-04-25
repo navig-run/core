@@ -103,7 +103,7 @@ def test_duplicate_substring_match(tmp_path: Path) -> None:
     scanner = DuplicateScanner([a, b])
     # "setup api gateway" is a substring of "api gateway setup and config"?
     # Not exact — but check bidirectional
-    dup = scanner.find_duplicate(a)
+    scanner.find_duplicate(a)
     # This checks "setup api gateway" in "api gateway setup and config" — no
     # and "api gateway setup and config" in "setup api gateway" — no
     # So no dup here (different word order). That's correct behaviour.

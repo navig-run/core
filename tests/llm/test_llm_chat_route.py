@@ -32,7 +32,7 @@ def mock_gateway():
 @pytest.fixture
 def app(mock_gateway):
     """Build an aiohttp Application with just the LLM route registered."""
-    aiohttp = pytest.importorskip("aiohttp")
+    pytest.importorskip("aiohttp")
     from aiohttp import web
 
     from navig.gateway.routes.llm import register
@@ -47,7 +47,7 @@ def app(mock_gateway):
 
 async def test_llm_chat_basic(app, mock_gateway):
     """Minimal ChatRequest returns a ChatResponse with text + metadata."""
-    aiohttp = pytest.importorskip("aiohttp")
+    pytest.importorskip("aiohttp")
     from aiohttp.test_utils import TestClient, TestServer
 
     async with TestClient(TestServer(app)) as client:
@@ -75,7 +75,7 @@ async def test_llm_chat_basic(app, mock_gateway):
 
 async def test_llm_chat_full_request(app, mock_gateway):
     """All optional fields are forwarded via metadata."""
-    aiohttp = pytest.importorskip("aiohttp")
+    pytest.importorskip("aiohttp")
     from aiohttp.test_utils import TestClient, TestServer
 
     async with TestClient(TestServer(app)) as client:
@@ -110,7 +110,7 @@ async def test_llm_chat_full_request(app, mock_gateway):
 
 async def test_llm_chat_missing_text(app):
     """Missing 'text' field returns 400."""
-    aiohttp = pytest.importorskip("aiohttp")
+    pytest.importorskip("aiohttp")
     from aiohttp.test_utils import TestClient, TestServer
 
     async with TestClient(TestServer(app)) as client:
@@ -122,7 +122,7 @@ async def test_llm_chat_missing_text(app):
 
 async def test_llm_chat_empty_text(app):
     """Empty string for 'text' returns 400."""
-    aiohttp = pytest.importorskip("aiohttp")
+    pytest.importorskip("aiohttp")
     from aiohttp.test_utils import TestClient, TestServer
 
     async with TestClient(TestServer(app)) as client:
@@ -134,7 +134,7 @@ async def test_llm_chat_empty_text(app):
 
 async def test_llm_chat_invalid_json(app):
     """Non-JSON body returns 400."""
-    aiohttp = pytest.importorskip("aiohttp")
+    pytest.importorskip("aiohttp")
     from aiohttp.test_utils import TestClient, TestServer
 
     async with TestClient(TestServer(app)) as client:
@@ -150,7 +150,7 @@ async def test_llm_chat_invalid_json(app):
 
 async def test_llm_chat_router_exception(app, mock_gateway):
     """Router exception returns 500 with error text."""
-    aiohttp = pytest.importorskip("aiohttp")
+    pytest.importorskip("aiohttp")
     from aiohttp.test_utils import TestClient, TestServer
 
     mock_gateway.router.route_message = AsyncMock(
@@ -171,7 +171,7 @@ async def test_llm_chat_router_exception(app, mock_gateway):
 
 async def test_llm_chat_default_scope(app, mock_gateway):
     """Scope defaults to 'personal' when omitted."""
-    aiohttp = pytest.importorskip("aiohttp")
+    pytest.importorskip("aiohttp")
     from aiohttp.test_utils import TestClient, TestServer
 
     async with TestClient(TestServer(app)) as client:
@@ -184,7 +184,7 @@ async def test_llm_chat_default_scope(app, mock_gateway):
 
 async def test_llm_chat_auth_required_when_gateway_token_set(app, mock_gateway):
     """Route enforces bearer auth when gateway auth token is configured."""
-    aiohttp = pytest.importorskip("aiohttp")
+    pytest.importorskip("aiohttp")
     from aiohttp.test_utils import TestClient, TestServer
 
     mock_gateway.config.auth_token = "secret-token"

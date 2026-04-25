@@ -10,9 +10,9 @@ pytestmark = pytest.mark.integration
 @pytest.fixture
 def evolver():
     with (
-        patch("navig.adapters.automation.evolution.evolver.AHKAdapter") as mock_adapter,
-        patch("navig.adapters.automation.evolution.evolver.AHKAIGenerator") as mock_gen,
-        patch("navig.adapters.automation.evolution.evolver.ScriptLibrary") as mock_lib,
+        patch("navig.adapters.automation.evolution.evolver.AHKAdapter"),
+        patch("navig.adapters.automation.evolution.evolver.AHKAIGenerator"),
+        patch("navig.adapters.automation.evolution.evolver.ScriptLibrary"),
     ):
         ev = Evolver()
         return ev

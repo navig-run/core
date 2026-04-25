@@ -241,7 +241,7 @@ class TestLaunchMenu:
         with patch.dict("sys.modules", {"rich.console": None}):
             from navig.commands.interactive import launch_menu
 
-            with pytest.raises(SystemExit) as exc_info:
+            with pytest.raises(SystemExit):
                 # This will fail the import check inside launch_menu
                 try:
                     launch_menu({})

@@ -155,7 +155,7 @@ class TestManagerStart:
         """Cannot exceed MAX_CONCURRENT running tasks."""
         # We'll mock _running_tasks to simulate many running
         # Start one real task, then monkey-patch _running_tasks
-        task = await manager.start("echo 1")
+        await manager.start("echo 1")
 
         # Simulate MAX_CONCURRENT running tasks
         fake_tasks = [
@@ -901,7 +901,7 @@ class TestEdgeCases:
         new_dir = tmp_path / "new_bg_tasks"
         assert not new_dir.exists()
         mgr = BackgroundTaskManager(output_dir=new_dir)
-        task = await mgr.start("echo hello")
+        await mgr.start("echo hello")
         assert new_dir.exists()
         # Shutdown: wait for process + close file handles
         await mgr.shutdown()

@@ -150,7 +150,7 @@ async def test_send_smart_reply_attempts_checklist_api():
     ch._get_checklist_config = MagicMock(return_value={"checklist_enabled": True})
 
     task_text = "- Task alpha\n- Task beta\n- Task gamma\n- Task delta"
-    result = await TelegramChecklistMixin._send_smart_reply(ch, chat_id=1, text=task_text)
+    await TelegramChecklistMixin._send_smart_reply(ch, chat_id=1, text=task_text)
 
     mock_cl.assert_awaited_once()
     # send_message should NOT be called when native checklist succeeds

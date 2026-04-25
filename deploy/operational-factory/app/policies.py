@@ -1,7 +1,8 @@
 from typing import Any, Dict
 
-from app.settings import RESTRICTED_RATE_LIMIT, SAFE_RATE_LIMIT
 from pydantic import BaseModel, Field
+
+from app.settings import RESTRICTED_RATE_LIMIT, SAFE_RATE_LIMIT
 
 
 class ActionSpec(BaseModel):

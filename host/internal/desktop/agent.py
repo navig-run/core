@@ -295,7 +295,7 @@ def _method_ahk_run(params: _Params) -> _Result:
             "exit_code": proc.returncode,
         }
     except subprocess.TimeoutExpired:
-        raise RuntimeError("AHK script timed out after 60 seconds")
+        raise RuntimeError("AHK script timed out after 60 seconds") from None
     finally:
         try:
             os.unlink(tmp_path)

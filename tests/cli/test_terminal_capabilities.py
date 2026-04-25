@@ -63,7 +63,6 @@ class TestProbeNerdFont:
         """If winreg returns a Nerd Font entry, probe returns True."""
         caps = importlib.import_module("navig.ui._capabilities")
 
-        fake_key = object()
         with (
             patch.object(sys, "platform", "win32"),
             patch.dict("sys.modules", {"winreg": MagicMock()}),
