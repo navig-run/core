@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
+import types
 from pathlib import Path
 
 from navig.adapters.automation.types import ExecutionResult
@@ -15,6 +17,7 @@ def _load_module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -122,3 +125,67 @@ def test_handler_returns_error_when_send_input_fails(monkeypatch):
     result = handler.cmd_ahk_type({"text": "hello", "window": "Missing"})
 
     assert result == {"status": "error", "message": "no target"}
+
+
+def test_handler_registers_full_ahk_command_set(monkeypatch):
+    handler = _load_module("package_ahk_handler_register", HANDLER_PATH)
+    registered: list[str] = []
+
+    registry = types.SimpleNamespace(
+        register=lambda name, handler, pack_id=None: registered.append(name)
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "navig.commands._registry",
+        types.SimpleNamespace(CommandRegistry=registry),
+    )
+
+    handler.on_load({"store_path": ROOT / "packages" / "navig-windows-automation"})
+
+    assert registered == [
+        "ahk_run",
+        "ahk_type",
+        "ahk_click",
+        "ahk_open_app",
+        "ahk_window_list",
+        "ahk_window_close",
+    ]
+
+
+def test_handler_window_commands_use_adapter(monkeypatch):
+    handler = _load_module("package_ahk_handler_windows", HANDLER_PATH)
+    monkeypatch.setattr(handler, "_IS_WIN", True)
+
+    class FakeWindow:
+        def __init__(self, title: str):
+            self.title = title
+
+        def to_dict(self):
+            return {"title": self.title}
+
+    monkeypatch.setattr(
+        handler,
+        "_get_adapter",
+        lambda: type(
+            "FakeAdapter",
+            (),
+            {
+                "open_app": lambda self, target: ExecutionResult(
+                    success=True, stdout=f"opened:{target}"
+                ),
+                "get_all_windows": lambda self: [FakeWindow("Notepad")],
+                "close_window": lambda self, title: ExecutionResult(success=True),
+            },
+        )(),
+    )
+
+    open_result = handler.cmd_ahk_open_app({"target": "notepad"})
+    list_result = handler.cmd_ahk_window_list({})
+    close_result = handler.cmd_ahk_window_close({"title": "Notepad"})
+
+    assert open_result == {
+        "status": "ok",
+        "data": {"target": "notepad", "output": "opened:notepad"},
+    }
+    assert list_result == {"status": "ok", "data": {"windows": [{"title": "Notepad"}]}}
+    assert close_result == {"status": "ok", "data": {"title": "Notepad"}}

@@ -27,6 +27,20 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+_MEMORY_METHODS = {
+    "recall": "memory_search",
+    "remember": "memory_store",
+    "checkpoint": "memory_checkpoint",
+}
+
+_WINDOWS_AUTOMATION_METHODS = {
+    "click": "ahk_click",
+    "type": "ahk_type",
+    "open-app": "ahk_open_app",
+    "window-list": "ahk_window_list",
+    "window-close": "ahk_window_close",
+}
+
 
 
 class NavigKernel:
@@ -211,12 +225,15 @@ class NavigKernel:
         parts = cmd.syntax.split()
         if len(parts) >= 3 and parts[0] == "navig" and parts[1] == "memory":
             method = parts[2]
-            params = {"query": " ".join(args)} if args else {}
-            self._dispatch_registry(method, params)
+            self._dispatch_registry(
+                _MEMORY_METHODS.get(method, method),
+                self._parse_memory_params(method, args or []),
+            )
 
         elif cmd.source_skill == "windows-automation":
             # Map command name to AHK registry handler
             method = cmd.name
+            registry_method = _WINDOWS_AUTOMATION_METHODS.get(method, method)
 
             # Simple arg parsing for prototype
             # args is meant to be a list of strings passed after the command?
@@ -236,11 +253,46 @@ class NavigKernel:
                 elif method == "click" and len(args) >= 2:
                     params["x"] = args[0]
                     params["y"] = args[1]
+                    if len(args) >= 3:
+                        params["button"] = args[2]
+                    if len(args) >= 4:
+                        params["clicks"] = args[3]
+                elif method == "window-close":
+                    params["title"] = " ".join(args)
 
-            self._dispatch_registry(method, params)
+            self._dispatch_registry(registry_method, params)
 
         else:
             logger.debug("kernel: (system command simulation): %s", cmd.syntax)
+
+    def _parse_memory_params(self, method: str, args: list[str]) -> dict:
+        if method == "recall":
+            return {"query": " ".join(args)} if args else {}
+
+        if method == "remember":
+            content_tokens: list[str] = []
+            tags: list[str] = []
+            i = 0
+            while i < len(args):
+                token = args[i]
+                if token == "--type" and i + 1 < len(args):
+                    tags.append(args[i + 1])
+                    i += 2
+                    continue
+                content_tokens.append(token)
+                i += 1
+
+            params: dict[str, object] = {}
+            if content_tokens:
+                params["content"] = " ".join(content_tokens)
+            if tags:
+                params["tags"] = tags
+            return params
+
+        if method == "checkpoint":
+            return {"root_path": self.root_path}
+
+        return {}
 
     def _dispatch_registry(self, method: str, params: dict):
         """Dispatch *method* via CommandRegistry; fall back to plugin_manager if not found."""
