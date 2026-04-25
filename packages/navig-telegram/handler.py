@@ -8,9 +8,9 @@ on_event : routes NAVIG lifecycle events to Telegram if relevant
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 import logging
 import sys
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
