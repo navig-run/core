@@ -9,6 +9,19 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Add entries here until the next release, then move them under a new version heading. -->
 <!-- Run: git log v2.9.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
 
+### Added
+- **`memory_checkpoint` command (`packages/navig-memory/handler.py`, `packages/navig-memory/src/main.py`)**: New `cmd_memory_checkpoint()` creates a timestamped JSON snapshot at `~/.navig/store/memory/checkpoints/{id}.json` containing workspace root, memory store path, and latest conversation session (last 10 messages from `ConversationStore`). Exposed as `@plugin.command("checkpoint")` in the memory plugin. `session-checkpoint` slash alias registered in the kernel's memory skill command map. Tests: `tests/core/test_navig_kernel_memory_dispatch.py`, `tests/memory/test_navig_memory_handler.py`, `tests/memory/test_navig_memory_package_main.py`.
+
+### Changed
+- **`pass → return None` in abstract/no-op methods** (`navig/core/plugins.py`, `navig/core/evolution/base.py`, `navig/gateway/channels/base.py`, `navig/plugins/base.py`): explicit `return None` clarifies intent in abstract stubs and satisfies strict type checkers.
+- **Agent parallel tool dispatch** (`tests/agent/test_agent_parallel_tool_dispatch.py`): 3 tests covering parallel-safe tool batching, exception wrapping, and `NEVER_PARALLEL_TOOLS` isolation now verified green.
+
+### Fixed
+- **Remove f-string without placeholder** (`navig/gateway/notifications.py` line 466): `f"📌 …"` → `"📌 …"`.
+- **Remove duplicate `first_h1` import** (`navig/plans/context.py`): duplicate `from navig.plans.frontmatter import first_h1 as _first_h1` removed.
+- **Remove unused loop variable** (`deploy/operational-factory/app/runtime.py`): `for agent_id, role in AGENTS.items()` → `for role in AGENTS.values()`.
+- **Remove unused imports across test suite** (~90 test files): `ruff`-identified unused imports removed to keep the suite clean and linter-green.
+
 ### Fixed
 - **Harden `navig service start` PID detection on slow Windows machines** (`navig/commands/service.py`): replaced the fixed `time.sleep(2)` + single `is_running()` check with a polling loop (up to 10 × 1 s) so the daemon is not falsely reported as failed when the PID file appears after the initial 2 s window. Also changed `_spawn_stop_watchdog()` to launch via `_pythonw_exe()` (i.e. `pythonw.exe` on Windows) instead of `sys.executable` (`python.exe`), eliminating the visible console window that would otherwise flash for up to 30 s during a stop sequence. Three regression tests added to `tests/service/test_service_cli.py`.
 - **Clarify and repair `navig agent start` foreground UX** (`navig/agent/runner.py`, `navig/agent/ears.py`, `navig/commands/agent.py`): foreground agent sessions now write an `agent.pid` file so `navig agent status` / `navig agent stop` can track the live process; console stdin is wired through a new `ConsoleListener` so typing into `navig agent start` actually reaches the agent; console-sourced replies are printed back to the terminal; `navig agent start --background` now exits cleanly with guidance to use `navig service start`; and `navig agent status --plain` now includes `daemon_running` / `daemon_pid` so daemon-backed Telegram/gateway health is distinguishable from the foreground agent process.
