@@ -13,7 +13,6 @@ from navig.ssh_keys import (
     discover_local_ssh_keys,
 )
 
-
 # ──────────────────────────────────────────────────────────────
 # _looks_like_private_key
 # ──────────────────────────────────────────────────────────────
@@ -102,7 +101,6 @@ class TestDiscoverLocalSshKeys:
     def test_no_cache_skips_cache_read(self):
         """With no_cache=True, cache is not used even when populated."""
         with patch("navig.ssh_keys.read_json_cache") as mock_read:
-            mock_read.return_value.__class__  # just accessing
             # Simulate no .ssh directory
             fake_ssh = Path("/nonexistent-ssh-dir-xyz123")
             with patch("navig.ssh_keys.Path") as MockPath:
