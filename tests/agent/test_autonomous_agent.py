@@ -15,7 +15,7 @@ import time
 import pytest
 import requests
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.live]
 
 BASE_URL = "http://localhost:8789"
 
