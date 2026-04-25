@@ -1,12 +1,10 @@
 """Tests for navig-commands-core/commands/sysinfo.py"""
 from __future__ import annotations
 
+import pathlib
 import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
-
-import pathlib
-import sys
 
 import pytest
 

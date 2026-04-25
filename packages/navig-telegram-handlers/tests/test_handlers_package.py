@@ -8,13 +8,12 @@ Covers:
 """
 from __future__ import annotations
 
+import importlib.util
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # Path munging so imports resolve from the package root
@@ -25,6 +24,21 @@ TELEGRAM_DIR = ROOT / "telegram"
 for _p in (str(ROOT), str(TELEGRAM_DIR)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+# Load handler.py via importlib to avoid 'handler' module name collision
+# with other packages (e.g. navig-memory) that also have a handler.py
+_handler_spec = importlib.util.spec_from_file_location(
+    "navig_telegram_handlers_handler", ROOT / "handler.py"
+)
+_handler_mod = importlib.util.module_from_spec(_handler_spec)
+sys.modules["navig_telegram_handlers_handler"] = _handler_mod
+_handler_spec.loader.exec_module(_handler_mod)
+
+_PluginContext = _handler_mod.PluginContext
+_PluginEvent = _handler_mod.PluginEvent
+_on_event = _handler_mod.on_event
+_on_load = _handler_mod.on_load
+_on_unload = _handler_mod.on_unload
 
 from formatters import FORMATTERS, format_checkdomain  # noqa: E402
 from menus import MENUS, build_checkdomain_menu  # noqa: E402
@@ -186,34 +200,22 @@ class TestBuildCheckdomainMenu:
 class TestHandlerLifecycle:
     def test_on_event_returns_none(self):
         """on_event is a no-op UX pack; must return None for any event."""
-        sys.path.insert(0, str(ROOT))
-        from handler import PluginContext, PluginEvent, on_event  # noqa: PLC0415
-
-        ctx = PluginContext(pack_id="x", version="0", store_path=ROOT)
-        evt = PluginEvent(name="message", payload={"text": "hi"}, source="tg")
-        assert on_event(evt, ctx) is None
+        ctx = _PluginContext(pack_id="x", version="0", store_path=ROOT)
+        evt = _PluginEvent(name="message", payload={"text": "hi"}, source="tg")
+        assert _on_event(evt, ctx) is None
 
     def test_on_load_no_raise_when_registry_absent(self):
         """on_load must not raise even when navig-telegram is not installed."""
-        sys.path.insert(0, str(ROOT))
-        from handler import PluginContext, on_load  # noqa: PLC0415
-
-        ctx = PluginContext(pack_id="x", version="0", store_path=ROOT)
-        on_load(ctx)  # must not raise
+        ctx = _PluginContext(pack_id="x", version="0", store_path=ROOT)
+        _on_load(ctx)  # must not raise
 
     def test_on_unload_no_raise_when_registry_absent(self):
         """on_unload must not raise."""
-        sys.path.insert(0, str(ROOT))
-        from handler import PluginContext, on_unload  # noqa: PLC0415
-
-        ctx = PluginContext(pack_id="x", version="0", store_path=ROOT)
-        on_unload(ctx)  # must not raise
+        ctx = _PluginContext(pack_id="x", version="0", store_path=ROOT)
+        _on_unload(ctx)  # must not raise
 
     def test_on_load_registers_when_registry_available(self):
         """When navig_telegram.handler_registry is importable, formatters are registered."""
-        sys.path.insert(0, str(ROOT))
-        from handler import PluginContext, on_load  # noqa: PLC0415
-
         registry_mock = MagicMock()
         registry_mock.register_formatter = MagicMock()
         registry_mock.register_menu = MagicMock()
@@ -222,7 +224,7 @@ class TestHandlerLifecycle:
         fake_navig_telegram.handler_registry = registry_mock
 
         with patch.dict("sys.modules", {"navig_telegram": fake_navig_telegram, "navig_telegram.handler_registry": registry_mock}):
-            ctx = PluginContext(pack_id="x", version="0", store_path=ROOT)
-            on_load(ctx)
+            ctx = _PluginContext(pack_id="x", version="0", store_path=ROOT)
+            _on_load(ctx)
             # At minimum, register_formatter must have been called once
             assert registry_mock.register_formatter.called

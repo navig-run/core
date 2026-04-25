@@ -51,7 +51,7 @@ def handle(args: dict, ctx: Any = None) -> dict:
                 "method": "tcp",
             },
         }
-    except (socket.timeout, ConnectionRefusedError, OSError) as exc:
+    except (TimeoutError, ConnectionRefusedError, OSError) as exc:
         return {
             "status": "error",
             "message": str(exc),

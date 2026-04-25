@@ -1,21 +1,26 @@
 """Tests for navig-telegram/handler.py"""
 from __future__ import annotations
 
+import importlib.util
 import pathlib
 import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
-from handler import (
-    PluginContext,
-    PluginEvent,
-    _scoped_src_path,
-    on_event,
-    on_load,
-    on_unload,
-)
+# Use importlib to avoid 'handler' name collision with navig-memory's handler.py
+_HANDLER_FILE = pathlib.Path(__file__).parent.parent / "handler.py"
+_spec = importlib.util.spec_from_file_location("navig_telegram_handler", _HANDLER_FILE)
+_mod = importlib.util.module_from_spec(_spec)
+sys.modules["navig_telegram_handler"] = _mod
+_spec.loader.exec_module(_mod)
+
+PluginContext = _mod.PluginContext
+PluginEvent = _mod.PluginEvent
+_scoped_src_path = _mod._scoped_src_path
+on_event = _mod.on_event
+on_load = _mod.on_load
+on_unload = _mod.on_unload
 
 
 # ── Data classes ──────────────────────────────────────────────────────────────

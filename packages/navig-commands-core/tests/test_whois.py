@@ -2,12 +2,11 @@
 from __future__ import annotations
 
 import json
+import pathlib
+import sys
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 from urllib.error import URLError
-
-import pathlib
-import sys
 
 import pytest
 

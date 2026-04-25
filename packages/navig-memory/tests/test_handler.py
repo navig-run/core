@@ -21,7 +21,6 @@ from handler import (
     on_unload,
 )
 
-
 # ── _JsonMemoryStore ──────────────────────────────────────────────────────────
 
 class TestJsonMemoryStore:

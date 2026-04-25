@@ -1,11 +1,10 @@
 """Tests for navig-commands-core/commands/ping.py"""
 from __future__ import annotations
 
-import socket
-from unittest.mock import MagicMock, patch
-
 import pathlib
+import socket
 import sys
+from unittest.mock import MagicMock, patch
 
 import pytest
 

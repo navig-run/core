@@ -7,9 +7,9 @@ Gracefully no-ops if navig-telegram is not present.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 import logging
 import sys
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any

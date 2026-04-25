@@ -17,7 +17,8 @@ def _ensure_repo_root_on_path() -> None:
 
 _ensure_repo_root_on_path()
 
-from navig.adapters.automation.ahk import AHKAdapter as _CoreAHKAdapter, AHKStatus
+from navig.adapters.automation.ahk import AHKAdapter as _CoreAHKAdapter
+from navig.adapters.automation.ahk import AHKStatus
 from navig.adapters.automation.types import ExecutionResult, WindowInfo
 
 
