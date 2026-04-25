@@ -234,8 +234,7 @@ class TestPromptSelection:
 class TestLaunchMenu:
     """Test main menu launch and error handling."""
 
-    @patch("navig.commands.interactive.Console")
-    def test_launch_menu_missing_rich(self, mock_console_class):
+    def test_launch_menu_missing_rich(self):
         """Test error handling when Rich is not available."""
         # Simulate ImportError for Rich
         with patch.dict("sys.modules", {"rich.console": None}):
