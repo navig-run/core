@@ -1,11 +1,11 @@
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from navig.commands.space import space_app
 from navig.commands.start import app as start_app
 from navig.spaces.kickoff import build_space_kickoff
-import pytest
 
 pytestmark = pytest.mark.integration
 

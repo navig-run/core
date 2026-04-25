@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from navig.update.checker import VersionChecker
 from navig.update.sources import SourceError
-import pytest
 
 pytestmark = pytest.mark.integration
 

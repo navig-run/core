@@ -8,7 +8,6 @@ from navig.gateway.channels.telegram_checklist import (
     should_send_as_checklist,
 )
 
-
 # ---------------------------------------------------------------------------
 # extract_task_list
 # ---------------------------------------------------------------------------

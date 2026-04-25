@@ -8,9 +8,10 @@ import threading
 import unittest
 from pathlib import Path
 
+import pytest
+
 from navig.gateway.audit_log import AuditLog
 from navig.gateway.policy_gate import PolicyDecision, PolicyGate
-import pytest
 
 pytestmark = pytest.mark.integration
 

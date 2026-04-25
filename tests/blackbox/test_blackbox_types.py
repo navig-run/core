@@ -1,8 +1,9 @@
 import json
 from datetime import datetime, timezone
 
-from navig.blackbox.types import BlackboxEvent, Bundle, EventType
 import pytest
+
+from navig.blackbox.types import BlackboxEvent, Bundle, EventType
 
 pytestmark = pytest.mark.unit
 

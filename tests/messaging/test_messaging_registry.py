@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import pytest
+
 from navig.messaging.registry import (
     get_active_provider_name,
     is_supported_provider_name,
     supported_provider_names,
 )
-import pytest
 
 pytestmark = pytest.mark.integration
 

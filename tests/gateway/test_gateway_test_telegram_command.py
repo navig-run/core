@@ -1,9 +1,9 @@
 import json
 
+import pytest
 from typer.testing import CliRunner
 
 from navig.commands.gateway import gateway_app
-import pytest
 
 pytestmark = pytest.mark.integration
 

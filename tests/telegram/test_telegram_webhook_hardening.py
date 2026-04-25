@@ -11,14 +11,12 @@ import collections
 import json
 from unittest.mock import AsyncMock, MagicMock
 
-
 from navig.gateway.routes.telegram_webhook import (
     _MAX_PAYLOAD_BYTES,
     _SEEN_UPDATE_IDS_CAPACITY,
     _make_seen_update_ids,
     _webhook_handler,
 )
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

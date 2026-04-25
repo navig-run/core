@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from navig.vault.resolver import resolve_json_str, resolve_secret
 import pytest
+
+from navig.vault.resolver import resolve_json_str, resolve_secret
 
 pytestmark = pytest.mark.integration
 

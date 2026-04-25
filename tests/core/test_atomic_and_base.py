@@ -16,7 +16,6 @@ import pytest
 from navig.core.yaml_io import atomic_write_text
 from navig.gateway.channels.base import BasePlatformAdapter, utf16_len, utf16_safe_split
 
-
 # ---------------------------------------------------------------------------
 # atomic_write_text
 # ---------------------------------------------------------------------------

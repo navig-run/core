@@ -6,8 +6,9 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from navig.commands.agent import agent_status
 import pytest
+
+from navig.commands.agent import agent_status
 
 pytestmark = pytest.mark.integration
 

@@ -2,6 +2,8 @@
 
 from datetime import datetime, timezone
 
+import pytest
+
 from navig.deploy.models import (
     DeployConfig,
     DeployPhase,
@@ -9,7 +11,6 @@ from navig.deploy.models import (
     PhaseResult,
     SnapshotRecord,
 )
-import pytest
 
 pytestmark = pytest.mark.integration
 

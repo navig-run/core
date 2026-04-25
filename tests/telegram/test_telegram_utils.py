@@ -10,7 +10,6 @@ Covers:
 
 from __future__ import annotations
 
-
 from navig.gateway.channels.telegram_utils import (
     TgErrorKind,
     _mdv2_escape,
@@ -19,7 +18,6 @@ from navig.gateway.channels.telegram_utils import (
     jittered_backoff,
     sanitize_user_error,
 )
-
 
 # ── escape_mdv2 ───────────────────────────────────────────────────────────────
 

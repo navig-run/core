@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from typer.testing import CliRunner
 
 from navig.cli import app
 from navig.integrations.firecrawl.client import FirecrawlError
 from navig.tools.web import SearchResult, WebSearchResult, web_search
-import pytest
 
 pytestmark = pytest.mark.integration
 

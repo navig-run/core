@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-
 ROOT = Path(__file__).resolve().parents[2]
 HANDLER_PATH = ROOT / "packages" / "navig-memory" / "handler.py"
 

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import types
 
+import pytest
 import typer
 
 import navig.cli.registration as reg
-import pytest
 
 pytestmark = pytest.mark.integration
 

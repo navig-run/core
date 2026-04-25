@@ -5,10 +5,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from navig.gateway.channels.telegram_forum import (
-    TelegramForumMixin,
     _COMMAND_TOPIC_MAP,
+    TelegramForumMixin,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers — real subclass so internal helpers call through to real impl

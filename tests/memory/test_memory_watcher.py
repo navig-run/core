@@ -5,8 +5,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from navig.memory.watcher import MemoryWatcher
 import pytest
+
+from navig.memory.watcher import MemoryWatcher
 
 pytestmark = pytest.mark.integration
 

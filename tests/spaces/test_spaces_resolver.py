@@ -1,7 +1,8 @@
 
+import pytest
+
 from navig.spaces.contracts import normalize_space_name
 from navig.spaces.resolver import discover_space_paths, resolve_space
-import pytest
 
 pytestmark = pytest.mark.integration
 

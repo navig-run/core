@@ -5,7 +5,6 @@ import sys
 import types
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 HANDLER_PATH = ROOT / "packages" / "navig-commands-core" / "handler.py"
 

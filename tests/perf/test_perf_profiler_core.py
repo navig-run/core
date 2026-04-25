@@ -1,5 +1,6 @@
-from navig.perf.profiler import detect_regressions
 import pytest
+
+from navig.perf.profiler import detect_regressions
 
 pytestmark = pytest.mark.integration
 

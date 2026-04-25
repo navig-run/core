@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from typer.testing import CliRunner
 
 from navig.commands.service import service_app
-import pytest
 
 pytestmark = pytest.mark.integration
 
@@ -278,6 +278,7 @@ def test_spawn_stop_watchdog_uses_pythonw_not_sys_executable(monkeypatch, tmp_pa
     """_spawn_stop_watchdog must use _pythonw_exe() (pythonw.exe on Windows),
     NOT sys.executable (python.exe), to avoid creating a visible console window."""
     import sys
+
     from navig.commands.service import _spawn_stop_watchdog
 
     captured: dict[str, object] = {}

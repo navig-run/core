@@ -1,3 +1,5 @@
+import pytest
+
 from navig.core.continuation import (
     ContinuationPolicy,
     apply_busy_suppression,
@@ -10,7 +12,6 @@ from navig.core.continuation import (
     policy_from_context,
     should_auto_continue,
 )
-import pytest
 
 pytestmark = pytest.mark.integration
 

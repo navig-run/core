@@ -9,10 +9,11 @@ from __future__ import annotations
 import subprocess
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 import navig.ai as ai_core
 import navig.commands.ai as ai_mod
 import navig.config as cfg_mod
-import pytest
 
 pytestmark = pytest.mark.integration
 

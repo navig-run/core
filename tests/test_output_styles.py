@@ -6,9 +6,7 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-
 from navig.output_styles import OutputStyleConfig, _parse_style_file, load_output_styles
-
 
 # ---------------------------------------------------------------------------
 # _parse_style_file

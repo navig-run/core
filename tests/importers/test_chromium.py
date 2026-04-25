@@ -1,8 +1,9 @@
 import json
 
+import pytest
+
 from navig.importers.sources.chrome import ChromeImporter
 from navig.importers.sources.edge import EdgeImporter
-import pytest
 
 pytestmark = pytest.mark.integration
 

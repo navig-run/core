@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from navig.onboarding.engine import EngineConfig
 from navig.onboarding.genesis import load_or_create
 from navig.onboarding.steps import build_step_registry
-import pytest
 
 pytestmark = pytest.mark.integration
 

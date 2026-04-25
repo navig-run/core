@@ -9,8 +9,6 @@ import os
 import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -69,14 +67,14 @@ class TestEveLog:
         os.environ.pop("NAVIG_CONFIG_DIR", None)
 
     def test_save_and_get_shipped(self):
-        from navig.agent.proactive.eve_log import save_shipped, get_today
+        from navig.agent.proactive.eve_log import get_today, save_shipped
         save_shipped("Fixed login bug · Deployed v2.3")
         entry = get_today()
         assert entry["shipped"] == "Fixed login bug · Deployed v2.3"
         assert "shipped_at" in entry
 
     def test_save_and_get_priority(self):
-        from navig.agent.proactive.eve_log import save_priority, get_today
+        from navig.agent.proactive.eve_log import get_today, save_priority
         save_priority("Ship the auth refactor")
         entry = get_today()
         assert entry["priority"] == "Ship the auth refactor"
@@ -84,6 +82,7 @@ class TestEveLog:
 
     def test_get_yesterday_returns_previous_date(self):
         from datetime import datetime, timedelta
+
         from navig.agent.proactive.eve_log import _load, _save, get_yesterday
         yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
         data = _load()
@@ -97,7 +96,7 @@ class TestEveLog:
         assert get_today() == {}
 
     def test_trim_to_max_days(self):
-        from navig.agent.proactive.eve_log import _load, _save, _MAX_DAYS
+        from navig.agent.proactive.eve_log import _MAX_DAYS, _load, _save
         data = {f"2023-01-{i:02d}": {"shipped": "x"} for i in range(1, _MAX_DAYS + 10)}
         _save(data)
         loaded = _load()
@@ -386,6 +385,7 @@ class TestNotificationBriefings:
 
     def test_morning_shows_anchor_from_yesterday(self):
         from datetime import datetime, timedelta
+
         from navig.agent.proactive.eve_log import _load, _save
         yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
         data = _load()

@@ -1,7 +1,8 @@
 import json
 
-from navig.operation_recorder import OperationRecord, OperationRecorder
 import pytest
+
+from navig.operation_recorder import OperationRecord, OperationRecorder
 
 pytestmark = pytest.mark.integration
 

@@ -4,11 +4,11 @@ Tests for flow command delegation.
 Verifies that `navig flow` properly delegates to the workflow command group.
 """
 
+import pytest
 import typer
 from typer.testing import CliRunner
 
 from navig.commands.workflow import task_app
-import pytest
 
 pytestmark = pytest.mark.integration
 

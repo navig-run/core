@@ -14,13 +14,12 @@ import pytest
 from navig.gateway.flow_runner import (
     Destination,
     DestinationKind,
+    FlowRunner,
     FlowRunResult,
     FlowRunStatus,
-    FlowRunner,
     _format_message,
     _make_run_id,
 )
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers

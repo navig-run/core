@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from navig.mcp_server import MCPProtocolHandler
 import pytest
+
+from navig.mcp_server import MCPProtocolHandler
 
 pytestmark = pytest.mark.integration
 

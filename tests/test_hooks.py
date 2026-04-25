@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # HookEvent & HookContext
 # ─────────────────────────────────────────────────────────────────────────────
@@ -11,6 +9,7 @@ from __future__ import annotations
 class TestHookContext:
     def test_to_json_is_valid(self):
         import json
+
         from navig.hooks.events import HookContext, HookEvent
 
         ctx = HookContext(
@@ -27,6 +26,7 @@ class TestHookContext:
 
     def test_to_json_without_optional_fields(self):
         import json
+
         from navig.hooks.events import HookContext, HookEvent
 
         ctx = HookContext(event=HookEvent.NOTIFICATION)
@@ -41,8 +41,8 @@ class TestHookContext:
 
 class TestHookDefinitionMatchesTool:
     def _make_defn(self, tool_filter):
-        from navig.hooks.registry import HookDefinition
         from navig.hooks.events import HookEvent
+        from navig.hooks.registry import HookDefinition
 
         return HookDefinition(
             event=HookEvent.PRE_TOOL_USE,

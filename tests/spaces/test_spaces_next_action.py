@@ -1,11 +1,12 @@
 from pathlib import Path
 
+import pytest
+
 from navig.spaces.next_action import (
     build_continuation_prompt,
     first_pending_task,
     select_best_next_action,
 )
-import pytest
 
 pytestmark = pytest.mark.integration
 

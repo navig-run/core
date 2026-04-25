@@ -22,7 +22,6 @@ from navig.core.rate_limit_tracker import (
     parse_rate_limit_headers,
 )
 
-
 # ---------------------------------------------------------------------------
 # RateLimitBucket properties
 # ---------------------------------------------------------------------------

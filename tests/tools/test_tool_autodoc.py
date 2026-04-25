@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from navig.tools.router import (
     SafetyLevel,
     ToolDomain,
@@ -11,7 +13,6 @@ from navig.tools.router import (
     ToolRegistry,
     ToolStatus,
 )
-import pytest
 
 pytestmark = pytest.mark.integration
 

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import pytest
 from typer.testing import CliRunner
 
 from navig.commands.agent import agent_app
-import pytest
 
 pytestmark = pytest.mark.integration
 

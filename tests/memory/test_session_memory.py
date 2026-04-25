@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 
-
 class TestSessionMemoryExtractor:
     def test_record_tool_call_increments_counter(self, tmp_path):
         from navig.memory.session_memory import SessionMemoryExtractor

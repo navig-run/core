@@ -8,6 +8,7 @@ when reading potentially malformed configuration dictionaries across the agent c
 from navig.agent.model_router import ModelSlot
 from navig.agent.prompt_caching import CacheStats
 
+
 def test_model_slot_safety():
     """Test `ModelSlot.from_dict` safe coercion."""
     valid_data = {"max_tokens": 1024, "temperature": "0.8", "num_ctx": "8192"}

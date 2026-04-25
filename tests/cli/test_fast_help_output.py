@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import re
 
-from navig.main import _fast_help_text
 import pytest
+
+from navig.main import _fast_help_text
 
 pytestmark = pytest.mark.unit
 

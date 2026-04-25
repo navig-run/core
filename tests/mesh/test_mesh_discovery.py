@@ -18,9 +18,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from navig.mesh.discovery import MeshDiscovery, _build_packet
 from navig.mesh.registry import NodeRegistry
-import pytest
 
 pytestmark = pytest.mark.integration
 

@@ -1,9 +1,9 @@
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from navig.commands.space import space_app
-import pytest
 
 pytestmark = pytest.mark.integration
 

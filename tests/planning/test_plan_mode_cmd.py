@@ -6,6 +6,7 @@ from pathlib import Path
 
 # Use the Typer test client
 from typer.testing import CliRunner
+
 from navig.commands.plan_mode import app
 
 runner = CliRunner()

@@ -5,10 +5,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from navig.cli import app
-import pytest
 
 pytestmark = pytest.mark.integration
 

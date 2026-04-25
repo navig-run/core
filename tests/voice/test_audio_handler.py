@@ -132,8 +132,9 @@ class TestResolveAudioFileParams:
 
 
 # ---
-from navig.gateway.channels.audio_menu.config import PROVIDERS
 import pytest
+
+from navig.gateway.channels.audio_menu.config import PROVIDERS
 
 pytestmark = pytest.mark.integration
 

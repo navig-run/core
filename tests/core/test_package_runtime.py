@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from navig.commands import package as package_cmd
 import pytest
+
+from navig.commands import package as package_cmd
 
 pytestmark = pytest.mark.integration
 

@@ -9,11 +9,9 @@ Covers:
 
 from __future__ import annotations
 
-
 import pytest
 
 from navig.core.retry_utils import RetryConfig, async_retry, jittered_backoff, retry_sync
-
 
 # ---------------------------------------------------------------------------
 # jittered_backoff
@@ -180,7 +178,7 @@ class TestRetrySync:
         def fn():
             calls[0] += 1
             if calls[0] < 2:
-                raise IOError("transient")
+                raise OSError("transient")
             return "ok"
 
         result = retry_sync(fn, config=RetryConfig(max_attempts=3, base_delay=0.01))

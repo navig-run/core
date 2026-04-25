@@ -10,12 +10,11 @@ import time
 import pytest
 
 from navig.memory.chat_store import (
+    _CHARS_PER_TOKEN,
     ChatMemoryStore,
     ConversationTurn,
-    _CHARS_PER_TOKEN,
 )
 from navig.memory.compactor import KeywordCompactor, KeywordSummariser
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ConversationTurn

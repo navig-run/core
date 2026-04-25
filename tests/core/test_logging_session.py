@@ -12,7 +12,6 @@ from __future__ import annotations
 import logging
 import threading
 
-
 from navig.core.logging import (
     COMPONENT_PREFIXES,
     _ComponentFilter,
@@ -22,7 +21,6 @@ from navig.core.logging import (
     get_logger,
     set_session_context,
 )
-
 
 # ---------------------------------------------------------------------------
 # Session context helpers

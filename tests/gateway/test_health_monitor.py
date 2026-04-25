@@ -10,7 +10,6 @@ import pytest
 
 from navig.gateway.health_monitor import ChannelHealthMonitor
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

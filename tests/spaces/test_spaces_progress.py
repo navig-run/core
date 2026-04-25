@@ -1,7 +1,8 @@
 from pathlib import Path
 
-from navig.spaces.progress import collect_spaces_progress, read_space_progress
 import pytest
+
+from navig.spaces.progress import collect_spaces_progress, read_space_progress
 
 pytestmark = pytest.mark.integration
 

@@ -8,8 +8,9 @@ requiring actual SSH connections.
 import time
 from unittest.mock import Mock, patch
 
-from navig.connection_pool import SSHConnection, SSHConnectionPool
 import pytest
+
+from navig.connection_pool import SSHConnection, SSHConnectionPool
 
 pytestmark = pytest.mark.integration
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -92,8 +91,9 @@ class TestRestore:
         assert src.read_text() == "version A"
 
     def test_restore_returns_false_for_missing_backup(self, tmp_path):
-        from navig.file_history import FileVersion
         from datetime import datetime, timezone
+
+        from navig.file_history import FileVersion
 
         store = _make_store(tmp_path)
         fake_version = FileVersion(

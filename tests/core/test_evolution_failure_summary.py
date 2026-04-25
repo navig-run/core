@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from navig.core.evolution.failure_summary import summarize_check_failure
 from navig.core.evolution.fix import FixEvolver
-import pytest
 
 pytestmark = pytest.mark.integration
 

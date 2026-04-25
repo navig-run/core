@@ -3,10 +3,10 @@ from __future__ import annotations
 import sys
 from types import SimpleNamespace
 
+import pytest
 from typer.testing import CliRunner
 
 import navig.commands.db as db_mod
-import pytest
 
 pytestmark = pytest.mark.integration
 

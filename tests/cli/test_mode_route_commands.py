@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from typer.testing import CliRunner
 import pytest
+from typer.testing import CliRunner
 
 pytestmark = pytest.mark.integration
 

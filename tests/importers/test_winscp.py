@@ -1,5 +1,6 @@
-from navig.importers.sources.winscp import WinSCPImporter
 import pytest
+
+from navig.importers.sources.winscp import WinSCPImporter
 
 pytestmark = pytest.mark.integration
 

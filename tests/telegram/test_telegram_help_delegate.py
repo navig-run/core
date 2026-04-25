@@ -1,7 +1,8 @@
 import inspect
 
-from navig.gateway.channels.telegram import TelegramChannel
 import pytest
+
+from navig.gateway.channels.telegram import TelegramChannel
 
 pytestmark = pytest.mark.integration
 

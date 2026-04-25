@@ -7,7 +7,6 @@ from pathlib import Path
 
 from navig.adapters.automation.types import ExecutionResult
 
-
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_SRC = ROOT / "packages" / "navig-windows-automation" / "src"
 HANDLER_PATH = ROOT / "packages" / "navig-windows-automation" / "handler.py"

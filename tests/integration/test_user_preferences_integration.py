@@ -4,9 +4,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 # We need to mock user_profile import since it uses global state and paths
 from navig.workspace import WorkspaceManager
-import pytest
 
 pytestmark = pytest.mark.integration
 

@@ -5,7 +5,6 @@ import sys
 import types
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 PACK_ROOT = ROOT / "packages" / "navig-telegram-handlers"
 

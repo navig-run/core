@@ -12,9 +12,10 @@ from pathlib import Path
 # Add app to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+import pytest
+
 from navig import console_helper as ch
 from navig.commands.init import init_app
-import pytest
 
 pytestmark = pytest.mark.integration
 

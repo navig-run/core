@@ -7,13 +7,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from navig.onboarding.engine import (
     EngineConfig,
     OnboardingEngine,
     OnboardingStep,
     StepResult,
 )
-import pytest
 
 pytestmark = pytest.mark.integration
 

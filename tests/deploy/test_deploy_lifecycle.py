@@ -4,6 +4,8 @@ import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from navig.deploy.engine import DeployEngine
 from navig.deploy.health import HealthChecker
 from navig.deploy.history import DeployHistory
@@ -18,7 +20,6 @@ from navig.deploy.models import (
     SnapshotRecord,
 )
 from navig.deploy.rollback import RollbackManager
-import pytest
 
 pytestmark = pytest.mark.integration
 

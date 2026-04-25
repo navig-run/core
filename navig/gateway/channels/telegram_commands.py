@@ -3348,7 +3348,7 @@ class TelegramCommandsMixin:
 
         # Persist the captured text
         try:
-            from navig.agent.proactive.eve_log import save_shipped, save_priority
+            from navig.agent.proactive.eve_log import save_priority, save_shipped
 
             if entry_type == "shipped":
                 save_shipped(text.strip())

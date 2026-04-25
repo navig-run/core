@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from navig.agent.conversational_legacy import ConversationalAgent
 import pytest
+
+from navig.agent.conversational_legacy import ConversationalAgent
 
 pytestmark = pytest.mark.integration
 

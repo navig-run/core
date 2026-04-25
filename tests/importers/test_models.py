@@ -1,5 +1,6 @@
-from navig.importers.models import ImportedItem, validate_item_dict
 import pytest
+
+from navig.importers.models import ImportedItem, validate_item_dict
 
 pytestmark = pytest.mark.unit
 

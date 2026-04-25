@@ -1,7 +1,8 @@
 from pathlib import Path
 
-from navig.spaces.briefing import build_spaces_briefing_lines
 import pytest
+
+from navig.spaces.briefing import build_spaces_briefing_lines
 
 pytestmark = pytest.mark.integration
 

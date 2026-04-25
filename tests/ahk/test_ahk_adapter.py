@@ -6,8 +6,9 @@ from unittest.mock import MagicMock, patch
 # Ensure navig on path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from navig.adapters.automation.ahk import AHKAdapter
 import pytest
+
+from navig.adapters.automation.ahk import AHKAdapter
 
 pytestmark = pytest.mark.integration
 

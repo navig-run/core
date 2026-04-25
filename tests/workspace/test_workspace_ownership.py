@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from navig import workspace as workspace_module
 from navig import workspace_ownership as own
 from navig.commands import onboard
 from navig.workspace import WorkspaceManager
-import pytest
 
 pytestmark = pytest.mark.integration
 

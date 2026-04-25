@@ -3,7 +3,6 @@ Tests for navig.memory.taxonomy — structured 4-type memory guidance.
 """
 from __future__ import annotations
 
-
 from navig.memory.taxonomy import (
     MEMORY_TAXONOMY,
     MemoryType,
@@ -87,6 +86,7 @@ class TestIsTaxonomyEnabled:
     def test_false_when_config_says_false(self, monkeypatch):
         """Patch config manager so taxonomy_enabled is False."""
         import unittest.mock as mock
+
         import navig.config as _cfg_mod
 
         fake_cm = mock.MagicMock()
@@ -97,6 +97,7 @@ class TestIsTaxonomyEnabled:
     def test_true_when_config_says_true(self, monkeypatch):
         """Patch config manager so taxonomy_enabled is True."""
         import unittest.mock as mock
+
         import navig.config as _cfg_mod
 
         fake_cm = mock.MagicMock()

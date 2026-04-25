@@ -22,10 +22,11 @@ import yaml
 # Add app to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import pytest
+
 from navig import console_helper as ch
 from navig.commands.init import init_app
 from navig.config import ConfigManager
-import pytest
 
 pytestmark = pytest.mark.integration
 

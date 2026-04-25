@@ -5,6 +5,8 @@ best-peer selection, and persistence round-trip.
 
 import time
 
+import pytest
+
 from navig.mesh.registry import (
     DEGRADED_AFTER_S,
     EVICT_AFTER_S,
@@ -12,7 +14,6 @@ from navig.mesh.registry import (
     NodeRecord,
     NodeRegistry,
 )
-import pytest
 
 pytestmark = pytest.mark.integration
 

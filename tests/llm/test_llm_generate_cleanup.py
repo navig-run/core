@@ -3,8 +3,9 @@ from __future__ import annotations
 import sys
 import types
 
-from navig import llm_generate
 import pytest
+
+from navig import llm_generate
 
 pytestmark = pytest.mark.integration
 
