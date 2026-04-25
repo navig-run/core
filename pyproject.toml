@@ -198,6 +198,15 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"packages/**/tests/**/*.py" = [
+  "S101",    # assert statements are idiomatic and required in pytest tests
+  "S105",    # hardcoded password strings are expected in test fixtures
+  "S106",    # hardcoded password in function arguments (test helpers)
+  "S107",    # hardcoded password as default value (test helpers)
+  "S311",    # pseudo-random use is fine in test data generation
+  "B011",    # assert False is acceptable in pytest (pytest.fail alternative)
+  "B017",    # assertRaises(Exception) acceptable in broad-catch test scenarios
+]
 "tests/**/*.py" = [
   "S101",    # assert statements are idiomatic and required in pytest tests
   "S105",    # hardcoded password strings are expected in test fixtures
