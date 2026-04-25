@@ -78,7 +78,7 @@ class TestOperationRecord:
         assert r.tags == []
 
     def test_to_dict_serialises_enums(self):
-        from navig.operation_recorder import OperationType, OperationStatus
+        from navig.operation_recorder import OperationStatus, OperationType
 
         r = self._make()
         d = r.to_dict()
@@ -86,7 +86,7 @@ class TestOperationRecord:
         assert d["status"] == OperationStatus.PENDING.value
 
     def test_from_dict_roundtrip(self):
-        from navig.operation_recorder import OperationType, OperationStatus
+        from navig.operation_recorder import OperationStatus, OperationType
 
         original = self._make(
             id="op-abc",
@@ -164,7 +164,7 @@ class TestOperationRecorderRecord:
 
 class TestStartComplete:
     def test_start_operation_returns_pending_record(self, tmp_path):
-        from navig.operation_recorder import OperationType, OperationStatus
+        from navig.operation_recorder import OperationStatus, OperationType
 
         rec = _make_recorder(tmp_path)
         op = rec.start_operation("navig run ls", operation_type=OperationType.REMOTE_COMMAND, host="prod")

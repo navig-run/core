@@ -37,7 +37,7 @@ class TestValidateEnvironment:
     def _cleared_env(self):
         """Return a dict with none of the LLM keys set."""
         keys_to_clear = REQUIRED_ENV_VARS["LLM_KEYS"]["vars"]
-        return {k: None for k in keys_to_clear}
+        return dict.fromkeys(keys_to_clear)
 
     def test_passes_with_openai_key(self):
         with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}, clear=False):
@@ -52,13 +52,13 @@ class TestValidateEnvironment:
             validate_environment()  # must not raise
 
     def test_raises_when_no_llm_key_present(self):
-        stripped = {k: "" for k in REQUIRED_ENV_VARS["LLM_KEYS"]["vars"]}
+        stripped = dict.fromkeys(REQUIRED_ENV_VARS["LLM_KEYS"]["vars"], "")
         with patch.dict(os.environ, stripped, clear=False):
             with pytest.raises(RuntimeError, match="REQUIRED environment variables"):
                 validate_environment()
 
     def test_error_printed_to_stderr(self, capsys):
-        stripped = {k: "" for k in REQUIRED_ENV_VARS["LLM_KEYS"]["vars"]}
+        stripped = dict.fromkeys(REQUIRED_ENV_VARS["LLM_KEYS"]["vars"], "")
         with patch.dict(os.environ, stripped, clear=False):
             with pytest.raises(RuntimeError):
                 validate_environment()
@@ -66,7 +66,7 @@ class TestValidateEnvironment:
         assert "Environment Verification Failed" in captured.err
 
     def test_error_message_mentions_group_name(self, capsys):
-        stripped = {k: "" for k in REQUIRED_ENV_VARS["LLM_KEYS"]["vars"]}
+        stripped = dict.fromkeys(REQUIRED_ENV_VARS["LLM_KEYS"]["vars"], "")
         with patch.dict(os.environ, stripped, clear=False):
             with pytest.raises(RuntimeError):
                 validate_environment()
