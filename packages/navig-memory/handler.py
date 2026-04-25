@@ -66,8 +66,19 @@ def _get_store(ctx: Any = None):
 
 def _store_path(ctx: Any = None) -> pathlib.Path:
     try:
-        if ctx and hasattr(ctx, "store_dir"):
-            return pathlib.Path(ctx["store_dir"]) / "memories.json"
+        if ctx:
+            store_dir = None
+            if isinstance(ctx, dict):
+                store_dir = ctx.get("store_dir")
+            else:
+                store_dir = getattr(ctx, "store_dir", None)
+                if store_dir is None:
+                    try:
+                        store_dir = ctx["store_dir"]
+                    except Exception:  # noqa: BLE001
+                        store_dir = None
+            if store_dir:
+                return pathlib.Path(store_dir) / "memories.json"
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
     try:

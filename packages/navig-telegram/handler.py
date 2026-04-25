@@ -8,6 +8,7 @@ on_event : routes NAVIG lifecycle events to Telegram if relevant
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import logging
 import sys
 from dataclasses import dataclass, field
@@ -38,27 +39,15 @@ class PluginEvent:
     source: str
 
 
-def on_load(ctx: PluginContext) -> None:
-    """Start the Telegram bot worker thread using config from PluginContext."""
-    src_path = str(ctx.store_path / "src")
+@contextmanager
+def _scoped_src_path(store_path: Path):
+    src_path = str(store_path / "src")
     added_to_path = False
     if src_path not in sys.path:
         sys.path.insert(0, src_path)
         added_to_path = True
     try:
-        import telegram_worker  # noqa: PLC0415
-
-        # Resolve packages/ dir as the parent of this package's install dir
-        packages_dir = ctx.store_path.parent
-        telegram_worker.start(ctx.config, packages_dir)
-        logger.info("[navig-telegram] Bot worker started")
-    except ImportError as exc:
-        raise RuntimeError(
-            f"navig-telegram: cannot import telegram_worker — {exc}"
-        ) from exc
-    except Exception as exc:
-        logger.error("[navig-telegram] Failed to start bot worker: %s", exc)
-        raise
+        yield
     finally:
         if added_to_path:
             try:
@@ -67,15 +56,35 @@ def on_load(ctx: PluginContext) -> None:
                 pass
 
 
+def on_load(ctx: PluginContext) -> None:
+    """Start the Telegram bot worker thread using config from PluginContext."""
+    with _scoped_src_path(ctx.store_path):
+        try:
+            import telegram_worker  # noqa: PLC0415
+
+            # Resolve packages/ dir as the parent of this package's install dir
+            packages_dir = ctx.store_path.parent
+            telegram_worker.start(ctx.config, packages_dir)
+            logger.info("[navig-telegram] Bot worker started")
+        except ImportError as exc:
+            raise RuntimeError(
+                f"navig-telegram: cannot import telegram_worker — {exc}"
+            ) from exc
+        except Exception as exc:
+            logger.error("[navig-telegram] Failed to start bot worker: %s", exc)
+            raise
+
+
 def on_unload(ctx: PluginContext) -> None:
     """Signal the bot worker to stop; must not raise."""
-    try:
-        import telegram_worker  # noqa: PLC0415
+    with _scoped_src_path(ctx.store_path):
+        try:
+            import telegram_worker  # noqa: PLC0415
 
-        telegram_worker.stop()
-        logger.info("[navig-telegram] Bot worker stopped")
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[navig-telegram] on_unload error (suppressed): %s", exc)
+            telegram_worker.stop()
+            logger.info("[navig-telegram] Bot worker stopped")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[navig-telegram] on_unload error (suppressed): %s", exc)
 
 
 def on_event(event: PluginEvent, ctx: PluginContext) -> dict[str, Any] | None:

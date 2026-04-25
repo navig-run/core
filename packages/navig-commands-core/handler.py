@@ -6,7 +6,9 @@ Registers all COMMANDS into the NAVIG command registry on load.
 
 from __future__ import annotations
 
+import inspect
 import logging
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -82,11 +84,39 @@ def on_event(event: PluginEvent, ctx: PluginContext) -> dict[str, Any] | None:
     handler = COMMANDS.get(event.name)
     if handler is None:
         return None
-    import asyncio  # noqa: PLC0415
 
     try:
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(handler(event.payload, ctx))  # type: ignore[arg-type]
+        result = handler(event.payload, ctx)  # type: ignore[misc]
+        if inspect.isawaitable(result):
+            return _run_awaitable(result)
+        return result
     except Exception as exc:  # noqa: BLE001
         logger.error("[navig-commands] on_event(%s) error: %s", event.name, exc)
         return None
+
+
+def _run_awaitable(awaitable: Any) -> dict[str, Any] | None:
+    import asyncio  # noqa: PLC0415
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(awaitable)
+
+    result_box: dict[str, Any] = {}
+    error_box: dict[str, BaseException] = {}
+
+    def _runner() -> None:
+        try:
+            result_box["value"] = asyncio.run(awaitable)
+        except BaseException as exc:  # pragma: no cover - re-raised on caller thread
+            error_box["value"] = exc
+
+    thread = threading.Thread(target=_runner, name="navig-commands-on-event")
+    thread.start()
+    thread.join()
+
+    if "value" in error_box:
+        raise error_box["value"]
+
+    return result_box.get("value")
