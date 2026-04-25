@@ -211,7 +211,7 @@ def test_hierarchical_config():
         hosts = config_mgr.list_hosts()
 
         if "test-server" in hosts:
-            ch.success(f"✓ Host 'test-server' found in list")
+            ch.success("✓ Host 'test-server' found in list")
             ch.info(f"  Total hosts: {len(hosts)}")
         else:
             ch.error("✗ Host 'test-server' not found in host list", "")

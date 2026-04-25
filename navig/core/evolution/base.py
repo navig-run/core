@@ -80,4 +80,4 @@ class BaseEvolver(ABC):
 
     def _save(self, goal: str, artifact: Any):
         """Save successful artifact."""
-        pass
+        return None

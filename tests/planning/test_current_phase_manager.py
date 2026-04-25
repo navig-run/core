@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from navig.plans.current_phase_manager import CurrentPhaseManager, PhaseState
+from navig.plans.current_phase_manager import CurrentPhaseManager
 
 pytestmark = pytest.mark.integration
 

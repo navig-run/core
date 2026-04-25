@@ -10,7 +10,6 @@ Covers:
 
 from __future__ import annotations
 
-import pytest
 
 from navig.gateway.channels.telegram_utils import (
     TgErrorKind,

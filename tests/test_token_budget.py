@@ -3,7 +3,6 @@ Tests for navig.token_budget — diminishing-returns continuation guard.
 """
 from __future__ import annotations
 
-import pytest
 
 from navig.token_budget import (
     BudgetTracker,

@@ -1,9 +1,7 @@
 """Tests for remote_agent timeout configuration parsing."""
 
 import importlib
-import os
 
-import pytest
 
 import navig.agent.remote_agent
 

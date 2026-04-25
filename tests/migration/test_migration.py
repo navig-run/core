@@ -2,7 +2,6 @@
 Tests for configuration migration utilities.
 """
 
-from pathlib import Path
 
 import pytest
 import yaml

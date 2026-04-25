@@ -3,7 +3,6 @@ Tests for navig.memory.taxonomy — structured 4-type memory guidance.
 """
 from __future__ import annotations
 
-import pytest
 
 from navig.memory.taxonomy import (
     MEMORY_TAXONOMY,

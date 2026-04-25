@@ -7,9 +7,6 @@ when a second Console targets stderr before the main stdout Console
 is initialised).
 """
 
-import importlib
-import sys
-import textwrap
 
 import pytest
 

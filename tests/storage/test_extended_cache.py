@@ -18,7 +18,6 @@ import copy
 import pytest
 
 from navig.agent.prompt_caching import (
-    _SKILLS_MARKERS,
     _TOOL_DEF_MARKERS,
     EXTENDED_CACHE_BETA_HEADER,
     CacheBreakpointPlacer,

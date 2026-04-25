@@ -117,7 +117,7 @@ class TestClassifier:
         assert r.confidence >= CONFIDENCE_THRESHOLD
 
     def test_diagnose_why_wrong(self):
-        from navig.commands.ai_router import CONFIDENCE_THRESHOLD, classify_intent
+        from navig.commands.ai_router import classify_intent
 
         r = classify_intent("what went wrong with the deployment?")
         assert r.subcommand in ("diagnose", "ask")  # either is acceptable

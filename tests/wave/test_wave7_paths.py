@@ -7,7 +7,6 @@ and providers.auth all honour NAVIG_CONFIG_DIR rather than hardcoding ~/.navig.
 
 from __future__ import annotations
 
-from pathlib import Path
 
 import pytest
 

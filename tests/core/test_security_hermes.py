@@ -18,7 +18,6 @@ from unittest.mock import patch
 import pytest
 
 from navig.core.security import (
-    DEFAULT_REDACT_PATTERNS,
     RedactingFormatter,
     _mask_token,
     get_managed_system,

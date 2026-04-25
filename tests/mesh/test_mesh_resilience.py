@@ -66,7 +66,7 @@ def _make_peer(
         node_id=node_id,
         hostname=f"host-{node_id}",
         os="linux",
-        gateway_url=f"http://10.0.0.1:8789",
+        gateway_url="http://10.0.0.1:8789",
         capabilities=capabilities or ["llm", "shell"],
         formation="",
         load=load,

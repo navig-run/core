@@ -149,7 +149,7 @@ class PluginBase(ABC):
 
         Use this for initialization that depends on NAVIG being fully loaded.
         """
-        pass
+        return None
 
     def on_unload(self) -> None:
         """
@@ -157,7 +157,7 @@ class PluginBase(ABC):
 
         Use this for cleanup (close connections, save state, etc.).
         """
-        pass
+        return None
 
     def get_config(self, key: str = None, default: Any = None) -> Any:
         """

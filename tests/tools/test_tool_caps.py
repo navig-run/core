@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import time
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from navig.agent.tool_caps import (
-    _LINE_SNAP_MIN_RATIO,
     DEFAULT_MAX_RESULT_CHARS,
-    SPILLOVER_DIR,
     SPILLOVER_TTL,
     TOOL_SPECIFIC_CAPS,
     cap_result,

@@ -466,7 +466,7 @@ class TelegramNotifier(ChannelNotifier):
 
         if anchor:
             lines += [
-                f"📌 <b>Your anchor for today:</b>",
+                "📌 <b>Your anchor for today:</b>",
                 f"<i>{anchor}</i>",
                 "",
             ]

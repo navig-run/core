@@ -84,7 +84,7 @@ def test_init():
             ch.success(f"✓ App root detected correctly: {config.base_dir}")
         else:
             ch.error(
-                f"✗ App root detection failed",
+                "✗ App root detection failed",
                 f"Expected: {navig_dir}\nGot: {config.base_dir}",
             )
 

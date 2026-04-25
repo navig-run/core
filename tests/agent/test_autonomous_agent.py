@@ -64,7 +64,7 @@ def test_cron_list():
         if resp.status_code == 200:
             data = resp.json()
             jobs = data.get("jobs", [])
-            print(f"[+] Cron service active")
+            print("[+] Cron service active")
             print(f"   Jobs configured: {len(jobs)}")
             for job in jobs:
                 status = "[+]" if job.get("enabled") else "[-]"
@@ -120,7 +120,7 @@ def test_cron_delete():
     if not _test_job_id:
         pytest.skip("No job_id from previous test")
 
-    print(f"\n=== Testing Cron Job Deletion ===")
+    print("\n=== Testing Cron Job Deletion ===")
     try:
         resp = requests.delete(f"{BASE_URL}/cron/jobs/{_test_job_id}", timeout=5)
         if resp.status_code == 200:
@@ -156,7 +156,7 @@ def test_heartbeat_trigger():
                 for issue in issues[:3]:  # Show first 3
                     print(f"   [!] {issue}")
 
-            print(f"\n   Response preview:")
+            print("\n   Response preview:")
             response_text = data.get("response", "")[:200]
             print(f"   {response_text}...")
 
@@ -214,7 +214,7 @@ def test_ai_config():
 
             models = config.global_config.get("ai_model_preference", [])
             if models:
-                print(f"   Preferred models:")
+                print("   Preferred models:")
                 for model in models[:3]:
                     print(f"   - {model}")
             else:

@@ -189,7 +189,7 @@ def processor_tree(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (inbox / "old_idea.md").write_text(
-        f"---\ntitle: Legacy cleanup\ndate: 2020-01-01\n---\n\nClean up old code.\n",
+        "---\ntitle: Legacy cleanup\ndate: 2020-01-01\n---\n\nClean up old code.\n",
         encoding="utf-8",
     )
     return tmp_path

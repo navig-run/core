@@ -102,5 +102,20 @@ def remember(content, type="fact"):
     }
 
 
+@plugin.command("checkpoint")
+def checkpoint(root_path=""):
+    logging.info(f"Checkpointing memory state for: {root_path or 'current workspace'}")
+    result = _HANDLER.cmd_memory_checkpoint({"root_path": root_path} if root_path else {})
+    if result.get("status") != "ok":
+        raise RuntimeError(result.get("message", "checkpoint failed"))
+
+    data = result["data"]
+    return {
+        "status": "success",
+        "id": data["id"],
+        "path": data["path"],
+    }
+
+
 if __name__ == "__main__":
     plugin.run()

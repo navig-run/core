@@ -63,3 +63,36 @@ def test_legacy_memory_main_recall_empty_query_is_empty():
     module = _load_module("navig_memory_package_main_empty", MAIN_PATH)
 
     assert module.recall("") == {"results": []}
+
+
+def test_legacy_memory_main_checkpoint_uses_handler(tmp_path):
+    module = _load_module("navig_memory_package_main_checkpoint", MAIN_PATH)
+    calls: list[dict] = []
+
+    fake_handler = type(
+        "FakeHandler",
+        (),
+        {
+            "cmd_memory_checkpoint": staticmethod(
+                lambda args: calls.append(args)
+                or {
+                    "status": "ok",
+                    "data": {
+                        "id": "cp-123",
+                        "path": str(tmp_path / "checkpoints" / "cp-123.json"),
+                    },
+                }
+            ),
+        },
+    )()
+
+    module._HANDLER = fake_handler
+
+    result = module.checkpoint(str(tmp_path / "workspace"))
+
+    assert result == {
+        "status": "success",
+        "id": "cp-123",
+        "path": str(tmp_path / "checkpoints" / "cp-123.json"),
+    }
+    assert calls == [{"root_path": str(tmp_path / "workspace")}]

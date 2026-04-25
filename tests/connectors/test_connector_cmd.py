@@ -18,7 +18,6 @@ from navig.connectors.types import (
     ConnectorStatus,
     HealthStatus,
     Resource,
-    ResourceType,
 )
 
 pytestmark = pytest.mark.integration

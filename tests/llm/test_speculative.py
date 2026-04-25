@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import json
 import time
-from collections import Counter
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -414,7 +411,6 @@ class TestSpeculativeAsync:
 
     async def test_speculative_run_timeout_handled(self):
         """Timeout during speculation is handled gracefully."""
-        import asyncio
 
         def slow_dispatch(tool: str, args: dict) -> str:
             import time

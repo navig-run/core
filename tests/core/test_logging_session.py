@@ -12,7 +12,6 @@ from __future__ import annotations
 import logging
 import threading
 
-import pytest
 
 from navig.core.logging import (
     COMPONENT_PREFIXES,

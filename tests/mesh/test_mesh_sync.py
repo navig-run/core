@@ -33,7 +33,7 @@ def _make_discovery() -> MagicMock:
     return disc
 
 
-def _make_sm(*, is_leader: bool = True, interval: int = 1) -> "SyncManager":  # type: ignore[name-defined]
+def _make_sm(*, is_leader: bool = True, interval: int = 1):
     from navig.mesh.sync_manager import SyncManager
 
     registry = _make_registry(is_leader=is_leader)
@@ -201,7 +201,6 @@ async def test_leader_tick_calls_send_election_packet():
 async def test_leader_tick_updates_state_reference():
     sm = _make_sm(is_leader=True)
     await sm.start()
-    old_hash = sm._state_hash
     # Mutate self_record to force state change
     sm._registry.self_record.node_id = "changed-node"
     await sm._leader_tick()

@@ -16,11 +16,10 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
-import typer
 from typer.testing import CliRunner
 
 # ── imports under test ──────────────────────────────────────────────────────
-from navig.commands.vault import PROVIDER_DEFAULTS, cred_app, vault_app
+from navig.commands.vault import PROVIDER_DEFAULTS, vault_app
 
 pytestmark = pytest.mark.integration
 
@@ -296,7 +295,7 @@ def test_check_all_disabled_creds_skipped():
 def test_voice_provider_step_is_registered():
     """voice-provider step exists in the onboarding registry."""
     from pathlib import Path
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import MagicMock
 
     cfg = MagicMock()
     cfg.navig_dir = Path("/tmp/navig_test")

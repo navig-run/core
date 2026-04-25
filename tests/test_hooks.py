@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -113,10 +112,8 @@ class TestFireHook:
         """fire_hook should return a no-op result when no hooks match."""
         from navig.hooks import fire_hook
         from navig.hooks.events import HookContext, HookEvent
-        from navig.hooks.registry import HookRegistry
 
         # Provide an empty registry so nothing is executed
-        from navig.hooks import executor as _exec_mod, registry as _reg_mod
 
         ctx = HookContext(event=HookEvent.SESSION_START, session_id="smoke-test")
         result = fire_hook(ctx)

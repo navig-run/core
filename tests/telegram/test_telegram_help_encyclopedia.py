@@ -9,9 +9,6 @@ from navig.gateway.channels.telegram_commands import (
     _HELP_CATEGORIES,
     TelegramCommandsMixin,
     _ensure_help_cmd_index,
-    _HelpCategory,
-    _HelpSubcategory,
-    _iter_unique_registry,
 )
 from navig.gateway.channels.telegram_keyboards import CallbackHandler
 

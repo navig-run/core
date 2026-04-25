@@ -414,7 +414,7 @@ def flow_daily_briefing():
         )
 
         lines = ["Daily Operational Briefing", "", "Agents report:"]
-        for agent_id, role in AGENTS.items():
+        for role in AGENTS.values():
             lines.append(f"- {role}: active")
 
         lines.append("")

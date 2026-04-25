@@ -7,8 +7,6 @@ import pytest
 
 from navig.gateway.channels.telegram_inline import (
     TelegramInlineMixin,
-    _INLINE_CACHE_TTL_SECONDS,
-    _INLINE_DEBOUNCE_SECONDS,
     _INLINE_MAX_RESULT_LEN,
 )
 

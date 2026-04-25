@@ -3,8 +3,6 @@ Tests for navig.cost_tracker — per-session LLM cost accumulation.
 """
 from __future__ import annotations
 
-import json
-import time
 from pathlib import Path
 
 import pytest
@@ -12,7 +10,6 @@ import pytest
 from navig.cost_tracker import (
     ModelUsage,
     SessionCostTracker,
-    SessionSnapshot,
     get_session_tracker,
     reset_session_tracker,
 )

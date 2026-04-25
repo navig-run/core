@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from navig.plans.inbox_reader import (
-    InboxItem,
     InboxReader,
     canonical_name,
     parse_suffix_state,

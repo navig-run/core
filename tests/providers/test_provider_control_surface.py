@@ -11,7 +11,6 @@ Covers:
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from unittest.mock import MagicMock, patch
 
 import pytest
 

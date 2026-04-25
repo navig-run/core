@@ -14,11 +14,9 @@ Verifies that:
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 # ---------------------------------------------------------------------------
 # 1. vault.batch_get

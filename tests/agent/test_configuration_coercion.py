@@ -4,7 +4,6 @@ This test validates the safety guards placed around `int()` and `float()` casts
 when reading potentially malformed configuration dictionaries across the agent codebase.
 """
 
-from typing import Any
 
 from navig.agent.model_router import ModelSlot
 from navig.agent.prompt_caching import CacheStats

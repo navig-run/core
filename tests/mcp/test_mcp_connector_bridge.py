@@ -501,7 +501,6 @@ def test_register_all_tools_preserves_existing_bundles() -> None:
 
 def test_registry_list_all_includes_capability_flags() -> None:
     """ConnectorRegistry.list_all() now includes can_search/can_fetch/can_act."""
-    from navig.connectors.registry import ConnectorRegistry
 
     C1 = _make_connector_class("cap1", can_search=True, can_fetch=False, can_act=False)
     C2 = _make_connector_class("cap2", can_search=True, can_fetch=True, can_act=True)

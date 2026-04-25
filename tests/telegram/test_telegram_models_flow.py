@@ -16,7 +16,6 @@ Covers:
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
 
 import pytest
 

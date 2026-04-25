@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -11,7 +10,6 @@ from navig.connectors.gmail.mappers import (
     gmail_message_list_entry_to_resource,
     gmail_message_to_resource,
 )
-from navig.connectors.types import ActionType, ResourceType
 
 pytestmark = pytest.mark.integration
 

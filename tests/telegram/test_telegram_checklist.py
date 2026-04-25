@@ -3,8 +3,6 @@
 import pytest
 
 from navig.gateway.channels.telegram_checklist import (
-    _CHECKLIST_MIN_ITEMS,
-    _CHECKLIST_MIN_LIST_RATIO,
     TelegramChecklistMixin,
     extract_task_list,
     should_send_as_checklist,

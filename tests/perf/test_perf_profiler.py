@@ -13,7 +13,6 @@ After the fix:  _safe_argv() returns  "host list"
 """
 from __future__ import annotations
 
-import sys
 
 import pytest
 
