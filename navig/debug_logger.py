@@ -291,20 +291,29 @@ _global_debug_logger: DebugLogger | None = None
 def get_debug_logger() -> logging.Logger:
     """Return a standard :class:`logging.Logger` for the calling module.
 
+    Inspects the call stack to derive the caller's module name, so each module
+    gets its own logger (e.g. ``navig.mcp.registry``, ``navig.mesh.router``)
+    rather than all sharing a single ``navig.gateway`` logger.
+
     Delegates to :func:`navig.core.logging.get_logger` so all NAVIG subsystems
     share a single, consistently configured logging hierarchy.
-
-    Falls back to a plain ``navig.gateway`` logger if the core logging module
-    is not yet available (e.g. during early boot).
     """
+    import inspect
+
+    frame_info = inspect.stack()[1]
+    caller_module: str = frame_info[0].f_globals.get("__name__", "") or ""
+    # Derive a short subsystem name, e.g. "navig.mcp.registry" → "mcp.registry"
+    subsystem = caller_module.removeprefix("navig.") if caller_module.startswith("navig.") else (caller_module or "gateway")
+
     try:
         from navig.core.logging import get_logger
-        return get_logger("gateway")
+        return get_logger(subsystem)
     except ImportError:
         pass
 
-    # Fallback: plain logger configured once.
-    logger = logging.getLogger("navig.gateway")
+    # Fallback: plain logger for the caller's module name.
+    logger_name = f"navig.{subsystem}" if not caller_module.startswith("navig") else caller_module
+    logger = logging.getLogger(logger_name)
     if not logger.handlers:
         logger.setLevel(logging.DEBUG)
         try:
