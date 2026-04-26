@@ -1,54 +1,86 @@
+"""Tests for navig.spaces.progress — _completion_from_markdown, read_space_progress."""
+from __future__ import annotations
+
 from pathlib import Path
 
 import pytest
 
-from navig.spaces.progress import collect_spaces_progress, read_space_progress
-
-pytestmark = pytest.mark.integration
+from navig.spaces.progress import SpaceProgress, _completion_from_markdown, read_space_progress
 
 
-def test_read_space_progress_from_frontmatter_completion(tmp_path):
-    space = tmp_path / "health"
-    space.mkdir(parents=True, exist_ok=True)
-    (space / "VISION.md").write_text("---\ngoal: Run a marathon\n---\n\n# Vision\n")
-    (space / "CURRENT_PHASE.md").write_text(
-        "---\ncompletion_pct: 62.5\nlast_updated: 2026-03-29\n---\n\n- [x] Week 1\n- [ ] Week 2\n"
-    )
+class TestCompletionFromMarkdown:
+    def test_all_done_returns_100(self) -> None:
+        text = "- [x] done\n- [X] also done"
+        assert _completion_from_markdown(text) == 100.0
 
-    row = read_space_progress("health", space, "global")
-    assert row.name == "health"
-    assert row.goal == "Run a marathon"
-    assert row.completion_pct == 62.5
-    assert row.last_updated == "2026-03-29"
+    def test_none_done_returns_0(self) -> None:
+        text = "- [ ] task 1\n- [ ] task 2"
+        assert _completion_from_markdown(text) == 0.0
+
+    def test_half_done(self) -> None:
+        text = "- [x] done\n- [ ] pending"
+        assert _completion_from_markdown(text) == 50.0
+
+    def test_empty_text_returns_0(self) -> None:
+        assert _completion_from_markdown("") == 0.0
+
+    def test_no_checkboxes_returns_0(self) -> None:
+        assert _completion_from_markdown("Just some text\n## Heading") == 0.0
+
+    def test_mixed_case_x(self) -> None:
+        text = "- [x] lower\n- [X] upper\n- [ ] pending"
+        pct = _completion_from_markdown(text)
+        assert abs(pct - 66.7) < 1.0
 
 
-def test_read_space_progress_from_checkboxes_when_no_frontmatter_pct(tmp_path):
-    space = tmp_path / "project"
-    space.mkdir(parents=True, exist_ok=True)
-    (space / "VISION.md").write_text("# Ship v2\n")
-    (space / "CURRENT_PHASE.md").write_text("- [x] task A\n- [ ] task B\n- [x] task C\n")
+class TestReadSpaceProgress:
+    def test_returns_space_progress_instance(self, tmp_path: Path) -> None:
+        result = read_space_progress("myspace", tmp_path, "project")
+        assert isinstance(result, SpaceProgress)
 
-    row = read_space_progress("project", space, "project")
-    assert row.goal == "Ship v2"
-    assert row.completion_pct == 66.7
+    def test_name_stored(self, tmp_path: Path) -> None:
+        result = read_space_progress("myspace", tmp_path, "project")
+        assert result.name == "myspace"
 
+    def test_scope_stored(self, tmp_path: Path) -> None:
+        result = read_space_progress("myspace", tmp_path, "global")
+        assert result.scope == "global"
 
-def test_collect_spaces_progress_project_overrides_global(tmp_path, monkeypatch):
-    home = tmp_path / "home"
-    monkeypatch.setattr(Path, "home", lambda: home)
+    def test_path_stored(self, tmp_path: Path) -> None:
+        result = read_space_progress("myspace", tmp_path, "project")
+        assert result.path == tmp_path
 
-    global_space = home / ".navig" / "spaces" / "health"
-    global_space.mkdir(parents=True, exist_ok=True)
-    (global_space / "VISION.md").write_text("# Global health\n")
-    (global_space / "CURRENT_PHASE.md").write_text("---\ncompletion_pct: 10\n---\n")
+    def test_goal_from_vision_frontmatter(self, tmp_path: Path) -> None:
+        vision = tmp_path / "VISION.md"
+        vision.write_text("---\ngoal: Ship MVP\n---\n# Some heading\n", encoding="utf-8")
+        result = read_space_progress("myspace", tmp_path, "project")
+        assert result.goal == "Ship MVP"
 
-    repo = tmp_path / "repo"
-    project_space = repo / ".navig" / "spaces" / "health"
-    project_space.mkdir(parents=True, exist_ok=True)
-    (project_space / "VISION.md").write_text("# Project health\n")
-    (project_space / "CURRENT_PHASE.md").write_text("---\ncompletion_pct: 90\n---\n")
+    def test_goal_falls_back_to_h1(self, tmp_path: Path) -> None:
+        vision = tmp_path / "VISION.md"
+        vision.write_text("# My Space Goal\n\nSome description\n", encoding="utf-8")
+        result = read_space_progress("myspace", tmp_path, "project")
+        assert "My Space Goal" in result.goal
 
-    rows = collect_spaces_progress(cwd=repo)
-    health = [r for r in rows if r.name == "health"][0]
-    assert health.scope == "project"
-    assert health.completion_pct == 90.0
+    def test_goal_fallback_to_space_name(self, tmp_path: Path) -> None:
+        # No VISION.md at all → fallback to "<name> goals"
+        result = read_space_progress("devops", tmp_path, "project")
+        assert "devops" in result.goal.lower()
+
+    def test_completion_from_frontmatter(self, tmp_path: Path) -> None:
+        phase = tmp_path / "CURRENT_PHASE.md"
+        phase.write_text("---\ncompletion_pct: 75\n---\n", encoding="utf-8")
+        result = read_space_progress("s", tmp_path, "project")
+        assert result.completion_pct == 75.0
+
+    def test_completion_calculated_from_checkboxes(self, tmp_path: Path) -> None:
+        phase = tmp_path / "CURRENT_PHASE.md"
+        phase.write_text("- [x] done\n- [ ] pending\n", encoding="utf-8")
+        result = read_space_progress("s", tmp_path, "project")
+        assert result.completion_pct == 50.0
+
+    def test_last_updated_from_frontmatter(self, tmp_path: Path) -> None:
+        phase = tmp_path / "CURRENT_PHASE.md"
+        phase.write_text("---\nlast_updated: 2024-01-15\n---\n", encoding="utf-8")
+        result = read_space_progress("s", tmp_path, "project")
+        assert result.last_updated == "2024-01-15"

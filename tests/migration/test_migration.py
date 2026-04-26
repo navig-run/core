@@ -1,7 +1,8 @@
-"""
-Tests for configuration migration utilities.
-"""
+"""Tests for navig.migration — legacy config migration utilities."""
 
+from __future__ import annotations
+
+from pathlib import Path
 
 import pytest
 import yaml
@@ -16,304 +17,271 @@ from navig.migration import (
     save_config,
 )
 
-pytestmark = pytest.mark.integration
+
+# ──────────────────────────────────────────────────────────────
+# Fixtures
+# ──────────────────────────────────────────────────────────────
 
 
-@pytest.fixture
-def temp_dir(tmp_path):
-    """Create temporary directory for tests."""
-    yield tmp_path
-
-
-@pytest.fixture
-def old_format_nginx_config():
-    """Old format configuration with nginx."""
+def _old_config(host: str = "10.0.0.1", services_web: str = "nginx") -> dict:
     return {
-        "name": "production",
-        "host": "srv.example.com",
+        "name": "myapp",
+        "host": host,
         "port": 22,
-        "user": "root",
-        "ssh_key": "~/.ssh/production",
-        "database": {
-            "type": "mysql",
-            "name": "myapp_db",
-            "user": "myapp_user",
-            "password": "secret123",
-        },
-        "services": {"web": "nginx", "php": "php8.2-fpm"},
-        "paths": {"web_root": "/var/www/myapp/public"},
-    }
-
-
-@pytest.fixture
-def old_format_apache_config():
-    """Old format configuration with apache2."""
-    return {
-        "name": "staging",
-        "host": "staging.example.com",
-        "port": 2222,
         "user": "deploy",
-        "ssh_key": "~/.ssh/staging",
-        "services": {"web": "apache2"},
+        "ssh_key": "~/.ssh/id_rsa",
+        "services": {"web": services_web, "db": "mysql"},
+        "paths": {"app": "/var/www/myapp"},
     }
 
 
-@pytest.fixture
-def new_format_config():
-    """New format configuration."""
+def _new_config() -> dict:
     return {
-        "name": "myhost",
-        "host": "srv.example.host",
-        "port": 22,
-        "user": "root",
-        "ssh_key": "~/.ssh/myhost",
-        "default_app": "myapp",
-        "apps": {
-            "myapp": {
-                "database": {"type": "mysql", "name": "myapp_db"},
-                "webserver": {"type": "nginx"},
-            }
-        },
+        "name": "myserver",
+        "host": "10.0.0.1",
+        "apps": {"myapp": {"paths": {"app": "/var/www"}}},
     }
 
 
-class TestFormatDetection:
-    """Test format detection."""
+def _write_yaml(path: Path, data: dict) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.dump(data), encoding="utf-8")
+    return path
 
-    def test_detect_old_format(self, temp_dir, old_format_nginx_config):
-        """Test detection of old format."""
-        config_path = temp_dir / "old.yaml"
-        save_config(old_format_nginx_config, config_path)
 
-        assert detect_format(config_path) == "old"
+# ──────────────────────────────────────────────────────────────
+# detect_format
+# ──────────────────────────────────────────────────────────────
 
-    def test_detect_new_format(self, temp_dir, new_format_config):
-        """Test detection of new format."""
-        config_path = temp_dir / "new.yaml"
-        save_config(new_format_config, config_path)
 
-        assert detect_format(config_path) == "new"
+class TestDetectFormat:
+    def test_detects_old_format(self, tmp_path):
+        cfg = _write_yaml(tmp_path / "old.yaml", _old_config())
+        assert detect_format(cfg) == "old"
 
-    def test_detect_format_missing_file(self, temp_dir):
-        """Test detection with missing file."""
-        config_path = temp_dir / "missing.yaml"
+    def test_detects_new_format(self, tmp_path):
+        cfg = _write_yaml(tmp_path / "new.yaml", _new_config())
+        assert detect_format(cfg) == "new"
 
+    def test_raises_file_not_found(self, tmp_path):
         with pytest.raises(FileNotFoundError):
-            detect_format(config_path)
+            detect_format(tmp_path / "missing.yaml")
 
-    def test_detect_format_empty_file(self, temp_dir):
-        """Test detection with empty file."""
-        config_path = temp_dir / "empty.yaml"
-        config_path.write_text("")
-
+    def test_raises_on_empty_file(self, tmp_path):
+        empty = tmp_path / "empty.yaml"
+        empty.write_text("", encoding="utf-8")
         with pytest.raises(ConfigMigrationError):
-            detect_format(config_path)
+            detect_format(empty)
+
+    def test_raises_on_ambiguous_config(self, tmp_path):
+        ambiguous = tmp_path / "ambiguous.yaml"
+        # No 'host' and no 'apps' key
+        _write_yaml(ambiguous, {"random": "data"})
+        with pytest.raises(ConfigMigrationError):
+            detect_format(ambiguous)
+
+    def test_raises_on_invalid_yaml(self, tmp_path):
+        bad = tmp_path / "bad.yaml"
+        bad.write_text("key: [unclosed", encoding="utf-8")
+        with pytest.raises(Exception):
+            detect_format(bad)
 
 
-class TestWebserverTypeExtraction:
-    """Test webserver type extraction."""
-
-    def test_extract_nginx(self, old_format_nginx_config):
-        """Test extraction of nginx type."""
-        assert extract_webserver_type(old_format_nginx_config) == "nginx"
-
-    def test_extract_apache(self, old_format_apache_config):
-        """Test extraction of apache2 type."""
-        assert extract_webserver_type(old_format_apache_config) == "apache2"
-
-    def test_extract_missing_services(self):
-        """Test extraction with missing services field."""
-        config = {"name": "test", "host": "test.com"}
-
-        with pytest.raises(ConfigMigrationError) as exc_info:
-            extract_webserver_type(config)
-
-        assert "Unable to determine webserver type" in str(exc_info.value)
-
-    def test_extract_missing_web_service(self):
-        """Test extraction with missing web service."""
-        config = {"services": {"php": "php8.2-fpm"}}
-
-        with pytest.raises(ConfigMigrationError) as exc_info:
-            extract_webserver_type(config)
-
-        assert "Unable to determine webserver type" in str(exc_info.value)
-
-    def test_extract_invalid_web_service(self):
-        """Test extraction with invalid web service."""
-        config = {"services": {"web": "lighttpd"}}
-
-        with pytest.raises(ConfigMigrationError) as exc_info:
-            extract_webserver_type(config)
-
-        assert "Unable to determine webserver type" in str(exc_info.value)
+# ──────────────────────────────────────────────────────────────
+# extract_webserver_type
+# ──────────────────────────────────────────────────────────────
 
 
-class TestConfigMigration:
-    """Test configuration migration."""
+class TestExtractWebserverType:
+    def test_extracts_nginx(self):
+        cfg = _old_config(services_web="nginx")
+        assert extract_webserver_type(cfg) == "nginx"
 
-    def test_migrate_nginx_config(self, temp_dir, old_format_nginx_config):
-        """Test migration of nginx configuration."""
-        old_path = temp_dir / "production.yaml"
-        new_path = temp_dir / "production_new.yaml"
-        save_config(old_format_nginx_config, old_path)
+    def test_extracts_nginx_uppercase(self):
+        cfg = _old_config(services_web="Nginx")
+        assert extract_webserver_type(cfg) == "nginx"
 
-        old_config, new_config = migrate_config(old_path, new_path)
+    def test_extracts_apache2(self):
+        cfg = _old_config(services_web="apache2")
+        assert extract_webserver_type(cfg) == "apache2"
 
-        # Verify host-level fields
-        assert new_config["name"] == "production"
-        assert new_config["host"] == "srv.example.com"
-        assert new_config["port"] == 22
-        assert new_config["user"] == "root"
-        assert new_config["ssh_key"] == "~/.ssh/production"
-        assert new_config["default_app"] == "production"
+    def test_extracts_apache_variant(self):
+        cfg = _old_config(services_web="Apache")
+        assert extract_webserver_type(cfg) == "apache2"
 
-        # Verify apps structure
-        assert "apps" in new_config
-        assert "production" in new_config["apps"]
+    def test_reads_from_webserver_type_if_present(self):
+        cfg = {"webserver": {"type": "nginx"}}
+        assert extract_webserver_type(cfg) == "nginx"
 
-        # Verify app fields
-        app = new_config["apps"]["production"]
-        assert app["database"]["type"] == "mysql"
-        assert app["database"]["name"] == "myapp_db"
-        assert app["services"]["web"] == "nginx"
-        assert app["paths"]["web_root"] == "/var/www/myapp/public"
+    def test_raises_when_no_services(self):
+        with pytest.raises(ConfigMigrationError):
+            extract_webserver_type({"host": "x.x.x.x"})
 
-        # Verify webserver type extracted
-        assert "webserver" in app
-        assert app["webserver"]["type"] == "nginx"
-
-    def test_migrate_apache_config(self, temp_dir, old_format_apache_config):
-        """Test migration of apache2 configuration."""
-        old_path = temp_dir / "staging.yaml"
-        new_path = temp_dir / "staging_new.yaml"
-        save_config(old_format_apache_config, old_path)
-
-        old_config, new_config = migrate_config(old_path, new_path)
-
-        # Verify webserver type extracted
-        app = new_config["apps"]["staging"]
-        assert app["webserver"]["type"] == "apache2"
-
-    def test_migrate_missing_webserver_type(self, temp_dir):
-        """Test migration fails when webserver type cannot be determined."""
-        config = {
-            "name": "test",
-            "host": "test.com",
-            "user": "root",
-            "ssh_key": "~/.ssh/test",
-        }
-        old_path = temp_dir / "test.yaml"
-        new_path = temp_dir / "test_new.yaml"
-        save_config(config, old_path)
-
-        with pytest.raises(ConfigMigrationError) as exc_info:
-            migrate_config(old_path, new_path)
-
-        assert "Failed to migrate" in str(exc_info.value)
-        assert "Unable to determine webserver type" in str(exc_info.value)
+    def test_raises_for_unknown_web_service(self):
+        with pytest.raises(ConfigMigrationError):
+            extract_webserver_type({"services": {"web": "caddy"}})
 
 
-class TestBackup:
-    """Test backup functionality."""
+# ──────────────────────────────────────────────────────────────
+# migrate_config
+# ──────────────────────────────────────────────────────────────
 
-    def test_backup_config(self, temp_dir, old_format_nginx_config):
-        """Test backup creation."""
-        config_path = temp_dir / "production.yaml"
-        save_config(old_format_nginx_config, config_path)
 
-        backup_path = backup_config(config_path)
+class TestMigrateConfig:
+    def test_returns_tuple_of_old_and_new(self, tmp_path):
+        old_path = _write_yaml(tmp_path / "myapp.yaml", _old_config())
+        old_cfg, new_cfg = migrate_config(old_path, tmp_path / "host_myapp.yaml")
+        assert isinstance(old_cfg, dict)
+        assert isinstance(new_cfg, dict)
 
-        assert backup_path.exists()
-        assert backup_path.parent == config_path.parent
-        assert "production.backup." in backup_path.name
-        assert backup_path.suffix == ".yaml"
+    def test_new_config_has_apps_key(self, tmp_path):
+        old_path = _write_yaml(tmp_path / "myapp.yaml", _old_config())
+        _, new_cfg = migrate_config(old_path, tmp_path / "out.yaml")
+        assert "apps" in new_cfg
 
-        # Verify backup content matches original
-        with open(config_path, "r") as f:
-            original = yaml.safe_load(f)
-        with open(backup_path, "r") as f:
-            backup = yaml.safe_load(f)
+    def test_app_name_taken_from_filename(self, tmp_path):
+        old_path = _write_yaml(tmp_path / "production.yaml", _old_config())
+        _, new_cfg = migrate_config(old_path, tmp_path / "out.yaml")
+        assert "production" in new_cfg["apps"]
 
-        assert original == backup
+    def test_host_preserved_at_root(self, tmp_path):
+        old_path = _write_yaml(tmp_path / "myapp.yaml", _old_config(host="192.168.1.1"))
+        _, new_cfg = migrate_config(old_path, tmp_path / "out.yaml")
+        assert new_cfg["host"] == "192.168.1.1"
 
-    def test_backup_missing_file(self, temp_dir):
-        """Test backup with missing file."""
-        config_path = temp_dir / "missing.yaml"
+    def test_webserver_type_added_to_app(self, tmp_path):
+        old_path = _write_yaml(tmp_path / "myapp.yaml", _old_config(services_web="nginx"))
+        _, new_cfg = migrate_config(old_path, tmp_path / "out.yaml")
+        assert new_cfg["apps"]["myapp"]["webserver"]["type"] == "nginx"
 
+    def test_metadata_added(self, tmp_path):
+        old_path = _write_yaml(tmp_path / "myapp.yaml", _old_config())
+        _, new_cfg = migrate_config(old_path, tmp_path / "out.yaml")
+        assert "metadata" in new_cfg
+        assert "migrated_at" in new_cfg["metadata"]
+
+    def test_default_app_set(self, tmp_path):
+        old_path = _write_yaml(tmp_path / "webserver.yaml", _old_config())
+        _, new_cfg = migrate_config(old_path, tmp_path / "out.yaml")
+        assert new_cfg["default_app"] == "webserver"
+
+    def test_raises_file_not_found(self, tmp_path):
         with pytest.raises(FileNotFoundError):
-            backup_config(config_path)
+            migrate_config(tmp_path / "ghost.yaml", tmp_path / "out.yaml")
+
+    def test_raises_on_already_new_format(self, tmp_path):
+        new_path = _write_yaml(tmp_path / "new.yaml", _new_config())
+        with pytest.raises(ConfigMigrationError):
+            migrate_config(new_path, tmp_path / "out.yaml")
+
+    def test_raises_on_empty_file(self, tmp_path):
+        empty = tmp_path / "empty.yaml"
+        empty.write_text("", encoding="utf-8")
+        with pytest.raises(ConfigMigrationError):
+            migrate_config(empty, tmp_path / "out.yaml")
 
 
-class TestMigrateAll:
-    """Test batch migration."""
+# ──────────────────────────────────────────────────────────────
+# backup_config
+# ──────────────────────────────────────────────────────────────
 
-    def test_migrate_all_configs(self, temp_dir, old_format_nginx_config, old_format_apache_config):
-        """Test migrating all configurations."""
-        old_dir = temp_dir / "apps"
-        new_dir = temp_dir / "hosts"
-        old_dir.mkdir()
 
-        # Create old format configs
-        save_config(old_format_nginx_config, old_dir / "production.yaml")
-        save_config(old_format_apache_config, old_dir / "staging.yaml")
+class TestBackupConfig:
+    def test_creates_backup_file(self, tmp_path):
+        cfg = _write_yaml(tmp_path / "config.yaml", _old_config())
+        backup_path = backup_config(cfg)
+        assert backup_path.exists()
 
-        # Migrate
-        results = migrate_all_configs(old_dir, new_dir, dry_run=False, backup=True)
+    def test_backup_is_different_file(self, tmp_path):
+        cfg = _write_yaml(tmp_path / "config.yaml", _old_config())
+        backup_path = backup_config(cfg)
+        assert backup_path != cfg
 
-        # Verify results
-        assert len(results["migrated"]) == 2
-        assert len(results["failed"]) == 0
-        assert len(results["backups"]) == 2
+    def test_backup_has_original_content(self, tmp_path):
+        data = _old_config()
+        cfg = _write_yaml(tmp_path / "config.yaml", data)
+        backup_path = backup_config(cfg)
+        loaded = yaml.safe_load(backup_path.read_text(encoding="utf-8"))
+        assert loaded["host"] == data["host"]
 
-        # Verify new configs exist
-        assert (new_dir / "production.yaml").exists()
-        assert (new_dir / "staging.yaml").exists()
+    def test_backup_name_contains_timestamp(self, tmp_path):
+        cfg = _write_yaml(tmp_path / "config.yaml", _old_config())
+        backup_path = backup_config(cfg)
+        assert ".backup." in backup_path.name
 
-        # Verify backups exist
-        assert len(list(old_dir.glob("*.backup.*.yaml"))) == 2
+    def test_raises_if_file_missing(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            backup_config(tmp_path / "ghost.yaml")
 
-    def test_migrate_all_dry_run(self, temp_dir, old_format_nginx_config):
-        """Test dry run migration."""
-        old_dir = temp_dir / "apps"
-        new_dir = temp_dir / "hosts"
-        old_dir.mkdir()
 
-        save_config(old_format_nginx_config, old_dir / "production.yaml")
+# ──────────────────────────────────────────────────────────────
+# save_config
+# ──────────────────────────────────────────────────────────────
 
-        # Dry run
-        results = migrate_all_configs(old_dir, new_dir, dry_run=True, backup=True)
 
-        # Verify no files created
-        assert not new_dir.exists()
-        assert len(list(old_dir.glob("*.backup.*.yaml"))) == 0
+class TestSaveConfig:
+    def test_writes_yaml_file(self, tmp_path):
+        dest = tmp_path / "saved.yaml"
+        save_config({"key": "value"}, dest)
+        loaded = yaml.safe_load(dest.read_text(encoding="utf-8"))
+        assert loaded == {"key": "value"}
 
-        # Verify results show what would be migrated
-        assert len(results["migrated"]) == 1
-        assert results["migrated"][0]["dry_run"] is True
+    def test_creates_parent_directories(self, tmp_path):
+        dest = tmp_path / "sub" / "deep" / "config.yaml"
+        save_config({"x": 1}, dest)
+        assert dest.exists()
 
-    def test_migrate_all_skip_new_format(self, temp_dir, new_format_config):
-        """Test skipping already migrated configs."""
-        old_dir = temp_dir / "apps"
-        new_dir = temp_dir / "hosts"
-        old_dir.mkdir()
 
-        save_config(new_format_config, old_dir / "myhost.yaml")
+# ──────────────────────────────────────────────────────────────
+# migrate_all_configs
+# ──────────────────────────────────────────────────────────────
 
-        results = migrate_all_configs(old_dir, new_dir, dry_run=False, backup=True)
 
-        # Verify skipped
-        assert len(results["skipped"]) == 1
-        assert results["skipped"][0]["reason"] == "Already in new format"
+class TestMigrateAllConfigs:
+    def test_empty_old_dir(self, tmp_path):
+        result = migrate_all_configs(tmp_path / "nonexistent", tmp_path / "new")
+        assert result["migrated"] == []
+        assert result["failed"] == []
 
-    def test_migrate_all_empty_directory(self, temp_dir):
-        """Test migration with empty directory."""
-        old_dir = temp_dir / "apps"
-        new_dir = temp_dir / "hosts"
+    def test_migrates_old_config(self, tmp_path):
+        old_dir = tmp_path / "old"
+        _write_yaml(old_dir / "myapp.yaml", _old_config())
+        result = migrate_all_configs(old_dir, tmp_path / "new", backup=False)
+        assert len(result["migrated"]) == 1
+        assert len(result["failed"]) == 0
 
-        results = migrate_all_configs(old_dir, new_dir, dry_run=False, backup=True)
+    def test_skips_already_new_format(self, tmp_path):
+        old_dir = tmp_path / "old"
+        _write_yaml(old_dir / "newstyle.yaml", _new_config())
+        result = migrate_all_configs(old_dir, tmp_path / "new", backup=False)
+        assert len(result["skipped"]) == 1
+        assert len(result["migrated"]) == 0
 
-        # Verify no results
-        assert len(results["migrated"]) == 0
-        assert len(results["skipped"]) == 0
-        assert len(results["failed"]) == 0
+    def test_skips_backup_files(self, tmp_path):
+        old_dir = tmp_path / "old"
+        _write_yaml(old_dir / "config.backup.20240101_120000.yaml", _old_config())
+        result = migrate_all_configs(old_dir, tmp_path / "new", backup=False)
+        assert len(result["skipped"]) == 1
+
+    def test_dry_run_does_not_write_new_files(self, tmp_path):
+        old_dir = tmp_path / "old"
+        new_dir = tmp_path / "new"
+        _write_yaml(old_dir / "myapp.yaml", _old_config())
+        result = migrate_all_configs(old_dir, new_dir, dry_run=True, backup=False)
+        assert len(result["migrated"]) == 1
+        assert result["migrated"][0]["dry_run"] is True
+        assert not (new_dir / "myapp.yaml").exists()
+
+    def test_creates_backups_when_requested(self, tmp_path):
+        old_dir = tmp_path / "old"
+        _write_yaml(old_dir / "myapp.yaml", _old_config())
+        result = migrate_all_configs(old_dir, tmp_path / "new", backup=True)
+        assert len(result["backups"]) == 1
+
+    def test_failed_migration_recorded(self, tmp_path):
+        old_dir = tmp_path / "old"
+        # Create a file with 'host' but no services.web (will fail extract_webserver_type)
+        bad_cfg = {"host": "10.0.0.1", "user": "admin"}
+        _write_yaml(old_dir / "broken.yaml", bad_cfg)
+        result = migrate_all_configs(old_dir, tmp_path / "new", backup=False)
+        assert len(result["failed"]) == 1

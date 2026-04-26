@@ -1,4 +1,4 @@
-"""Tests for navig.plans.milestone_progress."""
+"""Hermetic unit tests for navig.plans.milestone_progress."""
 
 from __future__ import annotations
 
@@ -6,156 +6,164 @@ from pathlib import Path
 
 import pytest
 
-from navig.plans.milestone_progress import MilestoneProgressEngine, MilestoneState
+from navig.plans.milestone_progress import (
+    MilestoneProgressEngine,
+    MilestoneState,
+    _count_checkboxes,
+)
 
-pytestmark = pytest.mark.integration
-
-_MVP1_CONTENT = """\
----
-title: Minimum Viable Product
-status: active
-target_date: 2025-06-01
----
-
-# MVP1 — Minimum Viable Product
-
-## Tasks
-
-- [x] Project scaffolding
-- [x] Core inbox reader
-- [x] Phase manager
-- [ ] Inbox processor
-- [ ] Review queue
-- [ ] Milestone tracking
-- [ ] Corpus scanner
-"""
-
-_MVP2_CONTENT = """\
----
-title: Enhanced Features
-status: blocked
-target_date: 2025-09-01
----
-
-# MVP2 — Enhanced Features
-
-## Tasks
-
-- [x] LM integration
-- [ ] Auto-reconciliation
-- [ ] Dashboard UI
-"""
+# ---------------------------------------------------------------------------
+# _count_checkboxes — pure regex
+# ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
-def milestone_tree(tmp_path: Path) -> Path:
-    """Create .navig/plans/milestones/ with sample milestones."""
-    ms_dir = tmp_path / ".navig" / "plans" / "milestones"
-    ms_dir.mkdir(parents=True)
-    (ms_dir / "MVP1.md").write_text(_MVP1_CONTENT, encoding="utf-8")
-    (ms_dir / "MVP2.md").write_text(_MVP2_CONTENT, encoding="utf-8")
-    return tmp_path
+class TestCountCheckboxes:
+    def test_empty_text(self):
+        done, total = _count_checkboxes("")
+        assert done == 0 and total == 0
+
+    def test_only_done(self):
+        text = "- [x] task one\n- [X] task two\n"
+        done, total = _count_checkboxes(text)
+        assert done == 2 and total == 2
+
+    def test_only_pending(self):
+        text = "- [ ] task a\n- [ ] task b\n- [ ] task c\n"
+        done, total = _count_checkboxes(text)
+        assert done == 0 and total == 3
+
+    def test_mixed(self):
+        text = "- [x] done\n- [ ] pending\n- [X] also done\n"
+        done, total = _count_checkboxes(text)
+        assert done == 2 and total == 3
+
+    def test_bullet_star(self):
+        text = "* [x] done with star\n* [ ] pending with star\n"
+        done, total = _count_checkboxes(text)
+        assert done == 1 and total == 2
+
+    def test_no_checkboxes(self):
+        text = "# Header\n\nSome prose without any tasks.\n"
+        done, total = _count_checkboxes(text)
+        assert done == 0 and total == 0
 
 
-def test_list_milestones(milestone_tree: Path) -> None:
-    engine = MilestoneProgressEngine(milestone_tree)
-    milestones = engine.list_milestones()
-    assert len(milestones) == 2
-    names = [m.name for m in milestones]
-    assert "MVP1" in names
-    assert "MVP2" in names
+# ---------------------------------------------------------------------------
+# MilestoneState.progress_pct
+# ---------------------------------------------------------------------------
 
 
-def test_milestone_checkbox_counts(milestone_tree: Path) -> None:
-    engine = MilestoneProgressEngine(milestone_tree)
-    mvp1 = engine.get_milestone("MVP1")
-    assert mvp1 is not None
-    assert mvp1.done_count == 3
-    assert mvp1.total_count == 7
-
-
-def test_milestone_progress_pct(milestone_tree: Path) -> None:
-    engine = MilestoneProgressEngine(milestone_tree)
-    mvp1 = engine.get_milestone("MVP1")
-    assert mvp1 is not None
-    expected = round((3 / 7) * 100, 1)
-    assert mvp1.progress_pct == expected
-
-
-def test_milestone_status(milestone_tree: Path) -> None:
-    engine = MilestoneProgressEngine(milestone_tree)
-    mvp2 = engine.get_milestone("MVP2")
-    assert mvp2 is not None
-    assert mvp2.status == "blocked"
-
-
-def test_render_strip_active(milestone_tree: Path) -> None:
-    engine = MilestoneProgressEngine(milestone_tree)
-    mvp1 = engine.get_milestone("MVP1")
-    assert mvp1 is not None
-    strip = engine.render_strip(mvp1, width=10)
-    assert "✓" in strip
-    assert "●" in strip
-    assert "MVP1" in strip
-
-
-def test_render_strip_blocked(milestone_tree: Path) -> None:
-    engine = MilestoneProgressEngine(milestone_tree)
-    mvp2 = engine.get_milestone("MVP2")
-    assert mvp2 is not None
-    strip = engine.render_strip(mvp2, width=10)
-    assert "⚠" in strip
-    assert "MVP2" in strip
-
-
-def test_render_all(milestone_tree: Path) -> None:
-    engine = MilestoneProgressEngine(milestone_tree)
-    output = engine.render_all(width=10)
-    assert "MVP1" in output
-    assert "MVP2" in output
-    lines = output.strip().splitlines()
-    assert len(lines) == 2
-
-
-def test_get_milestone_case_insensitive(milestone_tree: Path) -> None:
-    engine = MilestoneProgressEngine(milestone_tree)
-    ms = engine.get_milestone("mvp1")
-    assert ms is not None
-    assert ms.name == "MVP1"
-
-
-def test_get_milestone_missing(milestone_tree: Path) -> None:
-    engine = MilestoneProgressEngine(milestone_tree)
-    assert engine.get_milestone("NONEXISTENT") is None
-
-
-def test_list_milestones_empty(tmp_path: Path) -> None:
-    engine = MilestoneProgressEngine(tmp_path)
-    assert engine.list_milestones() == []
-
-
-def test_render_strip_no_tasks(tmp_path: Path) -> None:
-    ms_dir = tmp_path / ".navig" / "plans" / "milestones"
-    ms_dir.mkdir(parents=True)
-    (ms_dir / "EMPTY.md").write_text(
-        "---\ntitle: Empty\nstatus: active\n---\n\nNo checkboxes here.\n",
-        encoding="utf-8",
+def _make_state(done: int, total: int, status: str = "active") -> MilestoneState:
+    return MilestoneState(
+        name="MVP1",
+        title="MVP 1",
+        status=status,
+        target_date="2025-12-31",
+        done_count=done,
+        total_count=total,
+        source_path=Path("/fake/MVP1.md"),
     )
-    engine = MilestoneProgressEngine(tmp_path)
-    ms = engine.get_milestone("EMPTY")
-    assert ms is not None
-    strip = engine.render_strip(ms, width=10)
-    assert "no tasks" in strip
 
 
-def test_milestone_zero_total_pct() -> None:
-    ms = MilestoneState(
-        name="X",
-        title="X",
-        status="active",
-        target_date="",
-        done_count=0,
-        total_count=0,
-        source_path=Path("/fake"),
-    )
-    assert ms.progress_pct == 0.0
+class TestMilestoneStateProgressPct:
+    def test_zero_total_returns_zero(self):
+        assert _make_state(0, 0).progress_pct == 0.0
+
+    def test_half_done(self):
+        assert _make_state(1, 2).progress_pct == 50.0
+
+    def test_all_done(self):
+        assert _make_state(5, 5).progress_pct == 100.0
+
+    def test_rounded_to_one_decimal(self):
+        pct = _make_state(1, 3).progress_pct
+        assert pct == pytest.approx(33.3, abs=0.1)
+
+
+# ---------------------------------------------------------------------------
+# MilestoneProgressEngine.render_strip
+# ---------------------------------------------------------------------------
+
+
+class TestRenderStrip:
+    def _engine(self) -> MilestoneProgressEngine:
+        return MilestoneProgressEngine(Path("."))
+
+    def test_no_tasks_message(self):
+        ms = _make_state(0, 0)
+        result = self._engine().render_strip(ms, width=10)
+        assert "no tasks" in result
+
+    def test_all_done_shows_checks(self):
+        ms = _make_state(5, 5)
+        strip = self._engine().render_strip(ms, width=5)
+        assert strip.count("✓") == 5
+
+    def test_blocked_shows_warning_symbol(self):
+        ms = _make_state(2, 5, status="blocked")
+        strip = self._engine().render_strip(ms, width=5)
+        assert "⚠" in strip
+
+    def test_in_progress_shows_bullet(self):
+        ms = _make_state(2, 5, status="active")
+        strip = self._engine().render_strip(ms, width=5)
+        assert "●" in strip
+
+    def test_strip_contains_name_and_pct(self):
+        ms = _make_state(1, 2)
+        result = self._engine().render_strip(ms, width=4)
+        assert "MVP1" in result
+        assert "50.0%" in result
+
+
+# ---------------------------------------------------------------------------
+# MilestoneProgressEngine.list_milestones — filesystem-based
+# ---------------------------------------------------------------------------
+
+
+class TestListMilestones:
+    def _milestone_dir(self, tmp_path: Path) -> Path:
+        d = tmp_path / ".navig" / "plans" / "milestones"
+        d.mkdir(parents=True)
+        return d
+
+    def _write_milestone(self, d: Path, name: str, content: str) -> None:
+        (d / f"{name}.md").write_text(content, encoding="utf-8")
+
+    def test_empty_dir_returns_empty(self, tmp_path: Path):
+        self._milestone_dir(tmp_path)
+        engine = MilestoneProgressEngine(tmp_path)
+        assert engine.list_milestones() == []
+
+    def test_missing_dir_returns_empty(self, tmp_path: Path):
+        engine = MilestoneProgressEngine(tmp_path)
+        assert engine.list_milestones() == []
+
+    def test_reads_milestone_file(self, tmp_path: Path):
+        d = self._milestone_dir(tmp_path)
+        self._write_milestone(
+            d,
+            "MVP1",
+            "---\ntitle: MVP 1\nstatus: active\n---\n- [x] done\n- [ ] pending\n",
+        )
+        engine = MilestoneProgressEngine(tmp_path)
+        milestones = engine.list_milestones()
+        assert len(milestones) == 1
+        ms = milestones[0]
+        assert ms.name == "MVP1"
+        assert ms.done_count == 1
+        assert ms.total_count == 2
+
+    def test_ignores_non_md_files(self, tmp_path: Path):
+        d = self._milestone_dir(tmp_path)
+        (d / "notes.txt").write_text("some text", encoding="utf-8")
+        engine = MilestoneProgressEngine(tmp_path)
+        assert engine.list_milestones() == []
+
+    def test_multiple_milestones_sorted(self, tmp_path: Path):
+        d = self._milestone_dir(tmp_path)
+        for name in ("Z_last", "A_first", "M_mid"):
+            self._write_milestone(d, name, f"---\ntitle: {name}\n---\n")
+        engine = MilestoneProgressEngine(tmp_path)
+        names = [ms.name for ms in engine.list_milestones()]
+        assert names == sorted(names)

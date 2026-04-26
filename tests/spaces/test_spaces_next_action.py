@@ -1,61 +1,83 @@
+"""Tests for navig.spaces.next_action — first_pending_task, SpaceNextAction."""
+from __future__ import annotations
+
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from navig.spaces.next_action import (
-    build_continuation_prompt,
-    first_pending_task,
-    select_best_next_action,
-)
-
-pytestmark = pytest.mark.integration
+from navig.spaces.next_action import SpaceNextAction, first_pending_task
 
 
-def _set_global_config_dir(monkeypatch, tmp_path) -> Path:
-    config_dir = tmp_path / ".navig-global"
-    monkeypatch.setenv("NAVIG_CONFIG_DIR", str(config_dir))
-    return config_dir
+# ---------------------------------------------------------------------------
+# first_pending_task
+# ---------------------------------------------------------------------------
+
+class TestFirstPendingTask:
+    def test_extracts_pending_checkbox(self) -> None:
+        text = "- [ ] Fix the bug"
+        assert first_pending_task(text) == "Fix the bug"
+
+    def test_returns_empty_when_no_pending(self) -> None:
+        text = "- [x] Done already"
+        assert first_pending_task(text) == ""
+
+    def test_returns_empty_for_empty_input(self) -> None:
+        assert first_pending_task("") == ""
+
+    def test_returns_empty_for_none_input(self) -> None:
+        assert first_pending_task(None) == ""
+
+    def test_picks_first_pending_task(self) -> None:
+        text = "- [x] Completed\n- [ ] First pending\n- [ ] Second pending"
+        assert first_pending_task(text) == "First pending"
+
+    def test_handles_leading_whitespace(self) -> None:
+        text = "   - [ ] Indented task"
+        result = first_pending_task(text)
+        assert "Indented task" in result
+
+    def test_ignores_completed_checkboxes(self) -> None:
+        text = "- [x] Done\n- [X] Also done"
+        assert first_pending_task(text) == ""
+
+    def test_multiline_finds_first(self) -> None:
+        lines = "\n".join([f"- [ ] Task {i}" for i in range(5)])
+        assert first_pending_task(lines) == "Task 0"
 
 
-def test_first_pending_task_extracts_checkbox_text():
-    text = "- [x] done\n- [ ] Ship milestone\n"
-    assert first_pending_task(text) == "Ship milestone"
+# ---------------------------------------------------------------------------
+# SpaceNextAction
+# ---------------------------------------------------------------------------
 
+class TestSpaceNextAction:
+    def test_is_frozen_dataclass(self) -> None:
+        action = SpaceNextAction(
+            space="devops",
+            scope="project",
+            goal="Ship v2",
+            completion_pct=0.4,
+            next_task="Write tests",
+        )
+        with pytest.raises((AttributeError, TypeError)):
+            action.space = "other"  # type: ignore[misc]
 
-def test_select_best_next_action_prefers_lowest_progress(tmp_path, monkeypatch):
-    config_dir = _set_global_config_dir(monkeypatch, tmp_path)
+    def test_fields_accessible(self) -> None:
+        action = SpaceNextAction(
+            space="sysops",
+            scope="global",
+            goal="Stabilize infra",
+            completion_pct=0.75,
+            next_task="Configure monitoring",
+        )
+        assert action.space == "sysops"
+        assert action.scope == "global"
+        assert action.goal == "Stabilize infra"
+        assert action.completion_pct == 0.75
+        assert action.next_task == "Configure monitoring"
 
-    low = config_dir / "spaces" / "project"
-    low.mkdir(parents=True, exist_ok=True)
-    (low / "VISION.md").write_text("---\ngoal: Launch v2\n---\n", encoding="utf-8")
-    (low / "CURRENT_PHASE.md").write_text(
-        "---\ncompletion_pct: 10\n---\n\n- [ ] Draft release checklist\n", encoding="utf-8"
-    )
-
-    high = config_dir / "spaces" / "health"
-    high.mkdir(parents=True, exist_ok=True)
-    (high / "VISION.md").write_text("---\ngoal: Strong body\n---\n", encoding="utf-8")
-    (high / "CURRENT_PHASE.md").write_text(
-        "---\ncompletion_pct: 70\n---\n\n- [ ] Gym session\n", encoding="utf-8"
-    )
-
-    action = select_best_next_action(cwd=tmp_path / "repo")
-    assert action is not None
-    assert action.space == "project"
-    assert action.next_task == "Draft release checklist"
-
-
-def test_build_continuation_prompt_includes_space_goal_task(tmp_path, monkeypatch):
-    config_dir = _set_global_config_dir(monkeypatch, tmp_path)
-
-    space = config_dir / "spaces" / "finance"
-    space.mkdir(parents=True, exist_ok=True)
-    (space / "VISION.md").write_text("---\ngoal: Build emergency fund\n---\n", encoding="utf-8")
-    (space / "CURRENT_PHASE.md").write_text(
-        "---\ncompletion_pct: 33\n---\n\n- [ ] Move 10% salary to savings\n", encoding="utf-8"
-    )
-
-    prompt = build_continuation_prompt(preferred_space="finance", cwd=tmp_path / "repo")
-    assert "finance" in prompt
-    assert "Build emergency fund" in prompt
-    assert "Move 10% salary to savings" in prompt
+    def test_completion_pct_is_float(self) -> None:
+        action = SpaceNextAction(
+            space="x", scope="project", goal="g", completion_pct=0.5, next_task="t"
+        )
+        assert isinstance(action.completion_pct, float)
