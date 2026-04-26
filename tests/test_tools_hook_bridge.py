@@ -77,7 +77,6 @@ class TestHandlerFactories:
         ev = _make_tool_event(event=ToolEvent.AFTER_EXECUTE)
         # _after handler has a source-level bug: missing error kwarg to ExecutionEvent.after
         # Mock it so the handler can actually fire _fire_engine_event
-        from unittest.mock import MagicMock, patch
         from navig.engine import hooks as eng_hooks
         with patch.object(eng_hooks.ExecutionEvent, "after", return_value=MagicMock()):
             _make_after_handler()(ev)
