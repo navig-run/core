@@ -54,16 +54,8 @@ def safe_eval(expr: str, variables: dict[str, Any] | None = None) -> Any:
 
 def _eval_node(node: ast.AST, variables: dict[str, Any]) -> Any:
     # Literals
-    if isinstance(node, ast.Constant):  # Python 3.8+
+    if isinstance(node, ast.Constant):  # Python 3.8+ (ast.Str/Num/Bytes removed in 3.12)
         return node.value
-    if isinstance(node, (ast.Str, ast.Num, ast.Bytes, ast.NameConstant)):  # Python < 3.8
-        return (
-            node.n
-            if isinstance(node, ast.Num)
-            else node.s
-            if isinstance(node, ast.Str)
-            else node.value
-        )
 
     # Data structures
     if isinstance(node, ast.List):
