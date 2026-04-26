@@ -47,35 +47,38 @@ def test_no_args_exits_nonzero_or_shows_help():
 # explain command <name>
 # ---------------------------------------------------------------------------
 
+_WARN = "navig.console_helper.warn"
+_CREATE = {"create": True}
+
+
 def test_explain_command_exits_0():
-    with patch("navig.commands.explain.ch") as mock_ch:
+    with patch(_WARN, **_CREATE):
         result = runner.invoke(app, ["command", "mycommand"])
     assert result.exit_code == 0
 
 
 def test_explain_command_calls_warn():
-    with patch("navig.commands.explain.ch") as mock_ch:
+    with patch(_WARN, create=True) as mock_warn:
         runner.invoke(app, ["command", "mycommand"])
-    mock_ch.warn.assert_called_once()
+    mock_warn.assert_called_once()
 
 
 def test_explain_command_warn_includes_name():
-    with patch("navig.commands.explain.ch") as mock_ch:
+    with patch(_WARN, create=True) as mock_warn:
         runner.invoke(app, ["command", "my-special-cmd"])
-    call_arg = mock_ch.warn.call_args[0][0]
+    call_arg = mock_warn.call_args[0][0]
     assert "my-special-cmd" in call_arg
 
 
 def test_explain_command_warn_says_not_implemented():
-    with patch("navig.commands.explain.ch") as mock_ch:
+    with patch(_WARN, create=True) as mock_warn:
         runner.invoke(app, ["command", "test"])
-    call_arg = mock_ch.warn.call_args[0][0]
+    call_arg = mock_warn.call_args[0][0]
     assert "not yet implemented" in call_arg
 
 
 def test_explain_command_missing_arg_exits_nonzero():
-    with patch("navig.commands.explain.ch"):
-        result = runner.invoke(app, ["command"])
+    result = runner.invoke(app, ["command"])
     assert result.exit_code != 0
 
 
@@ -89,34 +92,33 @@ def test_explain_command_help_exits_0():
 # ---------------------------------------------------------------------------
 
 def test_explain_config_exits_0():
-    with patch("navig.commands.explain.ch") as mock_ch:
+    with patch(_WARN, create=True):
         result = runner.invoke(app, ["config", "MY_KEY"])
     assert result.exit_code == 0
 
 
 def test_explain_config_calls_warn():
-    with patch("navig.commands.explain.ch") as mock_ch:
+    with patch(_WARN, create=True) as mock_warn:
         runner.invoke(app, ["config", "MY_KEY"])
-    mock_ch.warn.assert_called_once()
+    mock_warn.assert_called_once()
 
 
 def test_explain_config_warn_includes_key():
-    with patch("navig.commands.explain.ch") as mock_ch:
+    with patch(_WARN, create=True) as mock_warn:
         runner.invoke(app, ["config", "database.host"])
-    call_arg = mock_ch.warn.call_args[0][0]
+    call_arg = mock_warn.call_args[0][0]
     assert "database.host" in call_arg
 
 
 def test_explain_config_warn_says_not_implemented():
-    with patch("navig.commands.explain.ch") as mock_ch:
+    with patch(_WARN, create=True) as mock_warn:
         runner.invoke(app, ["config", "timeout"])
-    call_arg = mock_ch.warn.call_args[0][0]
+    call_arg = mock_warn.call_args[0][0]
     assert "not yet implemented" in call_arg
 
 
 def test_explain_config_missing_arg_exits_nonzero():
-    with patch("navig.commands.explain.ch"):
-        result = runner.invoke(app, ["config"])
+    result = runner.invoke(app, ["config"])
     assert result.exit_code != 0
 
 
@@ -130,34 +132,33 @@ def test_explain_config_help_exits_0():
 # ---------------------------------------------------------------------------
 
 def test_explain_concept_exits_0():
-    with patch("navig.commands.explain.ch") as mock_ch:
+    with patch(_WARN, create=True):
         result = runner.invoke(app, ["concept", "vault"])
     assert result.exit_code == 0
 
 
 def test_explain_concept_calls_warn():
-    with patch("navig.commands.explain.ch") as mock_ch:
+    with patch(_WARN, create=True) as mock_warn:
         runner.invoke(app, ["concept", "vault"])
-    mock_ch.warn.assert_called_once()
+    mock_warn.assert_called_once()
 
 
 def test_explain_concept_warn_includes_topic():
-    with patch("navig.commands.explain.ch") as mock_ch:
+    with patch(_WARN, create=True) as mock_warn:
         runner.invoke(app, ["concept", "identity-sigil"])
-    call_arg = mock_ch.warn.call_args[0][0]
+    call_arg = mock_warn.call_args[0][0]
     assert "identity-sigil" in call_arg
 
 
 def test_explain_concept_warn_says_not_implemented():
-    with patch("navig.commands.explain.ch") as mock_ch:
+    with patch(_WARN, create=True) as mock_warn:
         runner.invoke(app, ["concept", "agents"])
-    call_arg = mock_ch.warn.call_args[0][0]
+    call_arg = mock_warn.call_args[0][0]
     assert "not yet implemented" in call_arg
 
 
 def test_explain_concept_missing_arg_exits_nonzero():
-    with patch("navig.commands.explain.ch"):
-        result = runner.invoke(app, ["concept"])
+    result = runner.invoke(app, ["concept"])
     assert result.exit_code != 0
 
 
@@ -170,18 +171,16 @@ def test_explain_concept_help_exits_0():
 # Cross-command isolation
 # ---------------------------------------------------------------------------
 
-def test_explain_command_does_not_call_config_handler():
-    with patch("navig.commands.explain.ch") as mock_ch:
+def test_explain_command_warn_called_exactly_once():
+    with patch(_WARN, create=True) as mock_warn:
         runner.invoke(app, ["command", "ls"])
-    # warn called exactly once
-    assert mock_ch.warn.call_count == 1
+    assert mock_warn.call_count == 1
 
 
 def test_each_subcommand_has_distinct_output_message():
     messages = []
     for sub, arg in [("command", "ls"), ("config", "timeout"), ("concept", "tunnel")]:
-        with patch("navig.commands.explain.ch") as mock_ch:
+        with patch(_WARN, create=True) as mock_warn:
             runner.invoke(app, [sub, arg])
-        messages.append(mock_ch.warn.call_args[0][0])
-    # All messages are distinct
+        messages.append(mock_warn.call_args[0][0])
     assert len(set(messages)) == 3
