@@ -237,13 +237,19 @@ async def _mcp_reconnect_loop(
             try:
                 from navig.mcp.client import MCPClientConfig
 
-                await mgr.add_client(
-                    config=MCPClientConfig(
-                        id=name,
-                        url=mcp_cfg["mcp_url"],
-                        transport=_transport_for_url(mcp_cfg["mcp_url"]),
+                # Only register the client once; use auto_connect=False to
+                # avoid a double-connect race (add_client fires its own
+                # background retry when auto_connect=True, and connect_client
+                # below would then issue a second simultaneous attempt).
+                if name not in mgr.clients:
+                    await mgr.add_client(
+                        config=MCPClientConfig(
+                            id=name,
+                            url=mcp_cfg["mcp_url"],
+                            transport=_transport_for_url(mcp_cfg["mcp_url"]),
+                            auto_connect=False,
+                        )
                     )
-                )
                 connected = await mgr.connect_client(name)
                 if connected:
                     logger.info("MCP reconnect: %s connected", name)
