@@ -423,6 +423,8 @@ def service_restart():
 
     from navig.daemon.service_manager import (
         _pythonw_exe,
+        clear_stop_flag,
+        clear_watchdog_deadline,
         task_scheduler_disable,
         task_scheduler_enable,
     )
@@ -446,6 +448,23 @@ def service_restart():
             ch.info(f"Swept {len(swept)} orphan daemon process(es): {swept}")
             time.sleep(1)
 
+    # Clear the stop-intent flag and watchdog deadline before spawning — the
+    # stop flow sets these and entry.py respects them to block auto-restarts.
+    # A restart is always an explicit user action, so always lift both locks.
+    clear_watchdog_deadline()
+    clear_stop_flag()
+
+    # Guard against the stop-watchdog race: any watchdog spawned by service_stop
+    # loops every 0.2 s calling _kill_orphan_daemons().  Poll until those files
+    # are gone before spawning the new process — same logic as service_start.
+    from navig.daemon.service_manager import DAEMON_DIR  # noqa: PLC0415
+
+    for _wdog_wait in range(60):  # 60 * 0.2 s = 12 s max
+        wdog_files = list(DAEMON_DIR.glob("navig_wdog_*.py"))
+        if not wdog_files:
+            break
+        time.sleep(0.2)
+
     ch.info("Starting daemon...")
     exe = _pythonw_exe()
     cmd = [exe, "-m", "navig.daemon.entry"]
@@ -463,8 +482,18 @@ def service_restart():
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-    time.sleep(2)
-    if NavigDaemon.is_running():
+
+    # Poll for the PID file instead of a fixed 2 s sleep — on slow Windows
+    # machines the daemon may need several seconds to write its PID file.
+    _POLL_INTERVAL = 1.0  # seconds between checks
+    _POLL_MAX = 10  # total attempts → up to 10 s
+    _started = False
+    for _attempt in range(_POLL_MAX):
+        time.sleep(_POLL_INTERVAL)
+        if NavigDaemon.is_running():
+            _started = True
+            break
+    if _started:
         # Re-enable the Task Scheduler task so logon/failure-restart works again.
         if os.name == "nt":
             task_scheduler_enable()  # silent if task not installed

@@ -1,0 +1,7 @@
+
+name: mock_pack
+description: A mock pack
+skills:
+  - mock_skill
+workflows:
+  - mock_workflow
