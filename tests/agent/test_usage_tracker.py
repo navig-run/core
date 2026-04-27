@@ -201,8 +201,8 @@ class TestCostTracker:
         sc2 = tracker.session_cost()
         assert sc1 is not sc2  # Different SessionCost objects
 
-    def test_clear_resets(self):
+    def test_reset_clears(self):
         tracker = CostTracker()
         tracker.record(self._event())
-        tracker.clear()
+        tracker.reset()
         assert tracker.session_cost().total_tokens == 0
