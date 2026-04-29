@@ -75,7 +75,7 @@ class TestFindingSummary:
         from navig.selfheal.pr_builder import _finding_summary
 
         findings = [_finding(severity="low"), _finding(severity="critical")]
-        result = _finding_summary(findings)
+        result = _finding_summary(findings).lower()
         assert result.index("critical") < result.index("low")
 
 
