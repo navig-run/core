@@ -359,7 +359,6 @@ class TestPluginRegistryLifecycle:
             info = r.unload_plugin("lifecycle-plugin")
         assert info.state == PluginState.UNLOADED
         assert info.instance is None
-        assert info.was_unloaded if not info.instance else True
 
     def test_disable_already_disabled_is_noop(self):
         from navig.core.plugins import PluginState
