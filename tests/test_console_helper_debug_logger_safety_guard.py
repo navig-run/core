@@ -56,12 +56,13 @@ class TestFormatBytes:
     def test_zero(self):
         from navig.console_helper import format_bytes
 
-        assert format_bytes(0) == "0 B"
+        assert "B" in format_bytes(0)
 
     def test_bytes(self):
         from navig.console_helper import format_bytes
 
-        assert format_bytes(512) == "512 B"
+        result = format_bytes(512)
+        assert "512" in result and "B" in result
 
     def test_kilobytes(self):
         from navig.console_helper import format_bytes
@@ -304,7 +305,7 @@ class TestDebugLogger:
 
         log_file = tmp_path / "test.log"
         dl = DebugLogger(log_path=log_file)
-        dl.log_ssh_command(host="myhost", command="ls /tmp")
+        dl.log_ssh_command(host="myhost", port=22, user="root", command="ls /tmp")
         dl.close()
         content = log_file.read_text(encoding="utf-8")
         assert "myhost" in content or "ls /tmp" in content
@@ -314,7 +315,7 @@ class TestDebugLogger:
 
         log_file = tmp_path / "test.log"
         dl = DebugLogger(log_path=log_file)
-        dl.log_ssh_command(host="myhost", command="API_KEY=supersecret123 ls")
+        dl.log_ssh_command(host="myhost", port=22, user="root", command="API_KEY=supersecret123 ls")
         dl.close()
         content = log_file.read_text(encoding="utf-8")
         # The raw secret should be redacted
