@@ -53,7 +53,7 @@ def test_substitute_numeric_value():
 def test_init_stores_driver():
     driver = MagicMock()
     runner = TemplateRunner(driver)
-    assert runner._driver is driver
+    assert runner.driver is driver
     assert runner._templates == []
 
 
