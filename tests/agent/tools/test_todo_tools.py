@@ -33,7 +33,8 @@ def _make_todo_list(session_id="session-1"):
 
 
 def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    import asyncio
+    return asyncio.run(coro)
 
 
 # ──────────────────────────────────────────────────────────────────────
