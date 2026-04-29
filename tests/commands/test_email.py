@@ -193,16 +193,10 @@ class TestSendEmail:
         assert result.exit_code == 0
 
     def test_not_configured_prints_error(self):
-        with patch("navig.commands.email.asyncio.run") as m:
-            # Simulate the inner async returning after emitting error messages
-            import asyncio as _asyncio
-
-            async def _fake_send():
-                from navig import console_helper as ch
-                ch.error("Email not configured")
-                ch.info("Configure with: navig email setup")
-
-            m.side_effect = lambda coro: _asyncio.run(_fake_send())
+        """When email is not enabled, send_email outputs an error message."""
+        cm = MagicMock()
+        cm._load_global_config.return_value = {}  # no proactive.email entry
+        with patch("navig.config.get_config_manager", return_value=cm):
             result = runner.invoke(
                 email_app,
                 ["send", "--to", "x@y.com", "--subject", "Subj", "--body", "Body"],
