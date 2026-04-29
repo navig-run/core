@@ -27,20 +27,21 @@ def _fresh_manager() -> ConnectorAuthManager:
 
 def _provider_config(connector_id: str) -> OAuthProviderConfig:
     return OAuthProviderConfig(
-        provider=connector_id,
+        name=connector_id,
         client_id="cid",
-        client_secret="csec",
-        auth_url="https://auth.example.com/oauth/authorize",
+        authorize_url="https://auth.example.com/oauth/authorize",
         token_url="https://auth.example.com/oauth/token",
         scopes=["read"],
     )
 
 
 def _valid_creds(access: str = "access_tok") -> OAuthCredentials:
+    import time
+    future_ms = int(time.time() * 1000) + 3_600_000  # 1 hour from now
     return OAuthCredentials(
         access=access,
         refresh="refresh_tok",
-        expires_at=9_999_999_999,  # far future
+        expires=future_ms,
     )
 
 
@@ -48,7 +49,7 @@ def _expired_creds() -> OAuthCredentials:
     return OAuthCredentials(
         access="old_access",
         refresh="refresh_tok",
-        expires_at=1,  # epoch — definitely expired
+        expires=1,  # 1ms since epoch — definitely expired
     )
 
 
@@ -70,10 +71,12 @@ def test_get_provider_config_returns_none_for_unknown():
     assert ConnectorAuthManager.get_provider_config("unknown") is None
 
 
-def test_reset_providers_clears_all():
+def test_reset_providers_clears_provider_configs():
+    ConnectorAuthManager.reset_providers()
     ConnectorAuthManager.register_provider("svc_a", _provider_config("svc_a"))
     ConnectorAuthManager.reset_providers()
-    assert ConnectorAuthManager.get_provider_config("svc_a") is None
+    # _provider_configs is empty after reset
+    assert "svc_a" not in ConnectorAuthManager._provider_configs
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +104,7 @@ def test_authenticate_returns_cached_token():
     cred_obj = MagicMock()
     from navig.vault import CredentialType
     cred_obj.credential_type = CredentialType.OAUTH
-    cred_obj.data = {"access": "cached_tok", "refresh": "r", "expires_at": 9_999_999_999}
+    cred_obj.data = {"access": "cached_tok", "refresh": "r", "expires": 9_999_999_999_999}
     mgr._vault.get.return_value = cred_obj
 
     with patch("navig.connectors.auth_manager.OAuthCredentials.from_dict", return_value=_valid_creds("cached_tok")):
@@ -123,7 +126,7 @@ def test_authenticate_refreshes_expired_token():
     cred_obj = MagicMock()
     from navig.vault import CredentialType
     cred_obj.credential_type = CredentialType.OAUTH
-    cred_obj.data = {"access": "old", "refresh": "r", "expires_at": 1}
+    cred_obj.data = {"access": "old", "refresh": "r", "expires": 1}
     mgr._vault.get.return_value = cred_obj
 
     new_creds = _valid_creds("new_access")
