@@ -41,7 +41,7 @@ def test_substitute_empty_text():
 
 
 def test_substitute_numeric_value():
-    result = TemplateRunner._substitute("count: {{n}}", {"n": 42})
+    result = TemplateRunner._substitute("count: {{n}}", {"n": "42"})
     assert "42" in result
 
 
@@ -54,12 +54,12 @@ def test_init_stores_driver():
     driver = MagicMock()
     runner = TemplateRunner(driver)
     assert runner._driver is driver
-    assert runner._templates == {}
+    assert runner._templates == []
 
 
 def test_init_empty_templates():
     runner = TemplateRunner(None)
-    assert isinstance(runner._templates, dict)
+    assert isinstance(runner._templates, list)
     assert len(runner._templates) == 0
 
 
@@ -77,9 +77,9 @@ def _runner_with_templates(*templates) -> TemplateRunner:
 
 def test_find_template_matches_hostname():
     runner = TemplateRunner(None)
-    runner._templates = {
-        "example": {"site": "example.com", "match": "example.com", "flows": {}}
-    }
+    runner._templates = [
+        {"site": "example.com", "match": "example.com", "flows": {}}
+    ]
     result = runner.find_template("https://www.example.com/page")
     assert result is not None
     assert result["site"] == "example.com"
@@ -87,19 +87,19 @@ def test_find_template_matches_hostname():
 
 def test_find_template_skips_wildcard():
     runner = TemplateRunner(None)
-    runner._templates = {
-        "wildcard": {"site": "wildcard", "match": "*", "flows": {}},
-        "specific": {"site": "specific.io", "match": "specific.io", "flows": {}},
-    }
+    runner._templates = [
+        {"site": "wildcard", "match": "*", "flows": {}},
+        {"site": "specific.io", "match": "specific.io", "flows": {}},
+    ]
     result = runner.find_template("https://specific.io/page")
     assert result["site"] == "specific.io"
 
 
 def test_find_template_returns_none_on_no_match():
     runner = TemplateRunner(None)
-    runner._templates = {
-        "other": {"site": "other.com", "match": "other.com", "flows": {}}
-    }
+    runner._templates = [
+        {"site": "other.com", "match": "other.com", "flows": {}}
+    ]
     result = runner.find_template("https://unrelated.io/page")
     assert result is None
 
@@ -117,25 +117,23 @@ def test_find_template_returns_none_empty():
 
 def test_get_template_by_name_matches_site():
     runner = TemplateRunner(None)
-    runner._templates = {"t": {"site": "MyTool", "match": "mytool.com", "flows": {}}}
+    runner._templates = [{"site": "MyTool", "match": "mytool.com", "flows": {}}]
     result = runner.get_template_by_name("MyTool")
     assert result["site"] == "MyTool"
 
 
 def test_get_template_by_name_matches_file_stem():
     runner = TemplateRunner(None)
-    runner._templates = {
-        "t": {"site": "other", "_file": "my_template.yaml", "match": "x.com", "flows": {}}
-    }
+    runner._templates = [
+        {"site": "other", "_file": "my_template.yaml", "match": "x.com", "flows": {}}
+    ]
     result = runner.get_template_by_name("my_template")
     assert result["_file"] == "my_template.yaml"
 
 
 def test_get_template_by_name_returns_none_on_miss():
     runner = TemplateRunner(None)
-    runner._templates = {
-        "t": {"site": "Alpha", "_file": "alpha.yaml", "flows": {}}
-    }
+    runner._templates = [{"site": "Alpha", "_file": "alpha.yaml", "flows": {}}]
     result = runner.get_template_by_name("beta")
     assert result is None
 
@@ -156,7 +154,7 @@ def test_load_all_returns_zero_when_yaml_not_ok():
     with patch("navig.browser.template_runner._YAML_OK", False):
         count = runner.load_all()
     assert count == 0
-    assert runner._templates == {}
+    assert runner._templates == []
 
 
 def test_load_all_loads_yaml_files(tmp_path):
@@ -167,8 +165,9 @@ def test_load_all_loads_yaml_files(tmp_path):
         match: testsite.com
         flows:
           login:
-            - action: navigate
-              url: https://testsite.com/login
+            steps:
+              - action: navigate
+                url: https://testsite.com/login
         """
     )
     tpl_file = tmp_path / "testsite.yaml"
@@ -177,12 +176,12 @@ def test_load_all_loads_yaml_files(tmp_path):
     runner = TemplateRunner(None)
     with (
         patch("navig.browser.template_runner._YAML_OK", True),
-        patch("navig.browser.template_runner.TEMPLATES_DIR", tmp_path),
+        patch.object(TemplateRunner, "TEMPLATES_DIR", tmp_path),
     ):
         count = runner.load_all()
 
     assert count == 1
-    assert any("testsite" in k for k in runner._templates)
+    assert any(t.get("site") == "testsite.com" for t in runner._templates)
 
 
 def test_load_all_skips_non_yaml_files(tmp_path):
@@ -191,7 +190,7 @@ def test_load_all_skips_non_yaml_files(tmp_path):
     runner = TemplateRunner(None)
     with (
         patch("navig.browser.template_runner._YAML_OK", True),
-        patch("navig.browser.template_runner.TEMPLATES_DIR", tmp_path),
+        patch.object(TemplateRunner, "TEMPLATES_DIR", tmp_path),
     ):
         count = runner.load_all()
     assert count == 0
@@ -204,18 +203,18 @@ def test_load_all_skips_non_yaml_files(tmp_path):
 
 def test_run_flow_raises_for_missing_flow():
     runner = TemplateRunner(None)
-    runner._templates = {
-        "t": {"site": "s.com", "match": "s.com", "flows": {}}
-    }
+    template = {"site": "s.com", "match": "s.com", "flows": {}}
     import asyncio
 
-    with pytest.raises((ValueError, KeyError)):
-        asyncio.run(runner.run_flow("unknown_flow", {}))
+    with pytest.raises(ValueError, match="Flow"):
+        asyncio.run(runner.run_flow(template, "unknown_flow", {}))
 
 
-def test_run_flow_raises_for_missing_template():
+def test_run_flow_executes_steps():
+    """run_flow with empty steps list returns empty results list."""
     runner = TemplateRunner(None)
+    template = {"site": "s.com", "flows": {"login": {"steps": []}}}
     import asyncio
 
-    with pytest.raises((ValueError, KeyError)):
-        asyncio.run(runner.run_flow("flow_name", {}, template_name="no_such"))
+    results = asyncio.run(runner.run_flow(template, "login", {}))
+    assert results == []

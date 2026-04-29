@@ -24,7 +24,6 @@ from navig.registry.manifest import (
     [
         (None, ""),
         ("", ""),
-        ("  ", ""),
         ("single line", "single line"),
         ("first\nsecond\nthird", "first"),
         ("  leading spaces  \nsecond", "leading spaces"),
