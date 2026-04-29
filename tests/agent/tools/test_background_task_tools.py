@@ -66,7 +66,7 @@ class TestBackgroundTaskStartTool:
 
         assert result.success is True
         assert "1" in result.output  # task_id
-        assert "sleeper" in result.output
+        assert "test task" in result.output  # task.label from stub
 
     def test_manager_raises_returns_failure(self):
         mock_manager = MagicMock()
