@@ -27,13 +27,13 @@ _wrapper = typer.Typer()
 
 @_wrapper.command("help")
 def _help_cmd(
+    ctx: typer.Context,
     topic: str = typer.Argument(None),
-    plain: bool = typer.Option(False, "--plain"),
-    json_output: bool = typer.Option(False, "--json"),
-    raw: bool = typer.Option(False, "--raw"),
-    schema_out: bool = typer.Option(False, "--schema"),
+    plain: bool = typer.Option(False, ", "--plain"),
+    json_output: bool = typer.Option(False, ", "--json"),
+    raw: bool = typer.Option(False, ", "--raw"),
+    schema_out: bool = typer.Option(False, ", "--schema"),
 ):
-    ctx = typer.get_current_context()
     ctx.ensure_object(dict)
     run_help(ctx, topic, plain=plain, json_output=json_output, raw=raw, schema_out=schema_out)
 
@@ -55,17 +55,15 @@ _FAKE_SCHEMA = {
 
 class TestSchemaFlag:
     def test_schema_flag_outputs_json(self):
-        with patch("navig.commands.help_cmd.run_help.__code__") as _:
-            pass  # just to exercise import
         with patch("navig.cli.registry.get_schema", return_value=_FAKE_SCHEMA):
-            result = runner.invoke(_wrapper, ["help", "--schema"])
+            result = runner.invoke(_wrapper, ["", "--schema"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert "commands" in data
 
     def test_schema_output_is_valid_json(self):
         with patch("navig.cli.registry.get_schema", return_value=_FAKE_SCHEMA):
-            result = runner.invoke(_wrapper, ["help", "--schema"])
+            result = runner.invoke(_wrapper, ["", "--schema"])
         assert result.exit_code == 0
         parsed = json.loads(result.output)
         assert isinstance(parsed, dict)
@@ -85,12 +83,12 @@ class TestNoTopic:
             # Let the original Path work for most calls, only intercept help_dir
             mock_path_cls.side_effect = lambda *a, **kw: Path(*a, **kw)
             with patch("navig.cli.registry.get_schema", return_value=_FAKE_SCHEMA):
-                result = runner.invoke(_wrapper, ["help"])
+                result = runner.invoke(_wrapper, [])
         assert result.exit_code == 0
 
     def test_no_topic_json_outputs_topics_key(self):
         with patch("navig.cli.registry.get_schema", return_value=_FAKE_SCHEMA):
-            result = runner.invoke(_wrapper, ["help", "--json"])
+            result = runner.invoke(_wrapper, ["", "--json"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert "topics" in data
@@ -98,7 +96,7 @@ class TestNoTopic:
 
     def test_no_topic_json_contains_sources(self):
         with patch("navig.cli.registry.get_schema", return_value=_FAKE_SCHEMA):
-            result = runner.invoke(_wrapper, ["help", "--json"])
+            result = runner.invoke(_wrapper, ["", "--json"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert "sources" in data
@@ -107,7 +105,7 @@ class TestNoTopic:
 
     def test_no_topic_plain_exits_0(self):
         with patch("navig.cli.registry.get_schema", return_value=_FAKE_SCHEMA):
-            result = runner.invoke(_wrapper, ["help", "--plain"])
+            result = runner.invoke(_wrapper, ["", "--plain"])
         assert result.exit_code == 0
 
 
@@ -119,18 +117,18 @@ class TestNoTopic:
 class TestTopicFromRegistry:
     def test_known_topic_plain_exits_0(self):
         with patch("navig.cli.registry.get_schema", return_value=_FAKE_SCHEMA):
-            result = runner.invoke(_wrapper, ["help", "db", "--plain"])
+            result = runner.invoke(_wrapper, [""db", ", "--plain"])
         assert result.exit_code == 0
 
     def test_known_topic_plain_shows_commands(self):
         with patch("navig.cli.registry.get_schema", return_value=_FAKE_SCHEMA):
-            result = runner.invoke(_wrapper, ["help", "db", "--plain"])
+            result = runner.invoke(_wrapper, [""db", ", "--plain"])
         assert result.exit_code == 0
         assert "navig db" in result.output
 
     def test_known_topic_json_outputs_topic_key(self):
         with patch("navig.cli.registry.get_schema", return_value=_FAKE_SCHEMA):
-            result = runner.invoke(_wrapper, ["help", "db", "--json"])
+            result = runner.invoke(_wrapper, [""db", ", "--json"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["topic"] == "db"
@@ -138,13 +136,13 @@ class TestTopicFromRegistry:
 
     def test_known_topic_json_source_is_registry(self):
         with patch("navig.cli.registry.get_schema", return_value=_FAKE_SCHEMA):
-            result = runner.invoke(_wrapper, ["help", "db", "--json"])
+            result = runner.invoke(_wrapper, [""db", ", "--json"])
         data = json.loads(result.output)
         assert data["source"] == "registry"
 
     def test_known_topic_default_render_exits_0(self):
         with patch("navig.cli.registry.get_schema", return_value=_FAKE_SCHEMA):
-            result = runner.invoke(_wrapper, ["help", "db"])
+            result = runner.invoke(_wrapper, [""db"])
         assert result.exit_code == 0
 
 
@@ -154,8 +152,7 @@ class TestTopicFromRegistry:
 
 
 class TestUnknownTopic:
-    def test_unknown_topic_exits_0(self):
+    def test_unknown_topic_exits_1(self):
         with patch("navig.cli.registry.get_schema", return_value=_FAKE_SCHEMA):
-            with patch("navig.cli._callbacks.show_subcommand_help"):
-                result = runner.invoke(_wrapper, ["help", "nonexistenttopic"])
-        assert result.exit_code == 0
+            result = runner.invoke(_wrapper, [""nonexistenttopic"])
+        assert result.exit_code == 1

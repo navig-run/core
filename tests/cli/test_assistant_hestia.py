@@ -50,13 +50,16 @@ class TestRegistration:
 
     def test_assistant_group_is_hidden(self):
         app = _make_app()
-        assistant_entry = next(g for g in app.registered_groups if g.name == "assistant")
-        assert assistant_entry.hidden is True
+        entry = next(g for g in app.registered_groups if g.name == "assistant")
+        # hidden can live in TyperInfo.hidden or in the nested typer_instance.info.hidden
+        hidden = bool(entry.hidden) or bool(entry.typer_instance.info.hidden)
+        assert hidden is True
 
     def test_hestia_group_is_hidden(self):
         app = _make_app()
-        hestia_entry = next(g for g in app.registered_groups if g.name == "hestia")
-        assert hestia_entry.hidden is True
+        entry = next(g for g in app.registered_groups if g.name == "hestia")
+        hidden = bool(entry.hidden) or bool(entry.typer_instance.info.hidden)
+        assert hidden is True
 
 
 # ---------------------------------------------------------------------------
