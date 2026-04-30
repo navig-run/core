@@ -201,9 +201,9 @@ class TestPromptDirs:
 
     def test_always_has_global_dir(self, tmp_path, monkeypatch):
         """Global config_dir/brain/prompts must always be in the result."""
-        from navig.platform import paths
+        import navig.commands.brain as brain_mod
 
-        monkeypatch.setattr(paths, "config_dir", lambda: tmp_path)
+        monkeypatch.setattr(brain_mod, "config_dir", lambda: tmp_path)
         monkeypatch.chdir(tmp_path)
         result = _prompt_dirs()
         expected_global = tmp_path / "brain" / "prompts"
@@ -211,14 +211,14 @@ class TestPromptDirs:
 
     def test_project_local_before_global(self, tmp_path, monkeypatch):
         """Project-local dir should appear before global dir."""
-        from navig.platform import paths
+        import navig.commands.brain as brain_mod
 
         # Set up a project-local .navig/brain/prompts/
         local_dir = tmp_path / ".navig" / "brain" / "prompts"
         local_dir.mkdir(parents=True)
 
         global_base = tmp_path / "global_navig"
-        monkeypatch.setattr(paths, "config_dir", lambda: global_base)
+        monkeypatch.setattr(brain_mod, "config_dir", lambda: global_base)
         monkeypatch.chdir(tmp_path)
 
         result = _prompt_dirs()
@@ -226,13 +226,13 @@ class TestPromptDirs:
 
     def test_no_duplicate_when_global_is_local(self, tmp_path, monkeypatch):
         """If project dir happens to equal global dir, no duplicate."""
-        from navig.platform import paths
+        import navig.commands.brain as brain_mod
 
         global_base = tmp_path / "navig_home"
         prompt_dir = global_base / "brain" / "prompts"
         prompt_dir.mkdir(parents=True)
 
-        monkeypatch.setattr(paths, "config_dir", lambda: global_base)
+        monkeypatch.setattr(brain_mod, "config_dir", lambda: global_base)
         # Ensure cwd is one level above so walk-up finds prompt_dir equivalent
         monkeypatch.chdir(tmp_path)
 
@@ -249,20 +249,20 @@ class TestPromptDirs:
 
 class TestResolve:
     def test_returns_none_when_no_prompts_exist(self, tmp_path, monkeypatch):
-        from navig.platform import paths
+        import navig.commands.brain as brain_mod
 
-        monkeypatch.setattr(paths, "config_dir", lambda: tmp_path)
+        monkeypatch.setattr(brain_mod, "config_dir", lambda: tmp_path)
         monkeypatch.chdir(tmp_path)
         assert _resolve("nonexistent-slug") is None
 
     def test_returns_path_when_found_in_global(self, tmp_path, monkeypatch):
-        from navig.platform import paths
+        import navig.commands.brain as brain_mod
 
         global_prompts = tmp_path / "brain" / "prompts"
         global_prompts.mkdir(parents=True)
         (global_prompts / "myslug.md").write_text("# My Prompt")
 
-        monkeypatch.setattr(paths, "config_dir", lambda: tmp_path)
+        monkeypatch.setattr(brain_mod, "config_dir", lambda: tmp_path)
         monkeypatch.chdir(tmp_path)
 
         result = _resolve("myslug")
@@ -270,7 +270,7 @@ class TestResolve:
         assert result.name == "myslug.md"
 
     def test_project_local_shadows_global(self, tmp_path, monkeypatch):
-        from navig.platform import paths
+        import navig.commands.brain as brain_mod
 
         # Create global prompt
         global_base = tmp_path / "global_home"
@@ -285,7 +285,7 @@ class TestResolve:
         local_dir.mkdir(parents=True)
         (local_dir / "shared.md").write_text("# Local")
 
-        monkeypatch.setattr(paths, "config_dir", lambda: global_base)
+        monkeypatch.setattr(brain_mod, "config_dir", lambda: global_base)
         monkeypatch.chdir(project_dir)
 
         result = _resolve("shared")
@@ -293,13 +293,13 @@ class TestResolve:
         assert result.parent == local_dir
 
     def test_md_extension_auto_appended(self, tmp_path, monkeypatch):
-        from navig.platform import paths
+        import navig.commands.brain as brain_mod
 
         global_prompts = tmp_path / "brain" / "prompts"
         global_prompts.mkdir(parents=True)
         (global_prompts / "test.md").write_text("# T")
 
-        monkeypatch.setattr(paths, "config_dir", lambda: tmp_path)
+        monkeypatch.setattr(brain_mod, "config_dir", lambda: tmp_path)
         monkeypatch.chdir(tmp_path)
 
         # Pass slug without .md extension
@@ -307,13 +307,13 @@ class TestResolve:
         assert result is not None
 
     def test_slug_with_md_extension_works(self, tmp_path, monkeypatch):
-        from navig.platform import paths
+        import navig.commands.brain as brain_mod
 
         global_prompts = tmp_path / "brain" / "prompts"
         global_prompts.mkdir(parents=True)
         (global_prompts / "test.md").write_text("# T")
 
-        monkeypatch.setattr(paths, "config_dir", lambda: tmp_path)
+        monkeypatch.setattr(brain_mod, "config_dir", lambda: tmp_path)
         monkeypatch.chdir(tmp_path)
 
         # Pass slug with .md extension explicitly
