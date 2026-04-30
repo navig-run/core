@@ -214,13 +214,17 @@ class TestDiscordAvailability:
 class TestDiscordSendWithoutDiscord:
     async def test_send_fails_gracefully_when_discord_unavailable(self):
         adapter = DiscordMessagingAdapter()
-        with patch(
-            "navig.messaging.adapters.discord_adapter.DISCORD_AVAILABLE", False
-        ):
+        # Patch the module-level bool that send_message checks
+        import navig.messaging.adapters.discord_adapter as _mod
+        original = _mod.DISCORD_AVAILABLE
+        _mod.DISCORD_AVAILABLE = False
+        try:
             result = await adapter.send_message("12345", "hello")
             assert isinstance(result, DeliveryReceipt)
-            assert result.success is False
-            assert "discord.py" in result.error.lower()
+            assert result.ok is False
+            assert "discord.py" in (result.error or "").lower()
+        finally:
+            _mod.DISCORD_AVAILABLE = original
 
 
 class TestWhatsAppCloudSendMessage:
@@ -229,21 +233,23 @@ class TestWhatsAppCloudSendMessage:
             "phone_number_id": "111",
             "access_token": "tok",
         })
-        mock_resp = AsyncMock()
+        # Build a proper async context-manager mock for session.post(...)
+        mock_resp = MagicMock()
         mock_resp.status = 200
         mock_resp.json = AsyncMock(return_value={"messages": [{"id": "wamid001"}]})
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=False)
 
-        mock_session = AsyncMock()
-        mock_session.post.return_value = mock_resp
-        adapter._session = mock_session
+        mock_post_cm = MagicMock()
+        mock_post_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_post_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = MagicMock()
+        mock_session.post = MagicMock(return_value=mock_post_cm)
 
         with patch.object(adapter, "_get_session", AsyncMock(return_value=mock_session)):
             result = await adapter.send_message("+33612345678", "Hello")
 
         assert isinstance(result, DeliveryReceipt)
-        assert result.success is True
+        assert result.ok is True
         assert result.message_id == "wamid001"
 
     async def test_send_api_error_returns_failure(self):
@@ -254,5 +260,5 @@ class TestWhatsAppCloudSendMessage:
             AsyncMock(side_effect=Exception("connection failed")),
         ):
             result = await adapter.send_message("+33612345678", "Hello")
-        assert result.success is False
-        assert "connection failed" in result.error
+        assert result.ok is False
+        assert "connection failed" in (result.error or "")
