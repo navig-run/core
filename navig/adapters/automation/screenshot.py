@@ -74,17 +74,19 @@ class _DxcamBackend(_ScreenshotBackend):
 
     name = "dxcam"
     priority = 10
+    _available: bool | None = None
 
-    @lru_cache(maxsize=1)
     def is_available(self) -> bool:
-        if sys.platform != "win32":
-            return False
-        try:
-            import dxcam  # type: ignore[import]  # noqa: F401
-
-            return True
-        except Exception:  # noqa: BLE001
-            return False
+        if _DxcamBackend._available is None:
+            if sys.platform != "win32":
+                _DxcamBackend._available = False
+            else:
+                try:
+                    import dxcam  # type: ignore[import]  # noqa: F401
+                    _DxcamBackend._available = True
+                except Exception:  # noqa: BLE001
+                    _DxcamBackend._available = False
+        return _DxcamBackend._available
 
     def capture_region(
         self, left: int, top: int, right: int, bottom: int
@@ -110,15 +112,16 @@ class _MssBackend(_ScreenshotBackend):
 
     name = "mss"
     priority = 20
+    _available: bool | None = None
 
-    @lru_cache(maxsize=1)
     def is_available(self) -> bool:
-        try:
-            import mss  # type: ignore[import]  # noqa: F401
-
-            return True
-        except Exception:  # noqa: BLE001
-            return False
+        if _MssBackend._available is None:
+            try:
+                import mss  # type: ignore[import]  # noqa: F401
+                _MssBackend._available = True
+            except Exception:  # noqa: BLE001
+                _MssBackend._available = False
+        return _MssBackend._available
 
     def capture_region(
         self, left: int, top: int, right: int, bottom: int
@@ -140,15 +143,16 @@ class _PillowBackend(_ScreenshotBackend):
 
     name = "pillow"
     priority = 100
+    _available: bool | None = None
 
-    @lru_cache(maxsize=1)
     def is_available(self) -> bool:
-        try:
-            from PIL import ImageGrab  # type: ignore[import]  # noqa: F401
-
-            return True
-        except Exception:  # noqa: BLE001
-            return False
+        if _PillowBackend._available is None:
+            try:
+                from PIL import ImageGrab  # type: ignore[import]  # noqa: F401
+                _PillowBackend._available = True
+            except Exception:  # noqa: BLE001
+                _PillowBackend._available = False
+        return _PillowBackend._available
 
     def capture_region(
         self, left: int, top: int, right: int, bottom: int

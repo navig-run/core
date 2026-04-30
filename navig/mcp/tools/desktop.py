@@ -1,9 +1,26 @@
+import base64
+import io
 import os
 import sys
+import time
 from pathlib import Path
+from textwrap import dedent
 from typing import Any
 
 from navig.platform.paths import config_dir
+
+# ─── Profile helper (single definition) ──────────────────────────────────────
+_PROFILE_ENV_KEY = "NAVIG_PROFILE_SNAPSHOT"
+
+
+def _snapshot_profile_enabled() -> bool:
+    """Return True when snapshot profiling is requested via env var."""
+    return os.environ.get(_PROFILE_ENV_KEY, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def register(server: Any) -> None:
@@ -108,6 +125,65 @@ def register(server: Any) -> None:
             "desktop_click": _tool_desktop_click,
             "desktop_set_value": _tool_desktop_set_value,
             "desktop_ahk": _tool_desktop_ahk,
+            "desktop_snapshot": _tool_desktop_snapshot,
+            "desktop_screenshot": _tool_desktop_screenshot,
+        }
+    )
+
+    # ── Snapshot / Screenshot tool schemas ──────────────────────────────────
+    server.tools.update(
+        {
+            "desktop_snapshot": {
+                "name": "desktop_snapshot",
+                "description": (
+                    "Capture the current desktop state: screenshot, cursor position, "
+                    "open windows, and interactive UI elements. "
+                    "Set use_vision=true to include a screenshot. "
+                    "Set use_ui_tree=false for a faster vision-only pass. "
+                    "Requires desktop_permission in the active mission step."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "use_vision": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": "Include a screenshot in the response.",
+                        },
+                        "use_ui_tree": {
+                            "type": "boolean",
+                            "default": True,
+                            "description": "Extract interactive UI elements (slower but richer).",
+                        },
+                        "display": {
+                            "type": "array",
+                            "items": {"type": "integer"},
+                            "description": "Limit to specific display indices (0-based). Omit for all screens.",
+                        },
+                    },
+                    "required": [],
+                },
+            },
+            "desktop_screenshot": {
+                "name": "desktop_screenshot",
+                "description": (
+                    "Fast screenshot-only desktop snapshot. Skips UI element extraction. "
+                    "Returns cursor position, window list, and a PNG image. "
+                    "Use desktop_snapshot when you need interactive element coordinates. "
+                    "Requires desktop_permission in the active mission step."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "display": {
+                            "type": "array",
+                            "items": {"type": "integer"},
+                            "description": "Limit to specific display indices (0-based). Omit for all screens.",
+                        },
+                    },
+                    "required": [],
+                },
+            },
         }
     )
 
@@ -258,3 +334,192 @@ def _tool_desktop_ahk(server: Any, args: dict[str, Any]) -> Any:
             client.close()
     except Exception as exc:
         return {"error": str(exc)}
+
+
+# ─── Snapshot / Screenshot helpers ───────────────────────────────────────────
+
+_SCREENSHOT_SCALE_ENV = "NAVIG_SCREENSHOT_SCALE"
+_MAX_IMAGE_WIDTH = 1920
+_MAX_IMAGE_HEIGHT = 1080
+
+
+def _screenshot_scale() -> float:
+    """Read NAVIG_SCREENSHOT_SCALE from env; clamp to [0.1, 1.0]."""
+    raw = os.environ.get(_SCREENSHOT_SCALE_ENV, "1.0")
+    try:
+        scale = float(raw)
+    except ValueError:
+        scale = 1.0
+    return max(0.1, min(1.0, scale))
+
+
+def _build_snapshot_text(
+    windows: list[dict],
+    cursor: tuple[int, int] | None,
+    interactive: list[dict] | None,
+    backend_name: str | None,
+    include_ui: bool,
+) -> str:
+    """Build the text portion of a snapshot response."""
+    lines: list[str] = []
+    if cursor:
+        lines.append(f"Cursor Position: {cursor[0]},{cursor[1]}")
+    if backend_name:
+        lines.append(f"Screenshot Backend: {backend_name}")
+    lines.append("")
+    lines.append("Open Windows:")
+    if windows:
+        for w in windows:
+            title = w.get("title", "")
+            pid = w.get("pid", "")
+            lines.append(f"  [{pid}] {title}")
+    else:
+        lines.append("  (none)")
+
+    if include_ui and interactive is not None:
+        lines.append("")
+        lines.append("Interactive Elements:")
+        if interactive:
+            for el in interactive:
+                lines.append(f"  {el}")
+        else:
+            lines.append("  (none found)")
+
+    return "\n".join(lines)
+
+
+def _tool_desktop_snapshot(server: Any, args: dict[str, Any]) -> Any:
+    """Capture desktop state with optional screenshot and UI tree."""
+    audit_err = _desktop_audit_initialized()
+    if audit_err:
+        return audit_err
+    perm_err = _desktop_permission_check("desktop_snapshot")
+    if perm_err:
+        return perm_err
+
+    use_vision = bool(args.get("use_vision", False))
+    use_ui_tree = bool(args.get("use_ui_tree", True))
+
+    t0 = time.perf_counter() if _snapshot_profile_enabled() else None
+
+    try:
+        client = _desktop_client()
+        try:
+            windows_raw = client.get_window_list() if hasattr(client, "get_window_list") else []
+            cursor_raw = client.get_cursor_position() if hasattr(client, "get_cursor_position") else None
+            interactive_raw = None
+            if use_ui_tree:
+                tree = client.get_window_tree(depth=4) if hasattr(client, "get_window_tree") else None
+                if isinstance(tree, dict):
+                    interactive_raw = tree.get("elements", [])
+        finally:
+            client.close()
+    except Exception as exc:
+        return {"error": f"Desktop capture failed: {exc}"}
+
+    screenshot_b64: str | None = None
+    backend_name: str | None = None
+    if use_vision:
+        try:
+            import PIL.Image as Image  # type: ignore[import]  # noqa: PLC0415
+
+            from navig.adapters.automation.screenshot import capture_full_screen  # noqa: PLC0415
+
+            img, backend_name = capture_full_screen()
+            scale = _screenshot_scale()
+            if scale < 1.0:
+                nw = max(1, int(img.width * scale))
+                nh = max(1, int(img.height * scale))
+                img = img.resize((nw, nh), Image.LANCZOS)
+            if img.width > _MAX_IMAGE_WIDTH or img.height > _MAX_IMAGE_HEIGHT:
+                img.thumbnail((_MAX_IMAGE_WIDTH, _MAX_IMAGE_HEIGHT), Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            screenshot_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        except Exception as exc:  # noqa: BLE001
+            import logging  # noqa: PLC0415
+            logging.getLogger(__name__).debug("Screenshot failed: %s", exc)
+
+    if t0 is not None:
+        import logging  # noqa: PLC0415
+        logging.getLogger(__name__).info(
+            "desktop_snapshot total_ms=%.1f use_vision=%s use_ui_tree=%s",
+            (time.perf_counter() - t0) * 1000,
+            use_vision,
+            use_ui_tree,
+        )
+
+    text = _build_snapshot_text(
+        windows=windows_raw if isinstance(windows_raw, list) else [],
+        cursor=cursor_raw,
+        interactive=interactive_raw,
+        backend_name=backend_name,
+        include_ui=use_ui_tree,
+    )
+
+    result: dict[str, Any] = {"text": text}
+    if screenshot_b64:
+        result["screenshot"] = {"format": "png", "data": screenshot_b64}
+    return result
+
+
+def _tool_desktop_screenshot(server: Any, args: dict[str, Any]) -> Any:
+    """Fast screenshot-only desktop snapshot. Skips UI tree extraction."""
+    audit_err = _desktop_audit_initialized()
+    if audit_err:
+        return audit_err
+    perm_err = _desktop_permission_check("desktop_screenshot")
+    if perm_err:
+        return perm_err
+
+    t0 = time.perf_counter() if _snapshot_profile_enabled() else None
+
+    try:
+        client = _desktop_client()
+        try:
+            windows_raw = client.get_window_list() if hasattr(client, "get_window_list") else []
+            cursor_raw = client.get_cursor_position() if hasattr(client, "get_cursor_position") else None
+        finally:
+            client.close()
+    except Exception as exc:
+        return {"error": f"Desktop state failed: {exc}"}
+
+    screenshot_b64: str | None = None
+    backend_name: str | None = None
+    try:
+        import PIL.Image as Image  # type: ignore[import]  # noqa: PLC0415
+
+        from navig.adapters.automation.screenshot import capture_full_screen  # noqa: PLC0415
+
+        img, backend_name = capture_full_screen()
+        scale = _screenshot_scale()
+        if scale < 1.0:
+            nw = max(1, int(img.width * scale))
+            nh = max(1, int(img.height * scale))
+            img = img.resize((nw, nh), Image.LANCZOS)
+        if img.width > _MAX_IMAGE_WIDTH or img.height > _MAX_IMAGE_HEIGHT:
+            img.thumbnail((_MAX_IMAGE_WIDTH, _MAX_IMAGE_HEIGHT), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        screenshot_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception as exc:  # noqa: BLE001
+        import logging  # noqa: PLC0415
+        logging.getLogger(__name__).debug("Screenshot failed: %s", exc)
+
+    if t0 is not None:
+        import logging  # noqa: PLC0415
+        logging.getLogger(__name__).info(
+            "desktop_screenshot total_ms=%.1f", (time.perf_counter() - t0) * 1000
+        )
+
+    text = _build_snapshot_text(
+        windows=windows_raw if isinstance(windows_raw, list) else [],
+        cursor=cursor_raw,
+        interactive=None,
+        backend_name=backend_name,
+        include_ui=False,
+    )
+    result: dict[str, Any] = {"text": text}
+    if screenshot_b64:
+        result["screenshot"] = {"format": "png", "data": screenshot_b64}
+    return result

@@ -149,6 +149,6 @@ def run_with_graceful_timeout(
                 stdout_data, stderr_data = proc.communicate(timeout=2)
             except Exception:  # noqa: BLE001
                 pass
-            raise subprocess.TimeoutExpired(
+            raise subprocess.TimeoutExpired(  # noqa: B904
                 proc.args, timeout, output=stdout_data, stderr=stderr_data
-            )
+            ) from None
