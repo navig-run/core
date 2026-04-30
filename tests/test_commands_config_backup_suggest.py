@@ -400,7 +400,7 @@ class TestGetFrequentCommands:
         mock_recorder = MagicMock()
         op = SimpleNamespace(command="navig host show")
         mock_recorder.get_last_n.return_value = [op] * 5
-        with patch("navig.commands.suggest.get_operation_recorder", return_value=mock_recorder):
+        with patch("navig.operation_recorder.get_operation_recorder", return_value=mock_recorder):
             result = get_frequent_commands(limit=3)
         assert len(result) <= 3
 
@@ -409,7 +409,7 @@ class TestGetFrequentCommands:
         mock_recorder = MagicMock()
         op = SimpleNamespace(command="navig db list")
         mock_recorder.get_last_n.return_value = [op] * 2
-        with patch("navig.commands.suggest.get_operation_recorder", return_value=mock_recorder):
+        with patch("navig.operation_recorder.get_operation_recorder", return_value=mock_recorder):
             result = get_frequent_commands()
         for item in result:
             assert isinstance(item, tuple)
@@ -429,7 +429,7 @@ class TestGetRecentCommands:
             SimpleNamespace(command="navig host list"),
             SimpleNamespace(command="navig db show"),
         ]
-        with patch("navig.commands.suggest.get_operation_recorder", return_value=mock_recorder):
+        with patch("navig.operation_recorder.get_operation_recorder", return_value=mock_recorder):
             result = get_recent_commands()
         assert all(isinstance(c, str) for c in result)
 
@@ -440,6 +440,6 @@ class TestGetRecentCommands:
             SimpleNamespace(command=None),
             SimpleNamespace(command="navig run"),
         ]
-        with patch("navig.commands.suggest.get_operation_recorder", return_value=mock_recorder):
+        with patch("navig.operation_recorder.get_operation_recorder", return_value=mock_recorder):
             result = get_recent_commands()
         assert None not in result
