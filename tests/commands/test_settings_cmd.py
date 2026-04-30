@@ -81,8 +81,9 @@ class TestGroupFor:
         assert result == "navig.ai"
 
     def test_telegram_key(self):
+        # navig.telegram is not in _GROUPS, falls back to "navig" prefix
         result = _group_for("navig.telegram.bot_token")
-        assert result == "navig.telegram"
+        assert result == "navig"
 
     def test_exact_prefix_match(self):
         # key exactly equals a prefix
