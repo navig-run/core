@@ -76,22 +76,29 @@ def test_remove_private_use_chars_empty():
 
 
 def test_check_pid_exists_true():
+    fake_proc = MagicMock()
+    fake_proc.status.return_value = "running"
     with patch("navig.platform.windows_utils.psutil") as m:
-        m.pid_exists.return_value = True
+        m.Process.return_value = fake_proc
+        m.STATUS_ZOMBIE = "zombie"
+        m.STATUS_DEAD = "dead"
         assert check_pid_exists(1234) is True
 
 
 def test_check_pid_exists_false():
+    import psutil as real_psutil
     with patch("navig.platform.windows_utils.psutil") as m:
-        m.pid_exists.return_value = False
+        m.Process.side_effect = real_psutil.NoSuchProcess(9999)
+        m.NoSuchProcess = real_psutil.NoSuchProcess
+        m.STATUS_ZOMBIE = "zombie"
+        m.STATUS_DEAD = "dead"
         assert check_pid_exists(9999) is False
 
 
 def test_check_pid_exists_no_psutil(monkeypatch):
     monkeypatch.setattr("navig.platform.windows_utils.psutil", None)
-    # Without psutil, falls back to os.kill check or returns False.
     result = check_pid_exists(1)
-    assert isinstance(result, bool)
+    assert result is False
 
 
 # ─── run_with_graceful_timeout ────────────────────────────────────────────────

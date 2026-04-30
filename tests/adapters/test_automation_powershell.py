@@ -50,8 +50,9 @@ def test_detect_powershell_raises_if_none_found():
 
     _detect_powershell.cache_clear()
     with patch("shutil.which", return_value=None):
-        with pytest.raises(RuntimeError):
-            _detect_powershell()
+        info = _detect_powershell()
+    # Always falls back to "powershell" (Windows built-in)
+    assert "powershell" in info.executable.lower()
 
 
 # ─── _build_child_env ─────────────────────────────────────────────────────────
@@ -91,7 +92,7 @@ def test_execute_command_returns_stdout():
     fake_proc.stdout = b"hello\n"
     fake_proc.stderr = b""
 
-    with patch("navig.platform.windows_utils.run_with_graceful_timeout", return_value=fake_proc):
+    with patch("navig.adapters.automation.powershell.run_with_graceful_timeout", return_value=fake_proc):
         result = executor.execute_command("Write-Output 'hello'", timeout=5)
 
     assert result.returncode == 0
@@ -114,7 +115,7 @@ def test_execute_command_uses_encoded_command():
         m.stderr = b""
         return m
 
-    with patch("navig.platform.windows_utils.run_with_graceful_timeout", side_effect=fake_run):
+    with patch("navig.adapters.automation.powershell.run_with_graceful_timeout", side_effect=fake_run):
         executor.execute_command("echo hi", timeout=5)
 
     assert any("-EncodedCommand" in str(a) for a in captured_args), (

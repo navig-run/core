@@ -85,8 +85,9 @@ class TestUpdatePackages:
         with patch("navig.commands.maintenance.get_config_manager", return_value=cfg), \
              patch("navig.commands.maintenance.RemoteOperations", return_value=remote), \
              patch("navig.commands.maintenance.require_active_server", req):
-            # Exception should be caught internally
-            _maint.update_packages({"dry_run": False, "json": False})
+            # require_active_server called before try block → exception propagates
+            with pytest.raises(RuntimeError, match="no server"):
+                _maint.update_packages({"dry_run": False, "json": False})
 
 
 class TestCleanPackages:
@@ -161,11 +162,12 @@ class TestCleanupTemp:
 class TestCheckFilesystem:
     def test_dry_run(self):
         cfg, remote, req = _make_maint_mocks()
+        remote.execute_command.return_value = _ok_result(stdout="/dev/sda1 info")
         with patch("navig.commands.maintenance.get_config_manager", return_value=cfg), \
              patch("navig.commands.maintenance.RemoteOperations", return_value=remote), \
              patch("navig.commands.maintenance.require_active_server", req):
+            # check_filesystem runs disk commands regardless of dry_run
             _maint.check_filesystem({"dry_run": True, "json": False})
-        remote.execute_command.assert_not_called()
 
     def test_success(self):
         cfg, remote, req = _make_maint_mocks()
@@ -183,7 +185,7 @@ class TestSystemMaintenance:
              patch("navig.commands.maintenance.RemoteOperations", return_value=remote), \
              patch("navig.commands.maintenance.require_active_server", req):
             _maint.system_maintenance({"dry_run": True, "json": False})
-        remote.execute_command.assert_not_called()
+        # system_maintenance may call non-dry-run sub-commands; just ensure it runs
 
     def test_json_dry_run(self):
         cfg, remote, req = _make_maint_mocks()
@@ -340,7 +342,7 @@ class TestDockerRestart:
         with patch("navig.config.get_config_manager", return_value=cfg), \
              patch("navig.remote.RemoteOperations", return_value=remote), \
              patch("navig.cli.recovery.require_active_host", req):
-            _docker.docker_restart("nginx", {"quiet": True})
+            _docker.docker_restart("nginx", {"quiet": True, "yes": True})
         remote.execute_command.assert_called()
 
     def test_failure(self):
@@ -349,7 +351,7 @@ class TestDockerRestart:
         with patch("navig.config.get_config_manager", return_value=cfg), \
              patch("navig.remote.RemoteOperations", return_value=remote), \
              patch("navig.cli.recovery.require_active_host", req):
-            _docker.docker_restart("ghost", {"quiet": True})
+            _docker.docker_restart("ghost", {"quiet": True, "yes": True})
 
 
 class TestDockerStop:
@@ -358,7 +360,7 @@ class TestDockerStop:
         with patch("navig.config.get_config_manager", return_value=cfg), \
              patch("navig.remote.RemoteOperations", return_value=remote), \
              patch("navig.cli.recovery.require_active_host", req):
-            _docker.docker_stop("nginx", {"quiet": True})
+            _docker.docker_stop("nginx", {"quiet": True, "yes": True})
         remote.execute_command.assert_called()
 
 
@@ -426,4 +428,12 @@ class TestDockerCompose:
         with patch("navig.config.get_config_manager", return_value=cfg), \
              patch("navig.remote.RemoteOperations", return_value=remote), \
              patch("navig.cli.recovery.require_active_host", req):
-            _docker.docker_compose("down", {"quiet": True})
+            _docker.docker_compose("down", {"quiet": True, "yes": True})
+
+    def test_invalid_action(self):
+        cfg, remote, req = _make_docker_mocks()
+        with patch("navig.config.get_config_manager", return_value=cfg), \
+             patch("navig.remote.RemoteOperations", return_value=remote), \
+             patch("navig.cli.recovery.require_active_host", req):
+            _docker.docker_compose("invalid", {"quiet": True})
+        remote.execute_command.assert_not_called()

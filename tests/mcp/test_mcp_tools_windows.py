@@ -133,12 +133,18 @@ def test_tool_process_list_returns_processes():
         "cpu_percent": 0.1,
         "memory_info": MagicMock(rss=1024 * 1024),
         "status": "running",
-        "username": "user",
-        "create_time": 0.0,
     }
+
+    class FakeNoSuchProcess(Exception):
+        pass
+
+    class FakeAccessDenied(Exception):
+        pass
 
     with patch("navig.mcp.tools.windows.psutil") as mock_psutil:
         mock_psutil.process_iter.return_value = [fake_proc]
+        mock_psutil.NoSuchProcess = FakeNoSuchProcess
+        mock_psutil.AccessDenied = FakeAccessDenied
         result = _tool_process_list(None, {})
 
     assert "processes" in result
@@ -171,14 +177,15 @@ def test_tool_registry_get_returns_value():
 def test_tool_notify_falls_back_to_powershell():
     from navig.mcp.tools.windows import _tool_notify
 
-    with patch.dict("sys.modules", {"win10toast": None}):
-        mock_executor = MagicMock()
-        mock_result = MagicMock()
-        mock_result.returncode = 0
-        mock_result.stderr = ""
-        mock_executor.execute_command.return_value = mock_result
+    mock_executor_cls = MagicMock()
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+    mock_result.stderr = ""
+    mock_executor_cls.return_value.execute_command.return_value = mock_result
 
-        with patch("navig.mcp.tools.windows.PowerShellExecutor", return_value=mock_executor):
-            result = _tool_notify(None, {"title": "Test", "message": "Hello"})
+    # Make win10toast import fail so code falls through to PowerShell path.
+    with patch.dict("sys.modules", {"win10toast": None}), \
+         patch("navig.mcp.tools.windows.PowerShellExecutor", mock_executor_cls):
+        result = _tool_notify(None, {"title": "Test", "message": "Hello"})
 
     assert result.get("status") == "ok"
