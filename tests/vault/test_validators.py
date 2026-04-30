@@ -23,7 +23,15 @@ from navig.vault.validators import (
 # ---------------------------------------------------------------------------
 
 def _cred(data: dict | None = None, metadata: dict | None = None) -> Credential:
-    return Credential(data=data or {}, metadata=metadata or {})
+    return Credential(
+        id="test-id",
+        provider="test",
+        profile_id="default",
+        credential_type="api_key",
+        label="Test Credential",
+        data=data or {},
+        metadata=metadata or {},
+    )
 
 
 def _mock_response(status: int, json_data: dict | None = None) -> MagicMock:
