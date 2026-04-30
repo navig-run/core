@@ -13,6 +13,11 @@ import re
 import subprocess
 import sys
 
+try:
+    import psutil  # type: ignore[import]
+except ImportError:  # pragma: no cover
+    psutil = None  # type: ignore[assignment]
+
 # ─── Unicode Private-Use Area ranges that cause rendering glitches ────────────
 # Compiled once; strips BMP PUA (U+E000–U+F8FF) and both supplementary PUA
 # planes (U+F0000–U+FFFFD, U+100000–U+10FFFD).
@@ -70,9 +75,7 @@ def check_pid_exists(pid: int) -> bool:
 
     Requires ``psutil``; returns *False* if psutil is unavailable.
     """
-    try:
-        import psutil  # type: ignore[import]
-    except ImportError:
+    if psutil is None:
         return False
     try:
         proc = psutil.Process(pid)
@@ -110,6 +113,11 @@ def run_with_graceful_timeout(
     """
     if sys.platform != "win32":
         return subprocess.run(*popenargs, timeout=timeout, **kwargs)
+
+    # Convert capture_output shorthand (subprocess.run-only) to explicit PIPE.
+    if kwargs.pop("capture_output", False):
+        kwargs.setdefault("stdout", subprocess.PIPE)
+        kwargs.setdefault("stderr", subprocess.PIPE)
 
     # CREATE_NEW_PROCESS_GROUP is required so we can send CTRL_BREAK_EVENT.
     creation_flags = kwargs.pop("creationflags", 0) | subprocess.CREATE_NEW_PROCESS_GROUP

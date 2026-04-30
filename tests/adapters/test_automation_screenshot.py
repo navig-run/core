@@ -63,33 +63,27 @@ def test_get_screenshot_backend_env_var_selects_backend(monkeypatch):
 
 
 def test_capture_full_screen_returns_tuple():
-    from navig.adapters.automation.screenshot import _PillowBackend
+    from navig.adapters.automation.screenshot import capture_full_screen
 
     fake_img = MagicMock()
-    with patch.object(_PillowBackend, "is_available", return_value=True), \
-         patch.object(_PillowBackend, "capture_full", return_value=fake_img):
-        from navig.adapters.automation.screenshot import capture_full_screen, get_screenshot_backend
-        # Bypass lru_cache.
-        mock_backend = _PillowBackend()
-        with patch("navig.adapters.automation.screenshot.get_screenshot_backend", return_value=mock_backend):
-            img, name = capture_full_screen()
-            assert img is fake_img
-            assert isinstance(name, str)
+
+    with patch("navig.adapters.automation.screenshot.capture", return_value=(fake_img, "pillow")):
+        img, name = capture_full_screen()
+        assert img is fake_img
+        assert name == "pillow"
 
 
 # ─── capture (region) ─────────────────────────────────────────────────────────
 
 
 def test_capture_region_calls_backend():
-    from navig.adapters.automation.screenshot import _PillowBackend
-
     fake_img = MagicMock()
     mock_backend = MagicMock()
     mock_backend.name = "pillow"
-    mock_backend.capture.return_value = fake_img
+    mock_backend.capture_region.return_value = fake_img
 
     with patch("navig.adapters.automation.screenshot.get_screenshot_backend", return_value=mock_backend):
         from navig.adapters.automation.screenshot import capture
         img, name = capture(0, 0, 100, 100)
         assert img is fake_img
-        mock_backend.capture.assert_called_once_with(0, 0, 100, 100)
+        mock_backend.capture_region.assert_called_once_with(0, 0, 100, 100)

@@ -18,6 +18,21 @@ from __future__ import annotations
 import sys
 from typing import Any
 
+try:
+    import psutil  # type: ignore[import]
+except ImportError:  # pragma: no cover
+    psutil = None  # type: ignore[assignment]
+
+if sys.platform == "win32":
+    import winreg
+    from navig.adapters.automation.powershell import PowerShellExecutor
+    from navig.platform.windows_utils import check_pid_exists, ps_quote_for_xml
+else:
+    winreg = None  # type: ignore[assignment]
+    PowerShellExecutor = None  # type: ignore[assignment]
+    check_pid_exists = None  # type: ignore[assignment]
+    ps_quote_for_xml = None  # type: ignore[assignment]
+
 # ─── Tool schemas ─────────────────────────────────────────────────────────────
 
 _TOOLS: dict[str, dict] = {
@@ -279,9 +294,7 @@ def _tool_process_list(server: Any, args: dict[str, Any]) -> Any:
     if err:
         return err
 
-    try:
-        import psutil  # type: ignore[import]  # noqa: PLC0415
-    except ImportError:
+    if psutil is None:
         return {"error": "psutil_missing", "hint": "Run: pip install psutil"}
 
     name_filter = (args.get("name_filter") or "").strip().lower()
@@ -330,12 +343,8 @@ def _tool_process_kill(server: Any, args: dict[str, Any]) -> Any:
     if pid is None and not name:
         return {"error": "pid or name is required"}
 
-    try:
-        import psutil  # type: ignore[import]  # noqa: PLC0415
-    except ImportError:
+    if psutil is None:
         return {"error": "psutil_missing", "hint": "Run: pip install psutil"}
-
-    from navig.platform.windows_utils import check_pid_exists  # noqa: PLC0415
 
     try:
         if pid is not None:
@@ -534,9 +543,6 @@ def _send_toast(title: str, message: str, app_id: str) -> dict[str, Any]:
         logging.getLogger(__name__).debug("win10toast failed: %s", exc)
 
     # Fallback: PowerShell WinRT toast.
-    from navig.adapters.automation.powershell import PowerShellExecutor  # noqa: PLC0415
-    from navig.platform.windows_utils import ps_quote_for_xml  # noqa: PLC0415
-
     ps_title = ps_quote_for_xml(title)
     ps_message = ps_quote_for_xml(message)
     ps_app_id = ps_quote_for_xml(app_id)
