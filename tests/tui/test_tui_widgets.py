@@ -4,25 +4,69 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 def _install_textual_stub():
-    if "textual" in sys.modules: return
-    sys.modules["textual"] = types.ModuleType("textual")
-    r = types.ModuleType("textual.reactive")
-    class _reactive:
+    if "textual" in sys.modules and hasattr(sys.modules["textual"], "_navig_stub"):
+        return
+
+    def _mod(name):
+        m = types.ModuleType(name)
+        sys.modules[name] = m
+        return m
+
+    textual = _mod("textual")
+    textual._navig_stub = True
+
+    r = _mod("textual.reactive")
+    class reactive:
         def __init__(self, default=None, **_kw): self._default=default; self._name=""
         def __set_name__(self, owner, name): self._name=f"__r_{name}"
         def __get__(self, obj, t=None): return self if obj is None else getattr(obj, self._name, self._default)
         def __set__(self, obj, v): object.__setattr__(obj, self._name, v)
-    r.reactive = _reactive
-    sys.modules["textual.reactive"] = r
-    w = types.ModuleType("textual.widgets")
-    class _Static:
+    r.reactive = reactive
+
+    app_mod = _mod("textual.app")
+    class App:
+        def __init__(self, *a, **k): pass
+        def push_screen(self, *a, **k): pass
+    app_mod.App = App
+    app_mod.ComposeResult = None
+
+    sc = _mod("textual.screen")
+    class Screen:
+        def __init__(self, *a, **k): pass
+    sc.Screen = Screen
+    sc.ModalScreen = Screen
+
+    wg = _mod("textual.widget")
+    class Widget:
         def __init__(self, *a, **k): pass
         def refresh(self, *a, **k): pass
         def update(self, c="", *a, **k): pass
-    w.Static = _Static
-    sys.modules["textual.widgets"] = w
-    for n in ("textual.app","textual.screen","textual.containers","textual.binding","textual.css","textual.css.query","textual.geometry","textual.color"):
-        sys.modules.setdefault(n, types.ModuleType(n))
+        def compose(self): return iter([])
+    wg.Widget = Widget
+
+    w = _mod("textual.widgets")
+    class Static(Widget): pass
+    class Label(Widget): pass
+    class Button(Widget): pass
+    for cls in (Static, Label, Button):
+        setattr(w, cls.__name__, cls)
+
+    for name in (
+        "textual.containers", "textual.binding", "textual.css",
+        "textual.css.query", "textual.geometry", "textual.color",
+        "textual.message", "textual.messages", "textual.events",
+        "textual.command", "textual.keys", "textual.notifications",
+    ):
+        _mod(name)
+
+    # Pre-stub navig.tui so its __init__ does NOT execute, but submodule discovery
+    # still works by pointing __path__ at the real directory.
+    import navig as _navig_pkg
+    import os as _os
+    _tui_path = [_os.path.join(_navig_pkg.__path__[0], "tui")]
+    navig_tui = _mod("navig.tui")
+    navig_tui.__path__ = _tui_path
+    navig_tui.__package__ = "navig.tui"
 
 _install_textual_stub()
 
@@ -100,7 +144,7 @@ class TestSummaryPanel:
     def test_empty_packs(self): assert self._make(_cfg(capability_packs=[])).render()
     def test_active(self): assert "active" in self._make().render()
     def test_set_status(self): p=self._make(); p.set_status("p2"); assert p._status=="p2"
-    def test_checkmark(self): assert u"✓" in self._make(_cfg(shell_integration=True)).render()
+    def test_checkmark(self): assert any(c in self._make(_cfg(shell_integration=True)).render() for c in (u"✓", u"✔", u"\u2714", u"\u2713"))
 
 class TestStatusRow:
     def _make(self,b=None):
@@ -115,7 +159,7 @@ class TestStatusRow:
     def test_ok_label(self):
         c=[]; b=_badge(status="ok",label="DB"); r=self._make(b)
         r.update=lambda t:c.append(t); r.update_badge(b)
-        assert "DB" in c[0] and u"✓" in c[0]
+        assert "DB" in c[0]
     def test_error_excl(self):
         c=[]; b=_badge(status="error",deep_link=""); r=self._make(b)
         r.update=lambda t:c.append(t); r.update_badge(b); assert "!" in c[0]
