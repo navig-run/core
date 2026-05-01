@@ -50,13 +50,13 @@ _reactive_stub.reactive = _MockReactive
 import importlib.util as _importlib_util
 import pathlib as _pathlib
 
-_REPO_ROOT = _pathlib.Path(__file__).parent.parent
+_REPO_ROOT = _pathlib.Path(__file__).resolve().parents[2]
 
 # Register our typed stubs so widget files find them when they do
 # `from textual.widgets import Static` / `from textual.reactive import reactive`.
-sys.modules.setdefault("textual", _textual_stub)
-sys.modules.setdefault("textual.widgets", _widgets_stub)
-sys.modules.setdefault("textual.reactive", _reactive_stub)
+sys.modules["textual"] = _textual_stub
+sys.modules["textual.widgets"] = _widgets_stub
+sys.modules["textual.reactive"] = _reactive_stub
 
 
 def _load_widget_file(relpath: str, mod_name: str):

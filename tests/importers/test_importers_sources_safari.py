@@ -1,23 +1,34 @@
-"""Tests for navig.importers.sources.safari — SafariImporter."""
+"""
+Tests for navig/importers/sources/safari.py
+Covers SafariImporter metadata, detect(), parse(), and _walk().
+"""
 
 from __future__ import annotations
 
 import plistlib
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from navig.importers.sources.safari import SafariImporter
 
 
-def _write_plist(path: Path, payload: dict) -> None:
-    with path.open("wb") as f:
-        plistlib.dump(payload, f)
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _build_plist(children: list[dict], tmp_path: Path) -> Path:
+    """Write a minimal Safari-style plist and return its Path."""
+    payload = {"Children": children}
+    p = tmp_path / "Bookmarks.plist"
+    with p.open("wb") as fh:
+        plistlib.dump(payload, fh)
+    return p
 
 
 # ---------------------------------------------------------------------------
-# SafariImporter metadata
+# Metadata / construction
 # ---------------------------------------------------------------------------
 
 class TestSafariImporterMeta:
@@ -27,9 +38,9 @@ class TestSafariImporterMeta:
     def test_item_type(self):
         assert SafariImporter.ITEM_TYPE == "bookmark"
 
-    def test_instantiates(self):
-        s = SafariImporter()
-        assert s is not None
+    def test_instantiates_without_args(self):
+        importer = SafariImporter()
+        assert importer is not None
 
 
 # ---------------------------------------------------------------------------
@@ -37,153 +48,171 @@ class TestSafariImporterMeta:
 # ---------------------------------------------------------------------------
 
 class TestSafariImporterDetect:
-    def test_detect_false_when_no_default(self):
-        s = SafariImporter()
-        with patch.object(s, "default_path", return_value=None):
-            assert s.detect() is False
+    def test_detect_true_when_path_exists(self, tmp_path):
+        dummy = tmp_path / "Bookmarks.plist"
+        dummy.write_bytes(b"")
+        with patch("navig.importers.sources.safari.safari_default_path", return_value=str(dummy)):
+            assert SafariImporter().detect() is True
 
     def test_detect_false_when_file_missing(self, tmp_path):
-        s = SafariImporter()
-        missing = str(tmp_path / "nonexistent.plist")
-        with patch.object(s, "default_path", return_value=missing):
-            assert s.detect() is False
+        missing = str(tmp_path / "NoSuch.plist")
+        with patch("navig.importers.sources.safari.safari_default_path", return_value=missing):
+            assert SafariImporter().detect() is False
 
-    def test_detect_true_when_file_exists(self, tmp_path):
-        f = tmp_path / "Bookmarks.plist"
-        f.write_bytes(b"data")
-        s = SafariImporter()
-        with patch.object(s, "default_path", return_value=str(f)):
-            assert s.detect() is True
+    def test_detect_false_when_path_is_none(self):
+        with patch("navig.importers.sources.safari.safari_default_path", return_value=None):
+            assert SafariImporter().detect() is False
+
+    def test_default_path_returns_safari_default(self):
+        with patch("navig.importers.sources.safari.safari_default_path", return_value="/a/b"):
+            assert SafariImporter().default_path() == "/a/b"
 
 
 # ---------------------------------------------------------------------------
-# parse()
+# parse() — basic
 # ---------------------------------------------------------------------------
 
 class TestSafariImporterParse:
-    def test_parse_missing_file_returns_empty(self, tmp_path):
-        s = SafariImporter()
-        result = s.parse(str(tmp_path / "nonexistent.plist"))
-        assert result == []
+    def test_returns_empty_for_missing_file(self, tmp_path):
+        items = SafariImporter().parse(str(tmp_path / "missing.plist"))
+        assert items == []
 
-    def test_parse_empty_plist_returns_empty(self, tmp_path):
-        f = tmp_path / "bookmarks.plist"
-        _write_plist(f, {})
-        s = SafariImporter()
-        result = s.parse(str(f))
-        assert result == []
+    def test_returns_list_for_valid_plist(self, tmp_path):
+        node = {"Title": "Example", "URLString": "https://example.com"}
+        p = _build_plist([node], tmp_path)
+        items = SafariImporter().parse(str(p))
+        assert isinstance(items, list)
+        assert len(items) == 1
 
-    def test_parse_single_bookmark(self, tmp_path):
-        f = tmp_path / "bookmarks.plist"
-        payload = {
-            "Children": [
-                {"Title": "Example", "URLString": "https://example.com"}
-            ]
-        }
-        _write_plist(f, payload)
-        s = SafariImporter()
-        result = s.parse(str(f))
-        assert len(result) == 1
-        assert result[0].value == "https://example.com"
-        assert result[0].label == "Example"
+    def test_item_label_equals_title(self, tmp_path):
+        node = {"Title": "My Site", "URLString": "https://my.site"}
+        p = _build_plist([node], tmp_path)
+        items = SafariImporter().parse(str(p))
+        assert items[0].label == "My Site"
 
-    def test_parse_bookmark_source_is_safari(self, tmp_path):
-        f = tmp_path / "bookmarks.plist"
-        payload = {
-            "Children": [
-                {"Title": "A", "URLString": "https://a.com"}
-            ]
-        }
-        _write_plist(f, payload)
-        result = SafariImporter().parse(str(f))
-        assert result[0].source == "safari"
+    def test_item_value_equals_url(self, tmp_path):
+        node = {"Title": "X", "URLString": "https://x.com"}
+        p = _build_plist([node], tmp_path)
+        items = SafariImporter().parse(str(p))
+        assert items[0].value == "https://x.com"
 
-    def test_parse_bookmark_type_is_bookmark(self, tmp_path):
-        f = tmp_path / "bookmarks.plist"
-        payload = {"Children": [{"Title": "X", "URLString": "https://x.com"}]}
-        _write_plist(f, payload)
-        result = SafariImporter().parse(str(f))
-        assert result[0].type == "bookmark"
+    def test_item_source_is_safari(self, tmp_path):
+        node = {"Title": "T", "URLString": "https://t.co"}
+        p = _build_plist([node], tmp_path)
+        items = SafariImporter().parse(str(p))
+        assert items[0].source == "safari"
 
-    def test_parse_nested_folder(self, tmp_path):
-        f = tmp_path / "bookmarks.plist"
-        payload = {
-            "Children": [
-                {
-                    "Title": "Work",
-                    "Children": [
-                        {"Title": "GitHub", "URLString": "https://github.com"}
-                    ],
-                }
-            ]
-        }
-        _write_plist(f, payload)
-        result = SafariImporter().parse(str(f))
-        assert len(result) == 1
-        assert result[0].meta["folder"] == "Work"
+    def test_item_type_is_bookmark(self, tmp_path):
+        node = {"Title": "T", "URLString": "https://t.co"}
+        p = _build_plist([node], tmp_path)
+        items = SafariImporter().parse(str(p))
+        assert items[0].type == "bookmark"
 
-    def test_parse_multiple_bookmarks(self, tmp_path):
-        f = tmp_path / "bookmarks.plist"
-        payload = {
-            "Children": [
-                {"Title": "A", "URLString": "https://a.com"},
-                {"Title": "B", "URLString": "https://b.com"},
-            ]
-        }
-        _write_plist(f, payload)
-        result = SafariImporter().parse(str(f))
-        assert len(result) == 2
+    def test_missing_title_uses_url_as_label(self, tmp_path):
+        node = {"URLString": "https://no-title.com"}
+        p = _build_plist([node], tmp_path)
+        items = SafariImporter().parse(str(p))
+        assert items[0].label == "https://no-title.com"
 
-    def test_parse_node_without_url_skipped(self, tmp_path):
-        f = tmp_path / "bookmarks.plist"
-        payload = {
-            "Children": [
-                {"Title": "Folder Only"}  # No URLString
-            ]
-        }
-        _write_plist(f, payload)
-        result = SafariImporter().parse(str(f))
-        assert result == []
+    def test_empty_url_skipped(self, tmp_path):
+        node = {"Title": "Folder", "URLString": ""}
+        p = _build_plist([node], tmp_path)
+        items = SafariImporter().parse(str(p))
+        assert items == []
 
-    def test_parse_url_used_as_label_when_no_title(self, tmp_path):
-        f = tmp_path / "bookmarks.plist"
-        payload = {"Children": [{"URLString": "https://no-title.com"}]}
-        _write_plist(f, payload)
-        result = SafariImporter().parse(str(f))
-        assert result[0].label == "https://no-title.com"
+    def test_node_without_url_skipped(self, tmp_path):
+        node = {"Title": "No URL"}
+        p = _build_plist([node], tmp_path)
+        items = SafariImporter().parse(str(p))
+        assert items == []
 
-    def test_parse_corrupt_plist_returns_empty(self, tmp_path):
-        f = tmp_path / "bad.plist"
-        f.write_bytes(b"not a valid plist at all!")
-        result = SafariImporter().parse(str(f))
-        assert result == []
+    def test_empty_children_returns_empty(self, tmp_path):
+        p = _build_plist([], tmp_path)
+        items = SafariImporter().parse(str(p))
+        assert items == []
 
-    def test_parse_folder_path_empty_at_root(self, tmp_path):
-        f = tmp_path / "bookmarks.plist"
-        payload = {"Children": [{"Title": "X", "URLString": "https://x.com"}]}
-        _write_plist(f, payload)
-        result = SafariImporter().parse(str(f))
-        assert result[0].meta["folder"] == ""
+    def test_corrupt_plist_returns_empty(self, tmp_path):
+        p = tmp_path / "bad.plist"
+        p.write_bytes(b"NOT A PLIST <<>>")
+        items = SafariImporter().parse(str(p))
+        assert items == []
 
-    def test_parse_deeply_nested(self, tmp_path):
-        f = tmp_path / "bookmarks.plist"
-        payload = {
-            "Children": [
-                {
-                    "Title": "Level1",
-                    "Children": [
-                        {
-                            "Title": "Level2",
-                            "Children": [
-                                {"Title": "Deep", "URLString": "https://deep.com"}
-                            ],
-                        }
-                    ],
-                }
-            ]
-        }
-        _write_plist(f, payload)
-        result = SafariImporter().parse(str(f))
-        assert len(result) == 1
-        assert "Level1" in result[0].meta["folder"]
-        assert "Level2" in result[0].meta["folder"]
+    def test_multiple_bookmarks(self, tmp_path):
+        nodes = [
+            {"Title": "A", "URLString": "https://a.com"},
+            {"Title": "B", "URLString": "https://b.com"},
+            {"Title": "C", "URLString": "https://c.com"},
+        ]
+        p = _build_plist(nodes, tmp_path)
+        items = SafariImporter().parse(str(p))
+        assert len(items) == 3
+        assert {i.label for i in items} == {"A", "B", "C"}
+
+
+# ---------------------------------------------------------------------------
+# parse() — nested folders (_walk recursion)
+# ---------------------------------------------------------------------------
+
+class TestSafariImporterNested:
+    def test_nested_folder_items_included(self, tmp_path):
+        tree = [
+            {
+                "Title": "Folder",
+                "Children": [{"Title": "Inner", "URLString": "https://inner.com"}],
+            }
+        ]
+        p = _build_plist(tree, tmp_path)
+        items = SafariImporter().parse(str(p))
+        assert len(items) == 1
+        assert items[0].label == "Inner"
+
+    def test_folder_name_in_meta(self, tmp_path):
+        tree = [
+            {
+                "Title": "Work",
+                "Children": [{"Title": "Task", "URLString": "https://task.com"}],
+            }
+        ]
+        p = _build_plist(tree, tmp_path)
+        items = SafariImporter().parse(str(p))
+        assert "Work" in items[0].meta["folder"]
+
+    def test_deeply_nested_folder_path(self, tmp_path):
+        tree = [
+            {
+                "Title": "A",
+                "Children": [
+                    {
+                        "Title": "B",
+                        "Children": [{"Title": "Leaf", "URLString": "https://leaf.com"}],
+                    }
+                ],
+            }
+        ]
+        p = _build_plist(tree, tmp_path)
+        items = SafariImporter().parse(str(p))
+        assert len(items) == 1
+        folder = items[0].meta["folder"]
+        assert "A" in folder
+        assert "B" in folder
+
+    def test_top_level_item_empty_folder(self, tmp_path):
+        node = {"Title": "Top", "URLString": "https://top.com"}
+        p = _build_plist([node], tmp_path)
+        items = SafariImporter().parse(str(p))
+        assert items[0].meta["folder"] == ""
+
+    def test_folder_url_and_child_both_collected(self, tmp_path):
+        # A node with BOTH a URLString AND Children — url becomes item, children recurse
+        tree = [
+            {
+                "Title": "Both",
+                "URLString": "https://both.com",
+                "Children": [{"Title": "Child", "URLString": "https://child.com"}],
+            }
+        ]
+        p = _build_plist(tree, tmp_path)
+        items = SafariImporter().parse(str(p))
+        urls = {i.value for i in items}
+        assert "https://both.com" in urls
+        assert "https://child.com" in urls

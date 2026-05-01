@@ -165,3 +165,116 @@ class TestBackoffSleepSync:
         mock_sleep.assert_called_once()
         sleep_secs = mock_sleep.call_args[0][0]
         assert sleep_secs == pytest.approx(4.0)  # 1000ms * 2^2 = 4000ms = 4s
+
+
+# ---------------------------------------------------------------------------
+# BackoffPolicy defaults (merged from root)
+# ---------------------------------------------------------------------------
+
+class TestBackoffPolicyDefaults:
+    def test_default_initial_ms(self):
+        from navig.retry_policy import BackoffPolicy
+        p = BackoffPolicy()
+        assert p.initial_ms == 5_000
+
+    def test_default_max_ms(self):
+        from navig.retry_policy import BackoffPolicy
+        p = BackoffPolicy()
+        assert p.max_ms == 300_000
+
+    def test_default_factor(self):
+        from navig.retry_policy import BackoffPolicy
+        p = BackoffPolicy()
+        assert p.factor == 2.0
+
+    def test_default_jitter(self):
+        from navig.retry_policy import BackoffPolicy
+        p = BackoffPolicy()
+        assert p.jitter == 0.1
+
+    def test_is_frozen(self):
+        import pytest
+        from navig.retry_policy import BackoffPolicy
+        p = BackoffPolicy()
+        with pytest.raises((AttributeError, TypeError)):
+            p.initial_ms = 999
+
+
+# ---------------------------------------------------------------------------
+# delay_ms (merged from root)
+# ---------------------------------------------------------------------------
+
+class TestDelayMs:
+    def test_attempt_zero_returns_initial(self):
+        from navig.retry_policy import BackoffPolicy
+        p = BackoffPolicy(initial_ms=1000, max_ms=60_000, factor=2.0, jitter=0.0)
+        assert p.delay_ms(0) == 1000.0
+
+    def test_attempt_one_doubles(self):
+        from navig.retry_policy import BackoffPolicy
+        p = BackoffPolicy(initial_ms=1000, max_ms=60_000, factor=2.0, jitter=0.0)
+        assert p.delay_ms(1) == 2000.0
+
+    def test_attempt_two_quadruples(self):
+        from navig.retry_policy import BackoffPolicy
+        p = BackoffPolicy(initial_ms=1000, max_ms=60_000, factor=2.0, jitter=0.0)
+        assert p.delay_ms(2) == 4000.0
+
+    def test_delay_capped_at_max_ms(self):
+        from navig.retry_policy import BackoffPolicy
+        p = BackoffPolicy(initial_ms=1000, max_ms=2000, factor=2.0, jitter=0.0)
+        assert p.delay_ms(5) == 2000.0
+
+    def test_jitter_adds_spread(self):
+        from navig.retry_policy import BackoffPolicy
+        p = BackoffPolicy(initial_ms=1000, max_ms=60_000, factor=1.0, jitter=0.2)
+        delays = [p.delay_ms(0) for _ in range(50)]
+        assert any(d != 1000.0 for d in delays)
+        assert all(800.0 <= d <= 1200.0 for d in delays)
+
+    def test_jitter_zero_returns_exact(self):
+        from navig.retry_policy import BackoffPolicy
+        p = BackoffPolicy(initial_ms=1000, max_ms=60_000, factor=2.0, jitter=0.0)
+        assert all(p.delay_ms(0) == 1000.0 for _ in range(10))
+
+    def test_returns_float(self):
+        from navig.retry_policy import BackoffPolicy
+        p = BackoffPolicy(initial_ms=1000, max_ms=60_000, factor=2.0, jitter=0.0)
+        assert isinstance(p.delay_ms(0), float)
+
+    def test_large_attempt_still_capped(self):
+        from navig.retry_policy import BackoffPolicy
+        p = BackoffPolicy(initial_ms=100, max_ms=500, factor=2.0, jitter=0.0)
+        assert p.delay_ms(100) == 500.0
+
+    def test_custom_factor(self):
+        from navig.retry_policy import BackoffPolicy
+        p = BackoffPolicy(initial_ms=1000, max_ms=60_000, factor=3.0, jitter=0.0)
+        assert p.delay_ms(2) == 9000.0
+
+
+# ---------------------------------------------------------------------------
+# delay_s (merged from root)
+# ---------------------------------------------------------------------------
+
+class TestDelayS:
+    def test_delay_s_is_delay_ms_divided_by_1000(self):
+        import math
+        from navig.retry_policy import BackoffPolicy
+        p = BackoffPolicy(initial_ms=2000, max_ms=60_000, factor=2.0, jitter=0.0)
+        assert math.isclose(p.delay_s(0), p.delay_ms(0) / 1000.0)
+
+    def test_delay_s_attempt_zero(self):
+        from navig.retry_policy import BackoffPolicy
+        p = BackoffPolicy(initial_ms=2000, max_ms=60_000, factor=2.0, jitter=0.0)
+        assert p.delay_s(0) == 2.0
+
+    def test_delay_s_capped_in_seconds(self):
+        from navig.retry_policy import BackoffPolicy
+        p = BackoffPolicy(initial_ms=1000, max_ms=5000, factor=2.0, jitter=0.0)
+        assert p.delay_s(10) == 5.0
+
+    def test_delay_s_returns_float(self):
+        from navig.retry_policy import BackoffPolicy
+        p = BackoffPolicy(initial_ms=1000, max_ms=60_000, factor=2.0, jitter=0.0)
+        assert isinstance(p.delay_s(0), float)

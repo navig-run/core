@@ -152,3 +152,54 @@ class TestSaveConfig:
             loaded = load_config(9014)
         assert loaded.provider == "edge"
         assert loaded.speed == 1.5
+
+
+# ---------------------------------------------------------------------------
+# AudioConfig field-level and dataclass integrity tests (merged from root)
+# ---------------------------------------------------------------------------
+
+class TestAudioConfig:
+    """Field count, asdict, and custom-value tests."""
+
+    def test_default_provider(self):
+        from dataclasses import asdict, fields
+        from navig.gateway.channels.audio_menu.state import AudioConfig
+        assert AudioConfig().provider == "openai"
+
+    def test_default_model(self):
+        from navig.gateway.channels.audio_menu.state import AudioConfig
+        assert AudioConfig().model == "tts-1-hd"
+
+    def test_default_voice(self):
+        from navig.gateway.channels.audio_menu.state import AudioConfig
+        assert AudioConfig().voice == "nova"
+
+    def test_default_speed(self):
+        from navig.gateway.channels.audio_menu.state import AudioConfig
+        assert AudioConfig().speed == 1.0
+
+    def test_default_format(self):
+        from navig.gateway.channels.audio_menu.state import AudioConfig
+        assert AudioConfig().format == "mp3"
+
+    def test_field_count(self):
+        from dataclasses import fields
+        from navig.gateway.channels.audio_menu.state import AudioConfig
+        assert len(fields(AudioConfig)) == 7
+
+    def test_asdict_roundtrip(self):
+        from dataclasses import asdict
+        from navig.gateway.channels.audio_menu.state import AudioConfig
+        cfg = AudioConfig(voice="alloy", speed=0.8)
+        d = asdict(cfg)
+        restored = AudioConfig(**d)
+        assert restored == cfg
+
+    def test_custom_values(self):
+        from navig.gateway.channels.audio_menu.state import AudioConfig
+        cfg = AudioConfig(provider="azure", model="neural", voice="aria", speed=1.5,
+                          format="ogg", auto=True, active=True)
+        assert cfg.provider == "azure"
+        assert cfg.voice == "aria"
+        assert cfg.speed == 1.5
+        assert cfg.auto is True

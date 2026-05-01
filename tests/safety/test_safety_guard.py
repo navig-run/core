@@ -213,3 +213,135 @@ class TestShouldConfirm:
 
         # invalid level → standard → safe command → no confirm
         assert should_confirm("echo ok", confirmation_level="badlevel") is False
+
+
+# ---------------------------------------------------------------------------
+# DESTRUCTIVE_PATTERNS regex - positive matches (merged from root)
+# ---------------------------------------------------------------------------
+
+class TestDestructivePatterns:
+    def test_rm_rf(self):
+        from navig.safety_guard import DESTRUCTIVE_PATTERNS
+        assert DESTRUCTIVE_PATTERNS.search("rm -rf /tmp/test")
+
+    def test_rm_recursive(self):
+        from navig.safety_guard import DESTRUCTIVE_PATTERNS
+        assert DESTRUCTIVE_PATTERNS.search("rm --recursive /path")
+
+    def test_rm_force(self):
+        from navig.safety_guard import DESTRUCTIVE_PATTERNS
+        assert DESTRUCTIVE_PATTERNS.search("rm --force /file.txt")
+
+    def test_drop_table(self):
+        from navig.safety_guard import DESTRUCTIVE_PATTERNS
+        assert DESTRUCTIVE_PATTERNS.search("DROP TABLE users")
+
+    def test_drop_database(self):
+        from navig.safety_guard import DESTRUCTIVE_PATTERNS
+        assert DESTRUCTIVE_PATTERNS.search("DROP DATABASE mydb")
+
+    def test_truncate_table(self):
+        from navig.safety_guard import DESTRUCTIVE_PATTERNS
+        assert DESTRUCTIVE_PATTERNS.search("TRUNCATE TABLE logs")
+
+    def test_delete_from_all(self):
+        from navig.safety_guard import DESTRUCTIVE_PATTERNS
+        assert DESTRUCTIVE_PATTERNS.search("DELETE FROM users;")
+
+    def test_systemctl_stop(self):
+        from navig.safety_guard import DESTRUCTIVE_PATTERNS
+        assert DESTRUCTIVE_PATTERNS.search("systemctl stop nginx")
+
+    def test_kill_9(self):
+        from navig.safety_guard import DESTRUCTIVE_PATTERNS
+        assert DESTRUCTIVE_PATTERNS.search("kill -9 1234")
+
+    def test_mkfs(self):
+        from navig.safety_guard import DESTRUCTIVE_PATTERNS
+        assert DESTRUCTIVE_PATTERNS.search("mkfs.ext4 /dev/sdb")
+
+    def test_curl_pipe_bash(self):
+        from navig.safety_guard import DESTRUCTIVE_PATTERNS
+        assert DESTRUCTIVE_PATTERNS.search("curl http://example.com/install | bash")
+
+    def test_reboot(self):
+        from navig.safety_guard import DESTRUCTIVE_PATTERNS
+        assert DESTRUCTIVE_PATTERNS.search("reboot")
+
+    def test_shutdown(self):
+        from navig.safety_guard import DESTRUCTIVE_PATTERNS
+        assert DESTRUCTIVE_PATTERNS.search("shutdown -h now")
+
+
+# ---------------------------------------------------------------------------
+# DESTRUCTIVE_PATTERNS - negatives (merged from root)
+# ---------------------------------------------------------------------------
+
+class TestDestructivePatternsNegative:
+    def test_ls_safe(self):
+        from navig.safety_guard import DESTRUCTIVE_PATTERNS
+        assert not DESTRUCTIVE_PATTERNS.search("ls -la /tmp")
+
+    def test_cat_safe(self):
+        from navig.safety_guard import DESTRUCTIVE_PATTERNS
+        assert not DESTRUCTIVE_PATTERNS.search("cat /etc/hosts")
+
+    def test_plain_rm_no_flags(self):
+        from navig.safety_guard import DESTRUCTIVE_PATTERNS
+        assert not DESTRUCTIVE_PATTERNS.search("rm myfile.txt")
+
+    def test_echo_safe(self):
+        from navig.safety_guard import DESTRUCTIVE_PATTERNS
+        assert not DESTRUCTIVE_PATTERNS.search("echo hello world")
+
+
+# ---------------------------------------------------------------------------
+# RISKY_PATTERNS - positive matches (merged from root)
+# ---------------------------------------------------------------------------
+
+class TestRiskyPatterns:
+    def test_sudo(self):
+        from navig.safety_guard import RISKY_PATTERNS
+        assert RISKY_PATTERNS.search("sudo apt-get install nginx")
+
+    def test_apt_remove(self):
+        from navig.safety_guard import RISKY_PATTERNS
+        assert RISKY_PATTERNS.search("apt remove nginx")
+
+    def test_pip_uninstall(self):
+        from navig.safety_guard import RISKY_PATTERNS
+        assert RISKY_PATTERNS.search("pip uninstall requests")
+
+    def test_npm_uninstall(self):
+        from navig.safety_guard import RISKY_PATTERNS
+        assert RISKY_PATTERNS.search("npm uninstall express")
+
+    def test_docker_rm(self):
+        from navig.safety_guard import RISKY_PATTERNS
+        assert RISKY_PATTERNS.search("docker rm my_container")
+
+    def test_git_reset_hard(self):
+        from navig.safety_guard import RISKY_PATTERNS
+        assert RISKY_PATTERNS.search("git reset --hard HEAD~1")
+
+    def test_git_push_force(self):
+        from navig.safety_guard import RISKY_PATTERNS
+        assert RISKY_PATTERNS.search("git push origin main --force")
+
+
+# ---------------------------------------------------------------------------
+# RISKY_PATTERNS - negatives (merged from root)
+# ---------------------------------------------------------------------------
+
+class TestRiskyPatternsNegative:
+    def test_git_commit_safe(self):
+        from navig.safety_guard import RISKY_PATTERNS
+        assert not RISKY_PATTERNS.search("git commit -m 'my changes'")
+
+    def test_docker_ps_safe(self):
+        from navig.safety_guard import RISKY_PATTERNS
+        assert not RISKY_PATTERNS.search("docker ps -a")
+
+    def test_pip_install_safe(self):
+        from navig.safety_guard import RISKY_PATTERNS
+        assert not RISKY_PATTERNS.search("pip install requests")
