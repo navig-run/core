@@ -271,3 +271,182 @@ class TestLoadAdminSettings:
             result = _load_admin_settings()
         assert "code_interpreter" in result
         assert result["code_interpreter"]["python_enabled"] is True
+
+
+# ─── _load_agents ─────────────────────────────────────────────────────────────
+
+from navig.gateway.deck.routes.admin import (  # noqa: E402
+    _load_agents,
+    _load_connectors,
+    _load_document_sets,
+    _load_service_accounts,
+)
+
+
+class TestLoadAgents:
+    def test_returns_dict_with_builtin_and_custom(self):
+        result = _load_agents()
+        assert "builtin" in result
+        assert "custom" in result
+
+    def test_builtin_is_list(self):
+        assert isinstance(_load_agents()["builtin"], list)
+
+    def test_custom_is_list(self):
+        assert isinstance(_load_agents()["custom"], list)
+
+    def test_builtin_non_empty(self):
+        assert len(_load_agents()["builtin"]) >= 4
+
+    def test_builtin_items_have_required_keys(self):
+        required = {"key", "icon", "label", "subtitle", "builtin", "enabled"}
+        for item in _load_agents()["builtin"]:
+            assert required <= item.keys(), f"Missing keys in {item}"
+
+    def test_assistant_always_present(self):
+        keys = {a["key"] for a in _load_agents()["builtin"]}
+        assert "assistant" in keys
+
+    def test_builtin_flag_is_true_for_builtin_items(self):
+        for item in _load_agents()["builtin"]:
+            assert item["builtin"] is True
+
+    def test_enabled_is_bool(self):
+        for item in _load_agents()["builtin"]:
+            assert isinstance(item["enabled"], bool)
+
+    def test_returns_fallback_on_config_failure(self):
+        fake_mod = MagicMock()
+        fake_mod.get_config_manager.side_effect = Exception("boom")
+        with patch.dict(sys.modules, {"navig.config": fake_mod}):
+            result = _load_agents()
+        assert "builtin" in result
+        assert len(result["builtin"]) >= 4
+
+
+# ─── _load_connectors ─────────────────────────────────────────────────────────
+
+
+class TestLoadConnectors:
+    def test_returns_list(self):
+        assert isinstance(_load_connectors(), list)
+
+    def test_returns_empty_when_no_connectors_configured(self):
+        fake_mod = MagicMock()
+        fake_cm = MagicMock()
+        fake_cm.get_config.return_value = {}
+        fake_mod.get_config_manager.return_value = fake_cm
+        with patch.dict(sys.modules, {"navig.config": fake_mod}):
+            result = _load_connectors()
+        assert result == []
+
+    def test_maps_connector_fields(self):
+        fake_mod = MagicMock()
+        fake_cm = MagicMock()
+        fake_cm.get_config.return_value = {
+            "connectors": [
+                {
+                    "key": "github",
+                    "name": "GitHub",
+                    "kind": "Source code",
+                    "status": "connected",
+                    "last_sync": "1 h ago",
+                }
+            ]
+        }
+        fake_mod.get_config_manager.return_value = fake_cm
+        with patch.dict(sys.modules, {"navig.config": fake_mod}):
+            result = _load_connectors()
+        assert len(result) == 1
+        assert result[0]["key"] == "github"
+        assert result[0]["status"] == "connected"
+
+    def test_returns_empty_on_exception(self):
+        fake_mod = MagicMock()
+        fake_mod.get_config_manager.side_effect = RuntimeError("fail")
+        with patch.dict(sys.modules, {"navig.config": fake_mod}):
+            result = _load_connectors()
+        assert result == []
+
+
+# ─── _load_document_sets ──────────────────────────────────────────────────────
+
+
+class TestLoadDocumentSets:
+    def test_returns_list(self):
+        assert isinstance(_load_document_sets(), list)
+
+    def test_returns_empty_when_no_sets_configured(self):
+        fake_mod = MagicMock()
+        fake_cm = MagicMock()
+        fake_cm.get_config.return_value = {}
+        fake_mod.get_config_manager.return_value = fake_cm
+        with patch.dict(sys.modules, {"navig.config": fake_mod}):
+            result = _load_document_sets()
+        assert result == []
+
+    def test_maps_document_set_fields(self):
+        fake_mod = MagicMock()
+        fake_cm = MagicMock()
+        fake_cm.get_config.return_value = {
+            "document_sets": [
+                {"name": "Engineering Docs", "icon": "⚙️", "docs": 50, "assignees": "devs"}
+            ]
+        }
+        fake_mod.get_config_manager.return_value = fake_cm
+        with patch.dict(sys.modules, {"navig.config": fake_mod}):
+            result = _load_document_sets()
+        assert len(result) == 1
+        assert result[0]["name"] == "Engineering Docs"
+        assert result[0]["docs"] == 50
+
+    def test_returns_empty_on_exception(self):
+        fake_mod = MagicMock()
+        fake_mod.get_config_manager.side_effect = RuntimeError("fail")
+        with patch.dict(sys.modules, {"navig.config": fake_mod}):
+            result = _load_document_sets()
+        assert result == []
+
+
+# ─── _load_service_accounts ───────────────────────────────────────────────────
+
+
+class TestLoadServiceAccounts:
+    def test_returns_list(self):
+        assert isinstance(_load_service_accounts(), list)
+
+    def test_returns_empty_when_none_configured(self):
+        fake_mod = MagicMock()
+        fake_cm = MagicMock()
+        fake_cm.get_config.return_value = {}
+        fake_mod.get_config_manager.return_value = fake_cm
+        with patch.dict(sys.modules, {"navig.config": fake_mod}):
+            result = _load_service_accounts()
+        assert result == []
+
+    def test_maps_token_fields(self):
+        fake_mod = MagicMock()
+        fake_cm = MagicMock()
+        fake_cm.get_config.return_value = {
+            "service_accounts": [
+                {
+                    "name": "ci-bot",
+                    "scopes": "read",
+                    "created": "2025-01-01",
+                    "last_used": "1 h ago",
+                }
+            ]
+        }
+        fake_mod.get_config_manager.return_value = fake_cm
+        with patch.dict(sys.modules, {"navig.config": fake_mod}):
+            result = _load_service_accounts()
+        assert len(result) == 1
+        assert result[0]["name"] == "ci-bot"
+        assert result[0]["scopes"] == "read"
+
+    def test_returns_empty_on_exception(self):
+        fake_mod = MagicMock()
+        fake_mod.get_config_manager.side_effect = RuntimeError("fail")
+        with patch.dict(sys.modules, {"navig.config": fake_mod}):
+            result = _load_service_accounts()
+        assert result == []

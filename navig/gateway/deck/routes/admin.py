@@ -13,6 +13,10 @@ Routes registered in navig.gateway.deck.__init__.register_deck_routes():
   GET /api/deck/admin/voice-providers
   GET /api/deck/admin/mcp-servers
   GET /api/deck/admin/settings
+  GET /api/deck/admin/agents
+  GET /api/deck/admin/connectors
+  GET /api/deck/admin/document-sets
+  GET /api/deck/admin/service-accounts
 """
 
 from __future__ import annotations
@@ -312,3 +316,169 @@ async def handle_deck_admin_mcp_servers(request: "web.Request") -> "web.Response
 async def handle_deck_admin_settings(request: "web.Request") -> "web.Response":
     """GET /api/deck/admin/settings"""
     return web.json_response(_load_admin_settings())
+
+
+# ── Agents / connectors / document-sets / service-accounts ────────────────────
+
+_BUILTIN_AGENTS: list[dict] = [
+    {
+        "key": "assistant",
+        "icon": "🤖",
+        "label": "navig-assistant",
+        "subtitle": "General-purpose conversational agent",
+        "builtin": True,
+        "enabled": True,
+    },
+    {
+        "key": "coder",
+        "icon": "💻",
+        "label": "navig-coder",
+        "subtitle": "Code generation, review, and debugging",
+        "builtin": True,
+        "enabled": True,
+    },
+    {
+        "key": "researcher",
+        "icon": "🔍",
+        "label": "navig-researcher",
+        "subtitle": "Web-search-augmented research and summarization",
+        "builtin": True,
+        "enabled": True,
+    },
+    {
+        "key": "planner",
+        "icon": "📋",
+        "label": "navig-planner",
+        "subtitle": "Multi-step task decomposition and orchestration",
+        "builtin": True,
+        "enabled": False,
+    },
+]
+
+
+def _load_agents() -> dict:
+    """Return built-in agents plus any custom agents from config."""
+    try:
+        from navig.config import get_config_manager
+
+        cm = get_config_manager()
+        cfg = cm.get_config() if hasattr(cm, "get_config") else {}
+        custom_raw = cfg.get("agents", {}).get("custom", []) if isinstance(cfg, dict) else []
+        enabled_keys: set[str] = set(
+            cfg.get("agents", {}).get("enabled", []) if isinstance(cfg, dict) else []
+        )
+
+        builtin = [
+            {**a, "enabled": a["key"] in enabled_keys if enabled_keys else a["enabled"]}
+            for a in _BUILTIN_AGENTS
+        ]
+        custom = [
+            {
+                "key": c.get("key", c.get("name", "")),
+                "icon": c.get("icon", "⚙️"),
+                "label": c.get("name", c.get("key", "")),
+                "subtitle": c.get("description", c.get("url", "")),
+                "builtin": False,
+                "enabled": bool(c.get("enabled", True)),
+            }
+            for c in (custom_raw if isinstance(custom_raw, list) else [])
+        ]
+        return {"builtin": builtin, "custom": custom}
+    except Exception as exc:
+        logger.warning("admin: failed to load agents: %s", exc)
+        return {"builtin": list(_BUILTIN_AGENTS), "custom": []}
+
+
+def _load_connectors() -> list[dict]:
+    """Return active connectors from config (empty list if none configured)."""
+    try:
+        from navig.config import get_config_manager
+
+        cm = get_config_manager()
+        cfg = cm.get_config() if hasattr(cm, "get_config") else {}
+        raw = cfg.get("connectors", []) if isinstance(cfg, dict) else []
+        if not isinstance(raw, list):
+            return []
+        return [
+            {
+                "key": c.get("key", c.get("name", "")),
+                "icon": c.get("icon", "🔗"),
+                "name": c.get("name", c.get("key", "")),
+                "kind": c.get("kind", ""),
+                "status": c.get("status", "disconnected"),
+                "last_sync": c.get("last_sync", ""),
+            }
+            for c in raw
+        ]
+    except Exception as exc:
+        logger.warning("admin: failed to load connectors: %s", exc)
+        return []
+
+
+def _load_document_sets() -> list[dict]:
+    """Return document sets from config (empty list if none configured)."""
+    try:
+        from navig.config import get_config_manager
+
+        cm = get_config_manager()
+        cfg = cm.get_config() if hasattr(cm, "get_config") else {}
+        raw = cfg.get("document_sets", []) if isinstance(cfg, dict) else []
+        if not isinstance(raw, list):
+            return []
+        return [
+            {
+                "name": ds.get("name", ""),
+                "icon": ds.get("icon", "📄"),
+                "docs": int(ds.get("docs", 0)),
+                "assignees": ds.get("assignees", ""),
+                "color": ds.get("color", ""),
+            }
+            for ds in raw
+        ]
+    except Exception as exc:
+        logger.warning("admin: failed to load document sets: %s", exc)
+        return []
+
+
+def _load_service_accounts() -> list[dict]:
+    """Return service-account tokens from config/vault (empty list if none)."""
+    try:
+        from navig.config import get_config_manager
+
+        cm = get_config_manager()
+        cfg = cm.get_config() if hasattr(cm, "get_config") else {}
+        raw = cfg.get("service_accounts", []) if isinstance(cfg, dict) else []
+        if not isinstance(raw, list):
+            return []
+        return [
+            {
+                "name": t.get("name", ""),
+                "scopes": t.get("scopes", "read"),
+                "created": t.get("created", ""),
+                "last_used": t.get("last_used", ""),
+            }
+            for t in raw
+        ]
+    except Exception as exc:
+        logger.warning("admin: failed to load service accounts: %s", exc)
+        return []
+
+
+async def handle_deck_admin_agents(request: "web.Request") -> "web.Response":
+    """GET /api/deck/admin/agents"""
+    return web.json_response(_load_agents())
+
+
+async def handle_deck_admin_connectors(request: "web.Request") -> "web.Response":
+    """GET /api/deck/admin/connectors"""
+    return web.json_response({"connectors": _load_connectors()})
+
+
+async def handle_deck_admin_document_sets(request: "web.Request") -> "web.Response":
+    """GET /api/deck/admin/document-sets"""
+    return web.json_response({"sets": _load_document_sets()})
+
+
+async def handle_deck_admin_service_accounts(request: "web.Request") -> "web.Response":
+    """GET /api/deck/admin/service-accounts"""
+    return web.json_response({"tokens": _load_service_accounts()})

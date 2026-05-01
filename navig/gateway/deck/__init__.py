@@ -20,10 +20,14 @@ except ImportError:
 
 from navig.gateway.deck.auth import configure_deck_auth, deck_auth_middleware
 from navig.gateway.deck.routes.admin import (
+    handle_deck_admin_agents,
+    handle_deck_admin_connectors,
+    handle_deck_admin_document_sets,
     handle_deck_admin_image_providers,
     handle_deck_admin_llm_providers,
     handle_deck_admin_mcp_servers,
     handle_deck_admin_search_providers,
+    handle_deck_admin_service_accounts,
     handle_deck_admin_settings,
     handle_deck_admin_voice_providers,
 )
@@ -113,6 +117,10 @@ def register_deck_routes(
         app.router.add_get("/api/deck/admin/voice-providers", handle_deck_admin_voice_providers)
         app.router.add_get("/api/deck/admin/mcp-servers", handle_deck_admin_mcp_servers)
         app.router.add_get("/api/deck/admin/settings", handle_deck_admin_settings)
+        app.router.add_get("/api/deck/admin/agents", handle_deck_admin_agents)
+        app.router.add_get("/api/deck/admin/connectors", handle_deck_admin_connectors)
+        app.router.add_get("/api/deck/admin/document-sets", handle_deck_admin_document_sets)
+        app.router.add_get("/api/deck/admin/service-accounts", handle_deck_admin_service_accounts)
 
         # Vault routes
         app.router.add_get("/api/deck/vault", handle_deck_vault_list)
