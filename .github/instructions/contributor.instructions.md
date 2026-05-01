@@ -7,6 +7,7 @@ applyTo: '**'
 ## Core Rules
 - Reuse existing code over writing new utilities. Do not duplicate logic.
 - Maintain repo hygiene: do not invent new ad-hoc structures. Use standard directories.
+- **Test files must always be placed inside a subdirectory of `tests/`**, never directly in the `tests/` root. Mirror the source module path: `navig/commands/foo.py` → `tests/commands/test_foo.py`. Create the subdirectory (with `__init__.py`) if it does not exist.
 - Before related changes, check `CHANGELOG.md` first to understand what was done recently (internal dev log, gitignored).
 - Keep the repo root clean.
 - Use `.dev/` for AI working artifacts (scripts, outputs, logs, scratch).

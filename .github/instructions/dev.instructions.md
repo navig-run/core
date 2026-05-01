@@ -26,6 +26,7 @@ applyTo: '**'
 ## Project Context
 - Python project: use `pytest`, `pip install -e .`, and existing package structure.
 - Commands live under `navig/commands/`; tests under `tests/`; docs under `docs/`.
+- **All test files must be in a subdirectory of `tests/`** (e.g. `tests/commands/`, `tests/core/`). Never place test files directly in the `tests/` root. Mirror the source path and create the subdirectory with `__init__.py` if needed.
 - Debug log path: `~/.navig/debug.log`.
 
 ## Documentation Maintenance
