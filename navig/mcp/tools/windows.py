@@ -25,6 +25,7 @@ except ImportError:  # pragma: no cover
 
 if sys.platform == "win32":
     import winreg
+
     from navig.adapters.automation.powershell import PowerShellExecutor
     from navig.platform.windows_utils import check_pid_exists, ps_quote_for_xml
 else:
@@ -81,8 +82,7 @@ _TOOLS: dict[str, dict] = {
                 "name": {
                     "type": "string",
                     "description": (
-                        "Process name (e.g. 'notepad.exe'); terminates the "
-                        "first matching process."
+                        "Process name (e.g. 'notepad.exe'); terminates the first matching process."
                     ),
                 },
                 "force": {
@@ -180,6 +180,51 @@ _TOOLS: dict[str, dict] = {
             "required": ["title", "message"],
         },
     },
+    "desktop_powershell": {
+        "name": "desktop_powershell",
+        "description": (
+            "Execute a PowerShell command or script on the local machine and return its output. "
+            "stdout and stderr are captured and returned together with the exit code."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "PowerShell command or script text to execute.",
+                },
+                "timeout": {
+                    "type": "number",
+                    "default": 30,
+                    "description": "Maximum execution time in seconds.",
+                },
+            },
+            "required": ["command"],
+        },
+    },
+    "desktop_clipboard_get": {
+        "name": "desktop_clipboard_get",
+        "description": "Read the current Windows clipboard contents as text.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    "desktop_clipboard_set": {
+        "name": "desktop_clipboard_set",
+        "description": "Write text to the Windows clipboard.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "Text to place on the clipboard.",
+                }
+            },
+            "required": ["text"],
+        },
+    },
 }
 
 # ─── Registration ─────────────────────────────────────────────────────────────
@@ -197,6 +242,9 @@ def register(server: Any) -> None:
             "desktop_registry_delete": _tool_registry_delete,
             "desktop_registry_list": _tool_registry_list,
             "desktop_notify": _tool_notify,
+            "desktop_powershell": _tool_powershell,
+            "desktop_clipboard_get": _tool_clipboard_get,
+            "desktop_clipboard_set": _tool_clipboard_set,
         }
     )
 
@@ -260,8 +308,7 @@ def _parse_reg_path(path: str) -> tuple[Any, str]:
 
     if prefix not in _HIVES:
         raise ValueError(
-            f"Unrecognised registry hive {prefix!r}. "
-            f"Expected one of: {', '.join(sorted(_HIVES))}."
+            f"Unrecognised registry hive {prefix!r}. Expected one of: {', '.join(sorted(_HIVES))}."
         )
     return _HIVES[prefix], rest
 
@@ -279,10 +326,7 @@ def _reg_type_constant(reg_type: str) -> int:
         "ExpandString": winreg.REG_EXPAND_SZ,
     }
     if reg_type not in _MAP:
-        raise ValueError(
-            f"Unknown registry type {reg_type!r}. "
-            f"Expected one of: {', '.join(_MAP)}."
-        )
+        raise ValueError(f"Unknown registry type {reg_type!r}. Expected one of: {', '.join(_MAP)}.")
     return _MAP[reg_type]
 
 
@@ -328,7 +372,11 @@ def _tool_process_list(server: Any, args: dict[str, Any]) -> Any:
     else:
         procs.sort(key=lambda p: p["name"].lower())
 
-    return {"processes": procs[:limit], "total_shown": min(len(procs), limit), "total_found": len(procs)}
+    return {
+        "processes": procs[:limit],
+        "total_shown": min(len(procs), limit),
+        "total_found": len(procs),
+    }
 
 
 def _tool_process_kill(server: Any, args: dict[str, Any]) -> Any:
@@ -354,7 +402,8 @@ def _tool_process_kill(server: Any, args: dict[str, Any]) -> Any:
         else:
             # Find first process matching the name.
             matched = [
-                p for p in psutil.process_iter(["pid", "name"])
+                p
+                for p in psutil.process_iter(["pid", "name"])
                 if (p.info.get("name") or "").lower() == (name or "").lower()
             ]
             if not matched:
@@ -540,6 +589,7 @@ def _send_toast(title: str, message: str, app_id: str) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         # Fall through to PowerShell method.
         import logging  # noqa: PLC0415
+
         logging.getLogger(__name__).debug("win10toast failed: %s", exc)
 
     # Fallback: PowerShell WinRT toast.
@@ -560,3 +610,107 @@ $toast = [Windows.UI.Notifications.ToastNotification,Windows.UI.Notifications,Co
     if result.returncode != 0:
         return {"error": f"PowerShell toast failed: {result.stderr.strip()}"}
     return {"success": True, "method": "powershell"}
+
+
+# ── PowerShell tool ───────────────────────────────────────────────────────────
+
+
+def _tool_powershell(server: Any, args: dict[str, Any]) -> Any:
+    err = _windows_only("desktop_powershell")
+    if err:
+        return err
+
+    if PowerShellExecutor is None:
+        return {"error": "PowerShellExecutor unavailable on this platform"}
+
+    command: str = args.get("command", "")
+    timeout: float = float(args.get("timeout", 30))
+
+    if not command.strip():
+        return {"error": "command must not be empty"}
+
+    try:
+        result = PowerShellExecutor.execute_command(command, timeout=timeout)
+        return {
+            "stdout": result.stdout or "",
+            "stderr": result.stderr or "",
+            "returncode": result.returncode,
+            "success": result.returncode == 0,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+
+# ── Clipboard tools ───────────────────────────────────────────────────────────
+
+
+def _tool_clipboard_get(server: Any, args: dict[str, Any]) -> Any:
+    err = _windows_only("desktop_clipboard_get")
+    if err:
+        return err
+
+    # Primary: pywin32
+    try:
+        import win32clipboard  # type: ignore[import]  # noqa: PLC0415
+
+        win32clipboard.OpenClipboard()
+        try:
+            if win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_UNICODETEXT):
+                text = win32clipboard.GetClipboardData(win32clipboard.CF_UNICODETEXT)
+                return {"text": text}
+            return {"text": "", "note": "Clipboard does not contain text data"}
+        finally:
+            win32clipboard.CloseClipboard()
+    except ImportError:
+        pass  # fall through to PowerShell fallback
+
+    # Fallback: PowerShell Get-Clipboard
+    if PowerShellExecutor is None:
+        return {"error": "Neither win32clipboard nor PowerShell is available"}
+
+    try:
+        result = PowerShellExecutor.execute_command("Get-Clipboard", timeout=5.0)
+        if result.returncode != 0:
+            return {"error": f"Get-Clipboard failed: {result.stderr.strip()}"}
+        return {"text": (result.stdout or "").rstrip("\r\n")}
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+
+def _tool_clipboard_set(server: Any, args: dict[str, Any]) -> Any:
+    err = _windows_only("desktop_clipboard_set")
+    if err:
+        return err
+
+    text: str = args.get("text", "")
+
+    # Primary: pywin32
+    try:
+        import win32clipboard  # type: ignore[import]  # noqa: PLC0415
+
+        win32clipboard.OpenClipboard()
+        try:
+            win32clipboard.EmptyClipboard()
+            win32clipboard.SetClipboardData(win32clipboard.CF_UNICODETEXT, text)
+        finally:
+            win32clipboard.CloseClipboard()
+        return {"success": True, "method": "win32clipboard"}
+    except ImportError:
+        pass  # fall through to PowerShell fallback
+
+    # Fallback: PowerShell Set-Clipboard
+    if PowerShellExecutor is None:
+        return {"error": "Neither win32clipboard nor PowerShell is available"}
+
+    try:
+        # Use here-string to safely pass arbitrary text
+        escaped = text.replace("'", "''")
+        result = PowerShellExecutor.execute_command(
+            f"Set-Clipboard -Value '{escaped}'",
+            timeout=5.0,
+        )
+        if result.returncode != 0:
+            return {"error": f"Set-Clipboard failed: {result.stderr.strip()}"}
+        return {"success": True, "method": "powershell"}
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}

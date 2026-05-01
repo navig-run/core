@@ -177,15 +177,17 @@ def test_tool_registry_get_returns_value():
 def test_tool_notify_falls_back_to_powershell():
     from navig.mcp.tools.windows import _tool_notify
 
-    mock_executor_cls = MagicMock()
     mock_result = MagicMock()
     mock_result.returncode = 0
     mock_result.stderr = ""
-    mock_executor_cls.return_value.execute_command.return_value = mock_result
+
+    mock_executor_cls = MagicMock()
+    mock_executor_cls.execute_command.return_value = mock_result  # static method
 
     # Make win10toast import fail so code falls through to PowerShell path.
     with patch.dict("sys.modules", {"win10toast": None}), \
          patch("navig.mcp.tools.windows.PowerShellExecutor", mock_executor_cls):
         result = _tool_notify(None, {"title": "Test", "message": "Hello"})
 
-    assert result.get("status") == "ok"
+    assert result.get("success") is True
+    assert result.get("method") == "powershell"

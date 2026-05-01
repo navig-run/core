@@ -130,6 +130,210 @@ def register(server: Any) -> None:
         }
     )
 
+    # ── Input / interaction tool schemas ────────────────────────────────────
+    server.tools.update(
+        {
+            "desktop_type": {
+                "name": "desktop_type",
+                "description": (
+                    "Type text at the current cursor position (or optionally click "
+                    "coordinates first). Supports clearing and pressing Enter. "
+                    "Requires desktop_permission in the active mission step."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string", "description": "Text to type."},
+                        "x": {
+                            "type": "integer",
+                            "description": "X coordinate to click before typing (optional).",
+                        },
+                        "y": {
+                            "type": "integer",
+                            "description": "Y coordinate to click before typing (optional).",
+                        },
+                        "clear": {
+                            "type": ["boolean", "string"],
+                            "default": False,
+                            "description": "Select-all then delete before typing.",
+                        },
+                        "press_enter": {
+                            "type": ["boolean", "string"],
+                            "default": False,
+                            "description": "Press Enter after typing.",
+                        },
+                    },
+                    "required": ["text"],
+                },
+            },
+            "desktop_scroll": {
+                "name": "desktop_scroll",
+                "description": (
+                    "Scroll at the specified screen coordinates. "
+                    "Requires desktop_permission in the active mission step."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "x": {"type": "integer", "description": "X coordinate to scroll at."},
+                        "y": {"type": "integer", "description": "Y coordinate to scroll at."},
+                        "direction": {
+                            "type": "string",
+                            "enum": ["up", "down", "left", "right"],
+                            "default": "down",
+                            "description": "Scroll direction.",
+                        },
+                        "amount": {
+                            "type": "integer",
+                            "default": 3,
+                            "description": "Number of wheel detents to scroll.",
+                        },
+                    },
+                    "required": ["x", "y"],
+                },
+            },
+            "desktop_move": {
+                "name": "desktop_move",
+                "description": (
+                    "Move the mouse to coordinates, with optional drag from a start position. "
+                    "Requires desktop_permission in the active mission step."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "x": {"type": "integer", "description": "Destination X coordinate."},
+                        "y": {"type": "integer", "description": "Destination Y coordinate."},
+                        "from_x": {
+                            "type": "integer",
+                            "description": "Drag start X (omit for plain move).",
+                        },
+                        "from_y": {
+                            "type": "integer",
+                            "description": "Drag start Y (omit for plain move).",
+                        },
+                    },
+                    "required": ["x", "y"],
+                },
+            },
+            "desktop_shortcut": {
+                "name": "desktop_shortcut",
+                "description": (
+                    "Send a keyboard shortcut (e.g. 'Ctrl+C', 'Alt+F4', 'Win+D'). "
+                    "Uses AutoHotkey Send syntax. "
+                    "Requires desktop_permission in the active mission step."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "keys": {
+                            "type": "string",
+                            "description": (
+                                "Shortcut string in AHK v2 Send notation. "
+                                "Examples: '^c' (Ctrl+C), '!{F4}' (Alt+F4), '#d' (Win+D), "
+                                "'{Enter}', '{Tab}', '+{Tab}'."
+                            ),
+                        }
+                    },
+                    "required": ["keys"],
+                },
+            },
+            "desktop_app": {
+                "name": "desktop_app",
+                "description": (
+                    "Launch, resize, or bring a Windows application to the foreground. "
+                    "Requires desktop_permission in the active mission step."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "mode": {
+                            "type": "string",
+                            "enum": ["launch", "switch", "resize"],
+                            "description": "Operation: 'launch' opens an app, 'switch' activates an existing window, 'resize' moves/resizes a window.",
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "App path (launch), window title substring (switch/resize).",
+                        },
+                        "x": {"type": "integer", "description": "Window X position (resize mode)."},
+                        "y": {"type": "integer", "description": "Window Y position (resize mode)."},
+                        "width": {
+                            "type": "integer",
+                            "description": "Window width in pixels (resize mode).",
+                        },
+                        "height": {
+                            "type": "integer",
+                            "description": "Window height in pixels (resize mode).",
+                        },
+                    },
+                    "required": ["mode", "name"],
+                },
+            },
+            "desktop_multi_select": {
+                "name": "desktop_multi_select",
+                "description": (
+                    "Click multiple screen coordinates, holding Ctrl between clicks to "
+                    "multi-select items (files, checkboxes, list entries). "
+                    "Requires desktop_permission in the active mission step."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "locations": {
+                            "type": "array",
+                            "items": {
+                                "type": "array",
+                                "items": {"type": "integer"},
+                                "minItems": 2,
+                                "maxItems": 2,
+                            },
+                            "description": "List of [x, y] coordinate pairs to click.",
+                        },
+                        "hold_ctrl": {
+                            "type": ["boolean", "string"],
+                            "default": True,
+                            "description": "Hold Ctrl during clicks for multi-selection.",
+                        },
+                    },
+                    "required": ["locations"],
+                },
+            },
+            "desktop_multi_edit": {
+                "name": "desktop_multi_edit",
+                "description": (
+                    "Enter text into multiple input fields. Provide a list of [x, y, text] triples. "
+                    "Requires desktop_permission in the active mission step."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "fields": {
+                            "type": "array",
+                            "items": {
+                                "type": "array",
+                                "description": "[x, y, text] triple.",
+                            },
+                            "description": "List of [x, y, text] — click each coordinate and type the text.",
+                        }
+                    },
+                    "required": ["fields"],
+                },
+            },
+        }
+    )
+
+    server._tool_handlers.update(
+        {
+            "desktop_type": _tool_desktop_type,
+            "desktop_scroll": _tool_desktop_scroll,
+            "desktop_move": _tool_desktop_move,
+            "desktop_shortcut": _tool_desktop_shortcut,
+            "desktop_app": _tool_desktop_app,
+            "desktop_multi_select": _tool_desktop_multi_select,
+            "desktop_multi_edit": _tool_desktop_multi_edit,
+        }
+    )
+
     # ── Snapshot / Screenshot tool schemas ──────────────────────────────────
     server.tools.update(
         {
@@ -406,10 +610,14 @@ def _tool_desktop_snapshot(server: Any, args: dict[str, Any]) -> Any:
         client = _desktop_client()
         try:
             windows_raw = client.get_window_list() if hasattr(client, "get_window_list") else []
-            cursor_raw = client.get_cursor_position() if hasattr(client, "get_cursor_position") else None
+            cursor_raw = (
+                client.get_cursor_position() if hasattr(client, "get_cursor_position") else None
+            )
             interactive_raw = None
             if use_ui_tree:
-                tree = client.get_window_tree(depth=4) if hasattr(client, "get_window_tree") else None
+                tree = (
+                    client.get_window_tree(depth=4) if hasattr(client, "get_window_tree") else None
+                )
                 if isinstance(tree, dict):
                     interactive_raw = tree.get("elements", [])
         finally:
@@ -438,10 +646,12 @@ def _tool_desktop_snapshot(server: Any, args: dict[str, Any]) -> Any:
             screenshot_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
         except Exception as exc:  # noqa: BLE001
             import logging  # noqa: PLC0415
+
             logging.getLogger(__name__).debug("Screenshot failed: %s", exc)
 
     if t0 is not None:
         import logging  # noqa: PLC0415
+
         logging.getLogger(__name__).info(
             "desktop_snapshot total_ms=%.1f use_vision=%s use_ui_tree=%s",
             (time.perf_counter() - t0) * 1000,
@@ -478,7 +688,9 @@ def _tool_desktop_screenshot(server: Any, args: dict[str, Any]) -> Any:
         client = _desktop_client()
         try:
             windows_raw = client.get_window_list() if hasattr(client, "get_window_list") else []
-            cursor_raw = client.get_cursor_position() if hasattr(client, "get_cursor_position") else None
+            cursor_raw = (
+                client.get_cursor_position() if hasattr(client, "get_cursor_position") else None
+            )
         finally:
             client.close()
     except Exception as exc:
@@ -504,10 +716,12 @@ def _tool_desktop_screenshot(server: Any, args: dict[str, Any]) -> Any:
         screenshot_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
     except Exception as exc:  # noqa: BLE001
         import logging  # noqa: PLC0415
+
         logging.getLogger(__name__).debug("Screenshot failed: %s", exc)
 
     if t0 is not None:
         import logging  # noqa: PLC0415
+
         logging.getLogger(__name__).info(
             "desktop_screenshot total_ms=%.1f", (time.perf_counter() - t0) * 1000
         )
@@ -523,3 +737,196 @@ def _tool_desktop_screenshot(server: Any, args: dict[str, Any]) -> Any:
     if screenshot_b64:
         result["screenshot"] = {"format": "png", "data": screenshot_b64}
     return result
+
+
+# ─── Input / interaction helpers ─────────────────────────────────────────────
+
+
+def _coerce_bool(value: bool | str | None, default: bool = False) -> bool:
+    """Coerce MCP boolean/string inputs to a Python bool."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1", "yes")
+    return default
+
+
+def _run_ahk(script: str, tool_name: str) -> Any:
+    """Run an AHK script with the standard permission + audit gates."""
+    audit_err = _desktop_audit_initialized()
+    if audit_err:
+        return audit_err
+    perm_err = _desktop_permission_check(tool_name)
+    if perm_err:
+        return perm_err
+    try:
+        client = _desktop_client()
+        try:
+            return client.ahk_run(script)
+        finally:
+            client.close()
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def _tool_desktop_type(server: Any, args: dict[str, Any]) -> Any:
+    """Type text at the current cursor position or at optional (x, y) coordinates."""
+    text: str = args.get("text", "")
+    x: int | None = args.get("x")
+    y: int | None = args.get("y")
+    clear = _coerce_bool(args.get("clear"), default=False)
+    press_enter = _coerce_bool(args.get("press_enter"), default=False)
+
+    # Escape AHK special characters for SendRaw/SendText-like usage.
+    # We use SendText which treats the string literally.
+    lines: list[str] = []
+    if x is not None and y is not None:
+        lines.append(f"Click {x}, {y}")
+        lines.append("Sleep 50")
+    if clear:
+        lines.append("Send '^a'")
+        lines.append("Sleep 30")
+        lines.append("Send '{Delete}'")
+        lines.append("Sleep 30")
+    # SendText sends the literal string (no AHK special chars interpreted).
+    escaped = text.replace("`", "``").replace("'", "''")
+    lines.append(f"SendText '{escaped}'")
+    if press_enter:
+        lines.append("Send '{Enter}'")
+
+    return _run_ahk("\n".join(lines), "desktop_type")
+
+
+def _tool_desktop_scroll(server: Any, args: dict[str, Any]) -> Any:
+    """Scroll at (x, y) in the given direction."""
+    x: int = int(args.get("x", 0))
+    y: int = int(args.get("y", 0))
+    direction: str = args.get("direction", "down").lower()
+    amount: int = max(1, int(args.get("amount", 3)))
+
+    _DIR_MAP = {
+        "up": "WheelUp",
+        "down": "WheelDown",
+        "left": "WheelLeft",
+        "right": "WheelRight",
+    }
+    wheel = _DIR_MAP.get(direction, "WheelDown")
+    script = f"Click {x}, {y}, 0, {wheel}, {amount}"
+    return _run_ahk(script, "desktop_scroll")
+
+
+def _tool_desktop_move(server: Any, args: dict[str, Any]) -> Any:
+    """Move the mouse to (x, y), optionally dragging from (from_x, from_y)."""
+    x: int = int(args.get("x", 0))
+    y: int = int(args.get("y", 0))
+    from_x: int | None = args.get("from_x")
+    from_y: int | None = args.get("from_y")
+
+    lines: list[str] = []
+    if from_x is not None and from_y is not None:
+        lines.append(f"MouseMove {from_x}, {from_y}")
+        lines.append("Sleep 30")
+        lines.append("MouseClickDrag 'Left', " + f"{from_x}, {from_y}, {x}, {y}")
+    else:
+        lines.append(f"MouseMove {x}, {y}")
+
+    return _run_ahk("\n".join(lines), "desktop_move")
+
+
+def _tool_desktop_shortcut(server: Any, args: dict[str, Any]) -> Any:
+    """Send a keyboard shortcut using AHK Send notation."""
+    keys: str = args.get("keys", "")
+    if not keys:
+        audit_err = _desktop_audit_initialized()
+        if audit_err:
+            return audit_err
+        return {"error": "keys must not be empty"}
+    # Pass directly to Send — caller is responsible for correct AHK v2 syntax.
+    script = f"Send '{keys}'"
+    return _run_ahk(script, "desktop_shortcut")
+
+
+def _tool_desktop_app(server: Any, args: dict[str, Any]) -> Any:
+    """Launch, switch to, or resize an application window."""
+    mode: str = args.get("mode", "").lower()
+    name: str = args.get("name", "")
+
+    if not name:
+        audit_err = _desktop_audit_initialized()
+        if audit_err:
+            return audit_err
+        return {"error": "name is required"}
+
+    if mode == "launch":
+        script = f'Run "{name}"'
+    elif mode == "switch":
+        script = f'WinActivate "ahk_exe {name}" 2>'
+        # Fallback to title match
+        script = (
+            f'try {{\n    WinActivate "{name}"\n}} catch {{\n    WinActivate "ahk_exe {name}"\n}}'
+        )
+    elif mode == "resize":
+        x: int = int(args.get("x", 0))
+        y: int = int(args.get("y", 0))
+        width: int = int(args.get("width", 800))
+        height: int = int(args.get("height", 600))
+        script = f'WinActivate "{name}"\nWinMove {x}, {y}, {width}, {height}, "{name}"'
+    else:
+        audit_err = _desktop_audit_initialized()
+        if audit_err:
+            return audit_err
+        return {"error": f'Unknown mode "{mode}". Use: launch, switch, resize'}
+
+    return _run_ahk(script, "desktop_app")
+
+
+def _tool_desktop_multi_select(server: Any, args: dict[str, Any]) -> Any:
+    """Click multiple coordinates while holding Ctrl for multi-selection."""
+    locations: list[list[int]] = args.get("locations", [])
+    hold_ctrl = _coerce_bool(args.get("hold_ctrl"), default=True)
+
+    if not locations:
+        audit_err = _desktop_audit_initialized()
+        if audit_err:
+            return audit_err
+        return {"error": "locations must not be empty"}
+
+    lines: list[str] = []
+    if hold_ctrl:
+        lines.append("Send '{Ctrl down}'")
+        lines.append("Sleep 30")
+    for loc in locations:
+        if len(loc) < 2:
+            continue
+        lines.append(f"Click {loc[0]}, {loc[1]}")
+        lines.append("Sleep 50")
+    if hold_ctrl:
+        lines.append("Send '{Ctrl up}'")
+
+    return _run_ahk("\n".join(lines), "desktop_multi_select")
+
+
+def _tool_desktop_multi_edit(server: Any, args: dict[str, Any]) -> Any:
+    """Enter text into multiple fields: list of [x, y, text] triples."""
+    fields: list[list] = args.get("fields", [])
+
+    if not fields:
+        audit_err = _desktop_audit_initialized()
+        if audit_err:
+            return audit_err
+        return {"error": "fields must not be empty"}
+
+    lines: list[str] = []
+    for item in fields:
+        if len(item) < 3:
+            continue
+        fx, fy, ft = int(item[0]), int(item[1]), str(item[2])
+        lines.append(f"Click {fx}, {fy}")
+        lines.append("Sleep 50")
+        lines.append("Send '^a'")
+        lines.append("Sleep 20")
+        escaped = ft.replace("`", "``").replace("'", "''")
+        lines.append(f"SendText '{escaped}'")
+        lines.append("Sleep 30")
+
+    return _run_ahk("\n".join(lines), "desktop_multi_edit")
