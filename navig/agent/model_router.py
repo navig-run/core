@@ -333,7 +333,14 @@ def _resolve_provider_api_key(
                         return secret
                 except (KeyError, AttributeError, TypeError, ValueError):
                     continue
-        except (ImportError, AttributeError, RuntimeError) as exc:
+        except (
+            ImportError,
+            AttributeError,
+            RuntimeError,
+            TimeoutError,
+            OSError,
+            ConnectionRefusedError,
+        ) as exc:
             logger.debug("Vault label lookup failed for %s: %s", provider_id, exc)
 
     try:
@@ -345,7 +352,14 @@ def _resolve_provider_api_key(
             resolved = resolved.strip()
             if resolved:
                 return resolved
-    except (ImportError, AttributeError, RuntimeError) as exc:
+    except (
+        ImportError,
+        AttributeError,
+        RuntimeError,
+        TimeoutError,
+        OSError,
+        ConnectionRefusedError,
+    ) as exc:
         logger.debug("Vault provider-key lookup failed for %s: %s", provider_id, exc)
 
     if provider_id in ("github_models", "github"):

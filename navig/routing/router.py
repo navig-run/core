@@ -587,9 +587,24 @@ class UnifiedRouter:
 
         def _add(name: str) -> None:
             n = (name or "").strip().lower()
-            if n and n not in seen:
-                providers.append(n)
-                seen.add(n)
+            if not n or n in seen:
+                return
+            # Skip providers that are disabled in the registry (opt-in only)
+            try:
+                from navig.providers.registry import get_provider as _get_prov
+
+                _manifest = _get_prov(n)
+                if _manifest is not None and not getattr(_manifest, "enabled", True):
+                    logger.debug(
+                        "Skipping user-configured provider '%s': disabled in registry "
+                        "(opt-in only). Enable it before use.",
+                        n,
+                    )
+                    return
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; never block routing
+            providers.append(n)
+            seen.add(n)
 
         # 1. ai.default_provider (set by Telegram /models activation)
         ai_cfg = self._config.get("ai") or {}
@@ -653,7 +668,21 @@ class UnifiedRouter:
         if name == "mcp_bridge":
             mcp_url = bridge_cfg.get("mcp_url", "")
             if not mcp_url:
+                logger.warning(
+                    "mcp_bridge is in the provider chain but bridge.mcp_url is not "
+                    "configured — skipping.  Set bridge.mcp_url or remove mcp_bridge "
+                    "from the provider_chain config."
+                )
                 return None
+            # If bridge_token is missing from in-memory config, try vault
+            if not bridge_token:
+                try:
+                    from navig.vault import get_vault
+
+                    raw = get_vault().get_secret("bridge/token")
+                    bridge_token = (raw.reveal().strip() if raw is not None else "") if raw else ""
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; non-fatal if vault unavailable
             return McpBridgeProvider(base_url=mcp_url, api_key=bridge_token)
 
         elif name == "openrouter":
@@ -663,11 +692,23 @@ class UnifiedRouter:
                 "OPENROUTER_API_KEY", ""
             )
             if not api_key:
-                # Try vault — get_api_key() is the correct single-arg API
+                # Use canonical manifest-path vault resolution (same as generic providers)
                 try:
                     from navig.vault import get_vault
 
-                    api_key = get_vault().get_api_key("openrouter") or ""
+                    _vault = get_vault()
+                    for _vpath in ("openrouter/api-key", "openrouter/api_key"):
+                        try:
+                            _raw = _vault.get_secret(_vpath)
+                            _candidate = _raw.reveal().strip() if _raw is not None else ""
+                            if _candidate:
+                                api_key = _candidate
+                                break
+                        except Exception:  # noqa: BLE001
+                            continue
+                    if not api_key:
+                        # Final fallback: legacy single-arg API
+                        api_key = _vault.get_api_key("openrouter") or ""
                 except Exception:  # noqa: BLE001
                     pass  # best-effort; failure is non-critical
             if not api_key:
@@ -677,14 +718,29 @@ class UnifiedRouter:
         elif name == "github_models":
             import os
 
-            token = os.getenv("GITHUB_TOKEN", "")
+            token = os.getenv("GITHUB_TOKEN", "") or os.getenv("GH_TOKEN", "")
             if not token:
+                # Try vault manifest paths directly (avoids class-as-self anti-pattern)
                 try:
-                    from navig.agent.llm_providers import GitHubModelsProvider as GMP
+                    from navig.vault import get_vault
 
-                    token = GMP._resolve_token(GMP)
+                    _vault = get_vault()
+                    for _vpath in ("github/token", "github/api-key"):
+                        try:
+                            _raw = _vault.get_secret(_vpath)
+                            _candidate = _raw.reveal().strip() if _raw is not None else ""
+                            if _candidate:
+                                token = _candidate
+                                break
+                        except Exception:  # noqa: BLE001
+                            continue
                 except Exception:  # noqa: BLE001
                     pass  # best-effort; failure is non-critical
+            if not token:
+                # config fallback: github_models.token written by navig init
+                token = str(
+                    (self._config.get("github_models") or {}).get("token", "")
+                ).strip()
             if not token:
                 return None
             return GitHubModelsProvider(api_key=token)

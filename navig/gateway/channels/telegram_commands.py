@@ -4322,16 +4322,27 @@ class TelegramCommandsMixin:
         bridge_online, bridge_url = await self._probe_bridge_grid()
 
         active_prov = ""
+        # Primary: read ai.default_provider — this is what UnifiedRouter actually uses
         try:
-            from navig.llm_router import get_llm_router
+            from navig.config import get_config_manager
 
-            lr = get_llm_router()
-            if lr:
-                m = lr.modes.get_mode("big_tasks")
-                if m and getattr(m, "provider", None):
-                    active_prov = m.provider
+            _cfg = get_config_manager().get_global_config() or {}
+            active_prov = (_cfg.get("ai") or {}).get("default_provider", "") or ""
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
+
+        # Fallback: legacy llm_router modes (pre-UnifiedRouter path)
+        if not active_prov:
+            try:
+                from navig.llm_router import get_llm_router
+
+                lr = get_llm_router()
+                if lr:
+                    m = lr.modes.get_mode("big_tasks")
+                    if m and getattr(m, "provider", None):
+                        active_prov = m.provider
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; failure is non-critical
 
         if not active_prov and bridge_online:
             active_prov = "bridge_copilot"
