@@ -1,7 +1,7 @@
 # NAVIG Enhanced Installers - Master Index
 
-📅 **Updated:** April 20, 2026
-🔖 **Version:** 2.9.0
+📅 **Updated:** May 1, 2026
+🔖 **Version:** 2.9.1
 ✅ **Status:** Ready for Production
 
 > **Looking for the main NAVIG CLI docs?**

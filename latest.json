@@ -1,7 +1,7 @@
 {
-  "version": "2.9.0",
+  "version": "2.9.1",
   "channel": "stable",
-  "download_url": "https://github.com/navig-run/core/releases/download/v2.9.0/navig-2.9.0.tar.gz",
+  "download_url": "https://github.com/navig-run/core/releases/download/v2.9.1/navig-2.9.1.tar.gz",
   "changelog_url": "https://github.com/navig-run/core/releases",
-  "released_at": "2026-04-20"
+  "released_at": "2026-05-01"
 }

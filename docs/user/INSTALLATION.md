@@ -64,7 +64,7 @@ navig --version
 ```
 
 **Expected output**: NAVIG version string — run `navig --version` to verify
-you see the current version printed (e.g. `NAVIG 2.9.0`).
+you see the current version printed (e.g. `NAVIG 2.9.1`).
 
 ### Cross-platform one-shot installers
 

@@ -7,7 +7,9 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 <!-- Add entries here until the next release, then move them under a new version heading. -->
-<!-- Run: git log v2.9.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+<!-- Run: git log v2.9.1..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
+
+## [2.9.1] - 2026-05-01
 
 ### Added
 - **Deploy engine unit test coverage** (`tests/deploy/test_deploy_engine_unit.py`, 19 tests): Fully mocked unit tests for `navig/deploy/engine.py` — `DeployEngine` lifecycle (dry-run full success, pre-check failure stops deploy, backup-skip flag, push failure + auto-rollback, push failure without rollback, health failure + rollback, progress-callback exception swallowed), `_parse_rsync_summary` (found/empty/no-match), `_build_rsync_cmd` (basic, excludes, trailing-slash normalisation), `DeployConfig.from_dict` (full dict, defaults, partial push), `merge_global_defaults` (excludes dedup, health retries, keep-last, noop).
