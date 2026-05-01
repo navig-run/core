@@ -9,6 +9,10 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Add entries here until the next release, then move them under a new version heading. -->
 <!-- Run: git log v2.9.1..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
 
+### Added
+- **`llm_generate` unit test coverage** (`tests/core/test_llm_generate.py`, 33 tests): Hermetic tests for `_parse_model_spec` (13 cases: explicit provider:model, provider_override wins, GPT/Claude/DeepSeek/llama/phi/qwen/slash/unknown inference), `_extract_user_text` (5 cases), `_enrich_messages_with_context` (4 cases), `_has_llm_modes_config` (mock+exception paths), `_prompt_cache_enabled`, `_load_fallback_chain`, and `llm_generate`/`run_llm` model-override dispatch paths (mocked `_call_provider` / `_call_and_wrap`).
+- **`mcp_manager` unit test coverage** (`tests/core/test_mcp_manager.py`, 45 tests): Full coverage of `MCPServer` (init, `is_enabled`, `is_running`, `get_status`, `start` success/already-running/exception paths, `stop` success/not-running/force-kill-on-timeout) and `MCPManager` (init creates dir, empty servers when no file, `_load_servers` from JSON / bad JSON, `_save_servers` roundtrip, `list_servers` all/enabled-only/running-only, `get_server`, `enable_server`/`disable_server` success+unknown, `uninstall_server` success+unknown, `start_all_enabled`/`stop_all` zero counts, `search_directory` query filtering).
+
 ## [2.9.1] - 2026-05-01
 
 ### Added
