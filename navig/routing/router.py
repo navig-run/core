@@ -229,6 +229,160 @@ _PROVIDER_DEFAULT_MODELS: dict[str, dict[str, str]] = {
     },
 }
 
+# Registry of well-known LLM providers surfaced in the NAVIG deck UI.
+# Each entry mirrors provider card data displayed on the Language Models admin page.
+# Keys correspond to provider names used by the routing layer where applicable.
+WELL_KNOWN_LLM_PROVIDERS: dict[str, dict[str, str]] = {
+    "openai": {"name": "GPT", "company": "OpenAI", "type": "cloud"},
+    "anthropic": {"name": "Claude", "company": "Anthropic", "type": "cloud"},
+    "vertex_ai": {"name": "Gemini", "company": "Google Cloud Vertex AI", "type": "cloud"},
+    "bedrock": {"name": "Amazon Bedrock", "company": "AWS", "type": "cloud"},
+    "azure": {"name": "Azure OpenAI", "company": "Microsoft Azure", "type": "cloud"},
+    "litellm_proxy": {"name": "LiteLLM Proxy", "company": "LiteLLM Proxy", "type": "proxy"},
+    "ollama": {"name": "Ollama", "company": "Ollama", "type": "local"},
+    "openrouter": {"name": "OpenRouter", "company": "OpenRouter", "type": "proxy"},
+    "lm_studio": {"name": "LM Studio", "company": "LM Studio", "type": "local"},
+    "bifrost": {"name": "Bifrost", "company": "Bifrost", "type": "proxy"},
+    "openai_compat": {"name": "OpenAI-Compatible", "company": "OpenAI-Compatible", "type": "proxy"},
+    "custom": {"name": "Custom Models", "company": "LiteLLM-compatible providers", "type": "proxy"},
+}
+
+# Well-known web search engine providers (Onyx WebSearchPage).
+WELL_KNOWN_SEARCH_PROVIDERS: dict[str, dict[str, str]] = {
+    "exa": {"name": "Exa", "subtitle": "Exa.ai", "requires_api_key": "true"},
+    "serper": {"name": "Serper", "subtitle": "Serper.dev", "requires_api_key": "true"},
+    "brave": {"name": "Brave", "subtitle": "Brave Search API", "requires_api_key": "true"},
+    "google_pse": {"name": "Google PSE", "subtitle": "Google", "requires_api_key": "true"},
+    "searxng": {"name": "SearXNG", "subtitle": "SearXNG", "requires_api_key": "false"},
+}
+
+# Well-known web crawler providers (Onyx WebSearchPage — Web Crawler section).
+WELL_KNOWN_CRAWLERS: dict[str, dict[str, str]] = {
+    "navig_crawler": {"name": "NAVIG Web Crawler", "requires_api_key": "false", "built_in": "true"},
+    "firecrawl": {"name": "Firecrawl", "requires_api_key": "true", "built_in": "false"},
+    "exa": {"name": "Exa", "requires_api_key": "true", "built_in": "false"},
+}
+
+# Well-known image generation providers grouped by vendor (Onyx ImageGenerationPage).
+WELL_KNOWN_IMAGE_PROVIDERS: dict[str, list[dict[str, str]]] = {
+    "openai": [
+        {
+            "id": "openai_gpt_image_2",
+            "model": "gpt-image-2",
+            "title": "GPT Image 2",
+            "description": "OpenAI's latest Image Generation model with the highest prompt fidelity.",
+        },
+        {
+            "id": "openai_gpt_image_1_5",
+            "model": "gpt-image-1.5",
+            "title": "GPT Image 1.5",
+            "description": "OpenAI's previous flagship Image Generation model.",
+        },
+        {
+            "id": "openai_gpt_image_1",
+            "model": "gpt-image-1",
+            "title": "GPT Image 1",
+            "description": "A capable image generation model from OpenAI with strong prompt adherence.",
+        },
+        {
+            "id": "openai_dalle_3",
+            "model": "dall-e-3",
+            "title": "DALL-E 3",
+            "description": "OpenAI image generation model capable of generating rich and expressive images.",
+        },
+    ],
+    "azure": [
+        {
+            "id": "azure_gpt_image_2",
+            "model": "",
+            "title": "Azure OpenAI GPT Image 2",
+            "description": "GPT Image 2 image generation model hosted on Microsoft Azure.",
+        },
+        {
+            "id": "azure_gpt_image_1_5",
+            "model": "",
+            "title": "Azure OpenAI GPT Image 1.5",
+            "description": "GPT Image 1.5 image generation model hosted on Microsoft Azure.",
+        },
+        {
+            "id": "azure_gpt_image_1",
+            "model": "",
+            "title": "Azure OpenAI GPT Image 1",
+            "description": "GPT Image 1 image generation model hosted on Microsoft Azure.",
+        },
+        {
+            "id": "azure_dalle_3",
+            "model": "",
+            "title": "Azure OpenAI DALL-E 3",
+            "description": "DALL-E 3 image generation model hosted on Microsoft Azure.",
+        },
+    ],
+    "vertex_ai": [
+        {
+            "id": "gemini_flash_image",
+            "model": "gemini-2.5-flash-image",
+            "title": "Gemini 2.5 Flash Image",
+            "description": "Gemini 2.5 Flash Image model is designed for speed and efficiency.",
+        },
+        {
+            "id": "gemini_pro_image",
+            "model": "gemini-3-pro-image-preview",
+            "title": "Gemini 3 Pro Image Preview",
+            "description": "Gemini 3 Pro Image Preview is designed for professional asset production.",
+        },
+    ],
+}
+
+# Well-known voice providers for STT and TTS (Onyx VoiceConfigurationPage).
+WELL_KNOWN_VOICE_PROVIDERS: dict[str, dict] = {
+    "stt": [
+        {
+            "id": "whisper",
+            "provider": "openai",
+            "label": "Whisper",
+            "subtitle": "OpenAI's general purpose speech recognition model.",
+        },
+        {
+            "id": "azure_stt",
+            "provider": "azure",
+            "label": "Azure Speech",
+            "subtitle": "Speech to text in Microsoft Foundry Tools.",
+        },
+        {
+            "id": "elevenlabs_stt",
+            "provider": "elevenlabs",
+            "label": "ElevenAPI",
+            "subtitle": "ElevenLabs Speech to Text API.",
+        },
+    ],
+    "tts": [
+        {
+            "id": "tts-1",
+            "provider": "openai",
+            "label": "TTS-1",
+            "subtitle": "OpenAI's text-to-speech model optimized for speed.",
+        },
+        {
+            "id": "tts-1-hd",
+            "provider": "openai",
+            "label": "TTS-1 HD",
+            "subtitle": "OpenAI's text-to-speech model optimized for quality.",
+        },
+        {
+            "id": "azure_tts",
+            "provider": "azure",
+            "label": "Azure Speech",
+            "subtitle": "Text to speech in Microsoft Foundry Tools.",
+        },
+        {
+            "id": "elevenlabs_tts",
+            "provider": "elevenlabs",
+            "label": "ElevenAPI",
+            "subtitle": "ElevenLabs Text to Speech API.",
+        },
+    ],
+}
+
 
 class UnifiedRouter:
     """
@@ -446,7 +600,9 @@ class UnifiedRouter:
             provider = self._get_provider_instance(provider_name)
             if provider is None:
                 trace.fallbacks_tried.append(provider_name)
-                logger.debug("Provider %s: no instance (key missing or config error)", provider_name)
+                logger.debug(
+                    "Provider %s: no instance (key missing or config error)", provider_name
+                )
                 continue
 
             # Health check
@@ -738,9 +894,7 @@ class UnifiedRouter:
                     pass  # best-effort; failure is non-critical
             if not token:
                 # config fallback: github_models.token written by navig init
-                token = str(
-                    (self._config.get("github_models") or {}).get("token", "")
-                ).strip()
+                token = str((self._config.get("github_models") or {}).get("token", "")).strip()
             if not token:
                 return None
             return GitHubModelsProvider(api_key=token)
@@ -760,8 +914,7 @@ class UnifiedRouter:
             api_key = _resolve_provider_api_key(name, self._config)
             if not api_key:
                 logger.warning(
-                    "No API key found for provider '%s' — check vault or env var "
-                    "(e.g. %s_API_KEY)",
+                    "No API key found for provider '%s' — check vault or env var (e.g. %s_API_KEY)",
                     name,
                     name.upper().replace("-", "_"),
                 )
@@ -812,10 +965,9 @@ class UnifiedRouter:
             if _fallback_model:
                 model = _fallback_model
             else:
-                _fb_default = (
-                    _PROVIDER_DEFAULT_MODELS.get(provider_name, {}).get(decision.mode, "")
-                    or _PROVIDER_DEFAULT_MODELS.get(provider_name, {}).get("_default", "")
-                )
+                _fb_default = _PROVIDER_DEFAULT_MODELS.get(provider_name, {}).get(
+                    decision.mode, ""
+                ) or _PROVIDER_DEFAULT_MODELS.get(provider_name, {}).get("_default", "")
                 if _fb_default:
                     model = _fb_default
                 # else keep decision.model — call will likely fail but
