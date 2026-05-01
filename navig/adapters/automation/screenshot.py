@@ -74,23 +74,20 @@ class _DxcamBackend(_ScreenshotBackend):
 
     name = "dxcam"
     priority = 10
-    _available: bool | None = None
 
-    def is_available(self) -> bool:
-        if _DxcamBackend._available is None:
-            if sys.platform != "win32":
-                _DxcamBackend._available = False
-            else:
-                try:
-                    import dxcam  # type: ignore[import]  # noqa: F401
-                    _DxcamBackend._available = True
-                except Exception:  # noqa: BLE001
-                    _DxcamBackend._available = False
-        return _DxcamBackend._available
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def is_available() -> bool:
+        if sys.platform != "win32":
+            return False
+        try:
+            import dxcam  # type: ignore[import]  # noqa: F401
 
-    def capture_region(
-        self, left: int, top: int, right: int, bottom: int
-    ) -> "PILImage.Image":
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+
+    def capture_region(self, left: int, top: int, right: int, bottom: int) -> "PILImage.Image":
         import dxcam  # type: ignore[import]
         from PIL import Image  # noqa: PLC0415
 
@@ -112,20 +109,18 @@ class _MssBackend(_ScreenshotBackend):
 
     name = "mss"
     priority = 20
-    _available: bool | None = None
 
-    def is_available(self) -> bool:
-        if _MssBackend._available is None:
-            try:
-                import mss  # type: ignore[import]  # noqa: F401
-                _MssBackend._available = True
-            except Exception:  # noqa: BLE001
-                _MssBackend._available = False
-        return _MssBackend._available
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def is_available() -> bool:
+        try:
+            import mss  # type: ignore[import]  # noqa: F401
 
-    def capture_region(
-        self, left: int, top: int, right: int, bottom: int
-    ) -> "PILImage.Image":
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+
+    def capture_region(self, left: int, top: int, right: int, bottom: int) -> "PILImage.Image":
         import mss  # type: ignore[import]
         from PIL import Image  # noqa: PLC0415
 
@@ -143,20 +138,18 @@ class _PillowBackend(_ScreenshotBackend):
 
     name = "pillow"
     priority = 100
-    _available: bool | None = None
 
-    def is_available(self) -> bool:
-        if _PillowBackend._available is None:
-            try:
-                from PIL import ImageGrab  # type: ignore[import]  # noqa: F401
-                _PillowBackend._available = True
-            except Exception:  # noqa: BLE001
-                _PillowBackend._available = False
-        return _PillowBackend._available
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def is_available() -> bool:
+        try:
+            from PIL import ImageGrab  # type: ignore[import]  # noqa: F401
 
-    def capture_region(
-        self, left: int, top: int, right: int, bottom: int
-    ) -> "PILImage.Image":
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+
+    def capture_region(self, left: int, top: int, right: int, bottom: int) -> "PILImage.Image":
         from PIL import ImageGrab  # type: ignore[import]
 
         return ImageGrab.grab(bbox=(left, top, right, bottom), all_screens=True)

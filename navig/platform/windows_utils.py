@@ -22,10 +22,7 @@ except ImportError:  # pragma: no cover
 # Compiled once; strips BMP PUA (U+E000–U+F8FF) and both supplementary PUA
 # planes (U+F0000–U+FFFFD, U+100000–U+10FFFD).
 _PRIVATE_USE_AREA_PATTERN: re.Pattern = re.compile(
-    "[\ue000-\uf8ff"
-    "\U000f0000-\U000ffffd"
-    "\U00100000-\U0010fffd"
-    "]"
+    "[\ue000-\uf8ff\U000f0000-\U000ffffd\U00100000-\U0010fffd]"
 )
 
 
@@ -75,12 +72,15 @@ def check_pid_exists(pid: int) -> bool:
 
     Requires ``psutil``; returns *False* if psutil is unavailable.
     """
-    if psutil is None:
+    psutil_mod = sys.modules.get("psutil", psutil)
+    if psutil_mod is None:
         return False
     try:
-        proc = psutil.Process(pid)
-        return proc.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
-    except psutil.NoSuchProcess:
+        proc = psutil_mod.Process(pid)
+        zombie_status = getattr(psutil_mod, "STATUS_ZOMBIE", "zombie")
+        dead_status = getattr(psutil_mod, "STATUS_DEAD", "dead")
+        return proc.status() not in (zombie_status, dead_status)
+    except getattr(psutil_mod, "NoSuchProcess", Exception):
         return False
 
 
@@ -131,9 +131,7 @@ def run_with_graceful_timeout(
     ) as proc:
         try:
             stdout, stderr = proc.communicate(timeout=timeout)
-            return subprocess.CompletedProcess(
-                proc.args, proc.returncode, stdout, stderr
-            )
+            return subprocess.CompletedProcess(proc.args, proc.returncode, stdout, stderr)
         except subprocess.TimeoutExpired:
             try:
                 os.kill(proc.pid, signal.CTRL_BREAK_EVENT)

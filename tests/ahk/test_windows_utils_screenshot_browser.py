@@ -114,6 +114,7 @@ class TestRemovePrivateUseChars:
 
     def test_pattern_compiled(self):
         import re
+
         assert isinstance(_PRIVATE_USE_AREA_PATTERN, re.Pattern)
 
 
@@ -173,9 +174,7 @@ class TestRunWithGracefulTimeout:
         completed = subprocess.CompletedProcess(["echo"], 0, b"hi", b"")
         with patch("sys.platform", "linux"):
             with patch("subprocess.run", return_value=completed) as mock_run:
-                result = run_with_graceful_timeout(
-                    ["echo", "hi"], timeout=5.0, capture_output=True
-                )
+                result = run_with_graceful_timeout(["echo", "hi"], timeout=5.0, capture_output=True)
         mock_run.assert_called_once()
         assert result.returncode == 0
 
@@ -194,13 +193,29 @@ class TestRunWithGracefulTimeout:
 from navig.adapters.automation.screenshot import (
     _BACKEND_ENV_VAR,
     _BACKEND_REGISTRY,
-    _ScreenshotBackend,
     _DxcamBackend,
+    _get_env_backend,
     _MssBackend,
     _PillowBackend,
-    _get_env_backend,
+    _ScreenshotBackend,
     get_screenshot_backend,
 )
+
+
+@pytest.fixture(autouse=True)
+def _refresh_screenshot_module_symbols():
+    """Refresh screenshot symbols in case another test reloads the module."""
+    import navig.adapters.automation.screenshot as screenshot_mod
+
+    globals()["_BACKEND_ENV_VAR"] = screenshot_mod._BACKEND_ENV_VAR
+    globals()["_BACKEND_REGISTRY"] = screenshot_mod._BACKEND_REGISTRY
+    globals()["_ScreenshotBackend"] = screenshot_mod._ScreenshotBackend
+    globals()["_DxcamBackend"] = screenshot_mod._DxcamBackend
+    globals()["_MssBackend"] = screenshot_mod._MssBackend
+    globals()["_PillowBackend"] = screenshot_mod._PillowBackend
+    globals()["_get_env_backend"] = screenshot_mod._get_env_backend
+    globals()["get_screenshot_backend"] = screenshot_mod.get_screenshot_backend
+    yield
 
 
 class TestBackendRegistry:
@@ -225,20 +240,24 @@ class TestBackendRegistry:
     def test_subclass_auto_registered(self):
         """A new subclass with a unique name is auto-registered."""
 
-        class _TestBackend(_ScreenshotBackend):
+        import navig.adapters.automation.screenshot as screenshot_mod
+
+        class _TestBackend(screenshot_mod._ScreenshotBackend):
             name = "_test_batch_130"
             priority = 999
 
-        assert "_test_batch_130" in _BACKEND_REGISTRY
-        del _BACKEND_REGISTRY["_test_batch_130"]  # cleanup
+        assert "_test_batch_130" in screenshot_mod._BACKEND_REGISTRY
+        del screenshot_mod._BACKEND_REGISTRY["_test_batch_130"]  # cleanup
 
     def test_subclass_without_name_not_registered(self):
-        before = set(_BACKEND_REGISTRY.keys())
+        import navig.adapters.automation.screenshot as screenshot_mod
 
-        class _NoName(_ScreenshotBackend):
+        before = set(screenshot_mod._BACKEND_REGISTRY.keys())
+
+        class _NoName(screenshot_mod._ScreenshotBackend):
             pass  # name="" → not registered
 
-        assert set(_BACKEND_REGISTRY.keys()) == before
+        assert set(screenshot_mod._BACKEND_REGISTRY.keys()) == before
 
 
 class TestBackendPriorities:
@@ -318,6 +337,7 @@ class TestGetEnvBackend:
         with patch.dict("os.environ", {}, clear=False):
             # Remove the key if present
             import os
+
             os.environ.pop(_BACKEND_ENV_VAR, None)
             with (
                 patch.object(_DxcamBackend, "is_available", return_value=False),
@@ -477,8 +497,9 @@ class TestBrowserConfigFromConfig:
 
 class TestGetPlaywright:
     def test_import_error_raises_import_error(self):
-        from navig.browser.controller import _get_playwright
         import navig.browser.controller as ctrl
+        from navig.browser.controller import _get_playwright
+
         # Reset global so we force re-import
         ctrl._playwright = None
         with patch.dict("sys.modules", {"playwright": None, "playwright.async_api": None}):
