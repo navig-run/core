@@ -390,7 +390,33 @@ class UnifiedRouter:
                             provider_chain = [_cfg_provider] + provider_chain
                         decision.provider = _cfg_provider
                         if _cfg_model:
-                            decision.model = _cfg_model
+                            # Validate the stored model ID against the provider
+                            # registry.  Stale IDs (e.g. fuyu-8b stored before a
+                            # registry update) cause immediate 400/404 from the API
+                            # and fall through all fallbacks with a misleading error.
+                            # When the model is not in the registry we clear it so
+                            # _execute() uses the safe _PROVIDER_DEFAULT_MODELS entry.
+                            try:
+                                from navig.providers.registry import get_provider as _get_prov
+
+                                _manifest = _get_prov(_cfg_provider)
+                                _known = (
+                                    list(_manifest.models) if _manifest and _manifest.models else []
+                                )
+                                if _known and _cfg_model not in _known:
+                                    logger.warning(
+                                        "llm_modes_config: model '%s' for provider '%s' is not "
+                                        "in the registry (%d known models) — clearing to use "
+                                        "provider default. Re-select via /provider to update.",
+                                        _cfg_model,
+                                        _cfg_provider,
+                                        len(_known),
+                                    )
+                                    _cfg_model = ""
+                            except Exception:
+                                pass  # best-effort; never block routing
+                            if _cfg_model:
+                                decision.model = _cfg_model
                         decision.reasons.append(f"llm_modes_config:{decision.mode}")
                         logger.info(
                             "llm_modes_config applied: mode=%s provider=%s model=%s",

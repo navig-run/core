@@ -1014,17 +1014,26 @@ class ConversationalAgent:
             exc_msg = str(exc)
             if "no provider available" in exc_msg.lower() or "no ai provider" in exc_msg.lower():
                 logger.warning("Unified router: all providers failed: %s", exc_msg)
-                # Extract a human-friendly hint from the underlying error.
-                _hint = ""
                 _exc_lower = exc_msg.lower()
+                # Extract the "Last error: <...>" tail for a concrete hint.
+                _last_err_snippet = ""
+                _le_marker = "last error:"
+                _le_idx = _exc_lower.rfind(_le_marker)
+                if _le_idx != -1:
+                    _last_err_snippet = exc_msg[_le_idx + len(_le_marker):].strip()[:160]
+                # Classify the failure so we give an actionable suggestion.
                 if (
                     "model" in _exc_lower
                     and (
                         "not found" in _exc_lower
                         or "does not exist" in _exc_lower
                         or "invalid model" in _exc_lower
+                        or "404" in exc_msg
                         or "400" in exc_msg
                     )
+                ) or (
+                    _last_err_snippet
+                    and ("404" in _last_err_snippet or "400" in _last_err_snippet)
                 ):
                     _hint = (
                         "\nThe configured model ID may be invalid or outdated. "
@@ -1032,6 +1041,8 @@ class ConversationalAgent:
                     )
                 elif "401" in exc_msg or "unauthorized" in _exc_lower or "invalid api key" in _exc_lower:
                     _hint = "\nThe API key appears to be invalid. Check /provider to update it."
+                elif _last_err_snippet:
+                    _hint = f"\nLast error: {_last_err_snippet}"
                 else:
                     _hint = (
                         "\nCheck /provider to confirm your selection and verify the API key "
