@@ -19,6 +19,14 @@ except ImportError:
     web = None
 
 from navig.gateway.deck.auth import configure_deck_auth, deck_auth_middleware
+from navig.gateway.deck.routes.admin import (
+    handle_deck_admin_image_providers,
+    handle_deck_admin_llm_providers,
+    handle_deck_admin_mcp_servers,
+    handle_deck_admin_search_providers,
+    handle_deck_admin_settings,
+    handle_deck_admin_voice_providers,
+)
 from navig.gateway.deck.routes.core import (
     handle_deck_mode,
     handle_deck_settings_get,
@@ -98,6 +106,14 @@ def register_deck_routes(
         app.router.add_post("/api/deck/llm-modes", handle_deck_llm_modes_update)
         app.router.add_post("/api/deck/llm-modes/detect", handle_deck_llm_modes_detect)
 
+        # Admin (Onyx-ported provider registries)
+        app.router.add_get("/api/deck/admin/llm-providers", handle_deck_admin_llm_providers)
+        app.router.add_get("/api/deck/admin/search-providers", handle_deck_admin_search_providers)
+        app.router.add_get("/api/deck/admin/image-providers", handle_deck_admin_image_providers)
+        app.router.add_get("/api/deck/admin/voice-providers", handle_deck_admin_voice_providers)
+        app.router.add_get("/api/deck/admin/mcp-servers", handle_deck_admin_mcp_servers)
+        app.router.add_get("/api/deck/admin/settings", handle_deck_admin_settings)
+
         # Vault routes
         app.router.add_get("/api/deck/vault", handle_deck_vault_list)
         app.router.add_post("/api/deck/vault", handle_deck_vault_add)
@@ -124,6 +140,7 @@ def register_deck_routes(
                     and "\\" not in f.name
                     and not f.name.startswith(".")
                 ):
+
                     async def _serve_static_file(request, fp=f):
                         return web.FileResponse(fp)
 
