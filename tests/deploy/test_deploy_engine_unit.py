@@ -68,6 +68,7 @@ def _make_engine(tmp_path: Path) -> DeployEngine:
 
 # ─── engine lifecycle ────────────────────────────────────────────────────────
 
+
 class TestDeployEngineUnit:
     def test_dry_run_full_success(self, tmp_path):
         engine = _make_engine(tmp_path)
@@ -214,6 +215,7 @@ class TestDeployEngineUnit:
 
 # ─── static helpers ──────────────────────────────────────────────────────────
 
+
 class TestDeployEngineStaticHelpers:
     def test_parse_rsync_summary_found(self):
         out = (
@@ -254,6 +256,7 @@ class TestDeployEngineStaticHelpers:
 
 # ─── DeployConfig parsing ────────────────────────────────────────────────────
 
+
 class TestDeployConfigParsing:
     def test_from_dict_full(self):
         data = {
@@ -287,9 +290,7 @@ class TestDeployConfigParsing:
         cfg = DeployConfig.from_dict(
             {"push": {"source": ".", "target": "/srv", "excludes": [".git"]}}
         )
-        cfg.merge_global_defaults(
-            {"deploy": {"default_push_excludes": [".git", "*.log"]}}
-        )
+        cfg.merge_global_defaults({"deploy": {"default_push_excludes": [".git", "*.log"]}})
         assert "*.log" in cfg.push.excludes
         # existing value not duplicated
         assert cfg.push.excludes.count(".git") == 1
