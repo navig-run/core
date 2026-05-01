@@ -224,9 +224,13 @@ ALL_PROVIDERS: list[ProviderManifest] = [
             # DeepSeek
             "deepseek-ai/deepseek-r1",
             "deepseek-ai/deepseek-r1-distill-llama-70b",
-            # Qwen
+            # Qwen 2.5
             "qwen/qwq-32b",
             "qwen/qwen2.5-72b-instruct",
+            # Qwen 3
+            "qwen/qwen3-235b-a22b",
+            "qwen/qwen3-30b-a3b",
+            "qwen/qwen3-coder-480b-a35b-instruct",
         ],
         emoji="🟩",
     ),

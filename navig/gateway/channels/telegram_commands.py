@@ -4890,9 +4890,12 @@ class TelegramCommandsMixin:
                 # Fallback: first non-vision model, or fallback arg, or first model overall
                 return text_models[0][0] if text_models else (fallback or models[0])
 
-            big = _pick(("70b",), models[0])
-            small = _pick_text(("8b", "7b"), models[-1])
-            coder = _pick(("deepseek",), big)
+            # Prefer largest general model: Qwen3-235B > Llama 405B > 70B
+            big = _pick_text(("235b", "405b", "70b", "72b"), models[0])
+            # Prefer fast small model: Llama 8B or any 7B, Qwen3-30B as medium option
+            small = _pick_text(("8b", "7b", "30b"), models[-1])
+            # Prefer Qwen3-Coder, then DeepSeek, then fall back to big
+            coder = _pick(("qwen3-coder", "coder", "deepseek-r1", "deepseek"), big)
             return {"small": small, "big": big, "coder_big": coder}
 
         if prov_id == "github_models":

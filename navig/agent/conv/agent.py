@@ -1014,10 +1014,32 @@ class ConversationalAgent:
             exc_msg = str(exc)
             if "no provider available" in exc_msg.lower() or "no ai provider" in exc_msg.lower():
                 logger.warning("Unified router: all providers failed: %s", exc_msg)
+                # Extract a human-friendly hint from the underlying error.
+                _hint = ""
+                _exc_lower = exc_msg.lower()
+                if (
+                    "model" in _exc_lower
+                    and (
+                        "not found" in _exc_lower
+                        or "does not exist" in _exc_lower
+                        or "invalid model" in _exc_lower
+                        or "400" in exc_msg
+                    )
+                ):
+                    _hint = (
+                        "\nThe configured model ID may be invalid or outdated. "
+                        "Use /provider to re-select your provider and reset the model list."
+                    )
+                elif "401" in exc_msg or "unauthorized" in _exc_lower or "invalid api key" in _exc_lower:
+                    _hint = "\nThe API key appears to be invalid. Check /provider to update it."
+                else:
+                    _hint = (
+                        "\nCheck /provider to confirm your selection and verify the API key "
+                        "is stored correctly (vault or env var)."
+                    )
                 return (
-                    "\u26a0\ufe0f I couldn't reach any AI provider right now.\n"
-                    "Check /provider to confirm your selection and verify the API key "
-                    "is stored correctly (vault or env var)."
+                    "\u26a0\ufe0f I couldn't reach any AI provider right now."
+                    + _hint
                 )
             logger.warning("Unified router failed: %s", exc)
         if ai_available and hasattr(self._ai_client, "chat_routed"):
