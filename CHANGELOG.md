@@ -10,6 +10,7 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 <!-- Run: git log v2.9.0..HEAD --pretty="- %s (%h)" to auto-generate draft entries. -->
 
 ### Added
+- **Hook subsystem test coverage** (`tests/hooks/test_hooks.py`, 44 tests): Full coverage of `navig/hooks/` — `HookEvent`, `HookContext.to_json()`, `HookResult`, `HookDefinition.matches_tool()` (glob + case-insensitive), `HookRegistry` (YAML load/merge/disable/timeout/network, lazy load, project-after-global merge), `_is_private_url` SSRF guard (loopback, RFC-1918, link-local, public-IP, non-http scheme pass-through), `HookExecutor` (exit-code 0/2/other, PRE_TOOL_USE block, timeout swallowed, retry-from-stdout, network disabled/private-IP blocked, multi-hook message accumulation, registry-failure isolation).
 - **Windows-MCP integration — filesystem, clipboard, PowerShell, and input tools** (`navig/platform/filesystem_ops.py`, `navig/mcp/tools/filesystem.py`, `navig/mcp/tools/windows.py`, `navig/mcp/tools/desktop.py`): Ported all actionable Windows-MCP capabilities into navig MCP tool bundles.
   - `navig/platform/filesystem_ops.py` — new stdlib-only helper: `read_file`, `write_file`, `copy_path`, `move_path`, `delete_path`, `list_directory`, `search_files`, `get_file_info` (constants `_MAX_READ_SIZE=10 MB`, `_MAX_RESULTS=500`).
   - `navig/mcp/tools/filesystem.py` — new `desktop_filesystem` MCP tool (8 modes: read, write, copy, move, delete, list, search, info); registered in `__init__.py`.
