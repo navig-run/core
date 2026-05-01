@@ -1486,7 +1486,7 @@ class TelegramChannel:
 
                     await self.send_message(
                         chat_id,
-                        "вљ™пёЏ No-AI mode expects a command. Use /help for shortcuts, or send <code>navig &lt;command&gt;</code>.",
+                        "🔔 No-AI mode expects a command. Use /help for shortcuts, or send <code>navig &lt;command&gt;</code>.",
                         parse_mode="HTML",
                     )
                     return
@@ -1545,14 +1545,14 @@ class TelegramChannel:
             elif _cmd.startswith("/"):
                 await self.send_message(
                     chat_id,
-                    "вќЊ That command is not available yet because AI is not configured. "
+                    "❌ That command is not available yet because AI is not configured. "
                     "Use /help to see available commands or /start to begin setup.",
                     parse_mode=None,
                 )
             else:
                 await self.send_message(
                     chat_id,
-                    "вќЊ AI is not configured yet. Use /help to see available commands "
+                    "❌ AI is not configured yet. Use /help to see available commands "
                     "or /start to begin setup.",
                     parse_mode=None,
                 )
@@ -2185,9 +2185,9 @@ class TelegramChannel:
 
         if self._is_debug_mode(user_id):
             model_name = self._resolve_model_name(metadata)
-            suffix = f"\n\nвњ… Done В· Model: {model_name}" if model_name else "\n\nвњ… Done"
+            suffix = f"\n\n✅ Done · Model: {model_name}" if model_name else "\n\n✅ Done"
         else:
-            suffix = "\n\nвњ… Done"
+            suffix = "\n\n✅ Done"
         final_text = f"{response}{suffix}"
 
         self._record_assistant_msg(session, session_manager, chat_id, user_id, response, is_group)
@@ -2250,7 +2250,7 @@ class TelegramChannel:
                 "Connecting to target...",
                 detail=f"{len(tools_to_call)} tool(s) queued",
                 progress=1,
-                icon="рџ”—",
+                icon="🔗",
             )
 
             total = len(tools_to_call)
@@ -2283,7 +2283,7 @@ class TelegramChannel:
                 progress_val = 2 + round((idx + 1) / total * 6)
 
                 async def _status(step, detail="", progress=0, _tn=tool_name):
-                    await renderer.update(step, detail=detail, progress=progress, icon="вљ™пёЏ")
+                    await renderer.update(step, detail=detail, progress=progress, icon="🔔")
 
                 result = await registry.run_tool(tool_name, args, on_status=_status)
                 tool_names_run.append(tool_name)
@@ -2294,7 +2294,7 @@ class TelegramChannel:
                         f"{tool_name} complete",
                         detail=self._summarize_tool_result(result),
                         progress=progress_val,
-                        icon="вњ…",
+                        icon="✅",
                     )
                 else:
                     await renderer.warn(tool_name, result.error or "unknown error")
@@ -2305,7 +2305,7 @@ class TelegramChannel:
             await renderer.warn("tool_pipeline", str(tool_exc))
 
         # в”Ђв”Ђ Step 2: call LLM with tool context в”Ђв”Ђ
-        await renderer.update("Analyzing results...", progress=8, icon="рџ§ ")
+        await renderer.update("Analyzing results...", progress=8, icon="🧠")
 
         tool_context = self._build_act_tool_context(tool_results)
 
@@ -2352,7 +2352,7 @@ class TelegramChannel:
             if r.name == "site_check" and isinstance(r.output, dict):
                 out = r.output
                 conclusion["Status"] = (
-                    f"HTTP {out.get('status_code')} В· {'online' if out.get('online') else 'offline'}"
+                    f"HTTP {out.get('status_code')} · {'online' if out.get('online') else 'offline'}"
                 )
                 conclusion["Latency"] = f"{out.get('latency_ms')}ms"
                 if out.get("cert_expiry"):
@@ -2400,7 +2400,7 @@ class TelegramChannel:
     def _summarize_tool_result(self, result) -> str:
         """Compact, tool-specific summary for ACT step progress lines."""
         if not result.success:
-            return f"вљ пёЏ {result.error or 'unknown error'}"
+            return f"⚠️ {result.error or 'unknown error'}"
 
         output = result.output
         if isinstance(output, dict):
@@ -2415,7 +2415,7 @@ class TelegramChannel:
                     f"latency: {latency}ms" if latency is not None else "",
                     f"redirects: {redirects}" if redirects is not None else "",
                 ]
-                return " В· ".join(p for p in parts if p)[:120]
+                return " · ".join(p for p in parts if p)[:120]
 
             if result.name in {"browser_fetch", "web_fetch"}:
                 url = str(output.get("url") or "")
@@ -2428,7 +2428,7 @@ class TelegramChannel:
                     f"status: {status}" if status is not None else "",
                     f"chars: {chars}" if chars is not None else "",
                 ]
-                return " В· ".join(p for p in parts if p)[:120]
+                return " · ".join(p for p in parts if p)[:120]
 
             if result.name == "search":
                 results = output.get("results") if isinstance(output.get("results"), list) else []
@@ -2437,7 +2437,7 @@ class TelegramChannel:
                     top = str(results[0].get("title") or "")
                 summary = f"results: {len(results)}"
                 if top:
-                    summary += f" В· top: {top[:56]}"
+                    summary += f" · top: {top[:56]}"
                 return summary[:120]
 
         return result.summary()[:120]
@@ -2516,7 +2516,7 @@ class TelegramChannel:
         split_at = trimmed.rfind(" ")
         if split_at >= int(max_chars * 0.6):
             trimmed = trimmed[:split_at].rstrip()
-        return f"{trimmed}вЂ¦"
+        return f"{trimmed}…"
 
     @staticmethod
     def _md_to_html(text: str) -> str:
@@ -2640,12 +2640,12 @@ class TelegramChannel:
         # Get the largest photo variant
         photos = message.get("photo", [])
         if not photos:
-            await self.send_message(chat_id, "вљ пёЏ Could not read photo.", parse_mode=None)
+            await self.send_message(chat_id, "⚠️ Could not read photo.", parse_mode=None)
             return
         best_photo = max(photos, key=lambda p: p.get("file_size", 0))
         file_id = best_photo.get("file_id")
         if not file_id:
-            await self.send_message(chat_id, "вљ пёЏ Could not read photo.", parse_mode=None)
+            await self.send_message(chat_id, "⚠️ Could not read photo.", parse_mode=None)
             return
 
         # Signal we're processing
@@ -2659,31 +2659,31 @@ class TelegramChannel:
             file_info = await self._api_call("getFile", {"file_id": file_id})
             if not file_info:
                 await self.send_message(
-                    chat_id, "вљ пёЏ Could not retrieve photo from Telegram.", parse_mode=None
+                    chat_id, "⚠️ Could not retrieve photo from Telegram.", parse_mode=None
                 )
                 return
             file_path = file_info.get("file_path", "")
             if not file_path:
                 await self.send_message(
-                    chat_id, "вљ пёЏ Could not retrieve photo from Telegram.", parse_mode=None
+                    chat_id, "⚠️ Could not retrieve photo from Telegram.", parse_mode=None
                 )
                 return
 
             dl_url = f"https://api.telegram.org/file/bot{self.bot_token}/{file_path}"
             if not self._session:
                 await self.send_message(
-                    chat_id, "вљ пёЏ Internal error: no HTTP session.", parse_mode=None
+                    chat_id, "⚠️ Internal error: no HTTP session.", parse_mode=None
                 )
                 return
 
             async with self._session.get(dl_url) as dl_resp:
                 if dl_resp.status != 200:
-                    await self.send_message(chat_id, "вљ пёЏ Failed to download photo.", parse_mode=None)
+                    await self.send_message(chat_id, "⚠️ Failed to download photo.", parse_mode=None)
                     return
                 image_bytes = await dl_resp.read()
         except Exception as exc:
             logger.warning("Photo download failed for chat %s: %s", chat_id, exc)
-            await self.send_message(chat_id, "вљ пёЏ Failed to download photo.", parse_mode=None)
+            await self.send_message(chat_id, "⚠️ Failed to download photo.", parse_mode=None)
             return
 
         ocr_text = self._extract_photo_ocr_text(image_bytes)
@@ -2706,7 +2706,7 @@ class TelegramChannel:
         else:
             await self.send_message(
                 chat_id,
-                "вљ пёЏ Vision analysis failed — the model could not process this image.",
+                "⚠️ Vision analysis failed — the model could not process this image.",
                 parse_mode=None,
             )
 
@@ -2734,7 +2734,7 @@ class TelegramChannel:
         if ocr_text:
             snippet = ocr_text.strip()
             if len(snippet) > 700:
-                snippet = snippet[:700] + "вЂ¦"
+                snippet = snippet[:700] + "…"
             parts.append(f"\nрџ“ќ <b>OCR</b>\n<code>{html.escape(snippet)}</code>")
 
         if not parts:
@@ -3056,7 +3056,7 @@ class TelegramChannel:
 
         file_id = voice_data.get("file_id") if voice_data else None
         if not file_id:
-            await self.send_message(chat_id, "рџЋ™пёЏ Couldn't read the voice message.", parse_mode=None)
+            await self.send_message(chat_id, "🎙️ Couldn't read the voice message.", parse_mode=None)
             return None, ""
 
         # в”Ђв”Ђ Resolve which STT provider to use based on available keys в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
@@ -3105,7 +3105,7 @@ class TelegramChannel:
         if stt_provider is None:
             await self.send_message(
                 chat_id,
-                "рџЋ™пёЏ <b>Voice transcription not configured.</b>\n\n"
+                "🎙️ <b>Voice transcription not configured.</b>\n\n"
                 "Add any of the following to <code>~/.navig/.env</code> and restart:\n"
                 "вЂў <code>DEEPGRAM_KEY=&lt;key&gt;</code> — blazing fast, recommended\n"
                 "вЂў <code>OPENAI_API_KEY=&lt;key&gt;</code> — Whisper API fallback\n"
@@ -3126,13 +3126,13 @@ class TelegramChannel:
             file_info = await self._api_call("getFile", {"file_id": file_id})
             if not file_info:
                 await self.send_message(
-                    chat_id, "рџЋ™пёЏ Couldn't retrieve the voice file.", parse_mode=None
+                    chat_id, "🎙️ Couldn't retrieve the voice file.", parse_mode=None
                 )
                 return None, ""
             file_path = file_info.get("file_path", "")
             if not file_path:
                 await self.send_message(
-                    chat_id, "рџЋ™пёЏ Couldn't retrieve the voice file.", parse_mode=None
+                    chat_id, "🎙️ Couldn't retrieve the voice file.", parse_mode=None
                 )
                 return None, ""
 
@@ -3140,14 +3140,14 @@ class TelegramChannel:
             dl_url = f"https://api.telegram.org/file/bot{self.bot_token}/{file_path}"
             if not self._session:
                 await self.send_message(
-                    chat_id, "рџЋ™пёЏ Internal error: no HTTP session.", parse_mode=None
+                    chat_id, "🎙️ Internal error: no HTTP session.", parse_mode=None
                 )
                 return None, ""
 
             async with self._session.get(dl_url) as dl_resp:
                 if dl_resp.status != 200:
                     await self.send_message(
-                        chat_id, "рџЋ™пёЏ Failed to download voice message.", parse_mode=None
+                        chat_id, "🎙️ Failed to download voice message.", parse_mode=None
                     )
                     return None, ""
                 audio_bytes = await dl_resp.read()
@@ -3172,18 +3172,18 @@ class TelegramChannel:
                 raw_err = result.error or ""
                 if "whisper not installed" in raw_err or "No module named 'whisper'" in raw_err:
                     user_msg = (
-                        "рџЋ™пёЏ Transcription failed: local Whisper is not installed.\n"
+                        "🎙️ Transcription failed: local Whisper is not installed.\n"
                         "Run `pip install openai-whisper` on the server, or add a "
                         "`DEEPGRAM_KEY` / `OPENAI_API_KEY` to `~/.navig/.env`."
                     )
                 elif "API key" in raw_err or "not set" in raw_err or "not configured" in raw_err:
-                    user_msg = "рџЋ™пёЏ Transcription failed: no STT API key configured — type your message instead."
+                    user_msg = "🎙️ Transcription failed: no STT API key configured — type your message instead."
                 elif "timeout" in raw_err.lower():
-                    user_msg = "рџЋ™пёЏ Transcription timed out — try a shorter clip or type it out."
+                    user_msg = "🎙️ Transcription timed out — try a shorter clip or type it out."
                 elif "too large" in raw_err:
-                    user_msg = f"рџЋ™пёЏ Audio file too large — {raw_err.split(':', 1)[-1].strip()}"
+                    user_msg = f"🎙️ Audio file too large — {raw_err.split(':', 1)[-1].strip()}"
                 else:
-                    user_msg = "рџЋ™пёЏ Couldn't transcribe audio — try again or type it out."
+                    user_msg = "🎙️ Couldn't transcribe audio — try again or type it out."
                 await self.send_message(chat_id, user_msg, parse_mode=None)
                 return None, ""
 
@@ -3207,7 +3207,7 @@ class TelegramChannel:
                 ]
             await self.send_message(
                 chat_id,
-                f"рџЋ™пёЏ <b>Heard:</b> <i>{html.escape(transcript)}</i>",
+                f"🎙️ <b>Heard:</b> <i>{html.escape(transcript)}</i>",
                 parse_mode="HTML",
                 keyboard=heard_kb,
             )
@@ -3218,7 +3218,7 @@ class TelegramChannel:
             logger.error("Voice transcription error: %s", e)
             await self.send_message(
                 chat_id,
-                "рџЋ™пёЏ Something went wrong processing your voice message — please try again.",
+                "🎙️ Something went wrong processing your voice message — please try again.",
                 parse_mode=None,
             )
             return None, ""
@@ -3333,7 +3333,7 @@ class TelegramChannel:
         text = re.sub(r"\s+", " ", text).strip()
         # Truncate at word boundary
         if len(text) > max_chars:
-            text = text[:max_chars].rsplit(" ", 1)[0] + "вЂ¦"
+            text = text[:max_chars].rsplit(" ", 1)[0] + "…"
         return text
 
     async def _send_response(
@@ -4360,7 +4360,7 @@ class TelegramChannel:
         if not HAS_KEYBOARDS or not HAS_SESSIONS:
             await self.send_message(
                 chat_id,
-                "вљ™пёЏ Settings UI requires the keyboard + session modules.",
+                "🔔 Settings UI requires the keyboard + session modules.",
                 parse_mode=None,
             )
             return
@@ -5135,7 +5135,7 @@ def create_telegram_channel(gateway, config: dict[str, Any]) -> TelegramChannel 
     ) -> tuple[bool, str]:
         manager = getattr(gateway, "approval_manager", None)
         if not manager:
-            return False, "вљ пёЏ Approval system unavailable"
+            return False, "⚠️ Approval system unavailable"
 
         resolved_id = (request_id or "").strip()
         if not resolved_id:
@@ -5162,9 +5162,9 @@ def create_telegram_channel(gateway, config: dict[str, Any]) -> TelegramChannel 
             if len(pending) == 1:
                 resolved_id = str(pending[0].get("id", "")).strip()
             elif len(pending) > 1:
-                return False, "вљ пёЏ Multiple pending approvals; specify a request ID."
+                return False, "⚠️ Multiple pending approvals; specify a request ID."
             else:
-                return False, "вљ пёЏ No pending approval found."
+                return False, "⚠️ No pending approval found."
 
         # AUDIT DECISION:
         # Is this the correct implementation? Yes — request ownership and channel are
@@ -5178,9 +5178,9 @@ def create_telegram_channel(gateway, config: dict[str, Any]) -> TelegramChannel 
                 request_user = str(request.get("user_id", ""))
                 request_channel = str(request.get("channel", ""))
                 if request_user and request_user != str(user_id):
-                    return False, "вљ пёЏ That approval request belongs to a different user."
+                    return False, "⚠️ That approval request belongs to a different user."
                 if request_channel and request_channel != "telegram":
-                    return False, "вљ пёЏ Approval request channel mismatch."
+                    return False, "⚠️ Approval request channel mismatch."
 
         try:
             success = await manager.respond(request_id=resolved_id, approved=approved)
@@ -5189,9 +5189,9 @@ def create_telegram_channel(gateway, config: dict[str, Any]) -> TelegramChannel 
             success = await manager.respond(resolved_id, approved)
 
         if not success:
-            return False, "вљ пёЏ Approval request expired or not found."
+            return False, "⚠️ Approval request expired or not found."
 
-        verdict = "вњ… Approved" if approved else "вќЊ Denied"
+        verdict = "✅ Approved" if approved else "❌ Denied"
         return True, f"{verdict} ({resolved_id})"
 
     return TelegramChannel(
