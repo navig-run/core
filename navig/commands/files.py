@@ -16,6 +16,7 @@ def upload_file_cmd(local: Path, remote: str | None, options: dict[str, Any]):
     remote_ops = RemoteOperations(config_manager)
 
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
+
     server_name = require_active_server(options, config_manager)
 
     if not local.exists():
@@ -94,6 +95,7 @@ def download_file_cmd(remote: str, local: Path | None, options: dict[str, Any]):
     remote_ops = RemoteOperations(config_manager)
 
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
+
     server_name = require_active_server(options, config_manager)
 
     if local is None:
@@ -119,6 +121,13 @@ def download_file_cmd(remote: str, local: Path | None, options: dict[str, Any]):
         ch.info('     Fix: navig run "chmod 644 /remote/file"')
         ch.info("  3. Local disk full: Check space with 'df -h' (Unix) or 'dir' (Windows)")
         ch.info("  4. Network timeout: Check connection with 'navig tunnel status'")
+
+
+def list_remote_directory(remote_path: str, options: dict[str, Any]):
+    """List remote directory contents (legacy compatibility wrapper)."""
+    from navig.commands.files_advanced import list_dir_cmd
+
+    list_dir_cmd(remote_path, options, all=False, long=True, human=True)
 
 
 import typer

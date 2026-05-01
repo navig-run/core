@@ -28,6 +28,7 @@ def _clear_cache():
 # AudioConfig defaults
 # ---------------------------------------------------------------------------
 
+
 class TestAudioConfigDefaults:
     def test_default_provider(self):
         c = AudioConfig()
@@ -68,6 +69,7 @@ class TestAudioConfigDefaults:
 # load_config
 # ---------------------------------------------------------------------------
 
+
 class TestLoadConfig:
     def test_returns_default_when_no_file(self, tmp_path):
         with patch.object(state_mod, "_STORE_DIR", tmp_path):
@@ -76,8 +78,15 @@ class TestLoadConfig:
         assert cfg.provider == "openai"
 
     def test_returns_saved_config(self, tmp_path):
-        data = {"provider": "edge", "model": "edge-neural", "voice": "en-US-AriaNeural",
-                "speed": 1.0, "format": "mp3", "auto": False, "active": True}
+        data = {
+            "provider": "edge",
+            "model": "edge-neural",
+            "voice": "en-US-AriaNeural",
+            "speed": 1.0,
+            "format": "mp3",
+            "auto": False,
+            "active": True,
+        }
         (tmp_path / "9002.json").write_text(json.dumps(data))
         with patch.object(state_mod, "_STORE_DIR", tmp_path):
             cfg = load_config(9002)
@@ -115,6 +124,7 @@ class TestLoadConfig:
 # ---------------------------------------------------------------------------
 # save_config
 # ---------------------------------------------------------------------------
+
 
 class TestSaveConfig:
     def test_saves_to_file(self, tmp_path):
@@ -158,38 +168,49 @@ class TestSaveConfig:
 # AudioConfig field-level and dataclass integrity tests (merged from root)
 # ---------------------------------------------------------------------------
 
+
 class TestAudioConfig:
     """Field count, asdict, and custom-value tests."""
 
     def test_default_provider(self):
         from dataclasses import asdict, fields
+
         from navig.gateway.channels.audio_menu.state import AudioConfig
+
         assert AudioConfig().provider == "openai"
 
     def test_default_model(self):
         from navig.gateway.channels.audio_menu.state import AudioConfig
+
         assert AudioConfig().model == "tts-1-hd"
 
     def test_default_voice(self):
         from navig.gateway.channels.audio_menu.state import AudioConfig
+
         assert AudioConfig().voice == "nova"
 
     def test_default_speed(self):
         from navig.gateway.channels.audio_menu.state import AudioConfig
+
         assert AudioConfig().speed == 1.0
 
     def test_default_format(self):
         from navig.gateway.channels.audio_menu.state import AudioConfig
+
         assert AudioConfig().format == "mp3"
 
     def test_field_count(self):
         from dataclasses import fields
+
         from navig.gateway.channels.audio_menu.state import AudioConfig
+
         assert len(fields(AudioConfig)) == 7
 
     def test_asdict_roundtrip(self):
         from dataclasses import asdict
+
         from navig.gateway.channels.audio_menu.state import AudioConfig
+
         cfg = AudioConfig(voice="alloy", speed=0.8)
         d = asdict(cfg)
         restored = AudioConfig(**d)
@@ -197,8 +218,16 @@ class TestAudioConfig:
 
     def test_custom_values(self):
         from navig.gateway.channels.audio_menu.state import AudioConfig
-        cfg = AudioConfig(provider="azure", model="neural", voice="aria", speed=1.5,
-                          format="ogg", auto=True, active=True)
+
+        cfg = AudioConfig(
+            provider="azure",
+            model="neural",
+            voice="aria",
+            speed=1.5,
+            format="ogg",
+            auto=True,
+            active=True,
+        )
         assert cfg.provider == "azure"
         assert cfg.voice == "aria"
         assert cfg.speed == 1.5

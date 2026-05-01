@@ -5,6 +5,7 @@ status_row) + discord_adapter + whatsapp_cloud messaging adapters.
 TUI widgets import `textual` which is not installed — we inject stubs into
 sys.modules *before* importing any widget module.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -17,6 +18,7 @@ import pytest
 # ---------------------------------------------------------------------------
 # Inject textual stubs (textual not installed in this env)
 # ---------------------------------------------------------------------------
+
 
 class _MockStatic:
     """Minimal Static stand-in that records update() calls."""
@@ -88,12 +90,12 @@ StatusRow = _status_row_mod.StatusRow
 # ---------------------------------------------------------------------------
 # Messaging adapters
 # ---------------------------------------------------------------------------
+from navig.messaging.adapter import DeliveryStatus, InboundEvent, Thread
 from navig.messaging.adapters.discord_adapter import (
-    DiscordMessagingAdapter,
     DISCORD_AVAILABLE,
+    DiscordMessagingAdapter,
 )
 from navig.messaging.adapters.whatsapp_cloud import WhatsAppCloudAdapter
-from navig.messaging.adapter import DeliveryStatus, InboundEvent, Thread
 
 # ===========================================================================
 # TUI: CheckRow
@@ -428,6 +430,7 @@ class TestDiscordMessagingAdapter:
     def test_send_message_discord_unavailable(self):
         """When DISCORD_AVAILABLE is False, send returns a failure receipt."""
         import navig.messaging.adapters.discord_adapter as _mod
+
         original = _mod.DISCORD_AVAILABLE
         try:
             _mod.DISCORD_AVAILABLE = False
@@ -510,16 +513,22 @@ class TestWhatsAppCloudAdapter:
 
     def _make_wa_payload(self, from_num: str = "+1234", body: str = "hello") -> dict:
         return {
-            "entry": [{
-                "changes": [{
-                    "value": {
-                        "messages": [{
-                            "from": from_num,
-                            "text": {"body": body},
-                        }]
-                    }
-                }]
-            }]
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "messages": [
+                                    {
+                                        "from": from_num,
+                                        "text": {"body": body},
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
         }
 
     def test_receive_webhook_normal(self):
@@ -547,7 +556,7 @@ class TestWhatsAppCloudAdapter:
         adapter = WhatsAppCloudAdapter()
         payload = {"entry": [{"changes": [{"value": {}}]}]}
         event = asyncio.run(adapter.receive_webhook(payload))
-        # Empty messages list → msg = {}, from = "" 
+        # Empty messages list → msg = {}, from = ""
         assert isinstance(event, InboundEvent)
         assert event.text == ""
 
@@ -598,10 +607,12 @@ class TestWhatsAppCloudAdapter:
 
     def test_send_message_success(self):
         """send_message returns success receipt when API responds 200 with messages."""
-        adapter = WhatsAppCloudAdapter({
-            "phone_number_id": "pid",
-            "access_token": "tok",
-        })
+        adapter = WhatsAppCloudAdapter(
+            {
+                "phone_number_id": "pid",
+                "access_token": "tok",
+            }
+        )
 
         mock_resp = AsyncMock()
         mock_resp.status = 200
@@ -621,10 +632,12 @@ class TestWhatsAppCloudAdapter:
 
     def test_send_message_api_error(self):
         """send_message returns failure when API returns error."""
-        adapter = WhatsAppCloudAdapter({
-            "phone_number_id": "pid",
-            "access_token": "tok",
-        })
+        adapter = WhatsAppCloudAdapter(
+            {
+                "phone_number_id": "pid",
+                "access_token": "tok",
+            }
+        )
 
         mock_resp = AsyncMock()
         mock_resp.status = 400

@@ -30,6 +30,7 @@ from navig.remote import RemoteOperations
 try:
     from navig.console_helper import format_bytes as _fmt_bytes
 except ImportError:
+
     def _fmt_bytes(value: Any) -> str:
         return str(value)
 
@@ -37,6 +38,7 @@ except ImportError:
 try:
     from navig.remote import is_local_host
 except ImportError:
+
     def is_local_host(name: str | None) -> bool:
         return False
 
@@ -53,27 +55,39 @@ def _monitor_disk_local_windows(app_name: str, threshold: int, options: dict) ->
         except (PermissionError, OSError):
             continue
         pct = int(usage.percent)
-        disks.append({
-            "device": part.device,
-            "mount": part.mountpoint,
-            "size": _fmt_bytes(usage.total),
-            "used": _fmt_bytes(usage.used),
-            "available": _fmt_bytes(usage.free),
-            "usage_percent": pct,
-        })
+        disks.append(
+            {
+                "device": part.device,
+                "mount": part.mountpoint,
+                "size": _fmt_bytes(usage.total),
+                "used": _fmt_bytes(usage.used),
+                "available": _fmt_bytes(usage.free),
+                "usage_percent": pct,
+            }
+        )
         if pct > threshold:
             alerts.append(f"{part.mountpoint} is {pct}% full (threshold: {threshold}%)")
 
     if options.get("json_output"):
-        console.print(json.dumps({
-            "timestamp": datetime.now().isoformat(),
-            "server": app_name, "threshold": threshold,
-            "disks": disks, "alerts": alerts,
-        }, indent=2))
+        console.print(
+            json.dumps(
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "server": app_name,
+                    "threshold": threshold,
+                    "disks": disks,
+                    "alerts": alerts,
+                },
+                indent=2,
+            )
+        )
         return
 
-    table = Table(title=f"Disk Space - {app_name} (Threshold: {threshold}%)",
-                  show_header=True, header_style="bold cyan")
+    table = Table(
+        title=f"Disk Space - {app_name} (Threshold: {threshold}%)",
+        show_header=True,
+        header_style="bold cyan",
+    )
     table.add_column("Drive", style="cyan")
     table.add_column("Device", style="dim")
     table.add_column("Size", justify="right")
@@ -83,8 +97,11 @@ def _monitor_disk_local_windows(app_name: str, threshold: int, options: dict) ->
     table.add_column("Status")
     for d in disks:
         table.add_row(
-            d["mount"], d["device"],
-            d["size"], d["used"], d["available"],
+            d["mount"],
+            d["device"],
+            d["size"],
+            d["used"],
+            d["available"],
             f"{d['usage_percent']}%",
             _disk_status(d["usage_percent"], threshold),
         )
@@ -104,8 +121,12 @@ def _monitor_resources_local_windows(app_name: str, options: dict) -> None:
     metrics: dict = {}
     alerts: list = []
 
-    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
-                  console=console, transient=True) as _prog:
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=True,
+    ) as _prog:
         _prog.add_task("Collecting local metrics\u2026", total=None)
 
         cpu = psutil.cpu_percent(interval=1)
@@ -143,13 +164,22 @@ def _monitor_resources_local_windows(app_name: str, options: dict) -> None:
             metrics["uptime"] = "N/A"
 
     if options.get("json_output"):
-        console.print(json.dumps({
-            "timestamp": datetime.now().isoformat(),
-            "server": app_name, "metrics": metrics, "alerts": alerts,
-        }, indent=2))
+        console.print(
+            json.dumps(
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "server": app_name,
+                    "metrics": metrics,
+                    "alerts": alerts,
+                },
+                indent=2,
+            )
+        )
         return
 
-    table = Table(title=f"Resource Usage \u2014 {app_name}", show_header=True, header_style="bold cyan")
+    table = Table(
+        title=f"Resource Usage \u2014 {app_name}", show_header=True, header_style="bold cyan"
+    )
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="white")
     table.add_column("Status")
@@ -158,18 +188,24 @@ def _monitor_resources_local_windows(app_name: str, options: dict) -> None:
     table.add_row("CPU Usage", f"{cpu_val}%", _traffic_light(cpu_val))
     mem = metrics.get("memory", {})
     mem_val = mem.get("usage_percent", 0)
-    table.add_row("Memory",
-                  f"{mem_val}% ({mem.get('used_mb', 0)} MB / {mem.get('total_mb', 0)} MB)",
-                  _traffic_light(mem_val))
+    table.add_row(
+        "Memory",
+        f"{mem_val}% ({mem.get('used_mb', 0)} MB / {mem.get('total_mb', 0)} MB)",
+        _traffic_light(mem_val),
+    )
     disk = metrics.get("disk", {})
     disk_val = disk.get("usage_percent", 0)
-    table.add_row("Disk (root)",
-                  f"{disk_val}% ({disk.get('used', '0')} / {disk.get('total', '0')})",
-                  _traffic_light(disk_val))
+    table.add_row(
+        "Disk (root)",
+        f"{disk_val}% ({disk.get('used', '0')} / {disk.get('total', '0')})",
+        _traffic_light(disk_val),
+    )
     table.add_row("Uptime", metrics.get("uptime", "N/A"), _info)
     console.print(table)
     if alerts:
-        console.print(f"\n[yellow]{_safe_symbol(chr(0x26A0), '!')} Alerts ({len(alerts)}):[/yellow]")
+        console.print(
+            f"\n[yellow]{_safe_symbol(chr(0x26A0), '!')} Alerts ({len(alerts)}):[/yellow]"
+        )
         for a in alerts:
             console.print(f"  [yellow]\u2022[/yellow] {a}")
     else:
@@ -770,6 +806,57 @@ def health_check(options: dict[str, Any]) -> None:
     console.print(f"\n[green]{_safe_symbol(chr(0x2713), 'OK')}[/green] Health check complete")
 
 
+def run_health_check(options: dict[str, Any]) -> None:
+    """Legacy compatibility wrapper for comprehensive health checks."""
+    health_check(options)
+
+
+def view_service_logs(service: str, tail: bool, lines: int, options: dict[str, Any]) -> None:
+    """Legacy compatibility wrapper to show service logs via systemd journal."""
+    config = get_config_manager()
+    app_name = require_active_server(options, config)
+
+    if not re.fullmatch(r"[A-Za-z0-9@_.-]+", service):
+        console.print(f"[red]Invalid service name:[/red] {service}")
+        return
+
+    server_config = config.load_server_config(app_name)
+    remote = RemoteOperations(config)
+
+    follow_flag = " -f" if tail else ""
+    line_count = max(1, int(lines or 100))
+    cmd = f"journalctl -u {service} -n {line_count}{follow_flag} --no-pager"
+    result = remote.execute_command(cmd, server_config)
+
+    if result.returncode == 0:
+        console.print(result.stdout)
+    else:
+        error_text = (result.stderr or result.stdout or "Failed to read service logs").strip()
+        console.print(f"[red]{error_text}[/red]")
+
+
+def restart_remote_service(service: str, options: dict[str, Any]) -> None:
+    """Legacy compatibility wrapper to restart a remote service."""
+    config = get_config_manager()
+    app_name = require_active_server(options, config)
+
+    if not re.fullmatch(r"[A-Za-z0-9@_.-]+", service):
+        console.print(f"[red]Invalid service name:[/red] {service}")
+        return
+
+    server_config = config.load_server_config(app_name)
+    remote = RemoteOperations(config)
+
+    cmd = f"sudo systemctl restart {service}"
+    result = remote.execute_command(cmd, server_config)
+
+    if result.returncode == 0:
+        console.print(f"[green]Restarted service:[/green] {service}")
+    else:
+        error_text = (result.stderr or result.stdout or "Service restart failed").strip()
+        console.print(f"[red]{error_text}[/red]")
+
+
 def generate_report(options: dict[str, Any]) -> None:
     """
     Generate comprehensive monitoring report and save to file.
@@ -917,7 +1004,9 @@ def generate_report(options: dict[str, Any]) -> None:
         json.dump(report, indent=2, fp=f)
 
     # Display summary
-    console.print(f"\n[green]{_safe_symbol(chr(0x2713), 'OK')}[/green] Report generated: {report_file}")
+    console.print(
+        f"\n[green]{_safe_symbol(chr(0x2713), 'OK')}[/green] Report generated: {report_file}"
+    )
     console.print("\n[cyan]Summary:[/cyan]")
     console.print(f"  {_safe_symbol(chr(0x2022), '-')} Server: {app_name}")
     console.print(f"  {_safe_symbol(chr(0x2022), '-')} Timestamp: {report['timestamp']}")
@@ -928,4 +1017,6 @@ def generate_report(options: dict[str, Any]) -> None:
         for alert in report["alerts"]:
             console.print(f"  [yellow]{_safe_symbol(chr(0x2022), '-')}[/yellow] {alert}")
     else:
-        console.print(f"\n[green]{_safe_symbol(chr(0x2713), 'OK')}[/green] No alerts - system healthy")
+        console.print(
+            f"\n[green]{_safe_symbol(chr(0x2713), 'OK')}[/green] No alerts - system healthy"
+        )
