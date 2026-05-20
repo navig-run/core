@@ -57,4 +57,4 @@ comtypes>=1.2.0      ; sys_platform == "win32"
 # openai>=1.0.0                 # Optional: Remote embeddings via OpenAI API
 # Optional: Local vector search (replaces pgvector for single-user mode)
 # sqlite-vec>=0.1.1             # ANN search inside SQLite (~2MB, cross-platform)
-python-telegram-bot>=20.0
+python-telegram-bot>=22.7
