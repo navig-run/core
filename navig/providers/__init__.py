@@ -2,116 +2,148 @@
 NAVIG AI Providers Package
 
 Multi-provider AI system with fallback support.
+
+Lazy-loading design: importing ``navig.providers`` costs ~0 ms.
+Sub-modules are imported only when an attribute is first accessed.
+This prevents Windows Defender / AV .pyc scanning from blocking gateway startup.
 """
 
-# AirLLM provider (optional - requires airllm package)
-from .airllm import (
-    AirLLMClient,
-    AirLLMConfig,
-    create_airllm_client,
-    get_airllm_vram_recommendations,
-    is_airllm_available,
-)
-from .auth import AuthProfileManager
-from .capabilities import (
-    Capability,
-    ModelCapabilityEntry,
-    capabilities_label,
-    get_model_capabilities,
-    has_capability,
-    list_models_with_capability,
-    list_vision_models,
-)
-from .clients import (
-    AnthropicClient,
-    BaseProviderClient,
-    CompletionRequest,
-    CompletionResponse,
-    Message,
-    OpenAIClient,
-    ProviderError,
-    ToolCall,
-    ToolDefinition,
-    create_client,
-    get_builtin_provider,
-)
-from .discovery import (
-    ModelInfo,
-    get_vision_api_format,
-    list_available_models,
-    list_connected_providers,
-    resolve_vision_model,
-)
-from .discovery import (
-    ProviderInfo as DiscoveryProviderInfo,
-)
-from .fallback import (
-    FallbackCandidate,
-    FallbackManager,
-    FallbackResult,
-    complete_with_fallback,
-    get_fallback_manager,
-)
-from .oauth import (
-    OAUTH_PROVIDERS,
-    OAuthCredentials,
-    OAuthFlowResult,
-    OAuthProviderConfig,
-    exchange_code_for_tokens,
-    generate_pkce_pair,
-    generate_state,
-    refresh_oauth_tokens,
-    run_oauth_flow_headless,
-    run_oauth_flow_interactive,
-)
-from .registry import (
-    ALL_PROVIDERS,
-    ProviderManifest,
-    ProviderTier,
-    get_provider,
-    list_all_providers,
-    list_enabled_providers,
-)
-from .types import (
-    BUILTIN_PROVIDERS,
-    PROVIDER_ENV_VARS,
-    ApiKeyCredential,
-    AuthMode,
-    AuthProfileStore,
-    ModelApi,
-    ModelCompatConfig,
-    ModelCost,
-    ModelDefinition,
-    OAuthCredential,
-    ProviderConfig,
-    ProvidersConfig,
-    TokenCredential,
-    builtin_provider_configs,
-)
+from __future__ import annotations
 
-# Perplexity provider (optional - requires httpx)
-try:
-    from .perplexity import (
-        PERPLEXITY_PROVIDER,
-        PerplexityClient,
-        PerplexitySearchResult,
-        create_perplexity_client,
-        is_perplexity_available,
-        perplexity_search,
-    )
+import importlib
+from typing import Any
 
-    _PERPLEXITY_AVAILABLE = True
-except ImportError:
-    _PERPLEXITY_AVAILABLE = False
-    PerplexityClient = None
-    PerplexitySearchResult = None
-    create_perplexity_client = None
-    perplexity_search = None
+# ---------------------------------------------------------------------------
+# Attribute → sub-module map (relative paths from this package)
+# ---------------------------------------------------------------------------
+# Each entry: "ExportedName" → ".submodule"
+# For aliases: "ExportedName" → (".submodule", "actual_attr_in_module")
+# ---------------------------------------------------------------------------
 
-    def is_perplexity_available():
-        return False
+_LAZY: dict[str, Any] = {
+    # ── types ─────────────────────────────────────────────────────────────
+    "BUILTIN_PROVIDERS":        ".types",
+    "PROVIDER_ENV_VARS":        ".types",
+    "ApiKeyCredential":         ".types",
+    "AuthMode":                 ".types",
+    "AuthProfileStore":         ".types",
+    "ModelApi":                 ".types",
+    "ModelCompatConfig":        ".types",
+    "ModelCost":                ".types",
+    "ModelDefinition":          ".types",
+    "OAuthCredential":          ".types",
+    "ProviderConfig":           ".types",
+    "ProvidersConfig":          ".types",
+    "TokenCredential":          ".types",
+    "builtin_provider_configs": ".types",
+    # ── capabilities ──────────────────────────────────────────────────────
+    "Capability":                   ".capabilities",
+    "ModelCapabilityEntry":         ".capabilities",
+    "capabilities_label":           ".capabilities",
+    "get_model_capabilities":       ".capabilities",
+    "has_capability":               ".capabilities",
+    "list_models_with_capability":  ".capabilities",
+    "list_vision_models":           ".capabilities",
+    # ── discovery ─────────────────────────────────────────────────────────
+    "ModelInfo":                ".discovery",
+    "get_vision_api_format":    ".discovery",
+    "list_available_models":    ".discovery",
+    "list_connected_providers": ".discovery",
+    "resolve_vision_model":     ".discovery",
+    # alias: ProviderInfo → DiscoveryProviderInfo
+    "DiscoveryProviderInfo":    (".discovery", "ProviderInfo"),
+    # ── fallback ──────────────────────────────────────────────────────────
+    "FallbackCandidate":    ".fallback",
+    "FallbackManager":      ".fallback",
+    "FallbackResult":       ".fallback",
+    "complete_with_fallback": ".fallback",
+    "get_fallback_manager": ".fallback",
+    # ── oauth ─────────────────────────────────────────────────────────────
+    "OAUTH_PROVIDERS":            ".oauth",
+    "OAuthCredentials":           ".oauth",
+    "OAuthFlowResult":            ".oauth",
+    "OAuthProviderConfig":        ".oauth",
+    "exchange_code_for_tokens":   ".oauth",
+    "generate_pkce_pair":         ".oauth",
+    "generate_state":             ".oauth",
+    "refresh_oauth_tokens":       ".oauth",
+    "run_oauth_flow_headless":    ".oauth",
+    "run_oauth_flow_interactive": ".oauth",
+    # ── registry ──────────────────────────────────────────────────────────
+    "ALL_PROVIDERS":        ".registry",
+    "ProviderManifest":     ".registry",
+    "ProviderTier":         ".registry",
+    "get_provider":         ".registry",
+    "list_all_providers":   ".registry",
+    "list_enabled_providers": ".registry",
+    # ── auth  (SLOW on Windows — lazy-load keeps startup fast) ────────────
+    "AuthProfileManager":   ".auth",
+    # ── clients ───────────────────────────────────────────────────────────
+    "AnthropicClient":      ".clients",
+    "BaseProviderClient":   ".clients",
+    "CompletionRequest":    ".clients",
+    "CompletionResponse":   ".clients",
+    "Message":              ".clients",
+    "OpenAIClient":         ".clients",
+    "ProviderError":        ".clients",
+    "ToolCall":             ".clients",
+    "ToolDefinition":       ".clients",
+    "create_client":        ".clients",
+    "get_builtin_provider": ".clients",
+    # ── airllm  (SLOW on Windows — lazy-load keeps startup fast) ──────────
+    "AirLLMClient":                  ".airllm",
+    "AirLLMConfig":                  ".airllm",
+    "create_airllm_client":          ".airllm",
+    "get_airllm_vram_recommendations": ".airllm",
+    "is_airllm_available":           ".airllm",
+}
 
-    PERPLEXITY_PROVIDER = None
+# Names that belong to the optional perplexity sub-module
+_PERPLEXITY_NAMES = frozenset({
+    "PERPLEXITY_PROVIDER",
+    "PerplexityClient",
+    "PerplexitySearchResult",
+    "create_perplexity_client",
+    "is_perplexity_available",
+    "perplexity_search",
+})
+
+
+def __getattr__(name: str) -> Any:
+    # ── optional perplexity ───────────────────────────────────────────────
+    if name in _PERPLEXITY_NAMES:
+        return _load_perplexity(name)
+
+    # ── standard lazy lookup ──────────────────────────────────────────────
+    entry = _LAZY.get(name)
+    if entry is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    if isinstance(entry, tuple):
+        submod_rel, attr = entry
+    else:
+        submod_rel, attr = entry, name
+
+    mod = importlib.import_module(submod_rel, package=__name__)
+    value = getattr(mod, attr)
+
+    # Cache on this module so subsequent accesses bypass __getattr__
+    globals()[name] = value
+    return value
+
+
+def _load_perplexity(name: str) -> Any:
+    try:
+        mod = importlib.import_module(".perplexity", package=__name__)
+        value = getattr(mod, name)
+    except ImportError:
+        if name == "is_perplexity_available":
+            value: Any = lambda: False
+        else:
+            value = None
+
+    globals()[name] = value
+    return value
 
 
 __all__ = [

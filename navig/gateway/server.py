@@ -21,14 +21,31 @@ from pathlib import Path
 from typing import Any
 
 try:
+    # Guard against aiohttp 3.13+ which has a circular-import deadlock on Python 3.14.
+    # Check the installed version via metadata (fast, no import) before importing.
+    from importlib.metadata import version as _pkg_version, PackageNotFoundError as _PNF
+    try:
+        _aiohttp_ver = tuple(int(x) for x in _pkg_version("aiohttp").split(".")[:2])
+        # aiohttp ≥ 3.13 has a circular-import deadlock specifically on Python 3.14.
+        # Python 3.13 and below are unaffected — allow any aiohttp version there.
+        if _aiohttp_ver >= (3, 13) and sys.version_info >= (3, 14):
+            _ver_str = ".".join(str(x) for x in _aiohttp_ver)
+            raise ImportError(
+                f"aiohttp {_ver_str} has a circular-import deadlock on Python 3.14.\n"
+                f"  Fix: \"{sys.executable}\" -m pip install \"aiohttp>=3.9.0,<3.13.0\"\n"
+                f"  Or upgrade to Python 3.13 64-bit: winget install Python.Python.3.13"
+            )
+    except _PNF:
+        pass  # aiohttp not installed — fall through to ImportError below
     import aiohttp
     from aiohttp import web
 
     AIOHTTP_AVAILABLE = True
-except ImportError:
+except ImportError as _aiohttp_import_err:
     web = None
     aiohttp = None
     AIOHTTP_AVAILABLE = False
+    print(f"\n⚠  Gateway cannot start: {_aiohttp_import_err}\n", flush=True)
 
 
 # Safe no-op fallback for @web.middleware when aiohttp is not installed.
@@ -196,6 +213,14 @@ class NavigGateway:
 
         self.running = True
         self.start_time = datetime.now()
+        _t0 = self.start_time.timestamp()
+
+        def _elapsed() -> str:
+            import time
+            return f"{time.monotonic() - _t0_mono:.2f}s"
+
+        import time as _time_mod
+        _t0_mono = _time_mod.monotonic()
 
         logger.info("Starting NAVIG Gateway...")
 
@@ -204,23 +229,31 @@ class NavigGateway:
 
         # Initialize formation registry (loaded once at gateway start)
         try:
+            _ts = _time_mod.monotonic()
             from navig.formations.registry import get_registry
 
             get_registry().initialize(self.storage_dir / "workspace")
+            logger.debug("[startup] Formation registry: %.2fs", _time_mod.monotonic() - _ts)
         except Exception as e:
             logger.error("Failed to initialize formation registry: %s", e)
 
         # Start HTTP server
+        _ts = _time_mod.monotonic()
         await self._start_http_server()
+        logger.debug("[startup] HTTP server: %.2fs", _time_mod.monotonic() - _ts)
 
         # Start config watcher
         await self.config_watcher.start()
 
         # Start heartbeat runner
+        _ts = _time_mod.monotonic()
         await self._start_heartbeat()
+        logger.debug("[startup] Heartbeat: %.2fs", _time_mod.monotonic() - _ts)
 
         # Start cron service
+        _ts = _time_mod.monotonic()
         await self._start_cron()
+        logger.debug("[startup] Cron: %.2fs", _time_mod.monotonic() - _ts)
 
         # Start channel health monitor
         await self._start_health_monitor()
@@ -232,7 +265,14 @@ class NavigGateway:
         await self._ensure_mesh_token()
 
         # Initialize autonomous modules
+        _ts = _time_mod.monotonic()
         await self._init_autonomous_modules()
+        logger.debug("[startup] Autonomous modules: %.2fs", _time_mod.monotonic() - _ts)
+
+        # Start channel adapters (Telegram polling, etc.)
+        _ts = _time_mod.monotonic()
+        await self._init_channels()
+        logger.debug("[startup] Channels: %.2fs", _time_mod.monotonic() - _ts)
 
         # Wire unified comms dispatcher
         await self._init_comms()
@@ -240,11 +280,12 @@ class NavigGateway:
         # Register messaging adapters (unified multi-network layer)
         await self._init_messaging_adapters()
 
-        logger.info("✅ NAVIG Gateway started on %s:%s", self.config.host, self.config.port)
-        print(f"\n✅ NAVIG Gateway running at http://{self.config.host}:{self.config.port}")
-        print(f"   Heartbeat: {'enabled' if self.config.heartbeat_enabled else 'disabled'}")
-        print(f"   Storage: {self.storage_dir}")
-        print("\n   Press Ctrl+C to stop\n")
+        _total = _time_mod.monotonic() - _t0_mono
+        logger.info("✅ NAVIG Gateway started on %s:%s (%.2fs)", self.config.host, self.config.port, _total)
+        print(f"\n✅ NAVIG Gateway running at http://{self.config.host}:{self.config.port}", flush=True)
+        print(f"   Heartbeat: {'enabled' if self.config.heartbeat_enabled else 'disabled'}", flush=True)
+        print(f"   Storage: {self.storage_dir}", flush=True)
+        print("\n   Press Ctrl+C to stop\n", flush=True)
 
         # Keep running
         try:
@@ -457,6 +498,13 @@ class NavigGateway:
         logger.info("_restart_channel: starting %r", name)
         try:
             await channel.start()
+            # Reset the event timestamp so the health monitor grants the
+            # channel its full startup grace period instead of immediately
+            # flagging it stale again (last_event_at = 0 → idle = process
+            # uptime >> stale_threshold).
+            import time as _time
+            if hasattr(channel, "_last_event_at"):
+                channel._last_event_at = _time.monotonic()
         except Exception as exc:  # noqa: BLE001
             logger.error("_restart_channel: start(%r) failed: %r", name, exc)
 
@@ -815,24 +863,72 @@ class NavigGateway:
             )
             return {"sent": True}
 
+    async def _init_channels(self):
+        """Instantiate and start channel adapters (e.g. Telegram polling loop)."""
+        raw_cfg = self.config_manager.global_config or {}
+        tg_cfg: dict = raw_cfg.get("telegram", {}) if isinstance(raw_cfg, dict) else {}
+
+        # Resolve bot token: config first, then vault
+        from navig.messaging.secrets import resolve_telegram_bot_token
+
+        bot_token = resolve_telegram_bot_token(raw_cfg) or tg_cfg.get("bot_token", "")
+        if not bot_token:
+            logger.info("Telegram channel not started: no bot_token configured")
+            return
+
+        try:
+            from navig.gateway.channels.telegram import TelegramChannel
+
+            allowed_users: list[int] = [
+                int(u) for u in tg_cfg.get("allowed_users", []) if u
+            ]
+            allowed_groups: list[int] = [
+                int(g) for g in tg_cfg.get("allowed_groups", []) if g
+            ]
+            require_auth: bool = tg_cfg.get("require_auth", True)
+            enable_notifications: bool = tg_cfg.get("enable_notifications", True)
+            webhook_url: str | None = tg_cfg.get("webhook_url") or None
+            webhook_secret: str | None = tg_cfg.get("webhook_secret") or None
+
+            channel = TelegramChannel(
+                bot_token=bot_token,
+                allowed_users=allowed_users,
+                allowed_groups=allowed_groups,
+                on_message=self.router.route_message,
+                enable_notifications=enable_notifications,
+                require_auth=require_auth,
+                webhook_url=webhook_url,
+                webhook_secret=webhook_secret,
+            )
+            self.channels["telegram"] = channel
+            await channel.start()
+            logger.info("Telegram channel started")
+        except Exception as exc:
+            logger.error("Failed to start Telegram channel: %s", exc)
+
     async def _init_comms(self):
         """Wire the unified comms dispatcher (Prompt 5 integration)."""
         try:
             from navig.comms.dispatch import configure as comms_configure
 
-            # Grab existing TelegramNotifier if the channel adapter set one up
+            # Grab existing TelegramNotifier from the live channel (populated by _init_channels)
             telegram_notifier = None
-            try:
-                from navig.gateway.channels.registry import ChannelRegistry
+            tg_channel = self.channels.get("telegram")
+            if tg_channel is not None:
+                telegram_notifier = getattr(tg_channel, "_notifier", None)
+            if telegram_notifier is None:
+                # Fallback: try ChannelRegistry (e.g. if channel was started externally)
+                try:
+                    from navig.gateway.channels.registry import ChannelRegistry
 
-                registry = (
-                    ChannelRegistry.instance() if hasattr(ChannelRegistry, "instance") else None
-                )
-                if registry:
-                    tg = registry.get_adapter("telegram")
-                    telegram_notifier = getattr(tg, "_notifier", None) if tg else None
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+                    registry = (
+                        ChannelRegistry.instance() if hasattr(ChannelRegistry, "instance") else None
+                    )
+                    if registry:
+                        tg = registry.get_adapter("telegram")
+                        telegram_notifier = getattr(tg, "_notifier", None) if tg else None
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
             # Optional Matrix bot
             matrix_bot = None
