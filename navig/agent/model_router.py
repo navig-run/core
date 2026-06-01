@@ -240,6 +240,33 @@ class RoutingConfig:
         # Router model for router_llm_json classification calls
         cfg.router_model = data.get("router_model") or ""
 
+        # ── Validate slot model IDs against the provider registry ──
+        # Auto-onboarding or stale config can leave hallucinated / vision-only
+        # model IDs (e.g. nvidia "adept/fuyu-8b", "qwen/qwen3.5-397b-a17b") that
+        # 404 on every chat call. When a slot's model isn't known to its
+        # provider, substitute the provider's default so requests hit a real
+        # model instead of failing every time.
+        for slot in (cfg.small, cfg.big, cfg.coder_big):
+            pid = str(slot.provider or "").strip().lower()
+            if not slot.model or not pid:
+                continue
+            try:
+                from navig.providers.registry import get_provider as _get_prov
+
+                manifest = _get_prov(pid)
+                known = list(manifest.models) if manifest and getattr(manifest, "models", None) else []
+                if known and slot.model not in known:
+                    replacement = getattr(manifest, "default_model", "") or known[0]
+                    logger.warning(
+                        "model_router: %s model '%s' is not in the provider registry "
+                        "(%d known) — substituting '%s'. Re-select via /provider or the "
+                        "Deck to set your preferred model.",
+                        pid, slot.model, len(known), replacement,
+                    )
+                    slot.model = replacement
+            except Exception:
+                pass  # best-effort; never block routing
+
         # Validate
         if cfg.enabled and cfg.mode != "single":
             if not cfg.small.model:
