@@ -64,20 +64,29 @@ def ensure_connectors_loaded() -> None:
 
     # Register OAuth provider configs so get_auth_url() works for each connector.
     # Each loader reads env vars (GITHUB_CLIENT_ID etc.) — silently skipped if absent.
-    _oauth_loaders = [
-        ("navig.connectors.github.oauth_config", "get_github_oauth_config", "github"),
-        ("navig.connectors.slack.oauth_config", "get_slack_oauth_config", "slack"),
-        ("navig.connectors.notion.oauth_config", "get_notion_oauth_config", "notion"),
-        ("navig.connectors.google_drive.oauth_config", "get_google_drive_oauth_config", "google_drive"),
-        ("navig.connectors.linear.oauth_config", "get_linear_oauth_config", "linear"),
-    ]
-    from navig.connectors.auth_manager import ConnectorAuthManager
-    for module_path, fn_name, connector_id in _oauth_loaders:
-        try:
-            import importlib
-            mod = importlib.import_module(module_path)
-            config = getattr(mod, fn_name)()
-            if config:
-                ConnectorAuthManager.register_provider(connector_id, config)
-        except Exception as exc:
-            _log.debug("%s OAuth config load failed: %s", connector_id, exc)
+    #
+    # The whole block is guarded: ConnectorAuthManager pulls in the vault (and
+    # transitively the `cryptography` package).  If that import chain is broken
+    # (e.g. a missing native dep), connector *registration* must still succeed —
+    # the registry is useful for listing even when OAuth isn't available yet.
+    try:
+        import importlib
+        from navig.connectors.auth_manager import ConnectorAuthManager
+
+        _oauth_loaders = [
+            ("navig.connectors.github.oauth_config", "get_github_oauth_config", "github"),
+            ("navig.connectors.slack.oauth_config", "get_slack_oauth_config", "slack"),
+            ("navig.connectors.notion.oauth_config", "get_notion_oauth_config", "notion"),
+            ("navig.connectors.google_drive.oauth_config", "get_google_drive_oauth_config", "google_drive"),
+            ("navig.connectors.linear.oauth_config", "get_linear_oauth_config", "linear"),
+        ]
+        for module_path, fn_name, connector_id in _oauth_loaders:
+            try:
+                mod = importlib.import_module(module_path)
+                config = getattr(mod, fn_name)()
+                if config:
+                    ConnectorAuthManager.register_provider(connector_id, config)
+            except Exception as exc:
+                _log.debug("%s OAuth config load failed: %s", connector_id, exc)
+    except Exception as exc:
+        _log.debug("OAuth provider registration skipped (auth manager unavailable): %s", exc)
