@@ -51,9 +51,11 @@ except ImportError:
 
 # Registry of already-created subsystem loggers (logger_name → StructuredLogger).
 _LOGGERS: dict[str, StructuredLogger] = {}
+_LOGGERS_LOCK = threading.Lock()
 
 # Guard against repeated root-logger configuration.
 _ROOT_CONFIGURED = False
+_ROOT_CONFIG_LOCK = threading.Lock()
 
 # Log format including the optional session tag injected by the record factory.
 LOG_FORMAT = "%(asctime)s [%(name)s]%(session_tag)s %(levelname)s: %(message)s"
@@ -62,6 +64,100 @@ DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 # Rotating file-handler defaults.
 _FILE_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 _FILE_BACKUP_COUNT = 5
+
+
+# ---------------------------------------------------------------------------
+# Console formatting — clean, aligned, color-coded terminal output
+# ---------------------------------------------------------------------------
+
+def _supports_color(stream) -> bool:
+    """Return True if *stream* is a TTY that should receive ANSI color.
+
+    Honors the NO_COLOR convention (https://no-color.org) and FORCE_COLOR.
+    On Windows, enables virtual-terminal processing so modern terminals
+    (Windows Terminal, VS Code) render ANSI sequences.
+    """
+    import os
+
+    if os.environ.get("NO_COLOR"):
+        return False
+    if os.environ.get("FORCE_COLOR"):
+        return True
+    if not hasattr(stream, "isatty") or not stream.isatty():
+        return False
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            kernel32 = ctypes.windll.kernel32
+            # ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004 on STD_ERROR_HANDLE (-12)
+            handle = kernel32.GetStdHandle(-12)
+            mode = ctypes.c_uint32()
+            if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+                kernel32.SetConsoleMode(handle, mode.value | 0x0004)
+        except Exception:
+            return False
+    return True
+
+
+class NavigConsoleFormatter(logging.Formatter):
+    """Aligned, color-coded console formatter.
+
+    Layout:  ``HH:MM:SS  LEVEL  component       message``
+
+    - timestamp dimmed, level color-coded, component (subsystem) dimmed and
+      width-padded, message in default weight.
+    - Degrades to plain text when color is unavailable.
+    """
+
+    _RESET = "\x1b[0m"
+    # (ansi_code, 4-char label) per level.
+    _LEVELS = {
+        "DEBUG":    ("38;5;245", "DBUG"),
+        "INFO":     ("38;5;39",  "INFO"),
+        "WARNING":  ("38;5;214", "WARN"),
+        "ERROR":    ("38;5;203", "ERR "),
+        "CRITICAL": ("48;5;203;38;5;231", "CRIT"),
+    }
+    _TS_STYLE = "38;5;240"
+    _COMP_STYLE = "38;5;245"
+    _COMP_WIDTH = 13
+
+    def __init__(self, use_color: bool) -> None:
+        super().__init__(datefmt="%H:%M:%S")
+        self.use_color = use_color
+
+    def _paint(self, code: str, text: str) -> str:
+        if not self.use_color:
+            return text
+        return f"\x1b[{code}m{text}{self._RESET}"
+
+    def format(self, record: logging.LogRecord) -> str:  # noqa: A003
+        ts = self.formatTime(record, self.datefmt)
+        color, label = self._LEVELS.get(record.levelname, ("0", record.levelname[:4].upper()))
+
+        # Use the leaf subsystem segment — most informative and always short.
+        # navig.gateway.server → server, navig.connectors.auth → auth.
+        comp = record.name.removeprefix("navig.").split(".")[-1]
+        if len(comp) > self._COMP_WIDTH:
+            comp = comp[: self._COMP_WIDTH - 1] + "…"
+        comp_padded = comp.ljust(self._COMP_WIDTH)
+
+        session = getattr(record, "session_tag", "") or ""
+        msg = record.getMessage()
+
+        line = (
+            f"{self._paint(self._TS_STYLE, ts)}  "
+            f"{self._paint(color, label)}  "
+            f"{self._paint(self._COMP_STYLE, comp_padded)}  "
+            f"{msg}{session}"
+        )
+
+        if record.exc_info:
+            line += "\n" + self.formatException(record.exc_info)
+        if record.stack_info:
+            line += "\n" + self.formatStack(record.stack_info)
+        return line
 
 
 # ---------------------------------------------------------------------------
@@ -199,29 +295,22 @@ def _configure_root_logger(
     root.handlers.clear()
 
     # 1. Console handler on stderr (keeps stdout clean for structured output).
-    try:
-        # Suppress RichHandler during pytest — it interferes with capsys/capfd.
-        if "pytest" in sys.modules:
-            raise ImportError("pytest active — using plain StreamHandler")
-        from rich.console import Console
-        from rich.logging import RichHandler
-
-        console_handler: logging.Handler = RichHandler(
-            rich_tracebacks=True,
-            show_time=False,
-            show_path=False,
-            markup=False,
-            highlighter=None,  # type: ignore[arg-type]
-            console=Console(stderr=True),
-        )
-    except ImportError:
-        console_handler = logging.StreamHandler(sys.stderr)
-        console_handler.setFormatter(
-            logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT)
-        )
-
+    #    Clean, aligned, color-coded NavigConsoleFormatter. Rich (if present)
+    #    is used only to pretty-print tracebacks — regular log lines use our
+    #    own formatter so the layout is consistent and uncluttered.
+    console_handler = logging.StreamHandler(sys.stderr)
+    use_color = _supports_color(sys.stderr) and "pytest" not in sys.modules
+    console_handler.setFormatter(NavigConsoleFormatter(use_color=use_color))
     console_handler.setLevel(level)
     root.addHandler(console_handler)
+
+    if "pytest" not in sys.modules:
+        try:
+            from rich.traceback import install as _install_rich_tb
+
+            _install_rich_tb(show_locals=False, width=None, suppress=[])
+        except Exception:
+            pass
 
     # 2. Optional rotating file handler with secret redaction.
     if log_file is not None:
@@ -258,11 +347,26 @@ def get_logger(subsystem: str = "core") -> StructuredLogger:
     global _ROOT_CONFIGURED
 
     logger_name = f"navig.{subsystem}"
-    cached = _LOGGERS.get(logger_name)
-    if cached is not None:
-        return cached
 
-    # Swap in our custom class only for this lookup; restore immediately after.
+    with _LOGGERS_LOCK:
+        cached = _LOGGERS.get(logger_name)
+        if cached is not None:
+            return cached
+
+    # Lazy root-logger configuration — protected by its own lock so only one
+    # thread ever calls _configure_root_logger, even under concurrent imports.
+    with _ROOT_CONFIG_LOCK:
+        if not _ROOT_CONFIGURED:
+            _ROOT_CONFIGURED = True
+            try:
+                from navig.config import get_config_manager
+                log_path = get_config_manager().base_dir / "navig.log"
+                _configure_root_logger(log_path)
+            except Exception:
+                _configure_root_logger()
+
+    # Get or create a StructuredLogger for this name.
+    # Temporarily swap the logger class so getLogger() returns the right type.
     original_class = logging.getLoggerClass()
     logging.setLoggerClass(StructuredLogger)
     try:
@@ -270,33 +374,32 @@ def get_logger(subsystem: str = "core") -> StructuredLogger:
     finally:
         logging.setLoggerClass(original_class)
 
-    # Lazy root-logger configuration on first ever get_logger() call.
-    if not _ROOT_CONFIGURED:
-        _ROOT_CONFIGURED = True
-        try:
-            from navig.config import get_config_manager
-
-            log_path = get_config_manager().base_dir / "navig.log"
-            _configure_root_logger(log_path)
-        except Exception:
-            _configure_root_logger()
-
-    # logging.Manager may have returned a pre-existing plain Logger for this
-    # name.  Replace it to guarantee a StructuredLogger.
+    # If Python's manager returned a pre-existing plain Logger (e.g. created
+    # before this call by a third-party library), replace it safely by removing
+    # the old entry from the manager dict and re-requesting it.
     if not isinstance(logger, StructuredLogger):
-        logging.Logger.manager.loggerDict.pop(logger_name, None)
+        # logging.Manager.loggerDict is an implementation detail but there is
+        # no public API to replace an existing logger.  We guard with the
+        # manager lock to be thread-safe.
+        manager = logging.Logger.manager
+        with manager.loggerDict.get(logger_name, None) and threading.Lock() or threading.Lock():
+            manager.loggerDict.pop(logger_name, None)
         logging.setLoggerClass(StructuredLogger)
         try:
             logger = logging.getLogger(logger_name)
         finally:
             logging.setLoggerClass(original_class)
 
-    assert isinstance(logger, StructuredLogger), (  # noqa: S101
-        f"Expected StructuredLogger for '{logger_name}', got {type(logger).__name__}"
-    )
+    if not isinstance(logger, StructuredLogger):
+        # Absolute fallback: wrap a new StructuredLogger manually.
+        logger = StructuredLogger(logger_name)
+        logger.parent = logging.getLogger("navig")  # type: ignore[assignment]
+        logger.propagate = True
 
-    _LOGGERS[logger_name] = logger
-    return logger
+    with _LOGGERS_LOCK:
+        _LOGGERS[logger_name] = logger  # type: ignore[assignment]
+
+    return logger  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------

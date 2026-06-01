@@ -164,6 +164,7 @@ class NavigGateway:
         # Components initialized later
         self.heartbeat_runner = None
         self.cron_service = None
+        self.cloud_manager: Any = None  # navig.cloud.CloudManager when cloud.enabled
         self.channels: dict[str, Any] = {}
 
         # Queue for pending messages
@@ -204,6 +205,68 @@ class NavigGateway:
                 "storage_dir": str(self.storage_dir),
             },
         )
+
+    def _print_boot_banner(self, cloud_url: str | None, elapsed: float) -> None:
+        """Print a clean, boxed startup summary to stdout.
+
+        Color is applied only when stdout is an interactive TTY (and NO_COLOR
+        is unset); otherwise it degrades to plain ASCII so piped/redirected
+        output stays clean.
+        """
+        import os
+
+        use_color = (
+            sys.stdout.isatty()
+            and not os.environ.get("NO_COLOR")
+            and sys.platform != "emscripten"
+        )
+        # Box-drawing chars require a UTF-8-capable stdout. Fall back to ASCII
+        # on legacy code pages (e.g. Windows cp1251) so the banner never crashes.
+        enc = (getattr(sys.stdout, "encoding", "") or "").lower()
+        unicode_ok = "utf" in enc
+        if unicode_ok:
+            TL, TR, BL, BR, H, V, MARK = "╭", "╮", "╰", "╯", "─", "│", "◆"
+        else:
+            TL, TR, BL, BR, H, V, MARK = "+", "+", "+", "+", "-", "|", ">"
+
+        def c(code: str, text: str) -> str:
+            return f"\x1b[{code}m{text}\x1b[0m" if use_color else text
+
+        local = f"http://{self.config.host}:{self.config.port}"
+        hb = "enabled" if self.config.heartbeat_enabled else "disabled"
+
+        rows: list[tuple[str, str]] = [("Local", local)]
+        if cloud_url:
+            rows.append(("Cloud", cloud_url))
+        rows.append(("Heartbeat", hb))
+        rows.append(("Storage", str(self.storage_dir)))
+        rows.append(("Ready in", f"{elapsed:.2f}s"))
+
+        label_w = max(len(k) for k, _ in rows)
+        title_plain = f"{MARK} NAVIG Gateway online"
+        inner = max(len(f"{k.ljust(label_w)}   {v}") for k, v in rows)
+        inner = max(inner, len(title_plain))
+
+        print("", flush=True)
+        print(c("38;5;240", TL + H * (inner + 2) + TR), flush=True)
+
+        title = f"{c('1;38;5;39', MARK + ' NAVIG')} {c('38;5;245', 'Gateway online')}"
+        print(
+            c("38;5;240", V + " ") + title + " " * (inner - len(title_plain)) + c("38;5;240", " " + V),
+            flush=True,
+        )
+        print(c("38;5;240", V + " " + " " * inner + " " + V), flush=True)
+        for k, v in rows:
+            label = c("38;5;245", k.ljust(label_w))
+            value = c("38;5;39", v) if k in ("Local", "Cloud") else v
+            plain = f"{k.ljust(label_w)}   {v}"
+            line = f"{label}   {value}"
+            print(
+                c("38;5;240", V + " ") + line + " " * (inner - len(plain)) + c("38;5;240", " " + V),
+                flush=True,
+            )
+        print(c("38;5;240", BL + H * (inner + 2) + BR), flush=True)
+        print("", flush=True)
 
     async def start(self):
         """Start the gateway server and all subsystems."""
@@ -280,12 +343,27 @@ class NavigGateway:
         # Register messaging adapters (unified multi-network layer)
         await self._init_messaging_adapters()
 
+        # Start cloud broker/tunnel manager when cloud.enabled is true.
+        # Off by default; opt-in via `navig cloud connect` or Deck UI toggle.
+        _ts = _time_mod.monotonic()
+        await self._start_cloud_manager()
+        logger.debug("[startup] Cloud manager: %.2fs", _time_mod.monotonic() - _ts)
+
         _total = _time_mod.monotonic() - _t0_mono
-        logger.info("✅ NAVIG Gateway started on %s:%s (%.2fs)", self.config.host, self.config.port, _total)
-        print(f"\n✅ NAVIG Gateway running at http://{self.config.host}:{self.config.port}", flush=True)
-        print(f"   Heartbeat: {'enabled' if self.config.heartbeat_enabled else 'disabled'}", flush=True)
-        print(f"   Storage: {self.storage_dir}", flush=True)
-        print("\n   Press Ctrl+C to stop\n", flush=True)
+        logger.info("Gateway ready in %.2fs", _total)
+        # Wrap the entire banner block so a typo or missing attr can't swallow
+        # the rest of the output -- the user must always see SOMETHING actionable.
+        try:
+            cloud_url = self._cloud_url_for_banner()
+            self._print_boot_banner(cloud_url, _total)
+            try:
+                self._print_cloud_user_hints(cloud_url)
+            except Exception as _hints_exc:  # noqa: BLE001
+                logger.debug("cloud hints failed: %r", _hints_exc)
+            print("   Press Ctrl+C to stop\n", flush=True)
+        except Exception as _banner_exc:  # noqa: BLE001
+            logger.warning("startup banner failed: %r", _banner_exc)
+            print(f"\n  NAVIG Gateway running on port {self.config.port}", flush=True)
 
         # Keep running
         try:
@@ -326,6 +404,13 @@ class NavigGateway:
         # Stop cron
         if self.cron_service:
             await self.cron_service.stop()
+
+        # Stop cloud manager (cloudflared subprocess + broker heartbeat)
+        if self.cloud_manager is not None:
+            try:
+                await self.cloud_manager.stop()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("cloud_manager.stop raised: %r", exc)
 
         # Stop config watcher
         await self.config_watcher.stop()
@@ -507,6 +592,117 @@ class NavigGateway:
                 channel._last_event_at = _time.monotonic()
         except Exception as exc:  # noqa: BLE001
             logger.error("_restart_channel: start(%r) failed: %r", name, exc)
+
+    async def _start_cloud_manager(self) -> None:
+        """Spawn the CloudManager when ``cloud.enabled`` is true.
+
+        The manager runs the cloudflared subprocess + broker heartbeat so the
+        hosted Deck can resolve "where is my daemon" by api_key/telegram_id.
+        Errors are logged but do not block the gateway startup -- local-only
+        users must keep working even if the broker is unreachable.
+        """
+        raw = self.config_manager.global_config or {}
+        cloud_cfg = raw.get("cloud", {}) if isinstance(raw, dict) else {}
+        # Default to ON: a fresh install with no cloud: block in user config
+        # should still wire the broker so the hosted Deck + Telegram Mini App
+        # work out of the box. Set cloud.enabled: false explicitly to opt out.
+        if not cloud_cfg.get("enabled", True):
+            return
+        deck_cfg = raw.get("deck", {}) if isinstance(raw, dict) else {}
+        api_key = (deck_cfg.get("api_key") or "").strip()
+        if not api_key:
+            # register_deck_routes mints + persists an api_key on first start.
+            # If we land here it means the Deck isn't wired (no bot_token, etc.)
+            # -- silent skip so non-bot users aren't nagged.
+            logger.debug("cloud manager skipped: no deck.api_key (deck not enabled?)")
+            return
+        try:
+            from navig.cloud import CloudManager  # local import keeps cold start cheap
+            self.cloud_manager = CloudManager(
+                api_key=api_key,
+                broker_url=cloud_cfg.get("broker_url", "https://deck.navig.run"),
+                gateway_port=self.config.port,
+                heartbeat_interval_s=float(cloud_cfg.get("heartbeat_interval_s", 60)),
+                tunnel_label=cloud_cfg.get("tunnel_label", "") or "",
+                cloudflared_path=cloud_cfg.get("cloudflared_path", "") or "",
+                cloudflared_extra_args=list(cloud_cfg.get("cloudflared_extra_args") or []),
+            )
+            await self.cloud_manager.start()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Cloud manager failed to start: %s", exc)
+            self.cloud_manager = None
+
+    def _cloud_url_for_banner(self) -> str | None:
+        cm = self.cloud_manager
+        if cm is None:
+            return None
+        try:
+            return cm.current_url
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _print_cloud_user_hints(self, cloud_url: str | None) -> None:
+        """Print the actionable two-line summary every user actually needs.
+
+        Shown after the gateway is up. Covers the two access paths:
+        - Browser: deck.navig.run/connect?key=... magic link
+        - Telegram: open the bot, tap the Mini App button
+
+        When cloud is OFF, prints the one-liner that tells the user how to
+        flip it on -- nothing else; we don't want to nag.
+        """
+        raw = self.config_manager.global_config or {}
+        cloud_cfg = raw.get("cloud", {}) if isinstance(raw, dict) else {}
+        deck_cfg = raw.get("deck", {}) if isinstance(raw, dict) else {}
+        broker_url = cloud_cfg.get("broker_url", "https://deck.navig.run").rstrip("/")
+        api_key = (deck_cfg.get("api_key") or "").strip()
+        cloud_on = bool(cloud_cfg.get("enabled", False))
+
+        if not cloud_on:
+            print("", flush=True)
+            print("   Cloud routing: OFF  (enable with: navig cloud connect)", flush=True)
+            return
+
+        # Cloud is on. Show the user the two entry points they'll actually use.
+        # No emoji / unicode arrows -- Windows consoles in legacy code pages
+        # raise UnicodeEncodeError on those, swallowing the rest of the boot
+        # output. ASCII keeps the banner visible everywhere.
+        def _emit(line: str) -> None:
+            try:
+                print(line, flush=True)
+            except UnicodeEncodeError:
+                try:
+                    print(line.encode("ascii", "replace").decode("ascii"), flush=True)
+                except Exception:  # noqa: BLE001
+                    pass
+
+        _emit("")
+        if cloud_url and api_key:
+            magic = f"{broker_url}/connect?key={api_key}"
+            _emit(f"   Browser:  open {magic}")
+            _emit(f"             (paste-and-go: stashes your key + resolves the daemon URL)")
+            bot_user = self._resolve_bot_username() or "your bot"
+            tg_hint = f"@{bot_user}" if bot_user != "your bot" else bot_user
+            _emit(f"   Telegram: open {tg_hint} -> /start -> tap the Mini App button")
+        elif not api_key:
+            _emit("   Cloud routing: enabled but deck.api_key is missing.")
+            _emit("   Run `navig cloud connect` to mint one and register.")
+        else:
+            _emit("   Cloud routing: starting cloudflared... (URL appears within ~5s)")
+
+    def _resolve_bot_username(self) -> str | None:
+        """Best-effort lookup of the configured Telegram bot's @username."""
+        try:
+            tg_channel = self.channels.get("telegram") if hasattr(self, "channels") else None
+            if tg_channel is None:
+                return None
+            for attr in ("bot_username", "_bot_username", "username"):
+                v = getattr(tg_channel, attr, None)
+                if isinstance(v, str) and v:
+                    return v.lstrip("@")
+        except Exception:  # noqa: BLE001
+            pass
+        return None
 
     async def _start_cron(self):
         """Start cron service."""
