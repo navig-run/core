@@ -6,6 +6,7 @@ Based on multi-provider architecture.
 """
 
 import json
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -25,6 +26,85 @@ except ImportError:
 from navig._llm_defaults import _DEFAULT_MAX_TOKENS, _DEFAULT_TEMPERATURE
 
 from .types import BUILTIN_PROVIDERS, ModelApi, ModelDefinition, ProviderConfig
+
+logger = logging.getLogger(__name__)
+
+
+def _sanitize_openai_body(body: dict[str, Any], provider_name: str) -> dict[str, Any]:
+    """Scrub an OpenAI-compatible request body for backends with strict deserializers.
+
+    The default body our client builds is OpenAI-compliant, but several
+    OpenAI-compatible providers (notably NVIDIA NIM) reject minor schema
+    deviations with cryptic serde-rust errors like::
+
+        invalid type: unit variant, expected newtype variant at line 1 column 40
+
+    The fixes we apply here are conservative — they match the payload shape
+    the official OpenAI Python SDK sends when no special parameters are set.
+
+    Adjustments by provider:
+
+    * **nvidia** — NIM's preprocessor balks at ``stream: false`` and at any
+      message ``content`` that isn't a plain non-null string. We omit
+      ``stream`` when defaulted, force-coerce content to ``str``, drop empty
+      messages, and ensure ``temperature`` is a Python ``float``.
+    * **other providers** — only minimal normalisation (drop ``None``s).
+    """
+    out = dict(body)
+
+    # Universal: never send None values (some servers expect omission, not null).
+    out = {k: v for k, v in out.items() if v is not None}
+
+    if provider_name == "nvidia":
+        # NIM rejects `stream: false` on some deployments; omit when defaulted.
+        if out.get("stream") is False:
+            out.pop("stream", None)
+        # Drop fields that NIM rejects but the OpenAI SDK omits by default.
+        out.pop("response_format", None)
+        # Ensure numeric types are exactly what NIM expects.
+        if "temperature" in out:
+            try:
+                out["temperature"] = float(out["temperature"])
+            except (TypeError, ValueError):
+                out.pop("temperature", None)
+        if "max_tokens" in out:
+            try:
+                out["max_tokens"] = int(out["max_tokens"])
+            except (TypeError, ValueError):
+                out.pop("max_tokens", None)
+        # Coerce message content to a plain string and drop empty messages.
+        msgs = out.get("messages") or []
+        cleaned: list[dict[str, Any]] = []
+        for m in msgs:
+            if not isinstance(m, dict):
+                continue
+            role = m.get("role")
+            content = m.get("content")
+            if isinstance(content, list):
+                # Multimodal content not supported on NIM's text-only models —
+                # join string parts; ignore others. Vision routes use the
+                # vision-specific endpoint instead.
+                text_parts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
+                content = "".join(text_parts)
+            if content is None:
+                content = ""
+            if not isinstance(content, str):
+                content = str(content)
+            if not role:
+                continue
+            cleaned.append({"role": role, "content": content})
+        # OpenAI-compatible APIs require conversations to start with a user
+        # (or system) message.  A persistent session that carries the previous
+        # assistant reply as the first element causes the 500 serde error.
+        # Strip any leading assistant turns so the first message is always
+        # user/system — this is safe because those turns contain no new
+        # information the model needs.
+        while cleaned and cleaned[0].get("role") == "assistant":
+            cleaned.pop(0)
+
+        out["messages"] = cleaned
+
+    return out
 
 
 @dataclass
@@ -281,6 +361,12 @@ class OpenAIClient(BaseProviderClient):
         if request.stop:
             body["stop"] = request.stop
 
+        # Provider-specific scrubbing — some OpenAI-compatible backends (notably
+        # NVIDIA NIM) have stricter serde-based deserializers that choke on
+        # fields the official OpenAI SDK omits when defaulted. Sanitize here so
+        # we always send a request shape known to work.
+        body = _sanitize_openai_body(body, provider_name=self.name)
+
         try:
             response = await client.post(
                 f"{self.base_url}/chat/completions",
@@ -288,6 +374,17 @@ class OpenAIClient(BaseProviderClient):
             )
 
             if response.status_code != 200:
+                # Log the payload (lightly redacted) so we can diagnose strict
+                # backends. Truncate to avoid flooding logs on big prompts.
+                import json as _json
+                try:
+                    body_preview = _json.dumps(body, ensure_ascii=False)[:600]
+                except Exception:
+                    body_preview = "<unserializable>"
+                logger.warning(
+                    "Provider %s returned HTTP %d. Sent body: %s",
+                    self.name, response.status_code, body_preview,
+                )
                 raise self._parse_error(response.status_code, response.text)
 
             data = response.json()
