@@ -52,6 +52,79 @@ from navig.ui.icons import icon as _ni
 
 logger = logging.getLogger(__name__)
 
+
+# Bindings already pushed to the broker this process lifetime. Avoids
+# re-binding the same (user_id, api_key) tuple on every /start (idempotent
+# from the broker's perspective, but we don't need the round-trip).
+_BROKER_BOUND_TG_IDS: set[int] = set()
+
+
+async def _maybe_bind_telegram_to_broker(user_id: int) -> None:
+    """Tell deck.navig.run to map this Telegram user_id to our daemon.
+
+    Called from ``_handle_start`` when ``cloud.enabled`` is true so the next
+    time the user opens the bot's Mini App, ``autoResolveDaemonUrl`` can
+    look up the daemon URL by ``telegram_id`` alone.
+
+    Security: this is the ONLY path that calls broker.bind_telegram. The
+    user_id comes from Telegram's authenticated long-poll/webhook delivery
+    -- the bot token validated the upstream connection, so the user_id is
+    trustworthy. We never bind arbitrary or guessed ids.
+
+    Best-effort: failures are logged at debug and never block the /start
+    greeting. Already-bound ids are skipped to avoid hammering the broker.
+    """
+    if not user_id or user_id in _BROKER_BOUND_TG_IDS:
+        return
+    try:
+        from navig.core import Config
+        cfg = Config()
+        if not bool(cfg.get("cloud.enabled", True)):  # default ON
+            return
+
+        # Owner allowlist: only bind user_ids that appear in
+        # telegram.allowed_users (the de-facto "daemon owner" list set during
+        # `navig init`). An empty list means "fresh install, pre-onboarding"
+        # -- bind anyone in that case so the first /start still works.
+        allowed_raw = cfg.get("telegram.allowed_users") or []
+        try:
+            allowed: set[int] = {int(x) for x in allowed_raw}
+        except (TypeError, ValueError):
+            allowed = set()
+        if allowed and int(user_id) not in allowed:
+            logger.debug(
+                "broker bind skipped: tg user %s not in telegram.allowed_users %s",
+                user_id, sorted(allowed),
+            )
+            return
+
+        api_key = (cfg.get("deck.api_key") or "").strip()
+        if not api_key:
+            logger.warning(
+                "broker bind skipped for tg %s: deck.api_key is empty — the Mini "
+                "App can't resolve this daemon. Run `navig cloud connect`.",
+                user_id,
+            )
+            return
+        broker_url = cfg.get("cloud.broker_url", "https://deck.navig.run")
+
+        from navig.cloud.broker_client import BrokerClient
+        client = BrokerClient(broker_url, api_key)
+        try:
+            await client.bind_telegram(int(user_id))
+            _BROKER_BOUND_TG_IDS.add(int(user_id))
+            logger.info("Telegram user %s bound to this daemon via broker", user_id)
+        finally:
+            await client.close()
+    except Exception as exc:  # noqa: BLE001
+        # Visible (not debug): a failed bind is exactly why the Mini App shows
+        # "not bound". A 404 here means the daemon has no broker row yet —
+        # register() didn't land (check the tunnel URL / cloud.enabled).
+        logger.warning(
+            "broker bind_telegram(%s) failed: %r — Mini App will show 'not bound' "
+            "until this succeeds.", user_id, exc,
+        )
+
 # Short timeout for non-critical probes and system commands (bridge ping, uptime, df).
 _SHORT_CMD_TIMEOUT: float = 2.0
 # Generic 5-second timeout for HTTP fetches and subprocess probes.
@@ -89,6 +162,67 @@ except ImportError:
     _HAS_SESSIONS = False
 
 
+# Commands that can never be disabled via the Deck UI — disabling them would
+# leave users unable to reach the bot's settings UI. Mirror this set in
+# navig/gateway/deck/routes/social.py (_TELEGRAM_LOCKED_COMMANDS).
+LOCKED_COMMANDS: frozenset[str] = frozenset({"start", "help", "settings", "status"})
+
+
+def get_command_style(command: str, default: str = "plain") -> str:
+    """Return the user-selected response style for `command`.
+
+    Reads telegram.command_styles map from config. Returns "ai" or "plain".
+    Falls back to `default` if no setting or the stored value is unrecognised.
+    Never raises.
+    """
+    try:
+        from navig.config import get_config_manager  # type: ignore[import]
+
+        cfg = get_config_manager()
+        if cfg is None:
+            return default
+        tg = cfg.get("telegram") or {}
+        if not isinstance(tg, dict):
+            return default
+        styles = tg.get("command_styles", {}) or {}
+        if not isinstance(styles, dict):
+            return default
+        val = styles.get(command.lstrip("/").strip().lower())
+        return val if val in ("ai", "plain") else default
+    except Exception:
+        return default
+
+
+def get_disabled_commands() -> set[str]:
+    """Return the set of disabled command names (bare, lowercase, no leading slash).
+
+    Reads from config.telegram.disabled_commands. Locked commands are filtered
+    out defensively in case the config was hand-edited.
+    """
+    try:
+        from navig.config import get_config_manager  # type: ignore[import]
+
+        cfg = get_config_manager()
+        if cfg is None:
+            return set()
+        tg = cfg.get("telegram") or {}
+        if not isinstance(tg, dict):
+            return set()
+        raw = tg.get("disabled_commands", []) or []
+        if not isinstance(raw, list):
+            return set()
+        out: set[str] = set()
+        for item in raw:
+            if not isinstance(item, str):
+                continue
+            name = item.lstrip("/").strip().lower()
+            if name and name not in LOCKED_COMMANDS:
+                out.add(name)
+        return out
+    except Exception:
+        return set()
+
+
 def _format_bridge_status(online: bool, url: str) -> str:
     """Return a single HTML line describing Bridge Grid status."""
     _url = html.escape(url)
@@ -121,6 +255,8 @@ class SlashCommandEntry:
     usage: str = ""  # optional usage hint shown in /help (e.g. "/cmd [option]")
     default_args: str = ""  # substituted for {args} when user sends no argument
     no_args_cli: str = ""   # alternative CLI command used when user sends NO argument
+    ai_capable: bool = False  # if True, the Deck Commands tab exposes an AI/Plain toggle
+    ai_default: str = "plain"  # "ai" or "plain" — fallback when user hasn't picked
 
 
 _SLASH_REGISTRY: list[SlashCommandEntry] = [
@@ -144,36 +280,16 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "System and spaces status",
         handler="_handle_status",
         category="core",
+        ai_capable=True,
     ),
     SlashCommandEntry(
-        "models",
-        "Active model routing table",
-        handler="_handle_models_command",
+        "mode",
+        "Set focus/behavior mode (work/relax/sleep/etc.)",
+        handler="_handle_mode",
         category="core",
-        usage="/models [big|small|coder|auto]",
+        usage="/mode [name|list]",
     ),
-    SlashCommandEntry(
-        "model",
-        "Active model routing table",
-        handler="_handle_models_command",
-        category="core",
-        visible=False,
-        usage="/model [big|small|coder|auto]",
-    ),
-    SlashCommandEntry(
-        "routing",
-        "Active model routing table",
-        handler="_handle_models_command",
-        category="core",
-        visible=False,
-    ),
-    SlashCommandEntry(
-        "router",
-        "Active model routing table",
-        handler="_handle_models_command",
-        category="core",
-        visible=False,
-    ),
+    # /models /model /routing /router moved to Deck → Account → Model Tier.
     SlashCommandEntry("briefing", "Today's summary", handler="_handle_briefing", category="core"),
     SlashCommandEntry(
         "pin",
@@ -203,24 +319,28 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "💽 Disk usage",
         handler="_handle_disk_cmd",
         category="monitoring",
+        ai_capable=True,
     ),
     SlashCommandEntry(
         "memory",
         "🧠 RAM status",
         handler="_handle_memory_cmd",
         category="monitoring",
+        ai_capable=True,
     ),
     SlashCommandEntry(
         "cpu",
         "⚡ CPU & load",
         handler="_handle_cpu_cmd",
         category="monitoring",
+        ai_capable=True,
     ),
     SlashCommandEntry(
         "uptime",
         "🕐 Server uptime",
         handler="_handle_uptime_cmd",
         category="monitoring",
+        ai_capable=True,
     ),
     SlashCommandEntry(
         "services",
@@ -233,6 +353,13 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "🔌 Open ports",
         handler="_handle_ports_cmd",
         category="monitoring",
+    ),
+    SlashCommandEntry(
+        "kill",
+        "🛑 Kill processes by group (node/python/chrome-tabs/...)",
+        handler="_handle_kill_cmd",
+        category="monitoring",
+        usage="/kill <group|name> [--force] [--dry-run]",
     ),
     SlashCommandEntry(
         "top",
@@ -445,6 +572,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         handler="_handle_ip",
         category="utilities",
         usage="/ip",
+        ai_capable=True,
     ),
     SlashCommandEntry("time", "Server time", cli_template='run "date"', category="utilities"),
     SlashCommandEntry(
@@ -483,156 +611,37 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         category="utilities",
     ),
     # --- Model control -------------------------------------------------------
-    SlashCommandEntry(
-        "ai",
-        "Current AI provider + model — switch with one tap",
-        handler="_handle_ai_command",
-        category="model",
-        usage="/ai  — shows provider/model picker with inline keyboard",
-    ),
-    SlashCommandEntry(
-        "ai_model",
-        "AI model picker (alias)",
-        handler="_handle_ai_command",
-        category="model",
-        visible=False,
-    ),
-    SlashCommandEntry(
-        "settings",
-        "Main config hub - audio, providers, focus, model",
-        handler="_handle_settings_hub",
-        category="model",
-    ),
-    SlashCommandEntry(
-        "providers",
-        "AI Provider Hub",
-        handler="_handle_providers",
-        category="model",
-        usage="/providers [provider-name]",
-    ),
-    SlashCommandEntry(
-        "provider",
-        "AI Provider Hub (alias)",
-        handler="_handle_providers",
-        category="model",
-        visible=False,
-        usage="/provider [provider-name]",
-    ),
-    SlashCommandEntry(
-        "mode",
-        "Set focus mode (work, deep-focus, etc.)",
-        handler="_handle_mode",
-        category="model",
-        usage="/mode [work|deep-focus|coder|auto|list]",
-    ),
-    SlashCommandEntry(
-        "big",
-        "Force big model for next message",
-        category="model",
-        handler="_handle_tier_override",
-        usage="/big  (then send your message)",
-    ),
-    SlashCommandEntry(
-        "small",
-        "Force small model for next message",
-        category="model",
-        handler="_handle_tier_override",
-        usage="/small  (then send your message)",
-    ),
-    SlashCommandEntry(
-        "coder",
-        "Force coder model for next message",
-        category="model",
-        handler="_handle_tier_override",
-        usage="/coder  (then send your message)",
-    ),
-    SlashCommandEntry(
-        "auto",
-        "Reset to automatic model selection",
-        handler="_handle_tier_override",
-        category="model",
-        usage="/auto  (then send your message)",
-    ),
-    # --- Voice & AI settings -------------------------------------------------
-    SlashCommandEntry(
-        "voice", "Voice & TTS settings", handler="_handle_voice_menu", category="voice"
-    ),
-    SlashCommandEntry(
-        "audio",
-        "Voice & TTS settings (alias for /voice)",
-        handler="_handle_voice_menu",
-        category="voice",
-        visible=False,
-    ),
-    SlashCommandEntry(
-        "voicereply",
-        "Toggle bot voice replies",
-        handler="_handle_audio_menu",
-        category="voice",
-    ),
+    # /ai /ai_model /mode /big /small /coder /auto moved to:
+    #   - Deck → Account → Focus Mode / Model Tier (visual pickers)
+    #   - Chat NL phrases (e.g. "use big model", "switch focus to deep work")
+    #     handled by nl_settings_intents.py
+    # /settings is gone — settings live in the Deck (Account section). Each
+    # individual settings command (/voice /audio /mode /ai /providers /persona
+    # etc.) has been migrated as documented in the comments above.
+    #
+    # /providers /provider /provider_voice /provider_hybrid /provider_vision
+    # /provider_show /provider_reset moved to Deck → Vault & Admin (LLM
+    # provider config uses /api/deck/admin/llm-providers + /api/deck/llm-modes
+    # which already exist). The Deck UI for these is part of the existing
+    # Vault / Admin section; no in-chat surface is needed.
+    # /models_reset moved to Deck → Account → Model Tier ("Auto" choice).
+    # --- Voice session toggles ----------------------------------------------
+    # Handlers (_handle_voiceon_cmd / _handle_voiceoff_cmd) existed already;
+    # these entries wire them into _SLASH_REGISTRY so they appear in /help and
+    # are routed by the dynamic slash dispatcher.
     SlashCommandEntry(
         "voiceon",
-        "Enable voice input (STT)",
+        "Enable voice replies for this session",
         handler="_handle_voiceon_cmd",
         category="voice",
         usage="/voiceon",
     ),
     SlashCommandEntry(
         "voiceoff",
-        "Disable voice input (STT)",
+        "Disable voice replies for this session",
         handler="_handle_voiceoff_cmd",
         category="voice",
         usage="/voiceoff",
-    ),
-    SlashCommandEntry(
-        "provider_voice",
-        "Voice provider keys (Deepgram, ElevenLabs)",
-        handler="_handle_provider_voice",
-        category="voice",
-        usage="/provider_voice",
-    ),
-    SlashCommandEntry(
-        "voice_provider",
-        "Voice provider keys (alias)",
-        handler="_handle_provider_voice",
-        category="voice",
-        visible=False,
-    ),
-    # --- Provider control surface --------------------------------------------
-    SlashCommandEntry(
-        "provider_hybrid",
-        "Hybrid routing — assign models to tiers",
-        handler="_handle_provider_hybrid",
-        category="model",
-        usage="/provider_hybrid",
-    ),
-    SlashCommandEntry(
-        "provider_vision",
-        "Vision model picker",
-        handler="_handle_provider_vision",
-        category="model",
-        usage="/provider_vision",
-    ),
-    SlashCommandEntry(
-        "provider_show",
-        "Show current routing state",
-        handler="_handle_provider_show",
-        category="model",
-        usage="/provider_show",
-    ),
-    SlashCommandEntry(
-        "provider_reset",
-        "Reset session provider overrides",
-        handler="_handle_provider_reset",
-        category="model",
-        usage="/provider_reset",
-    ),
-    SlashCommandEntry(
-        "models_reset",
-        "Reset tier assignments to provider defaults",
-        handler="_handle_models_reset",
-        category="model",
-        usage="/models_reset",
     ),
     # --- Diagnostics ---------------------------------------------------------
     # --- User / profile ------------------------------------------------------
@@ -709,19 +718,8 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         handler="_handle_skip",
         category="ai",
     ),
-    SlashCommandEntry(
-        "persona",
-        "Switch active AI persona",
-        handler="_handle_persona",
-        category="ai",
-        usage="/persona <name>",
-    ),
-    SlashCommandEntry(
-        "personas",
-        "List available AI personas",
-        handler="_handle_personas",
-        category="ai",
-    ),
+    # /persona /personas moved to Deck → Account → AI Persona
+    # (+ chat NL: "switch persona to tyler").
     SlashCommandEntry(
         "explain_ai",
         "AI explains any topic",
@@ -788,6 +786,7 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         "List your active reminders",
         handler="_handle_myreminders",
         category="utilities",
+        ai_capable=True,
     ),
     SlashCommandEntry(
         "reminders",
@@ -802,6 +801,25 @@ _SLASH_REGISTRY: list[SlashCommandEntry] = [
         handler="_handle_cancelreminder",
         category="utilities",
         usage="/cancelreminder <id>|all",
+    ),
+    SlashCommandEntry(
+        "habits",
+        "Show active habit reminders",
+        handler="_handle_habits",
+        category="utilities",
+    ),
+    SlashCommandEntry(
+        "health",
+        "Health space status and habit overview",
+        handler="_handle_health",
+        category="utilities",
+    ),
+    SlashCommandEntry(
+        "workout",
+        "Quick-add a workout reminder",
+        handler="_handle_workout",
+        category="utilities",
+        usage="/workout [HH:MM]  or  /workout daily HH:MM",
     ),
     SlashCommandEntry(
         "stats_global",
@@ -1052,7 +1070,11 @@ _HELP_CATEGORIES: list[_HelpCategory] = [
         key="voice",
         label="Voice & Audio",
         emoji="🎙",
-        commands=["voice", "voicereply", "voiceon", "voiceoff"],
+        # /voice and /voicereply removed: they had no handler and only existed
+        # in this menu. Voice provider/model picking lives in Deck → Account →
+        # Audio settings now. /voiceon and /voiceoff control session voice
+        # replies (handlers _handle_voiceon_cmd / _handle_voiceoff_cmd).
+        commands=["voiceon", "voiceoff"],
     ),
     _HelpCategory(
         key="diagnostics",
@@ -1143,6 +1165,7 @@ class TelegramCommandsMixin:
         "run",
         "restart",
         "docker",
+        "kill",
         "use",
         "space",
         "intake",
@@ -1404,10 +1427,16 @@ class TelegramCommandsMixin:
 
     @staticmethod
     def _build_command_list_for_registration() -> list[dict[str, str]]:
-        """Build Telegram command registration payload from visible unique entries."""
+        """Build Telegram command registration payload from visible unique entries.
+
+        Excludes any command whose name appears in telegram.disabled_commands so
+        disabled commands vanish from Telegram's autocomplete on next register.
+        """
+        disabled = get_disabled_commands()
         return [
             {"command": e.command, "description": e.description}
             for e in _iter_unique_registry(visible_only=True)
+            if e.command.lower() not in disabled
         ]
 
     @staticmethod
@@ -1459,40 +1488,71 @@ class TelegramCommandsMixin:
         user_id: int = 0,
         prior_last_active: str | None = None,
     ) -> None:
-        """Send a conversational context card — no navigation menus."""
-        # Active reminder count
-        active_count = 0
+        """Natural-language greeting only. No status, no command list, no buttons.
+
+        Settings, reminders, model state, and help all live in the Navig Deck.
+        Falls back to a fixed line when the LLM is unavailable.
+        """
+        fallback_text = "Hi 👋 I'm here. What's on your mind?"
+
+        # Pull a short slice of recent conversation so the greeting can reference
+        # what we were working on, rather than always being generic.
+        recent_msgs: list[dict[str, str]] = []
+        if _HAS_SESSIONS:
+            try:
+                sm = get_session_manager()
+                sess = sm.get_session(chat_id, user_id, is_group=False)
+                if sess and sess.messages:
+                    for m in sess.messages[-8:]:
+                        content = str(getattr(m, "content", "")).strip()
+                        if content:
+                            recent_msgs.append({"role": getattr(m, "role", "user"), "content": content})
+            except Exception as _ctx_exc:
+                logger.debug("session context skipped for /start: %s", _ctx_exc)
+
+        hour = datetime.now().hour
+        if 5 <= hour < 12:
+            tod = "morning"
+        elif 12 <= hour < 17:
+            tod = "afternoon"
+        elif 17 <= hour < 22:
+            tod = "evening"
+        else:
+            tod = "late night"
+
+        name = (username or "").lstrip("@").strip()
+        name_hint = f"The user's handle is @{name}. " if name else ""
+        ctx_hint = (
+            "Recent messages are below — if they suggest something natural to resume, hint at it briefly."
+            if recent_msgs
+            else "There is no prior context."
+        )
+
+        system_prompt = (
+            "You are NAVIG, the user's personal AI operator. "
+            "The user just sent /start to open the chat. "
+            f"It is {tod}. {name_hint}{ctx_hint} "
+            "Reply with ONE warm, conversational greeting — 1 to 2 short sentences. "
+            "Use at most a single emoji, only if it feels natural. "
+            "Do NOT list commands. Do NOT mention reminders, models, settings, or help. "
+            "If context suggests something specific, reference it; otherwise keep it open."
+        )
+
+        greeting: str | None = None
         try:
-            from navig.store.runtime import get_runtime_store
+            from navig.llm_generate import run_llm
 
-            active_count = len(get_runtime_store().get_user_reminders(user_id) or [])
-        except Exception as _rc_exc:  # noqa: BLE001
-            logger.debug("reminder count skipped: %s", _rc_exc)  # non-critical for /start display
+            messages = [{"role": "system", "content": system_prompt}]
+            messages.extend(recent_msgs)
+            messages.append({"role": "user", "content": "/start"})
+            result = run_llm(messages, mode="summary", effort="low")
+            text = (getattr(result, "content", "") or "").strip()
+            if text:
+                greeting = text
+        except Exception as _greet_exc:
+            logger.debug("LLM greeting failed (non-fatal): %s", _greet_exc)
 
-        # Current model tier preference
-        tier_raw = (getattr(self, "_user_model_prefs", {}) or {}).get(user_id, "")
-        tier = str(tier_raw).capitalize() if tier_raw else "Auto"
-
-        reminder_line = (
-            f"{_ni('reminder')} {active_count} active reminder{'s' if active_count != 1 else ''}"
-            if active_count
-            else f"{_ni('reminder')} No active reminders"
-        )
-        text = "\n".join(
-            [
-                f"{_ni('robot')} <b>NAVIG is ready</b>",
-                "",
-                reminder_line,
-                f"{_ni('brain')} Model: <code>{tier}</code>",
-                "",
-                "Type naturally or use a command:",
-                "<code>/remindme</code> · <code>/myreminders</code> · <code>/status</code> · <code>/briefing</code> · <code>/messengers</code>",
-                "",
-                "Need more? → /helpme",
-            ]
-        )
-        keyboard = [[{"text": "📋 What can I do?", "callback_data": "helpme"}]]
-        await self.send_message(chat_id, text, parse_mode="HTML", keyboard=keyboard)
+        await self.send_message(chat_id, greeting or fallback_text, parse_mode=None)
 
         # Away summary — show a brief context recap when the user returns after
         # a long absence.  The feature is gated by memory.away_summary_gap_hours
@@ -1533,58 +1593,19 @@ class TelegramCommandsMixin:
         except Exception as _away_exc:
             logger.debug("away_summary skipped (non-fatal): %s", _away_exc)  # /start must not block
 
-        # Onboarding handoff progress block (text only, no navigation buttons)
+        # Onboarding handoff block intentionally removed — setup progress now
+        # lives in the Navig Deck Welcome flow, not in the chat greeting.
+
+        # ── Cloud broker binding ─────────────────────────────────────────────
+        # When cloud.enabled is true, tell the broker on deck.navig.run that
+        # this Telegram user maps to our daemon. Idempotent — same user_id +
+        # same api_key produces the same binding. The daemon is the source of
+        # truth here: it validated the incoming Telegram message via the bot
+        # token in its OWN vault, so the user_id is trustworthy.
         try:
-            from navig.commands.init import (
-                consume_chat_onboarding_handoff_state,
-                get_chat_onboarding_step_progress,
-            )
-
-            handoff = consume_chat_onboarding_handoff_state()
-            steps = get_chat_onboarding_step_progress()
-            if not handoff:
-                home_navig_dir = config_dir()
-                handoff = consume_chat_onboarding_handoff_state(home_navig_dir)
-                if handoff:
-                    steps = get_chat_onboarding_step_progress(home_navig_dir)
-
-            if not handoff:
-                env_home_navig_dir = Path.home() / ".navig"
-                handoff = consume_chat_onboarding_handoff_state(env_home_navig_dir)
-                if handoff:
-                    steps = get_chat_onboarding_step_progress(env_home_navig_dir)
-        except Exception:
-            handoff = None
-            steps = []
-
-        if not handoff:
-            return
-
-        profile = str(handoff.get("profile") or "quickstart")
-        if not steps:
-            steps = handoff.get("steps") or []
-        pending_steps = [step for step in steps if not step.get("completed")]
-        completed_count = len(steps) - len(pending_steps)
-        checklist_lines = []
-        for step in steps:
-            mark = "✅" if step.get("completed") else "⬜"
-            checklist_lines.append(f"{mark} {step.get('label', '')}")
-
-        onboarding_text = "\n".join(
-            [
-                "✨ <b>Welcome to NAVIG setup</b>",
-                f"Profile: <code>{profile}</code>",
-                "",
-                f"Onboarding progress: <code>{completed_count}/{len(steps)}</code>",
-                *checklist_lines,
-                "",
-                "Next steps:",
-                *(f"• {step.get('hint', '')}" for step in pending_steps[:2]),
-                "• Start intake: `/intake`",
-                "• Check status: `/status`",
-            ]
-        )
-        await self.send_message(chat_id, onboarding_text, parse_mode="HTML")
+            await _maybe_bind_telegram_to_broker(user_id)
+        except Exception as _bind_exc:
+            logger.debug("cloud broker bind skipped: %s", _bind_exc)
 
     # -- Help Encyclopedia (interactive, in-place editing) -------------------
 
@@ -2031,9 +2052,11 @@ class TelegramCommandsMixin:
             )
             return
 
-        await self.send_message(
+        await self.send_command_output(
             chat_id,
             text,
+            command="status",
+            ai_hint="Session and system snapshot. Preserve every name, percentage, count, and timestamp exactly.",
             parse_mode="HTML",
             keyboard=nav_keyboard,
         )
@@ -2759,6 +2782,12 @@ class TelegramCommandsMixin:
             "choice": ("choose between", "pick one", "make a choice"),
             "skill": ("run skill", "list skills", "skill list"),
             "db": ("list databases", "show databases"),
+            "kill": (
+                "kill", "kill all", "kill the", "kill any", "kill every",
+                "terminate", "stop all", "close all", "shut down",
+                "shutdown processes", "clear chrome tabs", "kill chrome tabs",
+                "close chrome tabs", "kill node", "kill python", "kill powershell",
+            ),
         }
 
     def _extract_nl_args(self, raw_text: str, phrase: str) -> str:
@@ -3073,6 +3102,19 @@ class TelegramCommandsMixin:
         metadata: dict[str, Any] | None = None,
     ) -> bool:
         from navig.store.runtime import get_runtime_store
+
+        # Settings-change intents (focus mode, model tier) — apply the change
+        # and reply directly, replacing the deleted /mode /big /small /coder
+        # /auto commands. Falls through silently when no pattern matches.
+        try:
+            from navig.gateway.channels.nl_settings_intents import (
+                try_handle_settings_intent,
+            )
+
+            if await try_handle_settings_intent(text, chat_id, user_id, self):
+                return True
+        except Exception as _settings_exc:
+            logger.debug("nl_settings intent dispatch skipped: %s", _settings_exc)
 
         intent, space = self._infer_nl_space_intent(text)
         if intent and space:
@@ -6686,9 +6728,11 @@ class TelegramCommandsMixin:
         else:
             lines.append("<b>Public IP:</b> <i>unavailable</i>")
 
-        await self.send_message(
+        await self.send_command_output(
             chat_id,
             "🌐 <b>Server IP Info</b>\n\n" + "\n".join(lines),
+            command="ip",
+            ai_hint="Server IP information. Preserve hostname and IP addresses exactly.",
             parse_mode="HTML",
         )
 
@@ -7839,8 +7883,15 @@ class TelegramCommandsMixin:
         text_payload: str,
         keyboard: list[list[dict[str, str]]],
         message_id: int | None = None,
+        command: str | None = None,
+        ai_hint: str | None = None,
     ) -> None:
-        """Send monitoring card, editing in-place when message_id is provided."""
+        """Send monitoring card, editing in-place when message_id is provided.
+
+        On a fresh send (no message_id) honors the per-command AI/Plain style
+        when `command` is supplied. In-place refreshes stay plain so the edited
+        card content doesn't drift between AI rewrites.
+        """
         if message_id:
             try:
                 if await self.edit_message(
@@ -7853,7 +7904,16 @@ class TelegramCommandsMixin:
                     return
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Monitor card in-place edit failed: %s", exc)
-        await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
+        if command:
+            await self.send_command_output(
+                chat_id, text_payload,
+                command=command,
+                ai_hint=ai_hint,
+                parse_mode="HTML",
+                keyboard=keyboard,
+            )
+        else:
+            await self.send_message(chat_id, text_payload, parse_mode="HTML", keyboard=keyboard)
 
     # -- Monitoring command handlers -------------------------------------------
 
@@ -7926,7 +7986,12 @@ class TelegramCommandsMixin:
                 {"text": "🔌 Ports", "callback_data": "slash:ports"},
             ],
         ]
-        await self._send_monitor_card(chat_id, "\n".join(lines), keyboard, message_id=message_id)
+        await self._send_monitor_card(
+            chat_id, "\n".join(lines), keyboard,
+            message_id=message_id,
+            command="disk",
+            ai_hint="Disk usage. Preserve exact percentages and GB figures.",
+        )
 
     @rate_limited
     @error_handled
@@ -7998,7 +8063,12 @@ class TelegramCommandsMixin:
                 {"text": "🕐 Uptime", "callback_data": "slash:uptime"},
             ],
         ]
-        await self._send_monitor_card(chat_id, "\n".join(lines), keyboard, message_id=message_id)
+        await self._send_monitor_card(
+            chat_id, "\n".join(lines), keyboard,
+            message_id=message_id,
+            command="memory",
+            ai_hint="RAM and swap status. Preserve exact percentages and GB.",
+        )
 
     @rate_limited
     @error_handled
@@ -8100,7 +8170,12 @@ class TelegramCommandsMixin:
                 {"text": "⚙️ Services", "callback_data": "slash:services"},
             ],
         ]
-        await self._send_monitor_card(chat_id, "\n".join(lines), keyboard, message_id=message_id)
+        await self._send_monitor_card(
+            chat_id, "\n".join(lines), keyboard,
+            message_id=message_id,
+            command="cpu",
+            ai_hint="CPU load. Preserve exact percentage and load averages.",
+        )
 
     @rate_limited
     @error_handled
@@ -8175,7 +8250,12 @@ class TelegramCommandsMixin:
                 {"text": "💽 Disk", "callback_data": "slash:disk"},
             ],
         ]
-        await self._send_monitor_card(chat_id, "\n".join(lines), keyboard, message_id=message_id)
+        await self._send_monitor_card(
+            chat_id, "\n".join(lines), keyboard,
+            message_id=message_id,
+            command="uptime",
+            ai_hint="Server uptime. Preserve the exact duration value.",
+        )
 
     @rate_limited
     @error_handled
@@ -8329,6 +8409,147 @@ class TelegramCommandsMixin:
             ],
         ]
         await self._send_monitor_card(chat_id, "\n".join(lines), keyboard, message_id=message_id)
+
+    # -- Process killer --------------------------------------------------------
+
+    @rate_limited
+    @error_handled
+    @typing_context
+    async def _handle_kill_cmd(
+        self,
+        chat_id: int,
+        user_id: int = 0,
+        text: str = "",
+        metadata: MessageMetadata | None = None,
+    ) -> None:
+        """Kill processes by group or name. /kill <group> [--force] [--dry-run].
+
+        Built-in groups: node, python, powershell, pwsh, conhost, esbuild, git,
+        windows-terminal, chrome, chrome-tabs, chrome-all-renderers.
+
+        Any other token is treated as a process-name substring match.
+        Always shows a confirmation card with candidate count before killing.
+        """
+        from navig.commands import processes as _proc
+
+        # Parse args
+        args_raw = (
+            text[len("/kill"):].strip()
+            if text.lower().startswith("/kill")
+            else text.strip()
+        )
+        tokens = args_raw.split()
+        flags = {t for t in tokens if t.startswith("--")}
+        positional = [t for t in tokens if not t.startswith("--")]
+
+        if not positional:
+            groups = ", ".join(_proc.list_known_groups())
+            msg = (
+                "🛑 <b>Kill processes</b>\n\n"
+                "Usage: <code>/kill &lt;group|name&gt; [--force] [--dry-run]</code>\n\n"
+                f"<b>Built-in groups:</b>\n<i>{html.escape(groups)}</i>\n\n"
+                "Example: <code>/kill chrome-tabs</code>"
+            )
+            await self.send_message(chat_id, msg, parse_mode="HTML")
+            return
+
+        target = positional[0].lower()
+        force = "--force" in flags
+        dry_run = "--dry-run" in flags
+
+        # Enumerate first
+        candidates = _proc.find_processes_by_group(target)
+        n = len(candidates)
+
+        if n == 0:
+            await self.send_message(
+                chat_id,
+                f"🛑 <b>Kill: {html.escape(target)}</b>\n\n<i>No matching processes.</i>",
+                parse_mode="HTML",
+            )
+            return
+
+        # Dry-run: list candidates and stop
+        if dry_run:
+            lines = [
+                f"🔍 <b>Dry run — {html.escape(target)}</b>",
+                f"<i>{n} candidate{'s' if n != 1 else ''} would be killed:</i>",
+                "",
+            ]
+            for c in candidates[:20]:
+                lines.append(f"  <code>{c['pid']:>6}</code> {html.escape(c['name'])}")
+            if n > 20:
+                lines.append(f"  <i>… +{n - 20} more</i>")
+            await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
+            return
+
+        # Self-risky groups → extra warning in the confirmation card
+        is_self_risky = target in _proc.SELF_RISKY_GROUPS
+
+        # Build confirmation card
+        lines = [
+            f"🛑 <b>Confirm kill — {html.escape(target)}</b>",
+            f"<i>{n} process{'es' if n != 1 else ''} match{'es' if n == 1 else ''}.</i>",
+        ]
+        if is_self_risky:
+            lines.append(
+                "\n⚠️ <b>Warning:</b> this may affect the NAVIG daemon "
+                "itself (Python) or your active shell sessions (PowerShell). "
+                "Self-protection will skip the daemon's own PID and parent."
+            )
+        lines.append("")
+        for c in candidates[:5]:
+            lines.append(f"  <code>{c['pid']:>6}</code> {html.escape(c['name'])}")
+        if n > 5:
+            lines.append(f"  <i>… +{n - 5} more</i>")
+        if force:
+            lines.append("\n<b>Mode:</b> <code>--force</code> (SIGKILL)")
+        else:
+            lines.append("\n<b>Mode:</b> graceful terminate (escalates after 3 s)")
+
+        kill_data = f"kill_confirm:{target}:{'force' if force else 'soft'}"
+        cancel_data = "kill_cancel"
+        keyboard = [
+            [
+                {"text": f"🛑 Kill {n}", "callback_data": kill_data},
+                {"text": "Cancel", "callback_data": cancel_data},
+            ],
+        ]
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+
+    async def _handle_kill_confirm_callback(
+        self, chat_id: int, user_id: int, callback_data: str, message_id: int | None = None
+    ) -> None:
+        """Callback fired when user taps '🛑 Kill N' on the confirmation card."""
+        from navig.commands import processes as _proc
+
+        # Parse callback_data: "kill_confirm:<group>:<mode>"
+        parts = callback_data.split(":", 2)
+        if len(parts) < 3:
+            await self.send_message(chat_id, "❌ Invalid kill confirmation.", parse_mode=None)
+            return
+        target = parts[1]
+        force = parts[2] == "force"
+
+        report = _proc.kill_group(target, force=force, exclude_self=True, dry_run=False)
+        k = len(report.get("killed", []))
+        s = len(report.get("skipped", []))
+        f = len(report.get("failed", []))
+
+        lines = [
+            f"✅ <b>Kill complete — {html.escape(target)}</b>",
+            "",
+            f"<b>Killed:</b> {k}",
+        ]
+        if s:
+            lines.append(f"<b>Skipped:</b> {s} (self-protected or already gone)")
+        if f:
+            lines.append(f"<b>Failed:</b> {f}")
+            for fl in report["failed"][:5]:
+                lines.append(
+                    f"  <code>{fl.get('pid')}</code> — {html.escape(str(fl.get('reason', '?')))}"
+                )
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML")
 
     # -- Briefing / deck -------------------------------------------------------
 
@@ -9562,9 +9783,11 @@ class TelegramCommandsMixin:
 
         reminders = get_runtime_store().get_user_reminders(user_id)
         if not reminders:
-            await self.send_message(
+            await self.send_command_output(
                 chat_id,
                 "📭 You have no active reminders.",
+                command="myreminders",
+                ai_hint="The user has no reminders. Say so warmly in one short line.",
                 parse_mode=None,
             )
             return
@@ -9589,9 +9812,11 @@ class TelegramCommandsMixin:
                 {"text": "➕ Add reminder", "callback_data": "slash:remindme"},
             ]
         ]
-        await self.send_message(
+        await self.send_command_output(
             chat_id,
             "\n".join(lines),
+            command="myreminders",
+            ai_hint="List active reminders by their due time. Preserve every ID and timestamp.",
             parse_mode="HTML",
             keyboard=keyboard,
         )
@@ -9644,6 +9869,201 @@ class TelegramCommandsMixin:
                 f"❌ No active reminder found for id <code>{reminder_id}</code>.",
                 parse_mode=None,
             )
+
+    async def _handle_habits(self, chat_id: int, user_id: int) -> None:
+        """List active habit cron jobs in a formatted Telegram message."""
+        import json as _json
+        from pathlib import Path as _Path
+
+        _HABIT_PREFIX = "habit:"
+        try:
+            p = _Path.home() / ".navig" / "daemon" / "cron_jobs.json"
+            if not p.exists():
+                await self.send_message(chat_id, "No habits configured yet.\n\nUse <code>navig habit add workout</code> to add one.", parse_mode="HTML")
+                return
+            data = _json.loads(p.read_text(encoding="utf-8"))
+            habits = [j for j in data.get("jobs", []) if j.get("name", "").startswith(_HABIT_PREFIX)]
+        except Exception:
+            await self.send_message(chat_id, "⚠️ Could not read habit data.")
+            return
+
+        if not habits:
+            await self.send_message(
+                chat_id,
+                "No habits configured yet.\n\nUse <code>navig habit add workout</code> or <code>navig habit templates</code> to see options.",
+                parse_mode="HTML",
+            )
+            return
+
+        lines = ["💪 <b>Active Habits</b>", ""]
+        for j in sorted(habits, key=lambda x: x.get("name", "")):
+            key = j.get("name", "").removeprefix(_HABIT_PREFIX)
+            from navig.spaces.health import get_habit_template as _ght
+            tmpl = _ght(key)
+            emoji = tmpl.emoji if tmpl else "📌"
+            enabled = j.get("enabled", True)
+            status_str = "✅" if enabled else "⏸"
+            schedule = j.get("schedule", "—")
+            next_raw = j.get("next_run", "")
+            try:
+                from datetime import datetime as _dt
+                next_str = _dt.fromisoformat(next_raw).strftime("%a %H:%M")
+            except Exception:
+                next_str = "—"
+            lines.append(f"{status_str} {emoji} <b>{key}</b> — {schedule}\n   Next: {next_str}")
+        lines.append("\n<i>Manage: navig habit list | navig habit add | navig habit remove</i>")
+
+        keyboard = [[
+            {"text": "➕ Add workout", "callback_data": "slash:workout"},
+            {"text": "📋 Reminders", "callback_data": "slash:reminders"},
+        ]]
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+
+    async def _handle_health(self, chat_id: int, user_id: int) -> None:
+        """Show health space status: active habits, reminder count, space."""
+        import json as _json
+        from datetime import datetime as _dt
+        from pathlib import Path as _Path
+
+        _HABIT_PREFIX = "habit:"
+        try:
+            p = _Path.home() / ".navig" / "daemon" / "cron_jobs.json"
+            data = _json.loads(p.read_text(encoding="utf-8")) if p.exists() else {"jobs": []}
+            habit_count = sum(1 for j in data.get("jobs", []) if j.get("name", "").startswith(_HABIT_PREFIX) and j.get("enabled", True))
+        except Exception:
+            habit_count = 0
+
+        try:
+            from navig.store.runtime import get_runtime_store
+            reminder_count = len(get_runtime_store().get_user_reminders(user_id))
+        except Exception:
+            reminder_count = 0
+
+        try:
+            from navig.config import get_config_manager
+            cm = get_config_manager()
+            space = cm.get("spaces.active", default="personal")
+        except Exception:
+            space = "personal"
+
+        lines = [
+            "🏥 <b>Health Space</b>", "",
+            f"💪 Active habits:    <b>{habit_count}</b>",
+            f"⏰ Pending reminders: <b>{reminder_count}</b>",
+            f"🗂  Active space:     <b>{space}</b>",
+            "",
+            "<i>Set habit: /workout | /habits — full list</i>",
+        ]
+        keyboard = [[
+            {"text": "💪 Habits", "callback_data": "slash:habits"},
+            {"text": "⏰ Reminders", "callback_data": "slash:reminders"},
+        ]]
+        await self.send_message(chat_id, "\n".join(lines), parse_mode="HTML", keyboard=keyboard)
+
+    async def _handle_workout(self, chat_id: int, user_id: int, text: str) -> None:
+        """Quick-add a workout reminder.
+
+        /workout           — show next scheduled workout (or prompt to add)
+        /workout 08:00     — one-time reminder for today at 08:00
+        /workout daily 07:30 — create/update recurring workout habit
+        """
+        import re as _re
+        from datetime import datetime as _dt, date as _date, timedelta as _td
+
+        arg = text[len("/workout"):].strip()
+
+        if not arg:
+            # Show current workout habit status
+            await self._handle_habits(chat_id, user_id)
+            return
+
+        # "daily HH:MM" → create/update recurring habit
+        daily_match = _re.match(r"^daily\s+(\d{1,2}):(\d{2})$", arg, flags=_re.I)
+        if daily_match:
+            h, m = int(daily_match.group(1)), int(daily_match.group(2))
+            schedule = f"{m} {h} * * 1-5"
+            try:
+                import base64 as _b64
+                import json as _json
+                import os as _os
+                import tempfile as _tmp
+                from pathlib import Path as _Path
+
+                from navig.spaces.health import get_habit_template as _ght
+                tmpl = _ght("workout")
+                b64_msg = _b64.b64encode(tmpl.reminder_message.encode()).decode()
+                command = f"NAVIG_HABIT_REMINDER:{chat_id}:{b64_msg}"
+
+                p = _Path.home() / ".navig" / "daemon" / "cron_jobs.json"
+                p.parent.mkdir(parents=True, exist_ok=True)
+                data = _json.loads(p.read_text(encoding="utf-8")) if p.exists() else {"counter": 0, "jobs": []}
+
+                # Remove existing workout habit if present
+                data["jobs"] = [j for j in data.get("jobs", []) if j.get("name") != "habit:workout"]
+                data["counter"] = data.get("counter", 0) + 1
+                from navig.scheduler.cron_service import CronParser as _CP
+                data["jobs"].append({
+                    "id": f"job_{data['counter']}",
+                    "name": "habit:workout",
+                    "schedule": schedule,
+                    "command": command,
+                    "enabled": True,
+                    "timeout_seconds": 30,
+                    "retry_count": 0,
+                    "max_retries": 1,
+                    "last_run": None,
+                    "next_run": _CP.calculate_next(schedule).isoformat(),
+                    "last_status": None,
+                    "last_output": None,
+                    "created_at": _dt.now().isoformat(),
+                })
+                _fd, _tmp_name = _tmp.mkstemp(dir=p.parent, suffix=".tmp")
+                try:
+                    with _os.fdopen(_fd, "w", encoding="utf-8") as fh:
+                        fh.write(_json.dumps(data, indent=2))
+                    _os.replace(_tmp_name, p)
+                except Exception:
+                    _Path(_tmp_name).unlink(missing_ok=True)
+                    raise
+
+                await self.send_message(
+                    chat_id,
+                    f"💪 Daily workout reminder set for <b>{h:02d}:{m:02d}</b> on weekdays.\n\nManage with: <code>navig habit list</code>",
+                    parse_mode="HTML",
+                )
+            except Exception as exc:
+                await self.send_message(chat_id, f"⚠️ Could not create habit: {exc}", parse_mode=None)
+            return
+
+        # "HH:MM" → one-time reminder for today
+        time_match = _re.match(r"^(\d{1,2}):(\d{2})$", arg)
+        if time_match:
+            h, m = int(time_match.group(1)), int(time_match.group(2))
+            now = _dt.now()
+            remind_at = now.replace(hour=h, minute=m, second=0, microsecond=0)
+            if remind_at <= now:
+                remind_at += _td(days=1)
+
+            from navig.store.runtime import get_runtime_store
+            rid = get_runtime_store().create_reminder(
+                user_id=user_id,
+                chat_id=chat_id,
+                message="💪 Time to work out! Consistency beats intensity.",
+                remind_at=remind_at,
+            )
+            when_str = remind_at.strftime("%H:%M")
+            await self.send_message(
+                chat_id,
+                f"⏰ Workout reminder set for <b>{when_str}</b> today. (ID: <code>{rid}</code>)\n\nFor recurring: <code>/workout daily {when_str}</code>",
+                parse_mode="HTML",
+            )
+            return
+
+        await self.send_message(
+            chat_id,
+            "Usage:\n/workout 07:30 — one-time reminder today\n/workout daily 07:30 — recurring weekday habit",
+            parse_mode=None,
+        )
 
     async def _handle_stats_global(self, chat_id: int) -> None:
         await self.send_message(chat_id, "📊 Global chat statistics are gathering data...")
