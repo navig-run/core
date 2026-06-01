@@ -117,6 +117,7 @@ from navig.gateway.deck.routes.vault import (
     handle_deck_vault_test,
     handle_deck_vault_toggle,
     handle_deck_whisper_install,
+    handle_deck_whisper_install_status,
 )
 from navig.gateway.deck.routes.monitor import (
     handle_deck_monitor_all,
@@ -128,6 +129,16 @@ from navig.gateway.deck.routes.monitor import (
     handle_deck_monitor_uptime,
 )
 from navig.gateway.deck.routes.hosts import handle_deck_hosts
+from navig.gateway.deck.routes.connectors import (
+    handle_deck_connectors_list,
+    handle_deck_connectors_connect,
+    handle_deck_connectors_callback,
+    handle_deck_connectors_disconnect,
+    handle_deck_connectors_health,
+    handle_deck_mcp_list,
+    handle_deck_mcp_add,
+    handle_deck_mcp_remove,
+)
 from navig.gateway.deck.routes.bizops import (
     handle_bizops_overview,
     handle_bizops_accounts_list,
@@ -310,6 +321,17 @@ def register_deck_routes(
         app.router.add_post("/api/deck/vault/{cred_id}/toggle", handle_deck_vault_toggle)
         app.router.add_post("/api/deck/vault/{cred_id}/test", handle_deck_vault_test)
         app.router.add_post("/api/deck/whisper/install", handle_deck_whisper_install)
+        app.router.add_get("/api/deck/whisper/install/status", handle_deck_whisper_install_status)
+
+        # Connectors (OAuth integrations + MCP servers)
+        app.router.add_get("/api/deck/connectors", handle_deck_connectors_list)
+        app.router.add_post("/api/deck/connectors/{connector_id}/connect", handle_deck_connectors_connect)
+        app.router.add_post("/api/deck/connectors/{connector_id}/connect/callback", handle_deck_connectors_callback)
+        app.router.add_delete("/api/deck/connectors/{connector_id}", handle_deck_connectors_disconnect)
+        app.router.add_get("/api/deck/connectors/{connector_id}/health", handle_deck_connectors_health)
+        app.router.add_get("/api/deck/mcp/servers", handle_deck_mcp_list)
+        app.router.add_post("/api/deck/mcp/servers", handle_deck_mcp_add)
+        app.router.add_delete("/api/deck/mcp/servers/{name}", handle_deck_mcp_remove)
 
         # Hosts / Fleet endpoint
         app.router.add_get("/api/deck/hosts", handle_deck_hosts)
@@ -322,6 +344,34 @@ def register_deck_routes(
         app.router.add_get("/api/deck/monitor/uptime", handle_deck_monitor_uptime)
         app.router.add_get("/api/deck/monitor/services", handle_deck_monitor_services)
         app.router.add_get("/api/deck/monitor/ports", handle_deck_monitor_ports)
+
+        # BizOps — business operations cockpit
+        app.router.add_get("/api/deck/bizops", handle_bizops_overview)
+        app.router.add_get("/api/deck/bizops/accounts", handle_bizops_accounts_list)
+        app.router.add_post("/api/deck/bizops/accounts", handle_bizops_accounts_create)
+        app.router.add_patch("/api/deck/bizops/accounts/{id}", handle_bizops_accounts_update)
+        app.router.add_post("/api/deck/bizops/accounts/{id}/reconcile", handle_bizops_accounts_reconcile)
+        app.router.add_get("/api/deck/bizops/transactions", handle_bizops_transactions_list)
+        app.router.add_post("/api/deck/bizops/transactions", handle_bizops_transactions_create)
+        app.router.add_post("/api/deck/bizops/transactions/quick-add", handle_bizops_transactions_quick)
+        app.router.add_post("/api/deck/bizops/transactions/import-csv", handle_bizops_transactions_import)
+        app.router.add_delete("/api/deck/bizops/transactions/{id}", handle_bizops_transactions_delete)
+        app.router.add_get("/api/deck/bizops/projects", handle_bizops_projects_list)
+        app.router.add_post("/api/deck/bizops/projects", handle_bizops_projects_create)
+        app.router.add_patch("/api/deck/bizops/projects/{id}", handle_bizops_projects_update)
+        app.router.add_get("/api/deck/bizops/projects/{id}/summary", handle_bizops_projects_summary)
+        app.router.add_get("/api/deck/bizops/categories", handle_bizops_categories_list)
+        app.router.add_post("/api/deck/bizops/categories", handle_bizops_categories_create)
+        app.router.add_get("/api/deck/bizops/invoices", handle_bizops_invoices_list)
+        app.router.add_post("/api/deck/bizops/invoices", handle_bizops_invoices_create)
+        app.router.add_post("/api/deck/bizops/invoices/{id}/mark-paid", handle_bizops_invoices_mark_paid)
+        app.router.add_post("/api/deck/bizops/invoices/{id}/remind", handle_bizops_invoices_remind)
+        app.router.add_get("/api/deck/bizops/subscriptions", handle_bizops_subs_list)
+        app.router.add_post("/api/deck/bizops/subscriptions", handle_bizops_subs_create)
+        app.router.add_get("/api/deck/bizops/tax-reserves", handle_bizops_tax_get)
+        app.router.add_post("/api/deck/bizops/tax-reserves/rate", handle_bizops_tax_set_rate)
+        app.router.add_get("/api/deck/bizops/decisions", handle_bizops_decisions_list)
+        app.router.add_post("/api/deck/bizops/decisions/{id}/ack", handle_bizops_decisions_ack)
 
         # Static file serving for Deck SPA
         static_dir = _find_deck_static_dir(deck_cfg.get("static_dir"))

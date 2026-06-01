@@ -1,0 +1,1 @@
+"""GitHub connector sub-package."""

@@ -26,6 +26,8 @@ from navig.providers.oauth import (
     OAUTH_PROVIDERS,
     OAuthCredentials,
     OAuthProviderConfig,
+    generate_pkce_pair,
+    generate_state,
     refresh_oauth_tokens,
     run_oauth_flow_interactive,
 )
@@ -44,6 +46,10 @@ class ConnectorAuthManager:
 
     # Class-level provider config registry (supplements OAUTH_PROVIDERS)
     _provider_configs: dict[str, OAuthProviderConfig] = {}
+
+    # In-memory PKCE pending state: state_token → (connector_id, verifier)
+    # Entries expire after 10 minutes (checked on access).
+    _pending_auth: dict[str, tuple[str, str, float]] = {}  # state → (id, verifier, created_at)
 
     def __init__(self) -> None:
         self._vault = get_vault()
@@ -76,6 +82,78 @@ class ConnectorAuthManager:
         ``register_provider()`` — call this in your fixture teardown.
         """
         cls._provider_configs.clear()
+
+    # -- Headless OAuth (Deck/UI flow) -------------------------------------
+
+    def get_auth_url(self, connector_id: str) -> tuple[str, str, str]:
+        """
+        Generate an OAuth authorization URL for headless (browser-opened) flow.
+
+        Returns (auth_url, state, verifier).  The caller should open auth_url
+        in a browser; after the user authorizes, call
+        ``exchange_auth_code(state, code)`` to complete the flow.
+
+        Raises:
+            ConnectorNotFoundError: If no provider config is registered.
+        """
+        config = self.get_provider_config(connector_id)
+        if not config:
+            raise ConnectorNotFoundError(connector_id)
+
+        verifier, challenge = generate_pkce_pair()
+        state = generate_state()
+        auth_url = config.build_authorize_url(state, challenge)
+
+        ConnectorAuthManager._pending_auth[state] = (connector_id, verifier, time.time())
+        logger.debug("Generated auth URL for %s (state=%s…)", connector_id, state[:8])
+        return auth_url, state, verifier
+
+    async def exchange_auth_code(
+        self, state: str, code: str
+    ) -> OAuthCredentials:
+        """
+        Exchange an OAuth authorization code for tokens.
+
+        Looks up the pending PKCE verifier by *state*, calls the token
+        endpoint, stores the result in the vault, and returns the credentials.
+        """
+        from navig.providers.oauth import exchange_code_for_tokens
+
+        _PENDING_TTL = 600  # 10 minutes
+
+        entry = ConnectorAuthManager._pending_auth.get(state)
+        if not entry:
+            raise ConnectorAuthError("unknown", f"No pending auth for state {state!r}")
+
+        connector_id, verifier, created_at = entry
+        if time.time() - created_at > _PENDING_TTL:
+            del ConnectorAuthManager._pending_auth[state]
+            raise ConnectorAuthError(connector_id, "Auth session expired — please retry")
+
+        config = self.get_provider_config(connector_id)
+        if not config:
+            raise ConnectorNotFoundError(connector_id)
+
+        try:
+            creds = await exchange_code_for_tokens(config, code, verifier)
+        except Exception as exc:
+            raise ConnectorAuthError(connector_id, f"Token exchange failed: {exc}") from exc
+        finally:
+            ConnectorAuthManager._pending_auth.pop(state, None)
+
+        self._save_to_vault(connector_id, creds)
+        logger.info("Completed OAuth exchange for %s (account=%s)", connector_id, creds.email)
+        return creds
+
+    def get_connected_account(self, connector_id: str) -> str | None:
+        """Return the account email for a connected connector, or None."""
+        creds = self._load_from_vault(connector_id)
+        return creds.email if creds else None
+
+    def is_connected(self, connector_id: str) -> bool:
+        """Return True if a non-expired token exists in the vault."""
+        creds = self._load_from_vault(connector_id)
+        return creds is not None and not creds.is_expired
 
     # -- Token lifecycle ---------------------------------------------------
 
