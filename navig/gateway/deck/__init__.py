@@ -82,6 +82,11 @@ from navig.gateway.deck.routes.vision import (
     handle_deck_vision_get,
     handle_deck_vision_post,
 )
+from navig.gateway.deck.routes.cloud import (
+    handle_deck_cloud_enabled,
+    handle_deck_cloud_restart,
+    handle_deck_cloud_status,
+)
 from navig.gateway.deck.routes.runtime import (
     handle_runtime_nodes,
     handle_runtime_missions,
@@ -129,10 +134,16 @@ from navig.gateway.deck.routes.monitor import (
     handle_deck_monitor_uptime,
 )
 from navig.gateway.deck.routes.hosts import handle_deck_hosts
+from navig.gateway.deck.routes.context import (
+    handle_deck_context,
+    handle_deck_context_files,
+    handle_deck_spaces,
+)
 from navig.gateway.deck.routes.connectors import (
     handle_deck_connectors_list,
     handle_deck_connectors_connect,
     handle_deck_connectors_callback,
+    handle_deck_connectors_oauth_callback,
     handle_deck_connectors_disconnect,
     handle_deck_connectors_health,
     handle_deck_mcp_list,
@@ -190,21 +201,41 @@ def register_deck_routes(
     """
     deck_cfg = deck_cfg or {}
 
-    # Auto-generate api_key if missing — printed prominently so the user can
-    # copy it into the browser login.  Persist it with:
-    #   navig config set deck.api_key <key>
+    # Auto-generate api_key if missing AND persist it to ~/.navig/config.yaml
+    # immediately. Without persistence, every restart minted a fresh key,
+    # invalidating every Telegram/Deck binding the user had set up. The cost
+    # of a single file write at startup is trivial compared to that breakage.
     import secrets as _secrets
     api_key = str(deck_cfg.get("api_key") or "").strip()
     if not api_key:
         api_key = "navig_" + _secrets.token_urlsafe(32)
-        logger.info(
-            "Deck API key (auto-generated — not persisted):\n"
-            "    %s\n"
-            "  Paste this into the browser login screen.\n"
-            "  To persist: navig config set deck.api_key %s",
-            api_key,
-            api_key,
-        )
+        # Mutate the live deck_cfg dict so the rest of the boot path
+        # (CloudManager, etc.) sees the same key. deck_cfg is a reference
+        # into config_manager.global_config -- mutating it propagates.
+        try:
+            deck_cfg["api_key"] = api_key
+        except Exception:  # noqa: BLE001
+            pass
+        # Persist to disk so subsequent restarts reuse the same key.
+        try:
+            from navig.core import Config
+            _cfg = Config()
+            _cfg.set("deck.api_key", api_key, scope="global")
+            _cfg.save(scope="global")
+            logger.info(
+                "Deck API key generated and persisted to ~/.navig/config.yaml:\n"
+                "    %s\n"
+                "  Subsequent restarts will reuse this key.",
+                api_key,
+            )
+        except Exception as _persist_exc:  # noqa: BLE001
+            # If we can't persist (read-only FS in a container?), fall back to
+            # the old behavior of printing the ephemeral key.
+            logger.warning(
+                "Could not persist deck.api_key (%s). Using ephemeral key:\n    %s\n"
+                "  To persist manually: navig config set deck.api_key %s",
+                _persist_exc, api_key, api_key,
+            )
 
     # Configure module-level auth
     configure_deck_auth(
@@ -280,6 +311,11 @@ def register_deck_routes(
         # Vision provider/model — replaces in-chat /provider_vision
         app.router.add_get("/api/deck/vision", handle_deck_vision_get)
         app.router.add_post("/api/deck/vision", handle_deck_vision_post)
+
+        # Cloud broker/tunnel — exposes CloudManager state to Account → Cloud
+        app.router.add_get("/api/deck/cloud/status", handle_deck_cloud_status)
+        app.router.add_post("/api/deck/cloud/enabled", handle_deck_cloud_enabled)
+        app.router.add_post("/api/deck/cloud/restart", handle_deck_cloud_restart)
         app.router.add_post("/api/deck/social/matrix/bridges/deploy", handle_deck_social_matrix_bridges_deploy)
 
         # Mesh / Flux peer discovery — registered by
@@ -325,6 +361,10 @@ def register_deck_routes(
 
         # Connectors (OAuth integrations + MCP servers)
         app.router.add_get("/api/deck/connectors", handle_deck_connectors_list)
+        # OAuth provider redirect target — auth-bypassed (no bearer token on the
+        # provider's redirect; PKCE state is the security boundary). MUST be
+        # registered before the {connector_id} routes so "oauth" isn't captured.
+        app.router.add_get("/api/deck/connectors/oauth/callback", handle_deck_connectors_oauth_callback)
         app.router.add_post("/api/deck/connectors/{connector_id}/connect", handle_deck_connectors_connect)
         app.router.add_post("/api/deck/connectors/{connector_id}/connect/callback", handle_deck_connectors_callback)
         app.router.add_delete("/api/deck/connectors/{connector_id}", handle_deck_connectors_disconnect)
@@ -344,6 +384,11 @@ def register_deck_routes(
         app.router.add_get("/api/deck/monitor/uptime", handle_deck_monitor_uptime)
         app.router.add_get("/api/deck/monitor/services", handle_deck_monitor_services)
         app.router.add_get("/api/deck/monitor/ports", handle_deck_monitor_ports)
+
+        # Context Engine — memory bank + indexed files + spaces
+        app.router.add_get("/api/deck/context", handle_deck_context)
+        app.router.add_get("/api/deck/context/files", handle_deck_context_files)
+        app.router.add_get("/api/deck/spaces", handle_deck_spaces)
 
         # BizOps — business operations cockpit
         app.router.add_get("/api/deck/bizops", handle_bizops_overview)

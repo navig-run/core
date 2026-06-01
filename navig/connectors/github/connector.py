@@ -56,19 +56,29 @@ class GitHubConnector(BaseConnector):
             )
             r.raise_for_status()
             items = r.json().get("items", [])
-        return [
-            Resource(
-                id=str(item["id"]),
+
+        resources = []
+        for item in items:
+            # GitHub search returns repository_url like
+            # "https://api.github.com/repos/{owner}/{repo}". Derive the
+            # "owner/repo" so fetch() can resolve by "owner/repo#number".
+            repo_url = item.get("repository_url", "")
+            repo_full = "/".join(repo_url.split("/")[-2:]) if repo_url else ""
+            number = item.get("number")
+            # id is the fetch contract: "owner/repo#number" when derivable,
+            # else fall back to the numeric id.
+            rid = f"{repo_full}#{number}" if repo_full and number is not None else str(item["id"])
+            resources.append(Resource(
+                id=rid,
                 source="github",
                 title=item.get("title", ""),
                 preview=item.get("body", "")[:200] if item.get("body") else "",
                 url=item.get("html_url", ""),
                 timestamp=item.get("updated_at"),
-                resource_type=ResourceType.ISSUE if "pull_request" not in item else ResourceType.PULL_REQUEST,
-                metadata={"state": item.get("state"), "number": item.get("number"), "repo": item.get("repository_url", "").split("/")[-2:]},
-            )
-            for item in items
-        ]
+                resource_type=ResourceType.PULL_REQUEST if "pull_request" in item else ResourceType.ISSUE,
+                metadata={"state": item.get("state"), "number": number, "repo": repo_full, "github_id": item.get("id")},
+            ))
+        return resources
 
     async def fetch(self, resource_id: str) -> Resource | None:
         # resource_id format: "owner/repo#number" e.g. "facebook/react#12345"

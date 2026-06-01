@@ -92,6 +92,15 @@ class ConnectorRegistry:
         """Check whether a connector is registered."""
         return connector_id in self._classes
 
+    def peek_instance(self, connector_id: str) -> BaseConnector | None:
+        """Return the already-instantiated connector instance, or None.
+
+        Unlike ``get()``, this does NOT lazily create an instance — it only
+        returns one if it already exists. Used when you want to mutate live
+        state (e.g. mark disconnected) without forcing instantiation.
+        """
+        return self._instances.get(connector_id)
+
     # -- Listing -----------------------------------------------------------
 
     def list_all(self) -> list[dict[str, Any]]:

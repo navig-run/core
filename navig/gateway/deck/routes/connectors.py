@@ -39,15 +39,25 @@ def _get_registry_and_auth():
 
 
 def _build_connector_list(registry, auth_mgr) -> list[dict]:
-    """Build enriched connector list with live status + connected account."""
+    """Build enriched connector list with live status + connected account.
+
+    Uses a single vault read for all connected accounts (O(1) lookups) rather
+    than 2 vault reads per connector.
+    """
+    try:
+        accounts = auth_mgr.list_connected_accounts()  # {connector_id: email|""}
+    except Exception as exc:
+        logger.debug("list_connected_accounts failed: %s", exc)
+        accounts = {}
+
     items = []
     for info in registry.list_all():
         cid = info["id"]
         cls = registry.all_classes().get(cid)
         manifest = getattr(cls, "manifest", None)
 
-        connected = auth_mgr.is_connected(cid)
-        account = auth_mgr.get_connected_account(cid) if connected else None
+        connected = cid in accounts
+        account = accounts.get(cid) or None
 
         items.append({
             "id": cid,
@@ -155,6 +165,75 @@ async def handle_deck_connectors_callback(request: "web.Request") -> "web.Respon
         return web.json_response({"ok": False, "error": str(exc)}, status=500)
 
 
+def _callback_html(title: str, message: str, ok: bool) -> str:
+    color = "#10b981" if ok else "#ef4444"
+    icon = "✓" if ok else "✕"
+    return f"""<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<style>
+  body {{ margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+         background:#0a0a0d; color:#e5e5e5; display:flex; align-items:center;
+         justify-content:center; height:100vh; }}
+  .card {{ text-align:center; padding:2.5rem 2rem; }}
+  .icon {{ font-size:3rem; color:{color}; }}
+  h1 {{ font-size:1.25rem; margin:1rem 0 0.5rem; }}
+  p  {{ color:#a1a1aa; font-size:0.9rem; max-width:320px; }}
+</style></head><body>
+  <div class="card">
+    <div class="icon">{icon}</div>
+    <h1>{title}</h1>
+    <p>{message}</p>
+  </div>
+  <script>setTimeout(function(){{ try {{ window.close(); }} catch(e){{}} }}, 2500);</script>
+</body></html>"""
+
+
+async def handle_deck_connectors_oauth_callback(request: "web.Request") -> "web.Response":
+    """GET /api/deck/connectors/oauth/callback?code=&state=
+
+    The redirect target for the headless OAuth flow. The OAuth provider sends
+    the browser here after the user authorizes. We exchange the code for tokens
+    (stored in the vault) and return a small self-closing success page.
+
+    This route is allow-listed past deck auth (the provider redirect carries no
+    bearer token) — security comes from the unguessable PKCE `state` token,
+    which must match a pending in-memory entry created by /connect.
+    """
+    code = request.query.get("code", "").strip()
+    state = request.query.get("state", "").strip()
+    error = request.query.get("error", "").strip()
+
+    if error:
+        return web.Response(
+            text=_callback_html("Authorization Declined", f"The provider returned: {error}", ok=False),
+            content_type="text/html",
+            status=400,
+        )
+    if not code or not state:
+        return web.Response(
+            text=_callback_html("Invalid Callback", "Missing authorization code or state.", ok=False),
+            content_type="text/html",
+            status=400,
+        )
+
+    try:
+        from navig.connectors.auth_manager import ConnectorAuthManager
+        creds = await ConnectorAuthManager().exchange_auth_code(state, code)
+        account = creds.email or "your account"
+        return web.Response(
+            text=_callback_html("Connected", f"Linked {account}. You can close this window.", ok=True),
+            content_type="text/html",
+        )
+    except Exception as exc:
+        logger.error("OAuth redirect callback error: %s", exc)
+        return web.Response(
+            text=_callback_html("Connection Failed", str(exc), ok=False),
+            content_type="text/html",
+            status=400,
+        )
+
+
 async def handle_deck_connectors_disconnect(request: "web.Request") -> "web.Response":
     """DELETE /api/deck/connectors/{connector_id} — revoke + disconnect."""
     connector_id = request.match_info.get("connector_id", "")
@@ -167,13 +246,12 @@ async def handle_deck_connectors_disconnect(request: "web.Request") -> "web.Resp
 
         await ConnectorAuthManager().revoke(connector_id)
 
-        # Also mark instance as disconnected if it exists
+        # Also mark instance as disconnected if one has been instantiated
         registry = get_connector_registry()
-        if registry.has(connector_id):
-            inst = registry._instances.get(connector_id)
-            if inst:
-                from navig.connectors.types import ConnectorStatus
-                inst.status = ConnectorStatus.DISCONNECTED
+        inst = registry.peek_instance(connector_id)
+        if inst:
+            from navig.connectors.types import ConnectorStatus
+            inst.status = ConnectorStatus.DISCONNECTED
 
         return web.json_response({"ok": True, "connector_id": connector_id})
     except Exception as exc:
@@ -191,6 +269,7 @@ async def handle_deck_connectors_health(request: "web.Request") -> "web.Response
         from navig.connectors.errors import ConnectorNotFoundError
         from navig.connectors.registry import get_connector_registry
         from navig.connectors.bootstrap import ensure_connectors_loaded
+        from navig.connectors.auth_manager import ConnectorAuthManager
 
         ensure_connectors_loaded()
         registry = get_connector_registry()
@@ -200,11 +279,19 @@ async def handle_deck_connectors_health(request: "web.Request") -> "web.Response
         except ConnectorNotFoundError:
             return web.json_response({"ok": False, "error": f"Connector '{connector_id}' not found"}, status=404)
 
+        # Hydrate the instance with its vault token before probing. If there's
+        # no stored token, report "not connected" rather than a raw token error.
+        injected = await ConnectorAuthManager().inject_token(connector)
+        if not injected and getattr(connector.manifest, "requires_oauth", True):
+            return web.json_response({"ok": False, "latency_ms": 0, "message": "Not connected"})
+
+        # Return health fields at the top level. NB: HealthStatus.to_dict()
+        # carries its own `ok` (the probe result) — that IS the body's `ok`.
         health = await connector.health_check()
-        return web.json_response({"ok": True, **health.to_dict()})
+        return web.json_response(health.to_dict())
     except Exception as exc:
         logger.error("Health check error for %s: %s", connector_id, exc)
-        return web.json_response({"ok": False, "error": str(exc)}, status=500)
+        return web.json_response({"ok": False, "message": str(exc)}, status=500)
 
 
 # ── MCP server management (Tier 3) ──────────────────────────────────────────

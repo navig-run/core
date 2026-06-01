@@ -63,7 +63,10 @@ class LinearConnector(BaseConnector):
           }
         }"""
         data = await self._gql(gql, {"query": query, "limit": min(limit, 20)})
-        issues = data.get("data", {}).get("issueSearch", {}).get("nodes", [])
+        if data.get("errors"):
+            logger.warning("Linear search GraphQL errors: %s", data["errors"])
+            return []
+        issues = ((data.get("data") or {}).get("issueSearch") or {}).get("nodes", [])
         return [
             Resource(
                 id=i["id"],
@@ -84,7 +87,7 @@ class LinearConnector(BaseConnector):
           issue(id: $id) { id title description url state { name } team { name } updatedAt }
         }"""
         data = await self._gql(gql, {"id": resource_id})
-        i = data.get("data", {}).get("issue")
+        i = (data.get("data") or {}).get("issue")
         if not i:
             return None
         return Resource(

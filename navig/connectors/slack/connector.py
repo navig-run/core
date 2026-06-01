@@ -52,6 +52,15 @@ class SlackConnector(BaseConnector):
             )
             r.raise_for_status()
             data = r.json()
+        if not data.get("ok"):
+            # search.messages requires a user token with search:read — bot
+            # tokens return "not_allowed_token_type". Surface clearly, don't crash.
+            err = data.get("error", "unknown")
+            if err == "not_allowed_token_type":
+                logger.info("Slack search needs a user token (search:read); bot token can't search.")
+            else:
+                logger.warning("Slack search failed: %s", err)
+            return []
         messages = data.get("messages", {}).get("matches", [])
         return [
             Resource(
