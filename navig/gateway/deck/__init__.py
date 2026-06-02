@@ -115,6 +115,29 @@ from navig.gateway.deck.routes.apps import (
     handle_deck_apps_knowledge_add,
     handle_deck_apps_devops,
 )
+from navig.gateway.deck.routes.board import (
+    handle_board_get,
+    handle_board_goal_create,
+    handle_board_goal_update,
+    handle_board_goal_delete,
+    handle_board_goal_generate,
+    handle_board_goal_run,
+    handle_board_card_create,
+    handle_board_card_update,
+    handle_board_card_delete,
+    handle_board_card_move,
+    handle_board_card_run,
+    handle_board_card_approve,
+    handle_board_card_reject,
+    handle_board_dep_add,
+    handle_board_dep_remove,
+    handle_board_subtask_add,
+    handle_board_subtask_update,
+    handle_board_subtask_delete,
+    handle_board_briefing,
+    handle_board_settings_get,
+    handle_board_settings_post,
+)
 from navig.gateway.deck.routes.vault import (
     handle_deck_vault_add,
     handle_deck_vault_delete,
@@ -134,10 +157,51 @@ from navig.gateway.deck.routes.monitor import (
     handle_deck_monitor_uptime,
 )
 from navig.gateway.deck.routes.hosts import handle_deck_hosts
+from navig.gateway.deck.routes.batch import handle_deck_batch
 from navig.gateway.deck.routes.context import (
     handle_deck_context,
     handle_deck_context_files,
     handle_deck_spaces,
+)
+from navig.gateway.deck.routes.nettools import (
+    handle_deck_net_server,
+    handle_deck_net_dns,
+    handle_deck_net_ssl,
+    handle_deck_net_whois,
+    handle_deck_net_weather,
+)
+from navig.gateway.deck.routes.skills import (
+    handle_deck_skills,
+    handle_deck_skill_detail,
+)
+from navig.gateway.deck.routes.database import (
+    handle_deck_db_hosts,
+    handle_deck_db_list,
+    handle_deck_db_tables,
+    handle_deck_db_query,
+)
+from navig.gateway.deck.routes.schedule import (
+    handle_deck_reminders_list,
+    handle_deck_reminders_create,
+    handle_deck_reminder_cancel,
+    handle_deck_crons_list,
+    handle_deck_briefing,
+)
+from navig.gateway.deck.routes.messages import (
+    handle_deck_messages_threads_list,
+    handle_deck_messages_thread_detail,
+    handle_deck_messages_contacts,
+    handle_deck_messages_send,
+)
+from navig.gateway.deck.routes.remote import (
+    handle_deck_remote_hosts,
+    handle_deck_remote_host_use,
+    handle_deck_remote_host_test,
+    handle_deck_remote_files,
+    handle_deck_remote_cat,
+    handle_deck_remote_run,
+    handle_deck_remote_docker,
+    handle_deck_remote_backup,
 )
 from navig.gateway.deck.routes.connectors import (
     handle_deck_connectors_list,
@@ -343,6 +407,29 @@ def register_deck_routes(
         app.router.add_get("/api/deck/apps/goals", handle_deck_apps_goals)
         app.router.add_post("/api/deck/apps/goals/update-milestone", handle_deck_apps_goals_milestone)
         app.router.add_get("/api/deck/apps/calendar", handle_deck_apps_calendar)
+
+        # Tasks board (pipeline-chain Kanban)
+        app.router.add_get("/api/deck/board", handle_board_get)
+        app.router.add_post("/api/deck/board/goals", handle_board_goal_create)
+        app.router.add_patch("/api/deck/board/goals/{id}", handle_board_goal_update)
+        app.router.add_delete("/api/deck/board/goals/{id}", handle_board_goal_delete)
+        app.router.add_post("/api/deck/board/goals/{id}/generate", handle_board_goal_generate)
+        app.router.add_post("/api/deck/board/goals/{id}/run", handle_board_goal_run)
+        app.router.add_post("/api/deck/board/cards", handle_board_card_create)
+        app.router.add_patch("/api/deck/board/cards/{id}", handle_board_card_update)
+        app.router.add_delete("/api/deck/board/cards/{id}", handle_board_card_delete)
+        app.router.add_post("/api/deck/board/cards/{id}/move", handle_board_card_move)
+        app.router.add_post("/api/deck/board/cards/{id}/run", handle_board_card_run)
+        app.router.add_post("/api/deck/board/cards/{id}/approve", handle_board_card_approve)
+        app.router.add_post("/api/deck/board/cards/{id}/reject", handle_board_card_reject)
+        app.router.add_post("/api/deck/board/cards/{id}/deps", handle_board_dep_add)
+        app.router.add_delete("/api/deck/board/cards/{id}/deps/{dep}", handle_board_dep_remove)
+        app.router.add_post("/api/deck/board/cards/{id}/subtasks", handle_board_subtask_add)
+        app.router.add_patch("/api/deck/board/subtasks/{id}", handle_board_subtask_update)
+        app.router.add_delete("/api/deck/board/subtasks/{id}", handle_board_subtask_delete)
+        app.router.add_get("/api/deck/board/briefing", handle_board_briefing)
+        app.router.add_get("/api/deck/board/settings", handle_board_settings_get)
+        app.router.add_post("/api/deck/board/settings", handle_board_settings_post)
         app.router.add_get("/api/deck/apps/passport", handle_deck_apps_passport)
         app.router.add_get("/api/deck/apps/wallet", handle_deck_apps_wallet)
         app.router.add_post("/api/deck/apps/wallet/send", handle_deck_apps_wallet_send)
@@ -373,6 +460,9 @@ def register_deck_routes(
         app.router.add_post("/api/deck/mcp/servers", handle_deck_mcp_add)
         app.router.add_delete("/api/deck/mcp/servers/{name}", handle_deck_mcp_remove)
 
+        # Batch — collapse a screen's many GET reads into one round-trip
+        app.router.add_post("/api/deck/batch", handle_deck_batch)
+
         # Hosts / Fleet endpoint
         app.router.add_get("/api/deck/hosts", handle_deck_hosts)
 
@@ -389,6 +479,46 @@ def register_deck_routes(
         app.router.add_get("/api/deck/context", handle_deck_context)
         app.router.add_get("/api/deck/context/files", handle_deck_context_files)
         app.router.add_get("/api/deck/spaces", handle_deck_spaces)
+
+        # NetTools — diagnostics
+        app.router.add_get("/api/deck/net/server", handle_deck_net_server)
+        app.router.add_get("/api/deck/net/dns", handle_deck_net_dns)
+        app.router.add_get("/api/deck/net/ssl", handle_deck_net_ssl)
+        app.router.add_get("/api/deck/net/whois", handle_deck_net_whois)
+        app.router.add_get("/api/deck/net/weather", handle_deck_net_weather)
+
+        # Skills — discovery + detail
+        app.router.add_get("/api/deck/skills", handle_deck_skills)
+        app.router.add_get("/api/deck/skills/{skill_id}", handle_deck_skill_detail)
+
+        # Database — list / tables / query (SSH-backed)
+        app.router.add_get("/api/deck/db/hosts", handle_deck_db_hosts)
+        app.router.add_post("/api/deck/db/list", handle_deck_db_list)
+        app.router.add_post("/api/deck/db/tables", handle_deck_db_tables)
+        app.router.add_post("/api/deck/db/query", handle_deck_db_query)
+
+        # Schedule — reminders + crons + briefing
+        app.router.add_get("/api/deck/schedule/reminders", handle_deck_reminders_list)
+        app.router.add_post("/api/deck/schedule/reminders", handle_deck_reminders_create)
+        app.router.add_delete("/api/deck/schedule/reminders/{reminder_id}", handle_deck_reminder_cancel)
+        app.router.add_get("/api/deck/schedule/crons", handle_deck_crons_list)
+        app.router.add_get("/api/deck/schedule/briefing", handle_deck_briefing)
+
+        # Messages — threads + contacts + send across adapters
+        app.router.add_get("/api/deck/messages/threads", handle_deck_messages_threads_list)
+        app.router.add_get("/api/deck/messages/threads/{thread_id}", handle_deck_messages_thread_detail)
+        app.router.add_get("/api/deck/messages/contacts", handle_deck_messages_contacts)
+        app.router.add_post("/api/deck/messages/send", handle_deck_messages_send)
+
+        # Remote — SSH-backed host operations
+        app.router.add_get("/api/deck/remote/hosts", handle_deck_remote_hosts)
+        app.router.add_post("/api/deck/remote/hosts/use", handle_deck_remote_host_use)
+        app.router.add_post("/api/deck/remote/hosts/test", handle_deck_remote_host_test)
+        app.router.add_get("/api/deck/remote/files", handle_deck_remote_files)
+        app.router.add_get("/api/deck/remote/cat", handle_deck_remote_cat)
+        app.router.add_post("/api/deck/remote/run", handle_deck_remote_run)
+        app.router.add_post("/api/deck/remote/docker", handle_deck_remote_docker)
+        app.router.add_get("/api/deck/remote/backup", handle_deck_remote_backup)
 
         # BizOps — business operations cockpit
         app.router.add_get("/api/deck/bizops", handle_bizops_overview)
