@@ -1370,6 +1370,281 @@ def host_show(
         info_host(ctx.obj)
 
 
+@host_app.command("all")
+def host_all(
+    ctx: typer.Context,
+    command: str = typer.Argument(..., help="Shell command to run on all configured hosts"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+    timeout: int = typer.Option(30, "--timeout", "-t", help="Per-host timeout in seconds"),
+    json_out: bool = typer.Option(False, "--json", help="Output JSON array"),
+    filter_hosts: list[str] = typer.Option([], "--host", "-H", help="Limit to specific hosts (repeat for multiple)"),
+):
+    """Run a shell command on ALL configured hosts simultaneously.
+
+    Results are displayed as a Rich table with host, status, latency, and output.
+
+    Examples:
+      navig host all "df -h"
+      navig host all "uptime" --host web1 --host web2
+      navig host all "free -m" --json
+    """
+    import json as _json
+
+    from navig.remote import RemoteOperations
+
+    hosts = filter_hosts if filter_hosts else config_manager.list_hosts()
+
+    if not hosts:
+        ch.error("No hosts configured.", "Run 'navig host add' to configure your first host.")
+        raise typer.Exit(1)
+
+    preview_cmd = command[:60] + ("..." if len(command) > 60 else "")
+
+    if not yes:
+        ch.console.print(f"[dim]About to run on [cyan]{len(hosts)}[/cyan] host(s): [yellow]{preview_cmd}[/yellow][/dim]")
+        if not typer.confirm("Proceed?", default=True):
+            ch.dim("Cancelled.")
+            raise typer.Exit()
+
+    ch.console.print(f"[dim]Running on {len(hosts)} host(s)…[/dim]")
+
+    remote_ops = RemoteOperations(config_manager)
+    results = remote_ops.execute_command_parallel(command, hosts, timeout=timeout)
+
+    if json_out:
+        ch.raw_print(_json.dumps(results, indent=2))
+        return
+
+    table = ch.create_table(
+        title=f"Fleet: {preview_cmd}",
+        columns=[
+            {"name": "Host", "style": "cyan"},
+            {"name": "Status", "justify": "center"},
+            {"name": "Latency", "style": "dim", "justify": "right"},
+            {"name": "Output"},
+        ],
+    )
+
+    for r in sorted(results, key=lambda x: x["host"]):
+        if r["error"]:
+            status_cell = "[red]✗ error[/red]"
+            output_cell = r["error"][:100]
+        elif r["returncode"] == 0:
+            status_cell = "[green]✓ ok[/green]"
+            output_cell = r["stdout"].strip()[:120]
+        else:
+            status_cell = f"[yellow]✗ rc={r['returncode']}[/yellow]"
+            output_cell = (r["stderr"] or r["stdout"]).strip()[:120]
+
+        table.add_row(
+            r["host"],
+            status_cell,
+            f"{r['latency_ms']}ms",
+            output_cell,
+        )
+
+    ch.print_table(table)
+
+    ok_count = sum(1 for r in results if r["returncode"] == 0 and not r["error"])
+    color = "green" if ok_count == len(results) else ("yellow" if ok_count > 0 else "red")
+    ch.console.print(f"[{color}]{ok_count}/{len(results)} hosts succeeded[/{color}]")
+
+
+# ============================================================================
+# HOST CLOUD (Hetzner) — servers / firewall / transport-aware status
+# A host carries SSH + (optionally) a Hetzner cloud identity; these verbs read
+# the per-host key from the vault and surface cloud state beside the SSH hosts.
+# ============================================================================
+
+
+@host_app.command("servers")
+def host_servers(
+    ctx: typer.Context,
+    json_out: bool = typer.Option(False, "--json", help="Output JSON"),
+):
+    """List cloud (Hetzner) servers for hosts that have a key — beside the SSH hosts."""
+    import json as _json
+
+    from navig.cloud import hetzner as hz
+
+    hosts = config_manager.list_hosts()
+    if not hosts:
+        ch.error("No hosts configured.", "Run 'navig host add'.")
+        raise typer.Exit(1)
+
+    rows: list[dict[str, Any]] = []
+    for h in hosts:
+        cfg = config_manager.load_host_config(h) or {}
+        if not hz.has_cloud(cfg):
+            rows.append({"host": h, "cloud": None, "ip": cfg.get("host")})
+            continue
+        token = hz.token_for_host(cfg)
+        if not token:
+            rows.append({"host": h, "cloud": "hetzner", "error": "no vault key"})
+            continue
+        sid = (cfg.get("cloud_provider") or {}).get("server_id")
+        try:
+            srv = hz.get_server(token, sid) if sid else hz.find_server_by_ip(token, cfg.get("host", ""))
+        except hz.HetznerError as e:
+            rows.append({"host": h, "cloud": "hetzner", "error": str(e)})
+            continue
+        rows.append({
+            "host": h, "cloud": "hetzner",
+            "server": hz.summarize_server(srv) if srv else None,
+            "error": None if srv else "server not found",
+        })
+
+    if json_out:
+        ch.raw_print(_json.dumps(rows, indent=2))
+        return
+
+    table = ch.create_table(
+        title="Hosts — SSH + Hetzner",
+        columns=[
+            {"name": "Host", "style": "cyan"},
+            {"name": "Cloud"},
+            {"name": "Server"},
+            {"name": "Status", "justify": "center"},
+            {"name": "IP", "style": "dim"},
+            {"name": "Region", "style": "dim"},
+        ],
+    )
+    for r in rows:
+        if r.get("cloud") != "hetzner":
+            table.add_row(r["host"], "[dim]ssh only[/dim]", "—", "—", r.get("ip") or "—", "—")
+        elif r.get("error"):
+            table.add_row(r["host"], "hetzner", f"[red]{r['error']}[/red]", "—", "—", "—")
+        else:
+            s = r["server"]
+            st = s.get("status") or "?"
+            color = "green" if st == "running" else "yellow" if st in ("starting", "initializing") else "red"
+            table.add_row(
+                r["host"], "hetzner", str(s.get("name") or s.get("id")),
+                f"[{color}]{st}[/{color}]", s.get("ip") or "—", s.get("region") or "—",
+            )
+    ch.print_table(table)
+
+
+@host_app.command("firewall")
+def host_firewall(
+    ctx: typer.Context,
+    name: str = typer.Argument(None, help="Host name (default: active host)"),
+    json_out: bool = typer.Option(False, "--json", help="Output JSON"),
+):
+    """Show the Hetzner Cloud firewall(s) for a host."""
+    import json as _json
+
+    from navig.cloud import hetzner as hz
+
+    host = name or config_manager.get_active_host()
+    if not host:
+        ch.error("No host specified and no active host.", "navig host firewall <name>")
+        raise typer.Exit(1)
+    cfg = config_manager.load_host_config(host) or {}
+    if not hz.has_cloud(cfg):
+        ch.error(f"Host '{host}' has no Hetzner cloud identity.",
+                 "Add cloud_provider.type: hetzner + credential_id to its host config.")
+        raise typer.Exit(1)
+    token = hz.token_for_host(cfg)
+    if not token:
+        ch.error("No Hetzner key in the vault for this host.", "navig vault add hetzner")
+        raise typer.Exit(1)
+    try:
+        fws = hz.list_firewalls(token)
+    except hz.HetznerError as e:
+        ch.error(f"Hetzner API error: {e}")
+        raise typer.Exit(1) from None
+    if json_out:
+        ch.raw_print(_json.dumps(fws, indent=2))
+        return
+    if not fws:
+        ch.dim("No firewalls in this Hetzner project.")
+        return
+    for fw in fws:
+        applied = ", ".join(
+            str(r.get("server", {}).get("id")) for r in fw.get("applied_to", []) if r.get("type") == "server"
+        ) or "—"
+        ch.console.print(f"[bold]{fw.get('name')}[/bold] [dim](id {fw.get('id')} · servers: {applied})[/dim]")
+        table = ch.create_table(columns=[
+            {"name": "Dir"}, {"name": "Proto"}, {"name": "Port"}, {"name": "Sources"},
+        ])
+        for rule in fw.get("rules", []):
+            ips = rule.get("source_ips") or rule.get("destination_ips") or []
+            src = (ips[0] + (f"  +{len(ips) - 1}" if len(ips) > 1 else "")) if ips else "any"
+            table.add_row(rule.get("direction", "?"), rule.get("protocol", "?"), rule.get("port") or "—", src)
+        ch.print_table(table)
+
+
+@host_app.command("status")
+def host_status_cmd(
+    ctx: typer.Context,
+    name: str = typer.Argument(None, help="Host name (default: active host)"),
+):
+    """Transport-aware status — probes SSH + Hetzner and shows the optimal path.
+
+    SSH answers shell/files; the Hetzner API answers power/firewall and still
+    reports 'running' (+ offers reboot) even when SSH is down.
+    """
+    import socket
+
+    from navig.cloud import hetzner as hz
+
+    host = name or config_manager.get_active_host()
+    if not host:
+        ch.error("No host specified and no active host.")
+        raise typer.Exit(1)
+    cfg = config_manager.load_host_config(host) or {}
+    ip = cfg.get("host")
+    port = int(cfg.get("port", 22) or 22)
+
+    # SSH transport — a quick TCP reachability probe (no paramiko load).
+    ssh_ok = False
+    if ip:
+        try:
+            with socket.create_connection((ip, port), timeout=3):
+                ssh_ok = True
+        except OSError:
+            ssh_ok = False
+
+    # Hetzner transport.
+    cloud_line = "[dim]no cloud identity[/dim]"
+    power = None
+    if hz.has_cloud(cfg):
+        token = hz.token_for_host(cfg)
+        if not token:
+            cloud_line = "[yellow]hetzner declared, no vault key[/yellow]"
+        else:
+            sid = (cfg.get("cloud_provider") or {}).get("server_id")
+            try:
+                srv = hz.get_server(token, sid) if sid else hz.find_server_by_ip(token, ip or "")
+            except hz.HetznerError as e:
+                srv = None
+                cloud_line = f"[red]hetzner error: {e}[/red]"
+            if srv:
+                s = hz.summarize_server(srv)
+                power = s.get("status")
+                pc = "green" if power == "running" else "red"
+                cloud_line = (
+                    f"hetzner · [{pc}]{power}[/{pc}] · {s.get('type')} · "
+                    f"{s.get('region')} · fw:{len(s.get('firewalls') or [])}"
+                )
+            elif power is None and "error" not in cloud_line:
+                cloud_line = "[yellow]hetzner key set, server not found[/yellow]"
+
+    ssh_c = "green" if ssh_ok else "red"
+    ch.console.print(f"[bold cyan]{host}[/bold cyan]  [dim]{ip or ''}:{port}[/dim]")
+    ch.console.print(f"  SSH      [{ssh_c}]{'reachable' if ssh_ok else 'unreachable'}[/{ssh_c}]")
+    ch.console.print(f"  Hetzner  {cloud_line}")
+    if ssh_ok:
+        ch.dim("  → best path: SSH (shell/files); Hetzner API for power/firewall")
+    elif power == "running":
+        ch.console.print("  [yellow]→ SSH down but server is RUNNING per Hetzner — check 'navig host firewall', or reboot via Hetzner.[/yellow]")
+    elif power:
+        ch.console.print(f"  [red]→ server power state: {power} — power on via Hetzner before SSH.[/red]")
+    else:
+        ch.dim("  → only the SSH transport is available for this host")
+
+
 # ============================================================================
 # HOST NESTED SUBCOMMANDS (Pillar 1: Infrastructure)
 # ============================================================================
