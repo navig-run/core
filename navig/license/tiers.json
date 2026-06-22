@@ -1,0 +1,65 @@
+{
+  "_comment": "CANONICAL NAVIG tier / entitlement source of truth for the whole monorepo. See docs/BUSINESS-PLAN.md (the NAVIG Harbor plan). The `legacy` section below is the shipped 7-tier model; Python (navig-core/navig/license/quota.py) and TypeScript (navig-api/src/lib/billing.ts, navig-deck/lib/license.ts) all mirror it and MUST agree. The parity test navig-core/tests/license/test_tiers_parity.py enforces this. The `harbor` section is the TARGET model and is NOT yet wired into checkout — do not consume it at runtime until /monetization sets prices and the migration ships.",
+  "version": 1,
+
+  "modules": [
+    "core_ops",
+    "business_ops",
+    "ai_operator",
+    "security_ops",
+    "deploy_ops",
+    "client_ops",
+    "echo"
+  ],
+  "purchasable_modules": [
+    "business_ops",
+    "ai_operator",
+    "security_ops",
+    "deploy_ops",
+    "client_ops"
+  ],
+  "module_onetime_usd": {
+    "business_ops": 399,
+    "ai_operator": 399,
+    "deploy_ops": 499,
+    "security_ops": 999,
+    "client_ops": 999
+  },
+
+  "legacy": {
+    "_comment": "Shipped 7-tier model. Mirrors quota.py + billing.ts + license.ts. `plus` is the consumer rung (1 host, buys `echo`); it exists in quota.py/license.ts but historically was MISSING from billing.ts (the drift this spec + parity test close). `echo` is granted by tier, never sold a-la-carte.",
+    "tier_order": ["solo", "plus", "personal", "pro", "business", "fleet", "enterprise"],
+    "tiers": {
+      "solo":       { "host_limit": 1,      "capabilities": ["core_ops"] },
+      "plus":       { "host_limit": 1,      "capabilities": ["core_ops", "echo"] },
+      "personal":   { "host_limit": 5,      "capabilities": ["core_ops", "echo"] },
+      "pro":        { "host_limit": 10,     "capabilities": ["core_ops", "business_ops", "ai_operator", "echo"] },
+      "business":   { "host_limit": 50,     "capabilities": ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "echo"] },
+      "fleet":      { "host_limit": 200,    "capabilities": ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "client_ops", "echo"] },
+      "enterprise": { "host_limit": 100000, "capabilities": ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "client_ops", "echo"] }
+    }
+  },
+
+  "harbor": {
+    "_status": "draft_pending_monetization",
+    "_comment": "TARGET model — the NAVIG Harbor consolidation. Personal Free/Plus/Max + B2B Team/Enterprise. Prices are hypotheses (run /monetization). The a-la-carte module SKUs collapse: capabilities are folded into Harbor Tiers but the module names survive as INTERNAL capability flags (the @requires_capability gate + APP_MODULE map are unchanged). org/seats/role are reserved so the B2B Team track is additive (never a reprice). Nothing here is consumed at runtime yet.",
+    "reserved_dimensions": ["org", "seats", "role"],
+    "tiers": {
+      "free": { "track": "personal", "host_limit": 1, "ai": "byo_key", "capabilities": ["core_ops"] },
+      "plus": { "track": "personal", "host_limit": 5, "ai": "included+overage|byo", "capabilities": ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "echo"] },
+      "max":  { "track": "personal", "host_limit": 200, "ai": "higher+overage", "lifetime": true, "capabilities": ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "echo"] },
+      "team": { "track": "b2b", "per_seat": true, "host_limit": 200, "ai": "org_pooled", "capabilities": ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "client_ops", "echo"] },
+      "enterprise": { "track": "b2b", "per_seat": true, "host_limit": 100000, "ai": "org_pooled", "sso": true, "audit": true, "on_prem": true, "capabilities": ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "client_ops", "echo"] }
+    },
+    "legacy_to_harbor": {
+      "_comment": "DRAFT migration map — every existing tier maps to a Harbor Tier of >= value (additive, no one loses entitlements). Finalize in /monetization before the migration grant runs.",
+      "solo": "free",
+      "plus": "plus",
+      "personal": "plus",
+      "pro": "plus",
+      "business": "max",
+      "fleet": "max",
+      "enterprise": "enterprise"
+    }
+  }
+}
