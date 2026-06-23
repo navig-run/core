@@ -13,34 +13,59 @@ from __future__ import annotations
 
 from typing import Literal
 
-TierName = Literal["solo", "plus", "personal", "pro", "business", "fleet", "enterprise"]
+# Live (NAVIG Harbor) tiers we sell + enforce, PLUS retired legacy names kept
+# recognized so old/stray signed tokens still verify. Mirrors tiers.json `live`.
+TierName = Literal[
+    # live (Harbor)
+    "free", "plus", "max", "team", "enterprise",
+    # legacy (retired; recognized for back-compat verification only)
+    "solo", "personal", "pro", "business", "fleet",
+]
 
-# Tier → host_limit. Phase 3.1's /api/deck/hosts endpoint uses this to
-# slice the unified host inventory before returning it to the Deck.
-# `plus` is the consumer rung (NAVIG Echo pro) — 1 host like solo; it buys the
-# `echo` capability, not operator host scale.
+# Retired legacy tier → Harbor equivalent (≥ value). Applied at verify time so
+# an old token resolves to its Harbor tier; nobody loses entitlements.
+LEGACY_TO_HARBOR: dict[str, str] = {
+    "solo": "free",
+    "personal": "plus",
+    "pro": "plus",
+    "business": "max",
+    "fleet": "max",
+}
+
+# Tier → host_limit. /api/deck/hosts uses this to slice the host inventory.
+# Plus and Max share capabilities but differ on host scale (+ AI allowance,
+# priority relay, lifetime — enforced elsewhere).
 TIER_HOST_LIMIT: dict[TierName, int] = {
+    # live
+    "free": 1,
+    "plus": 5,
+    "max": 200,
+    "team": 200,
+    "enterprise": 100_000,  # effectively unlimited; sized for safety net
+    # legacy (recognized; never sold)
     "solo": 1,
-    "plus": 1,
     "personal": 5,
     "pro": 10,
     "business": 50,
     "fleet": 200,
-    "enterprise": 100_000,  # effectively unlimited; sized for safety net
 }
 
-# Tier → capabilities (which product modules are unlocked).
-#
-# Modules are STRICT SUPERSETS down the ladder. See the plan's "Capability
-# inclusion matrix" -- this map is the executable version of that table.
+# Tier → capabilities (internal capability flags unlocked). Modules are no
+# longer sold à-la-carte (see tiers.json) — only granted by tier. Plus/Max
+# carry the full operator set; Team/Enterprise add client_ops.
 TIER_CAPABILITIES: dict[TierName, list[str]] = {
+    # live (Harbor)
+    "free":       ["core_ops"],
+    "plus":       ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "echo"],
+    "max":        ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "echo"],
+    "team":       ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "client_ops", "echo"],
+    "enterprise": ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "client_ops", "echo"],
+    # legacy (recognized; capabilities ≤ their Harbor mapping)
     "solo":       ["core_ops"],
-    "plus":       ["core_ops", "echo"],
     "personal":   ["core_ops", "echo"],
     "pro":        ["core_ops", "business_ops", "ai_operator", "echo"],
     "business":   ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "echo"],
     "fleet":      ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "client_ops", "echo"],
-    "enterprise": ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "client_ops", "echo"],
 }
 
 # Every module name in canonical order. Used by the Deck's module manifest
@@ -70,7 +95,7 @@ def effective_host_limit() -> int:
         from navig.license import current_status
         return current_status().host_limit
     except Exception:  # noqa: BLE001
-        return TIER_HOST_LIMIT["solo"]
+        return TIER_HOST_LIMIT["free"]
 
 
 def current_tier_name() -> str:
@@ -79,4 +104,4 @@ def current_tier_name() -> str:
         from navig.license import current_status
         return current_status().effective_tier
     except Exception:  # noqa: BLE001
-        return "solo"
+        return "free"

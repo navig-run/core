@@ -123,12 +123,12 @@ def _b64url_encode(b: bytes) -> str:
 # ─── Token parse + verify ───────────────────────────────────────────────────
 
 def _free_status(reason: Reason = "missing") -> LicenseStatus:
-    """Default Solo (Free) tier status returned when no valid license exists."""
+    """Default Free tier status returned when no valid license exists."""
     return LicenseStatus(
         valid=False,
-        effective_tier="solo",
-        host_limit=TIER_HOST_LIMIT["solo"],
-        capabilities=list(TIER_CAPABILITIES["solo"]),
+        effective_tier="free",
+        host_limit=TIER_HOST_LIMIT["free"],
+        capabilities=list(TIER_CAPABILITIES["free"]),
         subscription_active=False,
         reason=reason,
     )
@@ -246,7 +246,13 @@ def verify_license(token: str | None) -> LicenseStatus:
     elif perpetual_tier is not None:
         effective_tier = perpetual_tier  # type: ignore[assignment]
     else:
-        effective_tier = "solo"
+        effective_tier = "free"
+
+    # NOTE: retired legacy tiers (solo/personal/pro/business/fleet) stay
+    # recognized and resolve to their own (legacy) capabilities — quota.py
+    # keeps them. `LEGACY_TO_HARBOR` is reserved for an explicit migration
+    # grant (re-mint), not applied at verify time, so existing tokens are
+    # never silently relabelled. (No legacy tokens exist today regardless.)
 
     base_caps = list(TIER_CAPABILITIES[effective_tier])
     capabilities = base_caps[:]
