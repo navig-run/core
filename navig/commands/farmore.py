@@ -24,8 +24,8 @@ from navig.platform.paths import config_dir
 ch = lazy_import("navig.console_helper")
 
 farmore_app = typer.Typer(
-    name="farmore",
-    help="🥔 GitHub repo mirroring & backup via farmore",
+    name="github",
+    help="🐙 GitHub repo mirroring & backup",
     no_args_is_help=True,
 )
 

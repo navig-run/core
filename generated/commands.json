@@ -3841,97 +3841,6 @@
     {
       "aliases": [],
       "examples": [
-        "navig farmore backup"
-      ],
-      "handler": "farmore_backup",
-      "module": "navig.commands.farmore",
-      "path": "navig farmore backup",
-      "since": "2.4.21",
-      "status": "stable",
-      "summary": "\ud83d\udce6 Clone / mirror every repo for a user or organisation.",
-      "tags": []
-    },
-    {
-      "aliases": [],
-      "examples": [
-        "navig farmore clone"
-      ],
-      "handler": "farmore_clone",
-      "module": "navig.commands.farmore",
-      "path": "navig farmore clone",
-      "since": "2.4.21",
-      "status": "stable",
-      "summary": "\u2b07\ufe0f  Clone a single repository (with farmore if available, else plain git).",
-      "tags": []
-    },
-    {
-      "aliases": [],
-      "examples": [
-        "navig farmore search"
-      ],
-      "handler": "farmore_search",
-      "module": "navig.commands.farmore",
-      "path": "navig farmore search",
-      "since": "2.4.21",
-      "status": "stable",
-      "summary": "\ud83d\udd0d Search GitHub and clone matching repositories.",
-      "tags": []
-    },
-    {
-      "aliases": [],
-      "examples": [
-        "navig farmore status"
-      ],
-      "handler": "farmore_status",
-      "module": "navig.commands.farmore",
-      "path": "navig farmore status",
-      "since": "2.4.21",
-      "status": "stable",
-      "summary": "\u2139\ufe0f  Show farmore installation status and token configuration.",
-      "tags": []
-    },
-    {
-      "aliases": [],
-      "examples": [
-        "navig farmore token remove"
-      ],
-      "handler": "token_remove",
-      "module": "navig.commands.farmore",
-      "path": "navig farmore token remove",
-      "since": "2.4.21",
-      "status": "stable",
-      "summary": "\ud83d\uddd1  Remove the stored GitHub token.",
-      "tags": []
-    },
-    {
-      "aliases": [],
-      "examples": [
-        "navig farmore token set"
-      ],
-      "handler": "token_set",
-      "module": "navig.commands.farmore",
-      "path": "navig farmore token set",
-      "since": "2.4.21",
-      "status": "stable",
-      "summary": "\ud83d\udd11 Save a GitHub token for farmore to use automatically.",
-      "tags": []
-    },
-    {
-      "aliases": [],
-      "examples": [
-        "navig farmore token show"
-      ],
-      "handler": "token_show",
-      "module": "navig.commands.farmore",
-      "path": "navig farmore token show",
-      "since": "2.4.21",
-      "status": "stable",
-      "summary": "\ud83d\udd0d Display where the current GitHub token comes from (masked).",
-      "tags": []
-    },
-    {
-      "aliases": [],
-      "examples": [
         "navig fetch"
       ],
       "handler": "fetch_command",
@@ -4486,6 +4395,97 @@
       "since": "2.4.21",
       "status": "stable",
       "summary": "Send a smoke-test message through one or all configured channels.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "examples": [
+        "navig github backup"
+      ],
+      "handler": "farmore_backup",
+      "module": "navig.commands.farmore",
+      "path": "navig github backup",
+      "since": "2.4.21",
+      "status": "stable",
+      "summary": "\ud83d\udce6 Clone / mirror every repo for a user or organisation.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "examples": [
+        "navig github clone"
+      ],
+      "handler": "farmore_clone",
+      "module": "navig.commands.farmore",
+      "path": "navig github clone",
+      "since": "2.4.21",
+      "status": "stable",
+      "summary": "\u2b07\ufe0f  Clone a single repository (with farmore if available, else plain git).",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "examples": [
+        "navig github search"
+      ],
+      "handler": "farmore_search",
+      "module": "navig.commands.farmore",
+      "path": "navig github search",
+      "since": "2.4.21",
+      "status": "stable",
+      "summary": "\ud83d\udd0d Search GitHub and clone matching repositories.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "examples": [
+        "navig github status"
+      ],
+      "handler": "farmore_status",
+      "module": "navig.commands.farmore",
+      "path": "navig github status",
+      "since": "2.4.21",
+      "status": "stable",
+      "summary": "\u2139\ufe0f  Show farmore installation status and token configuration.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "examples": [
+        "navig github token remove"
+      ],
+      "handler": "token_remove",
+      "module": "navig.commands.farmore",
+      "path": "navig github token remove",
+      "since": "2.4.21",
+      "status": "stable",
+      "summary": "\ud83d\uddd1  Remove the stored GitHub token.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "examples": [
+        "navig github token set"
+      ],
+      "handler": "token_set",
+      "module": "navig.commands.farmore",
+      "path": "navig github token set",
+      "since": "2.4.21",
+      "status": "stable",
+      "summary": "\ud83d\udd11 Save a GitHub token for farmore to use automatically.",
+      "tags": []
+    },
+    {
+      "aliases": [],
+      "examples": [
+        "navig github token show"
+      ],
+      "handler": "token_show",
+      "module": "navig.commands.farmore",
+      "path": "navig github token show",
+      "since": "2.4.21",
+      "status": "stable",
+      "summary": "\ud83d\udd0d Display where the current GitHub token comes from (masked).",
       "tags": []
     },
     {

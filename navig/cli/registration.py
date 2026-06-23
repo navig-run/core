@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
 _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "bridge": ("navig.commands.bridge", "bridge_app"),
-    "farmore": ("navig.commands.farmore", "farmore_app"),
+    "github": ("navig.commands.farmore", "farmore_app"),
     "copilot": ("navig.commands.ask", "copilot_app"),
     "inbox": ("navig.commands.inbox", "inbox_app"),
     "sync": ("navig.commands.sync", "sync_app"),
