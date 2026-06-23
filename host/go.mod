@@ -8,7 +8,7 @@ require (
 
 	// Gin (v1 API)
 	github.com/gin-gonic/gin v1.9.1
-	github.com/go-chi/chi/v5 v5.2.2
+	github.com/go-chi/chi/v5 v5.2.4
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/knadh/koanf v1.4.0
 	github.com/prometheus/client_golang v1.14.0
