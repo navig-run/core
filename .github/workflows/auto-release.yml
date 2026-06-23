@@ -72,3 +72,22 @@ jobs:
           prerelease: ${{ steps.meta.outputs.prerelease }}
           make_latest: ${{ steps.meta.outputs.prerelease == 'false' }}
           generate_release_notes: true
+
+      # Tell the marketing site to refresh the /commands CLI reference from the
+      # (CI-guaranteed-current) generated/commands.json on main. Needs a PAT with
+      # contents:write on navig-run/www, stored as the WWW_DISPATCH_TOKEN secret.
+      # If the secret is absent this no-ops — the www daily schedule still catches up.
+      - name: Notify navig-www to refresh CLI reference
+        env:
+          WWW_DISPATCH_TOKEN: ${{ secrets.WWW_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$WWW_DISPATCH_TOKEN" ]; then
+            echo "WWW_DISPATCH_TOKEN not set — skipping (navig-www daily sync will catch up)."
+            exit 0
+          fi
+          curl -fsSL -X POST \
+            -H "Authorization: token $WWW_DISPATCH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/navig-run/www/dispatches \
+            -d '{"event_type":"commands-updated"}'
+          echo "Dispatched commands-updated to navig-run/www."
