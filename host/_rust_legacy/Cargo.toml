@@ -55,7 +55,7 @@ tempfile   = "3.10"
 # from the frozen workspace and carries its own standalone dependency metadata.
 
 # ── OS utilities ─────────────────────────────────────────────────────────────
-keyring    = "3.0"
+keyring    = "4.0"
 dirs       = "6.0"
 ulid       = "1.1"
 
