@@ -9,7 +9,6 @@ Tests the wiki management functionality including:
 - Search functionality
 """
 
-from pathlib import Path
 
 import pytest
 import yaml

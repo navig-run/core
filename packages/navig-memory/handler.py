@@ -12,6 +12,7 @@ import json
 import logging
 import pathlib
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 _logger = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ def on_load(ctx: dict) -> None:
         CommandRegistry.register("memory_store", cmd_memory_store)
         CommandRegistry.register("memory_search", cmd_memory_search)
         CommandRegistry.register("memory_clear", cmd_memory_clear)
+        CommandRegistry.register("memory_checkpoint", cmd_memory_checkpoint)
     except ImportError as exc:
         _logger.warning(
             "navig-memory: CommandRegistry unavailable — commands not registered: %s",
@@ -39,7 +41,12 @@ def on_unload(ctx: dict) -> None:
     try:
         from navig.commands._registry import CommandRegistry
 
-        for name in ("memory_store", "memory_search", "memory_clear"):
+        for name in (
+            "memory_store",
+            "memory_search",
+            "memory_clear",
+            "memory_checkpoint",
+        ):
             CommandRegistry.deregister(name)
     except ImportError as exc:
         _logger.warning(
@@ -66,8 +73,19 @@ def _get_store(ctx: Any = None):
 
 def _store_path(ctx: Any = None) -> pathlib.Path:
     try:
-        if ctx and hasattr(ctx, "store_dir"):
-            return pathlib.Path(ctx["store_dir"]) / "memories.json"
+        if ctx:
+            store_dir = None
+            if isinstance(ctx, dict):
+                store_dir = ctx.get("store_dir")
+            else:
+                store_dir = getattr(ctx, "store_dir", None)
+                if store_dir is None:
+                    try:
+                        store_dir = ctx["store_dir"]
+                    except Exception:  # noqa: BLE001
+                        store_dir = None
+            if store_dir:
+                return pathlib.Path(store_dir) / "memories.json"
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
     try:
@@ -76,6 +94,57 @@ def _store_path(ctx: Any = None) -> pathlib.Path:
         return config_dir() / "store" / "memory" / "memories.json"
     except Exception:
         return pathlib.Path.home() / ".navig" / "store" / "memory" / "memories.json"
+
+
+def _checkpoint_path(ctx: Any = None) -> pathlib.Path:
+    store_path = _store_path(ctx)
+    return store_path.parent / "checkpoints"
+
+
+def _conversation_db_path() -> pathlib.Path | None:
+    try:
+        from navig.config import get_config_manager
+
+        cfg = get_config_manager()
+        return pathlib.Path(cfg.global_config_dir) / "memory" / "memory.db"
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _latest_conversation_snapshot() -> dict[str, Any] | None:
+    db_path = _conversation_db_path()
+    if db_path is None or not db_path.exists():
+        return None
+
+    try:
+        from navig.memory import ConversationStore
+
+        store = ConversationStore(db_path)
+        try:
+            sessions = store.list_sessions(limit=1)
+            if not sessions:
+                return None
+
+            session = sessions[0]
+            messages = store.get_history(session.session_key, limit=10)
+            return {
+                "session_key": session.session_key,
+                "message_count": session.message_count,
+                "updated_at": session.updated_at.isoformat(),
+                "messages": [
+                    {
+                        "role": message.role,
+                        "content": message.content,
+                        "timestamp": message.timestamp.isoformat(),
+                    }
+                    for message in messages
+                ],
+            }
+        finally:
+            store.close()
+    except Exception as exc:  # noqa: BLE001
+        _logger.debug("navig-memory: could not build checkpoint conversation snapshot: %s", exc)
+        return None
 
 
 class _JsonMemoryStore:
@@ -191,10 +260,44 @@ def cmd_memory_clear(args: dict, ctx: Any = None) -> dict:
         return {"status": "error", "message": str(exc)}
 
 
+def cmd_memory_checkpoint(args: dict, ctx: Any = None) -> dict:
+    """
+    Snapshot workspace and latest conversation context.
+
+    args:
+      root_path (str, optional): Workspace root to record in the snapshot.
+    """
+    checkpoint_dir = _checkpoint_path(ctx)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    created_at = datetime.now(timezone.utc)
+    checkpoint_id = created_at.strftime("%Y%m%dT%H%M%S%fZ")
+    checkpoint_file = checkpoint_dir / f"{checkpoint_id}.json"
+    snapshot = {
+        "id": checkpoint_id,
+        "created_at": created_at.isoformat(),
+        "workspace_root": args.get("root_path") or str(pathlib.Path.cwd()),
+        "memory_store": str(_store_path(ctx)),
+        "latest_session": _latest_conversation_snapshot(),
+    }
+    try:
+        checkpoint_file.write_text(
+            json.dumps(snapshot, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        return {
+            "status": "ok",
+            "data": {"id": checkpoint_id, "path": str(checkpoint_file)},
+        }
+    except Exception as exc:
+        return {"status": "error", "message": str(exc)}
+
+
 # ── COMMANDS registry ─────────────────────────────────────────────────────────
 
 COMMANDS: dict[str, Any] = {
     "memory_store": cmd_memory_store,
     "memory_search": cmd_memory_search,
     "memory_clear": cmd_memory_clear,
+    "memory_checkpoint": cmd_memory_checkpoint,
 }

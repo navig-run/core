@@ -731,6 +731,11 @@ def init_command(
         "--tui",
         help="Use full-screen TUI onboarding (opt-in). Falls back to CLI when unsupported.",
     ),
+    messaging: bool = typer.Option(
+        False,
+        "--messaging",
+        help="Configure messaging adapters (SMS, WhatsApp, Discord) via interactive vault wizard.",
+    ),
 ) -> None:
     """
     State-aware NAVIG setup gateway.
@@ -745,16 +750,24 @@ def init_command(
         navig init --profile system_standard   # + service daemon
 
     Deep-links (interactive wizard only):
-        navig init --provider    jump to AI-provider configuration
-        navig init --settings    open settings/status overview
-        navig init --reconfigure force the wizard to re-run
+        navig init --provider      jump to AI-provider configuration
+        navig init --settings      open settings/status overview
+        navig init --reconfigure   force the wizard to re-run
+        navig init --messaging     configure SMS / WhatsApp / Discord adapters
 
     Examples:
-        navig init               # auto: wizard on first run, dashboard after
-        navig init --reconfigure # always run wizard
-        navig init --provider    # configure AI provider
+        navig init                # auto: wizard on first run, dashboard after
+        navig init --reconfigure  # always run wizard
+        navig init --provider     # configure AI provider
+        navig init --messaging    # set up outbound messaging adapters
     """
     from navig.commands.init import run_init_command
+
+    if messaging:
+        from navig.commands.messaging_wizard import run_messaging_wizard
+
+        run_messaging_wizard()
+        return
 
     run_init_command(
         ctx,

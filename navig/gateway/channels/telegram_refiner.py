@@ -35,7 +35,7 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any
 
-from navig.gateway.channels.telegram_utils import escape_mdv2
+from navig.gateway.channels.telegram_utils import answer_callback_query, escape_mdv2
 
 logger = logging.getLogger(__name__)
 
@@ -509,24 +509,7 @@ async def handle_rfn_callback(
         return getattr(obj, key, default)
 
     async def _answer_callback(callback_id: str, text: str = "") -> None:
-        if not callback_id:
-            return
-        answer_fn = getattr(channel, "answer_callback_query", None)
-        if callable(answer_fn):
-            try:
-                await answer_fn(callback_id, text)
-                return
-            except Exception:
-                pass
-        api_call = getattr(channel, "_api_call", None)
-        if callable(api_call):
-            try:
-                await api_call(
-                    "answerCallbackQuery",
-                    {"callback_query_id": callback_id, "text": text, "show_alert": False},
-                )
-            except Exception:
-                pass
+        await answer_callback_query(channel, callback_id, text)
 
     cb_id = _cb_get(callback_query, "id", "") or ""
     cb_data: str = _cb_get(callback_query, "data", "") or ""

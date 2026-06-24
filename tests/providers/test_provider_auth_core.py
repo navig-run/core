@@ -1,5 +1,6 @@
-from navig.providers.auth import AuthProfileManager
 import pytest
+
+from navig.providers.auth import AuthProfileManager
 
 pytestmark = pytest.mark.integration
 

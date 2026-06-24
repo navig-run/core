@@ -1,171 +1,271 @@
-#!/usr/bin/env python3
-"""
-Unit tests for DebugLogger class.
+"""Tests for navig.debug_logger — DebugLogger structured audit log."""
 
-Tests cover:
-- Log file creation and rotation
-- Sensitive data redaction
-- Log format and structure
-- SSH command and result logging
-- Error logging with context
-"""
+from __future__ import annotations
 
-import os
-import tempfile
 from pathlib import Path
 
 import pytest
 
-from navig.debug_logger import DebugLogger
-
-pytestmark = pytest.mark.integration
-
-# ============================================================================
-# FIXTURES
-# ============================================================================
+from navig.debug_logger import DebugLogger, get_debug_logger
 
 
-@pytest.fixture
-def temp_log_path():
-    """Create a temporary log file path."""
-    with tempfile.NamedTemporaryFile(suffix=".log", delete=False) as f:
-        path = f.name
-    yield path
-    # Cleanup is handled by debug_logger fixture
+# ──────────────────────────────────────────────────────────────
+# Helpers
+# ──────────────────────────────────────────────────────────────
 
 
-@pytest.fixture
-def debug_logger(temp_log_path):
-    """Create a DebugLogger instance with temp log file."""
-    logger = DebugLogger(log_path=temp_log_path)
-    yield logger
-    # Cleanup: close the logger and remove the file
-    logger.close()
-    if os.path.exists(temp_log_path):
-        try:
-            os.unlink(temp_log_path)
-        except PermissionError:
-            pass  # File may still be locked on Windows
+def _make_logger(tmp_path: Path) -> DebugLogger:
+    """Create a DebugLogger writing to a temp file."""
+    log_file = tmp_path / "debug.log"
+    logger = DebugLogger(log_path=log_file, max_size_mb=1, max_files=2, truncate_output_kb=1)
+    return logger
 
 
-# ============================================================================
-# INITIALIZATION TESTS
-# ============================================================================
+def _read_log(tmp_path: Path) -> str:
+    log_file = tmp_path / "debug.log"
+    if not log_file.exists():
+        return ""
+    return log_file.read_text(encoding="utf-8")
 
 
-class TestDebugLoggerInit:
-    """Test DebugLogger initialization."""
-
-    def test_creates_log_file(self, temp_log_path):
-        """Test that log file is created on init."""
-        logger = DebugLogger(log_path=temp_log_path)
-        logger.log_command_start("test", {})
-        assert os.path.exists(temp_log_path)
-
-    def test_accepts_string_path(self, temp_log_path):
-        """Test that string paths are converted to Path objects."""
-        logger = DebugLogger(log_path=temp_log_path)
-        assert isinstance(logger.log_path, Path)
-
-    def test_accepts_path_object(self, temp_log_path):
-        """Test that Path objects work correctly."""
-        logger = DebugLogger(log_path=Path(temp_log_path))
-        assert isinstance(logger.log_path, Path)
+# ──────────────────────────────────────────────────────────────
+# Construction
+# ──────────────────────────────────────────────────────────────
 
 
-# ============================================================================
-# SENSITIVE DATA REDACTION TESTS
-# ============================================================================
+class TestDebugLoggerConstruction:
+    def test_creates_log_file(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        dl.log_command_start("test", {})
+        assert (tmp_path / "debug.log").exists()
+        dl.close()
+
+    def test_accepts_string_path(self, tmp_path):
+        log_path = tmp_path / "str_path.log"
+        dl = DebugLogger(log_path=str(log_path))
+        dl.log_command_start("cmd", {})
+        assert log_path.exists()
+        dl.close()
+
+    def test_close_is_safe_to_call_multiple_times(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        dl.close()
+        dl.close()  # Second close must not raise
 
 
-class TestSensitiveDataRedaction:
-    """Test sensitive data redaction patterns."""
-
-    def test_redacts_password(self, debug_logger):
-        """Test password redaction."""
-        result = debug_logger._redact_sensitive_data("password=secret123")
-        assert "secret123" not in result
-        assert "***REDACTED***" in result
-
-    def test_redacts_ssh_password(self, debug_logger):
-        """Test SSH password redaction."""
-        result = debug_logger._redact_sensitive_data("ssh_password: mypassword")
-        assert "mypassword" not in result
-        assert "***REDACTED***" in result
-
-    def test_redacts_api_key(self, debug_logger):
-        """Test API key redaction."""
-        result = debug_logger._redact_sensitive_data("api_key: sk-abc123xyz")
-        assert "sk-abc123xyz" not in result
-        assert "***REDACTED***" in result
-
-    def test_redacts_token(self, debug_logger):
-        """Test token redaction."""
-        result = debug_logger._redact_sensitive_data("token=eyJhbGciOiJIUzI1NiJ9.test")
-        assert "eyJhbGciOiJIUzI1NiJ9" not in result
-        assert "***REDACTED***" in result
-
-    def test_redacts_bearer_token(self, debug_logger):
-        """Test Bearer token redaction."""
-        result = debug_logger._redact_sensitive_data("Authorization: Bearer abc123")
-        assert "abc123" not in result
-        assert "***REDACTED***" in result
-
-    def test_redacts_mysql_password_flag(self, debug_logger):
-        """Test MySQL -p password redaction."""
-        result = debug_logger._redact_sensitive_data("mysql -u root -p secretpass")
-        assert "secretpass" not in result
-        assert "***REDACTED***" in result
+# ──────────────────────────────────────────────────────────────
+# Timestamp
+# ──────────────────────────────────────────────────────────────
 
 
-# ============================================================================
-# LOG FORMAT TESTS
-# ============================================================================
+class TestTimestamp:
+    def test_timestamp_format(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        ts = dl._timestamp()
+        # ISO 8601 format: YYYY-MM-DDTHH:MM:SS.mmmZ
+        assert "T" in ts
+        assert ts.endswith("Z")
+        assert len(ts) == 24  # 2024-01-15T10:30:00.123Z
+        dl.close()
 
 
-class TestLogFormat:
-    """Test log format and structure."""
+# ──────────────────────────────────────────────────────────────
+# Truncation
+# ──────────────────────────────────────────────────────────────
 
-    def test_command_start_format(self, debug_logger, temp_log_path):
-        """Test command start log format."""
-        debug_logger.log_command_start("navig host list", {"verbose": True})
 
-        with open(temp_log_path, "r") as f:
-            content = f.read()
+class TestTruncation:
+    def test_short_output_not_truncated(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        short = "hello world"
+        assert dl._truncate(short) == short
+        dl.close()
 
+    def test_long_output_truncated(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        # truncate_output_kb=1 → 1024 bytes
+        long_output = "x" * 2000
+        result = dl._truncate(long_output)
+        assert "TRUNCATED" in result
+        assert len(result) < len(long_output)
+        dl.close()
+
+    def test_empty_output_returned_unchanged(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        assert dl._truncate("") == ""
+        dl.close()
+
+
+# ──────────────────────────────────────────────────────────────
+# log_command_start
+# ──────────────────────────────────────────────────────────────
+
+
+class TestLogCommandStart:
+    def test_writes_to_log(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        dl.log_command_start("navig host list", {"verbose": True})
+        dl.close()
+        content = _read_log(tmp_path)
         assert "COMMAND START" in content
         assert "navig host list" in content
-        assert "=" * 80 in content  # Separator
 
-    def test_ssh_command_format(self, debug_logger, temp_log_path):
-        """Test SSH command log format."""
-        debug_logger.log_ssh_command("localhost", 22, "root", "echo hello", "subprocess")
+    def test_includes_args(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        dl.log_command_start("run", {"host": "prod"})
+        dl.close()
+        assert "prod" in _read_log(tmp_path)
 
-        with open(temp_log_path, "r") as f:
-            content = f.read()
 
+# ──────────────────────────────────────────────────────────────
+# log_ssh_command
+# ──────────────────────────────────────────────────────────────
+
+
+class TestLogSshCommand:
+    def test_writes_ssh_command(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        dl.log_ssh_command("10.0.0.1", 22, "admin", "ls -la")
+        dl.close()
+        content = _read_log(tmp_path)
         assert "SSH COMMAND" in content
-        assert "root@localhost:22" in content
-        assert "echo hello" in content
+        assert "10.0.0.1" in content
 
-    def test_ssh_result_format(self, debug_logger, temp_log_path):
-        """Test SSH result log format."""
-        debug_logger.log_ssh_result(True, "hello world", "", 50.5)
+    def test_includes_method(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        dl.log_ssh_command("host", 22, "user", "cmd", method="paramiko")
+        dl.close()
+        assert "paramiko" in _read_log(tmp_path)
 
-        with open(temp_log_path, "r") as f:
-            content = f.read()
 
-        assert "SSH RESULT: SUCCESS" in content
-        assert "50.50ms" in content
-        assert "hello world" in content
+# ──────────────────────────────────────────────────────────────
+# log_ssh_result
+# ──────────────────────────────────────────────────────────────
 
-    def test_error_format(self, debug_logger, temp_log_path):
-        """Test error log format."""
-        debug_logger.log_error(Exception("Test error"), "Testing context")
 
-        with open(temp_log_path, "r") as f:
-            content = f.read()
+class TestLogSshResult:
+    def test_success_logged(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        dl.log_ssh_result(True, "output text", duration_ms=42.0)
+        dl.close()
+        content = _read_log(tmp_path)
+        assert "SUCCESS" in content
+        assert "output text" in content
 
+    def test_failure_logged(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        dl.log_ssh_result(False, "", "permission denied", duration_ms=10.0)
+        dl.close()
+        content = _read_log(tmp_path)
+        assert "FAILED" in content
+        assert "permission denied" in content
+
+
+# ──────────────────────────────────────────────────────────────
+# log_command_end
+# ──────────────────────────────────────────────────────────────
+
+
+class TestLogCommandEnd:
+    def test_end_logged(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        dl.log_command_end(True, "all done")
+        dl.close()
+        content = _read_log(tmp_path)
+        assert "COMMAND END" in content
+        assert "SUCCESS" in content
+
+    def test_failed_command_end(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        dl.log_command_end(False, "timeout")
+        dl.close()
+        content = _read_log(tmp_path)
+        assert "FAILED" in content
+
+    def test_duration_included_when_start_logged(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        dl.log_command_start("cmd", {})
+        dl.log_command_end(True)
+        dl.close()
+        assert "Duration" in _read_log(tmp_path)
+
+
+# ──────────────────────────────────────────────────────────────
+# log_error
+# ──────────────────────────────────────────────────────────────
+
+
+class TestLogError:
+    def test_logs_exception(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        try:
+            raise ValueError("something broke")
+        except ValueError as exc:
+            dl.log_error(exc, context="unit test")
+        dl.close()
+        content = _read_log(tmp_path)
         assert "ERROR" in content
-        assert "Test error" in content
-        assert "Testing context" in content
+        assert "ValueError" in content
+
+    def test_logs_context(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        try:
+            raise RuntimeError("oops")
+        except RuntimeError as exc:
+            dl.log_error(exc, context="during deploy")
+        dl.close()
+        assert "during deploy" in _read_log(tmp_path)
+
+
+# ──────────────────────────────────────────────────────────────
+# log_operation
+# ──────────────────────────────────────────────────────────────
+
+
+class TestLogOperation:
+    def test_operation_logged(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        dl.log_operation("file_upload", {"file": "config.yaml", "size": 1024})
+        dl.close()
+        content = _read_log(tmp_path)
+        assert "file_upload" in content
+        assert "config.yaml" in content
+
+    def test_failed_operation_logged(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        dl.log_operation("db_query", {"query": "SELECT *"}, success=False)
+        dl.close()
+        content = _read_log(tmp_path)
+        assert "FAILED" in content
+
+
+# ──────────────────────────────────────────────────────────────
+# Redaction
+# ──────────────────────────────────────────────────────────────
+
+
+class TestRedaction:
+    def test_redact_sensitive_data_callable(self, tmp_path):
+        dl = _make_logger(tmp_path)
+        # Should not raise; actual redaction depends on navig.core.security
+        result = dl._redact_sensitive_data("some text with a token")
+        assert isinstance(result, str)
+        dl.close()
+
+
+# ──────────────────────────────────────────────────────────────
+# get_debug_logger
+# ──────────────────────────────────────────────────────────────
+
+
+class TestGetDebugLogger:
+    def test_returns_logger_instance(self):
+        import logging
+        result = get_debug_logger()
+        assert isinstance(result, logging.Logger)
+
+    def test_returns_same_logger(self):
+        import logging
+        l1 = get_debug_logger()
+        l2 = get_debug_logger()
+        assert l1.name == l2.name

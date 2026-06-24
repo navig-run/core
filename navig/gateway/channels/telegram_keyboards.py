@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from navig.gateway.channels.telegram_utils import escape_mdv2 as _mdv2_escape
+from navig.gateway.channels.telegram_utils import escape_mdv2 as _mdv2_escape  # noqa: F401
 
 if TYPE_CHECKING:
     from navig.gateway.channels.telegram import TelegramChannel
@@ -565,6 +565,197 @@ class ResponseKeyboardBuilder:
         """Legacy feedback profile — 👍/👎 removed. Returns no buttons."""
         return []
 
+    async def _answer(self, callback_id: str, text: str = "", show_alert: bool = False) -> None:
+        """Acknowledge a Telegram callback query."""
+        from navig.gateway.channels.telegram_utils import answer_callback_query
+
+        await answer_callback_query(self.channel, callback_id, text)
+
+    async def _handle_evening_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        """Handle evening summary inline action buttons (eve:{action}).
+
+        Actions
+        -------
+        log_shipped   — prompts user to log what shipped; captures next reply
+        plan_tomorrow — prompts user for tomorrow's anchor; captures next reply
+        backup_check  — runs ``navig backup show`` and replies with a Refresh button
+        dnd_on        — activates DND (chat_mode=sleep + notifications_enabled=False)
+        dnd_off       — reverts DND (chat_mode=work + notifications_enabled=True)
+        """
+        import asyncio as _asyncio
+
+        action = cb_data.split(":", 1)[1] if ":" in cb_data else cb_data
+
+        if action == "log_shipped":
+            await self._answer(cb_id, "✅ What shipped?")
+            try:
+                from navig.store.runtime import get_runtime_store
+
+                store = get_runtime_store()
+                state = store.get_ai_state(user_id) or {}
+                ctx = dict(state.get("context") or {})
+                ctx["eve_pending"] = {"active": True, "type": "shipped"}
+                store.set_ai_state(
+                    user_id=user_id,
+                    channel="telegram",
+                    chat_id=str(chat_id),
+                    context=ctx,
+                )
+            except Exception as exc:
+                logger.debug("eve_pending set failed: %s", exc)
+            await self.channel.send_message(
+                chat_id,
+                (
+                    "📦 <b>What shipped today?</b>\n\n"
+                    "Reply with a quick line — one sentence per item is enough.\n"
+                    "<i>e.g. Fixed login bug · Deployed v2.3 · Reviewed 4 PRs</i>\n\n"
+                    "<i>Reply <code>cancel</code> to skip.</i>"
+                ),
+                parse_mode="HTML",
+            )
+            return
+
+        if action == "plan_tomorrow":
+            await self._answer(cb_id, "🎯 Set your anchor")
+            try:
+                from navig.store.runtime import get_runtime_store
+
+                store = get_runtime_store()
+                state = store.get_ai_state(user_id) or {}
+                ctx = dict(state.get("context") or {})
+                ctx["eve_pending"] = {"active": True, "type": "priority"}
+                store.set_ai_state(
+                    user_id=user_id,
+                    channel="telegram",
+                    chat_id=str(chat_id),
+                    context=ctx,
+                )
+            except Exception as exc:
+                logger.debug("eve_pending set failed: %s", exc)
+            await self.channel.send_message(
+                chat_id,
+                (
+                    "🎯 <b>What's the top priority for tomorrow?</b>\n\n"
+                    "One sentence — I'll surface it in your morning briefing.\n"
+                    "<i>e.g. Ship the auth refactor · Unblock the design review</i>\n\n"
+                    "<i>Reply <code>cancel</code> to skip.</i>"
+                ),
+                parse_mode="HTML",
+            )
+            return
+
+        if action == "backup_check":
+            await self._answer(cb_id, "💾 Checking...")
+            _refresh_kb = [[{"text": "🔄 Refresh", "callback_data": "eve:backup_check"}]]
+            try:
+                import subprocess as _subprocess
+                from datetime import datetime as _dt
+
+                result = await _asyncio.to_thread(
+                    lambda: _subprocess.run(
+                        ["navig", "backup", "show", "--plain"],
+                        capture_output=True,
+                        text=True,
+                        timeout=15,
+                    )
+                )
+                out = (result.stdout or "").strip()
+                err = (result.stderr or "").strip()
+                body = out or err or "No backup data found."
+                if len(body) > 3500:
+                    body = body[:3500] + "\n…(truncated)"
+                ts = _dt.now().strftime("%H:%M")
+                await self.channel.send_message(
+                    chat_id,
+                    f"💾 <b>Backup status</b>  <i>· {ts}</i>\n\n<pre>{html.escape(body)}</pre>",
+                    parse_mode="HTML",
+                    keyboard=_refresh_kb,
+                )
+            except Exception as exc:
+                logger.warning("eve:backup_check error: %s", exc)
+                await self.channel.send_message(
+                    chat_id,
+                    "⚠️ Could not retrieve backup status. Run <code>navig backup show</code> manually.",
+                    parse_mode="HTML",
+                    keyboard=_refresh_kb,
+                )
+            return
+
+        if action == "dnd_on":
+            await self._answer(cb_id, "🌑 Going dark")
+            try:
+                from navig.agent.proactive.user_state import get_user_state_tracker
+
+                tracker = get_user_state_tracker()
+                tracker.set_preference("chat_mode", "sleep")
+                tracker.set_preference("notifications_enabled", False)
+            except Exception as exc:
+                logger.warning("eve:dnd_on preference error: %s", exc)
+            _wake_kb = [[{"text": "🌅 Wake up — restore notifications", "callback_data": "eve:dnd_off"}]]
+            await self.channel.send_message(
+                chat_id,
+                "🌑 <b>DND activated.</b>  Notifications suppressed until morning.\n"
+                "<i>Tap below or send any message to wake me up early.</i>",
+                parse_mode="HTML",
+                keyboard=_wake_kb,
+            )
+            return
+
+        if action == "dnd_off":
+            await self._answer(cb_id, "☀️ Back online")
+            try:
+                from navig.agent.proactive.user_state import get_user_state_tracker
+
+                tracker = get_user_state_tracker()
+                tracker.set_preference("chat_mode", "work")
+                tracker.set_preference("notifications_enabled", True)
+            except Exception as exc:
+                logger.warning("eve:dnd_off preference error: %s", exc)
+            await self.channel.send_message(
+                chat_id,
+                "☀️ <b>Back online.</b>  Notifications restored.",
+                parse_mode="HTML",
+            )
+            return
+
+        # Unknown action — acknowledge silently
+        await self._answer(cb_id, "")
+
+    async def _handle_morning_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        """Handle morning briefing inline buttons (morn:{action}).
+
+        Actions
+        -------
+        anchor_ok  — user confirms yesterday's priority is still their anchor today
+        """
+        action = cb_data.split(":", 1)[1] if ":" in cb_data else cb_data
+
+        if action == "anchor_ok":
+            await self._answer(cb_id, "📌 Anchor confirmed")
+            await self.channel.send_message(
+                chat_id,
+                "📌 <b>Anchor locked in.</b>  You know what to do. 🚀",
+                parse_mode="HTML",
+            )
+            return
+
+        # Unknown action — acknowledge silently
+        await self._answer(cb_id, "")
+
 
 # ────────────────────────────────────────────────────────────────
 # CallbackHandler
@@ -852,6 +1043,40 @@ class CallbackHandler:
                     await handler(chat_id=chat_id)
                 return
 
+            # ── Process killer confirmation (kill_confirm:* / kill_cancel) ──
+            if cb_data == "kill_cancel":
+                await self._answer(cb_id, "Cancelled")
+                try:
+                    await self.channel._api_call(
+                        "editMessageText",
+                        {
+                            "chat_id": chat_id,
+                            "message_id": message_id,
+                            "text": "🛑 <i>Kill cancelled.</i>",
+                            "parse_mode": "HTML",
+                        },
+                    )
+                except Exception:
+                    pass
+                return
+            if cb_data.startswith("kill_confirm:"):
+                await self._answer(cb_id, "Killing…")
+                handler = getattr(self.channel, "_handle_kill_confirm_callback", None)
+                if handler:
+                    await handler(chat_id, user_id, cb_data, message_id)
+                return
+
+            # ── TikTok (tk:dl / tk:an) — download or AI-analyse a shared link ──
+            if cb_data.startswith("tk:"):
+                await self._answer(cb_id, "Working…")
+                try:
+                    from navig.telegram import tiktok_actions as _tt
+
+                    await _tt.handle_callback(self.channel, cb_data, chat_id, message_id, user_id)
+                except Exception as _tk_exc:  # noqa: BLE001
+                    logger.debug("tiktok callback error: %s", _tk_exc)
+                return
+
             # ── Help Encyclopedia navigation (help:*) ──
             if cb_data.startswith("help:"):
                 await self._answer(cb_id, "")
@@ -915,6 +1140,61 @@ class CallbackHandler:
             # ── Provider hub callbacks (prov_*) — no store needed ──
             if cb_data.startswith("prov_"):
                 await self._handle_provider_callback(cb_id, cb_data, chat_id, message_id, user_id)
+                return
+
+            # ── Messengers hub callbacks (msg:*) — no store needed ──
+            if cb_data.startswith("msg:") or cb_data == "open_messengers":
+                if cb_data == "open_messengers":
+                    # Redirect to messengers hub (may replace the providers message)
+                    cb_data_rerouted = "msg:refresh"
+                    try:
+                        import functools
+
+                        from navig.gateway.channels.telegram_messengers_mixin import (
+                            TelegramMessengersMixin,
+                        )
+                        handler = functools.partial(
+                            TelegramMessengersMixin._handle_messengers_callback, self.channel
+                        )
+                        await handler(
+                            cb_id=cb_id,
+                            cb_data=cb_data_rerouted,
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            user_id=user_id,
+                        )
+                    except Exception as _msgr_err:
+                        logger.debug("open_messengers delegation error: %s", _msgr_err)
+                        await self._answer(cb_id, "")
+                        try:
+                            from navig.gateway.channels.telegram_messengers_mixin import (
+                                TelegramMessengersMixin,
+                            )
+                            await TelegramMessengersMixin._handle_messengers(
+                                self.channel, chat_id, user_id, message_id
+                            )
+                        except Exception as _fb_err:
+                            logger.debug("open_messengers fallback error: %s", _fb_err)
+                else:
+                    try:
+                        import functools
+
+                        from navig.gateway.channels.telegram_messengers_mixin import (
+                            TelegramMessengersMixin,
+                        )
+                        handler = functools.partial(
+                            TelegramMessengersMixin._handle_messengers_callback, self.channel
+                        )
+                        await handler(
+                            cb_id=cb_id,
+                            cb_data=cb_data,
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            user_id=user_id,
+                        )
+                    except Exception as _msgr_err:
+                        logger.debug("msg: callback error: %s", _msgr_err)
+                        await self._answer(cb_id, "⚠️ Messenger action unavailable")
                 return
 
             # ── Models flow callbacks (mdl_*) — no store needed ──
@@ -1008,6 +1288,11 @@ class CallbackHandler:
             # ── Evening summary action buttons (eve:*) — no store needed ──
             if cb_data.startswith("eve:"):
                 await self._handle_evening_callback(cb_id, cb_data, chat_id, message_id, user_id)
+                return
+
+            # ── Morning briefing action buttons (morn:*) — no store needed ──
+            if cb_data.startswith("morn:"):
+                await self._handle_morning_callback(cb_id, cb_data, chat_id, message_id, user_id)
                 return
 
             # ── Ask this (follow-up question routed as new user message) ──
@@ -1312,7 +1597,49 @@ class CallbackHandler:
             await self.channel._handle_models_command(chat_id, user_id, message_id=message_id)
             return
 
-        await self._answer(cb_id, "⚠️ Unknown navigation")
+        if action == "space" and target:
+            await self._answer(cb_id, f"\u2713 Switched to {target}")
+            try:
+                import functools as _ft
+
+                from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+                await _ft.partial(TelegramCommandsMixin._handle_space, self.channel)(
+                    chat_id=chat_id, user_id=user_id, text=f"/space {target}"
+                )
+            except Exception as _sp_exc:
+                logger.warning("nav:space callback error: %s", _sp_exc)
+            return
+
+        if action == "cmd" and target:
+            await self._answer(cb_id, "")
+            try:
+                dispatcher = getattr(self.channel, "_match_cli_command", None)
+                if dispatcher:
+                    entry = dispatcher(target)
+                    if entry and getattr(entry, "handler", None):
+                        import functools as _ft
+                        import inspect as _inspect
+
+                        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+                        handler_fn = getattr(TelegramCommandsMixin, entry.handler, None)
+                        if handler_fn:
+                            sig = _inspect.signature(handler_fn)
+                            kw: dict = {"chat_id": chat_id, "user_id": user_id, "text": target}
+                            kw = {k: v for k, v in kw.items() if k in sig.parameters}
+                            await _ft.partial(handler_fn, self.channel)(**kw)
+                            return
+            except Exception as _cmd_exc:
+                logger.warning("nav:cmd dispatch error %r: %s", target, _cmd_exc)
+            # Fallback: route as CLI command text
+            try:
+                handle_cmd = getattr(self.channel, "_handle_cli_command", None)
+                if handle_cmd:
+                    await handle_cmd(chat_id=chat_id, user_id=user_id, text=target, metadata={})
+            except Exception as _fb_exc:
+                logger.warning("nav:cmd fallback error %r: %s", target, _fb_exc)
+            return
+
+        await self._answer(cb_id, "\u26a0\ufe0f Unknown navigation")
 
     async def _answer(self, callback_id: str, text: str, show_alert: bool = False) -> None:
         if not callback_id:
@@ -2921,101 +3248,23 @@ class CallbackHandler:
         message_id: int,
         user_id: int,
     ) -> None:
-        """Handle evening summary inline action buttons (eve:{action}).
+        """Delegate to ResponseKeyboardBuilder._handle_evening_callback."""
+        await ResponseKeyboardBuilder._handle_evening_callback(
+            self, cb_id, cb_data, chat_id, message_id, user_id
+        )
 
-        Actions
-        -------
-        log_shipped   — prompts user to briefly log what was completed today
-        plan_tomorrow — prompts user to set their top priority for tomorrow
-        backup_check  — runs ``navig backup show`` in-process and replies
-        dnd_on        — activates DND / quiet mode for the rest of the night
-        """
-        import asyncio as _asyncio
-
-        action = cb_data.split(":", 1)[1] if ":" in cb_data else cb_data
-
-        if action == "log_shipped":
-            await self._answer(cb_id, "✅ What shipped?")
-            await self.channel.send_message(
-                chat_id,
-                (
-                    "📦 <b>What shipped today?</b>\n\n"
-                    "Reply with a quick line — one sentence per item is enough.\n"
-                    "<i>e.g. Fixed login bug · Deployed v2.3 · Reviewed 4 PRs</i>"
-                ),
-                parse_mode="HTML",
-            )
-            return
-
-        if action == "plan_tomorrow":
-            await self._answer(cb_id, "🎯 Set your priority")
-            await self.channel.send_message(
-                chat_id,
-                (
-                    "🎯 <b>What's the top priority for tomorrow?</b>\n\n"
-                    "Reply with a single sentence — I'll log it as your morning anchor.\n"
-                    "<i>e.g. Ship the auth refactor · Unblock the design review</i>"
-                ),
-                parse_mode="HTML",
-            )
-            return
-
-        if action == "backup_check":
-            await self._answer(cb_id, "💾 Checking...")
-            try:
-                import subprocess as _subprocess
-
-                result = await _asyncio.to_thread(
-                    lambda: _subprocess.run(
-                        ["navig", "backup", "show", "--plain"],
-                        capture_output=True,
-                        text=True,
-                        timeout=15,
-                    )
-                )
-                out = (result.stdout or "").strip()
-                err = (result.stderr or "").strip()
-                body = out or err or "No backup data found."
-                # Truncate to stay inside Telegram limits
-                if len(body) > 3500:
-                    body = body[:3500] + "\n…(truncated)"
-                await self.channel.send_message(
-                    chat_id,
-                    f"💾 <b>Backup status</b>\n\n<pre>{html.escape(body)}</pre>",
-                    parse_mode="HTML",
-                )
-            except Exception as exc:
-                logger.warning("eve:backup_check error: %s", exc)
-                await self.channel.send_message(
-                    chat_id,
-                    "⚠️ Could not retrieve backup status. Run <code>navig backup show</code> manually.",
-                    parse_mode="HTML",
-                )
-            return
-
-        if action == "dnd_on":
-            await self._answer(cb_id, "🌑 Going dark")
-            try:
-                from navig.agent.proactive.user_state import get_user_state_tracker
-
-                tracker = get_user_state_tracker()
-                tracker.set_dnd(True)
-                await self.channel.send_message(
-                    chat_id,
-                    "🌑 <b>DND activated.</b>  Notifications suppressed until morning.\n"
-                    "<i>Send any message to wake me up early.</i>",
-                    parse_mode="HTML",
-                )
-            except Exception as exc:
-                logger.warning("eve:dnd_on error: %s", exc)
-                await self.channel.send_message(
-                    chat_id,
-                    "🌑 DND activated. Notifications will be suppressed.",
-                )
-            return
-
-        # Unknown action — acknowledge silently
-        await self._answer(cb_id, "")
+    async def _handle_morning_callback(
+        self,
+        cb_id: str,
+        cb_data: str,
+        chat_id: int,
+        message_id: int,
+        user_id: int,
+    ) -> None:
+        """Delegate to ResponseKeyboardBuilder._handle_morning_callback."""
+        await ResponseKeyboardBuilder._handle_morning_callback(
+            self, cb_id, cb_data, chat_id, message_id, user_id
+        )
 
     async def _handle_heard_callback(
         self,

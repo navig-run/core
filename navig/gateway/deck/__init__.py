@@ -19,11 +19,30 @@ except ImportError:
     web = None
 
 from navig.gateway.deck.auth import configure_deck_auth, deck_auth_middleware
+from navig.gateway.deck.routes.admin import (
+    handle_deck_admin_agents,
+    handle_deck_admin_connectors,
+    handle_deck_admin_document_sets,
+    handle_deck_admin_image_providers,
+    handle_deck_admin_llm_providers,
+    handle_deck_admin_mcp_servers,
+    handle_deck_admin_search_providers,
+    handle_deck_admin_service_accounts,
+    handle_deck_admin_settings,
+    handle_deck_admin_settings_update,
+    handle_deck_admin_voice_providers,
+)
 from navig.gateway.deck.routes.core import (
     handle_deck_mode,
     handle_deck_settings_get,
     handle_deck_settings_post,
     handle_deck_status,
+)
+from navig.gateway.deck.routes.ops import (
+    handle_deck_ops,
+    handle_deck_ops_quick,
+    handle_deck_ops_session,
+    handle_deck_ops_toggle,
 )
 from navig.gateway.deck.routes.llm_modes import (
     handle_deck_llm_modes_detect,
@@ -39,12 +58,189 @@ from navig.gateway.deck.routes.static_assets import (
     _find_deck_static_dir,
     handle_deck_index,
 )
+from navig.gateway.deck.routes.social import (
+    handle_deck_social_adapter_get,
+    handle_deck_social_adapter_post,
+    handle_deck_social_matrix_bridges_deploy,
+    handle_deck_social_matrix_bridges_get,
+    handle_deck_social_matrix_get,
+    handle_deck_social_matrix_update,
+    handle_deck_social_status,
+    handle_deck_social_telegram_commands,
+    handle_deck_social_telegram_get,
+    handle_deck_social_telegram_post,
+)
+from navig.gateway.deck.routes.audio import (
+    handle_deck_audio_get,
+    handle_deck_audio_post,
+)
+from navig.gateway.deck.routes.persona import (
+    handle_deck_persona_get,
+    handle_deck_persona_post,
+)
+from navig.gateway.deck.routes.vision import (
+    handle_deck_vision_get,
+    handle_deck_vision_post,
+)
+from navig.gateway.deck.routes.cloud import (
+    handle_deck_cloud_enabled,
+    handle_deck_cloud_restart,
+    handle_deck_cloud_status,
+)
+from navig.gateway.deck.routes.runtime import (
+    handle_runtime_nodes,
+    handle_runtime_missions,
+    handle_runtime_receipts,
+    handle_runtime_mission_advance,
+)
+from navig.gateway.deck.routes.apps import (
+    handle_deck_apps_life,
+    handle_deck_apps_health,
+    handle_deck_apps_tasks_get,
+    handle_deck_apps_tasks_add,
+    handle_deck_apps_tasks_toggle,
+    handle_deck_apps_habits_toggle,
+    handle_deck_apps_reminders_get,
+    handle_deck_apps_reminders_add,
+    handle_deck_apps_reminders_delete,
+    handle_deck_apps_plans,
+    handle_deck_apps_finance,
+    handle_deck_apps_goals,
+    handle_deck_apps_goals_milestone,
+    handle_deck_apps_calendar,
+    handle_deck_apps_passport,
+    handle_deck_apps_wallet,
+    handle_deck_apps_wallet_send,
+    handle_deck_apps_knowledge_get,
+    handle_deck_apps_knowledge_add,
+    handle_deck_apps_devops,
+)
+from navig.gateway.deck.routes.board import (
+    handle_board_get,
+    handle_board_goal_create,
+    handle_board_goal_update,
+    handle_board_goal_delete,
+    handle_board_goal_generate,
+    handle_board_goal_run,
+    handle_board_card_create,
+    handle_board_card_update,
+    handle_board_card_delete,
+    handle_board_card_move,
+    handle_board_card_run,
+    handle_board_card_approve,
+    handle_board_card_reject,
+    handle_board_dep_add,
+    handle_board_dep_remove,
+    handle_board_subtask_add,
+    handle_board_subtask_update,
+    handle_board_subtask_delete,
+    handle_board_briefing,
+    handle_board_settings_get,
+    handle_board_settings_post,
+)
 from navig.gateway.deck.routes.vault import (
     handle_deck_vault_add,
     handle_deck_vault_delete,
     handle_deck_vault_list,
     handle_deck_vault_test,
     handle_deck_vault_toggle,
+    handle_deck_whisper_install,
+    handle_deck_whisper_install_status,
+)
+from navig.gateway.deck.routes.monitor import (
+    handle_deck_monitor_all,
+    handle_deck_monitor_cpu,
+    handle_deck_monitor_disk,
+    handle_deck_monitor_memory,
+    handle_deck_monitor_ports,
+    handle_deck_monitor_services,
+    handle_deck_monitor_uptime,
+)
+from navig.gateway.deck.routes.hosts import handle_deck_hosts
+from navig.gateway.deck.routes.batch import handle_deck_batch
+from navig.gateway.deck.routes.context import (
+    handle_deck_context,
+    handle_deck_context_files,
+    handle_deck_spaces,
+)
+from navig.gateway.deck.routes.nettools import (
+    handle_deck_net_server,
+    handle_deck_net_dns,
+    handle_deck_net_ssl,
+    handle_deck_net_whois,
+    handle_deck_net_weather,
+)
+from navig.gateway.deck.routes.skills import (
+    handle_deck_skills,
+    handle_deck_skill_detail,
+)
+from navig.gateway.deck.routes.database import (
+    handle_deck_db_hosts,
+    handle_deck_db_list,
+    handle_deck_db_tables,
+    handle_deck_db_query,
+)
+from navig.gateway.deck.routes.schedule import (
+    handle_deck_reminders_list,
+    handle_deck_reminders_create,
+    handle_deck_reminder_cancel,
+    handle_deck_crons_list,
+    handle_deck_briefing,
+)
+from navig.gateway.deck.routes.messages import (
+    handle_deck_messages_threads_list,
+    handle_deck_messages_thread_detail,
+    handle_deck_messages_contacts,
+    handle_deck_messages_send,
+)
+from navig.gateway.deck.routes.remote import (
+    handle_deck_remote_hosts,
+    handle_deck_remote_host_use,
+    handle_deck_remote_host_test,
+    handle_deck_remote_files,
+    handle_deck_remote_cat,
+    handle_deck_remote_run,
+    handle_deck_remote_docker,
+    handle_deck_remote_backup,
+)
+from navig.gateway.deck.routes.connectors import (
+    handle_deck_connectors_list,
+    handle_deck_connectors_connect,
+    handle_deck_connectors_callback,
+    handle_deck_connectors_oauth_callback,
+    handle_deck_connectors_disconnect,
+    handle_deck_connectors_health,
+    handle_deck_mcp_list,
+    handle_deck_mcp_add,
+    handle_deck_mcp_remove,
+)
+from navig.gateway.deck.routes.bizops import (
+    handle_bizops_overview,
+    handle_bizops_accounts_list,
+    handle_bizops_accounts_create,
+    handle_bizops_accounts_update,
+    handle_bizops_accounts_reconcile,
+    handle_bizops_transactions_list,
+    handle_bizops_transactions_create,
+    handle_bizops_transactions_quick,
+    handle_bizops_transactions_import,
+    handle_bizops_transactions_delete,
+    handle_bizops_projects_list,
+    handle_bizops_projects_create,
+    handle_bizops_projects_update,
+    handle_bizops_projects_summary,
+    handle_bizops_categories_list,
+    handle_bizops_categories_create,
+    handle_bizops_invoices_list,
+    handle_bizops_invoices_create,
+    handle_bizops_invoices_mark_paid,
+    handle_bizops_invoices_remind,
+    handle_bizops_subs_list,
+    handle_bizops_subs_create,
+    handle_bizops_tax_get,
+    handle_bizops_tax_set_rate,
+    handle_bizops_decisions_list,
+    handle_bizops_decisions_ack,
 )
 
 logger = logging.getLogger(__name__)
@@ -69,6 +265,42 @@ def register_deck_routes(
     """
     deck_cfg = deck_cfg or {}
 
+    # Auto-generate api_key if missing AND persist it to ~/.navig/config.yaml
+    # immediately. Without persistence, every restart minted a fresh key,
+    # invalidating every Telegram/Deck binding the user had set up. The cost
+    # of a single file write at startup is trivial compared to that breakage.
+    import secrets as _secrets
+    api_key = str(deck_cfg.get("api_key") or "").strip()
+    if not api_key:
+        api_key = "navig_" + _secrets.token_urlsafe(32)
+        # Mutate the live deck_cfg dict so the rest of the boot path
+        # (CloudManager, etc.) sees the same key. deck_cfg is a reference
+        # into config_manager.global_config -- mutating it propagates.
+        try:
+            deck_cfg["api_key"] = api_key
+        except Exception:  # noqa: BLE001
+            pass
+        # Persist to disk so subsequent restarts reuse the same key.
+        try:
+            from navig.core import Config
+            _cfg = Config()
+            _cfg.set("deck.api_key", api_key, scope="global")
+            _cfg.save(scope="global")
+            logger.info(
+                "Deck API key generated and persisted to ~/.navig/config.yaml:\n"
+                "    %s\n"
+                "  Subsequent restarts will reuse this key.",
+                api_key,
+            )
+        except Exception as _persist_exc:  # noqa: BLE001
+            # If we can't persist (read-only FS in a container?), fall back to
+            # the old behavior of printing the ephemeral key.
+            logger.warning(
+                "Could not persist deck.api_key (%s). Using ephemeral key:\n    %s\n"
+                "  To persist manually: navig config set deck.api_key %s",
+                _persist_exc, api_key, api_key,
+            )
+
     # Configure module-level auth
     configure_deck_auth(
         bot_token=bot_token,
@@ -76,12 +308,16 @@ def register_deck_routes(
         require_auth=require_auth,
         dev_mode=deck_cfg.get("dev_mode", False),
         auth_max_age=deck_cfg.get("auth_max_age", 3600),
+        api_key=api_key,
     )
 
-    # Add auth middleware to the app
-    # We insert at position 0 so it runs before CORS middleware
+    # Add auth middleware to the app.
+    # Must be appended (not inserted at 0) so that the CORS middleware (already
+    # at index 1) runs as the outermost wrapper.  CORS then post-processes the
+    # 401/403 responses returned by deck_auth_middleware and adds the required
+    # Access-Control-Allow-Origin headers before they reach the browser.
     if web:
-        app.middlewares.insert(0, deck_auth_middleware)
+        app.middlewares.append(deck_auth_middleware)
 
     # API routes
     if web:
@@ -93,10 +329,113 @@ def register_deck_routes(
         app.router.add_post("/api/deck/models", handle_deck_models_set)
         app.router.add_get("/api/deck/models/available", handle_deck_models_available)
 
+        # Ops / Remote Control
+        app.router.add_get("/api/deck/ops", handle_deck_ops)
+        app.router.add_post("/api/deck/ops/toggle", handle_deck_ops_toggle)
+        app.router.add_post("/api/deck/ops/session", handle_deck_ops_session)
+        app.router.add_post("/api/deck/ops/quick", handle_deck_ops_quick)
+
         # LLM Modes routes
         app.router.add_get("/api/deck/llm-modes", handle_deck_llm_modes_get)
         app.router.add_post("/api/deck/llm-modes", handle_deck_llm_modes_update)
         app.router.add_post("/api/deck/llm-modes/detect", handle_deck_llm_modes_detect)
+
+        # Admin (Onyx-ported provider registries)
+        app.router.add_get("/api/deck/admin/llm-providers", handle_deck_admin_llm_providers)
+        app.router.add_get("/api/deck/admin/search-providers", handle_deck_admin_search_providers)
+        app.router.add_get("/api/deck/admin/image-providers", handle_deck_admin_image_providers)
+        app.router.add_get("/api/deck/admin/voice-providers", handle_deck_admin_voice_providers)
+        app.router.add_get("/api/deck/admin/mcp-servers", handle_deck_admin_mcp_servers)
+        app.router.add_get("/api/deck/admin/settings", handle_deck_admin_settings)
+        app.router.add_get("/api/deck/admin/agents", handle_deck_admin_agents)
+        app.router.add_get("/api/deck/admin/connectors", handle_deck_admin_connectors)
+        app.router.add_get("/api/deck/admin/document-sets", handle_deck_admin_document_sets)
+        app.router.add_get("/api/deck/admin/service-accounts", handle_deck_admin_service_accounts)
+        app.router.add_post("/api/deck/admin/settings", handle_deck_admin_settings_update)
+
+        # Social Networks routes
+        app.router.add_get("/api/deck/social/status", handle_deck_social_status)
+        app.router.add_get("/api/deck/social/telegram", handle_deck_social_telegram_get)
+        app.router.add_post("/api/deck/social/telegram", handle_deck_social_telegram_post)
+        app.router.add_get("/api/deck/social/telegram/commands", handle_deck_social_telegram_commands)
+        app.router.add_get("/api/deck/social/adapter/{network}", handle_deck_social_adapter_get)
+        app.router.add_post("/api/deck/social/adapter/{network}", handle_deck_social_adapter_post)
+        app.router.add_get("/api/deck/social/matrix", handle_deck_social_matrix_get)
+        app.router.add_post("/api/deck/social/matrix", handle_deck_social_matrix_update)
+        app.router.add_get("/api/deck/social/matrix/bridges", handle_deck_social_matrix_bridges_get)
+
+        # Voice & Audio (per-user TTS config) — replaces in-chat /voice /audio menus
+        app.router.add_get("/api/deck/audio", handle_deck_audio_get)
+        app.router.add_post("/api/deck/audio", handle_deck_audio_post)
+
+        # Persona switcher — replaces in-chat /persona /personas
+        app.router.add_get("/api/deck/persona", handle_deck_persona_get)
+        app.router.add_post("/api/deck/persona", handle_deck_persona_post)
+
+        # Vision provider/model — replaces in-chat /provider_vision
+        app.router.add_get("/api/deck/vision", handle_deck_vision_get)
+        app.router.add_post("/api/deck/vision", handle_deck_vision_post)
+
+        # Cloud broker/tunnel — exposes CloudManager state to Account → Cloud
+        app.router.add_get("/api/deck/cloud/status", handle_deck_cloud_status)
+        app.router.add_post("/api/deck/cloud/enabled", handle_deck_cloud_enabled)
+        app.router.add_post("/api/deck/cloud/restart", handle_deck_cloud_restart)
+        app.router.add_post("/api/deck/social/matrix/bridges/deploy", handle_deck_social_matrix_bridges_deploy)
+
+        # Mesh / Flux peer discovery — registered by
+        # navig.gateway.routes.mesh.register() (registry-backed, computes
+        # health from heartbeat last_seen).
+
+        # Runtime (Nodes / Missions / Receipts)
+        app.router.add_get("/runtime/nodes", handle_runtime_nodes)
+        app.router.add_get("/runtime/missions", handle_runtime_missions)
+        app.router.add_get("/runtime/receipts", handle_runtime_receipts)
+        app.router.add_post("/runtime/missions/{mission_id}/advance", handle_runtime_mission_advance)
+
+        # LifeOps routes
+        app.router.add_get("/api/deck/apps/life", handle_deck_apps_life)
+        app.router.add_get("/api/deck/apps/health", handle_deck_apps_health)
+        app.router.add_get("/api/deck/apps/tasks", handle_deck_apps_tasks_get)
+        app.router.add_post("/api/deck/apps/tasks/add", handle_deck_apps_tasks_add)
+        app.router.add_post("/api/deck/apps/tasks/toggle", handle_deck_apps_tasks_toggle)
+        app.router.add_post("/api/deck/apps/habits/toggle", handle_deck_apps_habits_toggle)
+        app.router.add_get("/api/deck/apps/reminders", handle_deck_apps_reminders_get)
+        app.router.add_post("/api/deck/apps/reminders/add", handle_deck_apps_reminders_add)
+        app.router.add_delete("/api/deck/apps/reminders/{rid}", handle_deck_apps_reminders_delete)
+        app.router.add_get("/api/deck/apps/plans", handle_deck_apps_plans)
+        app.router.add_get("/api/deck/apps/finance", handle_deck_apps_finance)
+        app.router.add_get("/api/deck/apps/goals", handle_deck_apps_goals)
+        app.router.add_post("/api/deck/apps/goals/update-milestone", handle_deck_apps_goals_milestone)
+        app.router.add_get("/api/deck/apps/calendar", handle_deck_apps_calendar)
+
+        # Tasks board (pipeline-chain Kanban)
+        app.router.add_get("/api/deck/board", handle_board_get)
+        app.router.add_post("/api/deck/board/goals", handle_board_goal_create)
+        app.router.add_patch("/api/deck/board/goals/{id}", handle_board_goal_update)
+        app.router.add_delete("/api/deck/board/goals/{id}", handle_board_goal_delete)
+        app.router.add_post("/api/deck/board/goals/{id}/generate", handle_board_goal_generate)
+        app.router.add_post("/api/deck/board/goals/{id}/run", handle_board_goal_run)
+        app.router.add_post("/api/deck/board/cards", handle_board_card_create)
+        app.router.add_patch("/api/deck/board/cards/{id}", handle_board_card_update)
+        app.router.add_delete("/api/deck/board/cards/{id}", handle_board_card_delete)
+        app.router.add_post("/api/deck/board/cards/{id}/move", handle_board_card_move)
+        app.router.add_post("/api/deck/board/cards/{id}/run", handle_board_card_run)
+        app.router.add_post("/api/deck/board/cards/{id}/approve", handle_board_card_approve)
+        app.router.add_post("/api/deck/board/cards/{id}/reject", handle_board_card_reject)
+        app.router.add_post("/api/deck/board/cards/{id}/deps", handle_board_dep_add)
+        app.router.add_delete("/api/deck/board/cards/{id}/deps/{dep}", handle_board_dep_remove)
+        app.router.add_post("/api/deck/board/cards/{id}/subtasks", handle_board_subtask_add)
+        app.router.add_patch("/api/deck/board/subtasks/{id}", handle_board_subtask_update)
+        app.router.add_delete("/api/deck/board/subtasks/{id}", handle_board_subtask_delete)
+        app.router.add_get("/api/deck/board/briefing", handle_board_briefing)
+        app.router.add_get("/api/deck/board/settings", handle_board_settings_get)
+        app.router.add_post("/api/deck/board/settings", handle_board_settings_post)
+        app.router.add_get("/api/deck/apps/passport", handle_deck_apps_passport)
+        app.router.add_get("/api/deck/apps/wallet", handle_deck_apps_wallet)
+        app.router.add_post("/api/deck/apps/wallet/send", handle_deck_apps_wallet_send)
+        app.router.add_get("/api/deck/apps/knowledge", handle_deck_apps_knowledge_get)
+        app.router.add_post("/api/deck/apps/knowledge/add", handle_deck_apps_knowledge_add)
+        app.router.add_get("/api/deck/apps/devops", handle_deck_apps_devops)
 
         # Vault routes
         app.router.add_get("/api/deck/vault", handle_deck_vault_list)
@@ -104,12 +443,118 @@ def register_deck_routes(
         app.router.add_delete("/api/deck/vault/{cred_id}", handle_deck_vault_delete)
         app.router.add_post("/api/deck/vault/{cred_id}/toggle", handle_deck_vault_toggle)
         app.router.add_post("/api/deck/vault/{cred_id}/test", handle_deck_vault_test)
+        app.router.add_post("/api/deck/whisper/install", handle_deck_whisper_install)
+        app.router.add_get("/api/deck/whisper/install/status", handle_deck_whisper_install_status)
+
+        # Connectors (OAuth integrations + MCP servers)
+        app.router.add_get("/api/deck/connectors", handle_deck_connectors_list)
+        # OAuth provider redirect target — auth-bypassed (no bearer token on the
+        # provider's redirect; PKCE state is the security boundary). MUST be
+        # registered before the {connector_id} routes so "oauth" isn't captured.
+        app.router.add_get("/api/deck/connectors/oauth/callback", handle_deck_connectors_oauth_callback)
+        app.router.add_post("/api/deck/connectors/{connector_id}/connect", handle_deck_connectors_connect)
+        app.router.add_post("/api/deck/connectors/{connector_id}/connect/callback", handle_deck_connectors_callback)
+        app.router.add_delete("/api/deck/connectors/{connector_id}", handle_deck_connectors_disconnect)
+        app.router.add_get("/api/deck/connectors/{connector_id}/health", handle_deck_connectors_health)
+        app.router.add_get("/api/deck/mcp/servers", handle_deck_mcp_list)
+        app.router.add_post("/api/deck/mcp/servers", handle_deck_mcp_add)
+        app.router.add_delete("/api/deck/mcp/servers/{name}", handle_deck_mcp_remove)
+
+        # Batch — collapse a screen's many GET reads into one round-trip
+        app.router.add_post("/api/deck/batch", handle_deck_batch)
+
+        # Hosts / Fleet endpoint
+        app.router.add_get("/api/deck/hosts", handle_deck_hosts)
+
+        # Monitor routes — system resources (CPU, RAM, disk, uptime, services, ports)
+        app.router.add_get("/api/deck/monitor", handle_deck_monitor_all)
+        app.router.add_get("/api/deck/monitor/disk", handle_deck_monitor_disk)
+        app.router.add_get("/api/deck/monitor/memory", handle_deck_monitor_memory)
+        app.router.add_get("/api/deck/monitor/cpu", handle_deck_monitor_cpu)
+        app.router.add_get("/api/deck/monitor/uptime", handle_deck_monitor_uptime)
+        app.router.add_get("/api/deck/monitor/services", handle_deck_monitor_services)
+        app.router.add_get("/api/deck/monitor/ports", handle_deck_monitor_ports)
+
+        # Context Engine — memory bank + indexed files + spaces
+        app.router.add_get("/api/deck/context", handle_deck_context)
+        app.router.add_get("/api/deck/context/files", handle_deck_context_files)
+        app.router.add_get("/api/deck/spaces", handle_deck_spaces)
+
+        # NetTools — diagnostics
+        app.router.add_get("/api/deck/net/server", handle_deck_net_server)
+        app.router.add_get("/api/deck/net/dns", handle_deck_net_dns)
+        app.router.add_get("/api/deck/net/ssl", handle_deck_net_ssl)
+        app.router.add_get("/api/deck/net/whois", handle_deck_net_whois)
+        app.router.add_get("/api/deck/net/weather", handle_deck_net_weather)
+
+        # Skills — discovery + detail
+        app.router.add_get("/api/deck/skills", handle_deck_skills)
+        app.router.add_get("/api/deck/skills/{skill_id}", handle_deck_skill_detail)
+
+        # Database — list / tables / query (SSH-backed)
+        app.router.add_get("/api/deck/db/hosts", handle_deck_db_hosts)
+        app.router.add_post("/api/deck/db/list", handle_deck_db_list)
+        app.router.add_post("/api/deck/db/tables", handle_deck_db_tables)
+        app.router.add_post("/api/deck/db/query", handle_deck_db_query)
+
+        # Schedule — reminders + crons + briefing
+        app.router.add_get("/api/deck/schedule/reminders", handle_deck_reminders_list)
+        app.router.add_post("/api/deck/schedule/reminders", handle_deck_reminders_create)
+        app.router.add_delete("/api/deck/schedule/reminders/{reminder_id}", handle_deck_reminder_cancel)
+        app.router.add_get("/api/deck/schedule/crons", handle_deck_crons_list)
+        app.router.add_get("/api/deck/schedule/briefing", handle_deck_briefing)
+
+        # Messages — threads + contacts + send across adapters
+        app.router.add_get("/api/deck/messages/threads", handle_deck_messages_threads_list)
+        app.router.add_get("/api/deck/messages/threads/{thread_id}", handle_deck_messages_thread_detail)
+        app.router.add_get("/api/deck/messages/contacts", handle_deck_messages_contacts)
+        app.router.add_post("/api/deck/messages/send", handle_deck_messages_send)
+
+        # Remote — SSH-backed host operations
+        app.router.add_get("/api/deck/remote/hosts", handle_deck_remote_hosts)
+        app.router.add_post("/api/deck/remote/hosts/use", handle_deck_remote_host_use)
+        app.router.add_post("/api/deck/remote/hosts/test", handle_deck_remote_host_test)
+        app.router.add_get("/api/deck/remote/files", handle_deck_remote_files)
+        app.router.add_get("/api/deck/remote/cat", handle_deck_remote_cat)
+        app.router.add_post("/api/deck/remote/run", handle_deck_remote_run)
+        app.router.add_post("/api/deck/remote/docker", handle_deck_remote_docker)
+        app.router.add_get("/api/deck/remote/backup", handle_deck_remote_backup)
+
+        # BizOps — business operations cockpit
+        app.router.add_get("/api/deck/bizops", handle_bizops_overview)
+        app.router.add_get("/api/deck/bizops/accounts", handle_bizops_accounts_list)
+        app.router.add_post("/api/deck/bizops/accounts", handle_bizops_accounts_create)
+        app.router.add_patch("/api/deck/bizops/accounts/{id}", handle_bizops_accounts_update)
+        app.router.add_post("/api/deck/bizops/accounts/{id}/reconcile", handle_bizops_accounts_reconcile)
+        app.router.add_get("/api/deck/bizops/transactions", handle_bizops_transactions_list)
+        app.router.add_post("/api/deck/bizops/transactions", handle_bizops_transactions_create)
+        app.router.add_post("/api/deck/bizops/transactions/quick-add", handle_bizops_transactions_quick)
+        app.router.add_post("/api/deck/bizops/transactions/import-csv", handle_bizops_transactions_import)
+        app.router.add_delete("/api/deck/bizops/transactions/{id}", handle_bizops_transactions_delete)
+        app.router.add_get("/api/deck/bizops/projects", handle_bizops_projects_list)
+        app.router.add_post("/api/deck/bizops/projects", handle_bizops_projects_create)
+        app.router.add_patch("/api/deck/bizops/projects/{id}", handle_bizops_projects_update)
+        app.router.add_get("/api/deck/bizops/projects/{id}/summary", handle_bizops_projects_summary)
+        app.router.add_get("/api/deck/bizops/categories", handle_bizops_categories_list)
+        app.router.add_post("/api/deck/bizops/categories", handle_bizops_categories_create)
+        app.router.add_get("/api/deck/bizops/invoices", handle_bizops_invoices_list)
+        app.router.add_post("/api/deck/bizops/invoices", handle_bizops_invoices_create)
+        app.router.add_post("/api/deck/bizops/invoices/{id}/mark-paid", handle_bizops_invoices_mark_paid)
+        app.router.add_post("/api/deck/bizops/invoices/{id}/remind", handle_bizops_invoices_remind)
+        app.router.add_get("/api/deck/bizops/subscriptions", handle_bizops_subs_list)
+        app.router.add_post("/api/deck/bizops/subscriptions", handle_bizops_subs_create)
+        app.router.add_get("/api/deck/bizops/tax-reserves", handle_bizops_tax_get)
+        app.router.add_post("/api/deck/bizops/tax-reserves/rate", handle_bizops_tax_set_rate)
+        app.router.add_get("/api/deck/bizops/decisions", handle_bizops_decisions_list)
+        app.router.add_post("/api/deck/bizops/decisions/{id}/ack", handle_bizops_decisions_ack)
 
         # Static file serving for Deck SPA
         static_dir = _find_deck_static_dir(deck_cfg.get("static_dir"))
         if static_dir:
-            # Serve assets (JS, CSS, etc.)
-            app.router.add_static("/deck/assets", static_dir / "assets", show_index=False)
+            # Serve assets (JS, CSS, etc.) — only if the subdirectory actually exists.
+            _assets_dir = static_dir / "assets"
+            if _assets_dir.is_dir():
+                app.router.add_static("/deck/assets", _assets_dir, show_index=False)
             # Serve other static files
             for f in static_dir.iterdir():
                 # Plain filenames only — no path separators, no hidden files, not index.html.
@@ -124,6 +569,7 @@ def register_deck_routes(
                     and "\\" not in f.name
                     and not f.name.startswith(".")
                 ):
+
                     async def _serve_static_file(request, fp=f):
                         return web.FileResponse(fp)
 

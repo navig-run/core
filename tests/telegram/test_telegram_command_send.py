@@ -1,7 +1,7 @@
+import pytest
 from typer.testing import CliRunner
 
 from navig.commands.telegram import telegram_app
-import pytest
 
 pytestmark = pytest.mark.integration
 

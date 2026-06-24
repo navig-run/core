@@ -184,7 +184,7 @@ async def test_run_process_output_cap_truncates():
     cap = 500
     # Invoke Python directly (no shell) to avoid cross-platform quote issues
     result = await run_process(
-        [sys.executable, "-c", f"print('X' * 2000)"],
+        [sys.executable, "-c", "print('X' * 2000)"],
         ProcessOptions(timeout_s=15.0, output_cap=cap),
     )
     assert result.truncated is True

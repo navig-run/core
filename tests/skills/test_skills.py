@@ -2,8 +2,9 @@
 
 from pathlib import Path
 
-from navig.commands.skills import list_skills_cmd, tree_skills_cmd
 import pytest
+
+from navig.commands.skills import list_skills_cmd, tree_skills_cmd
 
 pytestmark = pytest.mark.integration
 

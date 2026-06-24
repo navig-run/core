@@ -10,7 +10,6 @@ import pytest
 
 from navig.gateway.keyed_queue import KeyedQueue, _enqueue_keyed_task
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

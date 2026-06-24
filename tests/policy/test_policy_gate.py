@@ -8,9 +8,10 @@ import threading
 import unittest
 from pathlib import Path
 
+import pytest
+
 from navig.gateway.audit_log import AuditLog
 from navig.gateway.policy_gate import PolicyDecision, PolicyGate
-import pytest
 
 pytestmark = pytest.mark.integration
 
@@ -230,7 +231,7 @@ class TestAuditLog(unittest.TestCase):
 
         def writer(n):
             try:
-                for i in range(10):
+                for _i in range(10):
                     self.log.record(
                         actor=f"thread-{n}",
                         action="concurrent.write",

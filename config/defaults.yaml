@@ -406,3 +406,28 @@ agent:
   plan_explore_agents: 3
   # Maximum clarifying questions asked in Phase 1 of `navig plan new`.
   plan_max_interview_questions: 5
+
+# Windows desktop automation (MCP tools: desktop_snapshot, desktop_screenshot, etc.)
+desktop:
+  # Screenshot backend: "auto" tries dxcam -> mss -> pillow in priority order.
+  screenshot_backend: "auto"
+  # Scale factor applied to screenshots in MCP responses (0.1–1.0).
+  screenshot_scale: 1.0
+  # Maximum dimensions for snapshot screenshots (width x height).
+  snapshot_max_width: 1920
+  snapshot_max_height: 1080
+  # Known browser process names (used to identify browser windows).
+  browser_names:
+    - chrome
+    - firefox
+    - msedge
+    - opera
+    - brave
+    - vivaldi
+    - safari
+    - arc
+    - zen
+  # App names excluded from all desktop tool window listings.
+  excluded_apps: []
+  # App names excluded only from automated interaction (still visible in listings).
+  avoided_apps: []

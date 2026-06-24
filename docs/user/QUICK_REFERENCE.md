@@ -1,329 +1,249 @@
-# NAVIG Cross-Platform Quick Reference
+# NAVIG CLI — Quick Reference
 
-## Installation
+> Daily cheat sheet for remote server operations. All commands target the **active host** unless
+> noted. Set active host with `navig host use <name>`.
 
-### Windows
-```bash
-navig ahk install
-```
+---
 
-### Linux
-```bash
-sudo apt install xdotool wmctrl xclip
-```
-
-### macOS
-```bash
-brew install cliclick  # Optional
-```
-
-## Check Status
+## Host and Context
 
 ```bash
-navig auto status
+navig host list                    # List all configured hosts
+navig host add                     # Add a new host (interactive wizard)
+navig host use staging-01          # Switch active host
+navig host show                    # Show current host details
+navig host test                    # Test SSH connectivity
+navig host test production         # Test a specific host
+
+navig app list                     # List apps on active host
+navig app use myapp                # Set active application context
+navig app show                     # Show current app config
 ```
 
-## Common Commands
+---
 
-### Automation
+## Remote Execution
 
 ```bash
-# Click at coordinates
-navig auto click 100 200
+navig run "ls -la /var/www"               # Simple command
+navig run "df -h && free -m"              # Chained command
 
-# Type text
-navig auto type "Hello World"
+# Complex commands with special characters — encode first (PowerShell):
+$cmd = "php artisan tinker --execute='echo User::count();'"
+$b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($cmd))
+navig run --b64 $b64
 
-# Open app
-navig auto open "Calculator"
-
-# List windows
-navig auto windows
-
-# Snap window
-navig auto snap "VS Code" left
-
-# Clipboard
-navig auto clipboard "Copy this"
-navig auto clipboard  # Print
-
-# Get focused window
-navig auto focus
+navig run @script.sh                      # From file
+navig run -i                              # Interactive multi-line editor
+echo "uptime" | navig run --stdin        # From stdin
 ```
 
-### AI Generation
+---
+
+## Database
 
 ```bash
-# Generate workflow
-navig evolve workflow "Open notepad and type hello"
+navig db list                             # List all databases
+navig db tables myapp_db                  # List tables
+navig db query "SELECT COUNT(*) FROM users" -d myapp_db
+navig db query "SELECT..." -d mydb --plain  # Pipe-friendly output
 
-# Generate script
-navig evolve script "Backup database to S3"
+# Backup
+navig db dump myapp_db -o backup.sql
+navig db dump myapp_db -o backup.sql.gz   # Auto-compressed by extension
 
-# Fix code
-navig evolve fix app.py "Fix bug in login function"
-navig evolve fix --check "pytest tests/" server.py "Add validation"
+# Restore
+navig db restore backup.sql -d myapp_db
 
-# Generate skill
-navig evolve skill "Monitor CPU usage and alert if high"
-
-# Generate pack
-navig evolve pack "DevOps tools bundle"
+# Laravel: prefer Tinker over raw SQL
+$cmd = "cd /var/www/myapp && php artisan tinker --execute='App\Models\User::count()'"
+$b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($cmd))
+navig run --b64 $b64
 ```
 
-### Workflows
+---
+
+## File Operations
 
 ```bash
-# List workflows
-navig workflow list
+navig file list /var/www                  # List directory
+navig file list /var/www --tree --depth 3 # Tree view
+navig file list /var/www --all            # Include hidden files
 
-# Run workflow
-navig workflow run <name>
+navig file show /var/log/nginx/error.log --tail --lines 50
+navig file show /var/log/app.log --lines 800-850
 
-# Run with variables
-navig workflow run <name> --var key=value
+navig file add local.txt /tmp/remote.txt  # Upload file
+navig file add ./dist/ /var/www/app/      # Upload directory
+navig file get /var/log/app.log ./        # Download
+
+navig file edit /etc/nginx/nginx.conf --content "..."
+navig file edit /tmp/script.sh --mode 755
+navig file remove /tmp/old --recursive
 ```
 
-### Scripts
+---
+
+## Docker
 
 ```bash
-# List scripts
-navig script list
-
-# Run script
-navig script run <name>
-
-# Edit script
-navig script edit <name>
-
-# Create new script
-navig script new <name> --template automation
+navig docker ps                           # Running containers
+navig docker ps -a                        # All containers
+navig docker logs nginx -n 100            # Last 100 log lines
+navig docker exec app "ls -la /app"       # Exec in container
+navig docker restart nginx
+navig docker stats                        # Resource usage
+navig docker compose up -d -f docker-compose.yml
 ```
 
-## Workflow YAML Structure
+---
 
-```yaml
-name: my_workflow
-description: "What it does"
-variables:
-  var1: "default_value"
-steps:
-  - action: open_app
-    args:
-      target: "{{var1}}"
-    capture: result
-    if: "condition"
-    platform:
-      windows:
-        args:
-          target: "notepad.exe"
-      linux:
-        args:
-          target: "gedit"
-      darwin:
-        args:
-          target: "TextEdit"
-```
-
-## Available Actions
-
-| Action | Description | Args |
-|--------|-------------|------|
-| `open_app` | Open application | `target` |
-| `click` | Click coordinates | `x`, `y`, `button` |
-| `type` | Type text | `text`, `delay` |
-| `send` | Send keys | `keys` |
-| `mouse_move` | Move mouse | `x`, `y`, `speed` |
-| `activate_window` | Focus window | `selector` |
-| `close_window` | Close window | `selector` |
-| `move_window` | Move/resize | `selector`, `x`, `y`, `width`, `height` |
-| `maximize_window` | Maximize | `selector` |
-| `minimize_window` | Minimize | `selector` |
-| `snap_window` | Snap to position | `selector`, `position` |
-| `get_focused_window` | Get active window | - |
-| `get_clipboard` | Get clipboard | - |
-| `set_clipboard` | Set clipboard | `text` |
-| `wait` | Sleep | `seconds` |
-| `wait_for` | Wait for condition | `type`, `target`, `timeout` |
-| `run_command` | Execute shell | `command` |
-
-## Condition Syntax
-
-Variables are accessed directly (no `{{}}`):
-
-```yaml
-if: "status == 'ready'"
-if: "count > 5"
-if: "window != None"
-if: "text in 'Calculator'"
-if: "count > 10 and status == 'ready'"
-```
-
-## Variable Interpolation
-
-In args, use `{{varname}}`:
-
-```yaml
-args:
-  text: "Hello {{username}}"
-  target: "{{app_name}}"
-```
-
-## Platform Detection
-
-The engine auto-detects:
-- `windows` → AHKAdapter
-- `linux` → LinuxAdapter
-- `darwin` → MacOSAdapter
-
-## Security
-
-✅ Safe evaluation (no eval/exec)
-✅ Whitelisted operations
-✅ No function calls
-✅ No imports
-✅ Sandboxed scope
-
-## Examples
-
-### Example 1: Screenshot & OCR (Windows)
-```bash
-navig ahk screenshot --output screenshot.png
-navig ahk ocr --image screenshot.png
-```
-
-### Example 2: Window Management
-```bash
-# Snap all Chrome windows to left
-navig auto snap "Chrome" left
-```
-
-### Example 3: Clipboard Automation
-```yaml
-name: clipboard_demo
-steps:
-  - action: get_clipboard
-    capture: original
-
-  - action: set_clipboard
-    args:
-      text: "Processed: {{original}}"
-```
-
-### Example 4: Conditional Execution
-```yaml
-name: conditional_demo
-steps:
-  - action: get_focused_window
-    capture: window
-
-  - action: type
-    args:
-      text: "VS Code is active!"
-    if: "'Code' in window.get('title', '')"
-```
-
-### Example 5: Cross-Platform App Launch
-```yaml
-name: open_editor
-variables:
-  editor: "code"
-steps:
-  - action: open_app
-    args:
-      target: "{{editor}}"
-    platform:
-      windows:
-        args:
-          target: "code.exe"
-      linux:
-        args:
-          target: "/usr/bin/code"
-      darwin:
-        args:
-          target: "Visual Studio Code"
-```
-
-## Debugging
-
-### Check adapter status
-```bash
-navig auto status
-```
-
-### Test workflow
-```bash
-navig workflow run cross_platform_test
-```
-
-### View workflow output
-Captured variables are returned as JSON after execution.
-
-## Help
+## SSH Tunnels
 
 ```bash
-navig --help
-navig auto --help
-navig evolve --help
-navig workflow --help
-navig script --help
+navig tunnel show                         # Active tunnel status
+navig tunnel run                          # Start tunnel
+navig tunnel stop                         # Stop tunnel
 ```
 
-## Documentation
+---
 
-- `docs/automation.md` - Full automation guide
-- `docs/evolution.md` - Evolution system
-- `docs/ARCHITECTURE.md` - System architecture
-- `docs/CROSS_PLATFORM_EVOLUTION.md` - Complete overview
+## Web Server
 
-## Common Issues
-
-### Linux: "Automation not available"
 ```bash
-sudo apt install xdotool wmctrl xclip
+navig web vhosts                          # List virtual hosts
+navig web test                            # Test nginx/apache config
+navig web reload                          # Reload (tests config first)
+navig web enable mysite.com
+navig web disable mysite.com
 ```
 
-### macOS: Mouse click not working
+---
+
+## Host Health and Security
+
 ```bash
-brew install cliclick
+navig host monitor show                   # Full health overview
+navig host monitor show --disk            # Disk usage
+navig host monitor show --resources       # CPU/memory/load
+navig host security show                  # Security overview
+navig host security show --firewall       # Firewall rules
+navig host maintenance                    # Run system maintenance
 ```
 
-### Windows: AHK not found
+---
+
+## Backup and Restore
+
 ```bash
-navig ahk install
+navig backup show                         # List backups
+navig backup export                       # Export NAVIG config
+navig backup import backup.json           # Import NAVIG config
+navig backup run --all                    # Full server backup
+navig backup run --db-all --compress gzip # All databases, compressed
+navig backup restore <name>               # Restore from backup
+navig backup remove <name>                # Delete backup
 ```
 
-### Workflow syntax error
-Check YAML syntax with:
+---
+
+## Flows (Workflows)
+
 ```bash
-navig workflow test <name>
+navig flow list                           # List saved flows
+navig flow show deploy-app                # View flow steps
+navig flow run deploy-app --dry-run       # Preview
+navig flow run deploy-app                 # Execute
+navig flow add my-flow                    # Create new flow
+navig flow edit my-flow                   # Edit flow YAML
+navig flow test my-flow                   # Validate syntax
 ```
 
-## Tips
+---
 
-1. **Test on your platform first** with `navig auto status`
-2. **Use platform overrides** for OS-specific cases
-3. **Capture variables** to chain actions
-4. **Use conditions** for flexible workflows
-5. **Generate with AI** using `navig evolve workflow`
-6. **Start simple** and iterate
+## Wiki / Knowledge Base
 
-## Next Steps
+```bash
+navig wiki init                           # Create project wiki
+navig wiki list                           # List all pages
+navig wiki show architecture/overview     # View a page
+navig wiki add notes.md                   # Add file to inbox
+navig wiki search "database schema"       # Full-text search
+navig wiki inbox process                  # AI-categorise inbox
+```
 
-1. Generate your first workflow:
-   ```bash
-   navig evolve workflow "Your automation idea"
-   ```
+---
 
-2. Test it:
-   ```bash
-   navig workflow run <generated_name>
-   ```
+## Plans and Briefing
 
-3. Edit if needed:
-   ```bash
-   # Workflows are saved in workflows/
-   code workflows/<name>.yaml
-   ```
+```bash
+navig plans status                        # Current progress
+navig plans next                          # Next recommended actions
+navig plans briefing                      # Today's summary
+navig plans sync                          # Sync across spaces
+```
 
-4. Share it with your team! 🚀
+---
+
+## Configuration and Daemon
+
+```bash
+navig config validate                     # Validate config
+navig config show                         # Display config
+navig config set <key> <value>            # Set a value
+navig service status                      # Daemon status
+navig service start                       # Start daemon
+navig service stop                        # Stop daemon
+navig service logs -n 30                  # Last 30 log lines
+```
+
+---
+
+## Common Flags
+
+| Flag | Short | Effect |
+|------|-------|--------|
+| `--yes` | `-y` | Skip confirmation prompts |
+| `--plain` / `--raw` | | No formatting (pipe-friendly) |
+| `--json` | | Structured JSON output |
+| `--dry-run` | | Preview — no changes made |
+| `--b64` | `-b` | Decode base64 before exec |
+| `--host <name>` | `-h` | Target a specific host |
+
+---
+
+## One-Liners
+
+```powershell
+# Timestamped database backup
+$ts = Get-Date -Format "yyyyMMdd_HHmmss"
+navig db dump myapp_db -o "backup-$ts.sql"
+
+# Tail app logs
+navig file show /var/log/myapp/app.log --tail --lines 100
+
+# Restart container and verify
+navig docker restart app; navig docker logs app -n 20
+
+# Validate config then restart daemon
+navig config validate; navig service stop; navig service start
+```
+
+---
+
+## Getting Help
+
+```bash
+navig help                                # Browse in-app help topics
+navig help db                             # Help for a specific group
+navig help --schema                       # Machine-readable command registry
+navig <group> --help                      # Full flags for any group
+```
+
+---
+
+> **See also:**
+> - Full command reference: [`docs/user/HANDBOOK.md`](HANDBOOK.md)
+> - Desktop automation: [`docs/user/CLI_COMMANDS.md`](CLI_COMMANDS.md)
+> - Common recipes: [`docs/user/workflows.md`](workflows.md)
+> - Telegram bot reference: [`docs/features/TELEGRAM.md`](../features/TELEGRAM.md)

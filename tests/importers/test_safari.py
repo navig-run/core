@@ -1,7 +1,8 @@
 import plistlib
 
-from navig.importers.sources.safari import SafariImporter
 import pytest
+
+from navig.importers.sources.safari import SafariImporter
 
 pytestmark = pytest.mark.integration
 

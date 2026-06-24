@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import navig.discovery as disc_mod
 import pytest
+
+import navig.discovery as disc_mod
 
 pytestmark = pytest.mark.integration
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from navig.connectors.types import (
     Action,
     ActionResult,
@@ -12,7 +14,6 @@ from navig.connectors.types import (
     Resource,
     ResourceType,
 )
-import pytest
 
 pytestmark = pytest.mark.unit
 

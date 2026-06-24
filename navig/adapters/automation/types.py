@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
@@ -53,3 +54,27 @@ class WindowInfo:
                 else ("maximized" if self.is_maximized else "normal")
             ),
         }
+
+
+@dataclass
+class Size:
+    """Screen or window dimensions in pixels."""
+
+    width: int
+    height: int
+
+    def to_string(self) -> str:
+        return f"{self.width}x{self.height}"
+
+
+@dataclass
+class DesktopStateInfo:
+    """Metadata attached to a desktop snapshot result."""
+
+    cursor_position: Optional[tuple[int, int]] = None
+    screenshot_original_size: Optional[Size] = None
+    screenshot_backend: Optional[str] = None
+    # xyxy bounding box of the captured region, or None for full desktop.
+    screenshot_region: Optional[tuple[int, int, int, int]] = None
+    # Indices of monitors included in the screenshot.
+    screenshot_displays: Optional[list[int]] = None

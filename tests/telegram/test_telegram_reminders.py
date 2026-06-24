@@ -35,6 +35,18 @@ def _make_dummy_bot():
             self.edits.append((chat_id, message_id, text, parse_mode, keyboard))
             return {"ok": True}
 
+        async def send_command_output(
+            self, chat_id, plain_text, *, command=None, ai_hint=None,
+            parse_mode="HTML", keyboard=None, ai_default="plain",
+            reply_to_message_id=None,
+        ):
+            # Mirror the real channel's default plain-style path so handlers that
+            # route output through send_command_output still record their message.
+            return await self.send_message(
+                chat_id, plain_text, parse_mode=parse_mode,
+                keyboard=keyboard, reply_to_message_id=reply_to_message_id,
+            )
+
     return DummyTelegram()
 
 
@@ -130,6 +142,16 @@ def _make_provider_bot(
         ):
             self.edits.append((chat_id, message_id, text, parse_mode, keyboard))
             return {"ok": True}
+
+        async def send_command_output(
+            self, chat_id, plain_text, *, command=None, ai_hint=None,
+            parse_mode="HTML", keyboard=None, ai_default="plain",
+            reply_to_message_id=None,
+        ):
+            return await self.send_message(
+                chat_id, plain_text, parse_mode=parse_mode,
+                keyboard=keyboard, reply_to_message_id=reply_to_message_id,
+            )
 
         def _list_enabled_providers(self):
             return list(providers)
@@ -374,6 +396,31 @@ async def test_space_command_switches_and_prints_kickoff(monkeypatch, tmp_path):
     assert any("Top next actions:" in m[1] for m in bot.messages)
 
 
+async def test_space_command_bootstraps_missing_roadmap_when_vision_exists(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_store = FakeContinuationStore()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    repo = tmp_path / "repo"
+    plans_dir = repo / ".navig" / "plans"
+    plans_dir.mkdir(parents=True, exist_ok=True)
+    (plans_dir / "DEV_PLAN.md").write_text("- [ ] Prepare incident runbook\n", encoding="utf-8")
+    monkeypatch.chdir(repo)
+
+    space_dir = Path(fake_cfg.global_config_dir) / "spaces" / "devops"
+    space_dir.mkdir(parents=True, exist_ok=True)
+    (space_dir / "VISION.md").write_text("# Existing Vision\n", encoding="utf-8")
+    (space_dir / "CURRENT_PHASE.md").write_text("# Existing Phase\n", encoding="utf-8")
+
+    await bot._handle_space(123, 456, "/space devops")
+
+    assert (space_dir / "ROADMAP.md").exists()
+    assert any("Active space: <code>devops</code>" in m[1] for m in bot.messages)
+
+
 async def test_spaces_command_lists_devops_and_sysops(monkeypatch, tmp_path):
     bot = _make_dummy_bot()
     fake_cfg = _FakeConfigManager(tmp_path / "global")
@@ -566,6 +613,38 @@ async def test_intake_flow_writes_space_docs(monkeypatch, tmp_path):
     assert any("Intake completed" in m[1] for m in bot.messages)
 
 
+async def test_intake_flow_handles_partial_space_docs(monkeypatch, tmp_path):
+    bot = _make_dummy_bot()
+    fake_cfg = _FakeConfigManager(tmp_path / "global")
+    fake_store = FakeContinuationStore()
+    monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
+    monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+
+    health_dir = Path(fake_cfg.global_config_dir) / "spaces" / "health"
+    health_dir.mkdir(parents=True, exist_ok=True)
+    (health_dir / "VISION.md").write_text("# Existing Vision\n", encoding="utf-8")
+    (health_dir / "CURRENT_PHASE.md").write_text("# Existing Phase\n", encoding="utf-8")
+
+    await bot._handle_intake(123, 456, "/intake health")
+    assert any("Intake started" in m[1] for m in bot.messages)
+
+    handled = await bot._handle_intake_reply(123, 456, "Improve sleep and recovery")
+    assert handled is True
+    handled = await bot._handle_intake_reply(
+        123, 456, "Have a repeatable bedtime routine by tomorrow"
+    )
+    assert handled is True
+    handled = await bot._handle_intake_reply(123, 456, "Late-night screen time")
+    assert handled is True
+    handled = await bot._handle_intake_reply(
+        123, 456, "I assume I can sleep well without planning evenings"
+    )
+    assert handled is True
+
+    assert (health_dir / "ROADMAP.md").exists()
+    assert any("Intake completed" in m[1] for m in bot.messages)
+
+
 async def test_intake_does_not_mark_first_host_on_view(monkeypatch, tmp_path):
     bot = _make_dummy_bot()
     fake_cfg = _FakeConfigManager(tmp_path / "global")
@@ -689,25 +768,27 @@ async def test_natural_language_command_missing_args_shows_usage(monkeypatch, tm
     assert any("Usage:" in m[1] for m in bot.messages)
 
 
-async def test_natural_language_unmapped_command_shows_suggestions(monkeypatch, tmp_path):
+async def test_natural_language_unmapped_command_falls_through_to_llm(monkeypatch, tmp_path):
+    """An unmapped natural-language phrase is no longer hijacked by a "did you mean
+    /x?" wall — it returns False so the conversational LLM answers it (the fuzzy
+    keyword-overlap suggestion menu was deliberately removed)."""
     bot = _make_dummy_bot()
     fake_cfg = _FakeConfigManager(tmp_path / "global")
     fake_store = FakeContinuationStore()
 
     monkeypatch.setattr("navig.commands.space.get_config_manager", lambda: fake_cfg)
     monkeypatch.setattr("navig.store.runtime.get_runtime_store", lambda: fake_store)
+    # No confident command match → resolver returns None (deterministic, no live LLM).
+    monkeypatch.setattr(bot, "_resolve_nl_command_intent", lambda _text: None)
 
     handled = await bot._handle_natural_language_request(
         123,
         456,
         "please check everything quickly",
     )
-    assert handled is True
-    assert any("Try:" in m[1] for m in bot.messages)
-    keyboard = bot.messages[-1][3].get("keyboard")
-    assert keyboard
-    callback_values = [btn.get("callback_data") for row in keyboard for btn in row]
-    assert any(str(value).startswith("nl_pick:") for value in callback_values)
+    # Falls through to the conversational LLM instead of posting a command menu.
+    assert handled is False
+    assert not any("Try:" in m[1] for m in bot.messages)
 
 
 async def test_natural_language_ambiguous_command_shows_choices(monkeypatch, tmp_path):
@@ -802,7 +883,10 @@ async def test_nl_callback_pick_missing_args_shows_usage(monkeypatch, tmp_path):
     assert any("Needs arguments" in call[1].get("text", "") for call in bot.api_calls)
 
 
-async def test_start_consumes_chat_onboarding_handoff_once(monkeypatch, tmp_path):
+async def test_start_no_longer_shows_onboarding_handoff_wall(monkeypatch, tmp_path):
+    """Setup progress moved to the Deck Welcome flow — /start must no longer consume
+    chat_onboarding_handoff.json or post the in-chat onboarding wall, even when a
+    handoff is pending."""
     bot = _make_dummy_bot()
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
@@ -831,18 +915,20 @@ async def test_start_consumes_chat_onboarding_handoff_once(monkeypatch, tmp_path
 
     await bot._handle_start(123, "alice", 456)
 
-    assert any("NAVIG is ready" in msg[1] for msg in bot.messages)
-    assert any("Welcome to NAVIG setup" in msg[1] for msg in bot.messages)
-    assert any("Onboarding progress: <code>2/3</code>" in msg[1] for msg in bot.messages)
-    assert any("✅ Choose AI provider" in msg[1] for msg in bot.messages)
-    assert any("⬜ Connect first host" in msg[1] for msg in bot.messages)
-    assert any("• Add or confirm your first server host" in msg[1] for msg in bot.messages)
+    # The in-chat onboarding/setup wall moved to the Deck Welcome flow — none of its
+    # markers may appear in the chat greeting anymore.
+    assert not any("Welcome to NAVIG setup" in msg[1] for msg in bot.messages)
+    assert not any("Onboarding progress" in msg[1] for msg in bot.messages)
+    assert not any("Choose AI provider" in msg[1] for msg in bot.messages)
+    assert not any("Connect first host" in msg[1] for msg in bot.messages)
+    assert not any("Add or confirm your first server host" in msg[1] for msg in bot.messages)
 
+    # Idempotent: a second /start also posts no onboarding wall.
     first_count = len(bot.messages)
     await bot._handle_start(123, "alice", 456)
     second_batch = bot.messages[first_count:]
-    assert any("NAVIG is ready" in msg[1] for msg in second_batch)
     assert not any("Welcome to NAVIG setup" in msg[1] for msg in second_batch)
+    assert not any("Onboarding progress" in msg[1] for msg in second_batch)
 
 
 async def test_providers_header_is_clean_and_shows_current_models(monkeypatch):

@@ -1,6 +1,5 @@
 """Tests for Workflow System"""
 
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "navig"
-version = "2.8.0"
+version = "2.9.1"
 description = "Terminal-first infrastructure CLI with multi-host SSH management, encrypted vault, AI operator layer, and memory"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -34,7 +34,8 @@ dependencies = [
   "rich>=13.7.0",
   "pyyaml>=6.0",
   "requests>=2.32.3",
-  "aiohttp>=3.9.0",
+  "aiohttp>=3.9.0,<3.13.0; python_version >= '3.14'",  # aiohttp 3.13+ deadlocks on CPython 3.14
+  "aiohttp>=3.9.0; python_version < '3.14'",           # no restriction on 3.13 and below
   "paramiko>=3.4.0",
   "colorama>=0.4.6",
   "psutil>=5.9.0",
@@ -52,6 +53,22 @@ dependencies = [
   "pydantic>=2.0.0",
   "json-repair>=0.30.0",
   "readchar>=3.0",
+  # Compiled Deck UI bundle (proprietary). Installed by default so
+  # `pip install navig` gives the complete product (daemon + visual
+  # cockpit). The daemon's gateway picks it up via
+  # _find_deck_static_dir and serves it at /deck. Free Solo tier; paid
+  # tiers via license token. Pure-CLI users who don't want this can do
+  # `pip install --no-deps navig` and install the rest manually, or
+  # `pip uninstall navig-deck` after install.
+  "navig-deck>=0.1.0",
+  # First-party companion tools — installed by default so `pip install navig`
+  # gives the complete product (the user's own software):
+  #   • farmore — GitHub repo mirroring / backup  →  `navig farmore …`
+  #   • rapidok — TikTok content downloader (yt-dlp) →  `navig tiktok …`
+  # Both are pure-Python and lazily imported by their command wrappers, so a
+  # missing one only disables its own subcommand — never the rest of navig.
+  "farmore>=0.9.0",
+  "rapidok>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -74,16 +91,29 @@ voice = [
 keyring = [
   "keyring>=25.0.0",
 ]
+# MTProto user-account engine behind the Telegram Manager (full-account organize /
+# history backfill / move / dedupe). Optional — lazily imported; the bot-token
+# channel works without it.
+telegram = [
+  "telethon>=1.43.2",
+]
 matrix = [
   "matrix-nio[e2e]>=0.24.0",
 ]
+# Back-compat alias: `pip install navig[deck]` still works but is a
+# no-op because navig-deck is now a default dependency (see the main
+# `dependencies` list). Kept so existing docs / install scripts that
+# specify the extra don't break.
+deck = []
 desktop = [
   "uiautomation>=2.0.18",
   "comtypes>=1.2.0",
 ]
-farmore = [
-  "farmore>=0.9.0",
-]
+# Back-compat aliases: farmore and rapidok are now DEFAULT dependencies (see the
+# main `dependencies` list), so these extras are no-ops. Kept so existing docs /
+# install scripts that say `navig[farmore]` / `navig[tiktok]` still resolve.
+farmore = []
+tiktok = []
 interactive = [
   # readchar is now a hard dependency (included in main deps).
   # This extra remains as a convenience alias: pip install navig[interactive]
@@ -93,8 +123,6 @@ interactive = [
 finance = [
   "beancount>=3.0.0",
 ]
-# telegram extra intentionally empty — NAVIG uses raw Bot API via httpx (no PTB required)
-telegram = []
 tui = [
   "textual>=0.50.0",
 ]
@@ -115,7 +143,7 @@ where = [".", "sdk/python"]
 include = ["navig*"]
 
 [tool.setuptools.package-data]
-navig = ["*.txt", "*.md", "help/*.md", "schemas/*.json"]
+navig = ["*.txt", "*.md", "help/*.md", "schemas/*.json", "cloud/lighthouse_worker/*.js"]
 "navig.resources" = ["workflows/*.yaml", "*.md"]
 "navig.agent.context" = ["*.md"]
 "navig_sdk" = ["*.md"]
@@ -198,6 +226,15 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"packages/**/tests/**/*.py" = [
+  "S101",    # assert statements are idiomatic and required in pytest tests
+  "S105",    # hardcoded password strings are expected in test fixtures
+  "S106",    # hardcoded password in function arguments (test helpers)
+  "S107",    # hardcoded password as default value (test helpers)
+  "S311",    # pseudo-random use is fine in test data generation
+  "B011",    # assert False is acceptable in pytest (pytest.fail alternative)
+  "B017",    # assertRaises(Exception) acceptable in broad-catch test scenarios
+]
 "tests/**/*.py" = [
   "S101",    # assert statements are idiomatic and required in pytest tests
   "S105",    # hardcoded password strings are expected in test fixtures

@@ -23,13 +23,13 @@ import platform
 import shutil
 import socket
 import sys
-import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from navig.core.yaml_io import atomic_write_text
 from navig.platform.paths import config_dir
 from navig.workspace_ownership import (
     USER_WORKSPACE_DIR,
@@ -2096,7 +2096,7 @@ def _run_onboard_rich(flow: str = "auto", non_interactive: bool = False) -> None
         cheat.add_column("Example", style="dim", no_wrap=True)
         cheat.add_row("navig host add", "Connect a new server", "navig host add prod")
         cheat.add_row("navig run", "Run a remote command", "navig run 'df -h'")
-        cheat.add_row("navig file", "Transfer files", "navig file upload ./app /srv")
+        cheat.add_row("navig file", "Transfer files", "navig file add ./app /srv")
         cheat.add_row("navig db", "Database operations", "navig db query 'SELECT 1'")
         cheat.add_row("navig flow", "Automate a workflow", "navig flow run deploy")
         cheat.add_row("navig init --status", "Show readiness", "navig init --status")
@@ -2743,12 +2743,7 @@ See documentation for enabling automated monitoring.
 
 def save_config(config: dict[str, Any], config_path: Path, console: ConsoleType = None) -> None:
     """Save configuration to JSON file."""
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-
-    tmp_path = config_path.with_suffix(".tmp")
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2)
-    tmp_path.replace(config_path)
+    atomic_write_text(config_path, json.dumps(config, indent=2))
 
     if console:
         console.print(f"[green]✓ Configuration saved to:[/green] {config_path}")
@@ -2812,17 +2807,7 @@ def sync_to_env(config: dict[str, Any], console: ConsoleType = None) -> None:
         if not found:
             env_lines.append(f"{key}={value}")
 
-    _tmp_path: Path | None = None
-    try:
-        _fd, _tmp = tempfile.mkstemp(dir=env_path.parent, suffix=".tmp")
-        _tmp_path = Path(_tmp)
-        with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
-            _fh.write(line_ending.join(env_lines) + line_ending)
-        os.replace(_tmp_path, env_path)
-        _tmp_path = None
-    finally:
-        if _tmp_path is not None:
-            _tmp_path.unlink(missing_ok=True)
+    atomic_write_text(env_path, line_ending.join(env_lines) + line_ending)
 
     if console:
         console.print(f"[green]✓ Environment synced to:[/green] {env_path}")

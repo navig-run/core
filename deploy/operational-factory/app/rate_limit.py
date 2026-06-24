@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, timezone
 
-from app.settings import RATE_WINDOW_SECONDS
 from sqlalchemy import text
+
+from app.settings import RATE_WINDOW_SECONDS
 
 
 def enforce_rate_limit(

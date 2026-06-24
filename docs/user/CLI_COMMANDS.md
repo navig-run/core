@@ -1,6 +1,6 @@
-# New CLI Commands - Cross-Platform Automation
+# Desktop Automation (`navig auto`)
 
-This document lists all new CLI commands added for cross-platform automation.
+This document covers desktop automation commands: clicking, typing, window management, clipboard, OCR, and screenshots.
 
 ## `navig auto` - Cross-Platform Automation
 

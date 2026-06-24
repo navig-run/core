@@ -9,12 +9,13 @@ from __future__ import annotations
 import io
 import sys
 
+import pytest
+
 from navig.onboarding.engine import EngineState, StepRecord
 from navig.onboarding.runner import (
     _deferred_integration_commands,
     _print_verification_dashboard,
 )
-import pytest
 
 pytestmark = pytest.mark.integration
 

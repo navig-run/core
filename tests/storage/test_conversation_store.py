@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from navig.memory.conversation import ConversationStore, Message, SessionInfo
+from navig.memory.conversation import ConversationStore, Message
 
 pytestmark = pytest.mark.integration
 

@@ -364,8 +364,8 @@ def _generate_clarifying_questions(goal: str, effort: str | None, max_q: int) ->
             "Return only the questions as a numbered list, nothing else."
         )
         resp = generate_text_sync(prompt, effort=effort or "low")
-        lines = [l.strip().lstrip("0123456789.) ") for l in resp.splitlines() if l.strip()]
-        return [l for l in lines if l][:max_q]
+        lines = [ln.strip().lstrip("0123456789.) ") for ln in resp.splitlines() if ln.strip()]
+        return [ln for ln in lines if ln][:max_q]
     except Exception:  # noqa: BLE001
         return []
 

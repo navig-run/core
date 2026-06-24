@@ -1,7 +1,8 @@
 from pathlib import Path
 
-from app.db import db_session
 from sqlalchemy import text
+
+from app.db import db_session
 
 
 def apply_migrations():

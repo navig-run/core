@@ -571,7 +571,7 @@ class TestGatewayApprovalRoutes:
 
         import navig.gateway.routes.approval as approval_mod
 
-        source = importlib.util.find_spec("navig.gateway.routes.approval")
+        importlib.util.find_spec("navig.gateway.routes.approval")
 
         # Read source and verify it uses 'req.command' not 'req.action'
         import inspect

@@ -26,6 +26,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from navig.mesh.discovery import MeshDiscovery, _build_packet
 from navig.mesh.registry import (
     CIRCUIT_OPEN_AFTER_FAILURES,
@@ -34,7 +36,6 @@ from navig.mesh.registry import (
     NodeRecord,
     NodeRegistry,
 )
-import pytest
 
 pytestmark = pytest.mark.integration
 
@@ -66,7 +67,7 @@ def _make_peer(
         node_id=node_id,
         hostname=f"host-{node_id}",
         os="linux",
-        gateway_url=f"http://10.0.0.1:8789",
+        gateway_url="http://10.0.0.1:8789",
         capabilities=capabilities or ["llm", "shell"],
         formation="",
         load=load,
@@ -245,7 +246,7 @@ class TestRoutingProtocolOptimisation(unittest.TestCase):
         self.assertFalse(self.reg._peers["peer-X"].circuit_open)
 
     def test_circuit_open_peer_sorted_last(self):
-        for i in range(CIRCUIT_OPEN_AFTER_FAILURES):
+        for _i in range(CIRCUIT_OPEN_AFTER_FAILURES):
             self.reg.record_probe_failure("peer-X")
         good = _make_peer("peer-good")
         self.reg.upsert_peer(good)

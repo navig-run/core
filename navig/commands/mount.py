@@ -32,6 +32,8 @@ from typing import Any
 
 import typer
 
+from navig.platform.paths import config_dir
+
 mount_app = typer.Typer(
     name="mount",
     help="Manage drive junctions (Windows NTFS) via a persistent registry",

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-import pytest
 
 # Use the Typer test client
 from typer.testing import CliRunner
+
 from navig.commands.plan_mode import app
 
 runner = CliRunner()

@@ -190,6 +190,7 @@ class BasePlatformAdapter(abc.ABC):
 
     async def send_typing(self, chat_id: str) -> None:
         """Send a typing indicator.  No-op by default."""
+        return None
 
     # -- Helpers ------------------------------------------------------------
 

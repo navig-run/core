@@ -1,7 +1,3 @@
-"""
-Cross-Platform Automation Workflow Documentation
-"""
-
 # Cross-Platform Automation
 
 NAVIG now supports cross-platform desktop automation across Windows, macOS, and Linux.

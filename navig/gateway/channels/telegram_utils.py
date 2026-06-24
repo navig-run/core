@@ -8,7 +8,7 @@ Agent:
 - ``escape_mdv2``         — canonical MarkdownV2 character escaper
 - ``sanitize_user_error`` — redact secrets before surfacing error text to users
 - ``classify_tg_error``   — lightweight Telegram/HTTP error taxonomy
-- ``jittered_backoff``    — decorrelated jittered-exponential backoff 
+- ``jittered_backoff``    — decorrelated jittered-exponential backoff
 
 All public names are importable at package level; internal helpers carry a
 ``_`` prefix and must not be called from outside this module.
@@ -21,6 +21,30 @@ import random
 import re
 import threading
 import time
+
+
+async def answer_callback_query(channel: object, callback_id: str, text: str = "") -> None:
+    """Acknowledge a Telegram callback query with graceful fallback."""
+    if not callback_id:
+        return
+
+    answer_fn = getattr(channel, "answer_callback_query", None)
+    if callable(answer_fn):
+        try:
+            await answer_fn(callback_id, text)
+            return
+        except Exception:
+            pass
+
+    api_call = getattr(channel, "_api_call", None)
+    if callable(api_call):
+        try:
+            await api_call(
+                "answerCallbackQuery",
+                {"callback_query_id": callback_id, "text": text, "show_alert": False},
+            )
+        except Exception:
+            pass
 
 # ── MarkdownV2 escape ──────────────────────────────────────────────────────────
 

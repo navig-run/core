@@ -4,10 +4,10 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from navig.cli import app
-import pytest
 
 pytestmark = pytest.mark.integration
 
@@ -217,6 +217,12 @@ def test_show_init_status_surfaces_next_actions_for_unconfigured_state(
 
     monkeypatch.delenv("NAVIG_LLM_PROVIDER", raising=False)
     monkeypatch.delenv("NAVIG_WEB_SEARCH_PROVIDER", raising=False)
+    # Clear all known provider API key env vars so the test is hermetic
+    # regardless of what the developer has in their environment.
+    monkeypatch.setattr(
+        "navig.providers.source_scan.scan_enabled_provider_sources",
+        lambda **kwargs: {},
+    )
 
     from navig.commands.init import show_init_status
 

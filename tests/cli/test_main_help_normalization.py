@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import navig.main as main_mod
 import pytest
+
+import navig.main as main_mod
 
 pytestmark = pytest.mark.unit
 

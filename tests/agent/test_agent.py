@@ -35,6 +35,7 @@ from navig.agent.eyes import Alert, Eyes, SystemMetrics
 from navig.agent.hands import CommandResult, CommandStatus, Hands
 from navig.agent.heart import Heart
 from navig.agent.nervous_system import Event, EventPriority, EventType, NervousSystem
+from navig.agent.runner import Agent
 from navig.agent.soul import BUILTIN_PROFILES, Mood, Soul
 
 pytestmark = pytest.mark.integration
@@ -236,7 +237,7 @@ class TestNervousSystem:
 
         ns.subscribe(EventType.SYSTEM_INFO, handler)
 
-        event = await ns.emit(EventType.SYSTEM_INFO, source="test", data={"msg": "hello"})
+        await ns.emit(EventType.SYSTEM_INFO, source="test", data={"msg": "hello"})
 
         # Allow async handlers to complete
         await asyncio.sleep(0.01)
@@ -751,6 +752,23 @@ class TestAgentIntegration:
         assert len(received_events) == 1
 
         await eyes.stop()
+
+    async def test_console_messages_print_responses(self, monkeypatch, capsys):
+        """Console-originated messages should echo the agent reply to stdout."""
+        config = AgentConfig()
+        agent = Agent(config=config)
+
+        async def _fake_think(_content, context=None):
+            assert context and context["source"] == "console"
+            return "Disk cleanup looks good"
+
+        monkeypatch.setattr(agent.brain, "think", _fake_think)
+        monkeypatch.setattr(agent.soul, "format_response", lambda response: response)
+
+        await agent._process_message(InputMessage(source="console", content="status"))
+
+        out = capsys.readouterr().out
+        assert "Agent: Disk cleanup looks good" in out
 
 
 # ============================================================================

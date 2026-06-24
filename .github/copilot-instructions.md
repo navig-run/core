@@ -67,6 +67,10 @@
 ## Testing
 
 - Every new command or behaviour change must include or update a test in `tests/`.
+- **Test files must always live inside a subdirectory of `tests/`** — never directly in the `tests/` root.
+  - Match the source module path: `navig/commands/foo.py` → `tests/commands/test_foo.py`.
+  - If no matching subdirectory exists, create one with an `__init__.py` (e.g. `tests/mygroup/__init__.py`).
+  - PRs that add test files directly to `tests/` root must be rejected during review.
 - Use the `_invoke_cli(args, capsys)` pattern for CLI tests.
 - Tests must not rely on network access, real SSH connections, or external APIs — mock them.
 - Do not add `pytest.mark.skip` without a linked issue or a date comment.
@@ -111,6 +115,7 @@
 
 - [ ] `CHANGELOG.md` updated under `[Unreleased]` (gitignored internal log)
 - [ ] Tests added or updated for changed behaviour
+- [ ] All new test files are inside a `tests/<subdir>/` subdirectory — **none placed directly in `tests/` root**
 - [ ] No new hidden deprecated wrappers added
 - [ ] No hardcoded credentials or paths
 - [ ] `docs/user/HANDBOOK.md` updated if CLI usage changed

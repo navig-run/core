@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Session ring buffer
 # ---------------------------------------------------------------------------
@@ -14,9 +13,10 @@ class TestSessionRingBuffer:
     """Unit tests for the new record_bot_reply / get_query_for_bot_reply / get_reply_text_for_msg methods."""
 
     def _make_manager(self):
-        from navig.gateway.channels.telegram_sessions import SessionManager
         import tempfile
         from pathlib import Path
+
+        from navig.gateway.channels.telegram_sessions import SessionManager
 
         tmpdir = Path(tempfile.mkdtemp())
         return SessionManager(storage_dir=tmpdir)

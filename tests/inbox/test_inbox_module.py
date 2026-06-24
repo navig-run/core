@@ -349,7 +349,7 @@ class TestHookSystem:
         decorator = self.hooks.register("after_route")
         assert callable(decorator)
 
-        decorated = decorator(lambda e: results.append("hit") or e)
+        decorator(lambda e: results.append("hit") or e)
         event = self._make_event("after_route")
         self.hooks.fire("after_route", event)
         assert "hit" in results

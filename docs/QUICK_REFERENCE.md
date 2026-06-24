@@ -1,5 +1,8 @@
 # NAVIG Remote Setup - Quick Reference Card
 
+> **Note:** This card covers the remote-drive / enhanced-installer setup scripts.
+> For the main NAVIG CLI quick reference, see [`docs/user/QUICK_REFERENCE.md`](user/QUICK_REFERENCE.md).
+
 **Print this or pin it!** ⭐
 
 ---
@@ -242,7 +245,6 @@ After installation:
 
 - **Complete Guide:** `ENHANCED_INSTALLERS_GUIDE.md`
 - **Remote Drives:** `REMOTE_DRIVES_GUIDE.md`
-- **Implementation:** `IMPLEMENTATION_SUMMARY.md`
 
 ---
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -11,7 +10,6 @@ from navig.connectors.base import BaseConnector, ConnectorManifest
 from navig.connectors.registry import get_connector_registry
 from navig.connectors.smart_linker import SmartLinker
 from navig.connectors.types import (
-    Action,
     ActionResult,
     ConnectorDomain,
     ConnectorStatus,

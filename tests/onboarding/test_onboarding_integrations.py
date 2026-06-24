@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 
 from navig.onboarding.engine import EngineConfig
@@ -13,7 +14,6 @@ from navig.onboarding.validators import (
     validate_smtp,
     validate_telegram,
 )
-import pytest
 
 pytestmark = pytest.mark.integration
 

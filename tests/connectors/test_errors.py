@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from navig.connectors.errors import (
     ConnectorAPIError,
     ConnectorAuthError,
@@ -10,7 +12,6 @@ from navig.connectors.errors import (
     ConnectorNotFoundError,
     ConnectorRateLimitError,
 )
-import pytest
 
 pytestmark = pytest.mark.unit
 

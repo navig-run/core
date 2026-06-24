@@ -2,7 +2,6 @@
 Tests for CLI enhancements: auto-detection, enhanced commands, list flags.
 """
 
-from pathlib import Path
 
 import pytest
 

@@ -119,7 +119,7 @@ def server_template_manager(config_manager, template_manager):
 def test_server(config_manager):
     """Create a test server configuration."""
     server_name = "test_server"
-    config = config_manager.create_server_config(
+    config_manager.create_server_config(
         name=server_name,
         host="10.0.0.10",
         port=22,

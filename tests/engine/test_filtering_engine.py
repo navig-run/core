@@ -11,12 +11,13 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
 from navig.agents.filtering_engine import (
     FilteringEngine,
     apply_frontmatter,
     normalize_headings,
 )
-import pytest
 
 pytestmark = pytest.mark.unit
 

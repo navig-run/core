@@ -22,6 +22,7 @@ from rich.table import Table
 from navig import console_helper as ch
 from navig.config import get_config_manager
 from navig.console_helper import get_console
+from navig.core.yaml_io import atomic_write_text
 from navig.spaces.kickoff import build_space_kickoff
 
 # ── Typer app ─────────────────────────────────────────────────────────────────
@@ -133,8 +134,6 @@ def get_active_space() -> str:
 
 def _set_active_space(name: str) -> None:
     """Persist *name* as the active space (cache file + best-effort config.yaml)."""
-    from navig.core.yaml_io import atomic_write_text
-
     cache_file = _active_space_cache_file()
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_text(cache_file, name)

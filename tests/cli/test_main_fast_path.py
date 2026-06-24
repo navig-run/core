@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import io
 
-import navig.main as main_mod
 import pytest
+
+import navig.main as main_mod
 
 pytestmark = pytest.mark.integration
 

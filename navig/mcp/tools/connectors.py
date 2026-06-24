@@ -3,8 +3,8 @@
 Exposes every connector registered in ``ConnectorRegistry`` as MCP-callable
 tools, zero duplication.
 
-**Naming convention:**  ``connector.{id}.search`` / ``connector.{id}.fetch``
-/ ``connector.{id}.act``  — one tool per enabled capability.
+**Naming convention:**  ``connector_{id}_search`` / ``connector_{id}_fetch``
+/ ``connector_{id}_act``  — one tool per enabled capability.
 
 **Auto-discovery contract:**
 - Adding a new connector to ``ConnectorRegistry`` automatically exposes it as
@@ -133,7 +133,7 @@ def list_connector_tools(registry=None) -> list[dict[str, Any]]:
     reg = registry or get_connector_registry()
     tools: list[dict[str, Any]] = [
         {
-            "name": "connector.list",
+            "name": "connector_list",
             "description": (
                 "List all registered connectors with their id, display name, domain, "
                 "status, and capability flags (can_search / can_fetch / can_act)."
@@ -141,7 +141,7 @@ def list_connector_tools(registry=None) -> list[dict[str, Any]]:
             "inputSchema": _list_connectors_input_schema(),
         },
         {
-            "name": "connector.health",
+            "name": "connector_health",
             "description": (
                 "Probe the health of a specific connector and return latency + ok status."
             ),
@@ -165,7 +165,7 @@ def list_connector_tools(registry=None) -> list[dict[str, Any]]:
         if manifest.can_search:
             tools.append(
                 {
-                    "name": f"connector.{cid}.search",
+                    "name": f"connector_{cid}_search",
                     "description": f"Search {display}. {desc}",
                     "inputSchema": _search_input_schema(),
                 }
@@ -174,7 +174,7 @@ def list_connector_tools(registry=None) -> list[dict[str, Any]]:
         if manifest.can_fetch:
             tools.append(
                 {
-                    "name": f"connector.{cid}.fetch",
+                    "name": f"connector_{cid}_fetch",
                     "description": f"Fetch a single resource from {display} by its ID.",
                     "inputSchema": _fetch_input_schema(),
                 }
@@ -183,7 +183,7 @@ def list_connector_tools(registry=None) -> list[dict[str, Any]]:
         if manifest.can_act:
             tools.append(
                 {
-                    "name": f"connector.{cid}.act",
+                    "name": f"connector_{cid}_act",
                     "description": (
                         f"Execute a write action on {display} "
                         "(reply, create, update, delete, archive, label, send, move)."
@@ -207,7 +207,7 @@ async def handle_connector_call(
 ) -> dict[str, Any]:
     """Route an MCP tool call to the matching registered connector.
 
-    Expected *tool_name* format:  ``"connector.{id}.{operation}"``
+    Expected *tool_name* format:  ``"connector_{id}_{operation}"``
     where *operation* is one of ``search``, ``fetch``, or ``act``.
 
     Args:
@@ -222,17 +222,40 @@ async def handle_connector_call(
         ConnectorNotFoundError: Connector id is not registered.
         ValueError: Malformed tool name or unsupported operation.
     """
-    parts = tool_name.split(".", 2)
-    if len(parts) != 3 or parts[0] != "connector":
+    # Format: connector_{id}_{operation} where operation in {search, fetch, act}
+    _OPERATIONS = ("search", "fetch", "act")
+    connector_id = operation = ""
+    if tool_name.startswith("connector_"):
+        remainder = tool_name[len("connector_"):]
+        for op in _OPERATIONS:
+            if remainder.endswith(f"_{op}"):
+                connector_id = remainder[: -(len(op) + 1)]
+                operation = op
+                break
+    if not connector_id or not operation:
+        if tool_name.startswith("connector_"):
+            parts = tool_name.split("_")
+            # parts[0]="connector", parts[-1]=attempted operation, middle=connector id
+            if len(parts) >= 3 and parts[-1] not in _OPERATIONS:
+                raise ValueError(f"Unsupported connector operation: {parts[-1]!r}")
         raise ValueError(
             f"Invalid connector tool name {tool_name!r}. "
-            "Expected format: 'connector.<id>.<operation>'"
+            "Expected format: 'connector_<id>_<operation>'"
         )
-    _, connector_id, operation = parts
 
     reg = registry or get_connector_registry()
     # Raises ConnectorNotFoundError if not registered — intentional.
     connector = reg.get(connector_id)
+
+    # Hydrate the connector with its stored vault token (transparently
+    # refreshes if expired). Without this, OAuth connectors raise
+    # "no access token" because the token lives in the vault, not the instance.
+    if operation in ("search", "fetch", "act") and getattr(connector.manifest, "requires_oauth", True):
+        try:
+            from navig.connectors.auth_manager import ConnectorAuthManager
+            await ConnectorAuthManager().inject_token(connector)
+        except Exception as _inj_exc:  # noqa: BLE001
+            logger.debug("Token injection for %s failed: %s", connector_id, _inj_exc)
 
     if operation == "search":
         query = params.get("query", "")
@@ -293,7 +316,7 @@ def _make_sync_connector_handler(tool_name: str) -> Any:
             logger.warning("Connector tool %r timed out after 30s", tool_name)
             raise
 
-    _handler.__name__ = f"_connector_{tool_name.replace('.', '_')}"
+    _handler.__name__ = f"_connector_{tool_name}"
     return _handler
 
 
@@ -346,6 +369,12 @@ def register(server: Any) -> None:
     if not hasattr(server, "_tool_handlers"):
         server._tool_handlers = {}
 
+    # Bootstrap all built-in connectors so they appear in the MCP tool list
+    # even when the CLI has not been invoked (e.g. pure MCP server startup).
+    from navig.connectors.bootstrap import ensure_connectors_loaded
+
+    ensure_connectors_loaded()
+
     tool_list = list_connector_tools()
 
     # Schema dict — used by tools/list to advertise the tool surface
@@ -364,8 +393,8 @@ def register(server: Any) -> None:
     # Meta-tools have dedicated sync handlers; per-connector operations go
     # through the async bridge (_make_sync_connector_handler).
     handlers: dict[str, Any] = {
-        "connector.list": _tool_connector_list,
-        "connector.health": _tool_connector_health,
+        "connector_list": _tool_connector_list,
+        "connector_health": _tool_connector_health,
     }
     for t in tool_list:
         name = t["name"]

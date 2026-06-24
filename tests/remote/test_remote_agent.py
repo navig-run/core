@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from navig.agent.remote_agent import (
     COMMAND_TIMEOUT,
-    MAX_OUTPUT_CHARS,
     CommandState,
     RemoteAgentExecutor,
     RemoteCommand,

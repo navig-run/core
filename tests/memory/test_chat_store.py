@@ -6,17 +6,15 @@ Tests for navig.memory.chat_store and navig.memory.compactor (Item 9).
 from __future__ import annotations
 
 import time
-from pathlib import Path
 
 import pytest
 
 from navig.memory.chat_store import (
+    _CHARS_PER_TOKEN,
     ChatMemoryStore,
     ConversationTurn,
-    _CHARS_PER_TOKEN,
 )
-from navig.memory.compactor import CompactionResult, KeywordCompactor, KeywordSummariser
-
+from navig.memory.compactor import KeywordCompactor, KeywordSummariser
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ConversationTurn

@@ -13,13 +13,17 @@ Responsibilities:
 
 from __future__ import annotations
 
+import logging
 import sys
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
+from weakref import WeakKeyDictionary
 
 if TYPE_CHECKING:
     import typer
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # External command map — name → (module_path, attr_name)
@@ -27,7 +31,10 @@ if TYPE_CHECKING:
 
 _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "bridge": ("navig.commands.bridge", "bridge_app"),
-    "github": ("navig.commands.farmore", "farmore_app"),
+    "github": ("navig.commands.farmore", "farmore_app"),  # primary name
+    "farmore": ("navig.commands.farmore", "farmore_app"),  # back-compat alias
+    "tiktok": ("navig.commands.tiktok", "tiktok_app"),
+    "tt": ("navig.commands.tiktok", "tiktok_app"),
     "copilot": ("navig.commands.ask", "copilot_app"),
     "inbox": ("navig.commands.inbox", "inbox_app"),
     "sync": ("navig.commands.sync", "sync_app"),
@@ -64,6 +71,8 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "t": ("navig.commands.tunnel", "tunnel_app"),             # hidden alias
     "skills": ("navig.commands.skills", "skills_app"),
     "skill": ("navig.commands.skills", "skills_app"),
+    "plugin": ("navig.commands.plugin", "plugin_app"),
+    "plugins": ("navig.commands.plugin", "plugin_app"),
     "history": ("navig.commands.history", "history_app"),
     "hist": ("navig.commands.history", "history_app"),        # hidden alias
     "trigger": ("navig.commands.triggers", "trigger_app"),
@@ -125,7 +134,13 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "knowledge": ("navig.commands.kg", "kg_app"),
     "webhook": ("navig.commands.webhook", "webhook_app"),
     "webhooks": ("navig.commands.webhook", "webhook_app"),
+    "signals": ("navig.commands.signals", "signals_app"),
+    "signal": ("navig.commands.signals", "signals_app"),          # alias
     "cron": ("navig.commands.cron", "cron_app"),
+    "habit": ("navig.commands.habit", "habit_app"),
+    "habits": ("navig.commands.habit", "habit_app"),             # alias
+    "day": ("navig.commands.life_dashboard", "life_dashboard_app"),
+    "life": ("navig.commands.life_dashboard", "life_dashboard_app"),
     "doctor": ("navig.commands.doctor", "doctor_app"),
     "docker": ("navig.commands.docker", "docker_app"),
     "prompts": ("navig.commands.prompts", "prompts_app"),
@@ -149,6 +164,9 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "snapshot": ("navig.commands.snapshot", "app"),
     "replay": ("navig.commands.replay", "app"),
     "cloud": ("navig.commands.cloud", "app"),
+    "lighthouse": ("navig.commands.lighthouse", "app"),
+    "license": ("navig.commands.license", "app"),
+    "miniapp": ("navig.commands.miniapp", "app"),
     "benchmark": ("navig.commands.benchmark", "app"),
     "finance": ("navig.commands.finance", "finance_app"),
     "work": ("navig.commands.work", "work_app"),
@@ -172,12 +190,26 @@ _EXTERNAL_CMD_MAP: dict[str, tuple[str, str]] = {
     "packs": ("navig.commands.package", "package_app"),
     "memory": ("navig.commands.memory", "memory_app"),
     "connector": ("navig.commands.connector_cmd", "connector_app"),
+    "menu": ("navig.commands.menu", "menu_app"),
+    "dev": ("navig.commands.menu", "dev_app"),       # shortcut → navig-menu run dev
+    "build": ("navig.commands.menu", "build_app"),   # shortcut → navig-menu run build
+    "test": ("navig.commands.menu", "test_app"),     # shortcut → navig-menu run test
 }
 
-# Commands that should be hidden from `--help` output (short forms, deprecated names).
+# Commands that should be hidden from `--help` output.
+# Covers all short aliases, deprecated names, and internal routing shims.
 _HIDDEN_COMMANDS: frozenset[str] = frozenset({
+    # Short aliases
     "tg", "mx", "fx", "h", "a", "f", "l", "s", "t", "q",
+    # Long aliases / deprecated
     "database", "hist", "ctx", "ct",
+    "cred", "cred-profile", "secret", "alias",
+    "continuation", "ai", "brain", "cost",
+    "output-style", "software", "hosts",
+    "day", "life", "habit", "habits",
+    "health",  # compat shim → stack
+    "cert", "key", "firewall", "dns", "port", "proxy",  # compat → other commands
+    "env", "job",
 })
 
 # =============================================================================
@@ -258,10 +290,10 @@ def _resolve_cli_target_from_argv(argv: list[str] | None = None) -> str | None:
 # Idempotency cache
 # =============================================================================
 
-# Maps id(app) → set of already-registered command names.  Prevents duplicate
-# add_typer() calls when _register_external_commands() is invoked more than
-# once for the same app (e.g. in tests).
-_registered_app_cmds: dict[int, set[str]] = {}
+# Maps app instance → set of already-registered command names.  Uses a
+# WeakKeyDictionary so GC'd apps don't leave stale entries that could be
+# matched by a new app allocated at the same address.
+_registered_app_cmds: WeakKeyDictionary = WeakKeyDictionary()
 _registration_lock = threading.Lock()
 
 
@@ -275,7 +307,7 @@ def _clear_registration_cache(target_app: typer.Typer | None = None) -> None:  #
         if target_app is None:
             _registered_app_cmds.clear()
         else:
-            _registered_app_cmds.pop(id(target_app), None)
+            _registered_app_cmds.pop(target_app, None)
 
 
 # =============================================================================
@@ -305,7 +337,7 @@ def _register_external_commands(
         from navig.cli import app
         target_app = app
 
-    app_key = id(target_app)
+    app_key = target_app
     with _registration_lock:
         already = _registered_app_cmds.setdefault(app_key, set())
 
@@ -316,6 +348,15 @@ def _register_external_commands(
     # ------------------------------------------------------------------
     if target in _EXTERNAL_CMD_MAP:
         _try_register_one(target_app, target, already)
+        return
+
+    # ------------------------------------------------------------------
+    # Flat top-level command: `navig wire <path> [--opts]`
+    # (a real command, not an add_typer group, so options after the
+    #  positional path parse correctly).
+    # ------------------------------------------------------------------
+    if target == "wire":
+        _try_register_wire(target_app, already)
         return
 
     # ------------------------------------------------------------------
@@ -336,6 +377,8 @@ def _register_external_commands(
     # ------------------------------------------------------------------
     for cmd_name in _EXTERNAL_CMD_MAP:
         _try_register_one(target_app, cmd_name, already)
+
+    _try_register_wire(target_app, already)
 
     if sys.platform == "win32":
         _try_register_ahk(target_app, already)
@@ -361,10 +404,28 @@ def _try_register_one(
         )
         already.add(cmd_name)
     except Exception as exc:
-        sys.stderr.write(
-            f"[navig] ⚠ command '{cmd_name}' unavailable"
-            f" (registration failed: {exc})\n"
+        logger.warning(
+            "[navig] command '%s' unavailable (registration failed: %s)",
+            cmd_name,
+            exc,
         )
+
+
+def _try_register_wire(
+    target_app: typer.Typer,  # type: ignore[name-defined]
+    already: set[str],
+) -> None:
+    """Register `navig wire` as a flat top-level command (not an add_typer group),
+    so `navig wire <path> --dry-run` parses options after the positional path."""
+    if "wire" in already:
+        return
+    try:
+        from navig.commands.wire import wire_command
+
+        target_app.command("wire")(wire_command)
+        already.add("wire")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[navig] command 'wire' unavailable (registration failed: %s)", exc)
 
 
 def _try_register_ahk(

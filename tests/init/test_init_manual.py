@@ -12,9 +12,10 @@ from pathlib import Path
 # Add app to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+import pytest
+
 from navig import console_helper as ch
 from navig.commands.init import init_app
-import pytest
 
 pytestmark = pytest.mark.integration
 
@@ -84,7 +85,7 @@ def test_init():
             ch.success(f"✓ App root detected correctly: {config.base_dir}")
         else:
             ch.error(
-                f"✗ App root detection failed",
+                "✗ App root detection failed",
                 f"Expected: {navig_dir}\nGot: {config.base_dir}",
             )
 

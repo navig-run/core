@@ -135,7 +135,10 @@ async def test_mcp_reconnect_loop():
 
     class DummyManager:
         def __init__(self):
-            self.clients = {"vscode-copilot": SimpleNamespace(is_connected=False)}
+            # No pre-existing client → the loop exercises the first-connect path
+            # (register once via add_client, then connect_client). For an already
+            # registered client the loop intentionally skips add_client.
+            self.clients: dict = {}
             self.add_client = AsyncMock()
             self.connect_client = AsyncMock(return_value=True)
 

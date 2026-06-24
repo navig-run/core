@@ -7,7 +7,6 @@ DeliveryTracker, and adapter integration.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -63,7 +62,7 @@ class TestContactStore:
 
     def test_set_default_network(self, tmp_path):
         store = self._make_store(tmp_path)
-        cid = store.add_contact(alias="dana")
+        store.add_contact(alias="dana")
         store.set_default_network("dana", "whatsapp")
 
         contact = store.resolve_alias("dana")

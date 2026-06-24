@@ -6,12 +6,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from navig.gateway.channels.telegram_inline import (
-    TelegramInlineMixin,
-    _INLINE_CACHE_TTL_SECONDS,
-    _INLINE_DEBOUNCE_SECONDS,
     _INLINE_MAX_RESULT_LEN,
+    TelegramInlineMixin,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers — use a real subclass so internal methods call through to real impl

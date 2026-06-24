@@ -333,6 +333,28 @@ def _eprint(message: str) -> None:
         sys.stderr.write(str(message) + "\n")
 
 
+def _run_startup_migrations() -> None:
+    """Run one-time workspace migrations and guard against stale registrations.
+
+    Safe to call on every invocation — both helpers are idempotent.
+    Failures are logged at DEBUG level and never crash the CLI.
+    """
+    try:
+        from pathlib import Path as _Path
+
+        from navig.migrations.workspace_to_spaces import (
+            ensure_no_stale_spaces_registration,
+            migrate_workspace_to_spaces,
+        )
+
+        migrate_workspace_to_spaces(_Path.home() / ".navig", notify=lambda _m: None)
+        ensure_no_stale_spaces_registration()
+    except Exception as exc:  # never crash main on migration failure
+        import logging as _logging
+
+        _logging.getLogger(__name__).debug("Startup migration skipped: %s", exc)
+
+
 def _check_first_run() -> None:
     """Trigger onboarding on first run if ~/.navig/onboarding.json is absent.
 
@@ -913,6 +935,10 @@ def main() -> None:
         # Runs after the fast-path so that -v / --version / --help are never
         # blocked by the onboarding wizard (macOS and other platforms included).
         _check_first_run()
+
+        # One-time workspace→spaces migration and stale-registration guard.
+        # Both helpers are idempotent; failures are swallowed at DEBUG level.
+        _run_startup_migrations()
 
         # Import the existing CLI app (maintains all current functionality)
         from navig.cli import _register_external_commands, app

@@ -170,8 +170,22 @@ class RoutingEngine:
         *,
         contact: Contact | None = None,
     ) -> RoutingDecision:
-        """Build a :class:`RoutingDecision` and log compliance."""
+        """Build a :class:`RoutingDecision` and log compliance.
+
+        Raises :class:`NoRouteError` if the resolved adapter is not registered
+        or not enabled, so callers get an actionable error rather than a silent
+        dispatch failure.
+        """
         adapter_name = network.lower()
+
+        # Guard: reject routes whose adapter isn't registered/enabled
+        if not self._adapters.is_available(adapter_name):
+            hint = "Run: navig init --messaging  to configure messaging adapters."
+            raise NoRouteError(
+                f"{adapter_name}:{address}",
+                f"Adapter '{adapter_name}' is not configured or not enabled. {hint}",
+            )
+
         compliance = self._adapters.get_compliance(adapter_name)
 
         decision = RoutingDecision(

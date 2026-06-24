@@ -12,8 +12,8 @@ Covers:
 
 from __future__ import annotations
 
-import json
 import gc
+import json
 import subprocess
 import warnings
 from pathlib import Path

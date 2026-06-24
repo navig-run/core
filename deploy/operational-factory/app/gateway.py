@@ -2,14 +2,15 @@ import json
 from datetime import datetime, timezone
 
 import httpx
+from fastapi import FastAPI, HTTPException
+from sqlalchemy import text
+
 from app.audit import write_audit
 from app.db import db_session, fetch_all_dict, fetch_one_dict
 from app.policies import validate_request
 from app.rate_limit import enforce_rate_limit
 from app.sandbox import run_bounded_log_read
 from app.settings import SANDBOX_URL
-from fastapi import FastAPI, HTTPException
-from sqlalchemy import text
 
 app = FastAPI(title="NAVIG Tool Gateway", version="0.1.0")
 
@@ -91,7 +92,7 @@ def execute_tool(payload: dict):
     try:
         req, spec = validate_request(payload)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     with db_session() as session:
         tenant_id = _tenant_id(session, req.tenant_slug)

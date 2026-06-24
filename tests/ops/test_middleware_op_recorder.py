@@ -15,8 +15,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import navig.cli.middleware as middleware_mod
 import pytest
+
+import navig.cli.middleware as middleware_mod
 
 pytestmark = pytest.mark.integration
 

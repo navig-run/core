@@ -62,7 +62,7 @@ class TestApiSource:
 class TestApiToolResult:
     """Tests for the standardized ApiToolResult envelope."""
 
-    def _make_ok(self, **kwargs) -> "ApiToolResult":
+    def _make_ok(self, **kwargs):
         from navig.tools.api_schema import ApiSource, ApiToolResult
 
         defaults = dict(

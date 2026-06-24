@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import time
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from navig.agent.tool_caps import (
-    _LINE_SNAP_MIN_RATIO,
     DEFAULT_MAX_RESULT_CHARS,
-    SPILLOVER_DIR,
     SPILLOVER_TTL,
     TOOL_SPECIFIC_CAPS,
     cap_result,
@@ -161,7 +158,7 @@ class TestDiskSpillover:
     def test_spillover_file_created(self, tmp_path):
         with patch("navig.agent.tool_caps.SPILLOVER_DIR", tmp_path):
             big = "x" * 500
-            result = cap_result(big, max_chars=100, tool_name="test_tool")
+            cap_result(big, max_chars=100, tool_name="test_tool")
             files = list(tmp_path.iterdir())
             assert len(files) == 1
             assert files[0].name.startswith("test_tool_")

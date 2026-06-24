@@ -1,9 +1,10 @@
 import os
 
 import httpx
-from app.settings import REDIS_URL, RUNTIME_URL
 from redis import Redis
 from rq import Queue, Worker
+
+from app.settings import REDIS_URL, RUNTIME_URL
 
 
 def enqueue_demo_tasks(queue: Queue):

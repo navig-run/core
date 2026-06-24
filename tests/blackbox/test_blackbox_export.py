@@ -1,115 +1,88 @@
-from unittest.mock import patch
+"""Tests for navig.blackbox.export — export_bundle."""
+from __future__ import annotations
+
+from datetime import datetime
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from navig.blackbox.export import export_bundle
 from navig.blackbox.types import Bundle
 
-pytestmark = pytest.mark.unit
 
-
-@pytest.fixture
-def tmp_dir(tmp_path):
-    return tmp_path
-
-
-@pytest.fixture
-def dummy_bundle():
-    from datetime import datetime
-
+def _bundle() -> Bundle:
     return Bundle(
-        id="test123",
-        created_at=datetime.now(),
+        id="test-bundle",
+        created_at=datetime(2024, 1, 1),
         navig_version="1.0.0",
         events=[],
         crash_reports=[],
         log_tails={},
-        manifest_hash="hash",
-        sealed=True,
+        manifest_hash="abc123",
     )
 
 
-@pytest.fixture(autouse=True)
-def _cleanup_subprocess_transports():
-    import asyncio
-    import gc
-    import subprocess
+class TestExportBundle:
+    def test_returns_zip_path_when_not_encrypted(self, tmp_path):
+        expected = tmp_path / "bundle.navbox"
+        with patch("navig.blackbox.export.write_bundle", return_value=expected) as mock_wb:
+            result = export_bundle(_bundle(), tmp_path / "bundle", encrypted=False)
+        assert result == expected
+        mock_wb.assert_called_once()
 
-    subprocess._cleanup()
-    gc.collect()
+    def test_encrypt_false_by_default(self, tmp_path):
+        expected = tmp_path / "bundle.navbox"
+        with patch("navig.blackbox.export.write_bundle", return_value=expected):
+            result = export_bundle(_bundle(), tmp_path / "bundle")
+        assert result == expected
 
-    try:
-        loop = asyncio.get_event_loop_policy().get_event_loop()
-    except Exception:
-        loop = None
+    def test_encrypted_returns_enc_path(self, tmp_path):
+        zip_path = tmp_path / "bundle.navbox"
+        zip_path.write_bytes(b"fake zip content")
+        enc_path = zip_path.with_suffix(".navbox.enc")
 
-    if loop is not None:
-        transports = getattr(loop, "_subprocesses", None)
-        if isinstance(transports, dict):
-            for transport in list(transports.values()):
-                try:
-                    transport.close()
-                except Exception:
-                    pass
-            transports.clear()
+        mock_vault = MagicMock()
+        mock_vault.engine.return_value.derive_key.return_value = b"key"
+        mock_crypto = MagicMock()
+        mock_crypto.seal.return_value = b"encrypted"
 
-    yield
+        with patch("navig.blackbox.export.write_bundle", return_value=zip_path):
+            with patch.dict(
+                "sys.modules",
+                {
+                    "navig.vault.core": MagicMock(get_vault=MagicMock(return_value=mock_vault)),
+                    "navig.vault.crypto": MagicMock(CryptoEngine=mock_crypto),
+                },
+            ):
+                result = export_bundle(_bundle(), tmp_path / "bundle", encrypted=True)
 
-    subprocess._cleanup()
-    gc.collect()
+        assert result == enc_path
+        assert enc_path.exists()
+        assert not zip_path.exists()  # plaintext removed
 
-    if loop is not None:
-        transports = getattr(loop, "_subprocesses", None)
-        if isinstance(transports, dict):
-            for transport in list(transports.values()):
-                try:
-                    transport.close()
-                except Exception:
-                    pass
-            transports.clear()
+    def test_encryption_failure_returns_zip(self, tmp_path):
+        zip_path = tmp_path / "bundle.navbox"
+        zip_path.write_bytes(b"content")
 
+        import builtins
+        real_import = builtins.__import__
 
-def test_export_bundle_unencrypted(tmp_dir, dummy_bundle):
-    out = tmp_dir / "out"
-    with patch("navig.blackbox.export.write_bundle", return_value=(tmp_dir / "out.navbox")):
-        res = export_bundle(dummy_bundle, out, encrypted=False)
-        assert res == (tmp_dir / "out.navbox")
+        def bad_import(name, *args, **kwargs):
+            if "vault" in name:
+                raise ImportError("no vault")
+            return real_import(name, *args, **kwargs)
 
+        with patch("navig.blackbox.export.write_bundle", return_value=zip_path):
+            with patch("builtins.__import__", side_effect=bad_import):
+                result = export_bundle(_bundle(), tmp_path / "bundle", encrypted=True)
 
-def test_export_bundle_encrypted_success(tmp_dir, dummy_bundle):
-    out = tmp_dir / "out"
-    zip_path = tmp_dir / "out.navbox"
-    zip_path.write_bytes(b"zipdata")
+        # Should fall back to plaintext zip
+        assert result == zip_path
 
-    with (
-        patch("navig.blackbox.export.write_bundle", return_value=zip_path),
-        patch("navig.vault.core.get_vault") as mock_v2,
-        patch("navig.vault.crypto.CryptoEngine.seal", return_value=b"sealed_data"),
-    ):
-        mock_v2.return_value.engine.return_value.derive_key.return_value = b"masterkey"
-
-        res = export_bundle(dummy_bundle, out, encrypted=True)
-
-        assert res.suffix == ".enc"
-        assert res.read_bytes() == b"sealed_data"
-        assert not zip_path.exists()
-
-
-def test_export_bundle_encrypted_failure_fallback(tmp_dir, dummy_bundle):
-    out = tmp_dir / "out"
-    zip_path = tmp_dir / "out.navbox"
-    zip_path.write_bytes(b"zipdata")
-
-    # Force an exception in encryption
-    with (
-        patch("navig.blackbox.export.write_bundle", return_value=zip_path),
-        patch(
-            "navig.vault.core.get_vault",
-            side_effect=Exception("Failed to load vault"),
-        ),
-    ):
-        res = export_bundle(dummy_bundle, out, encrypted=True)
-
-        # Falls back to unencrypted and prints a warning
-        assert res == zip_path
-        assert res.exists()
+    def test_write_bundle_called_with_output_path(self, tmp_path):
+        output = tmp_path / "out.navbox"
+        with patch("navig.blackbox.export.write_bundle", return_value=output) as mock_wb:
+            export_bundle(_bundle(), output, encrypted=False)
+        args = mock_wb.call_args[0]
+        assert args[1] == output

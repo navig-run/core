@@ -20,8 +20,8 @@ This checklist is for NAVIG maintainers preparing an official release.
   ```
 - [ ] **Run linters**:
   ```bash
-  flake8 navig/
-  black --check navig/
+  ruff check navig tests
+  ruff format --check navig tests
   ```
 - [ ] **Test installation** on clean environment:
   ```bash

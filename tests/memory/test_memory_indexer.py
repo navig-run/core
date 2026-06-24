@@ -13,9 +13,10 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from navig.memory.indexer import MemoryIndexer
 from navig.memory.storage import FileMetadata, MemoryChunk, MemoryStorage
-import pytest
 
 pytestmark = pytest.mark.integration
 

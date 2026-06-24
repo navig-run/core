@@ -19,7 +19,6 @@ import pytest
 
 from navig.agent.context_compressor import (
     ReactiveCompactor,
-    _default_summarizer,
     _estimate_messages_tokens,
     _estimate_tokens,
     get_reactive_compactor,

@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from email.header import decode_header
 
 import httpx
+from fastapi import FastAPI, HTTPException
+
 from app.audit import write_audit
 from app.db import db_session, fetch_all_dict, fetch_one_dict
 from app.settings import (
@@ -16,7 +18,6 @@ from app.settings import (
     REPO_PATH,
     TOOL_GATEWAY_URL,
 )
-from fastapi import FastAPI, HTTPException
 
 app = FastAPI(title="NAVIG Runtime", version="0.1.0")
 
@@ -414,7 +415,7 @@ def flow_daily_briefing():
         )
 
         lines = ["Daily Operational Briefing", "", "Agents report:"]
-        for agent_id, role in AGENTS.items():
+        for role in AGENTS.values():
             lines.append(f"- {role}: active")
 
         lines.append("")

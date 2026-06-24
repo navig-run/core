@@ -1,6 +1,5 @@
 """Tests for gateway client numeric coercion configuration fallback."""
 
-import pytest
 
 from navig.gateway_client import gateway_cli_defaults
 

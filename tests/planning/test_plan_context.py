@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -373,7 +372,7 @@ class TestPlanContextEdgeCases:
         home = tmp_path / "home"
         _set_test_home(monkeypatch, home)
 
-        space = _make_space(tmp_path)  # No CURRENT_PHASE.md in space dir
+        _make_space(tmp_path)  # No CURRENT_PHASE.md in space dir
 
         repo = tmp_path / "repo"
         plans_phases = repo / ".navig" / "plans" / "phases"

@@ -84,7 +84,6 @@ class PluginMeta:
     version: str = "1.0.0"
 
     def __str__(self) -> str:
-        status_icon = ""  # filled in by the loader when rendering /plugins list
         return f"{self.name} v{self.version} — {self.description}"
 
 
@@ -168,7 +167,7 @@ class BotPlugin(ABC):
         Called by the loader when any passive_pattern matches a non-command
         message. Override to implement NL / URL-trigger behaviour.
         """
-        pass
+        return None
 
     # ------------------------------------------------------------------ #
     # Optional: Telegram Business message support (Bot API 7.2+)         #
@@ -188,7 +187,7 @@ class BotPlugin(ABC):
         Called for business_message updates when handles_business == True.
         Access the message via update.business_message.
         """
-        pass
+        return None
 
     # ------------------------------------------------------------------ #
     # Enabled / disabled state                                             #

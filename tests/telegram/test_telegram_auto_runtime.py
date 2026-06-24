@@ -255,13 +255,24 @@ async def test_slash_ping_routes_to_ping_handler(monkeypatch):
     channel._handle_ping.assert_awaited_once_with(42, 42)
 
 
-async def test_slash_settings_and_voice_route_to_distinct_handlers(monkeypatch):
+async def test_slash_settings_and_voice_are_no_longer_dispatched_as_commands(monkeypatch):
+    """/settings and /voice moved to the Deck — they must NOT route to bot handlers
+    anymore. Guards the migration: a removed slash command falls through to normal
+    conversation instead of silently re-binding to a handler."""
+    seen: list[str] = []
+
+    async def _on_message(channel, user_id, message, metadata, on_partial=None):
+        seen.append(message)
+        return "ok"
+
     channel = TelegramChannel(
         bot_token="123:FAKE",
         allowed_users=[42],
-        on_message=lambda *args, **kwargs: None,
+        on_message=_on_message,
     )
     channel._bot_username = "mybot"
+    channel._send_response = AsyncMock()
+    channel._match_cli_command = lambda _text: None
 
     calls: list[str] = []
 
@@ -276,27 +287,22 @@ async def test_slash_settings_and_voice_route_to_distinct_handlers(monkeypatch):
 
     monkeypatch.setattr("navig.gateway.channels.telegram.HAS_SESSIONS", False)
 
-    settings_update = {
-        "message": {
-            "message_id": 3,
-            "text": "/settings",
-            "chat": {"id": 42, "type": "private"},
-            "from": {"id": 42, "username": "user42"},
-        }
-    }
-    voice_update = {
-        "message": {
-            "message_id": 4,
-            "text": "/voice",
-            "chat": {"id": 42, "type": "private"},
-            "from": {"id": 42, "username": "user42"},
-        }
-    }
+    for cmd in ("/settings", "/voice"):
+        await channel._process_update(
+            {
+                "message": {
+                    "message_id": 3,
+                    "text": cmd,
+                    "chat": {"id": 42, "type": "private"},
+                    "from": {"id": 42, "username": "user42"},
+                }
+            }
+        )
 
-    await channel._process_update(settings_update)
-    await channel._process_update(voice_update)
-
-    assert calls == ["settings:42:42", "voice:42:42"]
+    # Neither removed command reached a bot handler …
+    assert calls == []
+    # … both fell through to normal conversation instead.
+    assert len(seen) == 2
 
 
 async def test_auto_continuation_executes_second_turn_when_policy_enabled(monkeypatch):
@@ -322,7 +328,7 @@ async def test_auto_continuation_executes_second_turn_when_policy_enabled(monkey
         }
     )
 
-    async def _on_message(channel, user_id, message, metadata):
+    async def _on_message(channel, user_id, message, metadata, on_partial=None):
         if metadata.get("auto_continuation_turn"):
             return "Executing next concrete step now."
         return "Should I continue with the next step?"
@@ -377,7 +383,7 @@ async def test_auto_continuation_skips_for_choice_prompt_and_records_classifier(
         }
     )
 
-    async def _on_message(channel, user_id, message, metadata):
+    async def _on_message(channel, user_id, message, metadata, on_partial=None):
         if metadata.get("auto_continuation_turn"):
             return "This should not execute"
         return "Should I choose option A or B for the next rollout?"
@@ -432,7 +438,7 @@ async def test_auto_continuation_busy_suppression_blocks_immediate_retry(monkeyp
         }
     )
 
-    async def _on_message(channel, user_id, message, metadata):
+    async def _on_message(channel, user_id, message, metadata, on_partial=None):
         if metadata.get("auto_continuation_turn"):
             return "This follow-up should be suppressed"
         if message == "first":
@@ -501,7 +507,7 @@ async def test_auto_continuation_persists_updated_language(monkeypatch):
         }
     )
 
-    async def _on_message(channel, user_id, message, metadata):
+    async def _on_message(channel, user_id, message, metadata, on_partial=None):
         if metadata.get("auto_continuation_turn"):
             return "Executing next concrete step now."
         return "Should I continue with the next step?"

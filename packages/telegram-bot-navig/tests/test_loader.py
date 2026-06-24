@@ -15,6 +15,13 @@ import textwrap
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+try:
+    from telegram import Update  # noqa: F401
+except ImportError:
+    pytest.skip("python-telegram-bot not installed", allow_module_level=True)
+
 # ---------------------------------------------------------------------------
 # Make imports work from tests/ subdirectory
 # ---------------------------------------------------------------------------

@@ -25,7 +25,6 @@ from __future__ import annotations
 import json
 import threading
 import time
-from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 

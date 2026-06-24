@@ -25,6 +25,7 @@ _deck_config: dict[str, Any] = {
     "require_auth": True,
     "dev_mode": False,
     "auth_max_age": 86400,
+    "api_key": "",  # Bearer token accepted from desktop browser
 }
 
 
@@ -34,6 +35,7 @@ def configure_deck_auth(
     require_auth: bool = True,
     dev_mode: bool = False,
     auth_max_age: int = 3600,
+    api_key: str = "",
 ) -> None:
     """Set the module-level auth config for Deck API."""
     _deck_config["bot_token"] = bot_token
@@ -41,11 +43,13 @@ def configure_deck_auth(
     _deck_config["require_auth"] = require_auth
     _deck_config["dev_mode"] = dev_mode
     _deck_config["auth_max_age"] = auth_max_age
+    _deck_config["api_key"] = api_key or ""
     logger.info(
-        "Deck auth configured: require_auth=%s, allowed_users=%d, dev_mode=%s",
+        "Deck auth configured: require_auth=%s, allowed_users=%d, dev_mode=%s, api_key=%s",
         require_auth,
         len(_deck_config["allowed_users"]),
         dev_mode,
+        "set" if api_key else "not set",
     )
 
 
@@ -92,9 +96,26 @@ def validate_init_data(
         return None
 
 
+_DEV_BYPASS_SENTINEL = -1  # Negative = dev/localhost bypass; skips allowlist
+
+
 def _get_user_id(request: "web.Request", bot_token: str = "") -> int | None:
+    """Return the authenticated user_id, or None if not authenticated.
+
+    Returns _DEV_BYPASS_SENTINEL (negative) for dev/localhost bypass requests
+    so the auth middleware knows to skip the allowlist check.
+    """
     token = bot_token or _deck_config["bot_token"]
     max_age = _deck_config["auth_max_age"]
+
+    # Bearer token: accepted from desktop browser (api_key set in deck config)
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        bearer = auth_header[7:].strip()
+        configured_key = _deck_config.get("api_key", "")
+        if bearer and configured_key and bearer == configured_key:
+            logger.debug("Deck API: valid Bearer token (api_key match)")
+            return _DEV_BYPASS_SENTINEL
 
     init_data = request.headers.get("X-Telegram-Init-Data", "")
     if init_data and token:
@@ -106,11 +127,37 @@ def _get_user_id(request: "web.Request", bot_token: str = "") -> int | None:
         user_header = request.headers.get("X-Telegram-User", "")
         if user_header.isdigit():
             return int(user_header)
+        # dev_mode with no X-Telegram-User header → deny (return None → 401).
+        # The loopback bypass below is intentionally skipped in dev_mode.
+
+    # Auto-bypass for requests originating from localhost — production only.
+    # In dev_mode the caller must supply X-Telegram-User (handled above).
+    # Covers two cases:
+    #   a) Cross-origin requests from the React dev server (Origin: http://localhost:*)
+    #   b) Same-origin requests from the SPA served at 127.0.0.1:8765 (no Origin header,
+    #      request.remote == '127.0.0.1')  ← the common production case
+    if not _deck_config["dev_mode"]:
+        origin = request.headers.get("Origin", "")
+        if origin.startswith("http://localhost:") or origin.startswith("http://127.0.0.1:"):
+            logger.debug("Deck API: localhost origin %s → dev bypass", origin)
+            return _DEV_BYPASS_SENTINEL
+        remote = getattr(request, "remote", "") or ""
+        _LOOPBACK = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
+        if not origin and remote in _LOOPBACK:
+            logger.debug("Deck API: same-origin request from %s → dev bypass", remote)
+            return _DEV_BYPASS_SENTINEL
 
     return None
 
 
 if web:
+
+    # Paths under /api/deck that bypass auth. The OAuth provider redirect lands
+    # here with no bearer token; security is the unguessable PKCE `state` token
+    # (validated against an in-memory pending entry created by /connect).
+    _PUBLIC_DECK_PATHS = frozenset({
+        "/api/deck/connectors/oauth/callback",
+    })
 
     @web.middleware
     async def deck_auth_middleware(request: "web.Request", handler):
@@ -122,26 +169,43 @@ if web:
         if request.method == "OPTIONS":
             return await handler(request)
 
+        if path in _PUBLIC_DECK_PATHS:
+            return await handler(request)
+
         user_id = _get_user_id(request)
 
+        _CORS_HEADERS = {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Telegram-Init-Data, X-Telegram-User",
+        }
+
         if user_id is None:
-            logger.warning("Deck API unauthorized: no valid user from %s %s", request.method, path)
+            logger.warning(
+                "Deck API unauthorized: no valid auth from %s %s (origin=%s)",
+                request.method,
+                path,
+                request.headers.get("Origin", "-"),
+            )
             return web.json_response(
                 {
                     "error": "unauthorized",
                     "detail": "Valid Telegram WebApp initData required",
                 },
                 status=401,
+                headers=_CORS_HEADERS,
             )
 
         allowed = _deck_config["allowed_users"]
         require_auth = _deck_config["require_auth"]
-        if require_auth and allowed and user_id not in allowed:
+        # Bypass: dev/localhost sentinel — skip the allowlist check entirely
+        if user_id != _DEV_BYPASS_SENTINEL and require_auth and allowed and user_id not in allowed:
             logger.warning("Deck API forbidden: user %d not in allowed_users", user_id)
             return web.json_response(
                 {"error": "forbidden", "detail": "User not authorized for Deck"},
                 status=403,
+                headers=_CORS_HEADERS,
             )
 
-        request["deck_user_id"] = user_id
+        request["deck_user_id"] = abs(user_id)  # store positive ID for handlers
         return await handler(request)

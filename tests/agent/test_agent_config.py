@@ -1,6 +1,7 @@
 """Tests for Agent JSON config loader."""
 
 import json
+
 import pytest
 
 pytestmark = pytest.mark.unit

@@ -1,107 +1,34 @@
-﻿"""
-telegram/handlers.py - Transport adapter: routes Telegram updates to navig-commands-core handlers.
-
-No business logic lives here. This file only:
-  1. Parses the incoming Telegram command and arguments
-  2. Delegates to the transport-agnostic handler via the command registry
-  3. Formats the returned dict into a Telegram reply string
-
-To add a new command: add it to navig-commands-core/commands/ and register
-a cmd_<name> function here that parses args and calls the handler.
-"""
+"""Compatibility wrapper for the pack-local Telegram handler entrypoint."""
 
 from __future__ import annotations
 
-import logging
-import sys
+import importlib.util
 from pathlib import Path
-from typing import Any
-
-from telegram import Update
-from telegram.ext import ContextTypes
-
-logger = logging.getLogger(__name__)
 
 
-def _get_handler(command_name: str):
-    """
-    Resolve a command handler. Tries the live CommandRegistry first,
-    then falls back to a direct import from navig-commands-core.
-    """
-    try:
-        from navig.commands._registry import CommandRegistry  # noqa: PLC0415
-
-        return CommandRegistry.get(command_name)
-    except (ImportError, AttributeError):
-        pass
-    # Direct import fallback: works when the commands pack is co-installed
-    try:
-        packages_dir = Path(__file__).parent.parent.parent  # packages/
-        core_commands = packages_dir / "navig-commands-core" / "commands"
-        if core_commands not in sys.path:
-            sys.path.insert(0, str(core_commands))
-        # Try parent dir (authoring mode — navig-core/packages/)
-        auth_commands = (
-            Path(__file__).parent.parent.parent.parent
-            / "navig-commands-core"
-            / "commands"
-        )
-        if auth_commands.is_dir() and str(auth_commands) not in sys.path:
-            sys.path.insert(0, str(auth_commands))
-        from __init__ import COMMANDS  # noqa: PLC0415
-
-        return COMMANDS.get(command_name)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Cannot resolve handler for %r: %s", command_name, exc)
-        return None
-
-
-def _format_checkdomain(result: dict[str, Any]) -> str:
-    """Format a checkdomain result dict into a Telegram HTML reply."""
-    icon = {"available": "✅", "taken": "❌", "error": "⚠️"}.get(
-        result.get("status", "error"), "❓"
+def _load_pack_handlers():
+    handlers_path = Path(__file__).resolve().parents[1] / "tg_handlers.py"
+    spec = importlib.util.spec_from_file_location(
+        "navig_telegram_pack_handlers", handlers_path
     )
-    domain = result.get("domain", "")
-    details = result.get("details", "No details.")
-    return f"{icon} <b>{domain}</b>\n{details}"
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load tg_handlers.py from {handlers_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-async def cmd_checkdomain(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /checkdomain <domain> - check whether a domain is available."""
-    args = context.args or []
-    if not args:
-        await update.message.reply_text(
-            "🌐 <b>Domain Checker</b>\n\n"
-            "Usage: <code>/checkdomain example.com</code>\n\n"
-            "Or say:\n• <i>check domain navig.io</i>\n• <i>is schema.cx available</i>",
-            parse_mode="HTML",
-        )
-        return
+_PACK_HANDLERS = _load_pack_handlers()
 
-    domain = args[0].lower().strip("./")
-    status_msg = await update.message.reply_text(
-        f"🔍 Checking <code>{domain}</code>…", parse_mode="HTML"
-    )
+_get_handler = _PACK_HANDLERS._get_handler
+_format_checkdomain = _PACK_HANDLERS._format_checkdomain
+cmd_checkdomain = _PACK_HANDLERS.cmd_checkdomain
+TELEGRAM_COMMANDS = _PACK_HANDLERS.TELEGRAM_COMMANDS
 
-    handler = _get_handler("checkdomain")
-    if handler is None:
-        await status_msg.edit_text(
-            "⚠️ checkdomain handler not found. Is navig-commands-core installed?"
-        )
-        return
-
-    try:
-        result = await handler({"domain": domain})
-        reply = _format_checkdomain(result)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("checkdomain handler raised")
-        reply = f"⚠️ Error checking <code>{domain}</code>: {exc}"
-
-    await status_msg.edit_text(reply, parse_mode="HTML")
-
-
-# Registry: maps command string -> handler coroutine
-# The telegram_worker reads this to register CommandHandlers automatically.
-TELEGRAM_COMMANDS: dict[str, object] = {
-    "checkdomain": cmd_checkdomain,
-}
+__all__ = [
+    "_get_handler",
+    "_format_checkdomain",
+    "cmd_checkdomain",
+    "TELEGRAM_COMMANDS",
+]

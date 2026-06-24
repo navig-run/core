@@ -216,7 +216,7 @@ class Plugin(ABC):
 
         Use for initialization that doesn't require the plugin to be active.
         """
-        pass
+        return None
 
     def on_enable(self) -> None:
         """
@@ -224,7 +224,7 @@ class Plugin(ABC):
 
         Use for registering commands, hooks, and starting services.
         """
-        pass
+        return None
 
     def on_disable(self) -> None:
         """
@@ -232,7 +232,7 @@ class Plugin(ABC):
 
         Use for cleanup while keeping the plugin loaded.
         """
-        pass
+        return None
 
     def on_unload(self) -> None:
         """
@@ -240,7 +240,7 @@ class Plugin(ABC):
 
         Use for final cleanup and resource release.
         """
-        pass
+        return None
 
     # =========================================================================
     # Hook Integration

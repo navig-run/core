@@ -1,7 +1,8 @@
 from unittest.mock import MagicMock, patch
 
-from navig.commands import security
 import pytest
+
+from navig.commands import security
 
 pytestmark = pytest.mark.integration
 

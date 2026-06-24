@@ -2,7 +2,6 @@
 Tests for ConfigManager with new two-tier hierarchy.
 """
 
-from pathlib import Path
 
 import pytest
 import yaml

@@ -219,9 +219,9 @@ _tracker: DeliveryTracker | None = None
 
 
 def _default_db_path() -> Path:
-    from navig.config import get_config
+    from navig.platform import paths
 
-    return Path(get_config().data_dir) / "deliveries.db"
+    return paths.data_dir() / "deliveries.db"
 
 
 def get_delivery_tracker() -> DeliveryTracker:

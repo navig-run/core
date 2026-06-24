@@ -65,9 +65,9 @@ Unified database management for MySQL/MariaDB/PostgreSQL.
 | `db file <file.sql>` | Execute SQL file |
 | `db dump <database> [-o file]` | Backup database to file |
 | `db restore <database> <file>` | Restore database from backup |
-| `db shell` | Open interactive database shell |
-| `db users` | List database users |
-| `db containers` | List Docker database containers |
+| `db shell` | Open interactive database shell _(internal/hidden)_ |
+| `db users` | List database users _(internal/hidden)_ |
+| `db containers` | List Docker database containers _(internal/hidden)_ |
 | `db optimize <db> <table>` | Optimize table |
 | `db repair <db> <table>` | Repair table |
 
@@ -86,8 +86,7 @@ Real-time server monitoring and health checks, nested under `navig host`.
 | `host monitor show --network` | Network statistics |
 | `host monitor show --process` | Top processes by CPU/memory |
 
-> **Note:** The deprecated `navig monitor` alias still works but will be removed in v3.0.
-> Use `navig host monitor show` going forward.
+> **Note:** The `navig monitor` flat alias has been removed. Use `navig host monitor show` directly.
 
 ---
 
@@ -103,8 +102,7 @@ Firewall, intrusion detection, and security auditing, nested under `navig host`.
 | `host security show --fail2ban` | Show Fail2Ban status |
 | `host security show --updates` | Check security updates |
 
-> **Note:** The deprecated `navig security` alias still works but will be removed in v3.0.
-> Use `navig host security show` going forward.
+> **Note:** The `navig security` flat alias has been removed. Use `navig host security show` directly.
 
 ---
 
@@ -252,3 +250,109 @@ HestiaCP control panel integration, nested under `navig web`.
 
 > **Note:** The deprecated `navig hestia` top-level alias still works but will be removed in v3.0.
 > Use `navig web hestia` going forward.
+
+---
+
+## Agent Runtime (`navig agent`)
+
+Autonomous agent mode — installation, lifecycle, configuration, and personality management.
+
+| Command | Description |
+|---------|-------------|
+| `agent install` | Initialize agent config and directory structure under `~/.navig/agent/` |
+| `agent start` | Start the autonomous agent process |
+| `agent stop` | Stop the running agent |
+| `agent status` | Show agent state, mode, and personality |
+| `agent config` | Edit agent configuration interactively |
+| `agent logs` | View agent log output |
+| `agent personality` | Manage and switch personality profiles |
+| `agent service` | Manage agent as an OS-registered system service |
+
+See [docs/agent/install.md](../agent/install.md) for the full `navig agent install` reference.
+
+---
+
+## Flows (`navig flow`)
+
+Saved multi-step workflows for repeatable operations.
+
+| Command | Description |
+|---------|-------------|
+| `flow list` | List all saved flows |
+| `flow show <name>` | View flow steps |
+| `flow run <name>` | Execute a flow |
+| `flow run <name> --dry-run` | Preview without executing |
+| `flow test <name>` | Validate flow syntax |
+| `flow add <name>` | Create a new flow |
+| `flow edit <name>` | Edit flow YAML |
+| `flow remove <name>` | Delete a flow |
+| `flow template list` | List built-in flow templates |
+
+> Always run `--dry-run` before executing flows against production hosts.
+
+---
+
+## Wiki (`navig wiki`)
+
+Project knowledge base and documentation manager stored in `.navig/wiki/`.
+
+| Command | Description |
+|---------|-------------|
+| `wiki init` | Initialise project wiki |
+| `wiki init --global` | Initialise global wiki (`~/.navig/wiki/`) |
+| `wiki list` | List all pages |
+| `wiki list <folder>` | List pages in a folder |
+| `wiki show <page>` | View a page |
+| `wiki add <file>` | Add file to inbox |
+| `wiki add <file> --folder <folder>` | Add directly to a folder |
+| `wiki edit <page>` | Open page in editor |
+| `wiki remove <page>` | Archive a page |
+| `wiki search <query>` | Full-text search |
+| `wiki inbox` | List pending inbox items |
+| `wiki inbox process` | AI-categorise inbox items |
+| `wiki publish` | Export public wiki content |
+| `wiki links broken` | Find broken wiki links |
+
+See [docs/features/wiki.md](../features/wiki.md) for the full wiki module reference.
+
+---
+
+## Plans (`navig plans`)
+
+Space-aware planning and daily briefing.
+
+| Command | Description |
+|---------|-------------|
+| `plans status` | Show current planning status |
+| `plans next` | Show next recommended actions |
+| `plans briefing` | Generate today's briefing |
+| `plans add` | Add item to active plan |
+| `plans sync` | Sync plans across spaces |
+| `plans update` | Update plan data |
+
+---
+
+## Scaffold (`navig scaffold`)
+
+Generate project structures from YAML templates.
+
+| Command | Description |
+|---------|-------------|
+| `scaffold apply <template>` | Generate structure from template |
+| `scaffold apply <template> --dry-run` | Preview without creating files |
+| `scaffold validate <template>` | Validate template syntax |
+
+Options: `--host` (upload to remote), `--target-dir` (destination), `--set key=value` (override variables).
+
+---
+
+## Contacts (`navig contacts`)
+
+Contact address book for storing frequently used addresses.
+
+| Command | Description |
+|---------|-------------|
+| `contacts list` | List all contacts |
+| `contacts add` | Add a new contact |
+| `contacts import <file>` | Import contacts from file |
+

@@ -1,7 +1,7 @@
+import pytest
 from typer.testing import CliRunner
 
 from navig.cli import _register_external_commands, app
-import pytest
 
 pytestmark = pytest.mark.integration
 

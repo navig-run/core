@@ -8,14 +8,10 @@ FB-05 implementation tests.
 
 from __future__ import annotations
 
-import asyncio
 import json
-import os
-import shutil
 import subprocess
-import time
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -910,7 +906,6 @@ class TestEdgeCases:
                 name=f"w{i}", path=tmp_path / f"w{i}", branch=f"navig/w{i}"
             )
         removed = []
-        original_remove = mgr.remove
 
         async def tracking_remove(name, force=False):
             removed.append(name)

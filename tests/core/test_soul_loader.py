@@ -5,8 +5,6 @@ Covers the Phase-1 IDENTITY.md addition from RFC #37, plus regression tests
 for the existing chain steps.
 """
 
-import os
-import tempfile
 from pathlib import Path
 from unittest.mock import patch
 

@@ -1,6 +1,8 @@
 """Vault credential endpoints for the Deck API."""
 
+import asyncio
 import logging
+import sys
 
 try:
     from aiohttp import web
@@ -12,24 +14,68 @@ from navig.vault.secret_str import mask_secret
 logger = logging.getLogger(__name__)
 
 _VAULT_ALLOWED_PROVIDERS = {
+    # AI / LLM
     "openai",
     "openrouter",
     "anthropic",
     "groq",
     "google",
-    "github",
-    "gitlab",
-    "huggingface",
-    "replicate",
-    "together",
+    "deepseek",
     "mistral",
     "cohere",
-    "deepseek",
     "perplexity",
-    "ollama",
+    "fireworks",
+    "nvidia",
+    "together",
+    "replicate",
+    "huggingface",
     "siliconflow",
     "grok",
     "xai",
+    "ollama",
+    "cerebras",
+    "ai21",
+    # Voice / Audio
+    "deepgram",
+    "elevenlabs",
+    # Developer tools
+    "github",
+    "gitlab",
+    "vercel",
+    "netlify",
+    "linear",
+    "notion",
+    # Infrastructure / Cloud
+    "aws",
+    "gcp",
+    "azure",
+    "hetzner",
+    "digitalocean",
+    "cloudflare",
+    "fly",
+    # Data / SaaS
+    "stripe",
+    "supabase",
+    "pinecone",
+    "neon",
+    "redis",
+    # Messaging / social adapters
+    "telegram",
+    "discord",
+    "slack",
+    "whatsapp",
+    "sms",
+    "linkedin",
+    "linkedin_page",
+    "reddit",
+    "instagram_meta",
+    "instagram",
+    "facebook",
+    "threads",
+    "youtube",
+    "vk",
+    "medium",
+    "devto",
 }
 
 
@@ -45,21 +91,23 @@ async def handle_deck_vault_list(request: "web.Request") -> "web.Response":
         creds = vault.list()
         items = []
         for c in creds:
+            meta = c.metadata or {}
+            profile_id = meta.get("profile_id", "")
+            raw_ct = meta.get("credential_type", "")
+            credential_type = (
+                raw_ct.value if hasattr(raw_ct, "value") else str(raw_ct)
+            ) if raw_ct else ""
             items.append(
                 {
                     "id": c.id,
                     "provider": c.provider,
-                    "profile_id": c.profile_id,
-                    "credential_type": (
-                        c.credential_type.value
-                        if hasattr(c.credential_type, "value")
-                        else str(c.credential_type)
-                    ),
+                    "profile_id": profile_id,
+                    "credential_type": credential_type,
                     "label": c.label,
                     "enabled": c.enabled,
                     "created_at": c.created_at.isoformat() if c.created_at else None,
                     "last_used_at": (c.last_used_at.isoformat() if c.last_used_at else None),
-                    "metadata": c.metadata or {},
+                    "metadata": meta,
                 }
             )
 
@@ -73,10 +121,19 @@ async def handle_deck_vault_list(request: "web.Request") -> "web.Response":
             except Exception:
                 items[-1]["key_preview"] = "••••••••"
 
+        # Probe whether openai-whisper local package is installed
+        whisper_installed = False
+        try:
+            import whisper as _whisper_pkg  # noqa: F401
+            whisper_installed = True
+        except ImportError:
+            pass
+
         return web.json_response(
             {
                 "credentials": items,
                 "allowed_providers": sorted(_VAULT_ALLOWED_PROVIDERS),
+                "whisper_installed": whisper_installed,
             }
         )
     except Exception as e:
@@ -125,7 +182,7 @@ async def handle_deck_vault_add(request: "web.Request") -> "web.Response":
                 "ok": True,
                 "id": cred_id,
                 "provider": provider,
-                "key_preview": _mask_key(api_key),
+                "key_preview": mask_secret(api_key, show_prefix=6),
             }
         )
     except Exception as e:
@@ -198,3 +255,28 @@ async def handle_deck_vault_test(request: "web.Request") -> "web.Response":
     except Exception as e:
         logger.error("Vault test error: %s", e)
         return web.json_response({"error": str(e)}, status=500)
+
+
+async def handle_deck_whisper_install(request: "web.Request") -> "web.Response":
+    """Install the openai-whisper package for local speech-to-text."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, "-m", "pip", "install", "openai-whisper",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            return web.json_response({"ok": False, "error": "install timed out after 120s"}, status=500)
+
+        ok = proc.returncode == 0
+        output = (stdout.decode(errors="replace") if ok else stderr.decode(errors="replace")).strip()
+        return web.json_response({"ok": ok, "message": output or ("Installed successfully" if ok else "Install failed")})
+    except Exception as e:
+        logger.error("Whisper install error: %s", e)
+        return web.json_response({"ok": False, "error": str(e)}, status=500)

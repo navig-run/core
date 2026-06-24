@@ -1,104 +1,231 @@
+"""Tests for navig.workspace_ownership — classification, path resolution, duplicate detection."""
+
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
-from navig import workspace as workspace_module
-from navig import workspace_ownership as own
-from navig.commands import onboard
-from navig.workspace import WorkspaceManager
-import pytest
-
-pytestmark = pytest.mark.integration
+# ---------------------------------------------------------------------------
+# Module-level constants
+# ---------------------------------------------------------------------------
 
 
-def test_detect_project_workspace_duplicates(tmp_path: Path) -> None:
-    project_root = tmp_path / "project"
-    project_ws = project_root / ".navig" / "workspace"
-    user_ws = tmp_path / "user" / ".navig" / "workspace"
-    project_ws.mkdir(parents=True)
-    user_ws.mkdir(parents=True)
+class TestModuleConstants:
+    def test_personal_state_files_is_set(self):
+        from navig.workspace_ownership import PERSONAL_STATE_FILES
 
-    (project_ws / "SOUL.md").write_text("project-soul", encoding="utf-8")
-    (user_ws / "SOUL.md").write_text("user-soul", encoding="utf-8")
-    (project_ws / "HEARTBEAT.md").write_text("same", encoding="utf-8")
-    (user_ws / "HEARTBEAT.md").write_text("same", encoding="utf-8")
-    (project_ws / "PERSONA.md").write_text("legacy-only", encoding="utf-8")
+        assert isinstance(PERSONAL_STATE_FILES, set)
+        assert "AGENTS.md" in PERSONAL_STATE_FILES
+        assert "goals.json" in PERSONAL_STATE_FILES
 
-    duplicates = own.detect_project_workspace_duplicates(
-        project_root=project_root,
-        user_workspace=user_ws,
-    )
-    statuses = {d.file_name: d.status for d in duplicates}
+    def test_generated_default_files_subset_of_personal(self):
+        from navig.workspace_ownership import GENERATED_DEFAULT_FILES, PERSONAL_STATE_FILES
 
-    assert statuses["SOUL.md"] == "duplicate_conflict"
-    assert statuses["HEARTBEAT.md"] == "duplicate_identical"
-    assert statuses["PERSONA.md"] == "project_only_legacy"
+        assert GENERATED_DEFAULT_FILES.issubset(PERSONAL_STATE_FILES)
 
 
-def test_resolve_personal_workspace_path_uses_user_workspace_for_all_noncanonical_paths(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    user_ws = tmp_path / "home" / ".navig" / "workspace"
-    project_root = tmp_path / "project"
-    project_ws = project_root / ".navig" / "workspace"
-    custom_ws = tmp_path / "custom" / "workspace"
-
-    monkeypatch.setattr(own, "USER_WORKSPACE_DIR", user_ws)
-
-    canonical, legacy = own.resolve_personal_workspace_path(project_ws, project_root=project_root)
-    assert canonical == user_ws
-    assert legacy == project_ws
-
-    canonical, legacy = own.resolve_personal_workspace_path(custom_ws, project_root=project_root)
-    assert canonical == user_ws
-    assert legacy == custom_ws
+# ---------------------------------------------------------------------------
+# classify_workspace_file
+# ---------------------------------------------------------------------------
 
 
-def test_workspace_manager_prefers_user_workspace_and_uses_legacy_fallback(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    user_ws = tmp_path / "home" / ".navig" / "workspace"
-    project_root = tmp_path / "project"
-    project_ws = project_root / ".navig" / "workspace"
-    user_ws.mkdir(parents=True)
-    project_ws.mkdir(parents=True)
+class TestClassifyWorkspaceFile:
+    def test_generated_default_known_file(self):
+        from navig.workspace_ownership import GENERATED_DEFAULT_FILES, classify_workspace_file
 
-    # Redirect module defaults to temp locations.
-    monkeypatch.setattr(workspace_module, "DEFAULT_NAVIG_DIR", user_ws.parent)
-    monkeypatch.setattr(workspace_module, "DEFAULT_WORKSPACE_DIR", user_ws)
-    monkeypatch.setattr(workspace_module, "DEFAULT_CONFIG_FILE", user_ws.parent / "navig.json")
-    monkeypatch.setattr(own, "USER_WORKSPACE_DIR", user_ws)
+        for name in GENERATED_DEFAULT_FILES:
+            assert classify_workspace_file(name) == "generated_default"
 
-    (user_ws / "USER.md").write_text("user copy", encoding="utf-8")
-    (project_ws / "USER.md").write_text("project copy", encoding="utf-8")
+    def test_personal_file_not_in_generated(self):
+        from navig.workspace_ownership import classify_workspace_file
 
-    wm = WorkspaceManager(workspace_path=project_ws, config_path=tmp_path / "missing.json")
-    assert wm.workspace_path == user_ws
-    assert wm.legacy_workspace_path == project_ws
-    assert wm.get_file_content("USER.md") == "user copy"
+        assert classify_workspace_file("goals.json") == "personal_customized"
 
-    (user_ws / "USER.md").unlink()
-    assert wm.get_file_content("USER.md") == "project copy"
+    def test_unknown_file_is_personal(self):
+        from navig.workspace_ownership import classify_workspace_file
+
+        assert classify_workspace_file("custom_notes.txt") == "personal_customized"
 
 
-def test_create_workspace_templates_writes_personal_files_to_user_workspace_only(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    user_ws = tmp_path / "home" / ".navig" / "workspace"
-    project_ws = tmp_path / "project" / ".navig" / "workspace"
-    project_ws.mkdir(parents=True)
+# ---------------------------------------------------------------------------
+# is_project_workspace_path
+# ---------------------------------------------------------------------------
 
-    monkeypatch.setattr(onboard, "USER_WORKSPACE_DIR", user_ws)
-    monkeypatch.setattr(
-        onboard, "detect_project_workspace_duplicates", lambda project_root=None: []
-    )
 
-    onboard.create_workspace_templates(project_ws, console=None)
+class TestIsProjectWorkspacePath:
+    def test_returns_true_for_project_workspace(self, tmp_path):
+        from navig.workspace_ownership import is_project_workspace_path
 
-    assert (user_ws / "SOUL.md").exists()
-    assert (user_ws / "HEARTBEAT.md").exists()
-    assert not (project_ws / "SOUL.md").exists()
-    assert not (project_ws / "HEARTBEAT.md").exists()
+        project_root = tmp_path / "myproject"
+        project_root.mkdir()
+        project_ws = project_root / ".navig" / "workspace"
+        project_ws.mkdir(parents=True)
+
+        assert is_project_workspace_path(project_ws, project_root=project_root) is True
+
+    def test_returns_false_for_unrelated_path(self, tmp_path):
+        from navig.workspace_ownership import is_project_workspace_path
+
+        unrelated = tmp_path / "some" / "other" / "dir"
+        assert is_project_workspace_path(unrelated, project_root=tmp_path) is False
+
+    def test_user_workspace_is_not_project_workspace(self, tmp_path):
+        from navig.workspace_ownership import USER_WORKSPACE_DIR, is_project_workspace_path
+
+        assert is_project_workspace_path(USER_WORKSPACE_DIR, project_root=tmp_path) is False
+
+
+# ---------------------------------------------------------------------------
+# resolve_personal_workspace_path
+# ---------------------------------------------------------------------------
+
+
+class TestResolvePersonalWorkspacePath:
+    def test_none_requested_returns_canonical(self):
+        from navig.workspace_ownership import USER_WORKSPACE_DIR, resolve_personal_workspace_path
+
+        canonical, legacy = resolve_personal_workspace_path(None)
+        assert canonical == USER_WORKSPACE_DIR
+        assert legacy is None
+
+    def test_canonical_path_returns_no_legacy(self):
+        from navig.workspace_ownership import USER_WORKSPACE_DIR, resolve_personal_workspace_path
+
+        canonical, legacy = resolve_personal_workspace_path(USER_WORKSPACE_DIR)
+        assert canonical == USER_WORKSPACE_DIR
+        assert legacy is None
+
+    def test_different_path_returned_as_legacy(self, tmp_path):
+        from navig.workspace_ownership import USER_WORKSPACE_DIR, resolve_personal_workspace_path
+
+        other = tmp_path / "other_workspace"
+        other.mkdir()
+        canonical, legacy = resolve_personal_workspace_path(other)
+        assert canonical == USER_WORKSPACE_DIR
+        assert legacy is not None
+        assert legacy.resolve() == other.resolve()
+
+
+# ---------------------------------------------------------------------------
+# WorkspaceDuplicate
+# ---------------------------------------------------------------------------
+
+
+class TestWorkspaceDuplicate:
+    def test_fields(self, tmp_path):
+        from navig.workspace_ownership import WorkspaceDuplicate
+
+        dup = WorkspaceDuplicate(
+            file_name="SOUL.md",
+            project_path=tmp_path / "project" / "SOUL.md",
+            user_path=tmp_path / "user" / "SOUL.md",
+            status="duplicate_conflict",
+        )
+        assert dup.file_name == "SOUL.md"
+        assert dup.status == "duplicate_conflict"
+        assert dup.user_path is not None
+
+
+# ---------------------------------------------------------------------------
+# detect_project_workspace_duplicates
+# ---------------------------------------------------------------------------
+
+
+class TestDetectProjectWorkspaceDuplicates:
+    def test_no_project_workspace_returns_empty(self, tmp_path):
+        from navig.workspace_ownership import detect_project_workspace_duplicates
+
+        result = detect_project_workspace_duplicates(project_root=tmp_path)
+        assert result == []
+
+    def test_project_only_file_detected(self, tmp_path):
+        from navig.workspace_ownership import detect_project_workspace_duplicates
+
+        project_ws = tmp_path / ".navig" / "workspace"
+        project_ws.mkdir(parents=True)
+        (project_ws / "SOUL.md").write_text("soul content", encoding="utf-8")
+
+        user_ws = tmp_path / "user_workspace"
+        user_ws.mkdir()
+
+        result = detect_project_workspace_duplicates(
+            project_root=tmp_path, user_workspace=user_ws
+        )
+        assert len(result) == 1
+        assert result[0].file_name == "SOUL.md"
+        assert result[0].status == "project_only_legacy"
+
+    def test_identical_files_detected(self, tmp_path):
+        from navig.workspace_ownership import detect_project_workspace_duplicates
+
+        project_ws = tmp_path / ".navig" / "workspace"
+        project_ws.mkdir(parents=True)
+        user_ws = tmp_path / "user_workspace"
+        user_ws.mkdir()
+
+        content = "identical content"
+        (project_ws / "AGENTS.md").write_text(content, encoding="utf-8")
+        (user_ws / "AGENTS.md").write_text(content, encoding="utf-8")
+
+        result = detect_project_workspace_duplicates(
+            project_root=tmp_path, user_workspace=user_ws
+        )
+        assert len(result) == 1
+        assert result[0].status == "duplicate_identical"
+
+    def test_conflicting_files_detected(self, tmp_path):
+        from navig.workspace_ownership import detect_project_workspace_duplicates
+
+        project_ws = tmp_path / ".navig" / "workspace"
+        project_ws.mkdir(parents=True)
+        user_ws = tmp_path / "user_workspace"
+        user_ws.mkdir()
+
+        (project_ws / "IDENTITY.md").write_text("project version", encoding="utf-8")
+        (user_ws / "IDENTITY.md").write_text("user version - different", encoding="utf-8")
+
+        result = detect_project_workspace_duplicates(
+            project_root=tmp_path, user_workspace=user_ws
+        )
+        assert any(r.status == "duplicate_conflict" for r in result)
+
+    def test_only_personal_state_files_scanned(self, tmp_path):
+        from navig.workspace_ownership import detect_project_workspace_duplicates
+
+        project_ws = tmp_path / ".navig" / "workspace"
+        project_ws.mkdir(parents=True)
+        # Add a file NOT in PERSONAL_STATE_FILES
+        (project_ws / "random_notes.txt").write_text("notes", encoding="utf-8")
+
+        result = detect_project_workspace_duplicates(project_root=tmp_path)
+        # random_notes.txt should NOT appear in results
+        assert all(r.file_name != "random_notes.txt" for r in result)
+
+
+# ---------------------------------------------------------------------------
+# summarize_duplicates
+# ---------------------------------------------------------------------------
+
+
+class TestSummarizeDuplicates:
+    def test_empty_returns_zeros(self):
+        from navig.workspace_ownership import summarize_duplicates
+
+        summary = summarize_duplicates([])
+        assert summary["duplicate_conflict"] == 0
+        assert summary["duplicate_identical"] == 0
+        assert summary["project_only_legacy"] == 0
+
+    def test_counts_correctly(self, tmp_path):
+        from navig.workspace_ownership import WorkspaceDuplicate, summarize_duplicates
+
+        dups = [
+            WorkspaceDuplicate("A.md", tmp_path / "A.md", None, "project_only_legacy"),
+            WorkspaceDuplicate("B.md", tmp_path / "B.md", tmp_path / "B.md", "duplicate_identical"),
+            WorkspaceDuplicate("C.md", tmp_path / "C.md", tmp_path / "C.md", "duplicate_conflict"),
+            WorkspaceDuplicate("D.md", tmp_path / "D.md", None, "project_only_legacy"),
+        ]
+        summary = summarize_duplicates(dups)
+        assert summary["project_only_legacy"] == 2
+        assert summary["duplicate_identical"] == 1
+        assert summary["duplicate_conflict"] == 1

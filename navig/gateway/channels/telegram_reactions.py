@@ -43,6 +43,27 @@ _REACTION_DISPATCH: dict[str, str] = {
     "💯": "_reaction_pin_message",
 }
 
+# AI-action reactions are a SEPARATE concern from the canned-ack reactions above:
+# each runs a sandboxed, no-tools LLM text op (navig.telegram.ai_actions) gated by the
+# owner's per-tool policy. They build their own reply, so they need no _REACTION_ACKS
+# entry — keeping the canned table closed + ack-paired. emoji→tool is config-remappable
+# (telegram.business.emoji.<emoji>); this table is just which emojis route to the handler.
+_AI_REACTION_DISPATCH: dict[str, str] = {
+    "🌍": "_reaction_ai_action",
+    "🌐": "_reaction_ai_action",
+    "📋": "_reaction_ai_action",
+    "💡": "_reaction_ai_action",
+}
+
+# TikTok-action reactions — analyse a shared TikTok link (description + top
+# comments → AI briefing) via navig.telegram.tiktok_actions. Gated by the owner's
+# 'download' policy. Separate table so each reaction concern stays independent.
+_TIKTOK_REACTION_DISPATCH: dict[str, str] = {
+    "🎵": "_reaction_tiktok",
+    "🎬": "_reaction_tiktok",
+    "📹": "_reaction_tiktok",
+}
+
 # Ack reactions sent back on the same message after a handler runs.
 # Empty string means the ack is a chat message instead (see per-handler).
 _REACTION_ACKS: dict[str, str] = {
@@ -96,11 +117,32 @@ class TelegramReactionsMixin:
         user_info: dict = reaction_update.get("user") or {}
         user_id: int = int(user_info.get("id") or 0)
 
-        # Auth check — only configured users may trigger reaction actions.
-        # Anonymous reactions in large groups (actor_chat) are silently skipped.
-        if user_id:
-            is_group = chat.get("type") in ("group", "supergroup")
-            if not self._is_user_authorized(user_id, chat_id, is_group):
+        # Auth check — only configured users (the owner) may trigger reaction actions.
+        # NARROW EXCEPTION: a sandboxed AI tool (translate/summarize/…) whose owner
+        # policy is "both" may be triggered by anyone — it is a no-tools text op with
+        # zero system access, so a counterparty running it grants no privilege. Every
+        # other reaction stays strictly owner-only.
+        is_group = chat.get("type") in ("group", "supergroup")
+        is_owner = bool(user_id) and self._is_user_authorized(user_id, chat_id, is_group)
+        if not is_owner:
+            _first = next((r.get("emoji", "") for r in new_reactions if r.get("type") == "emoji"), "")
+            _allow_both = False
+            try:
+                from navig.telegram import ai_actions as _tg_ai, permissions as _tg_perm
+
+                _tool = _tg_ai.emoji_to_tool(_first)
+                _allow_both = bool(_tool and _tool in _tg_ai.LLM_TOOLS
+                                   and _tg_perm.tool_policy(_tool) == "both")
+                if not _allow_both:
+                    # TikTok emoji → analyse: allowed for a counterparty only when
+                    # the owner sets the 'download' policy to 'both'.
+                    from navig.telegram import tiktok_actions as _tg_tt
+
+                    _allow_both = bool(_first in _tg_tt.TIKTOK_REACTION_EMOJIS
+                                       and _tg_perm.tool_policy("download") == "both")
+            except Exception:  # noqa: BLE001
+                _allow_both = False
+            if not _allow_both:
                 return
 
         # Dispatch on the first recognised emoji; ignore multiple per update.
@@ -108,7 +150,11 @@ class TelegramReactionsMixin:
             if rxn.get("type") != "emoji":
                 continue
             emoji: str = rxn.get("emoji", "")
-            handler_name = _REACTION_DISPATCH.get(emoji)
+            handler_name = (
+                _REACTION_DISPATCH.get(emoji)
+                or _AI_REACTION_DISPATCH.get(emoji)
+                or _TIKTOK_REACTION_DISPATCH.get(emoji)
+            )
             if handler_name:
                 handler = getattr(self, handler_name, None)
                 if handler:
@@ -148,6 +194,58 @@ class TelegramReactionsMixin:
             )
         except Exception as exc:  # noqa: BLE001
             logger.debug("Could not save positive reaction to memory store: %s", exc)
+
+    async def _reaction_ai_action(
+        self, chat_id: int, msg_id: int, user_id: int, emoji: str
+    ) -> None:
+        """🌍/🌐/📋/💡 → run a SANDBOXED AI text action on the reacted message and reply.
+
+        Security: uses navig.telegram.ai_actions (text-in → text-out LLM, zero tools /
+        zero system access — prompt-injection in the message cannot escalate). Gated by
+        the owner's per-tool policy; a non-owner only reaches here for a 'both' tool.
+        """
+        from navig.telegram import ai_actions
+
+        tool = ai_actions.emoji_to_tool(emoji)
+        if not tool or tool not in ai_actions.LLM_TOOLS:
+            return
+        is_owner = user_id in getattr(self, "allowed_users", set())
+        # The reacted message's text comes from the catalog (reactions carry no body).
+        text = ""
+        try:
+            from navig.store.telegram_catalog import TelegramCatalogStore
+
+            row = TelegramCatalogStore().get_message_by_ref(chat_id, msg_id)
+            text = (row or {}).get("text") or ""
+        except Exception:  # noqa: BLE001
+            text = ""
+        if not text:
+            return
+        res = await ai_actions.run_text_action(tool, text, is_owner=is_owner)
+        if not res.get("ok"):
+            return
+        label = {"translate": "🌍 Translation", "summarize": "📋 Summary",
+                 "context": "🤔 Context", "explain": "💡 Explanation"}.get(tool, tool.title())
+        # AI output is markdown → send as a RICH message (renders headings/lists/
+        # quotes); send_rich_message falls back to plain HTML where unsupported.
+        body = f"**{label}**\n\n{res['result']}"
+        try:
+            await self.send_rich_message(chat_id, markdown=body, reply_to_message_id=msg_id)
+        except Exception:  # noqa: BLE001
+            await self.send_message(chat_id, res["result"])
+
+    async def _reaction_tiktok(
+        self, chat_id: int, msg_id: int, user_id: int, emoji: str
+    ) -> None:
+        """🎵/🎬/📹 → analyse the TikTok link in the reacted message (owner/'both' gated).
+
+        Delegates to navig.telegram.tiktok_actions, which re-extracts the URL from
+        the cataloged message, fetches metadata + top comments, and posts an AI
+        markdown briefing. The AI step is the same no-tools text call used elsewhere.
+        """
+        from navig.telegram import tiktok_actions
+
+        await tiktok_actions.handle_reaction(self, chat_id, msg_id, user_id, emoji)
 
         await self._safe_set_reaction(chat_id, msg_id, _REACTION_ACKS["👍"])
 

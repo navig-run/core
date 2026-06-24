@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import textwrap
 from pathlib import Path
 
 import pytest
@@ -24,7 +23,6 @@ from navig.agent.tools.skill_tools import (
     MANAGE_SKILLS_SCHEMA,
     get_skill_schemas,
     handle_manage_skills,
-    register_skill_tools,
 )
 
 pytestmark = pytest.mark.integration

@@ -80,12 +80,12 @@ navig backup import backup.json --dry-run
 navig backup import backup.json --hosts-only
 ```
 
-### `navig backup list`
+### `navig backup show`
 
 List all available backup files in the default export directory.
 
 ```bash
-navig backup list
+navig backup show
 ```
 
 Output:
@@ -99,34 +99,12 @@ Output:
 ╰───────────────────────────────────────────────────────────────╯
 ```
 
-### `navig backup inspect`
-
-Preview the contents of a backup file without importing it.
-
-**Options:**
-| Option | Description |
-|--------|-------------|
-| `file` | Path to the backup file (required) |
-| `--password`, `-p` | Password for encrypted backups |
-| `--json` | Output in JSON format |
-
-```bash
-# Inspect backup contents
-navig backup inspect navig-export-2025-01-06.json
-
-# Inspect encrypted backup
-navig backup inspect backup.enc --password mypassword
-
-# Output as JSON (for scripting)
-navig backup inspect backup.json --json
-```
-
-### `navig backup delete`
+### `navig backup remove`
 
 Delete a backup file.
 
 ```bash
-navig backup delete navig-export-2025-01-06.json
+navig backup remove navig-export-2025-01-06.json
 ```
 
 ## Export Formats
@@ -273,10 +251,10 @@ cd ~/dotfiles && git add . && git commit -m "Update NAVIG config"
 
 - Ensure the file is a valid JSON or tar.gz
 - Check if the file is encrypted (look for `.enc` extension)
-- Try `navig backup inspect` to diagnose
+- Try `navig backup show` to list available backups
 
 ### Import doesn't show new hosts
 
 - Check if hosts with same names already exist (merge mode skips)
 - Use `--overwrite` to replace existing
-- Verify the backup contains expected data with `navig backup inspect`
+- Verify the backup contains expected data with `navig backup import --dry-run`

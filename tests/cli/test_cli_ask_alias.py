@@ -177,7 +177,6 @@ def test_ai_diagnose_subcommand_emits_deprecation_warning(monkeypatch, capsys):
     import sys
     import types
 
-    from navig.commands import ai as ai_mod
 
     assistant_stub = types.SimpleNamespace(analyze_cmd=lambda *_a, **_kw: None)
     monkeypatch.setitem(sys.modules, "navig.commands.assistant", assistant_stub)

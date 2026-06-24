@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import importlib
 import json
-import logging
 import sys
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch

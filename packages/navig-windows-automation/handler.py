@@ -29,6 +29,9 @@ def on_load(ctx: dict) -> None:
         CommandRegistry.register("ahk_run", cmd_ahk_run)
         CommandRegistry.register("ahk_type", cmd_ahk_type)
         CommandRegistry.register("ahk_click", cmd_ahk_click)
+        CommandRegistry.register("ahk_open_app", cmd_ahk_open_app)
+        CommandRegistry.register("ahk_window_list", cmd_ahk_window_list)
+        CommandRegistry.register("ahk_window_close", cmd_ahk_window_close)
     except ImportError as exc:
         import logging
 
@@ -45,7 +48,14 @@ def on_unload(ctx: dict) -> None:
     try:
         from navig.commands._registry import CommandRegistry
 
-        for name in ("ahk_run", "ahk_type", "ahk_click"):
+        for name in (
+            "ahk_run",
+            "ahk_type",
+            "ahk_click",
+            "ahk_open_app",
+            "ahk_window_list",
+            "ahk_window_close",
+        ):
             CommandRegistry.deregister(name)
     except ImportError as exc:
         import logging
@@ -106,6 +116,12 @@ def cmd_ahk_run(args: dict, ctx: Any = None) -> dict:
     try:
         adapter = _get_adapter()
         result = adapter.run_script(script)
+        if not result.get("success", False):
+            return {
+                "status": "error",
+                "message": result.get("stderr") or "AHK execution failed",
+                "data": result,
+            }
         return {"status": "ok", "data": result}
     except Exception as exc:
         return {"status": "error", "message": str(exc)}
@@ -127,7 +143,12 @@ def cmd_ahk_type(args: dict, ctx: Any = None) -> dict:
         return {"status": "error", "message": "Windows only"}
     try:
         adapter = _get_adapter()
-        adapter.send_input(text, window_title=window or None)
+        result = adapter.send_input(text, window_title=window or None)
+        if not result.success:
+            return {
+                "status": "error",
+                "message": result.stderr or "AHK input failed",
+            }
         return {"status": "ok", "data": {"typed": len(text)}}
     except Exception as exc:
         return {"status": "error", "message": str(exc)}
@@ -151,8 +172,75 @@ def cmd_ahk_click(args: dict, ctx: Any = None) -> dict:
         return {"status": "error", "message": "Windows only"}
     try:
         adapter = _get_adapter()
-        adapter.click(int(x), int(y), button=button)
+        result = adapter.click(int(x), int(y), button=button)
+        if not result.success:
+            return {
+                "status": "error",
+                "message": result.stderr or "AHK click failed",
+            }
         return {"status": "ok", "data": {"x": x, "y": y, "button": button}}
+    except Exception as exc:
+        return {"status": "error", "message": str(exc)}
+
+
+def cmd_ahk_open_app(args: dict, ctx: Any = None) -> dict:
+    """
+    Open an application or file via AutoHotkey.
+
+    args:
+      target (str): App name, executable path, or file path.
+    """
+    target = args.get("target", "")
+    if not target:
+        return {"status": "error", "message": "Missing 'target' argument"}
+    if not _IS_WIN:
+        return {"status": "error", "message": "Windows only"}
+    try:
+        adapter = _get_adapter()
+        result = adapter.open_app(target)
+        if not result.success:
+            return {
+                "status": "error",
+                "message": result.stderr or "AHK open app failed",
+            }
+        return {"status": "ok", "data": {"target": target, "output": result.stdout}}
+    except Exception as exc:
+        return {"status": "error", "message": str(exc)}
+
+
+def cmd_ahk_window_list(args: dict, ctx: Any = None) -> dict:
+    """Return all visible windows."""
+    if not _IS_WIN:
+        return {"status": "error", "message": "Windows only"}
+    try:
+        adapter = _get_adapter()
+        windows = adapter.get_all_windows()
+        return {"status": "ok", "data": {"windows": [w.to_dict() for w in windows]}}
+    except Exception as exc:
+        return {"status": "error", "message": str(exc)}
+
+
+def cmd_ahk_window_close(args: dict, ctx: Any = None) -> dict:
+    """
+    Close a window by selector/title.
+
+    args:
+      title (str): Window selector or title.
+    """
+    title = args.get("title", "")
+    if not title:
+        return {"status": "error", "message": "Missing 'title' argument"}
+    if not _IS_WIN:
+        return {"status": "error", "message": "Windows only"}
+    try:
+        adapter = _get_adapter()
+        result = adapter.close_window(title)
+        if not result.success:
+            return {
+                "status": "error",
+                "message": result.stderr or "AHK close window failed",
+            }
+        return {"status": "ok", "data": {"title": title}}
     except Exception as exc:
         return {"status": "error", "message": str(exc)}
 
@@ -163,4 +251,7 @@ COMMANDS: dict[str, Any] = {
     "ahk_run": cmd_ahk_run,
     "ahk_type": cmd_ahk_type,
     "ahk_click": cmd_ahk_click,
+    "ahk_open_app": cmd_ahk_open_app,
+    "ahk_window_list": cmd_ahk_window_list,
+    "ahk_window_close": cmd_ahk_window_close,
 }

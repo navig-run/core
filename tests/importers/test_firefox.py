@@ -1,7 +1,8 @@
 import sqlite3
 
-from navig.importers.sources.firefox import FirefoxImporter
 import pytest
+
+from navig.importers.sources.firefox import FirefoxImporter
 
 pytestmark = pytest.mark.integration
 

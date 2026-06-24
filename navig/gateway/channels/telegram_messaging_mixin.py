@@ -262,9 +262,19 @@ class TelegramMessagingMixin:
         if not contacts:
             await self.send_message(
                 chat_id,
-                "No contacts yet. Add one with:\n"
-                "<code>navig contacts add --alias alice --name 'Alice' "
-                "--route 'whatsapp:+33612345678'</code>",
+                "👥 <b>No contacts yet.</b>\n\n"
+                "Contacts let you send messages across any configured adapter "
+                "(WhatsApp, SMS, Discord, Telegram) without typing the full address each time.\n\n"
+                "<b>Add your first contact:</b>\n"
+                "<code>navig contacts add --alias alice --name 'Alice Smith' --route 'whatsapp:+33612345678'</code>\n\n"
+                "<b>More examples:</b>\n"
+                "<code>navig contacts add --alias bob   --name 'Bob'   --route 'sms:+447911123456'</code>\n"
+                "<code>navig contacts add --alias carol --name 'Carol' --route 'telegram:987654321'</code>\n"
+                "<code>navig contacts add --alias team  --name 'Team'  --route 'discord:channel:123456'</code>\n\n"
+                "<b>Then message them with:</b>\n"
+                "<code>/msg alice Hey, how are you?</code>\n"
+                "<code>/msg bob   Meeting at 3pm today</code>\n\n"
+                "Run <code>navig contacts --help</code> to see all options.",
                 parse_mode="HTML",
             )
             return

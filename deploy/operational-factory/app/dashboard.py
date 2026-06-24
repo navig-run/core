@@ -1,8 +1,9 @@
 import httpx
-from app.settings import TOOL_GATEWAY_URL
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+
+from app.settings import TOOL_GATEWAY_URL
 
 app = FastAPI(title="NAVIG Approval Inbox", version="0.1.0")
 templates = Jinja2Templates(directory="/srv/app/app/templates")

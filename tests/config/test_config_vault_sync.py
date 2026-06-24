@@ -6,6 +6,7 @@ Tests for issue #62: vault state sync.
 """
 
 from unittest.mock import MagicMock, patch
+
 import pytest
 
 pytestmark = pytest.mark.integration

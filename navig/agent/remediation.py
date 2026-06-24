@@ -82,7 +82,7 @@ class RemediationAction:
             attempts = int(data.get("attempts", 0))
         except (ValueError, TypeError):
             attempts = 0
-            
+
         try:
             max_attempts = int(data.get("max_attempts", 5))
         except (ValueError, TypeError):

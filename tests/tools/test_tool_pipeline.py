@@ -180,7 +180,7 @@ async def test_on_step_callback_fires():
     pipe.add(PipelineStep("b"))
 
     seen = []
-    result = await pipe.run(on_step=lambda sr: seen.append(sr.tool_name))
+    await pipe.run(on_step=lambda sr: seen.append(sr.tool_name))
     assert seen == ["a", "b"]
 
 

@@ -305,7 +305,7 @@ class TestFullScan:
 
     def test_scan_ignores_node_modules(self, indexer: ProjectIndexer, project_dir: Path):
         indexer.scan()
-        s = indexer.stats()
+        indexer.stats()
         # node_modules should be excluded
         conn = indexer._get_conn()
         nm_files = conn.execute(

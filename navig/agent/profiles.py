@@ -204,7 +204,7 @@ def _profile_home(name: str) -> Path:
     The ``"default"`` profile uses ``~/.navig/`` directly for backward
     compatibility.  All others use ``~/.navig/profiles/<name>/``.
     """
-    home = _navig_home()
+    home = config_dir()
     if name == _DEFAULT_PROFILE:
         return home
     return home / _PROFILES_DIR / name
@@ -236,7 +236,7 @@ def get_active_profile() -> Profile:
 def list_profiles() -> list[str]:
     """List all available profile names."""
     profiles: list[str] = [_DEFAULT_PROFILE]
-    profiles_dir = _navig_home() / _PROFILES_DIR
+    profiles_dir = config_dir() / _PROFILES_DIR
     if profiles_dir.exists():
         for child in sorted(profiles_dir.iterdir()):
             if child.is_dir() and child.name not in profiles:

@@ -88,7 +88,7 @@ def test_install_ps1_parse(pwsh_cmd):
     assert INSTALL_PS1.exists(), "install.ps1 not found"
 
     # Load the script contents into a scriptblock to catch parse errors
-    script_content = INSTALL_PS1.read_text(encoding="utf-8")
+    INSTALL_PS1.read_text(encoding="utf-8")
 
     # In PowerShell, invoking [scriptblock]::Create() will throw a ParseException if syntax is invalid
     # We do a tiny inline command to test it

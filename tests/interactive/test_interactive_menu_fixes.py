@@ -119,8 +119,6 @@ class TestHostInspectFix:
         mock_status.return_value.__enter__ = Mock()
         mock_status.return_value.__exit__ = Mock()
 
-        original_active = mock_state.active_host
-
         execute_host_inspect(mock_state)
 
         # Verify set_active_host was called with selected host

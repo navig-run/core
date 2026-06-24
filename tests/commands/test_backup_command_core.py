@@ -3,8 +3,9 @@ from __future__ import annotations
 import subprocess
 from types import SimpleNamespace
 
-import navig.commands.backup as backup_mod
 import pytest
+
+import navig.commands.backup as backup_mod
 
 pytestmark = pytest.mark.integration
 

@@ -6,6 +6,32 @@ Keep your servers alive. Forever.
 
 from __future__ import annotations
 
+import sys as _sys
+
+# ── Windows WMI hang guard (must run before aiohttp is imported) ─────────────
+# On Windows, CPython's platform.system()/uname() calls platform._wmi_query,
+# which issues a WMI COM query (Win32_OperatingSystem). When the WMI service
+# (winmgmt) is wedged or its providers were disabled, that call HANGS forever
+# — it never raises, it just blocks. aiohttp calls platform.system() at import
+# time (aiohttp/helpers.py), so a wedged WMI freezes the entire daemon before
+# the gateway can even start (symptom: "Starting NAVIG Gateway…" then nothing).
+#
+# Fix: replace _wmi_query with one that raises OSError immediately. CPython's
+# _win32_ver catches OSError and falls back to sys.getwindowsversion() + the
+# `ver` command, so platform.system() still returns "Windows" — just without
+# the hanging WMI round-trip. No effect on non-Windows platforms.
+if _sys.platform == "win32":
+    try:
+        import platform as _platform
+
+        if hasattr(_platform, "_wmi_query"):
+            def _navig_no_wmi(*_a, **_k):  # noqa: ANN002, ANN003
+                raise OSError("WMI query disabled by navig (avoids winmgmt hang)")
+
+            _platform._wmi_query = _navig_no_wmi  # type: ignore[attr-defined]
+    except Exception:
+        pass  # never let the guard itself break import
+
 import warnings
 
 # Suppress spurious urllib3/charset-normalizer version mismatch warnings that

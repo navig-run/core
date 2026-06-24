@@ -97,22 +97,22 @@ class ModelSlot:
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> ModelSlot:
         defaults = d.get("defaults", {})
-        
+
         try:
             max_tokens = int(defaults.get("max_tokens", d.get("max_tokens", 512)))
         except (ValueError, TypeError):
             max_tokens = 512
-            
+
         try:
             temperature = float(defaults.get("temperature", d.get("temperature", 0.7)))
         except (ValueError, TypeError):
             temperature = 0.7
-            
+
         try:
             num_ctx = int(defaults.get("num_ctx", d.get("num_ctx", 4096)))
         except (ValueError, TypeError):
             num_ctx = 4096
-            
+
         return cls(
             provider=d.get("provider", ""),
             model=d.get("model", ""),
@@ -240,6 +240,33 @@ class RoutingConfig:
         # Router model for router_llm_json classification calls
         cfg.router_model = data.get("router_model") or ""
 
+        # ── Validate slot model IDs against the provider registry ──
+        # Auto-onboarding or stale config can leave hallucinated / vision-only
+        # model IDs (e.g. nvidia "adept/fuyu-8b", "qwen/qwen3.5-397b-a17b") that
+        # 404 on every chat call. When a slot's model isn't known to its
+        # provider, substitute the provider's default so requests hit a real
+        # model instead of failing every time.
+        for slot in (cfg.small, cfg.big, cfg.coder_big):
+            pid = str(slot.provider or "").strip().lower()
+            if not slot.model or not pid:
+                continue
+            try:
+                from navig.providers.registry import get_provider as _get_prov
+
+                manifest = _get_prov(pid)
+                known = list(manifest.models) if manifest and getattr(manifest, "models", None) else []
+                if known and slot.model not in known:
+                    replacement = getattr(manifest, "default_model", "") or known[0]
+                    logger.warning(
+                        "model_router: %s model '%s' is not in the provider registry "
+                        "(%d known) — substituting '%s'. Re-select via /provider or the "
+                        "Deck to set your preferred model.",
+                        pid, slot.model, len(known), replacement,
+                    )
+                    slot.model = replacement
+            except Exception:
+                pass  # best-effort; never block routing
+
         # Validate
         if cfg.enabled and cfg.mode != "single":
             if not cfg.small.model:
@@ -333,7 +360,14 @@ def _resolve_provider_api_key(
                         return secret
                 except (KeyError, AttributeError, TypeError, ValueError):
                     continue
-        except (ImportError, AttributeError, RuntimeError) as exc:
+        except (
+            ImportError,
+            AttributeError,
+            RuntimeError,
+            TimeoutError,
+            OSError,
+            ConnectionRefusedError,
+        ) as exc:
             logger.debug("Vault label lookup failed for %s: %s", provider_id, exc)
 
     try:
@@ -345,7 +379,14 @@ def _resolve_provider_api_key(
             resolved = resolved.strip()
             if resolved:
                 return resolved
-    except (ImportError, AttributeError, RuntimeError) as exc:
+    except (
+        ImportError,
+        AttributeError,
+        RuntimeError,
+        TimeoutError,
+        OSError,
+        ConnectionRefusedError,
+    ) as exc:
         logger.debug("Vault provider-key lookup failed for %s: %s", provider_id, exc)
 
     if provider_id in ("github_models", "github"):

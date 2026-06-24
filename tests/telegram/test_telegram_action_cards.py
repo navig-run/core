@@ -74,7 +74,7 @@ async def test_send_response_strips_search_tags_before_building_keyboard(
     assert "<search>" not in built_text
 
 
-async def test_handle_reason_edits_placeholder_with_generated_keyboard(
+async def test_handle_reason_sends_answer_with_generated_card_keyboard(
     monkeypatch,
 ) -> None:
     from navig.gateway.channels import telegram as tg
@@ -92,8 +92,8 @@ async def test_handle_reason_edits_placeholder_with_generated_keyboard(
     channel = TelegramChannel(bot_token="123:FAKE", on_message=_on_message)
     channel._features = frozenset({"sessions"})
     channel._keep_typing = AsyncMock()
-    # send_message is called twice: once to create the placeholder, once to deliver
-    # the final answer (after the placeholder is deleted).
+    # _on_message returns without streaming partials, so no streamed placeholder is
+    # created — the answer is delivered directly via _send_response (one send_message).
     channel.send_message = AsyncMock(return_value={"message_id": 321})
     channel.delete_message = AsyncMock(return_value=True)
     channel.edit_message = AsyncMock(return_value={"ok": True})
@@ -111,7 +111,7 @@ async def test_handle_reason_edits_placeholder_with_generated_keyboard(
     channel._kb_builder = builder
 
     await channel._handle_reason(
-        text="/big can you tell me latest ccn news ?",
+        text="can you tell me latest ccn news ?",
         chat_id=123,
         user_id=77,
         metadata={},
@@ -120,10 +120,11 @@ async def test_handle_reason_edits_placeholder_with_generated_keyboard(
         is_group=False,
     )
 
-    # New behaviour: reasoning placeholder is deleted, answer sent as new message.
-    channel.delete_message.assert_awaited_once_with(123, 321)
+    # No streamed placeholder → nothing to delete.
+    channel.delete_message.assert_not_awaited()
 
-    # The final answer must arrive via send_message (second call; first was placeholder).
+    # The answer arrives via send_message with internal tags stripped and the
+    # generated action-card keyboard attached.
     final_call = channel.send_message.await_args
     sent_text = final_call.args[1]
     sent_kwargs = final_call.kwargs

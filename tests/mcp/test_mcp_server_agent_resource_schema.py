@@ -105,7 +105,6 @@ def _read_json_resource(handler: MCPProtocolHandler, uri: str) -> dict:
 
 def test_agent_status_resource_schema_and_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """status resources should keep a stable payload schema and aliases."""
-    monkeypatch.setattr("navig.mcp_server.Path.home", classmethod(lambda cls: tmp_path))
     handler = MCPProtocolHandler()
     _mock_agent_resource_payloads(handler, monkeypatch)
 
@@ -127,7 +126,6 @@ def test_agent_status_resource_schema_and_alias(monkeypatch: pytest.MonkeyPatch,
 
 def test_agent_goals_resource_schema_and_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """goals resources should keep a stable payload schema and aliases."""
-    monkeypatch.setattr("navig.mcp_server.Path.home", classmethod(lambda cls: tmp_path))
     handler = MCPProtocolHandler()
     _mock_agent_resource_payloads(handler, monkeypatch)
 
@@ -154,7 +152,6 @@ def test_agent_remediation_resource_schema_and_alias(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
     """remediation resources should keep a stable payload schema and aliases."""
-    monkeypatch.setattr("navig.mcp_server.Path.home", classmethod(lambda cls: tmp_path))
     handler = MCPProtocolHandler()
     _mock_agent_resource_payloads(handler, monkeypatch)
 
@@ -181,7 +178,6 @@ def test_agent_remediation_resource_schema_and_alias(
 
 def test_agent_learning_resource_schema_and_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """learning resources should keep a stable payload schema and aliases."""
-    monkeypatch.setattr("navig.mcp_server.Path.home", classmethod(lambda cls: tmp_path))
     handler = MCPProtocolHandler()
     _mock_agent_resource_payloads(handler, monkeypatch)
 
@@ -202,7 +198,6 @@ def test_agent_learning_resource_schema_and_alias(monkeypatch: pytest.MonkeyPatc
 
 def test_agent_service_resource_schema_and_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """service resources should keep a stable payload schema and aliases."""
-    monkeypatch.setattr("navig.mcp_server.Path.home", classmethod(lambda cls: tmp_path))
     handler = MCPProtocolHandler()
     _mock_agent_resource_payloads(handler, monkeypatch)
 

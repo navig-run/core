@@ -6,6 +6,7 @@ Commands for managing the autonomous agent mode.
 
 import sys
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -49,6 +50,46 @@ def _get_agent_config_dir() -> Path:
 def _get_config_path() -> Path:
     """Get agent configuration file path."""
     return _get_agent_config_dir() / "config.yaml"
+
+
+def _detect_default_model() -> str:
+    """Return provider:model matching the main NAVIG LLM config, or a safe fallback."""
+    import logging  # noqa: PLC0415
+
+    try:
+        from navig.llm_router import get_llm_router  # noqa: PLC0415
+
+        # Suppress the "Unknown provider" validator warning — we handle unknown
+        # providers gracefully and don't want noise on every config/install call.
+        _log = logging.getLogger("navig.llm_router")
+        _prev = _log.level
+        _log.setLevel(logging.ERROR)
+        try:
+            router = get_llm_router()
+            resolved = router.get_config("chat")
+        finally:
+            _log.setLevel(_prev)
+
+        if resolved and resolved.provider and resolved.model:
+            return f"{resolved.provider}:{resolved.model}"
+    except Exception:
+        pass
+    return "openrouter:google/gemini-2.5-flash"
+
+
+def _detect_telegram_active() -> bool:
+    """Return True if a Telegram bot token is configured and the daemon is running."""
+    try:
+        from navig.messaging.secrets import resolve_telegram_bot_token  # noqa: PLC0415
+
+        token = resolve_telegram_bot_token()
+        if not token:
+            return False
+        from navig.daemon.supervisor import NavigDaemon  # noqa: PLC0415
+
+        return NavigDaemon.is_running()
+    except Exception:
+        return False
 
 
 def _resolve_runtime_identity(user_id: int | None, chat_id: int | None) -> tuple[int, int]:
@@ -256,54 +297,100 @@ def agent_install(
         "-m",
         help="Operating mode (autonomous, supervised, observe-only)",
     ),
-    telegram: bool = typer.Option(False, "--telegram", help="Enable Telegram integration"),
+    telegram: bool = typer.Option(
+        False,
+        "--telegram/--no-telegram",
+        help="Enable Telegram integration (auto-detected if daemon is running)",
+    ),
     force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing configuration"),
 ):
     """
     Install and configure agent mode.
+
+    Auto-detects your active AI model and Telegram bot from the current
+    NAVIG environment — no manual config needed for a first install.
 
     Creates configuration at ~/.navig/agent/config.yaml
 
     Examples:
         navig agent install
         navig agent install --personality witty
-        navig agent install --mode autonomous --telegram
+        navig agent install --mode autonomous
     """
     try:
-        from navig.agent import AgentConfig
+        from navig.agent import AgentConfig  # noqa: PLC0415
 
-        config_dir = _get_agent_config_dir()
+        agent_config_dir = _get_agent_config_dir()
         config_path = _get_config_path()
 
         if config_path.exists() and not force:
             ch.error("Agent already installed. Use --force to overwrite.")
-            ch.info(f"Config at: {config_path}")
+            ch.info(f"Config: {config_path}")
+            ch.info("Tip: navig agent config  — to review current settings")
             raise typer.Exit(1)
 
         # Create directories
-        config_dir.mkdir(parents=True, exist_ok=True)
-        (config_dir / "workspace").mkdir(exist_ok=True)
-        (config_dir / "personalities").mkdir(exist_ok=True)
-        (config_dir / "logs").mkdir(exist_ok=True)
+        agent_config_dir.mkdir(parents=True, exist_ok=True)
+        (agent_config_dir / "workspace").mkdir(exist_ok=True)
+        (agent_config_dir / "personalities").mkdir(exist_ok=True)
+        (agent_config_dir / "logs").mkdir(exist_ok=True)
 
-        # Create default configuration
+        # --- Auto-detect from the live environment ---
+        detected_model = _detect_default_model()
+        tg_from_env = _detect_telegram_active()
+        use_telegram = telegram or tg_from_env
+
+        # Build configuration
         config = AgentConfig()
         config.personality.profile = personality
         config.mode = mode
-        config.ears.telegram.enabled = telegram
+        config.brain.model = detected_model
+        config.ears.telegram.enabled = use_telegram
 
-        # Save configuration
         config.save(config_path)
 
         ch.success("Agent mode installed!")
-        ch.console.print(f"  Config: {config_path}")
-        ch.console.print(f"  Personality: {personality}")
-        ch.console.print(f"  Mode: {mode}")
+        ch.console.print(f"  Config: [dim]{config_path}[/dim]")
         ch.console.print()
-        ch.info("Next steps:")
-        ch.console.print("  1. Edit config: navig agent config")
-        ch.console.print("  2. Start agent: navig agent start")
 
+        # Show each field with auto-detect annotations
+        from rich.markup import escape as _escape
+
+        _auto = "[dim](auto-detected)[/dim]"
+        _explicit = ""
+        ch.console.print(f"  Personality : {personality}")
+        ch.console.print(f"  Mode        : {mode}")
+        ch.console.print(
+            f"  AI model    : {_escape(detected_model)}  {_auto}"
+        )
+        if use_telegram and tg_from_env and not telegram:
+            ch.console.print(
+                "  Telegram    : enabled  [dim](detected running bot)[/dim]"
+            )
+        elif use_telegram:
+            ch.console.print("  Telegram    : enabled")
+        else:
+            ch.console.print(
+                "  Telegram    : disabled  [dim](no bot token found)[/dim]"
+            )
+
+        ch.console.print()
+
+        # Context-aware next steps — only show what still needs doing
+        steps: list[str] = []
+        if not use_telegram:
+            steps.append(
+                "Configure a bot token first: [bold]navig init[/bold]  (web-search-provider step)"
+            )
+        steps.append("Review / tweak: [bold]navig agent config[/bold]")
+        steps.append("Launch:         [bold]navig agent start[/bold]")
+
+        ch.info("Next steps:")
+        for i, step in enumerate(steps, 1):
+            ch.console.print(f"  {i}. {step}")
+
+    except typer.Exit:
+        raise
     except Exception as e:
         ch.error(f"Installation failed: {e}")
         raise typer.Exit(1) from e
@@ -445,21 +532,37 @@ def agent_start(
             raise typer.Exit(1)
 
         if foreground:
-            # Run directly
-            ch.info("Starting agent in foreground...")
-            ch.console.print(f"  Personality: {agent_config.personality.profile}")
-            ch.console.print(f"  Mode: {agent_config.mode}")
+            # Show daemon relationship before blocking
+            try:
+                from navig.daemon.supervisor import NavigDaemon
+
+                daemon_running = NavigDaemon.is_running()
+            except Exception:  # noqa: BLE001
+                daemon_running = False
+
+            daemon_note = (
+                "[green]running[/green]" if daemon_running else "[yellow]stopped[/yellow]"
+            )
+            ch.info("Starting agent (foreground process)")
+            ch.console.print(f"  Personality : {agent_config.personality.profile}")
+            ch.console.print(f"  Mode        : {agent_config.mode}")
+            ch.console.print(f"  Daemon      : {daemon_note} (Telegram runs via daemon)")
             ch.console.print()
 
             import asyncio
 
             asyncio.run(run_agent(agent_config))
         else:
-            # Background mode - create a service or use subprocess
-            ch.info("Background mode - consider using 'navig agent service install'")
-            ch.info("For now, use: navig agent start --foreground &")
-            raise typer.Exit(1)
+            # --background is not yet implemented; direct users to the daemon
+            ch.warning(
+                "Background mode is not yet supported. "
+                "Use 'navig service start' to run Telegram/gateway as a background daemon."
+            )
+            ch.info("For a foreground session: navig agent start  (default)")
+            return
 
+    except typer.Exit:
+        raise
     except KeyboardInterrupt:
         ch.info("\nAgent stopped by user")
     except Exception as e:
@@ -556,6 +659,17 @@ def agent_status(
         speculative = get_speculative_runtime_snapshot()
 
         if plain:
+            daemon_running = False
+            daemon_pid = None
+            try:
+                from navig.daemon.supervisor import NavigDaemon
+
+                daemon_running = NavigDaemon.is_running()
+                daemon_pid = NavigDaemon.read_pid() if daemon_running else None
+            except Exception:  # noqa: BLE001
+                daemon_running = False
+                daemon_pid = None
+
             status = {
                 "installed": True,
                 "running": running,
@@ -563,6 +677,8 @@ def agent_status(
                 "enabled": config.enabled,
                 "mode": config.mode,
                 "personality": config.personality.profile,
+                "daemon_running": daemon_running,
+                "daemon_pid": daemon_pid,
                 "speculative": speculative,
             }
             print(json.dumps(status))
@@ -589,6 +705,24 @@ def agent_status(
                 )
             )
             ch.console.print(f"  Config: {config_path}")
+
+            # ---------- Daemon / Telegram section ----------
+            ch.console.print()
+            try:
+                from navig.daemon.supervisor import NavigDaemon
+
+                d_running = NavigDaemon.is_running()
+                d_pid = NavigDaemon.read_pid()
+                d_icon = "[green]Running[/green]" if d_running else "[red]Stopped[/red]"
+                ch.console.print(f"  Daemon (Telegram/gateway): {d_icon}")
+                if d_running and d_pid:
+                    ch.console.print(f"  Daemon PID: {d_pid}")
+                if not d_running:
+                    ch.console.print(
+                        "  [dim]Start daemon: navig service start[/dim]"
+                    )
+            except Exception:  # noqa: BLE001
+                ch.console.print("  Daemon: [dim]unknown[/dim]")
 
     except Exception as e:
         if plain:
@@ -667,18 +801,36 @@ def agent_config_cmd(
 
     # Default: show path and summary
     try:
-        from navig.agent import AgentConfig
+        from navig.agent import AgentConfig  # noqa: PLC0415
 
         config = AgentConfig.load(config_path)
 
+        # Check live environment for drift warnings
+        live_model = _detect_default_model()
+        tg_live = _detect_telegram_active()
+
         ch.info(f"Config: {config_path}")
         ch.console.print()
-        ch.console.print(f"  enabled: {config.enabled}")
-        ch.console.print(f"  mode: {config.mode}")
-        ch.console.print(f"  personality: {config.personality.profile}")
-        ch.console.print(f"  brain.model: {config.brain.model}")
-        ch.console.print(f"  telegram: {config.ears.telegram.enabled}")
-        ch.console.print(f"  mcp: {config.ears.mcp.enabled}")
+        ch.console.print(f"  enabled:      {config.enabled}")
+        ch.console.print(f"  mode:         {config.mode}")
+        ch.console.print(f"  personality:  {config.personality.profile}")
+
+        # brain.model — flag drift from live config
+        from rich.markup import escape as _escape
+
+        model_val = _escape(config.brain.model)
+        model_line = f"  brain.model:  {model_val}"
+        if config.brain.model != live_model:
+            model_line += f"  [dim](live: {_escape(live_model)})[/dim]"
+        ch.console.print(model_line)
+
+        # telegram — flag when daemon has it live but config says False
+        tg_line = f"  telegram:     {config.ears.telegram.enabled}"
+        if not config.ears.telegram.enabled and tg_live:
+            tg_line += "  [dim](bot is running — enable with --set ears.telegram.enabled --value true)[/dim]"
+        ch.console.print(tg_line)
+
+        ch.console.print(f"  mcp:          {config.ears.mcp.enabled}")
         ch.console.print()
         ch.info("Use --show for full config, --edit to modify")
 

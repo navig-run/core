@@ -470,7 +470,7 @@ class TestLiveBrowser:
             await driver.wait_for_stable(5000)
             t0 = time.perf_counter()
             text, ref_map = await driver.get_a11y_snapshot_with_refs()
-            elems = await driver.get_interactive_elements_fast()
+            await driver.get_interactive_elements_fast()
             elapsed = (time.perf_counter() - t0) * 1000
             assert elapsed < 500, f"State capture took {elapsed:.0f}ms, target <500ms"
         finally:

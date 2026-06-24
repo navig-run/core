@@ -1,8 +1,9 @@
 import json
 from zipfile import ZipFile
 
-from navig.importers.sources.telegram import TelegramImporter
 import pytest
+
+from navig.importers.sources.telegram import TelegramImporter
 
 pytestmark = pytest.mark.integration
 

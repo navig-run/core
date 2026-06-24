@@ -6,8 +6,9 @@ from unittest.mock import MagicMock, patch
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from navig.memory.indexer import MemoryIndexer
 import pytest
+
+from navig.memory.indexer import MemoryIndexer
 
 pytestmark = pytest.mark.integration
 
@@ -38,7 +39,7 @@ class TestMemoryBatching(unittest.TestCase):
     def test_batch_processing(self):
         # Create dummy directory structure
         with (
-            patch("pathlib.Path.rglob") as mock_rglob,
+            patch("pathlib.Path.rglob"),
             patch("pathlib.Path.exists", return_value=True),
             patch("pathlib.Path.read_text"),
             patch("pathlib.Path.stat"),

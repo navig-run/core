@@ -14,8 +14,6 @@ from __future__ import annotations
 
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -191,7 +189,7 @@ class TestLinksDbSingleton:
         init_calls = []
 
         orig_cls = mod.LinksDB
-        db_path = tmp_path / "links.db"
+        tmp_path / "links.db"
 
         class SlowLinksDB(orig_cls):
             def __init__(self, path):
@@ -246,7 +244,7 @@ class TestKnowledgeGraphSingleton:
         init_calls = []
 
         orig_cls = mod.KnowledgeGraph
-        db_path = tmp_path / "kg.db"
+        tmp_path / "kg.db"
 
         class SlowKG(orig_cls):
             def __init__(self, path):

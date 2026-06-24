@@ -2,7 +2,6 @@
 Tests for webserver type auto-detection in webserver commands.
 """
 
-from pathlib import Path
 
 import pytest
 import yaml

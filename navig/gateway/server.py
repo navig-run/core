@@ -21,14 +21,31 @@ from pathlib import Path
 from typing import Any
 
 try:
+    # Guard against aiohttp 3.13+ which has a circular-import deadlock on Python 3.14.
+    # Check the installed version via metadata (fast, no import) before importing.
+    from importlib.metadata import version as _pkg_version, PackageNotFoundError as _PNF
+    try:
+        _aiohttp_ver = tuple(int(x) for x in _pkg_version("aiohttp").split(".")[:2])
+        # aiohttp ≥ 3.13 has a circular-import deadlock specifically on Python 3.14.
+        # Python 3.13 and below are unaffected — allow any aiohttp version there.
+        if _aiohttp_ver >= (3, 13) and sys.version_info >= (3, 14):
+            _ver_str = ".".join(str(x) for x in _aiohttp_ver)
+            raise ImportError(
+                f"aiohttp {_ver_str} has a circular-import deadlock on Python 3.14.\n"
+                f"  Fix: \"{sys.executable}\" -m pip install \"aiohttp>=3.9.0,<3.13.0\"\n"
+                f"  Or upgrade to Python 3.13 64-bit: winget install Python.Python.3.13"
+            )
+    except _PNF:
+        pass  # aiohttp not installed — fall through to ImportError below
     import aiohttp
     from aiohttp import web
 
     AIOHTTP_AVAILABLE = True
-except ImportError:
+except ImportError as _aiohttp_import_err:
     web = None
     aiohttp = None
     AIOHTTP_AVAILABLE = False
+    print(f"\n⚠  Gateway cannot start: {_aiohttp_import_err}\n", flush=True)
 
 
 # Safe no-op fallback for @web.middleware when aiohttp is not installed.
@@ -147,6 +164,7 @@ class NavigGateway:
         # Components initialized later
         self.heartbeat_runner = None
         self.cron_service = None
+        self.cloud_manager: Any = None  # navig.cloud.CloudManager when cloud.enabled
         self.channels: dict[str, Any] = {}
 
         # Queue for pending messages
@@ -188,6 +206,68 @@ class NavigGateway:
             },
         )
 
+    def _print_boot_banner(self, cloud_url: str | None, elapsed: float) -> None:
+        """Print a clean, boxed startup summary to stdout.
+
+        Color is applied only when stdout is an interactive TTY (and NO_COLOR
+        is unset); otherwise it degrades to plain ASCII so piped/redirected
+        output stays clean.
+        """
+        import os
+
+        use_color = (
+            sys.stdout.isatty()
+            and not os.environ.get("NO_COLOR")
+            and sys.platform != "emscripten"
+        )
+        # Box-drawing chars require a UTF-8-capable stdout. Fall back to ASCII
+        # on legacy code pages (e.g. Windows cp1251) so the banner never crashes.
+        enc = (getattr(sys.stdout, "encoding", "") or "").lower()
+        unicode_ok = "utf" in enc
+        if unicode_ok:
+            TL, TR, BL, BR, H, V, MARK = "╭", "╮", "╰", "╯", "─", "│", "◆"
+        else:
+            TL, TR, BL, BR, H, V, MARK = "+", "+", "+", "+", "-", "|", ">"
+
+        def c(code: str, text: str) -> str:
+            return f"\x1b[{code}m{text}\x1b[0m" if use_color else text
+
+        local = f"http://{self.config.host}:{self.config.port}"
+        hb = "enabled" if self.config.heartbeat_enabled else "disabled"
+
+        rows: list[tuple[str, str]] = [("Local", local)]
+        if cloud_url:
+            rows.append(("Cloud", cloud_url))
+        rows.append(("Heartbeat", hb))
+        rows.append(("Storage", str(self.storage_dir)))
+        rows.append(("Ready in", f"{elapsed:.2f}s"))
+
+        label_w = max(len(k) for k, _ in rows)
+        title_plain = f"{MARK} NAVIG Gateway online"
+        inner = max(len(f"{k.ljust(label_w)}   {v}") for k, v in rows)
+        inner = max(inner, len(title_plain))
+
+        print("", flush=True)
+        print(c("38;5;240", TL + H * (inner + 2) + TR), flush=True)
+
+        title = f"{c('1;38;5;39', MARK + ' NAVIG')} {c('38;5;245', 'Gateway online')}"
+        print(
+            c("38;5;240", V + " ") + title + " " * (inner - len(title_plain)) + c("38;5;240", " " + V),
+            flush=True,
+        )
+        print(c("38;5;240", V + " " + " " * inner + " " + V), flush=True)
+        for k, v in rows:
+            label = c("38;5;245", k.ljust(label_w))
+            value = c("38;5;39", v) if k in ("Local", "Cloud") else v
+            plain = f"{k.ljust(label_w)}   {v}"
+            line = f"{label}   {value}"
+            print(
+                c("38;5;240", V + " ") + line + " " * (inner - len(plain)) + c("38;5;240", " " + V),
+                flush=True,
+            )
+        print(c("38;5;240", BL + H * (inner + 2) + BR), flush=True)
+        print("", flush=True)
+
     async def start(self):
         """Start the gateway server and all subsystems."""
         if self.running:
@@ -196,6 +276,14 @@ class NavigGateway:
 
         self.running = True
         self.start_time = datetime.now()
+        _t0 = self.start_time.timestamp()
+
+        def _elapsed() -> str:
+            import time
+            return f"{time.monotonic() - _t0_mono:.2f}s"
+
+        import time as _time_mod
+        _t0_mono = _time_mod.monotonic()
 
         logger.info("Starting NAVIG Gateway...")
 
@@ -204,23 +292,31 @@ class NavigGateway:
 
         # Initialize formation registry (loaded once at gateway start)
         try:
+            _ts = _time_mod.monotonic()
             from navig.formations.registry import get_registry
 
             get_registry().initialize(self.storage_dir / "workspace")
+            logger.debug("[startup] Formation registry: %.2fs", _time_mod.monotonic() - _ts)
         except Exception as e:
             logger.error("Failed to initialize formation registry: %s", e)
 
         # Start HTTP server
+        _ts = _time_mod.monotonic()
         await self._start_http_server()
+        logger.debug("[startup] HTTP server: %.2fs", _time_mod.monotonic() - _ts)
 
         # Start config watcher
         await self.config_watcher.start()
 
         # Start heartbeat runner
+        _ts = _time_mod.monotonic()
         await self._start_heartbeat()
+        logger.debug("[startup] Heartbeat: %.2fs", _time_mod.monotonic() - _ts)
 
         # Start cron service
+        _ts = _time_mod.monotonic()
         await self._start_cron()
+        logger.debug("[startup] Cron: %.2fs", _time_mod.monotonic() - _ts)
 
         # Start channel health monitor
         await self._start_health_monitor()
@@ -232,7 +328,14 @@ class NavigGateway:
         await self._ensure_mesh_token()
 
         # Initialize autonomous modules
+        _ts = _time_mod.monotonic()
         await self._init_autonomous_modules()
+        logger.debug("[startup] Autonomous modules: %.2fs", _time_mod.monotonic() - _ts)
+
+        # Start channel adapters (Telegram polling, etc.)
+        _ts = _time_mod.monotonic()
+        await self._init_channels()
+        logger.debug("[startup] Channels: %.2fs", _time_mod.monotonic() - _ts)
 
         # Wire unified comms dispatcher
         await self._init_comms()
@@ -240,11 +343,27 @@ class NavigGateway:
         # Register messaging adapters (unified multi-network layer)
         await self._init_messaging_adapters()
 
-        logger.info("✅ NAVIG Gateway started on %s:%s", self.config.host, self.config.port)
-        print(f"\n✅ NAVIG Gateway running at http://{self.config.host}:{self.config.port}")
-        print(f"   Heartbeat: {'enabled' if self.config.heartbeat_enabled else 'disabled'}")
-        print(f"   Storage: {self.storage_dir}")
-        print("\n   Press Ctrl+C to stop\n")
+        # Start cloud broker/tunnel manager when cloud.enabled is true.
+        # Off by default; opt-in via `navig cloud connect` or Deck UI toggle.
+        _ts = _time_mod.monotonic()
+        await self._start_cloud_manager()
+        logger.debug("[startup] Cloud manager: %.2fs", _time_mod.monotonic() - _ts)
+
+        _total = _time_mod.monotonic() - _t0_mono
+        logger.info("Gateway ready in %.2fs", _total)
+        # Wrap the entire banner block so a typo or missing attr can't swallow
+        # the rest of the output -- the user must always see SOMETHING actionable.
+        try:
+            cloud_url = self._cloud_url_for_banner()
+            self._print_boot_banner(cloud_url, _total)
+            try:
+                self._print_cloud_user_hints(cloud_url)
+            except Exception as _hints_exc:  # noqa: BLE001
+                logger.debug("cloud hints failed: %r", _hints_exc)
+            print("   Press Ctrl+C to stop\n", flush=True)
+        except Exception as _banner_exc:  # noqa: BLE001
+            logger.warning("startup banner failed: %r", _banner_exc)
+            print(f"\n  NAVIG Gateway running on port {self.config.port}", flush=True)
 
         # Keep running
         try:
@@ -285,6 +404,13 @@ class NavigGateway:
         # Stop cron
         if self.cron_service:
             await self.cron_service.stop()
+
+        # Stop cloud manager (cloudflared subprocess + broker heartbeat)
+        if self.cloud_manager is not None:
+            try:
+                await self.cloud_manager.stop()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("cloud_manager.stop raised: %r", exc)
 
         # Stop config watcher
         await self.config_watcher.stop()
@@ -457,8 +583,126 @@ class NavigGateway:
         logger.info("_restart_channel: starting %r", name)
         try:
             await channel.start()
+            # Reset the event timestamp so the health monitor grants the
+            # channel its full startup grace period instead of immediately
+            # flagging it stale again (last_event_at = 0 → idle = process
+            # uptime >> stale_threshold).
+            import time as _time
+            if hasattr(channel, "_last_event_at"):
+                channel._last_event_at = _time.monotonic()
         except Exception as exc:  # noqa: BLE001
             logger.error("_restart_channel: start(%r) failed: %r", name, exc)
+
+    async def _start_cloud_manager(self) -> None:
+        """Spawn the CloudManager when ``cloud.enabled`` is true.
+
+        The manager runs the cloudflared subprocess + broker heartbeat so the
+        hosted Deck can resolve "where is my daemon" by api_key/telegram_id.
+        Errors are logged but do not block the gateway startup -- local-only
+        users must keep working even if the broker is unreachable.
+        """
+        raw = self.config_manager.global_config or {}
+        cloud_cfg = raw.get("cloud", {}) if isinstance(raw, dict) else {}
+        # Default to ON: a fresh install with no cloud: block in user config
+        # should still wire the broker so the hosted Deck + Telegram Mini App
+        # work out of the box. Set cloud.enabled: false explicitly to opt out.
+        if not cloud_cfg.get("enabled", True):
+            return
+        deck_cfg = raw.get("deck", {}) if isinstance(raw, dict) else {}
+        api_key = (deck_cfg.get("api_key") or "").strip()
+        if not api_key:
+            # register_deck_routes mints + persists an api_key on first start.
+            # If we land here it means the Deck isn't wired (no bot_token, etc.)
+            # -- silent skip so non-bot users aren't nagged.
+            logger.debug("cloud manager skipped: no deck.api_key (deck not enabled?)")
+            return
+        try:
+            from navig.cloud import CloudManager  # local import keeps cold start cheap
+            self.cloud_manager = CloudManager(
+                api_key=api_key,
+                broker_url=cloud_cfg.get("broker_url", "https://deck.navig.run"),
+                gateway_port=self.config.port,
+                heartbeat_interval_s=float(cloud_cfg.get("heartbeat_interval_s", 60)),
+                tunnel_label=cloud_cfg.get("tunnel_label", "") or "",
+                cloudflared_path=cloud_cfg.get("cloudflared_path", "") or "",
+                cloudflared_extra_args=list(cloud_cfg.get("cloudflared_extra_args") or []),
+            )
+            await self.cloud_manager.start()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Cloud manager failed to start: %s", exc)
+            self.cloud_manager = None
+
+    def _cloud_url_for_banner(self) -> str | None:
+        cm = self.cloud_manager
+        if cm is None:
+            return None
+        try:
+            return cm.current_url
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _print_cloud_user_hints(self, cloud_url: str | None) -> None:
+        """Print the actionable two-line summary every user actually needs.
+
+        Shown after the gateway is up. Covers the two access paths:
+        - Browser: deck.navig.run/connect?key=... magic link
+        - Telegram: open the bot, tap the Mini App button
+
+        When cloud is OFF, prints the one-liner that tells the user how to
+        flip it on -- nothing else; we don't want to nag.
+        """
+        raw = self.config_manager.global_config or {}
+        cloud_cfg = raw.get("cloud", {}) if isinstance(raw, dict) else {}
+        deck_cfg = raw.get("deck", {}) if isinstance(raw, dict) else {}
+        broker_url = cloud_cfg.get("broker_url", "https://deck.navig.run").rstrip("/")
+        api_key = (deck_cfg.get("api_key") or "").strip()
+        cloud_on = bool(cloud_cfg.get("enabled", False))
+
+        if not cloud_on:
+            print("", flush=True)
+            print("   Cloud routing: OFF  (enable with: navig cloud connect)", flush=True)
+            return
+
+        # Cloud is on. Show the user the two entry points they'll actually use.
+        # No emoji / unicode arrows -- Windows consoles in legacy code pages
+        # raise UnicodeEncodeError on those, swallowing the rest of the boot
+        # output. ASCII keeps the banner visible everywhere.
+        def _emit(line: str) -> None:
+            try:
+                print(line, flush=True)
+            except UnicodeEncodeError:
+                try:
+                    print(line.encode("ascii", "replace").decode("ascii"), flush=True)
+                except Exception:  # noqa: BLE001
+                    pass
+
+        _emit("")
+        if cloud_url and api_key:
+            magic = f"{broker_url}/connect?key={api_key}"
+            _emit(f"   Browser:  open {magic}")
+            _emit(f"             (paste-and-go: stashes your key + resolves the daemon URL)")
+            bot_user = self._resolve_bot_username() or "your bot"
+            tg_hint = f"@{bot_user}" if bot_user != "your bot" else bot_user
+            _emit(f"   Telegram: open {tg_hint} -> /start -> tap the Mini App button")
+        elif not api_key:
+            _emit("   Cloud routing: enabled but deck.api_key is missing.")
+            _emit("   Run `navig cloud connect` to mint one and register.")
+        else:
+            _emit("   Cloud routing: starting cloudflared... (URL appears within ~5s)")
+
+    def _resolve_bot_username(self) -> str | None:
+        """Best-effort lookup of the configured Telegram bot's @username."""
+        try:
+            tg_channel = self.channels.get("telegram") if hasattr(self, "channels") else None
+            if tg_channel is None:
+                return None
+            for attr in ("bot_username", "_bot_username", "username"):
+                v = getattr(tg_channel, attr, None)
+                if isinstance(v, str) and v:
+                    return v.lstrip("@")
+        except Exception:  # noqa: BLE001
+            pass
+        return None
 
     async def _start_cron(self):
         """Start cron service."""
@@ -815,24 +1059,72 @@ class NavigGateway:
             )
             return {"sent": True}
 
+    async def _init_channels(self):
+        """Instantiate and start channel adapters (e.g. Telegram polling loop)."""
+        raw_cfg = self.config_manager.global_config or {}
+        tg_cfg: dict = raw_cfg.get("telegram", {}) if isinstance(raw_cfg, dict) else {}
+
+        # Resolve bot token: config first, then vault
+        from navig.messaging.secrets import resolve_telegram_bot_token
+
+        bot_token = resolve_telegram_bot_token(raw_cfg) or tg_cfg.get("bot_token", "")
+        if not bot_token:
+            logger.info("Telegram channel not started: no bot_token configured")
+            return
+
+        try:
+            from navig.gateway.channels.telegram import TelegramChannel
+
+            allowed_users: list[int] = [
+                int(u) for u in tg_cfg.get("allowed_users", []) if u
+            ]
+            allowed_groups: list[int] = [
+                int(g) for g in tg_cfg.get("allowed_groups", []) if g
+            ]
+            require_auth: bool = tg_cfg.get("require_auth", True)
+            enable_notifications: bool = tg_cfg.get("enable_notifications", True)
+            webhook_url: str | None = tg_cfg.get("webhook_url") or None
+            webhook_secret: str | None = tg_cfg.get("webhook_secret") or None
+
+            channel = TelegramChannel(
+                bot_token=bot_token,
+                allowed_users=allowed_users,
+                allowed_groups=allowed_groups,
+                on_message=self.router.route_message,
+                enable_notifications=enable_notifications,
+                require_auth=require_auth,
+                webhook_url=webhook_url,
+                webhook_secret=webhook_secret,
+            )
+            self.channels["telegram"] = channel
+            await channel.start()
+            logger.info("Telegram channel started")
+        except Exception as exc:
+            logger.error("Failed to start Telegram channel: %s", exc)
+
     async def _init_comms(self):
         """Wire the unified comms dispatcher (Prompt 5 integration)."""
         try:
             from navig.comms.dispatch import configure as comms_configure
 
-            # Grab existing TelegramNotifier if the channel adapter set one up
+            # Grab existing TelegramNotifier from the live channel (populated by _init_channels)
             telegram_notifier = None
-            try:
-                from navig.gateway.channels.registry import ChannelRegistry
+            tg_channel = self.channels.get("telegram")
+            if tg_channel is not None:
+                telegram_notifier = getattr(tg_channel, "_notifier", None)
+            if telegram_notifier is None:
+                # Fallback: try ChannelRegistry (e.g. if channel was started externally)
+                try:
+                    from navig.gateway.channels.registry import ChannelRegistry
 
-                registry = (
-                    ChannelRegistry.instance() if hasattr(ChannelRegistry, "instance") else None
-                )
-                if registry:
-                    tg = registry.get_adapter("telegram")
-                    telegram_notifier = getattr(tg, "_notifier", None) if tg else None
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+                    registry = (
+                        ChannelRegistry.instance() if hasattr(ChannelRegistry, "instance") else None
+                    )
+                    if registry:
+                        tg = registry.get_adapter("telegram")
+                        telegram_notifier = getattr(tg, "_notifier", None) if tg else None
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
 
             # Optional Matrix bot
             matrix_bot = None
@@ -862,11 +1154,49 @@ class NavigGateway:
         except Exception as exc:
             logger.warning("Comms init failed: %s", exc)
 
+    @staticmethod
+    def _resolve_adapter_config(cfg: dict) -> dict:
+        """Expand ``vault:KEY`` placeholder strings in an adapter config dict.
+
+        Walks the dict one level deep and replaces any string value of the form
+        ``"vault:key_name"`` with the secret retrieved from the NAVIG vault.
+        Nested dicts (e.g. ``cfg["twilio"]``) are also expanded one level.
+        Non-vault values are returned unchanged.
+        """
+        try:
+            from navig.vault.core import get_vault
+
+            vault = get_vault()
+            if vault is None:
+                return cfg
+        except Exception:
+            return cfg
+
+        def _expand(d: dict) -> dict:
+            out: dict = {}
+            for k, v in d.items():
+                if isinstance(v, str) and v.startswith("vault:"):
+                    secret_key = v[len("vault:"):]
+                    try:
+                        resolved = (vault.get_secret(secret_key) or "").strip()
+                        out[k] = resolved if resolved else v
+                    except Exception:
+                        out[k] = v
+                elif isinstance(v, dict):
+                    out[k] = _expand(v)
+                else:
+                    out[k] = v
+            return out
+
+        return _expand(cfg)
+
     async def _init_messaging_adapters(self):
         """Register multi-network messaging adapters from config.
 
         Reads ``adapters:`` section from :file:`defaults.yaml` / user config
         and populates :func:`~navig.messaging.adapter_registry.get_adapter_registry`.
+        Vault placeholder strings (``vault:key_name``) in the adapter config are
+        resolved before the adapters are constructed.
         """
         try:
             from navig.messaging.adapter_registry import get_adapter_registry
@@ -905,7 +1235,7 @@ class NavigGateway:
                 try:
                     from navig.messaging.adapters.sms import SmsAdapter
 
-                    adapter = SmsAdapter(config=sms_cfg)
+                    adapter = SmsAdapter(config=self._resolve_adapter_config(sms_cfg))
                     registry.register(adapter)
                     logger.debug("Messaging adapter registered: sms")
                 except Exception as exc:  # noqa: BLE001
@@ -917,7 +1247,7 @@ class NavigGateway:
                 try:
                     from navig.messaging.adapters.whatsapp_cloud import WhatsAppCloudAdapter
 
-                    adapter = WhatsAppCloudAdapter(config=wa_cfg)
+                    adapter = WhatsAppCloudAdapter(config=self._resolve_adapter_config(wa_cfg))
                     registry.register(adapter)
                     logger.debug("Messaging adapter registered: whatsapp")
                 except Exception as exc:  # noqa: BLE001
@@ -929,7 +1259,8 @@ class NavigGateway:
                 try:
                     from navig.messaging.adapters.discord_adapter import DiscordMessagingAdapter
 
-                    adapter = DiscordMessagingAdapter(config=discord_cfg)
+                    resolved_discord = self._resolve_adapter_config(discord_cfg)
+                    adapter = DiscordMessagingAdapter(config=resolved_discord)
                     # Client injection happens later when the discord.py bot connects
                     registry.register(adapter)
                     logger.debug("Messaging adapter registered: discord")

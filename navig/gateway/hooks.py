@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Mapping, Sequence
+from typing import Mapping
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Public constants (single source of truth — defaults.yaml mirrors these)

@@ -2,7 +2,6 @@
 Tests for Execution Modes and Confirmation System.
 """
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest

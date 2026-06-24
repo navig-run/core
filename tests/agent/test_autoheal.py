@@ -22,6 +22,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from navig.gateway.channels.telegram_autoheal import (
     AutoHealMixin,
     FailureClass,
@@ -30,7 +32,6 @@ from navig.gateway.channels.telegram_autoheal import (
     detect_failure_in_response,
 )
 from navig.selfheal.ssh_healer import HealResult, SSHHealer
-import pytest
 
 pytestmark = pytest.mark.integration
 

@@ -5,12 +5,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from navig.gateway.channels.telegram_reactions import (
-    TelegramReactionsMixin,
-    _REACTION_DISPATCH,
     _REACTION_ACKS,
-    _MIN_NEW_REACTION_COUNT,
+    _REACTION_DISPATCH,
+    TelegramReactionsMixin,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

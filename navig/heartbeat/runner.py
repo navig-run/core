@@ -293,10 +293,14 @@ Begin the health check now. Be thorough but efficient.
 
     async def _run_heartbeat_agent(self, prompt: str) -> str:
         """Run the AI agent for heartbeat."""
-        # Use the gateway's agent turn method
+        import uuid
+        # Fresh session key every run — heartbeats are stateless checks;
+        # a persistent session causes the previous HEARTBEAT_OK reply to
+        # prepend as an assistant message, which OpenAI-compatible APIs reject.
+        session_key = f"system:heartbeat:{uuid.uuid4().hex[:8]}"
         response = await self.gateway.run_agent_turn(
             agent_id="heartbeat",
-            session_key="system:heartbeat",
+            session_key=session_key,
             message=prompt,
         )
 

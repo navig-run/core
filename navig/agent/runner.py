@@ -173,6 +173,10 @@ class Agent:
             # Format with personality
             formatted = self.soul.format_response(response)
 
+            if source == "console":
+                print(f"Agent: {formatted}", flush=True)
+                print(flush=True)
+
             # Emit response event
             await self.nervous_system.emit(
                 EventType.RESPONSE_GENERATED,
@@ -209,9 +213,18 @@ async def run_agent(config: AgentConfig | None = None) -> None:
 
     Sets up signal handlers for graceful shutdown.
     """
+    import os
+    from pathlib import Path
+
     agent = Agent(config)
 
-    # Setup signal handlers
+    # PID file so 'navig agent stop' and 'navig agent status' can track this process
+    pid_dir = Path.home() / ".navig" / "agent"
+    pid_dir.mkdir(parents=True, exist_ok=True)
+    pid_file = pid_dir / "agent.pid"
+    pid_file.write_text(str(os.getpid()))
+
+    # Setup signal handlers (POSIX only; Windows uses KeyboardInterrupt)
     loop = asyncio.get_running_loop()
 
     def signal_handler():
@@ -223,18 +236,29 @@ async def run_agent(config: AgentConfig | None = None) -> None:
             loop.add_signal_handler(sig, signal_handler)
 
     try:
-        print("Starting NAVIG Agent...")
-        print(f"  Mode: {agent.config.mode}")
-        print(f"  Personality: {agent.config.personality.profile}")
-        print(f"  Workspace: {agent.config.workspace}")
-        print()
-
         await agent.start()
 
-        greeting = agent.soul.get_greeting()
-        print(f"Agent: {greeting}")
+        # Report which channels are actually active
+        listener_status = agent.ears.get_listener_status()
+        active_channels = [name for name, running in listener_status.items() if running]
+        channel_str = ", ".join(active_channels) if active_channels else "none"
+
         print()
-        print("Press Ctrl+C to stop.")
+        print(f"  Mode       : {agent.config.mode}")
+        print(f"  Personality: {agent.config.personality.profile}")
+        print(f"  Channels   : {channel_str}")
+        print(f"  PID        : {os.getpid()}")
+        if not active_channels:
+            print()
+            print("  NOTE: No input channels are active (Telegram/MCP/API all disabled).")
+            print("        The agent is running but cannot receive messages.")
+            print("        For Telegram: run 'navig service start' instead.")
+            print("        For console input: type below and press Enter.")
+        else:
+            print()
+            print("  Listening on active channels. Press Ctrl+C to stop.")
+            if "console" in active_channels:
+                print("  Console    : type a message and press Enter.")
         print()
 
         # Keep running until stopped
@@ -247,8 +271,13 @@ async def run_agent(config: AgentConfig | None = None) -> None:
         if agent.is_running:
             await agent.stop()
 
-        farewell = agent.soul.get_farewell()
-        print(f"\nAgent: {farewell}")
+        # Remove PID file
+        try:
+            pid_file.unlink(missing_ok=True)
+        except Exception:  # noqa: BLE001
+            pass
+
+        print("Agent stopped.")
 
 
 def main():

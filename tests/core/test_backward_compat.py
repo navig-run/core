@@ -1,7 +1,6 @@
 """Tests for backward compatibility with legacy config (no llm_modes)."""
-
-import os
 from unittest.mock import patch
+
 import pytest
 
 pytestmark = pytest.mark.unit
@@ -33,7 +32,6 @@ class TestBackwardCompat:
     @patch("navig.llm_router._has_api_key", return_value=True)
     def test_legacy_env_var_still_works(self, mock_key):
         """NAVIG_AI_MODEL env var path is not broken."""
-        env_model = os.environ.get("NAVIG_AI_MODEL", "")
         # The env var should be respected by the legacy path in llm_generate
         from navig.llm_router import LLMModeRouter
 

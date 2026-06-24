@@ -1,0 +1,60 @@
+{
+  "_comment": "CANONICAL NAVIG tier / entitlement source of truth for the whole monorepo. The `live` section is the model we SELL + ENFORCE today (NAVIG Harbor: Free/Plus/Max + Team/Enterprise). Python (navig-core/navig/license/quota.py) and TypeScript (navig-api/src/lib/billing.ts, navig-deck/lib/license.ts) all mirror `live` and MUST agree — the parity test navig-core/tests/license/test_tiers_parity.py enforces it. The `legacy` section is the retired 7-tier model, kept only so old/stray tokens still verify; `live.legacy_to_harbor` maps a legacy tier up to its Harbor equivalent. See docs/BUSINESS-PLAN.md + docs/MONETIZATION.md.",
+  "version": 2,
+
+  "modules": [
+    "core_ops",
+    "business_ops",
+    "ai_operator",
+    "security_ops",
+    "deploy_ops",
+    "client_ops",
+    "echo"
+  ],
+  "_modules_note": "Modules are INTERNAL capability flags only (the @requires_capability gate + deck APP_MODULE map). They are NO LONGER sold a-la-carte — capabilities are folded into Harbor tiers. module_onetime_usd is retained only to honor pre-existing perpetual module grants.",
+  "module_onetime_usd": {
+    "business_ops": 399,
+    "ai_operator": 399,
+    "deploy_ops": 499,
+    "security_ops": 999,
+    "client_ops": 999
+  },
+
+  "live": {
+    "_comment": "The live NAVIG Harbor model. Free/Plus/Max are self-serve; Team/Enterprise are contact-us (self-serve Team = Phase 4). Plus and Max carry identical capabilities; they differ on AI allowance, host scale, priority relay, and the lifetime SKU (Max only).",
+    "tier_order": ["free", "plus", "max", "team", "enterprise"],
+    "tiers": {
+      "free":       { "host_limit": 1,      "capabilities": ["core_ops"] },
+      "plus":       { "host_limit": 5,      "capabilities": ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "echo"] },
+      "max":        { "host_limit": 200,    "capabilities": ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "echo"] },
+      "team":       { "host_limit": 200,    "capabilities": ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "client_ops", "echo"] },
+      "enterprise": { "host_limit": 100000, "capabilities": ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "client_ops", "echo"] }
+    },
+    "prices_usd": {
+      "_comment": "Hypotheses from MONETIZATION.md; Stripe SKUs created by setup-stripe.mjs. Free has no SKU; Team/Enterprise are contact-us.",
+      "plus": { "annual": 144, "monthly": 15 },
+      "max":  { "annual": 432, "monthly": 45, "lifetime": 1080 }
+    },
+    "legacy_to_harbor": {
+      "_comment": "Map a retired legacy tier UP to its Harbor equivalent (>= value; nobody loses entitlements). Applied at verify time in keys.py for any old token.",
+      "solo": "free",
+      "personal": "plus",
+      "pro": "plus",
+      "business": "max",
+      "fleet": "max"
+    },
+    "reserved_dimensions": ["org", "seats", "role"]
+  },
+
+  "legacy": {
+    "_comment": "Retired 7-tier model. Kept ONLY so old/stray signed tokens still verify (capabilities <= their Harbor mapping). Never sold.",
+    "tier_order": ["solo", "plus", "personal", "pro", "business", "fleet", "enterprise"],
+    "tiers": {
+      "solo":       { "host_limit": 1,      "capabilities": ["core_ops"] },
+      "personal":   { "host_limit": 5,      "capabilities": ["core_ops", "echo"] },
+      "pro":        { "host_limit": 10,     "capabilities": ["core_ops", "business_ops", "ai_operator", "echo"] },
+      "business":   { "host_limit": 50,     "capabilities": ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "echo"] },
+      "fleet":      { "host_limit": 200,    "capabilities": ["core_ops", "business_ops", "ai_operator", "security_ops", "deploy_ops", "client_ops", "echo"] }
+    }
+  }
+}

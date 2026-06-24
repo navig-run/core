@@ -174,7 +174,7 @@ class TestToolRegistry:
     def test_register_and_get(self):
         """Register a tool and retrieve it by name."""
         reg = _fresh_registry()
-        meta = _register_echo(reg)
+        _register_echo(reg)
         retrieved = reg.get_tool("echo_tool")
         assert retrieved is not None
         assert retrieved.name == "echo_tool"

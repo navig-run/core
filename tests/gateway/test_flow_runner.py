@@ -5,24 +5,21 @@ Tests for navig.gateway.flow_runner (Item 8).
 """
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
 from navig.gateway.flow_runner import (
-    DeliveryBackend,
     Destination,
     DestinationKind,
+    FlowRunner,
     FlowRunResult,
     FlowRunStatus,
-    FlowRunner,
     _format_message,
     _make_run_id,
 )
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers

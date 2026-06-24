@@ -17,8 +17,16 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from telegram import Update
-from telegram.ext import ContextTypes
+try:
+    from telegram import Update
+    from telegram.ext import ContextTypes
+except ImportError:  # pragma: no cover - optional dependency for compatibility tests
+    Update = Any  # type: ignore[assignment]
+
+    class _ContextTypesFallback:
+        DEFAULT_TYPE = Any
+
+    ContextTypes = _ContextTypesFallback()
 
 logger = logging.getLogger(__name__)
 

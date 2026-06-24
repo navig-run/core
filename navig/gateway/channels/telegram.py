@@ -11,6 +11,7 @@ Provides integration with Telegram Bot API for:
 """
 
 import asyncio
+import hmac
 import html
 import logging
 import random
@@ -111,7 +112,7 @@ try:
 except ImportError:
     HAS_VOICE = False
 
-# Reaction Intelligence вЂ” message_reaction в†’ AI actions
+# Reaction Intelligence — message_reaction в†’ AI actions
 try:
     from navig.gateway.channels.telegram_reactions import (
         TelegramReactionsMixin as _TelegramReactionsMixin,  # noqa: F401
@@ -121,7 +122,7 @@ try:
 except ImportError:
     HAS_REACTIONS = False
 
-# Inline mode вЂ” @botname query in any chat
+# Inline mode — @botname query in any chat
 try:
     from navig.gateway.channels.telegram_inline import (
         TelegramInlineMixin as _TelegramInlineMixin,  # noqa: F401
@@ -131,7 +132,7 @@ try:
 except ImportError:
     HAS_INLINE = False
 
-# Smart reply вЂ” auto-convert list responses to native checklists
+# Smart reply — auto-convert list responses to native checklists
 try:
     from navig.gateway.channels.telegram_checklist import (
         TelegramChecklistMixin as _TelegramChecklistMixin,  # noqa: F401
@@ -141,7 +142,7 @@ try:
 except ImportError:
     HAS_CHECKLIST = False
 
-# Forum topic auto-router вЂ” route to supergroup topics
+# Forum topic auto-router — route to supergroup topics
 try:
     from navig.gateway.channels.telegram_forum import (
         TelegramForumMixin as _TelegramForumMixin,  # noqa: F401
@@ -164,17 +165,8 @@ _TALK_SLOW_LOG_MS: int = 2500        # TALK mode: warn when end-to-end latency e
 # ---------------------------------------------------------------------------
 # Reasoning-mode live progress phases
 # Each entry: (sleep_seconds_before_showing_this_phase, display_label)
-# All user-visible strings live here вЂ” single source of truth, never inline.
+# All user-visible strings live here — single source of truth, never inline.
 # ---------------------------------------------------------------------------
-_REASON_PLACEHOLDER: str = "\U0001f9e0 Reasoning\u2026"
-_REASON_PHASES: tuple[tuple[float, str], ...] = (
-    (2.0, "\U0001f4d6 Reading\u2026"),
-    (2.5, "\U0001f50e Analyzing\u2026"),
-    (2.5, "\u270d\ufe0f Composing\u2026"),
-    (3.0, "\U0001f504 Refining\u2026"),
-)
-# After all phases are exhausted the final label is re-emitted every N seconds.
-_TICKER_HOLD_INTERVAL_SEC: float = 10.0
 # Appended to REASON-mode LLM prompts so the model returns contextual explore
 # questions inline.  Stripped from display; surfaced as inline keyboard buttons.
 _EXPLORE_SUFFIX: str = (
@@ -297,7 +289,9 @@ class TelegramChannel:
         self._last_update_id = 0
         # Stamped with time.monotonic() on every received update; read by health
         # monitor to detect stale (connected-but-silent) channel state.
-        self._last_event_at: float = 0.0
+        # None = not yet started; health monitor skips None channels so the
+        # process-uptime value of monotonic() doesn't trigger a false stale.
+        self._last_event_at: float | None = None
         self._poll_task: asyncio.Task | None = None
         self._reminder_task: asyncio.Task | None = None
         self._notifier = None
@@ -400,7 +394,7 @@ class TelegramChannel:
           - Group: chat must be in ``allowed_groups`` **or** user in ``allowed_users``.
         """
         if not self.require_auth:
-            return True  # open mode вЂ” no restrictions
+            return True  # open mode — no restrictions
 
         if user_id in self.allowed_users:
             return True
@@ -408,7 +402,7 @@ class TelegramChannel:
         if is_group:
             return chat_id in self.allowed_groups
 
-        # DM from unknown user вЂ” deny
+        # DM from unknown user — deny
         return False
 
     async def start(self):
@@ -417,11 +411,12 @@ class TelegramChannel:
             logger.error("aiohttp not installed. Cannot start Telegram channel.")
             raise RuntimeError("aiohttp not installed; cannot start Telegram channel")
 
-        # total=60 must exceed the getUpdates long-poll timeout (30s) to avoid
-        # spurious TimeoutError on every polling cycle.
-        self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60, connect=10))
+        # total must exceed the getUpdates long-poll timeout (30s) plus headroom
+        # for connect + read + network jitter. 90s leaves a comfortable buffer so
+        # we don't log spurious TimeoutErrors on every polling cycle.
+        self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=90, connect=10))
 
-        # Get bot info вЂ” validate token before marking as running
+        # Get bot info — validate token before marking as running
         try:
             me = await self._api_call("getMe")
         except Exception as e:
@@ -434,14 +429,20 @@ class TelegramChannel:
             await self._session.close()
             self._session = None
             logger.error(
-                "Telegram API rejected the bot token (getMe returned ok=false). "
-                "Check TELEGRAM_BOT_TOKEN."
+                "Telegram API connection failed (getMe returned no result). "
+                "Possible causes: invalid TELEGRAM_BOT_TOKEN, network timeout, "
+                "or Telegram servers unreachable."
             )
             raise RuntimeError(
-                "Telegram API rejected bot token (ok=false) вЂ” check TELEGRAM_BOT_TOKEN"
+                "Telegram API connection failed (getMe returned no result — "
+                "check TELEGRAM_BOT_TOKEN or network connectivity)"
             )
 
-        # Token is valid вЂ” mark running and complete setup
+        # Token is valid — stamp the health monitor clock so the startup grace
+        # period is measured from actual start time, not from process boot.
+        self._last_event_at = time.monotonic()
+
+        # Token is valid — mark running and complete setup
         self._running = True
         self._bot_username = me.get("username", "")
         logger.info("Telegram bot started: @%s", self._bot_username)
@@ -452,27 +453,10 @@ class TelegramChannel:
                 logger.info("Auth ENFORCED: %d allowed users", len(self.allowed_users))
             else:
                 logger.warning(
-                    "Auth ENFORCED but allowed_users is EMPTY вЂ” all DMs will be blocked!"
+                    "Auth ENFORCED but allowed_users is EMPTY — all DMs will be blocked!"
                 )
         else:
-            logger.warning("Auth DISABLED (require_auth=false) вЂ” bot is open to everyone")
-
-        # Register slash commands with Telegram
-        await self._register_commands()
-
-        # Send startup notification to allowed users
-        from navig.boot_messages import get_boot_message
-
-        boot_msg = get_boot_message()
-        for user_id in self.allowed_users:
-            try:
-                await self.send_message(
-                    user_id,
-                    boot_msg,
-                    parse_mode=None,
-                )
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+            logger.warning("Auth DISABLED (require_auth=false) — bot is open to everyone")
 
         # Start notifications if enabled
         if self.enable_notifications and self.allowed_users:
@@ -483,6 +467,47 @@ class TelegramChannel:
             await self._setup_webhook()
         else:
             self._poll_task = asyncio.create_task(self._poll_updates())
+
+        # Register slash commands + send boot messages in the background so
+        # gateway startup is not blocked by Telegram API round-trips.
+        async def _deferred_setup() -> None:
+            # Small delay so the HTTP server is fully up before we hit the API.
+            await asyncio.sleep(0.5)
+            await self._register_commands()
+            try:
+                from navig.boot_messages import get_boot_message
+
+                boot_msg = get_boot_message()
+                for user_id in self.allowed_users:
+                    try:
+                        await self.send_message(user_id, boot_msg, parse_mode=None)
+                    except Exception:  # noqa: BLE001
+                        pass  # best-effort; failure is non-critical
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Deferred Telegram setup failed: %s", exc)
+
+        asyncio.create_task(_deferred_setup())
+
+        # Proactively bind allowed Telegram users to this daemon on the broker
+        # so the Mini App resolves by telegram_id WITHOUT the user needing to
+        # send /start first. Retries a few times to let the cloud tunnel finish
+        # registering (resolve/bind need the daemon's broker row to exist).
+        # Idempotent: successful binds are cached, so retries are no-ops.
+        async def _deferred_broker_bind() -> None:
+            if not self.allowed_users:
+                return
+            from navig.gateway.channels.telegram_commands import (
+                _maybe_bind_telegram_to_broker,
+            )
+            for delay in (3, 12, 30):
+                await asyncio.sleep(delay)
+                for uid in list(self.allowed_users):
+                    try:
+                        await _maybe_bind_telegram_to_broker(int(uid))
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("proactive broker bind(%s) retry: %r", uid, exc)
+
+        asyncio.create_task(_deferred_broker_bind())
 
         self._reminder_task = asyncio.create_task(self._poll_due_reminders())
 
@@ -536,6 +561,10 @@ class TelegramChannel:
 
         if self._session:
             await self._session.close()
+        self._session = None
+        # Reset health clock so that if this channel is restarted, the health
+        # monitor skips it until the new start() stamps a real timestamp.
+        self._last_event_at = None
 
     async def _api_call(
         self, method: str, data: dict | None = None, *, _retry_count: int = 0
@@ -565,7 +594,7 @@ class TelegramChannel:
                     except Exception:
                         retry_after = 2**_retry_count  # exponential backoff
                     logger.warning(
-                        "Telegram API rate limited on %s вЂ” retry %d/%d in %ds",
+                        "Telegram API rate limited on %s — retry %d/%d in %ds",
                         method,
                         _retry_count + 1,
                         _API_CALL_MAX_RETRIES,
@@ -578,10 +607,45 @@ class TelegramChannel:
                 if result.get("ok"):
                     return result.get("result")
                 else:
-                    logger.error("Telegram API error: %s", result.get("description"))
+                    description: str = result.get("description") or ""
+                    # Stale callback-query acknowledgements are expected after a
+                    # restart (Telegram's 30-second window has already elapsed for
+                    # queued button-press events).  Log at DEBUG to avoid filling
+                    # the console with false alarm ERRORs.
+                    _desc_l = description.lower()
+                    _benign_edit = (
+                        "message is not modified" in _desc_l
+                        or "message to edit not found" in _desc_l
+                        or "message can't be edited" in _desc_l
+                        or "message_id_invalid" in _desc_l
+                    )
+                    if method == "answerCallbackQuery" and (
+                        "query is too old" in description
+                        or "query ID is invalid" in description
+                    ):
+                        logger.debug(
+                            "Telegram: stale callback query (expected on restart): %s",
+                            description,
+                        )
+                    elif _benign_edit:
+                        # Streaming edits race against their own debounce: editing a
+                        # message to content it already holds (or one Telegram has
+                        # since dropped) is expected and harmless. Demote so the
+                        # progressive-edit path doesn't spam ERRORs.
+                        logger.debug("Telegram edit no-op (expected): %s", description)
+                    else:
+                        logger.error("Telegram API error: %s", description)
                     return None
         except asyncio.TimeoutError:
-            logger.error("Telegram API call timed out: %s", method)
+            # getUpdates is a long-poll: a timeout just means "no messages arrived
+            # in the long-poll window" or Telegram took a moment to respond.
+            # The next poll cycle resumes cleanly from _last_update_id + 1, so
+            # this is expected noise — demote to DEBUG. All other methods are
+            # genuine errors worth surfacing.
+            if method == "getUpdates":
+                logger.debug("Telegram getUpdates timed out — resuming on next poll")
+            else:
+                logger.error("Telegram API call timed out: %s", method)
             return None
         except Exception as e:
             logger.error("Telegram API call failed: %s", e)
@@ -596,14 +660,24 @@ class TelegramChannel:
                     {
                         "offset": self._last_update_id + 1,
                         "timeout": 30,
-                        "allowed_updates": ["message", "callback_query", "message_reaction", "inline_query"],
+                        "allowed_updates": [
+                            "message", "edited_message", "channel_post", "edited_channel_post",
+                            "callback_query", "message_reaction", "inline_query",
+                            # Telegram Business (owner's business-profile conversations)
+                            "business_connection", "business_message",
+                            "edited_business_message", "deleted_business_messages",
+                        ],
                     },
                 )
 
+                if updates is not None:
+                    # Stamp on every successful poll (including empty responses) so
+                    # the health monitor does not flag an idle-but-connected bot as
+                    # stale merely because no messages have arrived recently.
+                    self._last_event_at = time.monotonic()
                 if updates:
                     for update in updates:
                         self._last_update_id = update["update_id"]
-                        self._last_event_at = time.monotonic()
                         await self._process_update(update)
 
             except asyncio.CancelledError:
@@ -640,7 +714,7 @@ class TelegramChannel:
                     remind_at_str = str(reminder.get("remind_at") or "")
 
                     if not chat_id or not msg:
-                        # Malformed row вЂ” close it immediately
+                        # Malformed row — close it immediately
                         if reminder_id:
                             store.complete_reminder(reminder_id)
                         continue
@@ -673,7 +747,7 @@ class TelegramChannel:
                         continue
 
                     # Add a "missed" notice when first delivering an overdue reminder
-                    _header = "вЏ° <b>Reminder</b>"
+                    _header = "⏰ <b>Reminder</b>"
                     if _overdue_hours > 1 and retry_count == 0:
                         # Show the due time in server-local timezone so it matches
                         # the time the user originally entered (e.g. "23:30" not UTC)
@@ -686,7 +760,31 @@ class TelegramChannel:
                             _due_label = _due_local.strftime("%Y-%m-%d %H:%M")
                         except Exception:
                             _due_label = remind_at_str.replace("T", " ")[:16]
-                        _header = f"вЏ° <b>Missed reminder</b> <i>(was due {_due_label})</i>"
+                        _header = f"⏰ <b>Missed reminder</b> <i>(was due {_due_label})</i>"
+
+                    # Fan out to the other channels the user enabled for
+                    # reminders (deck feed / email / sms / …) via the notify
+                    # router, and let the matrix decide whether Telegram fires.
+                    _tg_on = True
+                    try:
+                        from navig.notify import dispatch as _notify_dispatch
+                        from navig.notify import prefs as _notify_prefs
+
+                        _others = [c for c in _notify_prefs.enabled_channels("reminder") if c != "telegram"]
+                        if _others:
+                            await _notify_dispatch(
+                                "reminder", "Reminder", msg,
+                                data={"reminder_id": reminder_id}, only_channels=_others,
+                            )
+                        _tg_on = _notify_prefs.is_enabled("reminder", "telegram")
+                    except Exception:
+                        logger.debug("notify reminder fan-out failed", exc_info=True)
+
+                    if not _tg_on:
+                        # Delivered via other channels — mark done so it doesn't re-fire.
+                        if reminder_id:
+                            store.complete_reminder(reminder_id)
+                        continue
 
                     sent = await self.send_message(
                         int(chat_id),
@@ -727,26 +825,57 @@ class TelegramChannel:
     # в”Ђв”Ђ Webhook mode в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
     async def _setup_webhook(self):
-        """Register the webhook URL with Telegram and delete any pending updates."""
+        """Register the webhook URL with Telegram and delete any pending updates.
+
+        setWebhook failures are often *transient* — most commonly Telegram itself
+        briefly failing to resolve the edge host ("bad webhook: Failed to resolve
+        host: Temporary failure in name resolution"), which clears within seconds.
+        We retry a few times with backoff before giving up, so a momentary DNS blip
+        on Telegram's side doesn't demote the brain to polling for the whole session
+        (which, in lighthouse mode, also bypasses the edge uplink). If the edge is
+        genuinely unreachable, we still fall back to polling so the bot keeps working.
+        """
         params: dict[str, Any] = {
             "url": self.webhook_url,
-            "allowed_updates": ["message", "callback_query", "message_reaction", "inline_query"],
+            "allowed_updates": [
+                "message", "edited_message", "channel_post", "edited_channel_post",
+                "callback_query", "message_reaction", "inline_query",
+                "business_connection", "business_message",
+                "edited_business_message", "deleted_business_messages",
+            ],
             "drop_pending_updates": True,
         }
         if self.webhook_secret:
             params["secret_token"] = self.webhook_secret
 
-        result = await self._api_call("setWebhook", params)
-        if result is not None:
-            logger.info("Telegram webhook set: %s", self.webhook_url)
+        # Seconds to wait between attempts; total attempts = len + 1 (~10s worst case).
+        backoffs = (3, 7)
+        for attempt in range(len(backoffs) + 1):
+            if not self._running:
+                return  # channel stopped mid-setup — abandon quietly
+            result = await self._api_call("setWebhook", params)
+            if result is not None:
+                logger.info("Telegram webhook set: %s", self.webhook_url)
+                return
+            if attempt < len(backoffs):
+                delay = backoffs[attempt]
+                logger.warning(
+                    "setWebhook failed (attempt %d/%d) — retrying in %ds "
+                    "(usually a transient DNS failure on Telegram's side)",
+                    attempt + 1, len(backoffs) + 1, delay,
+                )
+                await asyncio.sleep(delay)
+
+        logger.error(
+            "Failed to set Telegram webhook after %d attempts — falling back to polling",
+            len(backoffs) + 1,
+        )
+        self._use_webhook = False
+        # Guard against duplicate poll tasks
+        if self._poll_task is None or self._poll_task.done():
+            self._poll_task = asyncio.create_task(self._poll_updates())
         else:
-            logger.error("Failed to set Telegram webhook вЂ” falling back to polling")
-            self._use_webhook = False
-            # Guard against duplicate poll tasks
-            if self._poll_task is None or self._poll_task.done():
-                self._poll_task = asyncio.create_task(self._poll_updates())
-            else:
-                logger.warning("Poll task already running вЂ” skipping duplicate")
+            logger.warning("Poll task already running — skipping duplicate")
 
     async def handle_webhook_update(self, update: dict, secret_header: str = "") -> bool:
         """
@@ -760,9 +889,11 @@ class TelegramChannel:
             secret_header: Value of the ``X-Telegram-Bot-Api-Secret-Token``
                            header sent by Telegram (for HMAC validation).
         """
-        # Validate secret token if configured
-        if self.webhook_secret and secret_header != self.webhook_secret:
-            logger.warning("Webhook secret mismatch вЂ” rejecting update")
+        # Validate secret token if configured. Constant-time compare to avoid a
+        # timing side-channel on the webhook secret (R9; mirrors the deck api_key
+        # hardening in gateway/deck/auth.py).
+        if self.webhook_secret and not hmac.compare_digest(secret_header or "", self.webhook_secret):
+            logger.warning("Webhook secret mismatch — rejecting update")
             return False
 
         if not self._running:
@@ -777,6 +908,37 @@ class TelegramChannel:
 
     async def _process_update(self, update: dict):
         """Process a single update from Telegram."""
+        # в”Ђв”Ђ Network-manager catalog ingestion в”Ђв”Ђ best-effort, never blocks dispatch.
+        #    Also captures channel_post updates the assistant flow ignores below.
+        try:
+            from navig.gateway.channels.telegram_catalog_ingest import ingest_update
+
+            await ingest_update(self, update)
+        except Exception as _cat_exc:  # noqa: BLE001
+            logger.debug("Telegram catalog ingest skipped: %s", _cat_exc)
+
+        # ── Telegram Business updates (the owner's business-profile conversations) ──
+        #    DATA ONLY: cataloged, and on delete the owner is DM'd. Business messages
+        #    are NEVER routed to the command/slash dispatch (a counterparty must never
+        #    reach the system). See navig.telegram.business + the security model.
+        try:
+            from navig.telegram import business as _tg_business
+
+            if _bc := update.get("business_connection"):
+                await _tg_business.handle_business_connection(self, _bc)
+                return
+            if _bm := update.get("business_message"):
+                await _tg_business.handle_business_message(self, _bm)
+                return
+            if _ebm := update.get("edited_business_message"):
+                await _tg_business.handle_business_message(self, _ebm, edited=True)
+                return
+            if _dbm := update.get("deleted_business_messages"):
+                await _tg_business.handle_deleted_business_messages(self, _dbm)
+                return
+        except Exception as _biz_exc:  # noqa: BLE001
+            logger.warning("Telegram business update handling failed: %s", _biz_exc)
+
         # в”Ђв”Ђ Handle message reactions (рџ‘Ќ рџ‘Ћ рџ”Ґ рџ¤” рџ’Ї) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         if reaction_update := update.get("message_reaction"):
             if HAS_REACTIONS:
@@ -868,6 +1030,41 @@ class TelegramChannel:
                     except Exception as exc:
                         logger.error("slash: callback handler %r error: %s", cmd_name, exc)
                 return
+            # -- host_use: switch active host and refresh card --------------------
+            if cb_data.startswith("host_use:"):
+                host_name_cb = cb_data[9:]
+                try:
+                    await self._api_call(
+                        "answerCallbackQuery",
+                        {
+                            "callback_query_id": callback_query["id"],
+                            "text": f"\u2713 Switched to {host_name_cb}",
+                            "show_alert": False,
+                        },
+                    )
+                except Exception:
+                    pass
+                try:
+                    from navig.config import get_config_manager
+
+                    get_config_manager().set_active_host(host_name_cb)
+                except Exception as _use_exc:  # noqa: BLE001
+                    logger.warning("host_use: switch failed for %r: %s", host_name_cb, _use_exc)
+                # Refresh hosts card in-place
+                try:
+                    import functools as _ft
+
+                    from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+                    await _ft.partial(TelegramCommandsMixin._handle_hosts_cmd, self)(
+                        chat_id=cb_chat_id_cq,
+                        user_id=cb_user_id,
+                        metadata={},
+                        message_id=cb_message_id,
+                    )
+                except Exception as _ref_exc:  # noqa: BLE001
+                    logger.error("host_use: refresh hosts card failed: %s", _ref_exc)
+                return
             if self._cb_handler:
                 try:
                     await self._cb_handler.handle(callback_query)
@@ -923,26 +1120,26 @@ class TelegramChannel:
                     )
                     if not text:
                         return  # transcription failed; error already sent
-                    # text is now the transcript вЂ” fall through to pipeline
+                    # text is now the transcript — fall through to pipeline
                 # в”Ђв”Ђ Photo: vision analysis pipeline в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
                 elif content_type == "photo":
                     await self._handle_photo_vision(chat_id, user_id, is_group, message)
                     return
                 else:
                     logger.debug(
-                        "Non-text message (%s) from user %s вЂ” skipping",
+                        "Non-text message (%s) from user %s — skipping",
                         content_type,
                         user_id,
                     )
                     # Only acknowledge in DMs, not in groups
                     if not is_group and chat_id:
                         ack = {
-                            "voice": "can't process voice messages yet вЂ” try typing it out?",
+                            "voice": "can't process voice messages yet — try typing it out?",
                             "sticker": random.choice(["рџ‘Ђ", "рџ„", "nice one"]),
                             "video": "video processing isn't wired up yet.",
                             "document": "can't read files through Telegram yet. try uploading via the deck.",
                             "gif": random.choice(["рџ„", "ha"]),
-                            "location": "noted вЂ” but I can't do much with locations yet.",
+                            "location": "noted — but I can't do much with locations yet.",
                             "contact": "got it, but contact handling isn't set up.",
                         }.get(content_type, "got something I can't process yet.")
                         await self.send_message(chat_id, ack, parse_mode=None)
@@ -1011,7 +1208,7 @@ class TelegramChannel:
                 if state_chat_id is None or int(state_chat_id) == int(chat_id):
                     await self.send_message(
                         chat_id,
-                        "в„№пёЏ Your previous AI session expired after 24h of inactivity. "
+                        "ℹ️ Your previous AI session expired after 24h of inactivity. "
                         "Use `/agent start` to re-enable auto mode.",
                         parse_mode=None,
                     )
@@ -1213,6 +1410,12 @@ class TelegramChannel:
                         text=text,
                     ):
                         return
+                if await self._handle_eve_pending_reply(
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    text=text,
+                ):
+                    return
                 if await self._handle_nl_pending_reply(
                     chat_id=chat_id,
                     user_id=user_id,
@@ -1226,7 +1429,7 @@ class TelegramChannel:
                 ):
                     return
                 # NL command intent detection: skip for very short messages (1-2
-                # words) вЂ” genuine NL command intents ("set reminder", "run disk
+                # words) — genuine NL command intents ("set reminder", "run disk
                 # check") always use 3+ words; single-word and two-word casual
                 # turns avoid 3 serial async store round-trips here.
                 # Exception: media captions are already context-rich and should
@@ -1243,9 +1446,25 @@ class TelegramChannel:
                         return
                 # в”Ђв”Ђ Slash command routing в”Ђв”Ђ
                 cmd = stripped_text.lower()
-                if cmd in ("/models", "/model") or cmd.startswith(("/models ", "/model ")):
-                    await self._handle_models_command(chat_id, user_id, text=text)
-                    return
+
+                # Disabled-commands gate: reject if user has turned this command off in
+                # the Deck. Locked commands (start/help/settings/status) bypass the gate.
+                if cmd.startswith("/"):
+                    _cmd_bare = cmd.split(" ", 1)[0][1:].split("@", 1)[0]
+                    if _cmd_bare:
+                        from .telegram_commands import (
+                            LOCKED_COMMANDS as _LOCKED,
+                            get_disabled_commands as _get_disabled,
+                        )
+                        if _cmd_bare not in _LOCKED and _cmd_bare in _get_disabled():
+                            await self.send_message(
+                                chat_id,
+                                f"/{_cmd_bare} is disabled. Re-enable it in Deck → Social → Telegram → Commands.",
+                                parse_mode=None,
+                            )
+                            return
+
+                # /models, /model, /routing, /router moved to Deck → Account → Model Tier.
                 if cmd == "/status":
                     await self._handle_status(chat_id, user_id)
                     return
@@ -1261,9 +1480,7 @@ class TelegramChannel:
                     _help_topic = cmd[len("/help "):].strip() if cmd.startswith("/help ") else None
                     await self._handle_help(chat_id, topic=_help_topic)
                     return
-                if cmd.startswith("/mode"):
-                    await self._handle_mode(chat_id, text=cmd, user_id=user_id)
-                    return
+                # /mode moved to Deck → Account → Focus Mode (+ chat NL: "switch focus to deep work").
                 if cmd == "/briefing":
                     await self._handle_briefing(chat_id, user_id, metadata)
                     return
@@ -1273,29 +1490,11 @@ class TelegramChannel:
                 if cmd == "/ping":
                     await self._handle_ping(chat_id, user_id)
                     return
-                if cmd == "/voiceon":
-                    await self._handle_voiceon_cmd(
-                        chat_id=chat_id,
-                        user_id=user_id,
-                        is_group=is_group,
-                    )
-                    return
-                if cmd == "/voiceoff":
-                    await self._handle_voiceoff_cmd(
-                        chat_id=chat_id,
-                        user_id=user_id,
-                        is_group=is_group,
-                    )
-                    return
-                if cmd == "/settings":
-                    await self._handle_settings_hub(chat_id, user_id, message_id=None)
-                    return
-                if cmd in ("/routing", "/router") or cmd.startswith(("/routing ", "/router ")):
-                    await self._handle_models_command(chat_id, user_id, text=text)
-                    return
-                if cmd in ("/providers", "/provider"):
-                    await self._handle_providers(chat_id, user_id)
-                    return
+                # /voiceon, /voiceoff moved to Deck → Account → Voice & Audio
+                # (+ chat NL: "turn voice replies on/off").
+                # /settings moved to Deck → Account section (Focus / Tier / Voice / Persona).
+                # /routing, /router moved to Deck → Account → Model Tier.
+                # /providers /provider moved to Deck (Admin / LLM Providers).
                 if cmd == "/debug":
                     await self._handle_debug(chat_id)
                     return
@@ -1303,10 +1502,8 @@ class TelegramChannel:
                     await self._handle_trace_cmd(chat_id=chat_id, user_id=user_id, text=text)
                     return
 
-                # в”Ђв”Ђ Model tier overrides (standalone /big, /small, /coder, /auto) в”Ђв”Ђ
-                if cmd in ("/big", "/small", "/coder", "/auto"):
-                    await self._handle_tier_command(chat_id, user_id, cmd)
-                    return
+                # /big, /small, /coder, /auto moved to Deck → Account → Model Tier
+                # (+ chat NL: "use big model", "switch to small", "auto model").
 
                 # в”Ђв”Ђ /restart: daemon (systemd) vs container (docker) в”Ђв”Ђ
                 if cmd.startswith("/restart"):
@@ -1383,6 +1580,22 @@ class TelegramChannel:
                                     handler_func = functools.partial(msg_handler, self)
                             except ImportError:
                                 pass
+                        # Messengers mixin fallback
+                        if handler_func is None:
+                            try:
+                                from navig.gateway.channels.telegram_messengers_mixin import (
+                                    TelegramMessengersMixin,
+                                )
+
+                                msgrh = getattr(
+                                    TelegramMessengersMixin,
+                                    registry_entry.handler,
+                                    None,
+                                )
+                                if msgrh is not None:
+                                    handler_func = functools.partial(msgrh, self)
+                            except ImportError:
+                                pass
                         if handler_func:
                             sig = inspect.signature(handler_func)
                             kwargs = {}
@@ -1429,17 +1642,17 @@ class TelegramChannel:
 
                     await self.send_message(
                         chat_id,
-                        "вљ™пёЏ No-AI mode expects a command. Use /help for shortcuts, or send <code>navig &lt;command&gt;</code>.",
+                        "🔔 No-AI mode expects a command. Use /help for shortcuts, or send <code>navig &lt;command&gt;</code>.",
                         parse_mode="HTML",
                     )
                     return
 
                 # в”Ђв”Ђ Cinematic mode dispatch в”Ђв”Ђ
-                # Fire one typing indicator immediately before mode dispatch вЂ”
+                # Fire one typing indicator immediately before mode dispatch —
                 # gives the user instant visual feedback (~1 Telegram RTT) while
                 # classify_mode() and the LLM call are warming up.
-                # _keep_typing / _reasoning_ticker carry it forward from inside
-                # each handler.
+                # _keep_typing (started inside _stream_reply) carries it forward
+                # until the first streamed token lands.
                 await self.send_typing(chat_id)
                 await self._dispatch_by_mode(
                     tg_msg=telegram_msg,
@@ -1456,18 +1669,18 @@ class TelegramChannel:
                 import traceback
 
                 logger.error("Message handler error: %s\n%s", e, traceback.format_exc())
-                # Friendly error вЂ” no robotic entity-speak
+                # Friendly error — no robotic entity-speak
                 err_msg = random.choice(
                     [
-                        f"sorry, something went wrong вЂ” {e}",
+                        f"sorry, something went wrong — {e}",
                         f"oops, hit an error: {e}",
                         f"ran into a problem. {e}",
                     ]
                 )
-                await self.send_message(chat_id, f"вќЊ {err_msg}", parse_mode=None)
+                await self.send_message(chat_id, f"❌ {err_msg}", parse_mode=None)
 
         else:
-            # on_message handler not configured вЂ” respond contextually instead
+            # on_message handler not configured — respond contextually instead
             # of silently dropping the message (fixes #36).
             # Slash commands that provide guidance (/help, /start) don't need AI;
             # respond with useful info so users aren't left wondering what happened.
@@ -1475,7 +1688,7 @@ class TelegramChannel:
             if _cmd == "/help":
                 await self.send_message(
                     chat_id,
-                    "в„№пёЏ Available commands:\n/start вЂ” begin setup\n/help вЂ” show this help",
+                    "ℹ️ Available commands:\n/start — begin setup\n/help — show this help",
                     parse_mode=None,
                 )
             elif _cmd == "/start":
@@ -1488,14 +1701,14 @@ class TelegramChannel:
             elif _cmd.startswith("/"):
                 await self.send_message(
                     chat_id,
-                    "вќЊ That command is not available yet because AI is not configured. "
+                    "❌ That command is not available yet because AI is not configured. "
                     "Use /help to see available commands or /start to begin setup.",
                     parse_mode=None,
                 )
             else:
                 await self.send_message(
                     chat_id,
-                    "вќЊ AI is not configured yet. Use /help to see available commands "
+                    "❌ AI is not configured yet. Use /help to see available commands "
                     "or /start to begin setup.",
                     parse_mode=None,
                 )
@@ -1519,37 +1732,6 @@ class TelegramChannel:
             )
         except asyncio.CancelledError:
             pass  # task cancelled; expected during shutdown
-
-    async def _reasoning_ticker(self, chat_id: int, placeholder_id: int) -> None:
-        """Edit the reasoning placeholder through _REASON_PHASES while the LLM runs.
-
-        Phases and labels are defined in _REASON_PHASES вЂ” never hardcoded here.
-        After the last phase is exhausted the final label is re-emitted every
-        _TICKER_HOLD_INTERVAL_SEC seconds until the task is cancelled by
-        _handle_reason() when the LLM response arrives.
-
-        All edit failures are silently swallowed вЂ” this is purely cosmetic.
-        """
-        if not placeholder_id:
-            return
-        last_label = _REASON_PHASES[-1][1] if _REASON_PHASES else _REASON_PLACEHOLDER
-        try:
-            for sleep_secs, label in _REASON_PHASES:
-                await asyncio.sleep(sleep_secs)
-                try:
-                    await self.edit_message(chat_id, placeholder_id, label, parse_mode=None)
-                    last_label = label
-                except Exception:  # noqa: BLE001
-                    pass  # cosmetic вЂ” never surface ticker errors
-            # All phases done; hold last label until response arrives
-            while True:
-                await asyncio.sleep(_TICKER_HOLD_INTERVAL_SEC)
-                try:
-                    await self.edit_message(chat_id, placeholder_id, last_label, parse_mode=None)
-                except Exception:  # noqa: BLE001
-                    pass
-        except asyncio.CancelledError:
-            pass  # expected вЂ” cancelled by _handle_reason() on LLM completion
 
     async def _keep_recording(
         self, chat_id: int, interval: float = 4.0, max_duration: float = 120.0
@@ -1650,7 +1832,7 @@ class TelegramChannel:
         elif mode == "REASON":
             # When structural named-entity signals are detected, inject a
             # language-agnostic grounding hint so the LLM acknowledges uncertainty
-            # rather than confabulating. The hint is script-neutral вЂ” the model
+            # rather than confabulating. The hint is script-neutral — the model
             # will compose its response in whatever language the user wrote.
             if HAS_CLASSIFIER and entity_signal:
                 metadata = {
@@ -1727,6 +1909,224 @@ class TelegramChannel:
         except Exception as exc:  # noqa: BLE001
             logger.debug("Could not persist updated language metadata: %s", exc)
 
+    async def _finalize_streamed_message(
+        self,
+        chat_id: int,
+        placeholder_id: int,
+        response: str,
+        *,
+        original_text: str = "",
+        user_id: int = 0,
+        is_group: bool = False,
+        extra_krow: list | None = None,
+    ) -> bool:
+        """Edit the streamed placeholder INTO the final formatted reply.
+
+        Keeps the very bubble the user watched stream as the answer, instead of
+        deleting it and sending a fresh message. Returns True when the
+        placeholder was used (the common single-message case); False when the
+        reply needs the multi-message / oversized path so the caller can fall
+        back to delete + _send_response. Mirrors _send_response's formatting.
+        """
+        try:
+            text = self._strip_internal_tags(response)
+            explore_qs: list[str] = []
+            if HAS_KEYBOARDS and "EXPLORE_Q:" in text:
+                try:
+                    from navig.gateway.channels.telegram_keyboards import (
+                        extract_explore_questions,
+                    )
+
+                    text, explore_qs = extract_explore_questions(text)
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; never block the reply
+            text = TelegramChannel._md_to_html(text)
+            parts = None
+            if HAS_TEMPLATES:
+                try:
+                    from navig.agent.proactive.user_state import get_user_state_tracker
+
+                    verbosity = get_user_state_tracker().get_preference("verbosity", "normal")
+                except Exception:  # noqa: BLE001
+                    verbosity = "normal"
+                fmt = enforce_response_limits(text, verbosity=verbosity)
+                text = fmt.text
+                parts = fmt.parts
+
+            # Multi-part or oversized replies can't live in one editable message.
+            if (parts and len(parts) > 1) or len(text) > 4000:
+                return False
+
+            keyboard = None
+            if self._kb_builder:
+                try:
+                    keyboard = self._kb_builder.build(
+                        ai_response=text,
+                        user_message=original_text,
+                        message_id=0,
+                        explore_questions=explore_qs,
+                    )
+                except Exception as kb_err:  # noqa: BLE001
+                    logger.debug("Keyboard build failed: %s", kb_err)
+            if extra_krow:
+                if keyboard and isinstance(keyboard, dict) and "inline_keyboard" in keyboard:
+                    keyboard["inline_keyboard"].append(extra_krow)
+                else:
+                    keyboard = {"inline_keyboard": [extra_krow]}
+
+            # Edit in place. Try HTML; on parse rejection / no-op, retry plain.
+            # If both no-op (streamed text already final), we still own the
+            # bubble — never fall back to deleting a correct message.
+            res = await self.edit_message(
+                chat_id, placeholder_id, text, parse_mode="HTML", keyboard=keyboard
+            )
+            if res is None:
+                await self.edit_message(
+                    chat_id, placeholder_id, text, parse_mode=None, keyboard=keyboard
+                )
+
+            if HAS_SESSIONS and original_text:
+                try:
+                    get_session_manager().record_bot_reply(
+                        chat_id, int(placeholder_id), original_text, response
+                    )
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
+
+            # Voice reply is additive — the user already has the text bubble.
+            await self._maybe_send_voice(chat_id, user_id, is_group, response)
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("finalize streamed message failed: %r", exc)
+            return False
+
+    async def _stream_reply(
+        self,
+        chat_id: int,
+        user_id: int,
+        llm_message: str,
+        metadata: dict,
+        *,
+        original_text: str,
+        is_group: bool,
+        extra_krow: list | None = None,
+    ) -> str:
+        """Stream an LLM reply into one Telegram bubble and finalize it.
+
+        Shared by TALK and REASON. Sends nothing up front — the first streamed
+        token CREATES the message, later tokens edit it (debounced ~1/700ms),
+        and the final formatted reply (explore-question buttons + ``extra_krow``)
+        replaces it via ``_finalize_streamed_message``. The native "typing"
+        indicator covers the wait; no dots, no ticker. Falls back to a single
+        ``_send_response`` for groups, when streaming is disabled, or for
+        multi-part / oversized replies (both paths build explore buttons).
+
+        ``llm_message`` is sent to the model (REASON enriches it + appends the
+        explore suffix); ``original_text`` is the user's raw text used for
+        keyboard context, reaction lookups, and logs. Returns the response
+        text ("" if none).
+        """
+        try:
+            from navig.core import Config as _Config
+
+            stream_cfg = bool(_Config().get("telegram.stream_replies", True))
+        except Exception:  # noqa: BLE001
+            stream_cfg = True  # fail open: streaming is the better UX
+
+        _stream_state = {
+            "placeholder_id": None,
+            "last_edit_at": 0.0,
+            "last_sent_text": "",
+            "streaming_started": False,
+        }
+
+        async def _stream_on_partial(accumulated: str) -> None:
+            # First token SENDS the message; later tokens edit it in place,
+            # debounced (~1 edit/700ms; Telegram caps editMessageText ~1/s).
+            # The first token bypasses the debounce so the reply starts the
+            # instant the model emits text.
+            if not accumulated:
+                return
+            _first_token = not _stream_state["streaming_started"]
+            _stream_state["streaming_started"] = True
+            now = time.monotonic()
+            if not _first_token and (now - _stream_state["last_edit_at"]) < 0.45:
+                return
+            text_to_send = accumulated[-3800:]  # safe under Telegram's 4096 cap
+            pid = _stream_state["placeholder_id"]
+            if pid is None:
+                try:
+                    _m = await self.send_message(
+                        chat_id, text_to_send + "…", parse_mode=None
+                    )
+                    _stream_state["placeholder_id"] = (_m or {}).get("message_id")
+                    _stream_state["last_edit_at"] = now
+                    _stream_state["last_sent_text"] = text_to_send
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("stream first-send failed: %r", exc)
+                return
+            if text_to_send == _stream_state["last_sent_text"]:
+                return
+            _stream_state["last_edit_at"] = now
+            _stream_state["last_sent_text"] = text_to_send
+            try:
+                await self.edit_message(chat_id, pid, text_to_send + "…", parse_mode=None)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("stream edit_message skipped: %r", exc)
+
+        on_partial_cb = _stream_on_partial if (stream_cfg and not is_group) else None
+
+        typing_task = asyncio.create_task(self._keep_typing(chat_id))
+        try:
+            response = await self.on_message(
+                channel="telegram",
+                user_id=str(user_id),
+                message=llm_message,
+                metadata=metadata,
+                on_partial=on_partial_cb,
+            )
+        finally:
+            typing_task.cancel()
+            try:
+                await typing_task
+            except asyncio.CancelledError:
+                pass  # cancelled once the reply lands
+
+        _ph_id = _stream_state["placeholder_id"]
+        if response:
+            _finalized = False
+            if _ph_id is not None:
+                _finalized = await self._finalize_streamed_message(
+                    chat_id,
+                    _ph_id,
+                    response,
+                    original_text=original_text,
+                    user_id=user_id,
+                    is_group=is_group,
+                    extra_krow=extra_krow,
+                )
+            if not _finalized:
+                if _ph_id is not None:
+                    try:
+                        await self.delete_message(chat_id, _ph_id)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("stream placeholder delete failed: %r", exc)
+                await self._send_response(
+                    chat_id,
+                    response,
+                    original_text,
+                    user_id=user_id,
+                    is_group=is_group,
+                    extra_krow=extra_krow,
+                )
+        elif _ph_id is not None:
+            try:
+                await self.delete_message(chat_id, _ph_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("stream placeholder delete failed: %r", exc)
+
+        return response or ""
+
     async def _handle_talk(
         self,
         text: str,
@@ -1738,7 +2138,7 @@ class TelegramChannel:
         is_group: bool,
         entity_signal: bool = False,
     ) -> None:
-        """TALK mode вЂ” direct reply, no decorations, в‰¤3 lines, в‰¤2s."""
+        """TALK mode — direct reply, no decorations, в‰¤3 lines, в‰¤2s."""
         turn_t0 = time.monotonic()
 
         # TALK mode should stay low-latency by default. If caller didn't set an
@@ -1761,22 +2161,21 @@ class TelegramChannel:
                     "inventing details."
                 ),
             }
-        typing_task = asyncio.create_task(self._keep_typing(chat_id))
+        debug_krow = (
+            [{"text": "🔍 Debug", "callback_data": "dbg_trace"}]
+            if self._is_debug_mode(user_id)
+            else None
+        )
         llm_t0 = time.monotonic()
-        try:
-            response = await self.on_message(
-                channel="telegram",
-                user_id=str(user_id),
-                message=text,
-                metadata=metadata,
-            )
-        finally:
-            typing_task.cancel()
-            try:
-                await typing_task
-            except asyncio.CancelledError:
-                pass  # task cancelled; expected during shutdown
-
+        response = await self._stream_reply(
+            chat_id,
+            user_id,
+            text,
+            metadata,
+            original_text=text,
+            is_group=is_group,
+            extra_krow=debug_krow,
+        )
         llm_ms = int((time.monotonic() - llm_t0) * 1000)
 
         if response:
@@ -1784,20 +2183,6 @@ class TelegramChannel:
             self._record_assistant_msg(
                 session, session_manager, chat_id, user_id, response, is_group
             )
-            debug_krow = (
-                [{"text": "\ud83d\udd0d Debug", "callback_data": "dbg_trace"}]
-                if self._is_debug_mode(user_id)
-                else None
-            )
-            await self._send_response(
-                chat_id,
-                response,
-                text,
-                user_id=user_id,
-                is_group=is_group,
-                extra_krow=debug_krow,
-            )
-
             total_ms = int((time.monotonic() - turn_t0) * 1000)
             if total_ms >= _TALK_SLOW_LOG_MS:
                 logger.warning(
@@ -1981,17 +2366,19 @@ class TelegramChannel:
         is_group: bool,
         entity_signal: bool = False,
     ) -> None:
-        """REASON mode вЂ” send placeholder, fill with numbered CoT + bold conclusion."""
-        placeholder = await self.send_message(chat_id, _REASON_PLACEHOLDER, parse_mode=None)
-        placeholder_id = (placeholder or {}).get("message_id")
+        """REASON mode — web-grounded answer, streamed live, with explore buttons."""
+        # Route REASON through the fast chat tier. These are conversational /
+        # factual questions ("what is fight club?") the small fast model answers
+        # well in ~2s. Without this, the explore-suffix + web context appended
+        # below pad the message past run_agentic's short-chat cutoff and send it
+        # to the slow 480B coder model (~40s). setdefault keeps an explicit
+        # caller tier (e.g. a /big override) authoritative.
+        metadata = dict(metadata)
+        metadata.setdefault("tier_override", "small")
 
-        typing_task = asyncio.create_task(self._keep_typing(chat_id))
-        ticker_task = asyncio.create_task(self._reasoning_ticker(chat_id, placeholder_id or 0))
-
-        # Entity enrichment: silently fetch web context for named title/person references
-        # before sending to the LLM.  Uses the same entity-signal checks as
-        # select_tools_for_text() but avoids a full ACT pipeline вЂ” just prepends
-        # the top-3 search snippets so the model can ground its response in facts.
+        # Entity enrichment: silently fetch web context for named title /
+        # person references so the model grounds factual questions instead
+        # of confabulating.
         _enriched_text = text
         if HAS_CLASSIFIER and entity_signal:
             try:
@@ -2007,84 +2394,39 @@ class TelegramChannel:
                         _ctx = ["[Web context]"]
                         for _i, _h in enumerate(_hits[:3], 1):
                             _t = _h.get("title", "")
-                            _s = _h.get("snippet", "")
+                            _sn = _h.get("snippet", "")
                             _u = _h.get("url", "")
                             _line = (
                                 f"{_i}. {_t}"
-                                + (f" \u2014 {_s}" if _s else "")
+                                + (f" — {_sn}" if _sn else "")
                                 + (f" ({_u})" if _u else "")
                             )
                             _ctx.append(_line)
                         _enriched_text = "\n".join(_ctx) + "\n\nUser message: " + text
-            except Exception:
-                pass  # silent \u2014 never surface search errors to the user in REASON mode
-
-        try:
-            response = await self.on_message(
-                channel="telegram",
-                user_id=str(user_id),
-                message=_enriched_text + _EXPLORE_SUFFIX,
-                metadata=metadata,
-            )
-        finally:
-            typing_task.cancel()
-            ticker_task.cancel()
-            try:
-                await typing_task
-            except asyncio.CancelledError:
-                pass  # task cancelled; expected during shutdown
-            try:
-                await ticker_task
-            except asyncio.CancelledError:
-                pass  # task cancelled; expected during shutdown
-
-        if not response:
-            return
-
-        self._persist_updated_language(metadata, chat_id, user_id, session_manager, is_group)
-
-        # Only append model footer in debug/trace mode — keep normal replies clean
-        model_name = self._resolve_model_name(metadata) if self._is_debug_mode(user_id) else ""
-        footer = f"\n\n<code>\u00b7 {model_name}</code>" if model_name else ""
-        final_text = f"{response}{footer}"
-        final_text = self._strip_internal_tags(final_text)
-
-        self._record_assistant_msg(session, session_manager, chat_id, user_id, response, is_group)
-
-        # Extract contextual explore questions appended by the LLM.
-        explore_qs: list[str] = []
-        if HAS_KEYBOARDS:
-            try:
-                from navig.gateway.channels.telegram_keyboards import extract_explore_questions
-                final_text, explore_qs = extract_explore_questions(final_text)
             except Exception:  # noqa: BLE001
-                pass  # best-effort; never block the reply
+                pass  # silent; never surface search errors in REASON mode
 
-        keyboard = None
-        if self._kb_builder:
-            try:
-                keyboard = self._kb_builder.build(
-                    ai_response=final_text,
-                    user_message=text,
-                    message_id=placeholder_id or 0,
-                    explore_questions=explore_qs,
-                )
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
-
-        # Delete the reasoning placeholder so the answer appears as a fresh
-        # message — the reasoning phase vanishes cleanly rather than being
-        # edited in-place (jarring layout shift).
-        if placeholder_id:
-            try:
-                await self.delete_message(chat_id, placeholder_id)
-            except Exception:  # noqa: BLE001
-                pass  # cosmetic — never block the reply
-        await self._send_response(
-            chat_id, final_text, text,
-            user_id=user_id, is_group=is_group,
-            prebuilt_keyboard=keyboard,
+        debug_krow = (
+            [{"text": "🔍 Debug", "callback_data": "dbg_trace"}]
+            if self._is_debug_mode(user_id)
+            else None
         )
+        # Stream live like TALK. The EXPLORE_Q line the model appends is
+        # turned into explore-question buttons by _finalize_streamed_message.
+        response = await self._stream_reply(
+            chat_id,
+            user_id,
+            _enriched_text + _EXPLORE_SUFFIX,
+            metadata,
+            original_text=text,
+            is_group=is_group,
+            extra_krow=debug_krow,
+        )
+        if response:
+            self._persist_updated_language(metadata, chat_id, user_id, session_manager, is_group)
+            self._record_assistant_msg(
+                session, session_manager, chat_id, user_id, response, is_group
+            )
 
     async def _handle_code(
         self,
@@ -2096,7 +2438,7 @@ class TelegramChannel:
         session_manager,
         is_group: bool,
     ) -> None:
-        """CODE mode вЂ” coder tier, fenced code block, model footer."""
+        """CODE mode — coder tier, fenced code block, model footer."""
         metadata = dict(metadata)
         if "tier_override" not in metadata:
             metadata["tier_override"] = "coder_big"
@@ -2128,9 +2470,9 @@ class TelegramChannel:
 
         if self._is_debug_mode(user_id):
             model_name = self._resolve_model_name(metadata)
-            suffix = f"\n\nвњ… Done В· Model: {model_name}" if model_name else "\n\nвњ… Done"
+            suffix = f"\n\n✅ Done · Model: {model_name}" if model_name else "\n\n✅ Done"
         else:
-            suffix = "\n\nвњ… Done"
+            suffix = "\n\n✅ Done"
         final_text = f"{response}{suffix}"
 
         self._record_assistant_msg(session, session_manager, chat_id, user_id, response, is_group)
@@ -2158,12 +2500,12 @@ class TelegramChannel:
         session_manager,
         is_group: bool,
     ) -> None:
-        """ACT mode вЂ” cinematic status pipeline with live tool execution."""
+        """ACT mode — cinematic status pipeline with live tool execution."""
 
         # Send the initial sentinel message
         sentinel = await self.send_message(
             chat_id,
-            "в¬›в¬›в¬›в¬›в¬›в¬›в¬›в¬›в¬›в¬› Initializing...",
+            "⬛⬛⬛⬛⬛⬛⬛⬛⬛⬛ Initializing...",
             parse_mode=None,
         )
         sentinel_id = (sentinel or {}).get("message_id")
@@ -2193,7 +2535,7 @@ class TelegramChannel:
                 "Connecting to target...",
                 detail=f"{len(tools_to_call)} tool(s) queued",
                 progress=1,
-                icon="рџ”—",
+                icon="🔗",
             )
 
             total = len(tools_to_call)
@@ -2226,7 +2568,7 @@ class TelegramChannel:
                 progress_val = 2 + round((idx + 1) / total * 6)
 
                 async def _status(step, detail="", progress=0, _tn=tool_name):
-                    await renderer.update(step, detail=detail, progress=progress, icon="вљ™пёЏ")
+                    await renderer.update(step, detail=detail, progress=progress, icon="🔔")
 
                 result = await registry.run_tool(tool_name, args, on_status=_status)
                 tool_names_run.append(tool_name)
@@ -2237,7 +2579,7 @@ class TelegramChannel:
                         f"{tool_name} complete",
                         detail=self._summarize_tool_result(result),
                         progress=progress_val,
-                        icon="вњ…",
+                        icon="✅",
                     )
                 else:
                     await renderer.warn(tool_name, result.error or "unknown error")
@@ -2248,7 +2590,7 @@ class TelegramChannel:
             await renderer.warn("tool_pipeline", str(tool_exc))
 
         # в”Ђв”Ђ Step 2: call LLM with tool context в”Ђв”Ђ
-        await renderer.update("Analyzing results...", progress=8, icon="рџ§ ")
+        await renderer.update("Analyzing results...", progress=8, icon="🧠")
 
         tool_context = self._build_act_tool_context(tool_results)
 
@@ -2295,7 +2637,7 @@ class TelegramChannel:
             if r.name == "site_check" and isinstance(r.output, dict):
                 out = r.output
                 conclusion["Status"] = (
-                    f"HTTP {out.get('status_code')} В· {'online' if out.get('online') else 'offline'}"
+                    f"HTTP {out.get('status_code')} · {'online' if out.get('online') else 'offline'}"
                 )
                 conclusion["Latency"] = f"{out.get('latency_ms')}ms"
                 if out.get("cert_expiry"):
@@ -2343,7 +2685,7 @@ class TelegramChannel:
     def _summarize_tool_result(self, result) -> str:
         """Compact, tool-specific summary for ACT step progress lines."""
         if not result.success:
-            return f"вљ пёЏ {result.error or 'unknown error'}"
+            return f"⚠️ {result.error or 'unknown error'}"
 
         output = result.output
         if isinstance(output, dict):
@@ -2358,7 +2700,7 @@ class TelegramChannel:
                     f"latency: {latency}ms" if latency is not None else "",
                     f"redirects: {redirects}" if redirects is not None else "",
                 ]
-                return " В· ".join(p for p in parts if p)[:120]
+                return " · ".join(p for p in parts if p)[:120]
 
             if result.name in {"browser_fetch", "web_fetch"}:
                 url = str(output.get("url") or "")
@@ -2371,7 +2713,7 @@ class TelegramChannel:
                     f"status: {status}" if status is not None else "",
                     f"chars: {chars}" if chars is not None else "",
                 ]
-                return " В· ".join(p for p in parts if p)[:120]
+                return " · ".join(p for p in parts if p)[:120]
 
             if result.name == "search":
                 results = output.get("results") if isinstance(output.get("results"), list) else []
@@ -2380,7 +2722,7 @@ class TelegramChannel:
                     top = str(results[0].get("title") or "")
                 summary = f"results: {len(results)}"
                 if top:
-                    summary += f" В· top: {top[:56]}"
+                    summary += f" · top: {top[:56]}"
                 return summary[:120]
 
         return result.summary()[:120]
@@ -2459,7 +2801,7 @@ class TelegramChannel:
         split_at = trimmed.rfind(" ")
         if split_at >= int(max_chars * 0.6):
             trimmed = trimmed[:split_at].rstrip()
-        return f"{trimmed}вЂ¦"
+        return f"{trimmed}…"
 
     @staticmethod
     def _md_to_html(text: str) -> str:
@@ -2507,7 +2849,7 @@ class TelegramChannel:
         # Collapse 3+ blank lines в†’ 2
         result = re.sub(r"\n{3,}", "\n\n", result)
 
-        # Strip only leading/trailing newlines вЂ” preserve sub-bullet indentation
+        # Strip only leading/trailing newlines — preserve sub-bullet indentation
         return result.strip("\n")
 
     # в”Ђв”Ђ Shared helpers в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
@@ -2583,12 +2925,12 @@ class TelegramChannel:
         # Get the largest photo variant
         photos = message.get("photo", [])
         if not photos:
-            await self.send_message(chat_id, "вљ пёЏ Could not read photo.", parse_mode=None)
+            await self.send_message(chat_id, "⚠️ Could not read photo.", parse_mode=None)
             return
         best_photo = max(photos, key=lambda p: p.get("file_size", 0))
         file_id = best_photo.get("file_id")
         if not file_id:
-            await self.send_message(chat_id, "вљ пёЏ Could not read photo.", parse_mode=None)
+            await self.send_message(chat_id, "⚠️ Could not read photo.", parse_mode=None)
             return
 
         # Signal we're processing
@@ -2602,31 +2944,31 @@ class TelegramChannel:
             file_info = await self._api_call("getFile", {"file_id": file_id})
             if not file_info:
                 await self.send_message(
-                    chat_id, "вљ пёЏ Could not retrieve photo from Telegram.", parse_mode=None
+                    chat_id, "⚠️ Could not retrieve photo from Telegram.", parse_mode=None
                 )
                 return
             file_path = file_info.get("file_path", "")
             if not file_path:
                 await self.send_message(
-                    chat_id, "вљ пёЏ Could not retrieve photo from Telegram.", parse_mode=None
+                    chat_id, "⚠️ Could not retrieve photo from Telegram.", parse_mode=None
                 )
                 return
 
             dl_url = f"https://api.telegram.org/file/bot{self.bot_token}/{file_path}"
             if not self._session:
                 await self.send_message(
-                    chat_id, "вљ пёЏ Internal error: no HTTP session.", parse_mode=None
+                    chat_id, "⚠️ Internal error: no HTTP session.", parse_mode=None
                 )
                 return
 
             async with self._session.get(dl_url) as dl_resp:
                 if dl_resp.status != 200:
-                    await self.send_message(chat_id, "вљ пёЏ Failed to download photo.", parse_mode=None)
+                    await self.send_message(chat_id, "⚠️ Failed to download photo.", parse_mode=None)
                     return
                 image_bytes = await dl_resp.read()
         except Exception as exc:
             logger.warning("Photo download failed for chat %s: %s", chat_id, exc)
-            await self.send_message(chat_id, "вљ пёЏ Failed to download photo.", parse_mode=None)
+            await self.send_message(chat_id, "⚠️ Failed to download photo.", parse_mode=None)
             return
 
         ocr_text = self._extract_photo_ocr_text(image_bytes)
@@ -2649,7 +2991,7 @@ class TelegramChannel:
         else:
             await self.send_message(
                 chat_id,
-                "вљ пёЏ Vision analysis failed вЂ” the model could not process this image.",
+                "⚠️ Vision analysis failed — the model could not process this image.",
                 parse_mode=None,
             )
 
@@ -2677,7 +3019,7 @@ class TelegramChannel:
         if ocr_text:
             snippet = ocr_text.strip()
             if len(snippet) > 700:
-                snippet = snippet[:700] + "вЂ¦"
+                snippet = snippet[:700] + "…"
             parts.append(f"\nрџ“ќ <b>OCR</b>\n<code>{html.escape(snippet)}</code>")
 
         if not parts:
@@ -2991,7 +3333,7 @@ class TelegramChannel:
     ) -> tuple[str | None, str]:
         """Download a Telegram voice message, transcribe via STT (Deepgram/Whisper),
         echo the transcript to the chat, and return (transcript, detected_lang).
-        Returns (None, "") on failure вЂ” a friendly error has already been sent.
+        Returns (None, "") on failure — a friendly error has already been sent.
         """
         import os as _os
         import tempfile
@@ -2999,7 +3341,7 @@ class TelegramChannel:
 
         file_id = voice_data.get("file_id") if voice_data else None
         if not file_id:
-            await self.send_message(chat_id, "рџЋ™пёЏ Couldn't read the voice message.", parse_mode=None)
+            await self.send_message(chat_id, "🎙️ Couldn't read the voice message.", parse_mode=None)
             return None, ""
 
         # в”Ђв”Ђ Resolve which STT provider to use based on available keys в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
@@ -3032,7 +3374,7 @@ class TelegramChannel:
             else:
                 fallback_providers.append(_STTProvider.WHISPER_API)
 
-        # Local Whisper вЂ” works offline, no API key required
+        # Local Whisper — works offline, no API key required
         try:
             from navig.voice.stt import whisper_local_available as _wla
 
@@ -3048,11 +3390,11 @@ class TelegramChannel:
         if stt_provider is None:
             await self.send_message(
                 chat_id,
-                "рџЋ™пёЏ <b>Voice transcription not configured.</b>\n\n"
+                "🎙️ <b>Voice transcription not configured.</b>\n\n"
                 "Add any of the following to <code>~/.navig/.env</code> and restart:\n"
-                "вЂў <code>DEEPGRAM_KEY=&lt;key&gt;</code> вЂ” blazing fast, recommended\n"
-                "вЂў <code>OPENAI_API_KEY=&lt;key&gt;</code> вЂ” Whisper API fallback\n"
-                "вЂў <code>pip install openai-whisper</code> вЂ” offline, no key needed",
+                "вЂў <code>DEEPGRAM_KEY=&lt;key&gt;</code> — blazing fast, recommended\n"
+                "вЂў <code>OPENAI_API_KEY=&lt;key&gt;</code> — Whisper API fallback\n"
+                "вЂў <code>pip install openai-whisper</code> — offline, no key needed",
                 parse_mode="HTML",
             )
             return None, ""
@@ -3060,7 +3402,7 @@ class TelegramChannel:
         tmp_path: str | None = None
         _recording_task: asyncio.Task | None = None
         try:
-            # Signal immediately that we're processing audio вЂ” closest Bot API
+            # Signal immediately that we're processing audio — closest Bot API
             # equivalent to a read receipt for voice messages.
             await self._api_call("sendChatAction", {"chat_id": chat_id, "action": "record_voice"})
             _recording_task = asyncio.create_task(self._keep_recording(chat_id))
@@ -3069,13 +3411,13 @@ class TelegramChannel:
             file_info = await self._api_call("getFile", {"file_id": file_id})
             if not file_info:
                 await self.send_message(
-                    chat_id, "рџЋ™пёЏ Couldn't retrieve the voice file.", parse_mode=None
+                    chat_id, "🎙️ Couldn't retrieve the voice file.", parse_mode=None
                 )
                 return None, ""
             file_path = file_info.get("file_path", "")
             if not file_path:
                 await self.send_message(
-                    chat_id, "рџЋ™пёЏ Couldn't retrieve the voice file.", parse_mode=None
+                    chat_id, "🎙️ Couldn't retrieve the voice file.", parse_mode=None
                 )
                 return None, ""
 
@@ -3083,14 +3425,14 @@ class TelegramChannel:
             dl_url = f"https://api.telegram.org/file/bot{self.bot_token}/{file_path}"
             if not self._session:
                 await self.send_message(
-                    chat_id, "рџЋ™пёЏ Internal error: no HTTP session.", parse_mode=None
+                    chat_id, "🎙️ Internal error: no HTTP session.", parse_mode=None
                 )
                 return None, ""
 
             async with self._session.get(dl_url) as dl_resp:
                 if dl_resp.status != 200:
                     await self.send_message(
-                        chat_id, "рџЋ™пёЏ Failed to download voice message.", parse_mode=None
+                        chat_id, "🎙️ Failed to download voice message.", parse_mode=None
                     )
                     return None, ""
                 audio_bytes = await dl_resp.read()
@@ -3115,28 +3457,28 @@ class TelegramChannel:
                 raw_err = result.error or ""
                 if "whisper not installed" in raw_err or "No module named 'whisper'" in raw_err:
                     user_msg = (
-                        "рџЋ™пёЏ Transcription failed: local Whisper is not installed.\n"
+                        "🎙️ Transcription failed: local Whisper is not installed.\n"
                         "Run `pip install openai-whisper` on the server, or add a "
                         "`DEEPGRAM_KEY` / `OPENAI_API_KEY` to `~/.navig/.env`."
                     )
                 elif "API key" in raw_err or "not set" in raw_err or "not configured" in raw_err:
-                    user_msg = "рџЋ™пёЏ Transcription failed: no STT API key configured вЂ” type your message instead."
+                    user_msg = "🎙️ Transcription failed: no STT API key configured — type your message instead."
                 elif "timeout" in raw_err.lower():
-                    user_msg = "рџЋ™пёЏ Transcription timed out вЂ” try a shorter clip or type it out."
+                    user_msg = "🎙️ Transcription timed out — try a shorter clip or type it out."
                 elif "too large" in raw_err:
-                    user_msg = f"рџЋ™пёЏ Audio file too large вЂ” {raw_err.split(':', 1)[-1].strip()}"
+                    user_msg = f"🎙️ Audio file too large — {raw_err.split(':', 1)[-1].strip()}"
                 else:
-                    user_msg = "рџЋ™пёЏ Couldn't transcribe audio вЂ” try again or type it out."
+                    user_msg = "🎙️ Couldn't transcribe audio — try again or type it out."
                 await self.send_message(chat_id, user_msg, parse_mode=None)
                 return None, ""
 
             transcript = result.text.strip()
 
-            # Echo transcription вЂ” add action cards when debug trace is on
+            # Echo transcription — add action cards when debug trace is on
             # This also doubles as a read-receipt so the voice dot clears visually
             heard_kb = None
             _user_from_voice = getattr(voice_data, "from_user_id", None)
-            # We don't have user_id here directly вЂ” determine from chat_id
+            # We don't have user_id here directly — determine from chat_id
             _debug_active = any(
                 uid in getattr(self, "_debug_users", set()) for uid in self.allowed_users
             )
@@ -3150,7 +3492,7 @@ class TelegramChannel:
                 ]
             await self.send_message(
                 chat_id,
-                f"рџЋ™пёЏ <b>Heard:</b> <i>{html.escape(transcript)}</i>",
+                f"🎙️ <b>Heard:</b> <i>{html.escape(transcript)}</i>",
                 parse_mode="HTML",
                 keyboard=heard_kb,
             )
@@ -3161,7 +3503,7 @@ class TelegramChannel:
             logger.error("Voice transcription error: %s", e)
             await self.send_message(
                 chat_id,
-                "рџЋ™пёЏ Something went wrong processing your voice message вЂ” please try again.",
+                "🎙️ Something went wrong processing your voice message — please try again.",
                 parse_mode=None,
             )
             return None, ""
@@ -3236,7 +3578,14 @@ class TelegramChannel:
             tts = _TTS(_TTSConfig(provider=_TTSProvider.GOOGLE_CLOUD))
             tts_result = await tts.synthesize(tts_text)
             if not tts_result.success:
-                logger.warning("TTS synthesis failed (non-fatal): %s", tts_result.error)
+                # "not installed" / "no credentials" are configuration
+                # states, not bugs. Demote to debug so a user who hasn't
+                # set up TTS doesn't get a warn per voice reply.
+                err = str(tts_result.error or "")
+                if "not installed" in err or "no credentials" in err.lower() or "no api key" in err.lower():
+                    logger.debug("TTS synthesis skipped (no provider configured): %s", err)
+                else:
+                    logger.warning("TTS synthesis failed (non-fatal): %s", err)
                 return
 
             audio_data: bytes | None = tts_result.audio_data
@@ -3276,7 +3625,7 @@ class TelegramChannel:
         text = re.sub(r"\s+", " ", text).strip()
         # Truncate at word boundary
         if len(text) > max_chars:
-            text = text[:max_chars].rsplit(" ", 1)[0] + "вЂ¦"
+            text = text[:max_chars].rsplit(" ", 1)[0] + "…"
         return text
 
     async def _send_response(
@@ -3292,6 +3641,16 @@ class TelegramChannel:
         """Send a response with template limits, optional keyboard, and voice reply."""
         # Strip internal LLM reasoning tags before any further processing
         response = self._strip_internal_tags(response)
+        # Strip EXPLORE_Q: marker from ALL paths and capture questions for buttons.
+        # _handle_reason extracts them before calling us (explore_questions kwarg on build()).
+        # Every other path (TALK, ACT, …) lands here — extract once, reuse below.
+        _explore_qs: list[str] = []
+        if HAS_KEYBOARDS and "EXPLORE_Q:" in response:
+            try:
+                from navig.gateway.channels.telegram_keyboards import extract_explore_questions
+                response, _explore_qs = extract_explore_questions(response)
+            except Exception:  # noqa: BLE001
+                pass  # best-effort; never block the reply
         # Convert standard Markdown (**bold**, ## heading) to Telegram HTML
         response = TelegramChannel._md_to_html(response)
         parts = None
@@ -3313,6 +3672,7 @@ class TelegramChannel:
                     ai_response=response,
                     user_message=original_text,
                     message_id=0,
+                    explore_questions=_explore_qs,
                 )
             except Exception as kb_err:
                 logger.debug("Keyboard build failed: %s", kb_err)
@@ -3359,7 +3719,7 @@ class TelegramChannel:
                 except Exception:  # noqa: BLE001
                     pass  # best-effort; failure is non-critical
 
-        # Voice reply вЂ” non-fatal; user already has the text
+        # Voice reply — non-fatal; user already has the text
         await self._maybe_send_voice(chat_id, user_id, is_group, response)
 
     def _is_debug_mode(self, user_id: int) -> bool:
@@ -3397,30 +3757,12 @@ class TelegramChannel:
 
     @staticmethod
     def _fmt_provider(name: str) -> str:
-        """Normalise provider name for display вЂ” renames legacy aliases to canonical."""
+        """Normalise provider name for display — renames legacy aliases to canonical."""
         return {
             "forge_copilot": "bridge",
             "bridge_copilot": "bridge",
             "mcp_bridge": "bridge",
         }.get(name, name)
-
-    async def _handle_models_command(
-        self,
-        chat_id: int,
-        user_id: int = 0,
-        message_id: int | None = None,
-        text: str = "",
-    ):
-        """Delegate to the canonical model routing screen implementation."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        await TelegramCommandsMixin._handle_models_command(
-            self,
-            chat_id,
-            user_id=user_id,
-            message_id=message_id,
-            text=text,
-        )
 
     async def _handle_status(
         self,
@@ -3447,24 +3789,6 @@ class TelegramChannel:
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
         await TelegramCommandsMixin._handle_ping(self, chat_id, user_id=user_id)
-
-    async def _handle_ai_command(
-        self,
-        chat_id: int,
-        user_id: int = 0,
-        text: str = "",
-        message_id: int | None = None,
-    ) -> None:
-        """Delegate to canonical AI tier-picker handler (/ai)."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        await TelegramCommandsMixin._handle_ai_command(
-            self,
-            chat_id,
-            user_id=user_id,
-            text=text,
-            message_id=message_id,
-        )
 
     async def _handle_spaces(
         self,
@@ -3499,24 +3823,6 @@ class TelegramChannel:
             chat_id,
             user_id,
             text=text,
-            message_id=message_id,
-        )
-
-    async def _handle_settings_hub(
-        self,
-        chat_id: int,
-        user_id: int,
-        is_group: bool = False,
-        message_id: int | None = None,
-    ) -> None:
-        """Delegate to canonical settings hub handler used by menu navigation."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        await TelegramCommandsMixin._handle_settings_hub(
-            self,
-            chat_id,
-            user_id,
-            is_group=is_group,
             message_id=message_id,
         )
 
@@ -3580,24 +3886,6 @@ class TelegramChannel:
             self,
             chat_id,
             message_id=message_id,
-        )
-
-    async def _handle_providers(
-        self,
-        chat_id: int,
-        user_id: int = 0,
-        message_id: int | None = None,
-        text: str = "",
-    ) -> None:
-        """Delegate to the canonical provider hub implementation in TelegramCommandsMixin."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        await TelegramCommandsMixin._handle_providers(
-            self,
-            chat_id=chat_id,
-            user_id=user_id,
-            message_id=message_id,
-            text=text,
         )
 
     async def _show_provider_model_picker(
@@ -3717,116 +4005,6 @@ class TelegramChannel:
             tier_code,
             page=page,
             message_id=message_id,
-        )
-
-    async def _handle_audio_menu(
-        self,
-        chat_id: int,
-        user_id: int = 0,
-        is_group: bool = False,
-        message_id: int | None = None,
-    ) -> None:
-        """Delegate to audio/voice settings screen (Voice settings button)."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        await TelegramCommandsMixin._handle_audio_menu(
-            self,
-            chat_id,
-            user_id,
-            is_group=is_group,
-            message_id=message_id,
-        )
-
-    async def _handle_voice_menu(
-        self,
-        chat_id: int,
-        user_id: int = 0,
-        is_group: bool = False,
-        message_id: int | None = None,
-    ) -> None:
-        """Delegate to voice/TTS provider picker screen."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        await TelegramCommandsMixin._handle_voice_menu(
-            self,
-            chat_id,
-            user_id,
-            is_group=is_group,
-            message_id=message_id,
-        )
-
-    async def _handle_providers_and_models(
-        self,
-        chat_id: int,
-        user_id: int = 0,
-        is_group: bool = False,
-    ) -> None:
-        """Delegate to combined providers+models view (Providers & Models button)."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        await TelegramCommandsMixin._handle_providers_and_models(
-            self,
-            chat_id,
-            user_id=user_id,
-            is_group=is_group,
-        )
-
-    # в”Ђв”Ђ Provider control surface handlers (pu_* callbacks) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
-
-    async def _handle_provider_hybrid(
-        self,
-        chat_id: int,
-        user_id: int = 0,
-        message_id: int | None = None,
-        text: str = "",
-    ) -> None:
-        """Delegate hybrid routing screen (pu_hybrid callback)."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        await TelegramCommandsMixin._handle_provider_hybrid(
-            self, chat_id, user_id, message_id=message_id, text=text
-        )
-
-    async def _handle_provider_vision(
-        self,
-        chat_id: int,
-        user_id: int = 0,
-        message_id: int | None = None,
-        text: str = "",
-    ) -> None:
-        """Delegate vision provider picker (pu_vision / vis_* callbacks)."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        await TelegramCommandsMixin._handle_provider_vision(
-            self, chat_id, user_id, message_id=message_id, text=text
-        )
-
-    async def _handle_provider_show(
-        self,
-        chat_id: int,
-        user_id: int = 0,
-        message_id: int | None = None,
-        text: str = "",
-    ) -> None:
-        """Delegate routing state view (pu_show callback)."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        await TelegramCommandsMixin._handle_provider_show(
-            self, chat_id, user_id, message_id=message_id, text=text
-        )
-
-    async def _handle_provider_reset(
-        self,
-        chat_id: int,
-        user_id: int = 0,
-        message_id: int | None = None,
-        text: str = "",
-    ) -> None:
-        """Delegate session override reset (pu_reset_session callback)."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        await TelegramCommandsMixin._handle_provider_reset(
-            self, chat_id, user_id, message_id=message_id, text=text
         )
 
     # в”Ђв”Ђ Slash command handlers missing from initial delegation pass в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
@@ -4011,6 +4189,19 @@ class TelegramChannel:
             self, chat_id, user_id, text
         )
 
+    async def _handle_eve_pending_reply(
+        self,
+        chat_id: int,
+        user_id: int,
+        text: str,
+    ) -> bool:
+        """Delegate evening-briefing captured reply (shipped / priority)."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        return await TelegramCommandsMixin._handle_eve_pending_reply(
+            self, chat_id, user_id, text
+        )
+
     async def _handle_nl_pending_reply(
         self,
         chat_id: int,
@@ -4047,6 +4238,14 @@ class TelegramChannel:
         metadata: dict | None = None,
     ) -> bool:
         """Delegate natural-language в†’ command intent resolver."""
+        # Messaging intent first: "send sms/message to <contact> [in <lang>] …"
+        # (incl. voice). Handles translate + dispatch; short-circuits on success.
+        try:
+            if await self._try_nl_messaging_intent(chat_id, text, metadata):
+                return True
+        except Exception:
+            logger.debug("nl messaging intent failed", exc_info=True)
+
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
         return await TelegramCommandsMixin._handle_natural_language_request(
@@ -4185,48 +4384,6 @@ class TelegramChannel:
 
     # в”Ђв”Ђ Voice toggle handlers (BUGs 16-17: hardcoded slash route, no guard) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
-    async def _handle_voiceon_cmd(
-        self,
-        chat_id: int,
-        user_id: int = 0,
-        is_group: bool = False,
-    ) -> None:
-        """Delegate /voiceon вЂ” enable voice replies."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        await TelegramCommandsMixin._handle_voiceon_cmd(
-            self, chat_id, user_id, is_group
-        )
-
-    async def _handle_voiceoff_cmd(
-        self,
-        chat_id: int,
-        user_id: int = 0,
-        is_group: bool = False,
-    ) -> None:
-        """Delegate /voiceoff вЂ” disable voice replies."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        await TelegramCommandsMixin._handle_voiceoff_cmd(
-            self, chat_id, user_id, is_group
-        )
-
-    # в”Ђв”Ђ Voice provider panel (BUG-21: st_goto_voice_provider keyboard button) в”Ђв”Ђв”Ђ
-
-    async def _handle_provider_voice(
-        self,
-        chat_id: int,
-        user_id: int = 0,
-        is_group: bool = False,
-        message_id: int | None = None,
-    ) -> None:
-        """Delegate voice provider key-status panel (Deepgram / ElevenLabs)."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        await TelegramCommandsMixin._handle_provider_voice(
-            self, chat_id, user_id, is_group, message_id
-        )
-
     async def _handle_debug(self, chat_id: int) -> None:
         """Delegate /debug handler to canonical TelegramCommandsMixin."""
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
@@ -4241,17 +4398,6 @@ class TelegramChannel:
             self,
             chat_id=chat_id,
             user_id=user_id,
-        )
-
-    async def _handle_tier_command(self, chat_id: int, user_id: int, cmd: str) -> None:
-        """Delegate tier command handling to canonical TelegramCommandsMixin."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        await TelegramCommandsMixin._handle_tier_command(
-            self,
-            chat_id=chat_id,
-            user_id=user_id,
-            cmd=cmd,
         )
 
     async def _handle_restart(
@@ -4279,7 +4425,7 @@ class TelegramChannel:
         if not HAS_KEYBOARDS or not HAS_SESSIONS:
             await self.send_message(
                 chat_id,
-                "вљ™пёЏ Settings UI requires the keyboard + session modules.",
+                "🔔 Settings UI requires the keyboard + session modules.",
                 parse_mode=None,
             )
             return
@@ -4408,17 +4554,6 @@ class TelegramChannel:
             message_id=message_id,
         )
 
-    async def _handle_mode(self, chat_id: int, text: str = "", user_id: int = 0) -> None:
-        """Delegate /mode handling to canonical TelegramCommandsMixin implementation."""
-        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
-
-        await TelegramCommandsMixin._handle_mode(
-            self,
-            chat_id=chat_id,
-            text=text,
-            user_id=user_id,
-        )
-
     def _match_cli_command(self, text: str) -> str | None:
         """Match slash command to a navig CLI string via the registry."""
         from .telegram_commands import TelegramCommandsMixin
@@ -4503,6 +4638,91 @@ class TelegramChannel:
 
         return TelegramCommandsMixin._get_deck_url(self)
 
+    async def send_command_output(
+        self,
+        chat_id: int,
+        plain_text: str,
+        *,
+        command: str,
+        ai_hint: str | None = None,
+        parse_mode: str | None = "HTML",
+        keyboard: list[list[dict]] | None = None,
+        ai_default: str = "plain",
+        reply_to_message_id: int | None = None,
+    ) -> dict | None:
+        """Send command output honoring the per-command AI/Plain style setting.
+
+        - style="plain" → send `plain_text` as-is.
+        - style="ai" → strip HTML, ask the LLM to rewrite naturally while preserving
+          every fact, send the result with parse_mode=None. Keyboard is preserved.
+        - On any LLM failure (no key, timeout, empty response) → fall back to plain.
+          Never raises.
+        """
+        from navig.gateway.channels.telegram_commands import get_command_style
+
+        style = get_command_style(command, default=ai_default)
+
+        if style != "ai":
+            return await self.send_message(
+                chat_id, plain_text,
+                parse_mode=parse_mode,
+                reply_to_message_id=reply_to_message_id,
+                keyboard=keyboard,
+            )
+
+        import html as _html
+        import re as _re
+
+        clean = _re.sub(r"<[^>]+>", "", plain_text)
+        clean = _html.unescape(clean).strip()
+        if not clean:
+            return await self.send_message(
+                chat_id, plain_text,
+                parse_mode=parse_mode,
+                reply_to_message_id=reply_to_message_id,
+                keyboard=keyboard,
+            )
+
+        system_prompt = (
+            "You are NAVIG, speaking to the user in chat. Below is the raw output of "
+            "a command. Rewrite it as a natural, conversational reply — concise, "
+            "friendly, no bullet bloat. Preserve every fact (numbers, IDs, file paths, "
+            "names, timestamps) EXACTLY. Use at most one emoji. Do NOT add fabricated "
+            "detail. If the input is already a single short sentence, you may return "
+            "it unchanged."
+        )
+        if ai_hint:
+            system_prompt += f" Hint: {ai_hint}"
+
+        try:
+            from navig.llm_generate import run_llm
+
+            result = run_llm(
+                [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": clean},
+                ],
+                mode="summary",
+                effort="low",
+            )
+            rewritten = (getattr(result, "content", "") or "").strip()
+            if rewritten:
+                return await self.send_message(
+                    chat_id, rewritten,
+                    parse_mode=None,
+                    reply_to_message_id=reply_to_message_id,
+                    keyboard=keyboard,
+                )
+        except Exception as exc:
+            logger.debug("AI rewrite failed for /%s (non-fatal): %s", command, exc)
+
+        return await self.send_message(
+            chat_id, plain_text,
+            parse_mode=parse_mode,
+            reply_to_message_id=reply_to_message_id,
+            keyboard=keyboard,
+        )
+
     async def send_message(
         self,
         chat_id: int,
@@ -4577,7 +4797,12 @@ class TelegramChannel:
         parse_mode: str = "HTML",
         keyboard: list | None = None,
     ) -> dict | None:
-        """Edit an existing message."""
+        """Edit an existing message.
+
+        Returns the edited message dict on success, or None on failure
+        (including when Telegram rejects with "message is not modified").
+        Routes through ``_api_call`` so rate-limit handling applies.
+        """
         payload: dict = {
             "chat_id": chat_id,
             "message_id": message_id,
@@ -4587,7 +4812,15 @@ class TelegramChannel:
             payload["parse_mode"] = parse_mode
         if keyboard is not None:
             payload["reply_markup"] = {"inline_keyboard": keyboard}
-        return await self._api_call("editMessageText", payload)
+
+        result = await self._api_call("editMessageText", payload)
+        if result is not None:
+            return result
+        if parse_mode:
+            # Retry without parse_mode for HTML parse errors
+            retry_payload = {k: v for k, v in payload.items() if k != "parse_mode"}
+            return await self._api_call("editMessageText", retry_payload)
+        return None
 
     async def edit_message_reply_markup(
         self,
@@ -4635,6 +4868,20 @@ class TelegramChannel:
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
         return TelegramCommandsMixin._mon_host_ctx()
+
+    async def _send_monitor_card(
+        self,
+        chat_id: int,
+        text_payload: str,
+        keyboard: list[list[dict]],
+        message_id: int | None = None,
+    ) -> None:
+        """Forwarding wrapper — delegate to TelegramCommandsMixin._send_monitor_card."""
+        from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
+
+        await TelegramCommandsMixin._send_monitor_card(
+            self, chat_id, text_payload, keyboard, message_id=message_id
+        )
 
     @staticmethod
     def _strip_internal_tags(text: str) -> str:
@@ -4871,6 +5118,131 @@ class TelegramChannel:
             logger.warning("send_video failed: %s", e)
             return None
 
+    # ── Rich messages (sendRichMessage / sendRichMessageDraft) ───────────────
+    # Telegram's rich-message API renders full markdown/HTML: headings, tables,
+    # block quotes, collapsible <details>, footnotes, formulas, media collages.
+    # It is brand-new and may not be enabled on every Bot API server/account yet,
+    # so these methods degrade gracefully — the first "method not found"-style
+    # failure flips _rich_supported = False and every call routes through the
+    # normal HTML send_message thereafter (no per-message latency hit).
+
+    def _rich_messages_enabled(self) -> bool:
+        try:
+            from navig.core import Config
+
+            return bool(Config().get("telegram.rich_messages", True))
+        except Exception:  # noqa: BLE001
+            return True
+
+    async def send_rich_message(
+        self,
+        chat_id: int,
+        *,
+        markdown: str | None = None,
+        html: str | None = None,
+        business_connection_id: str | None = None,
+        reply_to_message_id: int | None = None,
+        keyboard: list[list[dict]] | None = None,
+        is_rtl: bool = False,
+        skip_entity_detection: bool = False,
+    ) -> dict | None:
+        """Send a rich formatted message (``sendRichMessage``). Pass EITHER
+        ``markdown`` (preferred — our AI outputs are already markdown) or ``html``.
+        Falls back to a basic-HTML ``send_message`` when rich messages aren't
+        available (learned + cached on this channel instance)."""
+        if not self._session or (not markdown and not html):
+            return None
+        if not self._rich_messages_enabled() or getattr(self, "_rich_supported", None) is False:
+            return await self._rich_fallback(
+                chat_id, markdown, html,
+                business_connection_id=business_connection_id,
+                reply_to_message_id=reply_to_message_id, keyboard=keyboard,
+            )
+        rich: dict = {"html": html} if html is not None else {"markdown": markdown}
+        if is_rtl:
+            rich["is_rtl"] = True
+        if skip_entity_detection:
+            rich["skip_entity_detection"] = True
+        data: dict = {"chat_id": chat_id, "rich_message": rich}
+        if business_connection_id:
+            data["business_connection_id"] = business_connection_id
+        if reply_to_message_id:
+            data["reply_parameters"] = {"message_id": reply_to_message_id}
+        if keyboard:
+            data["reply_markup"] = {"inline_keyboard": keyboard}
+        try:
+            async with self._session.post(f"{self.base_url}/sendRichMessage", json=data) as resp:
+                result = await resp.json()
+            if result.get("ok"):
+                self._rich_supported = True
+                return result.get("result")
+            desc = (result.get("description") or "").lower()
+            if (resp.status == 404 or "not found" in desc or "unknown method" in desc
+                    or "not supported" in desc or "rich message" in desc
+                    or "can't send rich" in desc):
+                self._rich_supported = False
+                logger.info("sendRichMessage unsupported here — using HTML messages (%s).", desc[:80])
+            else:
+                logger.debug("sendRichMessage error, falling back: %s", desc[:120])
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("sendRichMessage failed, falling back: %s", exc)
+        return await self._rich_fallback(
+            chat_id, markdown, html,
+            business_connection_id=business_connection_id,
+            reply_to_message_id=reply_to_message_id, keyboard=keyboard,
+        )
+
+    async def _rich_fallback(
+        self, chat_id, markdown, html, *, business_connection_id,
+        reply_to_message_id, keyboard,
+    ) -> dict | None:
+        """Render a rich message down to a basic-HTML send (or a business send)."""
+        if html is not None:
+            text, parse = html, "HTML"
+        else:
+            try:
+                text = self._md_to_html(markdown or "")
+            except Exception:  # noqa: BLE001
+                text = markdown or ""
+            parse = "HTML"
+        if business_connection_id:
+            data: dict = {
+                "chat_id": chat_id, "text": text, "parse_mode": parse,
+                "business_connection_id": business_connection_id,
+            }
+            if reply_to_message_id:
+                data["reply_to_message_id"] = reply_to_message_id
+            if keyboard:
+                data["reply_markup"] = {"inline_keyboard": keyboard}
+            return await self._api_call("sendMessage", data)
+        return await self.send_message(
+            chat_id, text, parse_mode=parse,
+            reply_to_message_id=reply_to_message_id, keyboard=keyboard,
+        )
+
+    async def send_rich_message_draft(
+        self, chat_id: int, draft_id: int, *, markdown: str | None = None,
+        html: str | None = None, is_rtl: bool = False,
+    ) -> bool:
+        """Stream a partial rich message (ephemeral ~30s preview) via
+        ``sendRichMessageDraft`` — use a ``<tg-thinking>`` block while generating,
+        then call ``send_rich_message`` to persist the final. No-op where rich
+        messages aren't supported."""
+        if not self._session or (not markdown and not html):
+            return False
+        if not self._rich_messages_enabled() or getattr(self, "_rich_supported", None) is False:
+            return False
+        rich: dict = {"html": html} if html is not None else {"markdown": markdown}
+        if is_rtl:
+            rich["is_rtl"] = True
+        data = {"chat_id": chat_id, "draft_id": int(draft_id), "rich_message": rich}
+        try:
+            async with self._session.post(f"{self.base_url}/sendRichMessageDraft", json=data) as resp:
+                result = await resp.json()
+            return bool(result.get("ok"))
+        except Exception:  # noqa: BLE001
+            return False
+
     async def send_animation(
         self,
         chat_id: int,
@@ -5027,7 +5399,7 @@ def create_telegram_channel(gateway, config: dict[str, Any]) -> TelegramChannel 
     ) -> tuple[bool, str]:
         manager = getattr(gateway, "approval_manager", None)
         if not manager:
-            return False, "вљ пёЏ Approval system unavailable"
+            return False, "⚠️ Approval system unavailable"
 
         resolved_id = (request_id or "").strip()
         if not resolved_id:
@@ -5054,14 +5426,14 @@ def create_telegram_channel(gateway, config: dict[str, Any]) -> TelegramChannel 
             if len(pending) == 1:
                 resolved_id = str(pending[0].get("id", "")).strip()
             elif len(pending) > 1:
-                return False, "вљ пёЏ Multiple pending approvals; specify a request ID."
+                return False, "⚠️ Multiple pending approvals; specify a request ID."
             else:
-                return False, "вљ пёЏ No pending approval found."
+                return False, "⚠️ No pending approval found."
 
         # AUDIT DECISION:
-        # Is this the correct implementation? Yes вЂ” request ownership and channel are
+        # Is this the correct implementation? Yes — request ownership and channel are
         # checked before responding to the approval manager.
-        # Does it break any existing callers? No вЂ” callback behavior is additive and
+        # Does it break any existing callers? No — callback behavior is additive and
         # falls back gracefully when approval manager is unavailable.
         # Is there a simpler alternative? Yes, but skipping ownership checks weakens security.
         if hasattr(manager, "get_request"):
@@ -5070,9 +5442,9 @@ def create_telegram_channel(gateway, config: dict[str, Any]) -> TelegramChannel 
                 request_user = str(request.get("user_id", ""))
                 request_channel = str(request.get("channel", ""))
                 if request_user and request_user != str(user_id):
-                    return False, "вљ пёЏ That approval request belongs to a different user."
+                    return False, "⚠️ That approval request belongs to a different user."
                 if request_channel and request_channel != "telegram":
-                    return False, "вљ пёЏ Approval request channel mismatch."
+                    return False, "⚠️ Approval request channel mismatch."
 
         try:
             success = await manager.respond(request_id=resolved_id, approved=approved)
@@ -5081,9 +5453,9 @@ def create_telegram_channel(gateway, config: dict[str, Any]) -> TelegramChannel 
             success = await manager.respond(resolved_id, approved)
 
         if not success:
-            return False, "вљ пёЏ Approval request expired or not found."
+            return False, "⚠️ Approval request expired or not found."
 
-        verdict = "вњ… Approved" if approved else "вќЊ Denied"
+        verdict = "✅ Approved" if approved else "❌ Denied"
         return True, f"{verdict} ({resolved_id})"
 
     return TelegramChannel(

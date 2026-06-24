@@ -827,6 +827,7 @@ class ConversationalAgent:
             from navig.token_budget import (
                 update_tracker as _upd_tok,
             )
+
             _tok_budget = _mk_tok()
             _tok_total_tokens = 0
             _tok_budget_active = True
@@ -1061,8 +1062,8 @@ class ConversationalAgent:
             # Check diminishing-returns token budget (stops early if output is plateauing)
             if _tok_budget_active and _tok_budget is not None:
                 try:
-                    _tok_total_tokens += (
-                        usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+                    _tok_total_tokens += usage.get("prompt_tokens", 0) + usage.get(
+                        "completion_tokens", 0
                     )
                     _tok_budget = _upd_tok(_tok_budget, _tok_total_tokens)
                     _tok_decision = _chk_tok(_tok_budget)
@@ -1123,6 +1124,7 @@ class ConversationalAgent:
             def _vault_injector(keys: list[str]) -> dict[str, str]:
                 try:
                     from navig.vault import get_vault
+
                     v = get_vault()
                     if v is not None:
                         return v.batch_get(keys)
@@ -1359,6 +1361,12 @@ class ConversationalAgent:
                 messages[0]["content"] += context_str
 
             tier_override = getattr(self, "_tier_override", "")
+
+            # NOTE: is_available() is intentionally NOT checked here as a gate.
+            # The unified router and _try_llm_mode_routing can reach providers
+            # (xai, anthropic, groq, etc.) that the legacy ai_client doesn't
+            # know about.  is_available() only guards the legacy chat_routed()
+            # call further below.
 
             # ── Unified Router (primary — provider-independent, always tried first) ──
             try:

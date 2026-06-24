@@ -259,10 +259,7 @@ def _parse_ip(addr: str) -> Union[IPv4Address, IPv6Address, None]:
 def _is_blocked(ip: Union[IPv4Address, IPv6Address]) -> bool:
     """Return ``True`` if *ip* falls within any of the blocked networks."""
     for net in _BLOCKED_NETS:
-        if isinstance(net, IPv4Network) and isinstance(ip, IPv4Address):
-            if ip in net:
-                return True
-        elif isinstance(net, IPv6Network) and isinstance(ip, IPv6Address):
+        if isinstance(net, IPv4Network) and isinstance(ip, IPv4Address) or isinstance(net, IPv6Network) and isinstance(ip, IPv6Address):
             if ip in net:
                 return True
     return False

@@ -17,13 +17,20 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+try:
+    from telegram import Update  # noqa: F401
+except ImportError:
+    pytest.skip("python-telegram-bot not installed", allow_module_level=True)
+
 # ---------------------------------------------------------------------------
 # Make imports work from tests/ subdirectory
 # ---------------------------------------------------------------------------
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-from plugins.nlp_aliases import NLPAliasPlugin, _call_llm, _detect  # noqa: E402
+from plugins.nlp_aliases import NLPAliasPlugin, _detect  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -185,8 +192,6 @@ def test_handle_message_no_body_prompts_user():
     plugin = NLPAliasPlugin()
     update = _make_update("explain,")
     update.message.reply_to_message = None
-
-    import plugins.nlp_aliases as mod
 
     asyncio.run(
         plugin.handle_message(update, _make_context())

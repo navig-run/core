@@ -32,6 +32,7 @@ from navig.core.file_permissions import set_owner_only_file_permissions
 from navig.core.yaml_io import atomic_write_text
 
 from .crypto import CryptoEngine, CryptoError
+from .secret_str import SecretStr
 from .session import SessionStore, VaultSession
 from .store import VaultStore
 from .types import (
@@ -271,8 +272,6 @@ class Vault:
         ------
         KeyError : Item not found.
         """
-        from navig.vault.secret_str import SecretStr  # noqa: PLC0415
-
         item = self._store.get(label)
         if item is None:
             raise KeyError(f"Vault item not found: {label!r}")
@@ -515,7 +514,15 @@ class Vault:
         """
         items = self._store.list(kind=kind, provider=provider)
         if profile_id is not None:
-            items = [i for i in items if i.metadata.get("profile_id", "default") == profile_id]
+            # Check the direct attribute first (set when CredentialInfo is constructed
+            # from stored metadata), then fall back to the metadata dict for items
+            # that stored profile_id only there.
+            items = [
+                i
+                for i in items
+                if getattr(i, "profile_id", None) == profile_id
+                or i.metadata.get("profile_id", "default") == profile_id
+            ]
         return items
 
     def search(self, query: str) -> list[VaultItem]:
@@ -583,16 +590,34 @@ class Vault:
             # Fallback: search by provider tag (picks first match)
             matches = self._store.list(provider=provider)
             prof = profile_id or "default"
-            matches = [m for m in matches if m.metadata.get("profile_id", "default") == prof]
-            if not matches:
+            # Check direct attribute first, then metadata dict (credentials added
+            # via the Telegram /provider wizard may not store profile_id in metadata)
+            profile_matches = [
+                m
+                for m in matches
+                if getattr(m, "profile_id", None) == prof
+                or m.metadata.get("profile_id", "default") == prof
+            ]
+            if not profile_matches and prof != "default" and matches:
+                # Cross-profile fallback: if the requested profile has nothing,
+                # accept credentials from the default profile.  This handles the
+                # common case where keys were stored before the active profile was
+                # switched (e.g. stored in 'default', active profile is 'work').
+                profile_matches = [
+                    m
+                    for m in matches
+                    if getattr(m, "profile_id", None) == "default"
+                    or m.metadata.get("profile_id", "default") == "default"
+                ]
+            if not profile_matches:
                 return None
             # Priority: active=True → most-recently-used → created_at desc
-            active_m = [m for m in matches if m.metadata.get("active", False)]
+            active_m = [m for m in profile_matches if m.metadata.get("active", False)]
             item = (
                 active_m[0]
                 if active_m
                 else sorted(
-                    matches,
+                    profile_matches,
                     key=lambda m: m.last_used_at or m.created_at,
                     reverse=True,
                 )[0]

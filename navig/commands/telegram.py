@@ -22,6 +22,12 @@ telegram_app = typer.Typer(help="Telegram bot management")
 sessions_app = typer.Typer(help="Session management")
 telegram_app.add_typer(sessions_app, name="sessions")
 
+# Attach the MTProto user-account "Telegram Manager" commands (login/dialogs/history/
+# search/move/forward/dedupe/rename/links) onto the same `telegram` command group.
+from navig.commands._telegram_mtproto import register as _register_mtproto  # noqa: E402
+
+_register_mtproto(telegram_app)
+
 
 def _load_telegram_token() -> str:
     from navig.messaging.secrets import resolve_telegram_bot_token

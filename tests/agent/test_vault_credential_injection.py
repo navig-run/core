@@ -14,11 +14,8 @@ Verifies that:
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # 1. vault.batch_get
@@ -258,8 +255,6 @@ class TestNavigDbQueryVaultIntegration:
             register_devops_tools()
 
         injected_args: list[dict] = []
-
-        original_run = None
 
         async def _mock_run(self, args, on_status=None):
             injected_args.append(dict(args))

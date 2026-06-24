@@ -603,6 +603,7 @@ async def test_task_callback_expired_card_shows_expired_toast():
 
 async def test_provider_vision_callback_data_respects_64_byte_limit(monkeypatch):
     from types import SimpleNamespace
+
     from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
     class _VisionChannel(_FakeChannel):

@@ -174,7 +174,7 @@ def main():
     hdr = f"  {'Function + text':46s} {'py (µs)':>8s}  {'nat (µs)':>8s}  speedup"
 
     # ── 1. Short texts (2–100 chars) ──────────────────────────────────────
-    print(f"\n  [1] tokenize_and_score — short texts (dominant: PyO3 call overhead)")
+    print("\n  [1] tokenize_and_score — short texts (dominant: PyO3 call overhead)")
     hr()
     print(hdr)
     hr()
@@ -192,7 +192,7 @@ def main():
             print(f"  tok_score text[{i:2d}] ({len(t):3d} ch)           {py_m:>8.1f}")
 
     # ── 2. Medium texts (300–600 chars) ───────────────────────────────────
-    print(f"\n  [2] tokenize_and_score — medium texts (300–600 chars)")
+    print("\n  [2] tokenize_and_score — medium texts (300–600 chars)")
     hr()
     print(hdr)
     hr()
@@ -245,7 +245,7 @@ def main():
         print(f"  per-text amortised             {py_batch_m / len(BATCH_50):>8.1f}")
 
     # ── 5. is_low_signal ──────────────────────────────────────────────────
-    print(f"\n  [5] is_low_signal — all texts (boolean, no Python object allocation)")
+    print("\n  [5] is_low_signal — all texts (boolean, no Python object allocation)")
     hr()
     print(hdr)
     hr()

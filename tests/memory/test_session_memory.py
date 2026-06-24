@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 
 class TestSessionMemoryExtractor:
     def test_record_tool_call_increments_counter(self, tmp_path):

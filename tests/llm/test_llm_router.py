@@ -1,6 +1,7 @@
 """Tests for LLMModeRouter — alias resolution, detect_mode, and routing."""
 
 from unittest.mock import patch
+
 import pytest
 
 pytestmark = pytest.mark.integration

@@ -197,7 +197,6 @@ class TestSessionIdGeneration:
 
     def test_sortable_across_seconds(self):
         """IDs generated in different seconds sort chronologically."""
-        import re
 
         id1 = _generate_session_id()
         # Patch time to be 2 seconds later

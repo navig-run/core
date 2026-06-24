@@ -5,7 +5,7 @@ This guide explains how to create optimized single-binary distributions of NAVIG
 ## Prerequisites
 
 ### Required
-- Python 3.8 or higher
+- Python 3.10 or higher
 - All NAVIG dependencies installed: `pip install -r requirements.txt`
 
 ### For PyInstaller builds

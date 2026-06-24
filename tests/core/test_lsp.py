@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -13,7 +11,6 @@ import pytest
 # ── lsp_client helpers ────────────────────────────────────────
 from navig.agent.lsp_client import (
     LSP_SEVERITY_ERROR,
-    LSP_SEVERITY_WARNING,
     LspDiagnostic,
     LspLocation,
     LspPosition,

@@ -246,7 +246,11 @@ class TestDiscoverUserProviders:
                 }
             }
         )
-        providers = router._discover_user_providers()
+        # Mock the registry so the opt-in enabled check is bypassed —
+        # user-explicitly-configured providers must always be included
+        # regardless of registry opt-in state.
+        with patch("navig.providers.registry.get_provider", return_value=None):
+            providers = router._discover_user_providers()
         assert "cerebras" in providers
         assert "xai" in providers
 

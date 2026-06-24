@@ -484,9 +484,11 @@ class NavigDaemon:
                     "Daemon already running (pid=%s). Use 'navig service stop' first.",
                     pid,
                 )
-                print(
-                    f"ERROR: Daemon already running (pid={pid}). Stop it first with: navig service stop"
-                )
+                # Avoid print() when sys.stdout is None (pythonw.exe / windowless mode)
+                if sys.stdout is not None:
+                    print(
+                        f"ERROR: Daemon already running (pid={pid}). Stop it first with: navig service stop"
+                    )
                 return
             else:
                 self.logger.warning("Stale PID file (pid=%s) - removing and starting fresh", pid)
