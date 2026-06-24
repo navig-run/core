@@ -19,6 +19,11 @@ logger = logging.getLogger(__name__)
 
 CFG_CONNECTIONS = "telegram.business.connections"   # {connection_id: {owner_id, can_reply}}
 CFG_DELETION_ALERT = "telegram.business.deletion_alert"
+CFG_PING = "telegram.business.ping.who"             # owner | both | off (default owner)
+
+import re as _re  # noqa: E402
+
+_PING_RE = _re.compile(r"^\s*/?ping(@\w+)?\s*$", _re.IGNORECASE)
 
 
 def _cfg():
@@ -71,6 +76,97 @@ def set_deletion_alert(value: bool) -> None:
     cfg.save(scope="global")
 
 
+# ── Ping (the one safe canned reply in business chats) ───────────────────────
+
+
+def ping_policy() -> str:
+    """Who may get a /ping reply in a business chat: owner | both | off."""
+    try:
+        v = str(_cfg().get(CFG_PING, "owner") or "owner").lower()
+        return v if v in ("owner", "both", "off") else "owner"
+    except Exception:  # noqa: BLE001
+        return "owner"
+
+
+def set_ping_policy(who: str) -> None:
+    if who not in ("owner", "both", "off"):
+        raise ValueError("who must be one of owner|both|off")
+    cfg = _cfg()
+    cfg.set(CFG_PING, who, scope="global")
+    cfg.save(scope="global")
+
+
+def _catalog_stats() -> dict[str, int]:
+    out = {"messages": 0, "rooms": 0, "media": 0}
+    try:
+        store = _store()
+        for key, sql in (
+            ("messages", "SELECT COUNT(*) AS c FROM tg_messages WHERE deleted = 0"),
+            ("rooms", "SELECT COUNT(*) AS c FROM tg_rooms"),
+            ("media", "SELECT COUNT(*) AS c FROM tg_media"),
+        ):
+            row = store._read_one(sql)
+            if row is not None:
+                out[key] = int(row["c"] or 0)
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+async def _send_business_reply(channel, chat_id, text, business_connection_id=None,
+                               parse_mode: str = "HTML") -> None:
+    """Reply INTO a business conversation. The bot posts as the business account, so
+    it needs ``business_connection_id`` (plain send_message can't do that). Falls
+    back to a plain send if the connection id is missing."""
+    data = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
+    if business_connection_id:
+        data["business_connection_id"] = business_connection_id
+    try:
+        await channel._api_call("sendMessage", data)
+    except Exception:  # noqa: BLE001
+        try:
+            await channel.send_message(chat_id, text, parse_mode=parse_mode)
+        except Exception:  # noqa: BLE001
+            logger.debug("business ping reply failed", exc_info=True)
+
+
+async def handle_ping(channel, msg: dict, *, is_owner: bool) -> bool:
+    """Reply to ``/ping`` (or bare ``ping``) in a business chat with a live status.
+
+    This is the ONE controlled exception to "business text is never a command": a
+    fixed, no-argument, no-system-access health check — a canned reply plus
+    read-only catalog counts. It NEVER reaches the CLI/system/skills/dispatch.
+    Owner-gated by default (``telegram.business.ping.who``: owner|both|off)."""
+    text = msg.get("text") or msg.get("caption") or ""
+    if not _PING_RE.match(text):
+        return False
+    who = ping_policy()
+    if who == "off" or (not is_owner and who != "both"):
+        return False
+    chat_id = (msg.get("chat") or {}).get("id")
+    if chat_id is None:
+        return False
+    stats = _catalog_stats()
+    latency = ""
+    try:
+        import time
+
+        sent = int(msg.get("date") or 0)
+        if sent:
+            latency = f"⚡ ~{max(0, int(time.time()) - sent)}s round-trip\n"
+    except Exception:  # noqa: BLE001
+        latency = ""
+    body = (
+        "🏓 <b>pong</b> — NAVIG is live\n\n"
+        f"{latency}"
+        f"📜 Messages: <code>{stats['messages']:,}</code>\n"
+        f"🗂️ Rooms: <code>{stats['rooms']:,}</code>\n"
+        f"🎞️ Media: <code>{stats['media']:,}</code>"
+    )
+    await _send_business_reply(channel, chat_id, body, msg.get("business_connection_id"))
+    return True
+
+
 # ── Update handlers (called from the bot channel's _process_update) ──────────
 
 
@@ -118,6 +214,22 @@ async def handle_business_message(channel, msg: dict, *, edited: bool = False) -
         )
     except Exception:  # noqa: BLE001
         logger.debug("business message catalog failed", exc_info=True)
+    # Owner health-check: /ping → live status report (owner-gated; the one safe
+    # canned reply — never a system/command path).
+    try:
+        if await handle_ping(channel, msg, is_owner=is_owner):
+            return
+    except Exception:  # noqa: BLE001
+        logger.debug("business ping skipped", exc_info=True)
+    # A shared TikTok link gets a metadata card + Download/Analyse buttons (gated by
+    # the 'download' policy). This is owner-facing DATA enrichment — still never a
+    # command, and a no-op when the message has no TikTok link.
+    try:
+        from navig.telegram import tiktok_actions
+
+        await tiktok_actions.offer_card(channel, chat_id, message_id, text, is_owner=is_owner)
+    except Exception:  # noqa: BLE001
+        logger.debug("tiktok offer_card skipped", exc_info=True)
     # IMPORTANT: business text is NEVER dispatched as a command. End of handling.
 
 

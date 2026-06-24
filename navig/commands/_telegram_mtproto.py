@@ -338,3 +338,46 @@ def register(telegram_app: "typer.Typer") -> None:
         from navig.telegram import business as biz
         biz.set_deletion_alert(state.lower() in ("on", "true", "1", "yes"))
         ch.success(f"Deletion alert {'ON' if biz.deletion_alert_enabled() else 'OFF'}")
+
+    @business_app.command("emoji")
+    def tg_biz_emoji(
+        emoji: str = typer.Argument(None, help="reaction emoji (omit to list all)"),
+        tool: str = typer.Argument(None, help="tool to map to, or 'off' to disable"),
+    ) -> None:
+        """List or remap reaction emojis, e.g. `navig telegram business emoji 🎯 tiktok`.
+
+        Tools: translate | summarize | context | explain | tiktok | download.
+        Use 'off' (or omit) to clear an emoji's override / disable it.
+        """
+        from navig.telegram import ai_actions as ai
+        if not emoji:
+            for e, t in ai.effective_emoji_map().items():
+                ch.console.print(f"  {e}  {t}")
+            ch.dim("\nremap:  navig telegram business emoji <emoji> <tool|off>")
+            return
+        try:
+            ai.set_emoji_override(emoji, None if (not tool or tool.lower() == "off") else tool)
+        except ValueError as exc:
+            ch.error(str(exc))
+            raise typer.Exit(1) from exc
+        ch.success(f"{emoji} -> {tool or 'off'}")
+
+    @business_app.command("ping")
+    def tg_biz_ping(
+        who: str = typer.Argument(None, help="owner | both | off (omit to show current)"),
+    ) -> None:
+        """Who gets a `/ping` status reply in business chats (default owner).
+
+        e.g. `navig telegram business ping both` lets a counterparty ping too.
+        """
+        from navig.telegram import business as biz
+        if not who:
+            ch.info(f"ping: {biz.ping_policy()}")
+            ch.dim("owner (only you) | both (you + counterparty) | off")
+            return
+        try:
+            biz.set_ping_policy(who.lower())
+        except ValueError as exc:
+            ch.error(str(exc))
+            raise typer.Exit(1) from exc
+        ch.success(f"ping -> {who.lower()}")

@@ -5118,6 +5118,131 @@ class TelegramChannel:
             logger.warning("send_video failed: %s", e)
             return None
 
+    # ── Rich messages (sendRichMessage / sendRichMessageDraft) ───────────────
+    # Telegram's rich-message API renders full markdown/HTML: headings, tables,
+    # block quotes, collapsible <details>, footnotes, formulas, media collages.
+    # It is brand-new and may not be enabled on every Bot API server/account yet,
+    # so these methods degrade gracefully — the first "method not found"-style
+    # failure flips _rich_supported = False and every call routes through the
+    # normal HTML send_message thereafter (no per-message latency hit).
+
+    def _rich_messages_enabled(self) -> bool:
+        try:
+            from navig.core import Config
+
+            return bool(Config().get("telegram.rich_messages", True))
+        except Exception:  # noqa: BLE001
+            return True
+
+    async def send_rich_message(
+        self,
+        chat_id: int,
+        *,
+        markdown: str | None = None,
+        html: str | None = None,
+        business_connection_id: str | None = None,
+        reply_to_message_id: int | None = None,
+        keyboard: list[list[dict]] | None = None,
+        is_rtl: bool = False,
+        skip_entity_detection: bool = False,
+    ) -> dict | None:
+        """Send a rich formatted message (``sendRichMessage``). Pass EITHER
+        ``markdown`` (preferred — our AI outputs are already markdown) or ``html``.
+        Falls back to a basic-HTML ``send_message`` when rich messages aren't
+        available (learned + cached on this channel instance)."""
+        if not self._session or (not markdown and not html):
+            return None
+        if not self._rich_messages_enabled() or getattr(self, "_rich_supported", None) is False:
+            return await self._rich_fallback(
+                chat_id, markdown, html,
+                business_connection_id=business_connection_id,
+                reply_to_message_id=reply_to_message_id, keyboard=keyboard,
+            )
+        rich: dict = {"html": html} if html is not None else {"markdown": markdown}
+        if is_rtl:
+            rich["is_rtl"] = True
+        if skip_entity_detection:
+            rich["skip_entity_detection"] = True
+        data: dict = {"chat_id": chat_id, "rich_message": rich}
+        if business_connection_id:
+            data["business_connection_id"] = business_connection_id
+        if reply_to_message_id:
+            data["reply_parameters"] = {"message_id": reply_to_message_id}
+        if keyboard:
+            data["reply_markup"] = {"inline_keyboard": keyboard}
+        try:
+            async with self._session.post(f"{self.base_url}/sendRichMessage", json=data) as resp:
+                result = await resp.json()
+            if result.get("ok"):
+                self._rich_supported = True
+                return result.get("result")
+            desc = (result.get("description") or "").lower()
+            if (resp.status == 404 or "not found" in desc or "unknown method" in desc
+                    or "not supported" in desc or "rich message" in desc
+                    or "can't send rich" in desc):
+                self._rich_supported = False
+                logger.info("sendRichMessage unsupported here — using HTML messages (%s).", desc[:80])
+            else:
+                logger.debug("sendRichMessage error, falling back: %s", desc[:120])
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("sendRichMessage failed, falling back: %s", exc)
+        return await self._rich_fallback(
+            chat_id, markdown, html,
+            business_connection_id=business_connection_id,
+            reply_to_message_id=reply_to_message_id, keyboard=keyboard,
+        )
+
+    async def _rich_fallback(
+        self, chat_id, markdown, html, *, business_connection_id,
+        reply_to_message_id, keyboard,
+    ) -> dict | None:
+        """Render a rich message down to a basic-HTML send (or a business send)."""
+        if html is not None:
+            text, parse = html, "HTML"
+        else:
+            try:
+                text = self._md_to_html(markdown or "")
+            except Exception:  # noqa: BLE001
+                text = markdown or ""
+            parse = "HTML"
+        if business_connection_id:
+            data: dict = {
+                "chat_id": chat_id, "text": text, "parse_mode": parse,
+                "business_connection_id": business_connection_id,
+            }
+            if reply_to_message_id:
+                data["reply_to_message_id"] = reply_to_message_id
+            if keyboard:
+                data["reply_markup"] = {"inline_keyboard": keyboard}
+            return await self._api_call("sendMessage", data)
+        return await self.send_message(
+            chat_id, text, parse_mode=parse,
+            reply_to_message_id=reply_to_message_id, keyboard=keyboard,
+        )
+
+    async def send_rich_message_draft(
+        self, chat_id: int, draft_id: int, *, markdown: str | None = None,
+        html: str | None = None, is_rtl: bool = False,
+    ) -> bool:
+        """Stream a partial rich message (ephemeral ~30s preview) via
+        ``sendRichMessageDraft`` — use a ``<tg-thinking>`` block while generating,
+        then call ``send_rich_message`` to persist the final. No-op where rich
+        messages aren't supported."""
+        if not self._session or (not markdown and not html):
+            return False
+        if not self._rich_messages_enabled() or getattr(self, "_rich_supported", None) is False:
+            return False
+        rich: dict = {"html": html} if html is not None else {"markdown": markdown}
+        if is_rtl:
+            rich["is_rtl"] = True
+        data = {"chat_id": chat_id, "draft_id": int(draft_id), "rich_message": rich}
+        try:
+            async with self._session.post(f"{self.base_url}/sendRichMessageDraft", json=data) as resp:
+                result = await resp.json()
+            return bool(result.get("ok"))
+        except Exception:  # noqa: BLE001
+            return False
+
     async def send_animation(
         self,
         chat_id: int,

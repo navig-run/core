@@ -58,6 +58,38 @@ It gives operators direct control over remote hosts, databases, containers, file
 
 ---
 
+## NAVIG Core (free) vs NAVIG Deck (paid)
+
+NAVIG ships in two layers with a deliberate split:
+
+- **NAVIG Core** (this repo) — Apache-2.0 open source. The daemon, CLI,
+  agent runtime, vault, scheduler, mesh, MCP server, Telegram text bot,
+  gateway. **Free forever, no host limits via the CLI, no telemetry.**
+- **NAVIG Deck** — the polished UI cockpit (proprietary; signed PyPI
+  wheel installed via `pip install navig[deck]`). Hosts inventory,
+  mesh topology, vault UI, mission queue, workflow runner, Telegram
+  Mini App. Free Solo tier (1 host); paid tiers and modules at
+  [navig.run/deck](https://navig.run/deck).
+
+The split is honest: the daemon is open and audit-able; the polished
+GUI is the paid product. Pack owners get the local app forever,
+self-hosted; subscribers add host scale and the hosted cloud relay we
+run on `relay.navig.run`. See [docs/BILLING.md](docs/BILLING.md) for the
+full pricing model.
+
+**What's free, forever, no matter what**:
+- The entire CLI — unlimited `navig ssh`, unlimited hosts you connect to
+- Telegram text bot (`/start`, `/run`, `/status`, all commands)
+- Agent runtime (`navig ask`, conversation memory, missions)
+- VS Code MCP integration
+- Vault, scheduler, mesh peer discovery
+- All updates, including major versions
+
+The Deck UI is what you pay for if you want it; **the daemon never
+will be**.
+
+---
+
 ## Why NAVIG?
 
 Most operators already have SSH. What they don't have is everything that should live around it:
@@ -91,6 +123,9 @@ NAVIG is not a configuration management tool (not Ansible). It is not a deployme
 | **Mesh networking** | LAN peer-to-peer node discovery and command delegation |
 | **MCP integration** | Expose tools and resources to AI editors and compatible clients |
 | **Daemon & gateway** | Background service with Telegram and Matrix channel support |
+| **Telegram Manager** | Full-account Telegram organizer (MTProto): search/move/forward/dedupe + a business-conversation AI catcher, emoji-AI, deletion alerts, and rich-message replies — owner-only ([docs](docs/TELEGRAM_MANAGER.md) · [cheatsheet](docs/TELEGRAM_CHEATSHEET.md)) |
+| **GitHub mirroring** | `navig github` — search, backup, and clone GitHub repos (flat or nested) via [farmore](https://github.com/miztizm/farmore), token from the vault |
+| **TikTok** | `navig tiktok` — download videos, extract metadata + top comments, and AI-brief any link (via [rapidok](https://github.com/miztizm/rapidok) + yt-dlp) |
 
 ---
 
@@ -255,6 +290,9 @@ navig <resource> <action> [options]
 | `navig mcp` | MCP server for AI editor and tool integration |
 | `navig gateway` | Start and manage chat gateway (Telegram, Matrix) |
 | `navig agent` | Autonomous agent runtime — install, start, configure, manage |
+| `navig telegram` | Telegram Manager — login, search, organize, business catcher, emoji rights |
+| `navig github` | Search / backup / clone GitHub repos (flat by default) — token from the vault |
+| `navig tiktok` | Download TikTok content + AI briefings (description + top comments) |
 
 ### Organisation
 
@@ -306,6 +344,84 @@ navig ask "Why does this container keep restarting?"
 ```
 
 The AI layer assists with reasoning, context, and workflow execution. It does not replace direct operator control — the operator stays responsible, the operator stays in command.
+
+---
+
+## Cloud routing (relay.navig.run)
+
+NAVIG's hosted Deck lives at [`relay.navig.run`](https://relay.navig.run). It's a static React app + a tiny **broker** (Cloudflare Pages Functions + D1) that maps your daemon's API key (and your Telegram user_id) to its current public URL. Your daemon registers itself with the broker on every boot; the Deck and the Telegram Mini App resolve "where is my daemon" via the broker. **Daemon data never leaves your machine** — the broker only stores routing metadata (a SHA-256 of your api_key, your current public URL, and the Telegram bindings).
+
+### Modes — pick one
+
+| Mode | Use when | How to enable | Subscription needed? |
+|---|---|---|---|
+| **Lighthouse** *(recommended)* | You want always-on access (Telegram / SMS / remote Deck) with no tunnel and no domain. | `navig lighthouse deploy` deploys a tiny edge to **your own** Cloudflare account (no Node/wrangler); the brain dials out to it over one WebSocket. See [docs/LIGHTHOUSE.md](docs/LIGHTHOUSE.md). | None — self-hosted on your Cloudflare, free for everyone. |
+| **cloudflared / hosted relay** | Laptop, home machine, anything behind NAT. No public IP, no domain. | The daemon spawns `cloudflared` to create a free `*.trycloudflare.com` quick tunnel. Manual: `navig cloud connect`. | Free for new Solo users + active subscribers. Lapsed subscribers get a 30-day grace; perpetual-only buyers self-host via Lighthouse/Tailscale instead. |
+| **Tailscale Funnel** | You want a free, stable, subscription-free public URL for your Mini App. | `navig cloud tailscale --enable` — bring up a `*.ts.net` URL via Tailscale Funnel, then `navig miniapp register` to push it to BotFather. | None — direct mode, broker not involved. |
+| **direct (your domain)** | VPS with a public domain and a reverse proxy (nginx, Caddy, Traefik). | `navig cloud direct https://navig.example.com` — daemon skips `cloudflared` entirely and registers your URL with the broker. Also picks up `$NAVIG_PUBLIC_URL` from systemd `Environment=` lines. | None — direct mode, broker not involved. |
+| **off** | Fully local-only. Don't talk to the broker at all. | `navig cloud disconnect` (or `cloud.enabled: false` in `~/.navig/config.yaml`). | None. |
+
+> **The subscription-vs-perpetual split**: the hosted cloud relay is
+> the one feature that costs us money per month. So it's a subscription
+> feature. Perpetual-pack buyers get the full local app forever and
+> self-host the Mini App with a single Tailscale command — free,
+> stable, costs us nothing. See [docs/CLOUD.md](docs/CLOUD.md) for the
+> full topology.
+
+### Always-on in 3 commands (your own edge + your own Deck)
+
+NAVIG self-hosts entirely on **your** Cloudflare account — two tiny deployments,
+each with its own stable URL, plus your brain dialing out:
+
+```bash
+navig lighthouse login     # 1. EDGE: API uplink (Worker + Durable Object). Opens
+                           #    Cloudflare → click Authorize → deploys + sets the
+                           #    Telegram webhook. (Or: navig lighthouse deploy --token <t>)
+navig miniapp deploy       # 2. DECK: builds the UI (static export) → your own
+                           #    Cloudflare Pages, bakes the edge URL in (auto-targets
+                           #    your brain) → sets the bot's Mini App button.
+navig gateway start        # 3. BRAIN: your daemon dials OUT to the edge. Nothing inbound.
+```
+
+Open your bot → tap the menu button → **your Deck**, talking to your brain through
+**your edge** — reachable from anywhere, no tunnel, no port-forwarding, no domain.
+`navig lighthouse url` prints every inbound hook (Telegram is set automatically;
+paste the SMS hook into Twilio only if you use SMS; social publishers are outbound
+— token only, no webhook).
+
+> **One Cloudflare credential for both deploys, no wrangler:** both
+> `lighthouse deploy`/`login` and `miniapp deploy` upload via the Cloudflare REST
+> API and reuse the same credential (an API token with the **"Edit Cloudflare
+> Workers"** template, or the OAuth token from `lighthouse login`). **Node 18+** is
+> only needed to *build* the Deck (`miniapp deploy`); the *upload* — like the edge —
+> needs neither Node nor wrangler. (`miniapp deploy --wrangler` is a Cloudflare-Pages
+> fallback if you prefer it.)
+
+### Ports & firewall (cheat sheet)
+
+| Mode | Inbound | Outbound | Daemon bind |
+|---|---|---|---|
+| cloudflared | none | 443 → `*.cloudflare.com` (cloudflared opens an outbound WebSocket) | `127.0.0.1:8765` (loopback only) |
+| direct | 443 → your VPS (terminated by nginx/Caddy) | 443 → `relay.navig.run` (heartbeat every 60s) | `127.0.0.1:8765` (your proxy forwards from 443 → here) |
+| off | none | none | `127.0.0.1:8765` (machine-local) |
+
+The daemon itself **never** binds to a public interface — your reverse proxy is what listens on `0.0.0.0:443` in direct mode. Defense in depth: even if you misconfigure the proxy, the daemon socket stays on loopback.
+
+### Quick commands
+
+```bash
+navig lighthouse login        # recommended: your own Cloudflare edge (browser auth)
+navig lighthouse url          # show every inbound hook + the one stable edge URL
+navig miniapp deploy          # deploy your own Deck UI → bot's Mini App button
+navig cloud connect           # turn cloudflared mode on (default)
+navig cloud direct https://navig.example.com   # switch to VPS direct mode
+navig cloud direct --clear    # revert direct mode back to cloudflared
+navig cloud status            # show mode, public URL, last heartbeat
+navig cloud disconnect        # full off (no broker, no tunnel)
+navig cloud key --reveal      # print the api_key (sensitive)
+```
+
+For the full operator guide — including ready-made nginx/Caddy configs, a systemd unit template with `Environment=NAVIG_PUBLIC_URL=...`, the security model, and troubleshooting — see [`docs/CLOUD.md`](docs/CLOUD.md).
 
 ---
 

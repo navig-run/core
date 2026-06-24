@@ -530,10 +530,31 @@ async def handle_business_status(request: "web.Request") -> "web.Response":
             "blocked": permissions.arming_blocked_reason(),
             "policies": permissions.all_policies(),
             "tools": list(permissions.BUSINESS_TOOLS),
-            "emoji": ai_actions.EMOJI_TOOLS,
+            "emoji": ai_actions.effective_emoji_map(),
+            "assignable_tools": sorted(ai_actions.ASSIGNABLE_TOOLS),
         })
     except Exception as exc:  # noqa: BLE001
         logger.exception("telegram business status failed")
+        return _err(str(exc))
+
+
+async def handle_business_emoji(request: "web.Request") -> "web.Response":
+    """Remap or clear an emoji trigger: ``{emoji, tool}``. An empty/null ``tool``
+    clears the override (reverts to the default, or disables a non-default emoji)."""
+    body = await _body(request)
+    emoji = (body.get("emoji") or "").strip()
+    tool = (body.get("tool") or "").strip() or None
+    if not emoji:
+        return _err("'emoji' is required", status=400)
+    try:
+        from navig.telegram import ai_actions
+
+        ai_actions.set_emoji_override(emoji, tool)
+        return _ok({"emoji": ai_actions.effective_emoji_map()})
+    except ValueError as exc:
+        return _err(str(exc), status=400)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("telegram business emoji remap failed")
         return _err(str(exc))
 
 
@@ -620,4 +641,5 @@ def register(app: "web.Application") -> None:
     app.router.add_get("/api/deck/telegram/business", handle_business_status)
     app.router.add_post("/api/deck/telegram/business/enable", handle_business_enable)
     app.router.add_post("/api/deck/telegram/business/rights", handle_business_rights)
+    app.router.add_post("/api/deck/telegram/business/emoji", handle_business_emoji)
     app.router.add_post("/api/deck/telegram/business/alerts", handle_business_alerts)

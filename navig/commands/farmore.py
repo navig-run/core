@@ -24,8 +24,8 @@ from navig.platform.paths import config_dir
 ch = lazy_import("navig.console_helper")
 
 farmore_app = typer.Typer(
-    name="farmore",
-    help="🥔 GitHub repo mirroring & backup via farmore",
+    name="github",
+    help="🐙 GitHub: search · backup · clone · mirror (flat by default, via farmore)",
     no_args_is_help=True,
 )
 
@@ -51,8 +51,20 @@ def _resolve_github_token() -> str | None:
 
         vault = get_vault()
         secret = vault.get("github_token", caller="farmore")
-        if secret and getattr(secret, "value", None):
-            return secret.value
+        if secret is not None:
+            # Credential exposes the decrypted payload via `.data` / `.get_secret()`
+            # — there is NO `.value` attribute. The token is stored under "value"
+            # (also accept "token"/"api_key" for older entries).
+            tok = None
+            data = getattr(secret, "data", None)
+            if isinstance(data, dict):
+                tok = data.get("value") or data.get("token") or data.get("api_key")
+            if not tok and hasattr(secret, "get_secret"):
+                tok = secret.get_secret("value") or secret.get_secret("token")
+            if not tok:
+                tok = getattr(secret, "value", None)
+            if tok:
+                return str(tok)
     except Exception:  # noqa: BLE001
         pass  # best-effort; failure is non-critical
 
@@ -177,6 +189,13 @@ def farmore_search(
         str | None,
         typer.Option("--token", "-t", help="GitHub token (overrides auto-resolve)"),
     ] = None,
+    flat: Annotated[
+        bool,
+        typer.Option(
+            "--flat/--no-flat",
+            help="Clone FLAT (<dir>/<repo>, collisions suffixed -<owner>) vs nested by owner",
+        ),
+    ] = True,
 ):
     """
     🔍 Search GitHub and clone matching repositories.
@@ -184,16 +203,20 @@ def farmore_search(
     Token resolution: vault → GITHUB_TOKEN env → ~/.navig/config.yaml.
     Without a token only public repos at low rate limits are accessible.
 
+    Downloads are FLAT by default (repos land directly as <dir>/<repo>, so a
+    second run updates them in place); use --no-flat for the owner-nested layout.
+
     Examples:
-        navig farmore search "agent soul" -o ./mirrors --limit 50 -y
-        navig farmore search "machine learning" --language python --min-stars 500
+        navig github search "agent soul" -o ./mirrors --limit 50 -y
+        navig github search "machine learning" --language python --min-stars 500
+        navig github search "cli tools" -o ./tools --no-flat   # nested by owner
     """
     resolved_token = token or _resolve_github_token()
 
     if not resolved_token:
         ch.warning(
             "No GitHub token found. Using unauthenticated access (60 req/hour).\n"
-            "Set one with:  navig farmore token set <your-token>"
+            "Set one with:  navig github token set <your-token>"
         )
 
     if not _require_farmore():
@@ -217,40 +240,55 @@ def farmore_search(
         args += ["--min-stars", str(min_stars)]
     if yes:
         args += ["--yes"]
+    if flat:
+        args += ["--flat-structure"]
 
     _run_farmore(args, resolved_token)
 
 
 @farmore_app.command("backup")
 def farmore_backup(
-    target: Annotated[str, typer.Argument(help="GitHub username or org to backup")],
+    target: Annotated[str, typer.Argument(help="GitHub username (or org with --org) to back up")],
     dest: Annotated[Path | None, typer.Option("--dest", "-d", help="Destination directory")] = None,
     visibility: Annotated[str, typer.Option("--visibility", help="all|public|private")] = "all",
+    org: Annotated[bool, typer.Option("--org", help="Treat target as an organisation, not a user")] = False,
     workers: Annotated[int, typer.Option("--workers", "-w", help="Parallel clone workers")] = 4,
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Auto-confirm")] = False,
+    flat: Annotated[
+        bool,
+        typer.Option("--flat/--no-flat", help="Clone FLAT (<dir>/<repo>) vs nested by visibility/owner"),
+    ] = True,
     token: Annotated[str | None, typer.Option("--token", "-t", help="GitHub token")] = None,
 ):
     """
-    📦 Clone / mirror every repo for a user or organisation.
+    📦 Clone / mirror every repo for a user (or --org organisation).
+
+    Downloads are FLAT by default (<dir>/<repo>, updates in place); --no-flat
+    keeps the repos/<visibility>/<owner> layout.
 
     Examples:
-        navig farmore backup myuser -d ./mirrors -y
-        navig farmore backup myorg --visibility public
+        navig github backup myuser -d ./mirrors -y
+        navig github backup myorg --org --visibility public
+        navig github backup myuser --no-flat       # nested by visibility/owner
     """
     resolved_token = token or _resolve_github_token()
 
     if not resolved_token:
         ch.warning(
             "No GitHub token found — only public repos accessible.\n"
-            "Set a token with:  navig farmore token set <your-token>"
+            "Set a token with:  navig github token set <your-token>"
         )
 
     if not _require_farmore():
         raise typer.Exit(1)
 
-    args = ["backup", target, "--visibility", visibility, "--workers", str(workers)]
+    # farmore exposes per-target commands `user` / `org` (there is no `backup`).
+    subcommand = "org" if org else "user"
+    args = [subcommand, target, "--visibility", visibility, "--workers", str(workers)]
     if dest:
         args += ["--dest", str(dest)]
+    if flat:
+        args += ["--flat"]
     if yes:
         args += ["--yes"]
 
@@ -266,12 +304,12 @@ def farmore_clone(
     """
     ⬇️  Clone a single repository (with farmore if available, else plain git).
 
-    Falls back to a plain `git clone` when no token is configured and
-    farmore is unavailable.
+    Always FLAT — lands directly as <dest>/<repo> (like `git clone`). Falls back
+    to a plain `git clone` when no token is configured and farmore is unavailable.
 
     Examples:
-        navig farmore clone owner/my-repo -d ./mirrors
-        navig farmore clone https://github.com/owner/repo
+        navig github clone owner/my-repo -d ./mirrors
+        navig github clone https://github.com/owner/repo
     """
     resolved_token = token or _resolve_github_token()
 
@@ -282,13 +320,15 @@ def farmore_clone(
         repo_url = repo
 
     if not _farmore_available():
-        # Graceful fallback: plain git clone
+        # Graceful fallback: plain git clone (always flat into dest/<repo>).
         _fallback_git_clone(repo_url, str(dest or Path.cwd()))
         return
 
-    args = ["repo", repo_url]
+    # `farmore clone <repo> [dest]` — dest is a POSITIONAL arg, and the clone is
+    # already flat (lands as <dest>/<repo>), so no extra flags needed.
+    args = ["clone", repo_url]
     if dest:
-        args += ["--dest", str(dest)]
+        args += [str(dest)]
 
     _run_farmore(args, resolved_token)
 
@@ -319,7 +359,7 @@ def token_set(
     writing to ~/.navig/config.yaml when the vault is unavailable.
 
     Examples:
-        navig farmore token set ghp_xxxxxxxxxxxxxxxx
+        navig github token set ghp_xxxxxxxxxxxxxxxx
     """
     if use_vault:
         try:
@@ -363,7 +403,7 @@ def token_show():
     🔍 Display where the current GitHub token comes from (masked).
 
     Examples:
-        navig farmore token show
+        navig github token show
     """
     token = _resolve_github_token()
     if token:
@@ -387,7 +427,7 @@ def token_show():
     else:
         ch.warning(
             "No GitHub token configured.\n"
-            "Set one with:  navig farmore token set <your-token>\n"
+            "Set one with:  navig github token set <your-token>\n"
             "Without a token, farmore only accesses public repos at low rate limits."
         )
 
@@ -398,7 +438,7 @@ def token_remove():
     🗑  Remove the stored GitHub token.
 
     Examples:
-        navig farmore token remove
+        navig github token remove
     """
     removed = False
 
@@ -440,7 +480,7 @@ def farmore_status():
     ℹ️  Show farmore installation status and token configuration.
 
     Examples:
-        navig farmore status
+        navig github status
     """
     # farmore availability
     if _farmore_available():
@@ -464,5 +504,5 @@ def farmore_status():
     else:
         ch.warning(
             "No GitHub token — only public repos accessible at low rate limits.\n"
-            "Set one with:  navig farmore token set <your-token>"
+            "Set one with:  navig github token set <your-token>"
         )

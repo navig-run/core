@@ -1066,6 +1066,17 @@ class CallbackHandler:
                     await handler(chat_id, user_id, cb_data, message_id)
                 return
 
+            # ── TikTok (tk:dl / tk:an) — download or AI-analyse a shared link ──
+            if cb_data.startswith("tk:"):
+                await self._answer(cb_id, "Working…")
+                try:
+                    from navig.telegram import tiktok_actions as _tt
+
+                    await _tt.handle_callback(self.channel, cb_data, chat_id, message_id, user_id)
+                except Exception as _tk_exc:  # noqa: BLE001
+                    logger.debug("tiktok callback error: %s", _tk_exc)
+                return
+
             # ── Help Encyclopedia navigation (help:*) ──
             if cb_data.startswith("help:"):
                 await self._answer(cb_id, "")

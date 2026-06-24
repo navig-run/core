@@ -171,3 +171,42 @@ def test_tags_and_link_index_persist(cfg):
     store.add_link(5, "https://www.tiktok.com/@x/video/1", "tiktok", message_id=1)
     links = store.list_links(5, provider="tiktok")
     assert links and links[0]["url"].endswith("/video/1")
+
+
+# ── Business /ping is owner-gated + never a command ───────────────────────────
+
+async def test_business_ping_is_owner_gated(cfg):
+    """`/ping` in a business chat replies only per policy (owner|both|off) — and
+    a non-ping message is never treated as a ping."""
+    from navig.telegram import business
+
+    sent: list = []
+
+    class _Ch:
+        async def _api_call(self, method, data):
+            sent.append((method, data))
+
+        async def send_message(self, *a, **k):
+            sent.append(("send_message", a, k))
+
+    ch = _Ch()
+    ping = {"chat": {"id": 5}, "from": {"id": 7}, "message_id": 1, "text": "/ping",
+            "business_connection_id": "c1", "date": 0}
+
+    # default policy = owner: the owner gets a reply, a counterparty does not
+    assert await business.handle_ping(ch, ping, is_owner=True) is True
+    assert sent and sent[-1][0] == "sendMessage"
+    sent.clear()
+    assert await business.handle_ping(ch, ping, is_owner=False) is False
+    assert sent == []
+
+    # 'both' lets a counterparty ping; 'off' disables even the owner
+    business.set_ping_policy("both")
+    assert await business.handle_ping(ch, ping, is_owner=False) is True
+    business.set_ping_policy("off")
+    assert await business.handle_ping(ch, ping, is_owner=True) is False
+
+    # a message that merely contains "ping" is NOT a ping (no spammy substring match)
+    business.set_ping_policy("owner")
+    not_ping = {"chat": {"id": 5}, "text": "shipping the crate", "date": 0}
+    assert await business.handle_ping(ch, not_ping, is_owner=True) is False
