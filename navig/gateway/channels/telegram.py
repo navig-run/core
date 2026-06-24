@@ -11,6 +11,7 @@ Provides integration with Telegram Bot API for:
 """
 
 import asyncio
+import hmac
 import html
 import logging
 import random
@@ -166,15 +167,6 @@ _TALK_SLOW_LOG_MS: int = 2500        # TALK mode: warn when end-to-end latency e
 # Each entry: (sleep_seconds_before_showing_this_phase, display_label)
 # All user-visible strings live here — single source of truth, never inline.
 # ---------------------------------------------------------------------------
-_REASON_PLACEHOLDER: str = "\U0001f9e0 Reasoning\u2026"
-_REASON_PHASES: tuple[tuple[float, str], ...] = (
-    (2.0, "\U0001f4d6 Reading\u2026"),
-    (2.5, "\U0001f50e Analyzing\u2026"),
-    (2.5, "\u270d\ufe0f Composing\u2026"),
-    (3.0, "\U0001f504 Refining\u2026"),
-)
-# After all phases are exhausted the final label is re-emitted every N seconds.
-_TICKER_HOLD_INTERVAL_SEC: float = 10.0
 # Appended to REASON-mode LLM prompts so the model returns contextual explore
 # questions inline.  Stripped from display; surfaced as inline keyboard buttons.
 _EXPLORE_SUFFIX: str = (
@@ -620,6 +612,13 @@ class TelegramChannel:
                     # restart (Telegram's 30-second window has already elapsed for
                     # queued button-press events).  Log at DEBUG to avoid filling
                     # the console with false alarm ERRORs.
+                    _desc_l = description.lower()
+                    _benign_edit = (
+                        "message is not modified" in _desc_l
+                        or "message to edit not found" in _desc_l
+                        or "message can't be edited" in _desc_l
+                        or "message_id_invalid" in _desc_l
+                    )
                     if method == "answerCallbackQuery" and (
                         "query is too old" in description
                         or "query ID is invalid" in description
@@ -628,6 +627,12 @@ class TelegramChannel:
                             "Telegram: stale callback query (expected on restart): %s",
                             description,
                         )
+                    elif _benign_edit:
+                        # Streaming edits race against their own debounce: editing a
+                        # message to content it already holds (or one Telegram has
+                        # since dropped) is expected and harmless. Demote so the
+                        # progressive-edit path doesn't spam ERRORs.
+                        logger.debug("Telegram edit no-op (expected): %s", description)
                     else:
                         logger.error("Telegram API error: %s", description)
                     return None
@@ -655,7 +660,13 @@ class TelegramChannel:
                     {
                         "offset": self._last_update_id + 1,
                         "timeout": 30,
-                        "allowed_updates": ["message", "callback_query", "message_reaction", "inline_query"],
+                        "allowed_updates": [
+                            "message", "edited_message", "channel_post", "edited_channel_post",
+                            "callback_query", "message_reaction", "inline_query",
+                            # Telegram Business (owner's business-profile conversations)
+                            "business_connection", "business_message",
+                            "edited_business_message", "deleted_business_messages",
+                        ],
                     },
                 )
 
@@ -751,6 +762,30 @@ class TelegramChannel:
                             _due_label = remind_at_str.replace("T", " ")[:16]
                         _header = f"⏰ <b>Missed reminder</b> <i>(was due {_due_label})</i>"
 
+                    # Fan out to the other channels the user enabled for
+                    # reminders (deck feed / email / sms / …) via the notify
+                    # router, and let the matrix decide whether Telegram fires.
+                    _tg_on = True
+                    try:
+                        from navig.notify import dispatch as _notify_dispatch
+                        from navig.notify import prefs as _notify_prefs
+
+                        _others = [c for c in _notify_prefs.enabled_channels("reminder") if c != "telegram"]
+                        if _others:
+                            await _notify_dispatch(
+                                "reminder", "Reminder", msg,
+                                data={"reminder_id": reminder_id}, only_channels=_others,
+                            )
+                        _tg_on = _notify_prefs.is_enabled("reminder", "telegram")
+                    except Exception:
+                        logger.debug("notify reminder fan-out failed", exc_info=True)
+
+                    if not _tg_on:
+                        # Delivered via other channels — mark done so it doesn't re-fire.
+                        if reminder_id:
+                            store.complete_reminder(reminder_id)
+                        continue
+
                     sent = await self.send_message(
                         int(chat_id),
                         f"{_header}\n{html.escape(msg)}",
@@ -790,26 +825,57 @@ class TelegramChannel:
     # в”Ђв”Ђ Webhook mode в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
     async def _setup_webhook(self):
-        """Register the webhook URL with Telegram and delete any pending updates."""
+        """Register the webhook URL with Telegram and delete any pending updates.
+
+        setWebhook failures are often *transient* — most commonly Telegram itself
+        briefly failing to resolve the edge host ("bad webhook: Failed to resolve
+        host: Temporary failure in name resolution"), which clears within seconds.
+        We retry a few times with backoff before giving up, so a momentary DNS blip
+        on Telegram's side doesn't demote the brain to polling for the whole session
+        (which, in lighthouse mode, also bypasses the edge uplink). If the edge is
+        genuinely unreachable, we still fall back to polling so the bot keeps working.
+        """
         params: dict[str, Any] = {
             "url": self.webhook_url,
-            "allowed_updates": ["message", "callback_query", "message_reaction", "inline_query"],
+            "allowed_updates": [
+                "message", "edited_message", "channel_post", "edited_channel_post",
+                "callback_query", "message_reaction", "inline_query",
+                "business_connection", "business_message",
+                "edited_business_message", "deleted_business_messages",
+            ],
             "drop_pending_updates": True,
         }
         if self.webhook_secret:
             params["secret_token"] = self.webhook_secret
 
-        result = await self._api_call("setWebhook", params)
-        if result is not None:
-            logger.info("Telegram webhook set: %s", self.webhook_url)
+        # Seconds to wait between attempts; total attempts = len + 1 (~10s worst case).
+        backoffs = (3, 7)
+        for attempt in range(len(backoffs) + 1):
+            if not self._running:
+                return  # channel stopped mid-setup — abandon quietly
+            result = await self._api_call("setWebhook", params)
+            if result is not None:
+                logger.info("Telegram webhook set: %s", self.webhook_url)
+                return
+            if attempt < len(backoffs):
+                delay = backoffs[attempt]
+                logger.warning(
+                    "setWebhook failed (attempt %d/%d) — retrying in %ds "
+                    "(usually a transient DNS failure on Telegram's side)",
+                    attempt + 1, len(backoffs) + 1, delay,
+                )
+                await asyncio.sleep(delay)
+
+        logger.error(
+            "Failed to set Telegram webhook after %d attempts — falling back to polling",
+            len(backoffs) + 1,
+        )
+        self._use_webhook = False
+        # Guard against duplicate poll tasks
+        if self._poll_task is None or self._poll_task.done():
+            self._poll_task = asyncio.create_task(self._poll_updates())
         else:
-            logger.error("Failed to set Telegram webhook — falling back to polling")
-            self._use_webhook = False
-            # Guard against duplicate poll tasks
-            if self._poll_task is None or self._poll_task.done():
-                self._poll_task = asyncio.create_task(self._poll_updates())
-            else:
-                logger.warning("Poll task already running — skipping duplicate")
+            logger.warning("Poll task already running — skipping duplicate")
 
     async def handle_webhook_update(self, update: dict, secret_header: str = "") -> bool:
         """
@@ -823,8 +889,10 @@ class TelegramChannel:
             secret_header: Value of the ``X-Telegram-Bot-Api-Secret-Token``
                            header sent by Telegram (for HMAC validation).
         """
-        # Validate secret token if configured
-        if self.webhook_secret and secret_header != self.webhook_secret:
+        # Validate secret token if configured. Constant-time compare to avoid a
+        # timing side-channel on the webhook secret (R9; mirrors the deck api_key
+        # hardening in gateway/deck/auth.py).
+        if self.webhook_secret and not hmac.compare_digest(secret_header or "", self.webhook_secret):
             logger.warning("Webhook secret mismatch — rejecting update")
             return False
 
@@ -840,6 +908,37 @@ class TelegramChannel:
 
     async def _process_update(self, update: dict):
         """Process a single update from Telegram."""
+        # в”Ђв”Ђ Network-manager catalog ingestion в”Ђв”Ђ best-effort, never blocks dispatch.
+        #    Also captures channel_post updates the assistant flow ignores below.
+        try:
+            from navig.gateway.channels.telegram_catalog_ingest import ingest_update
+
+            await ingest_update(self, update)
+        except Exception as _cat_exc:  # noqa: BLE001
+            logger.debug("Telegram catalog ingest skipped: %s", _cat_exc)
+
+        # ── Telegram Business updates (the owner's business-profile conversations) ──
+        #    DATA ONLY: cataloged, and on delete the owner is DM'd. Business messages
+        #    are NEVER routed to the command/slash dispatch (a counterparty must never
+        #    reach the system). See navig.telegram.business + the security model.
+        try:
+            from navig.telegram import business as _tg_business
+
+            if _bc := update.get("business_connection"):
+                await _tg_business.handle_business_connection(self, _bc)
+                return
+            if _bm := update.get("business_message"):
+                await _tg_business.handle_business_message(self, _bm)
+                return
+            if _ebm := update.get("edited_business_message"):
+                await _tg_business.handle_business_message(self, _ebm, edited=True)
+                return
+            if _dbm := update.get("deleted_business_messages"):
+                await _tg_business.handle_deleted_business_messages(self, _dbm)
+                return
+        except Exception as _biz_exc:  # noqa: BLE001
+            logger.warning("Telegram business update handling failed: %s", _biz_exc)
+
         # в”Ђв”Ђ Handle message reactions (рџ‘Ќ рџ‘Ћ рџ”Ґ рџ¤” рџ’Ї) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         if reaction_update := update.get("message_reaction"):
             if HAS_REACTIONS:
@@ -1552,8 +1651,8 @@ class TelegramChannel:
                 # Fire one typing indicator immediately before mode dispatch —
                 # gives the user instant visual feedback (~1 Telegram RTT) while
                 # classify_mode() and the LLM call are warming up.
-                # _keep_typing / _reasoning_ticker carry it forward from inside
-                # each handler.
+                # _keep_typing (started inside _stream_reply) carries it forward
+                # until the first streamed token lands.
                 await self.send_typing(chat_id)
                 await self._dispatch_by_mode(
                     tg_msg=telegram_msg,
@@ -1633,37 +1732,6 @@ class TelegramChannel:
             )
         except asyncio.CancelledError:
             pass  # task cancelled; expected during shutdown
-
-    async def _reasoning_ticker(self, chat_id: int, placeholder_id: int) -> None:
-        """Edit the reasoning placeholder through _REASON_PHASES while the LLM runs.
-
-        Phases and labels are defined in _REASON_PHASES — never hardcoded here.
-        After the last phase is exhausted the final label is re-emitted every
-        _TICKER_HOLD_INTERVAL_SEC seconds until the task is cancelled by
-        _handle_reason() when the LLM response arrives.
-
-        All edit failures are silently swallowed — this is purely cosmetic.
-        """
-        if not placeholder_id:
-            return
-        last_label = _REASON_PHASES[-1][1] if _REASON_PHASES else _REASON_PLACEHOLDER
-        try:
-            for sleep_secs, label in _REASON_PHASES:
-                await asyncio.sleep(sleep_secs)
-                try:
-                    await self.edit_message(chat_id, placeholder_id, label, parse_mode=None)
-                    last_label = label
-                except Exception:  # noqa: BLE001
-                    pass  # cosmetic — never surface ticker errors
-            # All phases done; hold last label until response arrives
-            while True:
-                await asyncio.sleep(_TICKER_HOLD_INTERVAL_SEC)
-                try:
-                    await self.edit_message(chat_id, placeholder_id, last_label, parse_mode=None)
-                except Exception:  # noqa: BLE001
-                    pass
-        except asyncio.CancelledError:
-            pass  # expected — cancelled by _handle_reason() on LLM completion
 
     async def _keep_recording(
         self, chat_id: int, interval: float = 4.0, max_duration: float = 120.0
@@ -1841,6 +1909,224 @@ class TelegramChannel:
         except Exception as exc:  # noqa: BLE001
             logger.debug("Could not persist updated language metadata: %s", exc)
 
+    async def _finalize_streamed_message(
+        self,
+        chat_id: int,
+        placeholder_id: int,
+        response: str,
+        *,
+        original_text: str = "",
+        user_id: int = 0,
+        is_group: bool = False,
+        extra_krow: list | None = None,
+    ) -> bool:
+        """Edit the streamed placeholder INTO the final formatted reply.
+
+        Keeps the very bubble the user watched stream as the answer, instead of
+        deleting it and sending a fresh message. Returns True when the
+        placeholder was used (the common single-message case); False when the
+        reply needs the multi-message / oversized path so the caller can fall
+        back to delete + _send_response. Mirrors _send_response's formatting.
+        """
+        try:
+            text = self._strip_internal_tags(response)
+            explore_qs: list[str] = []
+            if HAS_KEYBOARDS and "EXPLORE_Q:" in text:
+                try:
+                    from navig.gateway.channels.telegram_keyboards import (
+                        extract_explore_questions,
+                    )
+
+                    text, explore_qs = extract_explore_questions(text)
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; never block the reply
+            text = TelegramChannel._md_to_html(text)
+            parts = None
+            if HAS_TEMPLATES:
+                try:
+                    from navig.agent.proactive.user_state import get_user_state_tracker
+
+                    verbosity = get_user_state_tracker().get_preference("verbosity", "normal")
+                except Exception:  # noqa: BLE001
+                    verbosity = "normal"
+                fmt = enforce_response_limits(text, verbosity=verbosity)
+                text = fmt.text
+                parts = fmt.parts
+
+            # Multi-part or oversized replies can't live in one editable message.
+            if (parts and len(parts) > 1) or len(text) > 4000:
+                return False
+
+            keyboard = None
+            if self._kb_builder:
+                try:
+                    keyboard = self._kb_builder.build(
+                        ai_response=text,
+                        user_message=original_text,
+                        message_id=0,
+                        explore_questions=explore_qs,
+                    )
+                except Exception as kb_err:  # noqa: BLE001
+                    logger.debug("Keyboard build failed: %s", kb_err)
+            if extra_krow:
+                if keyboard and isinstance(keyboard, dict) and "inline_keyboard" in keyboard:
+                    keyboard["inline_keyboard"].append(extra_krow)
+                else:
+                    keyboard = {"inline_keyboard": [extra_krow]}
+
+            # Edit in place. Try HTML; on parse rejection / no-op, retry plain.
+            # If both no-op (streamed text already final), we still own the
+            # bubble — never fall back to deleting a correct message.
+            res = await self.edit_message(
+                chat_id, placeholder_id, text, parse_mode="HTML", keyboard=keyboard
+            )
+            if res is None:
+                await self.edit_message(
+                    chat_id, placeholder_id, text, parse_mode=None, keyboard=keyboard
+                )
+
+            if HAS_SESSIONS and original_text:
+                try:
+                    get_session_manager().record_bot_reply(
+                        chat_id, int(placeholder_id), original_text, response
+                    )
+                except Exception:  # noqa: BLE001
+                    pass  # best-effort; failure is non-critical
+
+            # Voice reply is additive — the user already has the text bubble.
+            await self._maybe_send_voice(chat_id, user_id, is_group, response)
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("finalize streamed message failed: %r", exc)
+            return False
+
+    async def _stream_reply(
+        self,
+        chat_id: int,
+        user_id: int,
+        llm_message: str,
+        metadata: dict,
+        *,
+        original_text: str,
+        is_group: bool,
+        extra_krow: list | None = None,
+    ) -> str:
+        """Stream an LLM reply into one Telegram bubble and finalize it.
+
+        Shared by TALK and REASON. Sends nothing up front — the first streamed
+        token CREATES the message, later tokens edit it (debounced ~1/700ms),
+        and the final formatted reply (explore-question buttons + ``extra_krow``)
+        replaces it via ``_finalize_streamed_message``. The native "typing"
+        indicator covers the wait; no dots, no ticker. Falls back to a single
+        ``_send_response`` for groups, when streaming is disabled, or for
+        multi-part / oversized replies (both paths build explore buttons).
+
+        ``llm_message`` is sent to the model (REASON enriches it + appends the
+        explore suffix); ``original_text`` is the user's raw text used for
+        keyboard context, reaction lookups, and logs. Returns the response
+        text ("" if none).
+        """
+        try:
+            from navig.core import Config as _Config
+
+            stream_cfg = bool(_Config().get("telegram.stream_replies", True))
+        except Exception:  # noqa: BLE001
+            stream_cfg = True  # fail open: streaming is the better UX
+
+        _stream_state = {
+            "placeholder_id": None,
+            "last_edit_at": 0.0,
+            "last_sent_text": "",
+            "streaming_started": False,
+        }
+
+        async def _stream_on_partial(accumulated: str) -> None:
+            # First token SENDS the message; later tokens edit it in place,
+            # debounced (~1 edit/700ms; Telegram caps editMessageText ~1/s).
+            # The first token bypasses the debounce so the reply starts the
+            # instant the model emits text.
+            if not accumulated:
+                return
+            _first_token = not _stream_state["streaming_started"]
+            _stream_state["streaming_started"] = True
+            now = time.monotonic()
+            if not _first_token and (now - _stream_state["last_edit_at"]) < 0.45:
+                return
+            text_to_send = accumulated[-3800:]  # safe under Telegram's 4096 cap
+            pid = _stream_state["placeholder_id"]
+            if pid is None:
+                try:
+                    _m = await self.send_message(
+                        chat_id, text_to_send + "…", parse_mode=None
+                    )
+                    _stream_state["placeholder_id"] = (_m or {}).get("message_id")
+                    _stream_state["last_edit_at"] = now
+                    _stream_state["last_sent_text"] = text_to_send
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("stream first-send failed: %r", exc)
+                return
+            if text_to_send == _stream_state["last_sent_text"]:
+                return
+            _stream_state["last_edit_at"] = now
+            _stream_state["last_sent_text"] = text_to_send
+            try:
+                await self.edit_message(chat_id, pid, text_to_send + "…", parse_mode=None)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("stream edit_message skipped: %r", exc)
+
+        on_partial_cb = _stream_on_partial if (stream_cfg and not is_group) else None
+
+        typing_task = asyncio.create_task(self._keep_typing(chat_id))
+        try:
+            response = await self.on_message(
+                channel="telegram",
+                user_id=str(user_id),
+                message=llm_message,
+                metadata=metadata,
+                on_partial=on_partial_cb,
+            )
+        finally:
+            typing_task.cancel()
+            try:
+                await typing_task
+            except asyncio.CancelledError:
+                pass  # cancelled once the reply lands
+
+        _ph_id = _stream_state["placeholder_id"]
+        if response:
+            _finalized = False
+            if _ph_id is not None:
+                _finalized = await self._finalize_streamed_message(
+                    chat_id,
+                    _ph_id,
+                    response,
+                    original_text=original_text,
+                    user_id=user_id,
+                    is_group=is_group,
+                    extra_krow=extra_krow,
+                )
+            if not _finalized:
+                if _ph_id is not None:
+                    try:
+                        await self.delete_message(chat_id, _ph_id)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("stream placeholder delete failed: %r", exc)
+                await self._send_response(
+                    chat_id,
+                    response,
+                    original_text,
+                    user_id=user_id,
+                    is_group=is_group,
+                    extra_krow=extra_krow,
+                )
+        elif _ph_id is not None:
+            try:
+                await self.delete_message(chat_id, _ph_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("stream placeholder delete failed: %r", exc)
+
+        return response or ""
+
     async def _handle_talk(
         self,
         text: str,
@@ -1875,22 +2161,21 @@ class TelegramChannel:
                     "inventing details."
                 ),
             }
-        typing_task = asyncio.create_task(self._keep_typing(chat_id))
+        debug_krow = (
+            [{"text": "🔍 Debug", "callback_data": "dbg_trace"}]
+            if self._is_debug_mode(user_id)
+            else None
+        )
         llm_t0 = time.monotonic()
-        try:
-            response = await self.on_message(
-                channel="telegram",
-                user_id=str(user_id),
-                message=text,
-                metadata=metadata,
-            )
-        finally:
-            typing_task.cancel()
-            try:
-                await typing_task
-            except asyncio.CancelledError:
-                pass  # task cancelled; expected during shutdown
-
+        response = await self._stream_reply(
+            chat_id,
+            user_id,
+            text,
+            metadata,
+            original_text=text,
+            is_group=is_group,
+            extra_krow=debug_krow,
+        )
         llm_ms = int((time.monotonic() - llm_t0) * 1000)
 
         if response:
@@ -1898,20 +2183,6 @@ class TelegramChannel:
             self._record_assistant_msg(
                 session, session_manager, chat_id, user_id, response, is_group
             )
-            debug_krow = (
-                [{"text": "\ud83d\udd0d Debug", "callback_data": "dbg_trace"}]
-                if self._is_debug_mode(user_id)
-                else None
-            )
-            await self._send_response(
-                chat_id,
-                response,
-                text,
-                user_id=user_id,
-                is_group=is_group,
-                extra_krow=debug_krow,
-            )
-
             total_ms = int((time.monotonic() - turn_t0) * 1000)
             if total_ms >= _TALK_SLOW_LOG_MS:
                 logger.warning(
@@ -2095,17 +2366,19 @@ class TelegramChannel:
         is_group: bool,
         entity_signal: bool = False,
     ) -> None:
-        """REASON mode — send placeholder, fill with numbered CoT + bold conclusion."""
-        placeholder = await self.send_message(chat_id, _REASON_PLACEHOLDER, parse_mode=None)
-        placeholder_id = (placeholder or {}).get("message_id")
+        """REASON mode — web-grounded answer, streamed live, with explore buttons."""
+        # Route REASON through the fast chat tier. These are conversational /
+        # factual questions ("what is fight club?") the small fast model answers
+        # well in ~2s. Without this, the explore-suffix + web context appended
+        # below pad the message past run_agentic's short-chat cutoff and send it
+        # to the slow 480B coder model (~40s). setdefault keeps an explicit
+        # caller tier (e.g. a /big override) authoritative.
+        metadata = dict(metadata)
+        metadata.setdefault("tier_override", "small")
 
-        typing_task = asyncio.create_task(self._keep_typing(chat_id))
-        ticker_task = asyncio.create_task(self._reasoning_ticker(chat_id, placeholder_id or 0))
-
-        # Entity enrichment: silently fetch web context for named title/person references
-        # before sending to the LLM.  Uses the same entity-signal checks as
-        # select_tools_for_text() but avoids a full ACT pipeline — just prepends
-        # the top-3 search snippets so the model can ground its response in facts.
+        # Entity enrichment: silently fetch web context for named title /
+        # person references so the model grounds factual questions instead
+        # of confabulating.
         _enriched_text = text
         if HAS_CLASSIFIER and entity_signal:
             try:
@@ -2121,84 +2394,39 @@ class TelegramChannel:
                         _ctx = ["[Web context]"]
                         for _i, _h in enumerate(_hits[:3], 1):
                             _t = _h.get("title", "")
-                            _s = _h.get("snippet", "")
+                            _sn = _h.get("snippet", "")
                             _u = _h.get("url", "")
                             _line = (
                                 f"{_i}. {_t}"
-                                + (f" \u2014 {_s}" if _s else "")
+                                + (f" — {_sn}" if _sn else "")
                                 + (f" ({_u})" if _u else "")
                             )
                             _ctx.append(_line)
                         _enriched_text = "\n".join(_ctx) + "\n\nUser message: " + text
-            except Exception:
-                pass  # silent \u2014 never surface search errors to the user in REASON mode
-
-        try:
-            response = await self.on_message(
-                channel="telegram",
-                user_id=str(user_id),
-                message=_enriched_text + _EXPLORE_SUFFIX,
-                metadata=metadata,
-            )
-        finally:
-            typing_task.cancel()
-            ticker_task.cancel()
-            try:
-                await typing_task
-            except asyncio.CancelledError:
-                pass  # task cancelled; expected during shutdown
-            try:
-                await ticker_task
-            except asyncio.CancelledError:
-                pass  # task cancelled; expected during shutdown
-
-        if not response:
-            return
-
-        self._persist_updated_language(metadata, chat_id, user_id, session_manager, is_group)
-
-        # Only append model footer in debug/trace mode — keep normal replies clean
-        model_name = self._resolve_model_name(metadata) if self._is_debug_mode(user_id) else ""
-        footer = f"\n\n<code>\u00b7 {model_name}</code>" if model_name else ""
-        final_text = f"{response}{footer}"
-        final_text = self._strip_internal_tags(final_text)
-
-        self._record_assistant_msg(session, session_manager, chat_id, user_id, response, is_group)
-
-        # Extract contextual explore questions appended by the LLM.
-        explore_qs: list[str] = []
-        if HAS_KEYBOARDS:
-            try:
-                from navig.gateway.channels.telegram_keyboards import extract_explore_questions
-                final_text, explore_qs = extract_explore_questions(final_text)
             except Exception:  # noqa: BLE001
-                pass  # best-effort; never block the reply
+                pass  # silent; never surface search errors in REASON mode
 
-        keyboard = None
-        if self._kb_builder:
-            try:
-                keyboard = self._kb_builder.build(
-                    ai_response=final_text,
-                    user_message=text,
-                    message_id=placeholder_id or 0,
-                    explore_questions=explore_qs,
-                )
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
-
-        # Delete the reasoning placeholder so the answer appears as a fresh
-        # message — the reasoning phase vanishes cleanly rather than being
-        # edited in-place (jarring layout shift).
-        if placeholder_id:
-            try:
-                await self.delete_message(chat_id, placeholder_id)
-            except Exception:  # noqa: BLE001
-                pass  # cosmetic — never block the reply
-        await self._send_response(
-            chat_id, final_text, text,
-            user_id=user_id, is_group=is_group,
-            prebuilt_keyboard=keyboard,
+        debug_krow = (
+            [{"text": "🔍 Debug", "callback_data": "dbg_trace"}]
+            if self._is_debug_mode(user_id)
+            else None
         )
+        # Stream live like TALK. The EXPLORE_Q line the model appends is
+        # turned into explore-question buttons by _finalize_streamed_message.
+        response = await self._stream_reply(
+            chat_id,
+            user_id,
+            _enriched_text + _EXPLORE_SUFFIX,
+            metadata,
+            original_text=text,
+            is_group=is_group,
+            extra_krow=debug_krow,
+        )
+        if response:
+            self._persist_updated_language(metadata, chat_id, user_id, session_manager, is_group)
+            self._record_assistant_msg(
+                session, session_manager, chat_id, user_id, response, is_group
+            )
 
     async def _handle_code(
         self,
@@ -3350,7 +3578,14 @@ class TelegramChannel:
             tts = _TTS(_TTSConfig(provider=_TTSProvider.GOOGLE_CLOUD))
             tts_result = await tts.synthesize(tts_text)
             if not tts_result.success:
-                logger.warning("TTS synthesis failed (non-fatal): %s", tts_result.error)
+                # "not installed" / "no credentials" are configuration
+                # states, not bugs. Demote to debug so a user who hasn't
+                # set up TTS doesn't get a warn per voice reply.
+                err = str(tts_result.error or "")
+                if "not installed" in err or "no credentials" in err.lower() or "no api key" in err.lower():
+                    logger.debug("TTS synthesis skipped (no provider configured): %s", err)
+                else:
+                    logger.warning("TTS synthesis failed (non-fatal): %s", err)
                 return
 
             audio_data: bytes | None = tts_result.audio_data
@@ -4003,6 +4238,14 @@ class TelegramChannel:
         metadata: dict | None = None,
     ) -> bool:
         """Delegate natural-language в†’ command intent resolver."""
+        # Messaging intent first: "send sms/message to <contact> [in <lang>] …"
+        # (incl. voice). Handles translate + dispatch; short-circuits on success.
+        try:
+            if await self._try_nl_messaging_intent(chat_id, text, metadata):
+                return True
+        except Exception:
+            logger.debug("nl messaging intent failed", exc_info=True)
+
         from navig.gateway.channels.telegram_commands import TelegramCommandsMixin
 
         return await TelegramCommandsMixin._handle_natural_language_request(

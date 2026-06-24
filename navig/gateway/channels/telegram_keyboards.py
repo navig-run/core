@@ -1043,6 +1043,29 @@ class CallbackHandler:
                     await handler(chat_id=chat_id)
                 return
 
+            # ── Process killer confirmation (kill_confirm:* / kill_cancel) ──
+            if cb_data == "kill_cancel":
+                await self._answer(cb_id, "Cancelled")
+                try:
+                    await self.channel._api_call(
+                        "editMessageText",
+                        {
+                            "chat_id": chat_id,
+                            "message_id": message_id,
+                            "text": "🛑 <i>Kill cancelled.</i>",
+                            "parse_mode": "HTML",
+                        },
+                    )
+                except Exception:
+                    pass
+                return
+            if cb_data.startswith("kill_confirm:"):
+                await self._answer(cb_id, "Killing…")
+                handler = getattr(self.channel, "_handle_kill_confirm_callback", None)
+                if handler:
+                    await handler(chat_id, user_id, cb_data, message_id)
+                return
+
             # ── Help Encyclopedia navigation (help:*) ──
             if cb_data.startswith("help:"):
                 await self._answer(cb_id, "")

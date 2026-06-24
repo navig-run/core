@@ -8,51 +8,21 @@ from navig.gateway.channels.telegram_keyboards import CallbackHandler
 pytestmark = pytest.mark.integration
 
 
-async def test_nav_open_targets_dispatch_to_channel_handlers(monkeypatch):
+async def test_nav_open_targets_delegate_to_navigate_to(monkeypatch):
+    """nav:open:<target> now delegates to the channel's ``navigateTo`` screen router
+    (navigation was redesigned from direct per-target handler calls to screens)."""
     channel = TelegramChannel(
         bot_token="123:FAKE",
         allowed_users=[42],
         on_message=lambda *args, **kwargs: None,
     )
 
-    called: list[tuple[str, int, int, int | None]] = []
+    screens: list[str] = []
 
-    async def _status(self, chat_id: int, user_id: int = 0, message_id: int | None = None):
-        called.append(("status", chat_id, user_id, message_id))
+    async def _navigate_to(chat_id, screen, user_id, message_id=None):
+        screens.append(screen)
 
-    async def _spaces(self, chat_id: int, message_id: int | None = None):
-        called.append(("spaces", chat_id, 0, message_id))
-
-    async def _settings_hub(
-        self,
-        chat_id: int,
-        user_id: int,
-        is_group: bool = False,
-        message_id: int | None = None,
-    ):
-        called.append(("settings", chat_id, user_id, message_id))
-
-    async def _models(self, chat_id: int, user_id: int = 0, message_id: int | None = None):
-        called.append(("models", chat_id, user_id, message_id))
-
-    async def _providers(self, chat_id: int, user_id: int = 0, message_id: int | None = None):
-        called.append(("providers", chat_id, user_id, message_id))
-
-    async def _intake(
-        self,
-        chat_id: int,
-        user_id: int,
-        text: str = "",
-        message_id: int | None = None,
-    ):
-        called.append(("intake", chat_id, user_id, message_id))
-
-    monkeypatch.setattr(TelegramChannel, "_handle_status", _status)
-    monkeypatch.setattr(TelegramChannel, "_handle_spaces", _spaces)
-    monkeypatch.setattr(TelegramChannel, "_handle_settings_hub", _settings_hub)
-    monkeypatch.setattr(TelegramChannel, "_handle_models_command", _models)
-    monkeypatch.setattr(TelegramChannel, "_handle_providers", _providers)
-    monkeypatch.setattr(TelegramChannel, "_handle_intake", _intake)
+    channel.navigateTo = _navigate_to
 
     handler = CallbackHandler(channel)
 
@@ -70,8 +40,7 @@ async def test_nav_open_targets_dispatch_to_channel_handlers(monkeypatch):
             user_id=300,
         )
 
-    names = [item[0] for item in called]
-    assert names == ["settings", "models", "providers", "spaces", "intake", "status"]
+    assert screens == ["settings", "models", "providers", "spaces", "intake", "status"]
 
 
 async def test_nav_open_does_not_mark_canonical_onboarding_steps(monkeypatch):

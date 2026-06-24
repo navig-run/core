@@ -60,7 +60,7 @@ _BROKER_BOUND_TG_IDS: set[int] = set()
 
 
 async def _maybe_bind_telegram_to_broker(user_id: int) -> None:
-    """Tell deck.navig.run to map this Telegram user_id to our daemon.
+    """Tell relay.navig.run to map this Telegram user_id to our daemon.
 
     Called from ``_handle_start`` when ``cloud.enabled`` is true so the next
     time the user opens the bot's Mini App, ``autoResolveDaemonUrl`` can
@@ -80,6 +80,26 @@ async def _maybe_bind_telegram_to_broker(user_id: int) -> None:
         from navig.core import Config
         cfg = Config()
         if not bool(cfg.get("cloud.enabled", True)):  # default ON
+            return
+
+        # Lighthouse mode: the daemon dials OUT to its own edge worker (the
+        # uplink IS the data path) and is created WITHOUT a broker — it never
+        # registers a row on api.navig.run. The lighthouse worker resolves
+        # telegram_id -> daemon itself, so a broker bind here would 404 forever.
+        # Detect identically to gateway/server.py::_start_cloud_manager
+        # (cloud.lighthouse_url OR the NAVIG_LIGHTHOUSE_URL env override).
+        import os as _os
+        lighthouse_url = (
+            cfg.get("cloud.lighthouse_url", "")
+            or _os.environ.get("NAVIG_LIGHTHOUSE_URL", "")
+            or ""
+        ).strip()
+        cloud_mode = (cfg.get("cloud.mode", "") or "").strip().lower()
+        if lighthouse_url and cloud_mode in ("", "lighthouse"):
+            logger.debug(
+                "broker bind skipped for tg %s: lighthouse mode — the uplink "
+                "resolves telegram_id, no api.navig.run row to bind.", user_id,
+            )
             return
 
         # Owner allowlist: only bind user_ids that appear in
@@ -106,9 +126,9 @@ async def _maybe_bind_telegram_to_broker(user_id: int) -> None:
                 user_id,
             )
             return
-        broker_url = cfg.get("cloud.broker_url", "https://deck.navig.run")
+        broker_url = cfg.get("cloud.broker_url", "https://relay.navig.run")
 
-        from navig.cloud.broker_client import BrokerClient
+        from navig.cloud.broker_client import BrokerClient, BrokerError
         client = BrokerClient(broker_url, api_key)
         try:
             await client.bind_telegram(int(user_id))
@@ -116,10 +136,27 @@ async def _maybe_bind_telegram_to_broker(user_id: int) -> None:
             logger.info("Telegram user %s bound to this daemon via broker", user_id)
         finally:
             await client.close()
+    except BrokerError as exc:
+        # 404 from the broker means the daemon hasn't registered its
+        # tunnel URL yet (heartbeat hasn't landed). This is a normal
+        # boot-time race — CloudManager._bind_telegram_users() runs
+        # right after register() succeeds and will bind cleanly within
+        # ~1s, so we don't need to warn the operator about a transient
+        # condition that fixes itself. Anything else gets the loud log.
+        if getattr(exc, "status", None) == 404:
+            logger.debug(
+                "broker bind_telegram(%s): 404 — daemon not yet registered, "
+                "CloudManager retry pending", user_id,
+            )
+        else:
+            logger.warning(
+                "broker bind_telegram(%s) failed: %r — Mini App will show "
+                "'not bound' until this succeeds.", user_id, exc,
+            )
     except Exception as exc:  # noqa: BLE001
-        # Visible (not debug): a failed bind is exactly why the Mini App shows
-        # "not bound". A 404 here means the daemon has no broker row yet —
-        # register() didn't land (check the tunnel URL / cloud.enabled).
+        # Visible (not debug): a failed bind is exactly why the Mini App
+        # shows "not bound". Catch all non-BrokerError failures here so
+        # network / config issues stay loud.
         logger.warning(
             "broker bind_telegram(%s) failed: %r — Mini App will show 'not bound' "
             "until this succeeds.", user_id, exc,
@@ -998,10 +1035,13 @@ _HELP_CATEGORIES: list[_HelpCategory] = [
                 "models",
                 "Models & Providers",
                 "🧠",
-                ["ai", "models", "settings", "providers", "mode", "big", "small", "coder", "auto"],
+                # /ai /models /settings /providers /big /small /coder /auto moved to the Deck
+                # (Account → Model Tier / LLM Providers); manage models there, not via the bot.
+                ["mode"],
             ),
             _HelpSubcategory(
-                "personas", "Personas & Style", "🎭", ["persona", "personas", "explain_ai"]
+                # /persona /personas moved to the Deck (Account → Persona).
+                "personas", "Personas & Style", "🎭", ["explain_ai"]
             ),
             _HelpSubcategory(
                 "continuation",
@@ -1495,6 +1535,17 @@ class TelegramCommandsMixin:
         """
         fallback_text = "Hi 👋 I'm here. What's on your mind?"
 
+        # Operator-side narrator trace: show what the daemon is doing when
+        # /start hits. Silent on non-TTY (systemd journal stays clean).
+        try:
+            from navig.core import narrator
+            _name_for_trace = (username or "").lstrip("@").strip() or f"user_{user_id}"
+            narrator.blank()
+            narrator.phase(f"/start from @{_name_for_trace} (user_id={user_id})", icon="brain")
+            narrator.step("loading recent session context", icon="gear")
+        except Exception:  # noqa: BLE001
+            narrator = None  # type: ignore[assignment]
+
         # Pull a short slice of recent conversation so the greeting can reference
         # what we were working on, rather than always being generic.
         recent_msgs: list[dict[str, str]] = []
@@ -1545,14 +1596,23 @@ class TelegramCommandsMixin:
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(recent_msgs)
             messages.append({"role": "user", "content": "/start"})
+            if narrator is not None:
+                narrator.step(f"calling LLM (mode=summary, context={len(recent_msgs)} msgs)", icon="radio")
             result = run_llm(messages, mode="summary", effort="low")
             text = (getattr(result, "content", "") or "").strip()
             if text:
                 greeting = text
         except Exception as _greet_exc:
             logger.debug("LLM greeting failed (non-fatal): %s", _greet_exc)
+            if narrator is not None:
+                narrator.step(f"LLM greeting failed -> fallback text  ({_greet_exc})", icon="warn")
 
         await self.send_message(chat_id, greeting or fallback_text, parse_mode=None)
+        if narrator is not None:
+            narrator.verdict(
+                "Greeting sent  (LLM)" if greeting else "Greeting sent  (fallback text)",
+                icon="check",
+            )
 
         # Away summary — show a brief context recap when the user returns after
         # a long absence.  The feature is gated by memory.away_summary_gap_hours
@@ -1597,7 +1657,7 @@ class TelegramCommandsMixin:
         # lives in the Navig Deck Welcome flow, not in the chat greeting.
 
         # ── Cloud broker binding ─────────────────────────────────────────────
-        # When cloud.enabled is true, tell the broker on deck.navig.run that
+        # When cloud.enabled is true, tell the broker on relay.navig.run that
         # this Telegram user maps to our daemon. Idempotent — same user_id +
         # same api_key produces the same binding. The daemon is the source of
         # truth here: it validated the incoming Telegram message via the bot
@@ -2878,9 +2938,33 @@ class TelegramCommandsMixin:
             best["missing_args"] = True
         return best
 
+    # Stopwords that must NOT contribute to NL-command overlap scoring.
+    # Without this filter, "tell me best joke" would overlap "me" with the
+    # `/remindme` alias "remind me" → score=1 → false-positive suggestion
+    # → the user's joke request gets intercepted before it reaches the LLM.
+    _NL_STOPWORDS: frozenset[str] = frozenset(
+        {
+            "a", "an", "the", "i", "me", "my", "we", "us", "our", "you",
+            "your", "he", "she", "it", "they", "them", "their", "to", "of",
+            "in", "on", "at", "for", "with", "by", "from", "is", "am", "are",
+            "was", "were", "be", "been", "being", "do", "does", "did", "have",
+            "has", "had", "and", "or", "but", "if", "so", "as", "that", "this",
+            "these", "those", "what", "which", "who", "whom", "whose", "when",
+            "where", "why", "how", "yes", "no", "ok", "okay", "please", "thanks",
+            "thank", "hi", "hey", "hello", "yo",
+        }
+    )
+
     def _suggest_nl_commands(self, text: str, limit: int = 3) -> list[dict[str, str]]:
         lowered = (text or "").lower()
         tokens = set(re.findall(r"[a-z0-9_]+", lowered))
+        # Drop stopwords from BOTH sides of the overlap so common chat
+        # words don't trigger command suggestions. Access via the class
+        # rather than `self` because TelegramChannel forwards into this
+        # mixin without inheriting from it (see telegram.py:4073), so a
+        # plain `self._NL_STOPWORDS` lookup raises AttributeError.
+        stopwords = TelegramCommandsMixin._NL_STOPWORDS
+        meaningful = tokens - stopwords
         alias_map = self._nl_phrase_aliases()
         scored: list[tuple[int, str, str]] = []
 
@@ -2895,7 +2979,8 @@ class TelegramCommandsMixin:
                 p_tokens = set(re.findall(r"[a-z0-9_]+", phrase.lower()))
                 if not p_tokens:
                     continue
-                overlap = len(tokens & p_tokens)
+                p_meaningful = p_tokens - stopwords
+                overlap = len(meaningful & p_meaningful)
                 if overlap:
                     score = max(score, overlap)
                 # Only award the substring bonus when the phrase is present as a
@@ -2907,7 +2992,9 @@ class TelegramCommandsMixin:
                 ):
                     score = max(score, 3)
 
-            if score > 0:
+            # Require a real signal: either two meaningful overlapping tokens
+            # OR a verbatim phrase substring. Single-token noise stays out.
+            if score >= 2:
                 scored.append((score, command, usage))
 
         scored.sort(key=lambda row: (-row[0], row[1]))
@@ -3163,23 +3250,14 @@ class TelegramCommandsMixin:
 
         resolved = self._resolve_nl_command_intent(text)
         if not resolved:
-            # No command matched — show best-effort suggestions so the user
-            # knows what commands are available. If no suggestions can be
-            # generated, fall through to the conversational LLM.
-            suggestions = self._suggest_nl_commands(text, limit=3)
-            if suggestions:
-                sug_lines = ["\U0001f914 Not sure which command you mean.", "", "Try:"]
-                for _s in suggestions:
-                    sug_lines.append(f"\u2022 <code>{html.escape(_s['usage'])}</code>")
-                await self.send_message(
-                    chat_id,
-                    "\n".join(sug_lines),
-                    parse_mode="HTML",
-                    keyboard=self._nl_command_keyboard(suggestions, limit=3),
-                )
-                return True
+            # No confident command match -> fall through to the
+            # conversational LLM (return False). We deliberately do NOT show
+            # a "did you mean /x?" wall here: natural questions like "tell me
+            # more about the movie" were getting hijacked by a single fuzzy
+            # keyword overlap ("about" -> /about) and answered with a command
+            # menu instead of a real reply. Genuine slash commands have their
+            # own dispatcher; bare natural language belongs to the LLM.
             return False
-
         if resolved.get("ambiguous"):
             candidates = list(resolved.get("candidates") or [])[:3]
             if candidates:
@@ -9968,7 +10046,9 @@ class TelegramCommandsMixin:
         /workout daily 07:30 — create/update recurring workout habit
         """
         import re as _re
-        from datetime import datetime as _dt, date as _date, timedelta as _td
+        from datetime import date as _date
+        from datetime import datetime as _dt
+        from datetime import timedelta as _td
 
         arg = text[len("/workout"):].strip()
 
