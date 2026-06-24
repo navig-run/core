@@ -43,7 +43,7 @@ reqwest     = { version = "0.12", default-features = false, features = ["json", 
 utoipa      = { version = "5.5", features = ["axum_extras"] }
 
 # ── Auth / crypto ─────────────────────────────────────────────────────────────
-jsonwebtoken = "10.3"
+jsonwebtoken = "10.4"
 argon2       = "0.5"
 rand         = "0.10"
 
