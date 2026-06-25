@@ -988,6 +988,189 @@ def memory_fact_stats(
         ch.error(f"Error: {e}")
 
 
+@memory_app.command("pending")
+def memory_pending(
+    limit: int = typer.Option(50, "--limit", "-l", help="Max proposals to show"),
+    plain: bool = typer.Option(False, "--plain", help="Plain output for scripting"),
+):
+    """List facts the agent has PROPOSED, awaiting your approval.
+
+    Proposed facts are never injected into prompts until you approve them.
+
+    Examples:
+        navig memory pending
+        navig memory approve <id|all>
+    """
+    try:
+        from navig.memory.key_facts import get_key_fact_store
+
+        store = get_key_fact_store()
+        pending = store.get_pending(limit=limit)
+        if not pending:
+            ch.info("No pending proposals — the agent hasn't learned anything new to confirm.")
+            return
+        if plain:
+            for f in pending:
+                print(f"{f.id}\t{f.category}\t{f.content}")
+            return
+        from rich.table import Table
+
+        table = Table(title=f"Proposed memories awaiting review ({len(pending)})")
+        table.add_column("ID", style="dim", no_wrap=True)
+        table.add_column("Category", style="cyan")
+        table.add_column("Proposed fact")
+        for f in pending:
+            table.add_row(f.id[:8], f.category, f.content)
+        ch.console.print(table)
+        ch.info("Approve with: navig memory approve <id|all>   ·   reject: navig memory reject <id>")
+    except Exception as e:  # noqa: BLE001
+        ch.error(f"Error: {e}")
+
+
+@memory_app.command("approve")
+def memory_approve(
+    fact_id: str = typer.Argument(..., help="Fact ID prefix, or 'all'"),
+):
+    """Approve a proposed fact so the agent may use it in future conversations.
+
+    Examples:
+        navig memory approve abc12345
+        navig memory approve all
+    """
+    try:
+        from navig.memory.key_facts import get_key_fact_store
+
+        store = get_key_fact_store()
+        if fact_id.lower() == "all":
+            n = store.approve_all_pending()
+            ch.success(f"Approved {n} proposal(s).")
+            return
+        matches = [f for f in store.get_pending(limit=1000) if f.id.startswith(fact_id)]
+        if not matches:
+            ch.error(f"No pending fact matching '{fact_id}'")
+            return
+        for f in matches:
+            store.approve(f.id)
+            ch.success(f"Approved: {f.content[:70]}")
+    except Exception as e:  # noqa: BLE001
+        ch.error(f"Error: {e}")
+
+
+@memory_app.command("reject")
+def memory_reject(
+    fact_id: str = typer.Argument(..., help="Fact ID prefix to reject"),
+    reason: str = typer.Option("", "--reason", "-r", help="Why it was rejected (audit)"),
+):
+    """Reject a proposed fact. It's kept for audit but never used.
+
+    Examples:
+        navig memory reject abc12345 --reason "not durable"
+    """
+    try:
+        from navig.memory.key_facts import get_key_fact_store
+
+        store = get_key_fact_store()
+        matches = [f for f in store.get_pending(limit=1000) if f.id.startswith(fact_id)]
+        if not matches:
+            ch.error(f"No pending fact matching '{fact_id}'")
+            return
+        for f in matches:
+            store.reject(f.id, reason=reason or None)
+            ch.success(f"Rejected: {f.content[:70]}")
+    except Exception as e:  # noqa: BLE001
+        ch.error(f"Error: {e}")
+
+
+@memory_app.command("learn")
+def memory_learn(
+    min_occurrences: int = typer.Option(3, "--min-occurrences", help="Minimum pattern frequency"),
+    limit: int = typer.Option(10, "--limit", "-l", help="Max patterns to propose"),
+):
+    """Mine your command-usage patterns and propose them as memories (pending review).
+
+    Turns "you keep running git pull → docker compose up" into a reviewable fact.
+
+    Examples:
+        navig memory learn
+        navig memory learn --min-occurrences 5
+    """
+    try:
+        from navig.agent.memory_proposer import propose_from_command_patterns
+
+        proposed = propose_from_command_patterns(min_occurrences=min_occurrences, limit=limit)
+        if not proposed:
+            ch.info("No frequent command patterns to propose yet — run more commands first.")
+            return
+        ch.success(f"Proposed {len(proposed)} pattern-based memory(ies):")
+        for f in proposed:
+            ch.console.print(f"  [{f.id[:8]}] {f.content}")
+        ch.info("Review with: navig memory pending")
+    except Exception as e:  # noqa: BLE001
+        ch.error(f"Error: {e}")
+
+
+@memory_app.command("export")
+def memory_export(
+    as_markdown: bool = typer.Option(False, "--md", help="Human-readable Markdown (default: JSON)"),
+    output: str = typer.Option("", "--output", "-o", help="Write to file instead of stdout"),
+    include_pending: bool = typer.Option(
+        False, "--all", help="JSON only: include pending/rejected facts too"
+    ),
+):
+    """Export your memory — portable, user-owned. JSON for re-import, Markdown to read.
+
+    Examples:
+        navig memory export --md
+        navig memory export -o my-memory.json
+    """
+    try:
+        from navig.memory.key_facts import get_key_fact_store
+
+        store = get_key_fact_store()
+        text = (
+            store.export_markdown()
+            if as_markdown
+            else store.export_json(approved_only=not include_pending)
+        )
+        if output:
+            from pathlib import Path
+
+            Path(output).write_text(text, encoding="utf-8")
+            ch.success(f"Exported memory to {output}")
+        else:
+            print(text)
+    except Exception as e:  # noqa: BLE001
+        ch.error(f"Error: {e}")
+
+
+@memory_app.command("import")
+def memory_import(
+    path: str = typer.Argument(..., help="Path to a memory export JSON file"),
+    pending: bool = typer.Option(
+        False, "--pending", help="Import as pending (review before use) instead of approved"
+    ),
+):
+    """Import memory from another device/agent (an export JSON). Dedups by content.
+
+    Examples:
+        navig memory import my-memory.json
+        navig memory import shared.json --pending
+    """
+    try:
+        from pathlib import Path
+
+        from navig.memory.key_facts import get_key_fact_store
+
+        text = Path(path).read_text(encoding="utf-8")
+        store = get_key_fact_store()
+        added, merged = store.import_json(text, default_approved=None if pending else 1)
+        ch.success(f"Imported memory: {added} new, {merged} merged into existing.")
+        if pending:
+            ch.info("Imported as pending — review with: navig memory pending")
+    except Exception as e:  # noqa: BLE001
+        ch.error(f"Error: {e}")
+
+
 @memory_app.command("sync")
 def memory_sync(
     ctx: typer.Context,

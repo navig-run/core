@@ -17,11 +17,25 @@ from navig.mcp.tools.inventory import (
 
 
 def _server(hosts: dict | None = None, apps: dict | None = None) -> MagicMock:
+    """Build a mock server whose _config speaks the current ConfigManager API.
+
+    ``hosts`` — dict mapping host_name -> config dict
+    ``apps``  — dict mapping app_name  -> config dict (individual app files)
+    """
     server = MagicMock()
     server.tools = {}
     server._tool_handlers = {}
-    server._config.get_hosts.return_value = hosts or {}
-    server._config.get_apps.return_value = apps or {}
+
+    hosts = hosts or {}
+    apps = apps or {}
+
+    cfg = server._config
+    cfg.list_hosts.return_value = list(hosts.keys())
+    cfg.load_host_config.side_effect = lambda name: hosts[name]
+    cfg.host_exists.side_effect = lambda name: name in hosts
+    cfg.list_apps_from_files.return_value = list(apps.keys())
+    cfg.load_app_from_file.side_effect = lambda name: apps.get(name)
+
     return server
 
 

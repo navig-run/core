@@ -283,7 +283,11 @@ def main(
                 ch.dim(f"→ Auto-detected host: {host}")
         else:
             # Multiple hosts have this app
-            active_host = _get_config_manager().get_active_host()
+            # get_active_host may return a (host, source) tuple — unpack safely.
+            active_host_raw = _get_config_manager().get_active_host(return_source=False)
+            active_host: str | None = (
+                active_host_raw[0] if isinstance(active_host_raw, tuple) else active_host_raw
+            )
             default_host = _get_config_manager().global_config.get("default_host")
 
             # Try to use active host first, then default host
@@ -831,7 +835,7 @@ def whoami_command(
 
     if debug:
         try:
-            from navig.platform.paths import navig_config_dir
+            from navig.platform.paths import config_dir as navig_config_dir
 
             state_file = navig_config_dir() / "state" / "entity.json"
             ch.dim(f"  entity path: {state_file}")
@@ -957,6 +961,59 @@ def run_command(
     if json:
         options["json"] = True
     run_remote_command(command, options, stdin=stdin, file=file, interactive=interactive)
+
+
+@app.command("kill")
+def kill_command(
+    target: str = typer.Argument(..., help="Group (node/python/chrome-tabs/...) or process-name substring"),
+    force: bool = typer.Option(False, "--force", "-f", help="Use SIGKILL instead of graceful terminate"),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would be killed without killing"),
+    include_self: bool = typer.Option(
+        False, "--include-self", help="Don't protect this process's PID + parent PID (dangerous)"
+    ),
+):
+    """Kill processes by group or name (cross-platform).
+
+    \b
+    Built-in groups:
+      node, python, powershell, pwsh, conhost, windows-terminal,
+      esbuild, git, chrome, chrome-tabs, chrome-all-renderers
+
+    \b
+    Examples:
+      navig kill node                  # graceful terminate all node procs
+      navig kill chrome-tabs           # kill Chrome tab renderers (keeps browser + extensions)
+      navig kill esbuild --force       # SIGKILL all esbuild
+      navig kill node --dry-run        # list what would be killed
+    """
+    from navig.commands import processes
+
+    if dry_run:
+        report = processes.kill_group(target, dry_run=True)
+        cands = report["candidates"]
+        if not cands:
+            typer.echo(f"No matching processes for '{target}'.")
+            raise typer.Exit(0)
+        typer.echo(f"Would kill {len(cands)} process(es) matching '{target}':")
+        for c in cands[:50]:
+            typer.echo(f"  pid={c['pid']:>6}  name={c['name']}")
+        if len(cands) > 50:
+            typer.echo(f"  ... +{len(cands) - 50} more")
+        raise typer.Exit(0)
+
+    report = processes.kill_group(
+        target, force=force, exclude_self=not include_self, dry_run=False
+    )
+    k, s, f = len(report["killed"]), len(report["skipped"]), len(report["failed"])
+    typer.echo(f"Group '{target}': killed={k} skipped={s} failed={f}")
+    if s:
+        for sk in report["skipped"]:
+            typer.echo(f"  skip pid={sk.get('pid')} reason={sk.get('reason')}")
+    if f:
+        for fl in report["failed"]:
+            typer.echo(f"  fail pid={fl.get('pid')} reason={fl.get('reason')}")
+        raise typer.Exit(1)
+    raise typer.Exit(0)
 
 
 @app.command("r", hidden=True)

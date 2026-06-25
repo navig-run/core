@@ -234,3 +234,55 @@ async def handle_deck_remote_backup(request: "web.Request") -> "web.Response":
     except Exception:
         data = {"raw": out}
     return _ok({"source": "remote", "host": host, "data": data})
+
+
+# ── Deploy NAVIG to a host (install + start over SSH; background + status poll) ──
+
+_DEPLOY_STATE: dict[str, dict] = {}  # host → {running, progress, result}
+
+
+async def handle_deck_remote_deploy(request: "web.Request") -> "web.Response":
+    """POST { host, public_url? } — install + start NAVIG on the host (background)."""
+    body = await _read_body(request)
+    host = str(body.get("host") or "").strip()
+    public_url = str(body.get("public_url") or "").strip()
+    if not host:
+        return _err("'host' is required", 400)
+    existing = _DEPLOY_STATE.get(host)
+    if existing and existing.get("running"):
+        return _ok({"host": host, "started": False, "running": True})
+
+    _DEPLOY_STATE[host] = {"running": True, "progress": "queued", "result": None}
+
+    async def _run_deploy() -> None:
+        from navig.remote_deploy import deploy_to_host  # noqa: PLC0415
+
+        loop = asyncio.get_event_loop()
+
+        def _progress(msg: str) -> None:
+            st = _DEPLOY_STATE.get(host)
+            if st is not None:
+                st["progress"] = msg
+
+        try:
+            result = await loop.run_in_executor(
+                None, lambda: deploy_to_host(host, public_url=public_url, on_progress=_progress)
+            )
+            _DEPLOY_STATE[host] = {"running": False, "progress": "done", "result": result.as_dict()}
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("remote deploy failed for %s", host)
+            _DEPLOY_STATE[host] = {
+                "running": False, "progress": "error",
+                "result": {"host": host, "ok": False, "steps": [{"name": "deploy", "ok": False, "detail": str(exc)}]},
+            }
+
+    asyncio.create_task(_run_deploy())
+    return _ok({"host": host, "started": True, "running": True})
+
+
+async def handle_deck_remote_deploy_status(request: "web.Request") -> "web.Response":
+    """GET ?host=X — current deploy status (running · progress · steps)."""
+    host = (request.query.get("host") or "").strip()
+    if not host:
+        return _err("'host' is required", 400)
+    return _ok(_DEPLOY_STATE.get(host) or {"running": False, "progress": "idle", "result": None})

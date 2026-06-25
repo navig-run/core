@@ -109,6 +109,8 @@ def test_build_step_registry_includes_new_integration_steps(tmp_path: Path) -> N
         "first-host",
         "matrix",
         "telegram-bot",
+        "lighthouse",
+        "deck-deploy",
         "email",
         "social-networks",
         "runtime-secrets",

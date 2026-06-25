@@ -38,6 +38,22 @@ _NETWORK_ALIASES: dict[str, str] = {
 }
 
 
+def _extract_json(raw: str) -> dict | None:
+    """Pull the first JSON object out of an LLM reply (tolerates code fences)."""
+    if not raw:
+        return None
+    import json as _json
+
+    s = raw.strip()
+    a, b = s.find("{"), s.rfind("}")
+    if a == -1 or b == -1 or b < a:
+        return None
+    try:
+        return _json.loads(s[a : b + 1])
+    except Exception:
+        return None
+
+
 class TelegramMessagingMixin:
     """
     Mixin providing messaging slash-command handlers for TelegramChannel.
@@ -121,6 +137,85 @@ class TelegramMessagingMixin:
                 await self.send_message(chat_id, f"❌ SMS failed: {receipt.error}")
         except Exception as exc:
             await self.send_message(chat_id, f"❌ Error: {exc}")
+
+    # ── Natural-language messaging (voice or text) ────────────
+    async def _try_nl_messaging_intent(
+        self, chat_id: int, text: str, metadata: dict | None = None
+    ) -> bool:
+        """Detect a free-form 'send SMS/message to <contact>' instruction (any
+        language, incl. a requested translation) and dispatch it. Returns True
+        when handled. Powers voice commands like
+        «Навиг отправь смс Алексу на французском "Привет бро"»: the transcribed
+        text is parsed by the LLM, translated into the requested language, the
+        contact is resolved to a phone number, and the SMS is sent."""
+        low = (text or "").lower()
+        # Cheap gate: only spend an LLM call when a messaging channel is named.
+        if not any(g in low for g in ("sms", "смс", "whatsapp", "ватсап", "envoie", "manda")):
+            return False
+
+        # Give the model the known contacts so it can map "Алексу"/"Alex" → alias.
+        try:
+            from navig.store.contacts import get_contact_store
+
+            rows = get_contact_store().list_contacts(limit=200)
+            contacts_blurb = ", ".join(
+                f"{c.alias} ({c.display_name})" if getattr(c, "display_name", "") else c.alias
+                for c in rows
+            ) or "(none)"
+        except Exception:
+            contacts_blurb = "(unavailable)"
+
+        from navig.llm_generate import llm_generate
+
+        sys = (
+            "Convert the user's instruction into a messaging action. The user may "
+            "speak any language. Reply with ONE JSON object and nothing else:\n"
+            '{"is_send": bool, "contact": str, "channel": "sms|whatsapp|telegram", '
+            '"language": str|null, "message": str}\n'
+            "- is_send: true ONLY if they clearly want to send a message to someone.\n"
+            "- contact: the recipient; match one of the known contact aliases if possible.\n"
+            "- channel: the network to use (default \"sms\").\n"
+            "- language: the language they asked to send IN (e.g. \"French\"), else null.\n"
+            "- message: the body, TRANSLATED into `language` if given, else the original. "
+            "Output only the exact words to send."
+        )
+        user = f"Instruction: {text}\nKnown contacts (alias — name): {contacts_blurb}"
+        try:
+            raw = llm_generate(
+                messages=[{"role": "system", "content": sys}, {"role": "user", "content": user}],
+                mode="big_tasks", temperature=0.2, max_tokens=400,
+            )
+        except Exception:
+            return False
+
+        data = _extract_json(raw)
+        if not data or not data.get("is_send"):
+            return False
+        contact = str(data.get("contact") or "").strip()
+        message = str(data.get("message") or "").strip()
+        channel = _NETWORK_ALIASES.get((data.get("channel") or "sms").strip().lower(), "sms")
+        if not contact or not message:
+            return False
+
+        try:
+            receipt = await self._messaging_dispatch(contact, message, network=channel)
+        except Exception as exc:
+            await self.send_message(chat_id, f"❌ Couldn't send to {html.escape(contact)}: {exc}")
+            return True
+        if getattr(receipt, "ok", False):
+            lang = data.get("language")
+            tail = f" (in {lang})" if lang else ""
+            await self.send_message(
+                chat_id,
+                f"✅ {channel.upper()} sent to <b>{html.escape(contact)}</b>{html.escape(tail)}:\n{html.escape(message)}",
+                parse_mode="HTML",
+            )
+        else:
+            await self.send_message(
+                chat_id,
+                f"❌ Couldn't send to {html.escape(contact)}: {getattr(receipt, 'error', 'failed')}",
+            )
+        return True
 
     # ── /wa @alias message ────────────────────────────────────
 

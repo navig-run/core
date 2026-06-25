@@ -197,6 +197,14 @@ class SessionManager:
         """Load all sessions from disk."""
         with self._lock:
             for session_file in self.storage_dir.glob("*.json"):
+                # Skip atomic-write temp files left by a previous crash
+                if session_file.name.endswith(".tmp.json"):
+                    try:
+                        session_file.unlink()
+                        logger.debug("Removed stale temp session file: %s", session_file.name)
+                    except OSError:
+                        pass
+                    continue
                 try:
                     with open(session_file, encoding="utf-8") as f:
                         data = json.load(f)

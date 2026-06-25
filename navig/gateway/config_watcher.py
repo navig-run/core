@@ -194,8 +194,13 @@ class ConfigWatcher:
         """Handle configuration file change."""
         logger.info("Reloading configuration...")
 
-        # Reload config manager
-        self.gateway.config_manager.load_config()
+        # ConfigManager doesn't expose a public `load_config` — invalidate the
+        # internal cache so the next `get()` reads fresh from disk.
+        cfg_mgr = self.gateway.config_manager
+        if hasattr(cfg_mgr, "_invalidate_config_cache"):
+            cfg_mgr._invalidate_config_cache()
+        elif hasattr(cfg_mgr, "reload"):
+            cfg_mgr.reload()
 
         # Update gateway config
         self.gateway._load_config()

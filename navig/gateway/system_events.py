@@ -117,6 +117,11 @@ class SystemEventQueue:
         # Load persisted events
         self._load_events()
 
+        # Register as the process-global queue so modules without a gateway
+        # reference (e.g. channel ingestion) can emit deck events.
+        global _GLOBAL_QUEUE
+        _GLOBAL_QUEUE = self
+
     def _get_events_path(self) -> Path:
         return self.storage_path / "events.json"
 
@@ -338,6 +343,18 @@ class SystemEventQueue:
             events = [e for e in events if e.event_type == event_type]
 
         return events[-limit:]
+
+
+# ── Process-global accessor ───────────────────────────────────
+# Set in SystemEventQueue.__init__ so modules without a gateway reference
+# (e.g. channel ingestion) can emit deck events best-effort.
+
+_GLOBAL_QUEUE: "SystemEventQueue | None" = None
+
+
+def get_system_events() -> "SystemEventQueue | None":
+    """Return the process-global :class:`SystemEventQueue`, or ``None``."""
+    return _GLOBAL_QUEUE
 
 
 # Common event types

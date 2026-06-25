@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from navig.memory.paths import KEY_FACTS_DB_PATH
+from navig.memory.paths import get_key_facts_db_path
 
 logger = logging.getLogger("navig.memory.key_facts")
 
@@ -84,6 +84,10 @@ class KeyFact:
     last_accessed: str | None = None
     embedding: list[float] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Curation status: 1 = approved (used in retrieval), None = pending (proposed
+    # by the agent, awaiting review), 0 = rejected. Defaults to approved so
+    # directly-constructed / manual facts work unchanged; proposers set None.
+    approved: int | None = 1
 
     @property
     def token_count(self) -> int:
@@ -110,6 +114,7 @@ class KeyFact:
             "last_accessed": self.last_accessed,
             "embedding": json.dumps(self.embedding) if self.embedding else None,
             "metadata": json.dumps(self.metadata),
+            "approved": self.approved,
         }
 
     @classmethod
@@ -130,6 +135,8 @@ class KeyFact:
             last_accessed=row["last_accessed"],
             embedding=json.loads(row["embedding"]) if row["embedding"] else None,
             metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+            # Guard against a row from a pre-migration db (column absent → approved).
+            approved=(row["approved"] if "approved" in row.keys() else 1),
         )
 
     def __repr__(self) -> str:
@@ -174,7 +181,7 @@ class KeyFactStore:
         db_path: Path | None = None,
         embedding_provider: Any | None = None,
     ):
-        self.db_path = db_path or KEY_FACTS_DB_PATH
+        self.db_path = db_path or get_key_facts_db_path()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.embedding_provider = embedding_provider
         self._local = threading.local()
@@ -210,7 +217,8 @@ class KeyFactStore:
                 access_count            INTEGER DEFAULT 0,
                 last_accessed           TEXT,
                 embedding               TEXT,
-                metadata                TEXT DEFAULT '{}'
+                metadata                TEXT DEFAULT '{}',
+                approved                INTEGER DEFAULT 1
             );
 
             CREATE INDEX IF NOT EXISTS idx_kf_category ON key_facts(category);
@@ -221,6 +229,21 @@ class KeyFactStore:
             CREATE INDEX IF NOT EXISTS idx_kf_source ON key_facts(source_conversation_id);
         """
         )
+
+        # Migration: add `approved` to pre-existing dbs (CREATE TABLE IF NOT EXISTS
+        # won't alter them). Idempotent — guarded by a column-presence check. Backfill
+        # existing rows to approved=1 so current memory keeps working; only NEW facts
+        # proposed by the agent are inserted as pending (approved=NULL). The approved
+        # index is created *after* this so it never references a not-yet-added column.
+        try:
+            cols = {r["name"] for r in conn.execute("PRAGMA table_info(key_facts)")}
+            if "approved" not in cols:
+                conn.execute("ALTER TABLE key_facts ADD COLUMN approved INTEGER")
+                conn.execute("UPDATE key_facts SET approved = 1 WHERE approved IS NULL")
+                logger.info("key_facts: migrated existing rows to approved=1")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_kf_approved ON key_facts(approved)")
+        except sqlite3.OperationalError as exc:
+            logger.warning("key_facts approved-column migration skipped: %s", exc)
 
         # FTS5 for full-text keyword search (standalone, not external content)
         self._fts_available = False
@@ -296,18 +319,18 @@ class KeyFactStore:
                 (id, content, category, tags, confidence,
                  source_conversation_id, source_platform,
                  created_at, updated_at, superseded_by, deleted,
-                 access_count, last_accessed, embedding, metadata)
+                 access_count, last_accessed, embedding, metadata, approved)
                 VALUES
                 (:id, :content, :category, :tags, :confidence,
                  :source_conversation_id, :source_platform,
                  :created_at, :updated_at, :superseded_by, :deleted,
-                 :access_count, :last_accessed, :embedding, :metadata)
+                 :access_count, :last_accessed, :embedding, :metadata, :approved)
             """,
                 d,
             )
 
-            # Update FTS
-            self._update_fts(fact)
+            # Update FTS inside the same transaction for atomicity.
+            self._update_fts_conn(conn, fact)
             conn.commit()
 
         return fact
@@ -322,8 +345,13 @@ class KeyFactStore:
         limit: int = 100,
         category: str | None = None,
         min_confidence: float = 0.0,
+        approved: int | None = None,
     ) -> list[KeyFact]:
-        """Get all active (non-deleted, non-superseded) facts."""
+        """Get all active (non-deleted, non-superseded) facts.
+
+        *approved*: when ``1`` returns only approved facts (the curation-gated set
+        used for retrieval); when ``None`` (default) applies no approval filter.
+        """
         query = "SELECT * FROM key_facts WHERE deleted = 0 AND superseded_by IS NULL"
         params: list[Any] = []
 
@@ -333,12 +361,135 @@ class KeyFactStore:
         if min_confidence > 0:
             query += " AND confidence >= ?"
             params.append(min_confidence)
+        if approved is not None:
+            query += " AND approved = ?"
+            params.append(approved)
 
         query += " ORDER BY confidence DESC, updated_at DESC LIMIT ?"
         params.append(limit)
 
         rows = self._conn().execute(query, params).fetchall()
         return [KeyFact.from_row(r) for r in rows]
+
+    # ── Curation (propose → approve / reject) ─────────────────
+
+    def get_pending(self, limit: int = 100) -> list[KeyFact]:
+        """Return facts the agent proposed that are awaiting review (approved IS NULL)."""
+        rows = self._conn().execute(
+            """SELECT * FROM key_facts
+               WHERE deleted = 0 AND superseded_by IS NULL AND approved IS NULL
+               ORDER BY created_at DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [KeyFact.from_row(r) for r in rows]
+
+    def set_approval(
+        self, fact_id: str, approved: int | None, reason: str | None = None
+    ) -> bool:
+        """Set a fact's curation status (1=approved, 0=rejected, None=pending).
+
+        On rejection, records *reason* under ``metadata["rejection_reason"]`` for audit.
+        """
+        with self._write_lock:
+            conn = self._conn()
+            fact = self.get(fact_id)
+            if fact is None:
+                return False
+            meta = dict(fact.metadata)
+            if approved == 0 and reason:
+                meta["rejection_reason"] = reason
+            cursor = conn.execute(
+                "UPDATE key_facts SET approved = ?, metadata = ?, updated_at = ? WHERE id = ?",
+                (approved, json.dumps(meta), _utcnow(), fact_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def approve(self, fact_id: str) -> bool:
+        """Approve a proposed fact so retrieval may use it."""
+        return self.set_approval(fact_id, 1)
+
+    def reject(self, fact_id: str, reason: str | None = None) -> bool:
+        """Reject a proposed fact (kept for audit, never injected)."""
+        return self.set_approval(fact_id, 0, reason=reason)
+
+    def approve_all_pending(self) -> int:
+        """Approve every pending fact. Returns the number approved."""
+        with self._write_lock:
+            conn = self._conn()
+            cursor = conn.execute(
+                "UPDATE key_facts SET approved = 1, updated_at = ? "
+                "WHERE approved IS NULL AND deleted = 0 AND superseded_by IS NULL",
+                (_utcnow(),),
+            )
+            conn.commit()
+            return cursor.rowcount
+
+    # ── Portable export / import ──────────────────────────────
+
+    def export_json(self, approved_only: bool = True) -> str:
+        """Serialise facts to a portable JSON document (user-owned memory)."""
+        facts = self.get_active(limit=100000, approved=1 if approved_only else None)
+        payload = {
+            "version": self.SCHEMA_VERSION,
+            "exported_at": _utcnow(),
+            "facts": [f.to_dict() for f in facts],
+        }
+        return json.dumps(payload, indent=2, ensure_ascii=False)
+
+    def export_markdown(self) -> str:
+        """Human-readable 'what it knows about me' export (approved facts only)."""
+        facts = self.get_active(limit=100000, approved=1)
+        lines = ["# NAVIG — what I remember about you", ""]
+        by_cat: dict[str, list[KeyFact]] = {}
+        for f in facts:
+            by_cat.setdefault(f.category, []).append(f)
+        for cat in sorted(by_cat):
+            lines.append(f"## {cat}")
+            for f in by_cat[cat]:
+                lines.append(f"- {f.content}")
+            lines.append("")
+        return "\n".join(lines).rstrip() + "\n"
+
+    def import_json(self, text: str, default_approved: int | None = 1) -> tuple[int, int]:
+        """Import facts from an ``export_json`` document.
+
+        Returns ``(added, merged)``. Each fact is routed through ``upsert`` so
+        content-dedup is handled. *default_approved* applies when an imported fact
+        carries no explicit approval.
+        """
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"invalid memory import JSON: {exc}") from exc
+        raw_facts = data.get("facts", data) if isinstance(data, dict) else data
+        added = merged = 0
+        for raw in raw_facts or []:
+            try:
+                content = (raw.get("content") or "").strip()
+                if not content:
+                    continue
+                existed = self._find_duplicate(content) is not None
+                tags = raw.get("tags")
+                if isinstance(tags, str):
+                    try:
+                        tags = json.loads(tags)
+                    except json.JSONDecodeError:
+                        tags = []
+                fact = KeyFact(
+                    content=content,
+                    category=raw.get("category", "context"),
+                    tags=tags or [],
+                    confidence=float(raw.get("confidence", 0.8) or 0.8),
+                    source_platform=raw.get("source_platform", "import"),
+                    approved=raw.get("approved", default_approved),
+                )
+                self.upsert(fact)
+                merged += int(existed)
+                added += int(not existed)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("skipping malformed imported fact: %s", exc)
+        return added, merged
 
     def search_keyword(self, query: str, limit: int = 20) -> list[tuple[KeyFact, float]]:
         """
@@ -356,7 +507,7 @@ class KeyFactStore:
                     WHERE key_facts_fts MATCH ?
                       AND kf.deleted = 0
                       AND kf.superseded_by IS NULL
-                    ORDER BY fts.rank
+                    ORDER BY fts.rank, kf.confidence DESC
                     LIMIT ?
                 """,
                     (query, limit),
@@ -418,21 +569,23 @@ class KeyFactStore:
     def soft_delete(self, fact_id: str) -> bool:
         """Mark a fact as deleted.  Reversible."""
         with self._write_lock:
-            cursor = self._conn().execute(
+            conn = self._conn()
+            cursor = conn.execute(
                 "UPDATE key_facts SET deleted = 1, updated_at = ? WHERE id = ?",
                 (_utcnow(), fact_id),
             )
-            self._conn().commit()
+            conn.commit()
             return cursor.rowcount > 0
 
     def restore(self, fact_id: str) -> bool:
         """Restore a soft-deleted fact."""
         with self._write_lock:
-            cursor = self._conn().execute(
+            conn = self._conn()
+            cursor = conn.execute(
                 "UPDATE key_facts SET deleted = 0, updated_at = ? WHERE id = ?",
                 (_utcnow(), fact_id),
             )
-            self._conn().commit()
+            conn.commit()
             return cursor.rowcount > 0
 
     def supersede(self, old_id: str, new_fact: KeyFact) -> KeyFact:
@@ -540,7 +693,9 @@ class KeyFactStore:
         normalized = " ".join(content.lower().split())
         rows = (
             self._conn()
-            .execute("SELECT * FROM key_facts WHERE deleted = 0 AND superseded_by IS NULL")
+            .execute(
+                "SELECT * FROM key_facts WHERE deleted = 0 AND superseded_by IS NULL LIMIT 500"
+            )
             .fetchall()
         )
         for r in rows:
@@ -568,23 +723,26 @@ class KeyFactStore:
                 access_count = :access_count,
                 last_accessed = :last_accessed,
                 embedding = :embedding,
-                metadata = :metadata
+                metadata = :metadata,
+                approved = :approved
             WHERE id = :id
         """,
             d,
         )
 
     def _update_fts(self, fact: KeyFact) -> None:
+        """Update FTS index (uses current thread-local connection, no commit)."""
+        self._update_fts_conn(self._conn(), fact)
+
+    def _update_fts_conn(self, conn: sqlite3.Connection, fact: KeyFact) -> None:
+        """Update FTS index on *conn* without committing."""
         if not self._fts_available:
             return
         try:
-            conn = self._conn()
-            # Delete old FTS entry by fact_id
             conn.execute(
                 "DELETE FROM key_facts_fts WHERE fact_id = ?",
                 (fact.id,),
             )
-            # Insert current content
             tags_str = " ".join(fact.tags) if fact.tags else ""
             conn.execute(
                 "INSERT INTO key_facts_fts (fact_id, content, tags, category) VALUES (?, ?, ?, ?)",

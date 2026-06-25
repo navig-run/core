@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -60,8 +61,13 @@ def normalize_space_name(name: str | None) -> str:
         candidate = value[:-6]
         if candidate in CANONICAL_SPACES:
             return candidate
+        value = candidate or value
 
-    return "default"
+    # Free-form directory space: keep its own (slugified) name rather than
+    # collapsing to "default" — collapsing silently broke directory spaces
+    # like `homelab` (they all resolved to the default space).
+    slug = re.sub(r"[^a-z0-9_-]+", "-", value).strip("-")
+    return slug or "default"
 
 
 def validate_space_name(name: str) -> bool:

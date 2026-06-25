@@ -215,22 +215,29 @@ class TestSupportsThinking:
 
 
 class TestGetThinkingParams:
-    def test_anthropic_low_disables_thinking(self):
+    # Current Anthropic API (Opus 4.8/4.7, Sonnet 4.6): budget_tokens is REMOVED
+    # and 400s — effort is expressed via output_config.effort + adaptive thinking.
+
+    def test_anthropic_low_is_effort_only(self):
         params = get_thinking_params(EffortLevel.LOW, provider="anthropic")
-        assert params == {"thinking": {"type": "disabled"}}
+        assert params == {"output_config": {"effort": "low"}}
+        assert "thinking" not in params  # no thinking blocks to replay on tool turns
 
-    def test_anthropic_medium_enables_thinking(self):
+    def test_anthropic_medium_is_effort_only(self):
         params = get_thinking_params(EffortLevel.MEDIUM, provider="anthropic")
-        assert params["thinking"]["type"] == "enabled"
-        assert params["thinking"]["budget_tokens"] == ANTHROPIC_THINKING_BUDGET[EffortLevel.MEDIUM]
+        assert params == {"output_config": {"effort": "medium"}}
+        assert "budget_tokens" not in str(params)
 
-    def test_anthropic_high_budget(self):
+    def test_anthropic_high_uses_adaptive_thinking(self):
         params = get_thinking_params(EffortLevel.HIGH, provider="anthropic")
-        assert params["thinking"]["budget_tokens"] == 32768
+        assert params["thinking"] == {"type": "adaptive"}
+        assert params["output_config"]["effort"] == "high"
+        assert "budget_tokens" not in str(params)
 
-    def test_anthropic_ultrathink_budget(self):
+    def test_anthropic_ultrathink_maps_to_max(self):
         params = get_thinking_params(EffortLevel.ULTRATHINK, provider="anthropic")
-        assert params["thinking"]["budget_tokens"] == 131072
+        assert params["thinking"] == {"type": "adaptive"}
+        assert params["output_config"]["effort"] == "max"
 
     def test_openai_returns_reasoning_effort(self):
         params = get_thinking_params(EffortLevel.HIGH, provider="openai")

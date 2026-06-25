@@ -380,3 +380,7 @@ tools/license_keys/*.priv
 
 # Founder license key material — NEVER ship in public core
 tools/license_keys/
+
+# scratch / one-off dev files — never commit
+.tmp_*
+fix_aiohttp.ps1

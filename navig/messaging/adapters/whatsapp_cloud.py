@@ -36,6 +36,32 @@ logger = logging.getLogger(__name__)
 
 _GRAPH_API = "https://graph.facebook.com"
 
+# WhatsApp media kinds keyed by our attachment "kind".
+_WA_TYPE = {"photo": "image", "image": "image", "video": "video", "voice": "audio", "audio": "audio"}
+
+
+def _whatsapp_payload(to: str, text: str, attachments: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """Build a Cloud-API message payload.
+
+    Media requires a public ``url`` (Cloud API fetches it by link) — local-only
+    attachments would need a separate media upload, so they fall back to text.
+    Only the first attachment is sent (WhatsApp is one media object per message).
+    """
+    base = {"messaging_product": "whatsapp", "to": to}
+    if attachments:
+        att = attachments[0]
+        link = att.get("url")
+        if link:
+            wtype = _WA_TYPE.get((att.get("kind") or "").lower(), "document")
+            media: dict[str, Any] = {"link": link}
+            if wtype in ("image", "video", "document") and text:
+                media["caption"] = text
+            if wtype == "document" and att.get("filename"):
+                media["filename"] = att["filename"]
+            return {**base, "type": wtype, wtype: media}
+        logger.info("WhatsApp attachment without a public url — sending text only")
+    return {**base, "type": "text", "text": {"body": text}}
+
 
 class WhatsAppCloudAdapter:
     """
@@ -86,12 +112,7 @@ class WhatsAppCloudAdapter:
             "Authorization": f"Bearer {self._access_token}",
             "Content-Type": "application/json",
         }
-        payload: dict[str, Any] = {
-            "messaging_product": "whatsapp",
-            "to": to_number,
-            "type": "text",
-            "text": {"body": text},
-        }
+        payload: dict[str, Any] = _whatsapp_payload(to_number, text, attachments)
 
         try:
             session = await self._get_session()

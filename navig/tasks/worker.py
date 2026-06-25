@@ -192,6 +192,16 @@ class TaskWorker:
 
     async def _execute_task(self, task: Task) -> None:
         """Execute *task*, updating queue state on completion or failure."""
+        import time as _time
+
+        # Operator narrator: task lifecycle is a high-signal event.
+        try:
+            from navig.core import narrator as _n
+            _n.phase(f"Task starting  {task.id}  ({task.name})", icon="gear")
+        except Exception:  # noqa: BLE001
+            _n = None  # type: ignore[assignment]
+
+        t0 = _time.monotonic()
         try:
             handler = self._handlers.get(task.handler)
             if handler is None:
@@ -216,17 +226,24 @@ class TaskWorker:
                 await self.queue.complete(task.id, result=result)
                 self._stats["tasks_completed"] += 1
                 logger.info("Task completed: %s (%s)", task.id, task.name)
+                if _n is not None:
+                    elapsed_ms = int((_time.monotonic() - t0) * 1000)
+                    _n.verdict(f"Task done  {task.id}  ({elapsed_ms}ms)", icon="check")
 
             except asyncio.TimeoutError:
                 error_msg = f"Timed out after {timeout}s"
                 await self.queue.fail(task.id, error_msg)
                 self._stats["tasks_failed"] += 1
                 logger.error("Task timed out: %s", task.id)
+                if _n is not None:
+                    _n.verdict(f"Task timeout  {task.id}  (>{timeout}s)", icon="warn")
 
         except Exception as exc:
             await self.queue.fail(task.id, str(exc))
             self._stats["tasks_failed"] += 1
             logger.error("Task failed: %s — %s", task.id, exc)
+            if _n is not None:
+                _n.verdict(f"Task failed  {task.id}  ({exc})", icon="cross")
 
         finally:
             self._active_tasks.pop(task.id, None)

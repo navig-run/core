@@ -45,6 +45,31 @@ class _Result:
     warnings: list[str] = field(default_factory=list)
 
 
+def _find_uv() -> str | None:
+    """Locate uv, preferring NAVIG's bundled runtime copy.
+
+    The installer keeps uv self-contained at ``~/.navig/runtime/uv`` and off
+    PATH, so ``shutil.which`` alone would miss it and fall back to ``pip`` —
+    which the uv-built venv has no pip for. We derive the runtime root from
+    ``sys.executable`` (``<runtime>/venv/(Scripts|bin)/python``) and only then
+    fall back to any uv on PATH (e.g. for dev installs).
+    """
+    exe = "uv.exe" if os.name == "nt" else "uv"
+    candidates = []
+    try:
+        candidates.append(Path(sys.executable).resolve().parents[2] / exe)
+    except Exception:  # noqa: BLE001
+        pass  # sys.executable shape unexpected; fall through to other lookups
+    candidates.append(Path.home() / ".navig" / "runtime" / exe)
+    for c in candidates:
+        try:
+            if c.exists():
+                return str(c)
+        except Exception:  # noqa: BLE001
+            pass  # unreadable path; try the next candidate
+    return shutil.which("uv")
+
+
 def _step_git(src_dir, force):
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
     t0 = time.monotonic()
@@ -98,7 +123,7 @@ def _step_git(src_dir, force):
     commit_line = pull.stdout.strip().splitlines()[-1] if pull.stdout.strip() else ""
     result = _Result("Sync with upstream", ok=True, note=commit_line[:80], elapsed=elapsed)
     t1 = time.monotonic()
-    uv = shutil.which("uv")
+    uv = _find_uv()
     if uv:
         cmd = [
             uv,
@@ -122,7 +147,7 @@ def _step_git(src_dir, force):
 
 def _step_pypi(force):
     t0 = time.monotonic()
-    uv = shutil.which("uv")
+    uv = _find_uv()
     if uv:
         cmd = [uv, "pip", "install", "--python", sys.executable, "--upgrade", "navig"]
         if force:

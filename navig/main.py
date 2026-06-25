@@ -204,7 +204,11 @@ def _handle_start_command(extra_args: list[str]) -> bool:
     `navig start` is a convenient alias for `navig dashboard`.
     Accepts optional flags: --fast (skip boot animation).
     """
-    from navig.commands.dashboard import run_dashboard, run_dashboard_simple
+    try:
+        from navig.commands.dashboard import run_dashboard, run_dashboard_simple
+    except Exception as exc:
+        _log.debug("Dashboard unavailable: %s — falling back to full CLI", exc)
+        return False
 
     skip_boot = "--fast" in extra_args
     simple = "--simple" in extra_args
@@ -286,11 +290,11 @@ def _normalize_help_compat_args(argv: list[str]) -> list[str]:
 
     # Legacy alias: `navig memory list` -> `navig memory sessions`
     if len(non_global_tokens) >= 2 and non_global_tokens[0] == "memory" and non_global_tokens[1] == "list":
-        normalized = list(argv)
+        rewritten = list(argv)
         list_arg_index = 1 + non_global_positions[1]
-        normalized[list_arg_index] = "sessions"
-        args = normalized[1:]
-        argv = normalized
+        rewritten[list_arg_index] = "sessions"
+        args = rewritten[1:]
+        argv = rewritten
 
     if "--help" in args:
         return argv
@@ -406,7 +410,7 @@ _BUILTIN_COMMANDS: frozenset[str] = frozenset({
     "config",
     "status",
     "version",
-    "log", "l",
+    "log", "l", "logs",
     "local",
     "mcp",
     "profile",
@@ -907,6 +911,17 @@ def main() -> None:
     3. Add plugin management commands
     4. Run the CLI
     """
+    # On Windows the console may use a legacy code page (e.g. cp1251) that
+    # cannot encode emoji used in NAVIG's output.  Reconfigure stdout/stderr
+    # to UTF-8 so rich output and gateway banners render correctly.
+    if sys.platform == "win32":
+        for _stream in (sys.stdout, sys.stderr):
+            if hasattr(_stream, "reconfigure"):
+                try:
+                    _stream.reconfigure(encoding="utf-8", errors="replace")
+                except Exception:
+                    pass
+
     try:
         from navig.config import reset_config_manager, set_config_cache_bypass
         from navig.core.crash_handler import crash_handler
@@ -939,6 +954,24 @@ def main() -> None:
         # One-time workspace→spaces migration and stale-registration guard.
         # Both helpers are idempotent; failures are swallowed at DEBUG level.
         _run_startup_migrations()
+
+        # Bind the process cwd to the active workshop (CLI only): the active
+        # space *is* the working directory, so an agent's relative file/shell
+        # ops land inside the space — not wherever the CLI was launched. The
+        # daemon serves many spaces concurrently and must NEVER chdir (its file
+        # tools resolve per-request via the session ContextVar instead).
+        try:
+            import os as _os  # noqa: PLC0415
+            from pathlib import Path as _Path  # noqa: PLC0415
+
+            if not any(tok in ("gateway", "daemon") for tok in sys.argv[1:3]):
+                from navig.spaces.active import get_active_working_dir  # noqa: PLC0415
+
+                _wd = get_active_working_dir()
+                if _wd and _wd.is_dir() and _wd.resolve() != _Path.cwd().resolve():
+                    _os.chdir(_wd)
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; never block the CLI
 
         # Import the existing CLI app (maintains all current functionality)
         from navig.cli import _register_external_commands, app

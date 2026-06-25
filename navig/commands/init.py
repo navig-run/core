@@ -21,6 +21,11 @@ _CHAT_ONBOARDING_CANONICAL_STEPS: tuple[tuple[str, str, str], ...] = (
     ("ai-provider", "Choose AI provider", "Open Providers and choose your AI brain"),
     ("first-host", "Connect first host", "Add or confirm your first server host"),
     ("telegram-bot", "Enable Telegram bot", "Verify Telegram bot runtime health"),
+    (
+        "setup-matrix-bridges",
+        "Set up unified inbox",
+        "Bridge WhatsApp, Telegram personal, Messenger into Matrix",
+    ),
 )
 _CHAT_ONBOARDING_CANONICAL_STEP_IDS = {
     step_id for step_id, _, _ in _CHAT_ONBOARDING_CANONICAL_STEPS
@@ -1217,6 +1222,139 @@ def run_chat_first_handoff(
             ch.info("Run: navig start")
             ch.info("Then open Telegram and say 'hello' to your bot.")
 
+    # Continue to bridge onboarding if stdin is a tty
+    if sys.stdin.isatty() and not quiet:
+        run_matrix_bridge_onboarding(quiet=quiet)
+
+
+def run_matrix_bridge_onboarding(
+    *,
+    quiet: bool = False,
+    navig_dir: Path | None = None,
+) -> None:
+    """Interactive step: configure Matrix/Synapse bridges for unified inbox.
+
+    Called automatically after the Telegram-bot step during ``navig init``.
+    Delegates container status checks and deployment to
+    :mod:`navig.commands.matrix` to keep a single source of truth.
+    """
+    if quiet:
+        return
+
+    from navig.config import get_config_manager
+
+    cfg = get_config_manager()
+    matrix_cfg: dict = (cfg.global_config or {}).get("comms", {}).get("matrix", {})
+    homeserver_url: str = (matrix_cfg.get("homeserver_url") or "").strip()
+
+    ch.newline()
+    ch.header("Unified Inbox — Matrix Bridges")
+    ch.info("NAVIG can bridge WhatsApp, Telegram (personal), and Messenger into one inbox.")
+    ch.info("This requires a Matrix/Synapse server running on a VPS or via a Cloudflare tunnel.")
+    ch.newline()
+
+    # ── Prompt for homeserver URL if not yet configured ───────────────────
+    if not homeserver_url:
+        ch.subheader("Synapse not configured")
+        ch.info("You have two options to run Synapse:")
+        ch.newline()
+        ch.info("  Option A — navig-ubuntu (recommended, all-in-one):")
+        ch.dim("    navig host use <your-vps>")
+        ch.dim("    navig matrix bridge deploy")
+        ch.newline()
+        ch.info("  Option B — Cloudflare tunnel (no open ports, no domain required):")
+        ch.dim("    1. cd deploy/synapse && docker compose up -d synapse postgres")
+        ch.dim("    2. cloudflared tunnel --url http://localhost:8008")
+        ch.dim("    3. Paste the tunnel URL below")
+        ch.newline()
+        ch.dim("    Cloudflare free plan is enough — Synapse only needs an HTTPS endpoint.")
+        ch.newline()
+
+        try:
+            import typer as _typer
+
+            entered = _typer.prompt(
+                "Homeserver URL (https://... or Cloudflare tunnel URL, blank to skip)",
+                default="",
+                show_default=False,
+            ).strip().rstrip("/")
+        except Exception:
+            entered = ""
+
+        if not entered:
+            ch.warning("Skipping bridge setup.")
+            ch.info("Run later: navig matrix bridge deploy")
+            return
+
+        homeserver_url = entered
+        try:
+            cfg.set("comms.matrix.homeserver_url", homeserver_url)
+            ch.success(f"Saved homeserver URL: {homeserver_url}")
+        except Exception as exc:
+            ch.warning(f"Could not save homeserver URL: {exc}")
+
+    # ── Status — delegate to matrix.py (single source of truth) ──────────
+    ch.subheader("Bridge Status")
+    ch.info(f"Synapse: {homeserver_url}")
+    ch.newline()
+
+    try:
+        from navig.commands.matrix import get_bridge_statuses, deploy_bridge_stack
+
+        statuses = get_bridge_statuses()
+    except Exception as exc:
+        ch.warning(f"Could not check bridge containers: {exc}")
+        ch.info("Run: navig matrix bridge status")
+        return
+
+    _LABELS = {
+        "telegram": "Telegram personal account",
+        "whatsapp": "WhatsApp (multi-device)",
+        "messenger": "Facebook / Instagram DMs",
+    }
+    for key, running in statuses.items():
+        label = _LABELS.get(key, key)
+        symbol = "[green]✓ running[/green]" if running else "[dim]not running[/dim]"
+        ch.info(f"  {label}: {symbol}")
+
+    ch.newline()
+
+    if all(statuses.values()):
+        ch.success("All bridges are running.")
+        mark_chat_onboarding_step_completed("setup-matrix-bridges", navig_dir)
+        return
+
+    # ── Offer to deploy ───────────────────────────────────────────────────
+    try:
+        import typer as _typer
+
+        deploy_now = _typer.confirm("Deploy bridges now?", default=False)
+    except Exception:
+        deploy_now = False
+
+    if not deploy_now:
+        ch.info("Run later:  navig matrix bridge deploy")
+        ch.info("Then link:  navig matrix bridge setup <telegram|whatsapp|messenger>")
+        return
+
+    ch.info("Starting bridge containers via docker compose...")
+    ok, msg = deploy_bridge_stack()
+    if not ok:
+        ch.warning(msg)
+        return
+    ch.success(msg)
+
+    # ── Per-bridge setup hints ────────────────────────────────────────────
+    ch.newline()
+    ch.subheader("Next: Link your accounts")
+    ch.dim("  navig matrix bridge setup telegram   → phone number + OTP")
+    ch.dim("  navig matrix bridge setup whatsapp   → scan QR with your phone")
+    ch.dim("  navig matrix bridge setup messenger  → Facebook session cookies")
+    ch.newline()
+
+    mark_chat_onboarding_step_completed("setup-matrix-bridges", navig_dir)
+    ch.success("Unified inbox step complete.")
+
 
 def run_init(dry_run: bool = False, no_genesis: bool = False, name: str = "") -> None:
     """Initialize NAVIG global directories and run first-time setup."""
@@ -1350,6 +1488,27 @@ def run_init_command(
         _maybe_send_first_run_ping()
     except Exception:  # noqa: BLE001
         pass
+
+    try:
+        _print_post_init_cloud_hint()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _print_post_init_cloud_hint() -> None:
+    """Print a one-liner pointing at `navig cloud connect` after init succeeds.
+
+    Cloud routing is opt-in -- this is the discoverability hook for users who
+    want the hosted Relay at relay.navig.run to be able to reach their daemon
+    over cloudflared + outbound uplink, with no VPS or DNS records.
+    """
+    from navig.core import Config
+    cfg = Config()
+    if bool(cfg.get("cloud.enabled", False)):
+        return  # already connected; nothing to advertise
+    ch.info("")
+    ch.info("Want the hosted Relay (relay.navig.run) + Telegram Mini App to reach this daemon?")
+    ch.info("Run:  navig cloud connect    (free Cloudflare quick tunnel, no DNS records)")
 
 
 def run_init_rollback(

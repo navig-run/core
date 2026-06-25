@@ -29,9 +29,14 @@ class VaultSession:
     last_used: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def is_expired(self) -> bool:
-        """True if the session has been idle longer than its TTL."""
+        """True if the session has been idle at least as long as its TTL (R9-21).
+
+        Uses ``>=`` so a ``ttl_seconds == 0`` session is treated as already
+        expired (no live session) and expiry triggers exactly *at* the TTL
+        boundary rather than one tick after — the security-safe interpretation.
+        """
         idle = (datetime.now(timezone.utc) - self.last_used).total_seconds()
-        return idle > self.ttl_seconds
+        return idle >= self.ttl_seconds
 
     def touch(self) -> None:
         """Reset idle timer on use."""

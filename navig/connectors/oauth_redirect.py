@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import os
 
+from navig._daemon_defaults import _GATEWAY_PORT
+
 _CALLBACK_PATH = "/api/deck/connectors/oauth/callback"
-_DEFAULT_BASE = "http://localhost:8789"
+_DEFAULT_BASE = f"http://localhost:{_GATEWAY_PORT}"
 
 
 def connector_redirect_uri() -> str:

@@ -47,6 +47,11 @@ class SmsAdapter:
         self._config = config or {}
         self._provider = self._config.get("provider", "twilio")
         self._from_number = self._resolve_from_number()
+        # Twilio Messaging Service (MG…). When set, send via the service instead
+        # of a single from-number — Twilio picks the sender + handles failover.
+        self._messaging_service_sid = (
+            self._config.get("twilio", {}).get("messaging_service_sid", "") or ""
+        ).strip()
         self._client: Any = None
 
     # ── Protocol properties ───────────────────────────────────
@@ -80,11 +85,12 @@ class SmsAdapter:
         try:
             client = self._get_client()
             if self._provider == "twilio":
-                msg = client.messages.create(
-                    body=text,
-                    from_=self._from_number,
-                    to=to_number,
-                )
+                kwargs: dict[str, Any] = {"body": text, "to": to_number}
+                if self._messaging_service_sid:
+                    kwargs["messaging_service_sid"] = self._messaging_service_sid
+                else:
+                    kwargs["from_"] = self._from_number
+                msg = client.messages.create(**kwargs)
                 return DeliveryReceipt.success(
                     message_id=msg.sid,
                     status=DeliveryStatus.SENT,

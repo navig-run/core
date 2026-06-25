@@ -482,3 +482,98 @@ async def handle_deck_admin_document_sets(request: "web.Request") -> "web.Respon
 async def handle_deck_admin_service_accounts(request: "web.Request") -> "web.Response":
     """GET /api/deck/admin/service-accounts"""
     return web.json_response({"tokens": _load_service_accounts()})
+
+
+# ---------------------------------------------------------------------------
+# Writable settings schemas
+# POST /api/deck/admin/settings
+# ---------------------------------------------------------------------------
+
+_CODE_INTERP_BOOL: frozenset[str] = frozenset({"python_enabled", "node_enabled", "network_enabled"})
+_CODE_INTERP_INT: frozenset[str] = frozenset({"timeout_seconds", "memory_mb"})
+
+_CHAT_BOOL: frozenset[str] = frozenset({"markdown", "streaming"})
+_CHAT_STR: frozenset[str] = frozenset({"verbosity", "citations"})
+_CHAT_INT: frozenset[str] = frozenset({"context_messages"})
+
+_INDEX_BOOL: frozenset[str] = frozenset({"hybrid_search", "reranking"})
+_INDEX_STR: frozenset[str] = frozenset({"embedding_model"})
+_INDEX_INT: frozenset[str] = frozenset({"chunk_size", "chunk_overlap"})
+
+
+async def handle_deck_admin_settings_update(request: "web.Request") -> "web.Response":
+    """POST /api/deck/admin/settings — partial-patch admin settings groups."""
+    try:
+        body: dict = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "invalid JSON"}, status=400)
+
+    try:
+        from navig.config import get_config_manager
+
+        cm = get_config_manager()
+    except Exception as exc:
+        return web.json_response({"ok": False, "error": f"config unavailable: {exc}"}, status=503)
+
+    updated: list[str] = []
+    errors: list[str] = []
+
+    def _write(section: str, key: str, value: object) -> None:
+        try:
+            cm.set(f"{section}.{key}", value)
+            updated.append(f"{section}.{key}")
+        except Exception as exc:
+            errors.append(f"{section}.{key}: {exc}")
+
+    def _validate_group(
+        section: str,
+        patch: dict,
+        bool_keys: frozenset[str],
+        str_keys: frozenset[str],
+        int_keys: frozenset[str],
+    ) -> None:
+        for key, value in patch.items():
+            if key in bool_keys:
+                if not isinstance(value, bool):
+                    errors.append(f"{section}.{key}: expected boolean")
+                else:
+                    _write(section, key, value)
+            elif key in str_keys:
+                if not isinstance(value, str):
+                    errors.append(f"{section}.{key}: expected string")
+                else:
+                    _write(section, key, value)
+            elif key in int_keys:
+                if not isinstance(value, (int, float)):
+                    errors.append(f"{section}.{key}: expected number")
+                else:
+                    _write(section, key, int(value))
+            # else: silently skip unknown keys
+
+    if "code_interpreter" in body and isinstance(body["code_interpreter"], dict):
+        _validate_group(
+            "code_interpreter", body["code_interpreter"],
+            _CODE_INTERP_BOOL, frozenset(), _CODE_INTERP_INT,
+        )
+
+    if "chat_preferences" in body and isinstance(body["chat_preferences"], dict):
+        _validate_group(
+            "chat", body["chat_preferences"],
+            _CHAT_BOOL, _CHAT_STR, _CHAT_INT,
+        )
+
+    if "index" in body and isinstance(body["index"], dict):
+        _validate_group(
+            "index", body["index"],
+            _INDEX_BOOL, _INDEX_STR, _INDEX_INT,
+        )
+
+    if errors and not updated:
+        return web.json_response({"ok": False, "errors": errors}, status=400)
+
+    return web.json_response({
+        "ok": True,
+        "updated": updated,
+        "errors": errors,
+        "settings": _load_admin_settings(),
+    })

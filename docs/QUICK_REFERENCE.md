@@ -182,6 +182,21 @@ navig service restart
 
 ---
 
+## 🗼 Always-on (no tunnel) — Lighthouse
+
+```bash
+navig vault add cloudflare     # CF token: Workers Scripts: Edit + Account Settings: Read
+navig lighthouse deploy        # deploys YOUR edge → *.workers.dev (no Node, no domain)
+navig gateway start            # brain dials out to it over one WebSocket
+navig lighthouse status        # config + live uplink state
+navig lighthouse disable       # revert to tunnel/direct (add --delete to remove the Worker)
+```
+
+`navig init` also offers this as an optional first-run step. Full guide:
+[LIGHTHOUSE.md](LIGHTHOUSE.md).
+
+---
+
 ## 📞 Get Help
 
 ```bash

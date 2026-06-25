@@ -5,6 +5,8 @@ Provides real integration with Google Calendar API.
 """
 
 import datetime
+import logging
+import os
 import os.path
 import pickle
 
@@ -14,8 +16,46 @@ from googleapiclient.discovery import build
 
 from .providers import CalendarEvent, CalendarProvider
 
+logger = logging.getLogger(__name__)
+
 # If modifying these scopes, delete the file token.pickle.
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
+
+# The OAuth token file stores a google-auth Credentials object. A stock
+# pickle.load() on this file is an RCE sink if another local user can write to
+# it; restrict unpickling to the credential class plus plain data/datetime types.
+_SAFE_TOKEN_GLOBALS: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("google.oauth2.credentials", "Credentials"),
+        ("builtins", "dict"),
+        ("builtins", "list"),
+        ("builtins", "tuple"),
+        ("builtins", "set"),
+        ("builtins", "frozenset"),
+        ("builtins", "str"),
+        ("builtins", "bytes"),
+        ("builtins", "int"),
+        ("builtins", "float"),
+        ("builtins", "bool"),
+        ("builtins", "NoneType"),
+        ("datetime", "datetime"),
+        ("datetime", "date"),
+        ("datetime", "time"),
+        ("datetime", "timezone"),
+        ("datetime", "timedelta"),
+    }
+)
+
+
+class _RestrictedTokenUnpickler(pickle.Unpickler):
+    """Unpickler restricted to the OAuth credential class and plain data types."""
+
+    def find_class(self, module: str, name: str):  # noqa: ANN206
+        if (module, name) in _SAFE_TOKEN_GLOBALS:
+            return super().find_class(module, name)
+        raise pickle.UnpicklingError(
+            f"Refusing to unpickle disallowed global: {module}.{name}"
+        )
 
 
 class GoogleCalendar(CalendarProvider):
@@ -35,8 +75,17 @@ class GoogleCalendar(CalendarProvider):
     def _authenticate(self):
         """Authenticate with Google API."""
         if os.path.exists(self.token_path):
-            with open(self.token_path, "rb") as token:
-                self.creds = pickle.load(token)
+            try:
+                with open(self.token_path, "rb") as token:
+                    self.creds = _RestrictedTokenUnpickler(token).load()
+            except (pickle.UnpicklingError, OSError, EOFError, AttributeError) as exc:
+                # Tampered, corrupt, or incompatible token — discard and re-auth.
+                logger.warning(
+                    "Ignoring unreadable/untrusted OAuth token at %s: %s",
+                    self.token_path,
+                    exc,
+                )
+                self.creds = None
 
         # If there are no (valid) credentials available, let the user log in.
         if not self.creds or not self.creds.valid:
@@ -44,15 +93,19 @@ class GoogleCalendar(CalendarProvider):
                 self.creds.refresh(Request())
             else:
                 if not os.path.exists(self.credentials_path):
-                    print("Credentials file not found. Running in mock mode.")
+                    logger.warning("Credentials file not found. Running in mock mode.")
                     return
 
                 flow = InstalledAppFlow.from_client_secrets_file(self.credentials_path, SCOPES)
                 self.creds = flow.run_local_server(port=0)
 
-            # Save the credentials for the next run
+            # Save the credentials for the next run (owner-only perms)
             with open(self.token_path, "wb") as token:
                 pickle.dump(self.creds, token)
+            try:
+                os.chmod(self.token_path, 0o600)
+            except OSError:
+                pass
 
         if self.creds:
             self.service = build("calendar", "v3", credentials=self.creds)
@@ -62,7 +115,7 @@ class GoogleCalendar(CalendarProvider):
     ) -> list[CalendarEvent]:
         """List events from primary calendar."""
         if not self.service:
-            print("[GoogleCalendar] Not authenticated, returning empty list.")
+            logger.debug("[GoogleCalendar] Not authenticated, returning empty list.")
             return []
 
         events_result = (

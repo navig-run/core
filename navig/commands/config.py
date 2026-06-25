@@ -13,6 +13,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from navig import console_helper as ch
+from navig._daemon_defaults import _GATEWAY_PORT
 from navig.cli._callbacks import show_subcommand_help
 from navig.config import get_config_manager
 from navig.console_helper import get_console
@@ -881,7 +882,7 @@ def show_settings():
     console.print(Panel(
         _section_table([
             ("Enabled",      _bool_icon(gw.get("enabled", False)),             "gateway.enabled"),
-            ("Listen",       f"{gw.get('host', '127.0.0.1')}:{gw.get('port', 8765)}", "gateway.port"),
+            ("Listen",       f"{gw.get('host', '127.0.0.1')}:{gw.get('port', _GATEWAY_PORT)}", "gateway.port"),
             ("Require auth", _bool_icon(gw.get("require_auth", True)),         "gateway.require_auth"),
         ], gc, defaults),
         title="[bold]🌐  Gateway[/]", border_style="white", expand=False,
@@ -1382,6 +1383,18 @@ def config_get_cmd(
             else:
                 value = None
                 break
+
+        # Fall back to the canonical resolver (merged defaults + every scope —
+        # the same path `config set` and Config().get() use). Without this, keys
+        # that ARE in effect (factory defaults, or values persisted via
+        # Config().set such as cloud.lighthouse_url) misleadingly read as
+        # "not found" because the raw global file alone doesn't contain them.
+        if value is None:
+            try:
+                from navig.core import Config
+                value = Config().get(key)
+            except Exception:
+                value = None
 
         if value is None:
             ch.warning(f"Key '{key}' not found or is empty.")

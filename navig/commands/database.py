@@ -8,7 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from navig import console_helper as ch
-from navig.commands._db_utils import calculate_file_checksum, create_mysql_config_file
+from navig.commands._db_utils import (
+    calculate_file_checksum,
+    create_mysql_config_file,
+    get_db_host_port,
+    run_mysql_query,
+)
 
 
 def execute_sql(query: str, options: dict[str, Any]):
@@ -46,61 +51,39 @@ def execute_sql(query: str, options: dict[str, Any]):
         ch.warning("Cancelled.")
         return
 
-    # Ensure tunnel is running
-    tunnel_info = tunnel_manager.get_tunnel_status(server_name)
-    if not tunnel_info:
-        ch.warning("Starting tunnel...")
-        tunnel_info = tunnel_manager.start_tunnel(server_name)
-
     server_config = config_manager.load_server_config(server_name)
     db = server_config["database"]
 
-    # Create secure config file (prevents password in process listings)
-    config_file = create_mysql_config_file(db["user"], db["password"])
+    # For direct-access hosts (e.g. managed cloud DB, OVH external MySQL)
+    # skip the SSH tunnel entirely when direct_host is configured.
+    tunnel_info = None
+    if not db.get("direct_host"):
+        tunnel_info = tunnel_manager.get_tunnel_status(server_name)
+        if not tunnel_info:
+            ch.warning("Starting tunnel...")
+            tunnel_info = tunnel_manager.start_tunnel(server_name)
 
-    try:
-        # Execute via mysql client
-        mysql_cmd = [
-            "mysql",
-            f"--defaults-file={config_file}",
-            "-h",
-            "127.0.0.1",
-            "-P",
-            str(tunnel_info["local_port"]),
-            db["name"],
-            "-e",
-            query,
-        ]
+    db_host, db_port = get_db_host_port(db, tunnel_info)
 
-        try:
-            result = subprocess.run(mysql_cmd, capture_output=True, text=True)
-            if json_enabled:
-                ch.raw_print(
-                    json.dumps(
-                        {
-                            "query": query,
-                            "success": result.returncode == 0,
-                            "output": result.stdout if result.returncode == 0 else None,
-                            "error": result.stderr if result.returncode != 0 else None,
-                        }
-                    )
-                )
-            else:
-                if result.returncode == 0:
-                    ch.raw_print(result.stdout)
-                else:
-                    ch.error(f"SQL Error: {result.stderr}")
-        except FileNotFoundError:
-            if json_enabled:
-                ch.raw_print(json.dumps({"success": False, "error": "mysql client not found"}))
-            else:
-                ch.error("mysql client not found. Please install MySQL client tools.")
-    finally:
-        # Always cleanup temp config file
-        try:
-            os.unlink(config_file)
-        except OSError:
-            pass  # best-effort cleanup
+    success, stdout, stderr = run_mysql_query(
+        db_host, db_port, db["name"], db["user"], db["password"], query
+    )
+    if json_enabled:
+        ch.raw_print(
+            json.dumps(
+                {
+                    "query": query,
+                    "success": success,
+                    "output": stdout if success else None,
+                    "error": stderr if not success else None,
+                }
+            )
+        )
+    else:
+        if success:
+            ch.raw_print(stdout)
+        else:
+            ch.error(f"SQL Error: {stderr}")
 
 
 def execute_sql_file(file: Path, options: dict[str, Any]):
@@ -132,11 +115,6 @@ def backup_database(path: Path | None, options: dict[str, Any]):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         path = config_manager.backups_dir / f"{server_name}_{timestamp}.sql"
 
-    # Ensure tunnel
-    tunnel_info = tunnel_manager.get_tunnel_status(server_name)
-    if not tunnel_info:
-        tunnel_info = tunnel_manager.start_tunnel(server_name)
-
     server_config = config_manager.load_server_config(server_name)
     db = server_config["database"]
 
@@ -160,6 +138,15 @@ def backup_database(path: Path | None, options: dict[str, Any]):
     if not json_enabled:
         ch.info(f"Creating backup: {path}")
 
+    # For direct-access hosts skip the SSH tunnel.
+    tunnel_info = None
+    if not db.get("direct_host"):
+        tunnel_info = tunnel_manager.get_tunnel_status(server_name)
+        if not tunnel_info:
+            tunnel_info = tunnel_manager.start_tunnel(server_name)
+
+    db_host, db_port = get_db_host_port(db, tunnel_info)
+
     # Create secure config file (prevents password in process listings)
     config_file = create_mysql_config_file(db["user"], db["password"])
 
@@ -168,9 +155,9 @@ def backup_database(path: Path | None, options: dict[str, Any]):
             "mysqldump",
             f"--defaults-file={config_file}",
             "-h",
-            "127.0.0.1",
+            db_host,
             "-P",
-            str(tunnel_info["local_port"]),
+            str(db_port),
             db["name"],
         ]
 
@@ -294,14 +281,18 @@ def restore_database(file: Path, options: dict[str, Any]):
                 ch.warning("Restore cancelled.")
             return
 
-    # Ensure tunnel
-    tunnel_info = tunnel_manager.get_tunnel_status(server_name)
-    if not tunnel_info:
-        ch.info("Starting tunnel...")
-        tunnel_info = tunnel_manager.start_tunnel(server_name)
-
     server_config = config_manager.load_server_config(server_name)
     db = server_config["database"]
+
+    # For direct-access hosts skip the SSH tunnel.
+    tunnel_info = None
+    if not db.get("direct_host"):
+        tunnel_info = tunnel_manager.get_tunnel_status(server_name)
+        if not tunnel_info:
+            ch.info("Starting tunnel...")
+            tunnel_info = tunnel_manager.start_tunnel(server_name)
+
+    db_host, db_port = get_db_host_port(db, tunnel_info)
 
     # Create backup of current state before restore
     if not options.get("no_backup"):
@@ -322,9 +313,9 @@ def restore_database(file: Path, options: dict[str, Any]):
             "mysql",
             f"--defaults-file={config_file}",
             "-h",
-            "127.0.0.1",
+            db_host,
             "-P",
-            str(tunnel_info["local_port"]),
+            str(db_port),
             db["name"],
         ]
 

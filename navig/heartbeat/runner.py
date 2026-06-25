@@ -261,12 +261,24 @@ class HeartbeatRunner:
 
         workspace = WorkspaceManager(Path(self.gateway.config_manager.global_config_dir))
 
+        # Fall back to the bundled default instructions when the user has no
+        # HEARTBEAT.md on disk — otherwise the agent runs with zero guidance
+        # and pads its reply with generic advice that gets logged as "issues".
         heartbeat_instructions = workspace.read_file("HEARTBEAT.md")
+        if not heartbeat_instructions.strip():
+            heartbeat_instructions = workspace.DEFAULT_FILES.get("HEARTBEAT.md", "")
 
         # Get list of hosts to check
         config = self.gateway.config_manager.global_config
         hosts = config.get("hosts", {})
-        host_list = list(hosts.keys()) if hosts else ["(no hosts configured)"]
+        if hosts:
+            host_block = "\n".join(f"- {h}" for h in hosts)
+        else:
+            host_block = (
+                "(none configured — this is the normal state for a single-machine "
+                "setup; check only the local daemon, disk, and memory. The absence "
+                "of remote hosts is NOT a problem and must not be reported.)"
+            )
 
         prompt = f"""You are performing a scheduled health check.
 
@@ -274,18 +286,33 @@ class HeartbeatRunner:
 {heartbeat_instructions}
 
 ## Hosts to Check
-{chr(10).join(f"- {h}" for h in host_list)}
+{host_block}
+
+## What Counts as an Issue
+Report ONLY actual, actionable health problems — e.g. a host unreachable,
+disk usage over 80%, memory over 90%, a certificate expiring soon, or a
+crashed/stopped critical service.
+
+The following are NOT issues. If these are the only things you would note,
+the system is healthy — respond with HEARTBEAT_OK:
+- Informational observations about the check itself ([INFO]).
+- Configuration suggestions (e.g. "you could add hosts or extra metrics").
+- General best-practice recommendations.
+- The absence of configured hosts or services.
 
 ## Required Response Format
-If everything is healthy, respond with EXACTLY:
+If everything is healthy (including the normal case where there is nothing
+to check), respond with EXACTLY:
 HEARTBEAT_OK
 
-If there are issues, list them:
+Only if there are real problems, list them under an issues header, using a
+severity of LOW, MEDIUM, HIGH, or CRITICAL (never INFO):
 ISSUES FOUND:
-- [severity] description
-- [severity] description
+- [SEVERITY] description
 
-Then provide recommended actions.
+Then, on a new line, a separate section for any advice:
+RECOMMENDED ACTIONS:
+- description
 
 Begin the health check now. Be thorough but efficient.
 """
@@ -298,38 +325,72 @@ Begin the health check now. Be thorough but efficient.
         # a persistent session causes the previous HEARTBEAT_OK reply to
         # prepend as an assistant message, which OpenAI-compatible APIs reject.
         session_key = f"system:heartbeat:{uuid.uuid4().hex[:8]}"
+
+        # A heartbeat is a trivial health check — routing it through the default
+        # `big_tasks` tier ties up a 70B model (e.g. nvidia llama-3.3-70b) for
+        # 100s+ on a reply that's usually just "HEARTBEAT_OK". Resolve the
+        # fast/small tier (grok-3-mini / groq-8b / configured small_talk model)
+        # and pin the heartbeat to it. Falls back to the default route if
+        # resolution fails, so a routing edge case never breaks the check.
+        fast_model: str | None = None
+        try:
+            from navig.llm_router import resolve_llm
+
+            cfg = resolve_llm(mode="small_talk")
+            if cfg and getattr(cfg, "provider", None) and getattr(cfg, "model", None):
+                fast_model = f"{cfg.provider}:{cfg.model}"
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("heartbeat fast-model resolution failed: %s", exc)
+            fast_model = None
+
         response = await self.gateway.run_agent_turn(
             agent_id="heartbeat",
             session_key=session_key,
             message=prompt,
+            model=fast_model,
         )
 
         return response
 
     def _parse_issues(self, response: str) -> list[str]:
-        """Parse issues from heartbeat response."""
-        issues = []
+        """Parse issues from a heartbeat response.
+
+        Only lines inside the ``ISSUES FOUND:`` section count. The section
+        ends at the next header (e.g. ``RECOMMENDED ACTIONS:``) so advice
+        bullets aren't miscounted as issues, and ``[INFO]`` lines are dropped
+        because they're observations, not actionable problems.
+        """
+        issues: list[str] = []
 
         if "HEARTBEAT_OK" in response:
             return issues
 
-        # Look for issue patterns
-        lines = response.split("\n")
         in_issues_section = False
+        for raw in response.split("\n"):
+            line = raw.strip()
+            if not line:
+                continue
 
-        for line in lines:
-            line = line.strip()
-
-            if "ISSUES FOUND" in line.upper():
+            upper = line.upper()
+            if "ISSUES FOUND" in upper:
                 in_issues_section = True
                 continue
 
-            if in_issues_section and line.startswith("-"):
-                issues.append(line[1:].strip())
+            if not in_issues_section:
+                continue
 
-            # Also catch [severity] pattern
-            if line.startswith("[") and "]" in line:
-                issues.append(line)
+            # A new section header (any non-issue line ending in ":") closes
+            # the issues block — keeps "RECOMMENDED ACTIONS:" bullets out.
+            if line.endswith(":") and "ISSUE" not in upper:
+                in_issues_section = False
+                continue
+
+            if line.startswith("-"):
+                line = line[1:].strip()
+            if not line or line.upper().startswith("[INFO]"):
+                continue
+
+            issues.append(line)
 
         return issues
 
@@ -371,7 +432,18 @@ Begin the health check now. Be thorough but efficient.
             return
 
         if result.issues_found:
-            logger.warning("Heartbeat found %s issues", len(result.issues_found))
+            # Include the issue texts directly in the log so the operator
+            # doesn't have to chase down `navig heartbeat status` to see
+            # what was actually found. Trim each to ~120 chars so a single
+            # giant agent response doesn't flood the boot log.
+            preview = "; ".join(
+                (i[:120] + "…") if len(i) > 120 else i for i in result.issues_found
+            )
+            logger.warning(
+                "Heartbeat found %s issues: %s",
+                len(result.issues_found),
+                preview,
+            )
 
             # Format and send notification
             issue_text = "\n".join(f"- {i}" for i in result.issues_found)
@@ -422,7 +494,17 @@ Begin the health check now. Be thorough but efficient.
         recipient = notify_config.get("recipient")
 
         if not recipient:
-            logger.warning("No notification recipient configured")
+            # One-shot: warn loudly on the first heartbeat tick after
+            # boot, then drop to DEBUG. The user is told once that they
+            # have un-deliverable notifications, then we stop nagging.
+            if not getattr(self, "_warned_no_recipient", False):
+                logger.warning(
+                    "No notification recipient configured — heartbeat issues won't be delivered. "
+                    "Set `notifications.recipient` in ~/.navig/config.yaml. (This warning is shown once.)"
+                )
+                self._warned_no_recipient = True
+            else:
+                logger.debug("No notification recipient configured (suppressed; one-shot)")
             return
 
         # Use smart notification filter if available
@@ -453,7 +535,11 @@ Begin the health check now. Be thorough but efficient.
         }
 
     def get_history(self, limit: int = 10) -> list[dict]:
-        """Get recent heartbeat history."""
+        """Get recent heartbeat history.
+
+        Includes the full `issues_found` list so the CLI can show the
+        operator what the agent actually flagged instead of just a count.
+        """
         return [
             {
                 "success": r.success,
@@ -461,6 +547,7 @@ Begin the health check now. Be thorough but efficient.
                 "duration": r.duration_seconds,
                 "timestamp": r.timestamp.isoformat(),
                 "issues_count": len(r.issues_found),
+                "issues_found": list(r.issues_found),
                 "error": r.error,
             }
             for r in self._history[-limit:]

@@ -3354,7 +3354,8 @@ class TelegramChannel:
             try:
                 from navig.vault import get_vault as _gv2
 
-                dg_key = _gv2().get_secret("deepgram/api-key") or None
+                # Keys live under the PROVIDER (get_api_key), not a 'deepgram/api-key' label.
+                dg_key = _gv2().get_api_key("deepgram") or None
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
         if dg_key:
@@ -3365,7 +3366,7 @@ class TelegramChannel:
             try:
                 from navig.vault import get_vault as _gv2
 
-                oai_key = _gv2().get_secret("openai/api-key") or None
+                oai_key = _gv2().get_api_key("openai") or None
             except Exception:  # noqa: BLE001
                 pass  # best-effort; failure is non-critical
         if oai_key:
@@ -3391,10 +3392,10 @@ class TelegramChannel:
             await self.send_message(
                 chat_id,
                 "🎙️ <b>Voice transcription not configured.</b>\n\n"
-                "Add any of the following to <code>~/.navig/.env</code> and restart:\n"
-                "вЂў <code>DEEPGRAM_KEY=&lt;key&gt;</code> — blazing fast, recommended\n"
-                "вЂў <code>OPENAI_API_KEY=&lt;key&gt;</code> — Whisper API fallback\n"
-                "вЂў <code>pip install openai-whisper</code> — offline, no key needed",
+                "Add a speech-to-text key to your vault, then restart:\n"
+                "• <code>navig vault set deepgram &lt;key&gt;</code> — blazing fast, recommended\n"
+                "• <code>navig vault set openai &lt;key&gt;</code> — Whisper API fallback\n"
+                "• <code>pip install openai-whisper</code> — offline, no key needed",
                 parse_mode="HTML",
             )
             return None, ""
@@ -3545,6 +3546,31 @@ class TelegramChannel:
             logging.getLogger("navig").warning("_transcribe_audio_file delegation failed: %s", _e)
             return None
 
+    def _select_tts_provider(self):
+        """Best available TTS provider + ordered fallbacks for voice replies.
+
+        Prefers keyed providers the user actually has (Deepgram/OpenAI, resolved
+        from the vault), then keyless Edge. Returns ``(primary, [fallbacks])``;
+        ``synthesize()`` tries them in order until one succeeds.
+        """
+        from navig.voice.tts import TTS as _T
+        from navig.voice.tts import TTSProvider as _P
+
+        order = []
+        if _T._resolve_api_key("deepgram", "DEEPGRAM_API_KEY"):
+            order.append(_P.DEEPGRAM)
+        if _T._resolve_api_key("openai", "OPENAI_API_KEY"):
+            order.append(_P.OPENAI)
+        try:
+            import edge_tts  # noqa: F401, PLC0415
+
+            order.append(_P.EDGE)
+        except Exception:  # noqa: BLE001
+            pass
+        if not order:
+            order = [_P.EDGE]  # last resort; errors cleanly if edge-tts isn't installed
+        return order[0], order[1:]
+
     async def _maybe_send_voice(
         self,
         chat_id: int,
@@ -3559,23 +3585,31 @@ class TelegramChannel:
         if not HAS_VOICE or is_group:
             return
 
-        # Honour per-user voice preference
-        if HAS_SESSIONS:
-            try:
-                sm = get_session_manager()
-                session = sm.get_session(chat_id, user_id, is_group=False)
-                if session is not None and not session.voice_enabled:
-                    return
-            except Exception:  # noqa: BLE001
-                pass  # best-effort; failure is non-critical
+        # Honour the /voiceon toggle (session metadata set by _handle_voiceon_cmd).
+        # Default OFF — never surprise a user with audio they didn't enable.
+        if not HAS_SESSIONS:
+            return
+        try:
+            sm = get_session_manager()
+            voice_on = sm.get_session_metadata(
+                chat_id, user_id, "voice_replies_enabled", False, is_group=is_group
+            )
+        except Exception:  # noqa: BLE001
+            return
+        if not voice_on:
+            return
 
         tts_text = self._prepare_for_tts(text)
         if not tts_text:
             return
 
+        # Pick a TTS provider that's actually usable — keyed providers the user has
+        # (Deepgram/OpenAI, resolved from the vault) first, keyless Edge last.
+        # synthesize() walks [provider] + fallback_providers until one succeeds.
+        provider, fallbacks = self._select_tts_provider()
         tts_result = None
         try:
-            tts = _TTS(_TTSConfig(provider=_TTSProvider.GOOGLE_CLOUD))
+            tts = _TTS(_TTSConfig(provider=provider, fallback_providers=fallbacks))
             tts_result = await tts.synthesize(tts_text)
             if not tts_result.success:
                 # "not installed" / "no credentials" are configuration
@@ -4979,29 +5013,50 @@ class TelegramChannel:
         audio_data: bytes,
         reply_to_message_id: int | None = None,
     ) -> dict | None:
-        """Send a voice message using multipart/form-data (sendVoice Bot API)."""
+        """Send a spoken reply as a Telegram voice note, with an audio-file fallback.
+
+        Tries ``sendVoice`` (the round voice-note bubble). If that's rejected —
+        e.g. the recipient's "Voice Messages" privacy restriction
+        (``VOICE_MESSAGES_FORBIDDEN``), or because the codec isn't OGG/OPUS (our
+        TTS providers emit MP3) — it falls back to ``sendAudio``, which accepts
+        MP3 and is NOT subject to the voice-message privacy setting. Either way
+        the user hears the reply.
+        """
         if not self._session or not aiohttp:
             return None
-        url = f"{self.base_url}/sendVoice"
+
+        # 1) Preferred: a true voice note (OGG/OPUS round bubble).
         try:
             form = aiohttp.FormData()
             form.add_field("chat_id", str(chat_id))
-            form.add_field(
-                "voice",
-                audio_data,
-                filename="voice.ogg",
-                content_type="audio/ogg",
-            )
+            form.add_field("voice", audio_data, filename="voice.ogg", content_type="audio/ogg")
             if reply_to_message_id:
                 form.add_field("reply_to_message_id", str(reply_to_message_id))
-            async with self._session.post(url, data=form) as resp:
+            async with self._session.post(f"{self.base_url}/sendVoice", data=form) as resp:
                 result = await resp.json()
                 if result.get("ok"):
                     return result.get("result")
-                logger.warning("sendVoice API error: %s", result.get("description"))
+                desc = str(result.get("description", ""))
+                # Privacy block or codec mismatch → deliver as a normal audio clip.
+                logger.info("sendVoice rejected (%s) — falling back to sendAudio", desc)
+        except Exception as e:  # noqa: BLE001
+            logger.info("sendVoice failed (%s) — falling back to sendAudio", e)
+
+        # 2) Fallback: a normal audio file (plays inline; accepts mp3/m4a/etc.).
+        try:
+            form = aiohttp.FormData()
+            form.add_field("chat_id", str(chat_id))
+            form.add_field("audio", audio_data, filename="reply.mp3", content_type="audio/mpeg")
+            if reply_to_message_id:
+                form.add_field("reply_to_message_id", str(reply_to_message_id))
+            async with self._session.post(f"{self.base_url}/sendAudio", data=form) as resp:
+                result = await resp.json()
+                if result.get("ok"):
+                    return result.get("result")
+                logger.warning("sendAudio fallback error: %s", result.get("description"))
                 return None
-        except Exception as e:
-            logger.warning("send_voice failed: %s", e)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("send_voice fallback failed: %s", e)
             return None
 
     async def send_photo(

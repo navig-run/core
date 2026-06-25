@@ -105,6 +105,29 @@ def verify_github_signature(body: bytes, signature: str, secret: str) -> bool:
     return verify_signature(body, signature, secret, SignatureConfig.for_github())
 
 
+def verify_twilio_signature(url: str, params: dict[str, str], signature: str, auth_token: str) -> bool:
+    """Verify Twilio's ``X-Twilio-Signature`` (P-F).
+
+    Twilio's scheme: HMAC-SHA1, keyed by the account auth token, over the exact
+    request URL Twilio POSTed to **concatenated with each POST param** (sorted by
+    key, ``key+value`` with no separator), then base64. The *url* must be the
+    public webhook URL Twilio was configured with (reconstruct from forwarded
+    headers behind a tunnel) — a wrong URL fails every legitimate request, which
+    is why the caller gates this behind an explicit opt-in.
+    """
+    import base64
+    import hashlib
+
+    if not auth_token or not signature:
+        return False
+    data = url
+    for key in sorted(params.keys()):
+        data += key + str(params[key])
+    digest = hmac.new(auth_token.encode("utf-8"), data.encode("utf-8"), hashlib.sha1).digest()
+    expected = base64.b64encode(digest).decode("utf-8")
+    return hmac.compare_digest(expected, signature)
+
+
 def verify_stripe_signature(
     body: bytes,
     signature_header: str,

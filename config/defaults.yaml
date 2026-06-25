@@ -141,7 +141,62 @@ adapters:
     enabled: false
     # Uses discord.py official bot — requires bot token
     # Credentials from vault or env: DISCORD_BOT_TOKEN
-    bot_token: ""
+    guild_id: ""
+    channel_id: ""
+  linkedin:
+    enabled: false
+    # LinkedIn personal profile publishing
+    # Credentials from vault or env: LINKEDIN_ACCESS_TOKEN
+  linkedin_page:
+    enabled: false
+    # LinkedIn Company Page publishing
+    # Credentials from vault or env: LINKEDIN_PAGE_ACCESS_TOKEN
+    organization_id: ""
+  reddit:
+    enabled: false
+    # Reddit post/comment automation
+    # Credentials from vault or env: REDDIT_CLIENT_SECRET
+    client_id: ""
+    username: ""
+    subreddit: ""
+  instagram_meta:
+    enabled: false
+    # Instagram via Meta Graph API (Business account)
+    # Credentials from vault or env: INSTAGRAM_META_ACCESS_TOKEN
+    instagram_account_id: ""
+  instagram:
+    enabled: false
+    # Instagram standalone / third-party client
+    # Credentials from vault or env: INSTAGRAM_ACCESS_TOKEN
+  facebook:
+    enabled: false
+    # Facebook Page publishing via Graph API
+    # Credentials from vault or env: FACEBOOK_ACCESS_TOKEN
+    page_id: ""
+  threads:
+    enabled: false
+    # Threads (Meta) publishing
+    # Credentials from vault or env: THREADS_ACCESS_TOKEN
+  youtube:
+    enabled: false
+    # YouTube Data API v3 (community posts / uploads)
+    # Credentials from vault or env: YOUTUBE_API_KEY
+    channel_id: ""
+  vk:
+    enabled: false
+    # VKontakte community posting
+    # Credentials from vault or env: VK_ACCESS_TOKEN
+    group_id: ""
+  medium:
+    enabled: false
+    # Medium story publishing
+    # Credentials from vault or env: MEDIUM_INTEGRATION_TOKEN
+    publication_id: ""
+  devto:
+    enabled: false
+    # Dev.to article publishing
+    # Credentials from vault or env: DEVTO_API_KEY
+    organization_id: ""
   # Experimental adapters (requires opt-in via enabled: true)
   # matrix:
   #   enabled: false
@@ -228,6 +283,39 @@ proactive:
   heartbeat_interval_sec: 1800
   # Proactive engagement evaluation interval (seconds)
   engagement_tick_interval_sec: 900
+
+# Autonomous mission loop (navig.missions)
+# The MissionExecutor is always live for board card runs and manual POSTs to
+# /api/deck/runtime/missions. The SYSTEM triggers — heartbeat issues and
+# proactive suggestions creating + running missions on their own — are gated by
+# `autonomous_enabled` and are OFF by default. Even when enabled, missions run
+# under the operator's autonomy_level (default APPROVAL → human-gated; never
+# silent auto). Flip to true only when you want NAVIG to act on its own.
+missions:
+  autonomous_enabled: false
+  # Max concurrent executions (the shared bound that also caps board card runs).
+  max_concurrency: 3
+  # Hard per-mission deadline (seconds) when the mission doesn't set its own.
+  default_timeout_secs: 600
+  # Max ReAct iterations for an agentic mission.
+  max_iterations: 8
+  # MissionScheduler sweep interval (seconds) — re-drives orphaned QUEUED
+  # missions after a restart.
+  scheduler_interval_secs: 300
+
+# Adversarial verification — a cheap (Haiku-tier) second opinion that checks
+# AUTO missions and destructive tool calls before they commit. Off by default;
+# opt in to let an always-on agent touch infra with a safety net.
+verifier:
+  enabled: false
+  # A "safe" verdict below this confidence is treated as unsafe (adversarial bias).
+  confidence_threshold: 0.7
+  # Never silently approve without a live audit log (mirrors approval invariant).
+  audit_required: true
+  # On verifier error: false = block the action (safe default), true = allow.
+  fail_open: false
+  # Optional explicit model override; empty = the configured small_talk/cheap tier.
+  model: ""
 
 # OAuth / authentication
 oauth:
@@ -411,7 +499,7 @@ agent:
 desktop:
   # Screenshot backend: "auto" tries dxcam -> mss -> pillow in priority order.
   screenshot_backend: "auto"
-  # Scale factor applied to screenshots in MCP responses (0.1�1.0).
+  # Scale factor applied to screenshots in MCP responses (0.1�1.0).
   screenshot_scale: 1.0
   # Maximum dimensions for snapshot screenshots (width x height).
   snapshot_max_width: 1920
@@ -431,3 +519,47 @@ desktop:
   excluded_apps: []
   # App names excluded only from automated interaction (still visible in listings).
   avoided_apps: []
+
+# ── Deck (Telegram Mini App) API ─────────────────────────────────────────────
+deck:
+  # Set to true to enable the Deck REST API endpoints.
+  enabled: true
+  # api_key: Bearer token accepted from the desktop browser login screen.
+  # Auto-generated on first start if blank — copy from the gateway startup log.
+  # To persist: navig config set deck.api_key <key>
+  api_key: ""
+  # dev_mode: Accept 'X-Telegram-User: <user_id>' header as auth bypass.
+  # ONLY enable in local development — never on a production server.
+  dev_mode: false
+  # Token lifetime for cached Telegram initData validation (seconds).
+  auth_max_age: 3600
+
+# ── Cloud (Cloudflare quick-tunnel broker on relay.navig.run) ───────────────
+# When enabled, the gateway spawns a managed `cloudflared tunnel --url ...`
+# child and registers the resulting https://*.trycloudflare.com URL with the
+# broker so the hosted Relay can resolve "where is my daemon" by api_key or by
+# Telegram user_id. Default ON -- this is the one-tap path that makes a fresh
+# navig install reachable from Telegram + browser without DNS or port forward
+# config. Disable with `navig cloud disconnect` or set `cloud.enabled: false`
+# in ~/.navig/config.yaml for fully-offline / local-only operation. The
+# daemon stays on the user's machine either way; the broker only stores
+# routing metadata (no vault contents, no command history).
+cloud:
+  enabled: true
+  broker_url: "https://relay.navig.run"
+  heartbeat_interval_s: 60
+  # Optional friendly label shown in /api/cloud/status (default: hostname).
+  tunnel_label: ""
+  # Advanced override: extra args passed to `cloudflared tunnel`.
+  cloudflared_extra_args: []
+  # Path to a user-supplied cloudflared binary; empty = use $PATH or
+  # ~/.navig/bin/cloudflared (downloaded + sha256-verified on first run).
+  cloudflared_path: ""
+  # VPS / direct mode: when set, SKIP cloudflared entirely and register
+  # THIS URL with the broker instead. You're responsible for a reverse
+  # proxy (nginx, Caddy, Traefik) terminating TLS on this hostname and
+  # forwarding to gateway.host:gateway.port. Also auto-populated from
+  # $NAVIG_PUBLIC_URL at daemon start when blank.
+  #   Example:  public_url: "https://navig.example.com"
+  # See docs/CLOUD.md for the full VPS setup recipe.
+  public_url: ""

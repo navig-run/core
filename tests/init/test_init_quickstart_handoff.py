@@ -32,7 +32,11 @@ def test_init_profile_quickstart_maps_to_operator_and_runs_chat_handoff() -> Non
 
 def test_get_chat_onboarding_step_progress_defaults_to_pending(tmp_path) -> None:
     steps = get_chat_onboarding_step_progress(tmp_path / ".navig")
-    assert [step["id"] for step in steps] == ["ai-provider", "first-host", "telegram-bot"]
+    # 4 canonical steps — `setup-matrix-bridges` (unified inbox) was added to
+    # _CHAT_ONBOARDING_CANONICAL_STEPS after this test was written (R9-20).
+    assert [step["id"] for step in steps] == [
+        "ai-provider", "first-host", "telegram-bot", "setup-matrix-bridges",
+    ]
     assert all(step["completed"] is False for step in steps)
 
 

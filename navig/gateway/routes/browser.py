@@ -39,7 +39,7 @@ def _status(gw):
         if auth is not None:
             return auth
         err = _chk(gw)
-        if err:
+        if err is not None:
             return err
         return json_ok(
             {
@@ -57,7 +57,7 @@ def _navigate(gw):
         if auth is not None:
             return auth
         err = _chk(gw)
-        if err:
+        if err is not None:
             return err
         try:
             data = await r.json()
@@ -84,7 +84,7 @@ def _click(gw):
         if auth is not None:
             return auth
         err = _chk(gw)
-        if err:
+        if err is not None:
             return err
         try:
             data = await r.json()
@@ -111,7 +111,7 @@ def _fill(gw):
         if auth is not None:
             return auth
         err = _chk(gw)
-        if err:
+        if err is not None:
             return err
         try:
             data = await r.json()
@@ -138,7 +138,7 @@ def _screenshot(gw):
         if auth is not None:
             return auth
         err = _chk(gw)
-        if err:
+        if err is not None:
             return err
         try:
             data = await r.json() if r.can_read_body else {}
@@ -164,7 +164,7 @@ def _stop(gw):
         if auth is not None:
             return auth
         err = _chk(gw)
-        if err:
+        if err is not None:
             return err
         try:
             await gw.browser_controller.stop()

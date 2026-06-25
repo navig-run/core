@@ -739,6 +739,11 @@ Determine the user's intent and extract any parameters. Respond with JSON only."
                     try:
                         args = args_extractor(match)
                     except Exception:
+                        logger.debug(
+                            "args_extractor failed for command %r; defaulting to {}",
+                            command,
+                            exc_info=True,
+                        )
                         args = {}
                 else:
                     args = args_extractor.copy() if args_extractor else {}

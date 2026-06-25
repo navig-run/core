@@ -39,6 +39,7 @@ logger = get_debug_logger()
 MCAST_GROUP = "224.0.0.251"
 MCAST_PORT = 5354
 HEARTBEAT_INTERVAL = 15  # seconds — was 30; two misses = degraded at 45 s threshold
+HEARTBEAT_LOG_INTERVAL = 10  # log a summary every N beats instead of per-beat spam
 PROBE_INTERVAL = 20  # seconds between active HTTP /health pings per peer
 PROBE_TIMEOUT_S = 3.0  # seconds before a probe is counted as failed
 MAX_PACKET_SIZE = 512  # bytes — single datagram fits all fields
@@ -201,6 +202,7 @@ class MeshDiscovery:
         self._probe_task: asyncio.Task | None = None
         self._running = False
         self._seq: int = 0  # monotonic per-node packet sequence counter
+        self._heartbeat_count: int = 0  # total heartbeats sent; used for log throttling
         self._peer_seqs: dict = {}  # node_id -> last seen seq (loss detection)
         self._election_callback = None
         if self._secret:
@@ -264,12 +266,15 @@ class MeshDiscovery:
                 None,
                 lambda: self._sender.sendto(data, (MCAST_GROUP, MCAST_PORT)),  # type: ignore[union-attr]
             )
-            logger.debug(
-                "[mesh.discovery] Sent %s seq=%d (%d bytes)",
-                ptype,
-                self._seq,
-                len(data),
-            )
+            # Heartbeat packets are emitted every 15 s — log them in bulk
+            # summaries (see _heartbeat_loop) to avoid flooding debug output.
+            if ptype != "heartbeat":
+                logger.debug(
+                    "[mesh.discovery] Sent %s seq=%d (%d bytes)",
+                    ptype,
+                    self._seq,
+                    len(data),
+                )
         except Exception as e:
             logger.warning("[mesh.discovery] Send error: %s", e)
 
@@ -305,6 +310,14 @@ class MeshDiscovery:
             while self._running:
                 await asyncio.sleep(HEARTBEAT_INTERVAL)
                 await self._send("heartbeat")
+                self._heartbeat_count += 1
+                if self._heartbeat_count % HEARTBEAT_LOG_INTERVAL == 0:
+                    logger.debug(
+                        "[mesh.discovery] Heartbeat running — %d sent (seq=%d, every %ds)",
+                        self._heartbeat_count,
+                        self._seq,
+                        HEARTBEAT_INTERVAL,
+                    )
         except asyncio.CancelledError:
             pass  # task cancelled; expected during shutdown
 
@@ -414,6 +427,11 @@ class MeshDiscovery:
             self._registry.remove_peer(record.node_id)
             self._peer_seqs.pop(record.node_id, None)
             logger.info("[mesh.discovery] Peer left: %s", record.node_id)
+            try:
+                from navig.core import narrator
+                narrator.phase(f"Mesh peer left: {record.node_id}", icon="wave")
+            except Exception:  # noqa: BLE001
+                pass
             return
 
         # hello or heartbeat → upsert; reset circuit breaker on any live contact
@@ -431,6 +449,16 @@ class MeshDiscovery:
             record.gateway_url,
             record.health,
         )
+
+        # Narrator for NEW peer discoveries only (skip heartbeats — too noisy).
+        # `hello` from a previously-unknown node is the operator-interesting moment.
+        if ptype == "hello" and not existing:
+            try:
+                from navig.core import narrator
+                narrator.phase(f"Mesh peer joined: {record.node_id}", icon="anchor")
+                narrator.step(f"{record.gateway_url}  ({record.health})", icon="radio")
+            except Exception:  # noqa: BLE001
+                pass
 
         # Reply with our own HELLO so the new peer knows about us immediately
         if ptype == "hello":

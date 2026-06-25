@@ -9,7 +9,7 @@ import secrets
 
 import typer
 
-from navig._daemon_defaults import _DAEMON_PORT
+from navig._daemon_defaults import _DAEMON_PORT, _GATEWAY_PORT
 from navig.core.yaml_io import safe_load_yaml
 from navig.lazy_loader import lazy_import
 from navig.platform.paths import config_dir
@@ -141,7 +141,7 @@ def bridge_status(
     gw = cfg.get("gateway", {})
 
     enabled = gw.get("enabled", False)
-    port = gw.get("port", 8789)
+    port = gw.get("port", _GATEWAY_PORT)
     host = gw.get("host", "127.0.0.1")
     token = gw.get("auth", {}).get("token", "")
 

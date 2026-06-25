@@ -14,6 +14,10 @@ Place lightweight gateway HTTP helpers here; keep this file free of any
 
 from __future__ import annotations
 
+# Zero-dependency leaf import — keeps this module free of the heavy
+# ``navig.gateway.*`` import cascade (see module docstring).
+from navig._daemon_defaults import _GATEWAY_PORT
+
 
 def gateway_cli_defaults() -> tuple[int, str]:
     """Return gateway port/host from config with stable CLI fallbacks."""
@@ -26,9 +30,9 @@ def gateway_cli_defaults() -> tuple[int, str]:
 
     gw = raw.get("gateway") or {}
     try:
-        port = int(gw.get("port") or 8789)
+        port = int(gw.get("port") or _GATEWAY_PORT)
     except (ValueError, TypeError):
-        port = 8789
+        port = _GATEWAY_PORT
     host = str(gw.get("host") or "127.0.0.1")
     return port, host
 

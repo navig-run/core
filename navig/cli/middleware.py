@@ -209,7 +209,13 @@ def init_debug_logger(
             },
         )
 
-        atexit.register(lambda: debug_logger.log_command_end(success=True))
+        atexit.register(lambda: debug_logger.log_command_end(
+            success=not any(
+                isinstance(e, Exception) and not isinstance(e, SystemExit)
+                for e in [sys.exc_info()[1]]
+                if e is not None
+            )
+        ))
 
         if verbose:
             ch.dim(f"→ Debug logging enabled: {debug_logger.log_path}")
@@ -228,15 +234,19 @@ def _resolve_debug_log_flag(flag: bool) -> tuple[bool, dict | None]:
         from navig.cli import _get_config_manager
 
         cm = _get_config_manager()
-        if cm._global_config_loaded:
+        # _global_config_loaded is a private attr — guard with hasattr
+        # so future ConfigManager refactors don't cause a silent AttributeError.
+        if getattr(cm, "_global_config_loaded", False):
             return bool(cm.global_config.get("debug_log", False)), cm.global_config
         # Fast path: read only the YAML file directly.
         import yaml
 
-        gc_file = cm.global_config_dir / "config.yaml"
-        if gc_file.exists():
-            raw = yaml.safe_load(gc_file.read_text(encoding="utf-8")) or {}
-            return bool(raw.get("debug_log", False)), raw
+        gc_path = getattr(cm, "global_config_dir", None)
+        if gc_path is not None:
+            gc_file = Path(gc_path) / "config.yaml"
+            if gc_file.exists():
+                raw = yaml.safe_load(gc_file.read_text(encoding="utf-8")) or {}
+                return bool(raw.get("debug_log", False)), raw
     except Exception:
         pass
 

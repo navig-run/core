@@ -36,6 +36,7 @@ logger = logging.getLogger("navig.agent.effort")
 __all__ = [
     "EffortLevel",
     "EFFORT_ALIASES",
+    "ANTHROPIC_EFFORT",
     "ANTHROPIC_THINKING_BUDGET",
     "OPENAI_REASONING_EFFORT",
     "GOOGLE_THINKING_BUDGET",
@@ -92,6 +93,19 @@ EFFORT_ALIASES: dict[str, EffortLevel] = {
 # ─────────────────────────────────────────────────────────────────
 
 
+# Anthropic ``output_config.effort`` levels (current API). ``max`` is Opus-tier
+# only (Opus 4.6+); Sonnet/Haiku reject it, so MAXIMUM/ULTRATHINK callers must be
+# on an Opus model. budget_tokens is removed on Opus 4.8/4.7 — see get_thinking_params.
+ANTHROPIC_EFFORT: dict[EffortLevel, str] = {
+    EffortLevel.LOW: "low",
+    EffortLevel.MEDIUM: "medium",
+    EffortLevel.HIGH: "high",
+    EffortLevel.MAXIMUM: "max",
+    EffortLevel.ULTRATHINK: "max",
+}
+
+# Deprecated: retained only for reference / non-current Anthropic models. Do NOT
+# send budget_tokens to Opus 4.8/4.7 — it 400s. Use ANTHROPIC_EFFORT instead.
 ANTHROPIC_THINKING_BUDGET: dict[EffortLevel, int] = {
     EffortLevel.LOW: 1024,
     EffortLevel.MEDIUM: 8192,
@@ -258,8 +272,8 @@ def get_thinking_params(
 
     Examples::
 
-        # Anthropic
-        {"thinking": {"type": "enabled", "budget_tokens": 32768}}
+        # Anthropic (current API: Opus 4.8/4.7, Sonnet 4.6)
+        {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}}
 
         # OpenAI
         {"reasoning_effort": "high"}
@@ -276,11 +290,16 @@ def get_thinking_params(
     prov = provider.lower()
 
     if prov == "anthropic":
-        budget = ANTHROPIC_THINKING_BUDGET[level]
-        if level == EffortLevel.LOW:
-            # LOW → disable extended thinking entirely
-            return {"thinking": {"type": "disabled"}}
-        return {"thinking": {"type": "enabled", "budget_tokens": budget}}
+        # Current Anthropic API (Opus 4.8/4.7, Sonnet 4.6): ``budget_tokens`` is
+        # REMOVED and 400s. Thinking depth + overall token spend is controlled by
+        # ``output_config.effort`` (GA, no beta header), optionally combined with
+        # adaptive thinking. LOW/MEDIUM stay effort-only (no ``thinking`` key →
+        # thinking off, cheapest, and — crucially — no thinking blocks to replay
+        # across tool turns). HIGH/MAX add adaptive thinking. ``max`` is Opus-tier.
+        effort = ANTHROPIC_EFFORT[level]
+        if level in (EffortLevel.LOW, EffortLevel.MEDIUM):
+            return {"output_config": {"effort": effort}}
+        return {"thinking": {"type": "adaptive"}, "output_config": {"effort": effort}}
 
     if prov == "openai":
         return {"reasoning_effort": OPENAI_REASONING_EFFORT[level]}

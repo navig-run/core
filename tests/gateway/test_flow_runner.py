@@ -99,7 +99,9 @@ class TestFlowRunnerSuccess:
     async def test_finished_at_set(self):
         runner = _make_runner()
         result = await runner.run()
-        assert result.finished_at > result.started_at
+        # >= not >: a trivial flow can finish within one clock tick of starting
+        # (time.time() resolution), so finished_at may equal started_at (R9-20).
+        assert result.finished_at >= result.started_at
 
     async def test_delivers_to_success_destination(self):
         delivered: list[tuple[Destination, str]] = []

@@ -204,7 +204,9 @@ class TestAudioConfig:
 
         from navig.gateway.channels.audio_menu.state import AudioConfig
 
-        assert len(fields(AudioConfig)) == 7
+        # 8 fields: provider, model, voice, speed, format, auto, active,
+        # voice_replies_enabled (added after this test was written — R9-20).
+        assert len(fields(AudioConfig)) == 8
 
     def test_asdict_roundtrip(self):
         from dataclasses import asdict

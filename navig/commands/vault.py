@@ -125,9 +125,14 @@ PROVIDER_DEFAULTS = {
     "gitlab": ("gitlab", "token", "token", "GitLab Token"),
     # Generic integrations
     "telegram": ("telegram", "token", "token", "Telegram Bot Token"),
+    "cloudflare": ("cloudflare", "token", "token", "Cloudflare API Token"),
+    "cf": ("cloudflare", "token", "token", "Cloudflare API Token"),
     "firecrawl": ("firecrawl", "api_key", "api_key", "Firecrawl API Key"),
     "tavily": ("tavily", "api_key", "api_key", "Tavily API Key"),
     "brave": ("brave", "api_key", "api_key", "Brave Search API Key"),
+    "serpapi": ("serpapi", "api_key", "api_key", "SerpAPI Key"),
+    "hunter": ("hunter", "api_key", "api_key", "Hunter.io API Key"),
+    "apollo": ("apollo", "api_key", "api_key", "Apollo.io API Key"),
 }
 
 
@@ -1132,6 +1137,10 @@ def vault_set(
 def vault_get(
     path: str = typer.Argument(..., help="Key path: provider or provider/data_key"),
     reveal: bool = typer.Option(False, "--reveal", "-r", help="Show the actual secret value"),
+    raw: bool = typer.Option(
+        False, "--raw", help="Print ONLY the secret to stdout (machine-readable; implies --reveal). "
+        "Exits non-zero if not found. Used by clients (e.g. navig-echo) to resolve secrets."
+    ),
     profile: str = typer.Option("default", "--profile", "-P", help="Credential profile"),
 ):
     """Get a credential value from the vault."""
@@ -1144,7 +1153,9 @@ def vault_get(
         try:
             resolved_secret = (vault.get_secret(path) or "").strip()
             if resolved_secret:
-                if reveal:
+                if raw:
+                    print(resolved_secret)  # noqa: T201 — clean machine-readable output
+                elif reveal:
                     _ch.warning("Revealing secret!")
                     _rprint(resolved_secret)
                 else:
@@ -1156,12 +1167,18 @@ def vault_get(
             pass  # path not found as label; fall through to provider credential lookup
 
     if cred is None:
+        if raw:
+            raise typer.Exit(1)  # silent non-zero exit for machine callers
         _ch.error(f"No credential found for provider '{provider}' in profile '{profile}'.")
         _ch.info("Use 'navig vault set <path> <value>' to add one.")
         raise typer.Exit(1)
 
     secret = cred.data.get(data_key, "")
-    if reveal:
+    if raw:
+        if not secret:
+            raise typer.Exit(1)
+        print(secret)  # noqa: T201 — clean machine-readable output
+    elif reveal:
         _ch.warning("Revealing secret!")
         _rprint(secret)
     else:

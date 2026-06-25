@@ -113,7 +113,7 @@ def test_list_tools_empty_registry() -> None:
     reg = _fresh_registry()
     tools = list_connector_tools(registry=reg)
     names = {t["name"] for t in tools}
-    assert names == {"connector.list", "connector.health"}
+    assert names == {"connector_list", "connector_health"}
 
 
 def test_list_tools_search_only() -> None:
@@ -122,14 +122,14 @@ def test_list_tools_search_only() -> None:
     reg = _fresh_registry(Cls)
     tools = list_connector_tools(registry=reg)
     names = {t["name"] for t in tools}
-    assert "connector.alpha.search" in names
-    assert "connector.list" in names
-    assert "connector.health" in names
+    assert "connector_alpha_search" in names
+    assert "connector_list" in names
+    assert "connector_health" in names
     # Only one per-connector tool (search only)
-    connector_tools = [t for t in tools if t["name"].startswith("connector.alpha")]
+    connector_tools = [t for t in tools if t["name"].startswith("connector_alpha")]
     assert len(connector_tools) == 1
     t = connector_tools[0]
-    assert t["name"] == "connector.alpha.search"
+    assert t["name"] == "connector_alpha_search"
     assert "alpha" in t["description"].lower() or "TestConn" in t["description"]
     schema = t["inputSchema"]
     assert schema["type"] == "object"
@@ -143,11 +143,11 @@ def test_list_tools_all_capabilities() -> None:
     reg = _fresh_registry(Cls)
     tools = list_connector_tools(registry=reg)
     names = [t["name"] for t in tools]
-    assert "connector.full.search" in names
-    assert "connector.full.fetch" in names
-    assert "connector.full.act" in names
-    assert "connector.list" in names
-    assert "connector.health" in names
+    assert "connector_full_search" in names
+    assert "connector_full_fetch" in names
+    assert "connector_full_act" in names
+    assert "connector_list" in names
+    assert "connector_health" in names
     # Exactly 3 per-connector + 2 meta
     assert len(names) == 5
 
@@ -160,12 +160,12 @@ def test_list_tools_multiple_connectors() -> None:
     tools = list_connector_tools(registry=reg)
     assert len(tools) == 6  # 2 meta + 1 (c1) + 3 (c2)
     names = {t["name"] for t in tools}
-    assert "connector.c1.search" in names
-    assert "connector.c2.search" in names
-    assert "connector.c2.fetch" in names
-    assert "connector.c2.act" in names
-    assert "connector.list" in names
-    assert "connector.health" in names
+    assert "connector_c1_search" in names
+    assert "connector_c2_search" in names
+    assert "connector_c2_fetch" in names
+    assert "connector_c2_act" in names
+    assert "connector_list" in names
+    assert "connector_health" in names
 
 
 def test_bad_manifest_connector_is_skipped() -> None:
@@ -210,7 +210,7 @@ def test_bad_manifest_connector_is_skipped() -> None:
         tools = list_connector_tools(registry=reg)
 
     names = [t["name"] for t in tools]
-    assert "connector.good.search" in names  # good connector still present
+    assert "connector_good_search" in names  # good connector still present
     assert not any("bad" in n for n in names)  # bad connector skipped
     # warning called with the bad connector id
     assert mock_logger.warning.called, "logger.warning should have been called"
@@ -231,7 +231,7 @@ async def test_handle_search_routes_correctly() -> None:
     inst = reg.get("s1")
     inst.search = AsyncMock(return_value=expected)  # type: ignore[method-assign]
 
-    result = await handle_connector_call("connector.s1.search", {"query": "hello"}, registry=reg)
+    result = await handle_connector_call("connector_s1_search", {"query": "hello"}, registry=reg)
 
     inst.search.assert_called_once_with("hello", limit=5)
     assert result == {"results": [expected[0].to_dict()]}
@@ -243,7 +243,7 @@ async def test_handle_search_honours_limit() -> None:
     inst = reg.get("slim")
     inst.search = AsyncMock(return_value=[])  # type: ignore[method-assign]
 
-    await handle_connector_call("connector.slim.search", {"query": "x", "limit": 3}, registry=reg)
+    await handle_connector_call("connector_slim_search", {"query": "x", "limit": 3}, registry=reg)
     inst.search.assert_called_once_with("x", limit=3)
 
 
@@ -255,7 +255,7 @@ async def test_handle_fetch_routes_correctly() -> None:
     inst.fetch = AsyncMock(return_value=expected)  # type: ignore[method-assign]
 
     result = await handle_connector_call(
-        "connector.f1.fetch", {"resource_id": "abc123"}, registry=reg
+        "connector_f1_fetch", {"resource_id": "abc123"}, registry=reg
     )
 
     inst.fetch.assert_called_once_with("abc123")
@@ -270,7 +270,7 @@ async def test_handle_fetch_none_resource() -> None:
     inst.fetch = AsyncMock(return_value=None)  # type: ignore[method-assign]
 
     result = await handle_connector_call(
-        "connector.fnone.fetch", {"resource_id": "x"}, registry=reg
+        "connector_fnone_fetch", {"resource_id": "x"}, registry=reg
     )
     assert result == {"resource": None}
 
@@ -283,7 +283,7 @@ async def test_handle_act_routes_correctly() -> None:
     inst.act = AsyncMock(return_value=action_result)  # type: ignore[method-assign]
 
     result = await handle_connector_call(
-        "connector.a1.act",
+        "connector_a1_act",
         {"action_type": "archive", "resource_id": "msg:42", "params": {"label": "done"}},
         registry=reg,
     )
@@ -302,7 +302,7 @@ async def test_handle_act_invalid_action_type_raises() -> None:
 
     with pytest.raises(ValueError, match="Unknown action_type"):
         await handle_connector_call(
-            "connector.bad_act.act", {"action_type": "explode"}, registry=reg
+            "connector_bad_act_act", {"action_type": "explode"}, registry=reg
         )
 
 
@@ -310,7 +310,7 @@ async def test_handle_unknown_connector_raises() -> None:
     """ConnectorNotFoundError propagates when connector id is not in registry."""
     reg = _fresh_registry()
     with pytest.raises(ConnectorNotFoundError):
-        await handle_connector_call("connector.nope.search", {"query": "x"}, registry=reg)
+        await handle_connector_call("connector_nope_search", {"query": "x"}, registry=reg)
 
 
 async def test_handle_malformed_tool_name_raises() -> None:
@@ -323,7 +323,7 @@ async def test_handle_unknown_operation_raises() -> None:
     Cls = _make_connector_class("op_test")
     reg = _fresh_registry(Cls)
     with pytest.raises(ValueError, match="Unsupported connector operation"):
-        await handle_connector_call("connector.op_test.explode", {}, registry=reg)
+        await handle_connector_call("connector_op_test_explode", {}, registry=reg)
 
 
 # ---------------------------------------------------------------------------
@@ -341,9 +341,9 @@ def test_register_updates_server_tools() -> None:
     with patch("navig.mcp.tools.connectors.get_connector_registry", return_value=reg):
         register(server)
 
-    assert "connector.reg1.search" in server.tools
-    assert "connector.reg1.fetch" in server.tools
-    assert "connector.reg1.act" not in server.tools  # can_act=False
+    assert "connector_reg1_search" in server.tools
+    assert "connector_reg1_fetch" in server.tools
+    assert "connector_reg1_act" not in server.tools  # can_act=False
 
 
 def test_register_creates_tools_attr_if_missing() -> None:
@@ -367,15 +367,15 @@ def test_register_populates_tool_handlers() -> None:
         register(server)
 
     # Per-connector handlers present
-    assert "connector.h1.search" in server._tool_handlers
-    assert "connector.h1.fetch" in server._tool_handlers
-    assert "connector.h1.act" in server._tool_handlers
+    assert "connector_h1_search" in server._tool_handlers
+    assert "connector_h1_fetch" in server._tool_handlers
+    assert "connector_h1_act" in server._tool_handlers
     # Meta-tool handlers present
-    assert "connector.list" in server._tool_handlers
-    assert "connector.health" in server._tool_handlers
+    assert "connector_list" in server._tool_handlers
+    assert "connector_health" in server._tool_handlers
     # All handlers are callable
     for name, fn in server._tool_handlers.items():
-        if name.startswith("connector."):
+        if name.startswith("connector_"):
             assert callable(fn), f"Handler for {name!r} is not callable"
 
 
@@ -389,10 +389,10 @@ def test_register_meta_tools_in_server_tools() -> None:
     with patch("navig.mcp.tools.connectors.get_connector_registry", return_value=reg):
         register(server)
 
-    assert "connector.list" in server.tools
-    assert "connector.health" in server.tools
-    assert "connector.list" in server._tool_handlers
-    assert "connector.health" in server._tool_handlers
+    assert "connector_list" in server.tools
+    assert "connector_health" in server.tools
+    assert "connector_list" in server._tool_handlers
+    assert "connector_health" in server._tool_handlers
 
 
 def test_tool_connector_list_returns_all() -> None:
@@ -464,10 +464,10 @@ def test_sync_handler_dispatches_via_thread_pool() -> None:
         "navig.mcp.tools.connectors.handle_connector_call",
         new=AsyncMock(return_value=expected),
     ) as mock_hcc:
-        handler = _make_sync_connector_handler("connector.mock.search")
+        handler = _make_sync_connector_handler("connector_mock_search")
         result = handler(None, {"query": "test"})
 
-    mock_hcc.assert_called_once_with("connector.mock.search", {"query": "test"})
+    mock_hcc.assert_called_once_with("connector_mock_search", {"query": "test"})
     assert result == expected
 
 
@@ -486,7 +486,7 @@ def test_register_all_tools_preserves_existing_bundles() -> None:
         register_all_tools(server)
 
     # Connector tool present
-    assert "connector.brdg.search" in server.tools
+    assert "connector_brdg_search" in server.tools
     # Built-in bundles also registered (memory / wiki add to server.tools)
     tool_names = set(server.tools.keys())
     assert any("memory" in n or "wiki" in n or "navig" in n for n in tool_names), (
@@ -533,7 +533,7 @@ def test_pool_timeout_cancels_future() -> None:
         patch("navig.mcp.tools.connectors._POOL") as mock_pool,
     ):
         mock_pool.submit.return_value = mock_future
-        handler = _make_sync_connector_handler("connector.slow.search")
+        handler = _make_sync_connector_handler("connector_slow_search")
         with pytest.raises(concurrent.futures.TimeoutError):
             handler(None, {"query": "test"})
 

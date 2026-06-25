@@ -98,13 +98,33 @@ def copilot_ask(
         navig copilot ask "How do I set up a reverse proxy in nginx?"
         navig copilot ask "Explain Python decorators" --model gpt-4o
     """
+    from navig.core import narrator
+    import time
+
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": question})
 
+    narrator.blank()
+    narrator.phase("NAVIG is reasoning ...", icon="brain")
+    bridge_url, _ = _read_bridge_config()
+    narrator.step(f"Connecting to MCP Bridge ({bridge_url})", icon="radio")
+    model_label = model or "default"
+    narrator.step(f"Querying model: {model_label}", icon="gear")
+
+    t0 = time.monotonic()
     result = _run(_chat(messages, model=model or ""))
+    elapsed_ms = int((time.monotonic() - t0) * 1000)
+    narrator.step(f"Response received in {elapsed_ms}ms", icon="anchor")
+
+    narrator.blank()
     ch.print_markdown(result)
+    narrator.blank()
+
+    # Lightweight verdict line so the user sees a clear "done" marker.
+    tokens = max(1, len(result.split()))
+    narrator.verdict(f"Done · {tokens} tokens · {elapsed_ms}ms", icon="check")
 
 
 @copilot_app.command("explain")

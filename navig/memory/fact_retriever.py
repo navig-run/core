@@ -271,16 +271,20 @@ class FactRetriever:
             limit=20,
             category="identity",
             min_confidence=0.7,
+            approved=1,
         )
         for fact in always_relevant:
             if fact.id not in seen:
                 seen[fact.id] = (0.0, 0.0)
 
-        # Reconstruct full fact objects
+        # Reconstruct full fact objects. Curation gate: only APPROVED facts
+        # (approved == 1) are eligible for prompt injection. Pending (None) and
+        # rejected (0) facts surface only in the review surface, never the prompt —
+        # keyword/vector search can return them, so the filter lives here.
         candidates: list[tuple[KeyFact, float, float]] = []
         for fact_id, (kw_score, vec_score) in seen.items():
             fact = self.store.get(fact_id)
-            if fact and fact.is_active:
+            if fact and fact.is_active and fact.approved == 1:
                 candidates.append((fact, kw_score, vec_score))
 
         return candidates

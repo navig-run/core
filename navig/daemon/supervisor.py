@@ -30,6 +30,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
+from navig._daemon_defaults import _GATEWAY_PORT
 from navig.core.yaml_io import atomic_write_text
 from navig.platform import paths
 
@@ -302,7 +303,7 @@ class NavigDaemon:
         self,
         *,
         python_exe: str | None = None,
-        port: int = 8789,
+        port: int = _GATEWAY_PORT,
     ) -> None:
         """Register the gateway server as a supervised child."""
         python = python_exe or sys.executable

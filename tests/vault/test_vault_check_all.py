@@ -343,25 +343,13 @@ def test_voice_provider_step_skips_without_tty(tmp_path):
     assert result.status in ("skipped", "completed")
 
 
-# ── /provider_voice Telegram command ─────────────────────────────────────────
-
-
-def test_provider_voice_in_slash_registry():
-    """/provider_voice is in the _SLASH_REGISTRY."""
-    from navig.gateway.channels.telegram_commands import _SLASH_REGISTRY
-
-    cmds = {e.command for e in _SLASH_REGISTRY}
-    assert "provider_voice" in cmds
-    assert "voice_provider" in cmds  # hidden alias
-
-
-def test_provider_voice_handler_is_wired():
-    """/provider_voice points to _handle_provider_voice."""
-    from navig.gateway.channels.telegram_commands import _SLASH_REGISTRY
-
-    entry = next(e for e in _SLASH_REGISTRY if e.command == "provider_voice")
-    assert entry.handler == "_handle_provider_voice"
-    assert entry.category == "voice"
+# ── /provider_voice Telegram command — REMOVED BY DESIGN (R9-20) ──────────────
+# The /provider_voice (and /provider_hybrid/_vision/_show/_reset) in-chat slash
+# commands were intentionally moved to the Deck → Vault & Admin UI (see the
+# comment in telegram_commands.py ~L659: "no in-chat surface is needed"). The
+# two tests that asserted /provider_voice in _SLASH_REGISTRY were stale and are
+# removed. The voice surface that REMAINS is the settings-hub button, covered by
+# the test below.
 
 
 def test_settings_hub_keyboard_has_voice_keys_button():

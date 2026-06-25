@@ -589,6 +589,269 @@ def skills_callback(ctx: typer.Context):
         raise typer.Exit()
 
 
+@skills_app.command("install")
+def skills_install(
+    ctx: typer.Context,
+    spec: str = typer.Argument(
+        ...,
+        help=(
+            "Foreign: claude:<name> · openclaw:<name> · hermes:<name> · codex:<name> · "
+            "a local path.  Community: github:navig-run/… · skill:owner/repo[@ref]"
+        ),
+    ),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite if already installed."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+):
+    """Install a skill — from another agent (Claude/OpenClaw/Hermes/Codex/local) or the community registry.
+
+    Foreign skills are normalized into a canonical NAVIG ``SKILL.md`` under
+    ``~/.navig/store/skills/<id>/`` (origin recorded in ``.skill.meta.json``).
+    """
+    from navig.skills import federation
+
+    # 1) Foreign agent / local path / OpenClaw plugin bundle → normalize into the store.
+    try:
+        targets = federation.install_all(spec, force=force, dry_run=dry_run)
+    except (ValueError, FileExistsError) as exc:
+        ch.error(str(exc))
+        raise typer.Exit(1) from exc
+
+    if targets is not None:
+        if dry_run:
+            ch.info(f"dry-run · would install {len(targets)} skill(s):")
+            for t in targets:
+                ch.info(f"  · {t.name} → {t}")
+        else:
+            ch.success(f"Installed {len(targets)} skill(s).", details=", ".join(t.name for t in targets))
+            if len(targets) == 1:
+                ch.info("Run it: navig skills run " + targets[0].name)
+        return
+
+    # 2) Community registry (GitHub-backed) — unchanged.
+    from navig.commands.install import install_asset
+
+    try:
+        install_asset(spec, force=force, dry_run=dry_run)
+    except (ValueError, SystemExit) as exc:
+        raise typer.Exit(1) from exc
+
+
+@skills_app.command("export")
+def skills_export(
+    skill_id: str = typer.Argument(..., help="Id of an installed/discovered skill."),
+    fmt: str = typer.Option("claude", "--format", "-f", help="claude · hermes · openclaw"),
+    dest: Path = typer.Option(
+        Path("."), "--dest", "-o", help="Output directory (a <id>/ folder is created inside)."
+    ),
+    force: bool = typer.Option(False, "--force", help="Overwrite an existing export."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview without writing files."),
+):
+    """Export a NAVIG skill in another agent's format so it can consume it."""
+    from navig.skills import federation
+
+    try:
+        out = federation.export(skill_id, fmt, dest, force=force, dry_run=dry_run)
+    except (ValueError, FileExistsError) as exc:
+        ch.error(str(exc))
+        raise typer.Exit(1) from exc
+
+    if dry_run:
+        ch.info(f"dry-run · would export '{skill_id}' ({fmt}) → {out}")
+    else:
+        ch.success(f"Exported '{skill_id}' as {fmt}.", details=str(out))
+
+
+_SKILL_TEMPLATE = """\
+---
+name: {name}
+description: {description}
+allowed-tools: bash, read
+platforms: linux, macos, windows
+safety: safe
+---
+
+# {title}
+
+Describe what this skill does and, importantly, **when it should be used** — the
+description above is what NAVIG/Claude match against to auto-activate this skill.
+
+## Steps
+1. ...
+
+## Examples
+```bash
+# example invocation
+```
+"""
+
+
+@skills_app.command("new")
+@skills_app.command("create")
+def skills_new(
+    name: str = typer.Argument(..., help="Skill name (kebab-case)"),
+    description: str = typer.Option("", "--description", "-d", help="One-line skill description."),
+    here: bool = typer.Option(False, "--here", help="Create ./<name> instead of the user store."),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite an existing SKILL.md."),
+):
+    """Scaffold a new Claude-compatible SKILL.md skill."""
+    import re
+
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    if not slug:
+        ch.error("Invalid skill name.")
+        raise typer.Exit(1)
+
+    if here:
+        target = Path.cwd() / slug
+    else:
+        from navig.platform.paths import store_dir
+
+        target = store_dir() / "skills" / slug
+    skill_file = target / "SKILL.md"
+
+    if skill_file.exists() and not force:
+        ch.warning(f"'{slug}' already exists.", details=str(skill_file))
+        raise typer.Exit(1)
+
+    target.mkdir(parents=True, exist_ok=True)
+    content = _SKILL_TEMPLATE.format(
+        name=slug,
+        description=description or f"TODO: when should '{slug}' be used?",
+        title=slug.replace("-", " ").title(),
+    )
+    skill_file.write_text(content, encoding="utf-8")
+    ch.success(f"Created skill '{slug}'.", details=str(skill_file))
+    ch.info("Edit the description (auto-activation matches it), then: navig skills run " + slug)
+
+
+def _installed_skill_ids() -> set[str]:
+    try:
+        from navig.platform.paths import store_dir
+
+        d = store_dir() / "skills"
+        return {p.name for p in d.iterdir() if p.is_dir()} if d.exists() else set()
+    except Exception:  # noqa: BLE001
+        return set()
+
+
+def _load_community_registry() -> list[dict]:
+    """Load the community CLI-skill registry from the workspace, else GitHub."""
+    import json
+
+    # 1. Local workspace copy (navig-community/cli-skills/registry.json)
+    try:
+        here = Path(__file__).resolve()
+        for _ in range(8):
+            here = here.parent
+            cand = here / "navig-community" / "cli-skills" / "registry.json"
+            if cand.exists():
+                data = json.loads(cand.read_text(encoding="utf-8"))
+                return data.get("skills", []) if isinstance(data, dict) else list(data or [])
+    except Exception:  # noqa: BLE001
+        pass
+    # 2. Remote
+    try:
+        import urllib.request
+
+        url = "https://raw.githubusercontent.com/navig-run/community/main/cli-skills/registry.json"
+        req = urllib.request.Request(url, headers={"User-Agent": "navig-cli"})  # noqa: S310 — https
+        with urllib.request.urlopen(req, timeout=20) as resp:  # noqa: S310
+            data = json.loads(resp.read().decode("utf-8"))
+        return data.get("skills", []) if isinstance(data, dict) else list(data or [])
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def compute_skill_suggestions(path: str = ".", limit: int = 6) -> tuple[list[str], str, list[dict]]:
+    """Detect stack + active space and rank community skills. Returns (stack, space, picks).
+
+    Reused by ``navig skill suggest`` and the onboarding flow. Never raises — on
+    any failure it returns whatever it has (possibly an empty pick list).
+    """
+    import re as _re
+
+    try:
+        from navig.commands.project_inspect import inspect_path
+
+        info = inspect_path(path)
+    except Exception:  # noqa: BLE001
+        info = {}
+    stack = [str(s) for s in (info.get("stack") or [])]
+    meta = info.get("metadata") or {}
+
+    space = ""
+    try:
+        from navig.commands.space import get_active_space
+
+        space = get_active_space() or ""
+    except Exception:  # noqa: BLE001
+        pass
+
+    registry = _load_community_registry()
+    if not registry:
+        return stack, space, []
+
+    words: set[str] = set()
+    for token in stack:
+        words.update(_re.split(r"[^a-z0-9]+", token.lower()))
+    for v in meta.values():
+        if isinstance(v, str):
+            words.update(_re.split(r"[^a-z0-9]+", v.lower()))
+    words.discard("")
+
+    installed = _installed_skill_ids()
+    scored: list[tuple[int, dict]] = []
+    for sk in registry:
+        sid = str(sk.get("id", ""))
+        if not sid or sid in installed:
+            continue
+        hay = " ".join(str(sk.get(k, "")) for k in ("id", "category", "description")).lower()
+        hay += " " + " ".join(str(c) for c in (sk.get("commands") or [])).lower()
+        score = sum(1 for w in words if w and w in hay)
+        if sk.get("category") in ("developer", "system"):
+            score += 1  # generally useful for any code project
+        if score > 0:
+            scored.append((score, sk))
+
+    scored.sort(key=lambda t: t[0], reverse=True)
+    return stack, space, [sk for _, sk in scored[:limit]]
+
+
+@skills_app.command("suggest")
+def skills_suggest(
+    path: str = typer.Option(".", "--path", help="Project directory to inspect."),
+    install: bool = typer.Option(False, "--install", help="Install the suggested skills."),
+    limit: int = typer.Option(6, "--limit", "-n", help="Max suggestions."),
+):
+    """Detect this project's stack + active space and recommend community skills."""
+    stack, space, picks = compute_skill_suggestions(path, limit)
+
+    ch.info(f"Stack: {', '.join(stack) or 'unknown'}" + (f"   ·   Space: {space}" if space else ""))
+
+    if not picks:
+        ch.info("No stack-specific suggestions yet. Browse: navig skill install github:navig-run/community/...")
+        return
+
+    ch.info("Suggested skills:")
+    for sk in picks:
+        cmd = sk.get("install") or (
+            f"navig skill install github:navig-run/community/cli-skills/{sk.get('category')}/{sk.get('id')}"
+        )
+        ch.info(f"  • {sk.get('id')} — {sk.get('description', '')}")
+        if not install:
+            ch.info(f"      {cmd}")
+
+    if install:
+        from navig.commands.install import install_asset
+
+        for sk in picks:
+            spec = f"github:navig-run/community/cli-skills/{sk.get('category')}/{sk.get('id')}"
+            try:
+                install_asset(spec, force=False)
+            except Exception as exc:  # noqa: BLE001
+                ch.warning(f"  failed: {sk.get('id')} ({exc})")
+
+
 @skills_app.command("list")
 def skills_list(
     ctx: typer.Context,

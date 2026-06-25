@@ -15,7 +15,9 @@ def get_gateway_status() -> dict[str, Any]:
     try:
         import requests
 
-        response = requests.get("http://localhost:8789/status", timeout=2)
+        from navig.gateway_client import gateway_base_url
+
+        response = requests.get(f"{gateway_base_url()}/status", timeout=2)
         if response.status_code == 200:
             data = response.json()
             return {
@@ -144,7 +146,65 @@ def show_status(options: dict[str, Any]) -> None:
         if show_all:
             ch.dim("  (start with: navig start)")
 
+    # Cloud (broker + cloudflared tunnel) — only printed when enabled
+    try:
+        _print_cloud_status_section(show_all=show_all)
+    except Exception:  # noqa: BLE001
+        pass
+
     # Extended status
     if show_all:
         ch.dim("")
         ch.dim("Tip: Use 'navig status --json' for machine-readable output")
+
+
+def _print_cloud_status_section(*, show_all: bool) -> None:
+    """Render a ``Cloud:`` line in ``navig status`` when cloud.enabled is true.
+
+    Pulls live state from the running daemon's ``/api/deck/cloud/status``
+    endpoint; falls back to "starting / unreachable" when the daemon is down.
+    """
+    import urllib.error
+    import urllib.request
+
+    from navig.core import Config
+    cfg = Config()
+    enabled = bool(cfg.get("cloud.enabled", False))
+    if not enabled and not show_all:
+        return
+
+    api_key = cfg.get("deck.api_key", "") or ""
+    from navig.gateway_client import gateway_cli_defaults
+
+    port = gateway_cli_defaults()[0]
+    truncated = "<unset>"
+    if api_key:
+        truncated = f"{api_key[:4]}…{api_key[-4:]}" if len(api_key) > 10 else "***"
+
+    if not enabled:
+        ch.dim(f"Cloud: disabled  (api_key: {truncated})")
+        return
+
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/api/deck/cloud/status",
+        headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            info = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError):
+        ch.warning(f"Cloud: enabled but daemon not reachable (port {port})")
+        ch.dim(f"  api_key: {truncated}")
+        return
+
+    status = info.get("status", "off")
+    tunnel = info.get("tunnel_url") or "<provisioning>"
+    if status == "online":
+        ch.success(f"Cloud: online  {tunnel}")
+    elif status == "starting":
+        ch.dim(f"Cloud: starting  ({tunnel})")
+    elif status == "error":
+        ch.warning(f"Cloud: error  {info.get('last_error', '')}")
+    else:
+        ch.dim(f"Cloud: {status}")
+    ch.dim(f"  api_key: {truncated}    broker: {info.get('broker_url', '')}")

@@ -71,6 +71,216 @@ _WEB_SEARCH_PROVIDER_CATALOG: tuple[tuple[str, str, tuple[str, ...]], ...] = (
 )
 
 
+def _step_lighthouse(navig_dir: Path) -> OnboardingStep:
+    """Optionally deploy Lighthouse — a self-hosted Cloudflare edge that makes
+    navig reachable (Telegram, SMS, remote deck) with **no tunnel**.
+
+    Uploads a prebuilt Worker to the user's OWN Cloudflare account via the REST
+    API (no Node/wrangler, no custom domain), flips ``cloud.mode=lighthouse``,
+    and points the Telegram webhook at the new ``*.workers.dev`` URL. Reuses the
+    exact same path as ``navig lighthouse deploy``.
+    """
+
+    def _already_configured() -> bool:
+        try:
+            from navig.core import Config
+            c = Config()
+            return bool((c.get("cloud.lighthouse_url") or "").strip() or (c.get("cloud.public_url") or "").strip())
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _set(key: str, value) -> None:
+        from navig.config import get_config_manager
+        get_config_manager().set(key, value, scope="global")
+
+    def _deploy_lighthouse() -> StepResult:
+        import typer
+
+        try:
+            token = typer.prompt(
+                "  Cloudflare API token — Workers Scripts: Edit + Account Settings: Read\n"
+                "  (https://dash.cloudflare.com/profile/api-tokens; blank to skip)",
+                default="",
+                hide_input=True,
+            ).strip()
+        except EOFError:
+            token = ""
+        if not token:
+            return StepResult(status="skipped", output={"reason": "no token"}, fix_hint="Run `navig lighthouse deploy` later.")
+        try:
+            # run_lighthouse_deploy() persists the token to the vault for unattended redeploys.
+            from navig.commands.lighthouse import run_lighthouse_deploy
+
+            result, webhook, webhook_err = run_lighthouse_deploy(token=token, set_webhook=True)
+        except Exception as exc:  # noqa: BLE001
+            return StepResult(status="failed", output={"reason": "deploy failed"}, error=str(exc),
+                              fix_hint="Check token scopes, then run `navig lighthouse deploy`.")
+        out: dict = {"mode": "lighthouse", "url": result.url, "account": result.account_id}
+        if webhook:
+            out["telegram_webhook"] = webhook
+        if webhook_err:
+            out["telegram_warning"] = webhook_err
+        return StepResult(status="completed", output=out)
+
+    def run() -> StepResult:
+        if _already_configured():
+            return StepResult(status="completed", output={"note": "reachability already configured"})
+        tty = _tty_check()
+        if tty is not None:
+            return tty
+
+        import typer
+
+        try:
+            choice = typer.prompt(
+                "  How should this brain be reached?\n"
+                "    1) Direct      — this is a VPS with a public URL\n"
+                "    2) Lighthouse  — always-on edge, no tunnel (home/laptop)\n"
+                "    3) Tunnel      — quick cloudflared tunnel\n"
+                "    4) Local-only  — decide later\n"
+                "  Choose 1-4",
+                default="4",
+            ).strip()
+        except (EOFError, KeyboardInterrupt):
+            choice = "4"
+
+        if choice == "1":
+            try:
+                url = typer.prompt("  Public URL (e.g. https://navig.example.com)", default="").strip()
+            except EOFError:
+                url = ""
+            if not url:
+                return StepResult(status="skipped", output={"reason": "no URL"}, fix_hint="Run `navig cloud direct <url>` later.")
+            _set("cloud.public_url", url)
+            _set("cloud.enabled", True)
+            return StepResult(status="completed", output={"mode": "direct", "url": url})
+        if choice == "2":
+            return _deploy_lighthouse()
+        if choice == "3":
+            _set("cloud.enabled", True)  # no lighthouse/public_url set → cloudflared tunnel mode
+            return StepResult(status="completed", output={"mode": "tunnel"})
+        return StepResult(status="skipped", output={"mode": "local", "note": "set later: navig cloud direct <url> | navig lighthouse deploy"})
+
+    return OnboardingStep(
+        id="lighthouse",
+        title="Reachability — how this brain is reached",
+        run=run,
+        verify=_already_configured,
+        on_failure="skip",
+        phase="configuration",
+        tier="optional",
+    )
+
+
+def _step_deck(navig_dir: Path) -> OnboardingStep:
+    """Optionally publish the Deck (the Telegram Mini App UI) to the user's OWN
+    Cloudflare Pages, pointed at this brain's reachable edge.
+
+    Offered once the brain is reachable by ANY mode — Lighthouse, a Direct VPS
+    public URL, or a cloudflared tunnel (the deck bakes in whichever edge URL
+    applies). Runs the same path as ``navig miniapp deploy`` (needs Node 18+).
+    Skippable; surfaced in the deferred-commands list when declined.
+    """
+
+    def _already() -> bool:
+        try:
+            from navig.core import Config
+            return bool((Config().get("deck.public_url") or "").strip())
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _reachable_ready() -> bool:
+        """True once the brain has a public reachability mode configured.
+
+        The deck needs a stable edge URL to bake in. That URL can come from any
+        reachability mode — Lighthouse (``cloud.lighthouse_url``), a Direct VPS
+        (``cloud.public_url``), or a cloudflared tunnel (``cloud.enabled`` with
+        no static URL → resolved at runtime by the broker). Local-only has none
+        of these, so the deck step is correctly skipped there.
+        """
+        try:
+            from navig.core import Config
+            cfg = Config()
+            return bool(
+                (cfg.get("cloud.lighthouse_url") or "").strip()
+                or (cfg.get("cloud.public_url") or "").strip()
+                or cfg.get("cloud.enabled")
+            )
+        except Exception:  # noqa: BLE001
+            return False
+
+    def run() -> StepResult:
+        if _already():
+            return StepResult(status="completed", output={"note": "already deployed"})
+
+        tty = _tty_check()
+        if tty is not None:
+            return tty
+
+        if not _reachable_ready():
+            # The deck needs a public edge URL baked in — no point until this
+            # brain is reachable (Lighthouse / Direct VPS / tunnel). Local-only
+            # brains skip here and can deploy later once reachability is set.
+            return StepResult(
+                status="skipped",
+                output={"reason": "set reachability first"},
+                fix_hint="Pick a reachability mode (`navig lighthouse login` or "
+                "`navig cloud direct <url>`), then `navig miniapp deploy`.",
+            )
+
+        import typer
+
+        try:
+            want = typer.confirm(
+                "  Publish your own Deck (Telegram Mini App) to your Cloudflare now?\n"
+                "  Needs Node 18+; builds + deploys to Cloudflare Pages (~1-2 min)",
+                default=False,
+            )
+        except KeyboardInterrupt:
+            raise
+        except EOFError:
+            want = False
+        if not want:
+            return StepResult(status="skipped", output={"reason": "declined"})
+
+        try:
+            from navig.commands.miniapp import run_miniapp_deploy
+
+            res = run_miniapp_deploy(register=True)
+        except Exception as exc:  # noqa: BLE001
+            return StepResult(
+                status="failed",
+                output={"reason": "deploy error"},
+                error=str(exc),
+                fix_hint="Run `navig miniapp deploy` from the navig-deck folder.",
+            )
+
+        if not res.get("ok"):
+            # Missing Node / deck source → skip (recoverable); real failures → failed.
+            soft = res.get("status") in ("no_deck", "no_node")
+            return StepResult(
+                status="skipped" if soft else "failed",
+                output={"reason": res.get("status")},
+                error=res.get("error"),
+                fix_hint="Run `navig miniapp deploy` (needs Node 18+) from the navig-deck folder.",
+            )
+
+        out: dict = {"url": res.get("url")}
+        if res.get("registered"):
+            out["mini_app"] = "menu button set"
+        return StepResult(status="completed", output=out)
+
+    return OnboardingStep(
+        id="deck-deploy",
+        title="Deck (your own Telegram Mini App)",
+        run=run,
+        verify=_already,
+        on_failure="skip",
+        phase="configuration",
+        tier="optional",
+    )
+
+
 def build_step_registry(
     config: EngineConfig,
     genesis: GenesisData,
@@ -103,6 +313,8 @@ def build_step_registry(
         _step_first_host(navig_dir),
         _step_matrix(navig_dir),
         _step_telegram_bot(navig_dir),
+        _step_lighthouse(navig_dir),
+        _step_deck(navig_dir),
         _step_email(navig_dir),
         _step_social_networks(navig_dir),
         _step_runtime_secrets(navig_dir),
@@ -1214,7 +1426,40 @@ def _step_first_host(navig_dir: Path) -> OnboardingStep:
             )
             existing = list(hosts_dir.glob("*.yaml")) if hosts_dir.exists() else []
             if existing:
-                return StepResult(status="completed", output={"hostsFound": len(existing)})
+                # Offer to install + start NAVIG on the host we just added (the VPS).
+                new_host = max(existing, key=lambda p: p.stat().st_mtime).stem
+                deployed = False
+                # Clarify the role choice. Deploying installs the daemon there =
+                # it becomes a SECOND brain (runs the agent + can run a bot).
+                # Declining keeps it a managed host you drive over SSH from this
+                # brain (deck Remote app) — the smaller blast radius, and the
+                # right default for an important/prod box.
+                typer.echo(
+                    f"  Deploy = make '{new_host}' a second brain (installs the daemon there).\n"
+                    f"  Skip   = keep it an SSH-managed host (control it from this brain). "
+                    "Best for prod."
+                )
+                try:
+                    deploy_ans = (
+                        typer.prompt(
+                            f"  Make '{new_host}' a second brain now? (y/N)", default="n"
+                        )
+                        .strip()
+                        .lower()
+                    )
+                except (EOFError, KeyboardInterrupt):
+                    deploy_ans = "n"
+                if deploy_ans in ("y", "yes"):
+                    rc = subprocess.run(
+                        [sys.executable, "-m", "navig", "host", "deploy", new_host],
+                        check=False,
+                        env=_env,
+                    ).returncode
+                    deployed = rc == 0
+                return StepResult(
+                    status="completed",
+                    output={"hostsFound": len(existing), "deployed": deployed},
+                )
 
         return StepResult(
             status="skipped",
@@ -1503,6 +1748,37 @@ def _step_telegram_bot(navig_dir: Path) -> OnboardingStep:
             return tty
 
         import typer
+
+        # The Telegram bot runs wherever the NAVIG daemon (the "brain") runs —
+        # this token is stored on THIS machine's vault/.env, so it only takes
+        # effect if this machine is your brain. If you onboarded a client (e.g.
+        # your laptop) and your brain lives elsewhere (a VPS / your outpost),
+        # set the token THERE instead: `navig vault set telegram_bot_token <tok>`
+        # (or run onboarding on the brain). We hint at the likely role using the
+        # reachability that was just configured for this machine.
+        try:
+            from navig.core import Config
+
+            _cfg = Config()
+            _is_brain = bool(
+                (_cfg.get("cloud.lighthouse_url") or "").strip()
+                or (_cfg.get("cloud.public_url") or "").strip()
+                or _cfg.get("cloud.enabled")
+            )
+        except Exception:  # noqa: BLE001
+            _is_brain = False
+        if _is_brain:
+            typer.echo(
+                "  The bot runs on THIS machine (your reachable brain). Good — "
+                "set the token here."
+            )
+        else:
+            typer.echo(
+                "  Note: the Telegram bot runs where the NAVIG daemon runs. This "
+                "token is saved on THIS machine — if your brain is elsewhere (a "
+                "VPS / outpost), set it there with "
+                "`navig vault set telegram_bot_token <token>`."
+            )
 
         try:
             token = typer.prompt(

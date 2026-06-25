@@ -2974,12 +2974,14 @@ def show_agent_gateway_menu(state: MenuState, standalone: bool = False) -> bool:
                 import subprocess
                 import sys
 
+                from navig._daemon_defaults import _GATEWAY_PORT
+
                 cmd = [
                     sys.executable,
                     "-m",
                     "navig.daemon.telegram_worker",
                     "--port",
-                    "8789",
+                    str(_GATEWAY_PORT),
                 ]
                 if sys.platform == "win32":
                     subprocess.Popen(
@@ -2999,8 +3001,10 @@ def show_agent_gateway_menu(state: MenuState, standalone: bool = False) -> bool:
                 console.print(
                     f"[{COLORS['success']}]✓ Started Gateway + Bot in background[/{COLORS['success']}]"
                 )
+                from navig.gateway_client import gateway_base_url
+
                 console.print(
-                    f"[{COLORS['dim']}]  Gateway: http://localhost:8789[/{COLORS['dim']}]"
+                    f"[{COLORS['dim']}]  Gateway: {gateway_base_url()}[/{COLORS['dim']}]"
                 )
                 console.print(
                     f"[{COLORS['dim']}]  Check bot status with: navig bot status[/{COLORS['dim']}]"

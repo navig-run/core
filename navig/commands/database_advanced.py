@@ -9,7 +9,7 @@ from typing import Any
 from rich.table import Table
 
 from navig import console_helper as ch
-from navig.commands._db_utils import create_mysql_config_file
+from navig.commands._db_utils import create_mysql_config_file, get_db_host_port
 
 
 def _validate_sql_identifier(identifier: str, identifier_type: str = "identifier") -> bool:
@@ -106,14 +106,17 @@ def list_databases_cmd(options: dict[str, Any]):
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
     server_name = require_active_server(options, config_manager)
 
-    # Ensure tunnel
-    tunnel_info = tunnel_manager.get_tunnel_status(server_name)
-    if not tunnel_info:
-        ch.warning("Starting tunnel...")
-        tunnel_info = tunnel_manager.start_tunnel(server_name)
-
     server_config = config_manager.load_server_config(server_name)
     db = server_config["database"]
+
+    tunnel_info = None
+    if not db.get("direct_host"):
+        tunnel_info = tunnel_manager.get_tunnel_status(server_name)
+        if not tunnel_info:
+            ch.warning("Starting tunnel...")
+            tunnel_info = tunnel_manager.start_tunnel(server_name)
+
+    db_host, db_port = get_db_host_port(db, tunnel_info)
 
     # Query for database sizes (safe - no user input)
     query = """
@@ -134,9 +137,9 @@ def list_databases_cmd(options: dict[str, Any]):
             "mysql",
             f"--defaults-file={config_file}",  # Secure credential passing
             "-h",
-            "127.0.0.1",
+            db_host,
             "-P",
-            str(tunnel_info["local_port"]),
+            str(db_port),
             "-e",
             query,
         ]
@@ -230,13 +233,16 @@ def optimize_table_cmd(table: str, options: dict[str, Any]):
             ch.info(f"[DRY RUN] {msg}")
         return True
 
-    # Ensure tunnel
-    tunnel_info = tunnel_manager.get_tunnel_status(server_name)
-    if not tunnel_info:
-        tunnel_info = tunnel_manager.start_tunnel(server_name)
-
     server_config = config_manager.load_server_config(server_name)
     db = server_config["database"]
+
+    tunnel_info = None
+    if not db.get("direct_host"):
+        tunnel_info = tunnel_manager.get_tunnel_status(server_name)
+        if not tunnel_info:
+            tunnel_info = tunnel_manager.start_tunnel(server_name)
+
+    db_host, db_port = get_db_host_port(db, tunnel_info)
 
     # SECURITY: Escape table name with backticks
     safe_table = _escape_sql_identifier(table)
@@ -250,9 +256,9 @@ def optimize_table_cmd(table: str, options: dict[str, Any]):
             "mysql",
             f"--defaults-file={config_file}",
             "-h",
-            "127.0.0.1",
+            db_host,
             "-P",
-            str(tunnel_info["local_port"]),
+            str(db_port),
             db["name"],
             "-e",
             query,
@@ -323,13 +329,16 @@ def repair_table_cmd(table: str, options: dict[str, Any]):
             ch.info(f"[DRY RUN] {msg}")
         return True
 
-    # Ensure tunnel
-    tunnel_info = tunnel_manager.get_tunnel_status(server_name)
-    if not tunnel_info:
-        tunnel_info = tunnel_manager.start_tunnel(server_name)
-
     server_config = config_manager.load_server_config(server_name)
     db = server_config["database"]
+
+    tunnel_info = None
+    if not db.get("direct_host"):
+        tunnel_info = tunnel_manager.get_tunnel_status(server_name)
+        if not tunnel_info:
+            tunnel_info = tunnel_manager.start_tunnel(server_name)
+
+    db_host, db_port = get_db_host_port(db, tunnel_info)
 
     # SECURITY: Escape table name with backticks
     safe_table = _escape_sql_identifier(table)
@@ -343,9 +352,9 @@ def repair_table_cmd(table: str, options: dict[str, Any]):
             "mysql",
             f"--defaults-file={config_file}",
             "-h",
-            "127.0.0.1",
+            db_host,
             "-P",
-            str(tunnel_info["local_port"]),
+            str(db_port),
             db["name"],
             "-e",
             query,
@@ -396,13 +405,16 @@ def list_users_cmd(options: dict[str, Any]):
     from navig.cli.recovery import require_active_server  # noqa: PLC0415
     server_name = require_active_server(options, config_manager)
 
-    # Ensure tunnel
-    tunnel_info = tunnel_manager.get_tunnel_status(server_name)
-    if not tunnel_info:
-        tunnel_info = tunnel_manager.start_tunnel(server_name)
-
     server_config = config_manager.load_server_config(server_name)
     db = server_config["database"]
+
+    tunnel_info = None
+    if not db.get("direct_host"):
+        tunnel_info = tunnel_manager.get_tunnel_status(server_name)
+        if not tunnel_info:
+            tunnel_info = tunnel_manager.start_tunnel(server_name)
+
+    db_host, db_port = get_db_host_port(db, tunnel_info)
 
     query = "SELECT User, Host FROM mysql.user ORDER BY User, Host;"
 
@@ -414,9 +426,9 @@ def list_users_cmd(options: dict[str, Any]):
             "mysql",
             f"--defaults-file={config_file}",
             "-h",
-            "127.0.0.1",
+            db_host,
             "-P",
-            str(tunnel_info["local_port"]),
+            str(db_port),
             "-e",
             query,
         ]
@@ -494,13 +506,16 @@ def list_tables_cmd(database: str, options: dict[str, Any]):
         ch.error(str(e))
         return
 
-    # Ensure tunnel
-    tunnel_info = tunnel_manager.get_tunnel_status(server_name)
-    if not tunnel_info:
-        tunnel_info = tunnel_manager.start_tunnel(server_name)
-
     server_config = config_manager.load_server_config(server_name)
     db = server_config["database"]
+
+    tunnel_info = None
+    if not db.get("direct_host"):
+        tunnel_info = tunnel_manager.get_tunnel_status(server_name)
+        if not tunnel_info:
+            tunnel_info = tunnel_manager.start_tunnel(server_name)
+
+    db_host, db_port = get_db_host_port(db, tunnel_info)
 
     # SECURITY: Use backtick escaping for database name in WHERE clause
     safe_database = _escape_sql_identifier(database)  # noqa: F841 - validates input; value embedded below via {database}
@@ -525,9 +540,9 @@ def list_tables_cmd(database: str, options: dict[str, Any]):
             "mysql",
             f"--defaults-file={config_file}",
             "-h",
-            "127.0.0.1",
+            db_host,
             "-P",
-            str(tunnel_info["local_port"]),
+            str(db_port),
             "-e",
             query,
         ]

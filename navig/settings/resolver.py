@@ -13,6 +13,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from navig._daemon_defaults import _DAEMON_PORT
 from navig.core.dict_utils import deep_merge as _deep_merge
 from navig.platform import paths
 
@@ -25,7 +26,7 @@ DEFAULTS: dict[str, Any] = {
     "navig.ai.model": "gpt-4o-mini",
     "navig.ai.temperature": 0.4,
     "navig.ai.max_tokens": 4096,
-    "navig.daemon.port": 8765,
+    "navig.daemon.port": _DAEMON_PORT,
     "navig.daemon.host": "127.0.0.1",
     "navig.daemon.auto_start": True,
     "navig.inbox.mode": "copy",

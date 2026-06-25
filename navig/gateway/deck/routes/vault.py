@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import sys
+from typing import Any
 
 try:
     from aiohttp import web
@@ -59,6 +60,12 @@ _VAULT_ALLOWED_PROVIDERS = {
     "pinecone",
     "neon",
     "redis",
+    # Search / research / enrichment
+    "tavily",
+    "serpapi",
+    "brave",
+    "hunter",
+    "apollo",
     # Messaging / social adapters
     "telegram",
     "discord",
@@ -257,26 +264,99 @@ async def handle_deck_vault_test(request: "web.Request") -> "web.Response":
         return web.json_response({"error": str(e)}, status=500)
 
 
-async def handle_deck_whisper_install(request: "web.Request") -> "web.Response":
-    """Install the openai-whisper package for local speech-to-text."""
+# ── Whisper install: background runner + status polling ──────────────────────
+#
+# `pip install openai-whisper` pulls torch (~2 GB) and easily exceeds any
+# reasonable HTTP timeout. We spawn the install as a background task and let
+# the client poll /whisper/install/status until it finishes.
+
+_WHISPER_INSTALL_STATE: dict[str, Any] = {
+    "running": False,
+    "ok": None,        # None while running, True/False when done
+    "message": "",     # latest line of output / final outcome
+    "started_at": 0.0,
+    "finished_at": 0.0,
+}
+
+
+def _whisper_already_installed() -> bool:
+    """Cheap check — try importing the module without invoking it."""
+    try:
+        import importlib.util
+        return importlib.util.find_spec("whisper") is not None
+    except Exception:
+        return False
+
+
+async def _run_whisper_install() -> None:
+    """Background coroutine: runs `pip install openai-whisper` to completion."""
+    import time as _time
+    _WHISPER_INSTALL_STATE.update({
+        "running": True,
+        "ok": None,
+        "message": "Starting pip install openai-whisper…",
+        "started_at": _time.time(),
+        "finished_at": 0.0,
+    })
     try:
         proc = await asyncio.create_subprocess_exec(
             sys.executable, "-m", "pip", "install", "openai-whisper",
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,  # merge so we see warnings too
         )
-        try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
-        except asyncio.TimeoutError:
-            try:
-                proc.kill()
-            except Exception:
-                pass
-            return web.json_response({"ok": False, "error": "install timed out after 120s"}, status=500)
-
+        # Read line-by-line so the latest progress line is always visible.
+        last_line = ""
+        assert proc.stdout is not None
+        while True:
+            chunk = await proc.stdout.readline()
+            if not chunk:
+                break
+            line = chunk.decode(errors="replace").rstrip()
+            if line:
+                last_line = line
+                _WHISPER_INSTALL_STATE["message"] = line[:240]
+        await proc.wait()
         ok = proc.returncode == 0
-        output = (stdout.decode(errors="replace") if ok else stderr.decode(errors="replace")).strip()
-        return web.json_response({"ok": ok, "message": output or ("Installed successfully" if ok else "Install failed")})
-    except Exception as e:
-        logger.error("Whisper install error: %s", e)
-        return web.json_response({"ok": False, "error": str(e)}, status=500)
+        _WHISPER_INSTALL_STATE.update({
+            "running": False,
+            "ok": ok,
+            "message": (last_line or ("Installed successfully" if ok else "Install failed"))[:240],
+            "finished_at": _time.time(),
+        })
+    except Exception as exc:
+        logger.exception("Whisper install error")
+        _WHISPER_INSTALL_STATE.update({
+            "running": False,
+            "ok": False,
+            "message": f"Install failed: {exc}",
+            "finished_at": _time.time(),
+        })
+
+
+async def handle_deck_whisper_install(request: "web.Request") -> "web.Response":
+    """Kick off the openai-whisper install in the background.
+
+    Returns immediately with `{ok: true, started: bool, already_installed: bool}`.
+    Long-running pip resolution / torch download happens asynchronously.
+    Clients should poll `/api/deck/whisper/install/status` to track progress.
+    """
+    if _whisper_already_installed():
+        _WHISPER_INSTALL_STATE.update({
+            "running": False, "ok": True, "message": "Already installed",
+        })
+        return web.json_response({"ok": True, "started": False, "already_installed": True})
+
+    if _WHISPER_INSTALL_STATE["running"]:
+        return web.json_response({"ok": True, "started": False, "already_running": True})
+
+    # Fire and forget. The task runs in the same event loop and updates the
+    # shared dict above; no need to track the task handle.
+    asyncio.create_task(_run_whisper_install())
+    return web.json_response({"ok": True, "started": True})
+
+
+async def handle_deck_whisper_install_status(request: "web.Request") -> "web.Response":
+    """Poll endpoint — returns the current state of the install."""
+    state = dict(_WHISPER_INSTALL_STATE)
+    state["already_installed"] = _whisper_already_installed()
+    return web.json_response(state)

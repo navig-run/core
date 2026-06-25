@@ -14,7 +14,9 @@ from navig.agent.remote_agent import (
     RemoteCommand,
     RemoteResult,
     RemoteTask,
+    _WIN_CMDLINE_B64_LIMIT,
     _build_navig_command,
+    _build_navig_file_command,
     _needs_b64,
     _truncate,
 )
@@ -578,3 +580,137 @@ class TestRegistration:
         # Mutating tools should NOT be in READ_ONLY
         assert "remote_execute" not in PlanInterceptor.READ_ONLY_TOOLS
         assert "remote_multi_host" not in PlanInterceptor.READ_ONLY_TOOLS
+
+
+# ═════════════════════════════════════════════════════════════
+# _build_navig_file_command
+# ═════════════════════════════════════════════════════════════
+
+
+class TestBuildNavigFileCommand:
+    def test_basic_output(self):
+        cmd = _build_navig_file_command("/tmp/cmd.sh")
+        assert cmd == "navig run --yes --file /tmp/cmd.sh"
+
+    def test_with_host(self):
+        cmd = _build_navig_file_command("/tmp/cmd.sh", host="prod")
+        assert cmd == "navig run --host prod --yes --file /tmp/cmd.sh"
+
+    def test_no_host_kwarg(self):
+        cmd = _build_navig_file_command("/tmp/cmd.sh", host=None)
+        assert "--host" not in cmd
+
+    def test_spaces_in_path(self):
+        cmd = _build_navig_file_command("/tmp/my cmd.sh")
+        assert "/tmp/my cmd.sh" in cmd
+
+
+# ═════════════════════════════════════════════════════════════
+# Large-payload → temp-file fallback in execute_command
+# ═════════════════════════════════════════════════════════════
+
+# A raw command that (a) triggers b64 via the `$` char and (b) base64-encodes to
+# well over _WIN_CMDLINE_B64_LIMIT chars.  ~6 100 raw bytes → ~8 140 base64 chars.
+_LARGE_CMD = "echo $VAR " + ("x" * 6_100)
+
+
+class TestLargePayloadTempFile:
+    """execute_command must use --file instead of --b64 for large payloads."""
+
+    async def test_large_payload_uses_file_flag(self, tmp_path):
+        """Shell command must contain --file, not --b64, when payload is large."""
+        proc = _make_proc(stdout="ok", returncode=0)
+        with patch(
+            "navig.agent.remote_agent.asyncio.create_subprocess_shell",
+            return_value=proc,
+        ) as mock_sub:
+            executor = RemoteAgentExecutor()
+            result = await executor.execute_command(_LARGE_CMD)
+
+        assert result.success is True
+        call_cmd = mock_sub.call_args[0][0]
+        assert "--file" in call_cmd
+        assert "--b64" not in call_cmd
+
+    async def test_small_payload_still_uses_b64(self):
+        """Commands with special chars but short payload must still use --b64."""
+        proc = _make_proc(stdout="ok", returncode=0)
+        with patch(
+            "navig.agent.remote_agent.asyncio.create_subprocess_shell",
+            return_value=proc,
+        ) as mock_sub:
+            executor = RemoteAgentExecutor()
+            await executor.execute_command("echo $HOME")
+
+        call_cmd = mock_sub.call_args[0][0]
+        assert "--b64" in call_cmd
+        assert "--file" not in call_cmd
+
+    async def test_temp_file_is_cleaned_up(self, tmp_path, monkeypatch):
+        """Temp file created for large payload must be deleted after execution."""
+        created_paths: list[str] = []
+
+        import tempfile
+        import pathlib
+
+        orig_ntf = tempfile.NamedTemporaryFile
+
+        def _tracking_ntf(*args, **kwargs):
+            fh = orig_ntf(*args, **kwargs)
+            created_paths.append(fh.name)
+            return fh
+
+        monkeypatch.setattr(tempfile, "NamedTemporaryFile", _tracking_ntf)
+
+        proc = _make_proc(stdout="ok", returncode=0)
+        with patch(
+            "navig.agent.remote_agent.asyncio.create_subprocess_shell",
+            return_value=proc,
+        ):
+            executor = RemoteAgentExecutor()
+            await executor.execute_command(_LARGE_CMD)
+
+        assert created_paths, "Expected a temp file to be created"
+        for p in created_paths:
+            assert not pathlib.Path(p).exists(), f"Temp file not cleaned up: {p}"
+
+    async def test_large_payload_with_host(self):
+        """--host flag must be forwarded when using the file fallback path."""
+        proc = _make_proc(stdout="ok", returncode=0)
+        with patch(
+            "navig.agent.remote_agent.asyncio.create_subprocess_shell",
+            return_value=proc,
+        ) as mock_sub:
+            executor = RemoteAgentExecutor()
+            await executor.execute_command(_LARGE_CMD, host="staging")
+
+        call_cmd = mock_sub.call_args[0][0]
+        assert "--file" in call_cmd
+        assert "--host staging" in call_cmd
+
+    async def test_win_cmdline_limit_constant(self):
+        """Sanity-check: constant is a positive int safely below Windows 32767 limit."""
+        assert isinstance(_WIN_CMDLINE_B64_LIMIT, int)
+        assert 100 < _WIN_CMDLINE_B64_LIMIT < 32_767
+
+    async def test_oserror_on_temp_write_falls_back_to_b64(self, monkeypatch):
+        """If writing the temp file raises OSError, fall back gracefully to --b64."""
+        import tempfile
+
+        def _failing_ntf(*args, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(tempfile, "NamedTemporaryFile", _failing_ntf)
+
+        proc = _make_proc(stdout="ok", returncode=0)
+        with patch(
+            "navig.agent.remote_agent.asyncio.create_subprocess_shell",
+            return_value=proc,
+        ) as mock_sub:
+            executor = RemoteAgentExecutor()
+            result = await executor.execute_command(_LARGE_CMD)
+
+        # Must not raise; must fall back to --b64
+        assert result.success is True
+        call_cmd = mock_sub.call_args[0][0]
+        assert "--b64" in call_cmd

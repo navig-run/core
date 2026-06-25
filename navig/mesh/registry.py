@@ -29,6 +29,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from navig._daemon_defaults import _GATEWAY_PORT
 from navig.debug_logger import get_debug_logger
 from navig.platform.paths import config_dir
 
@@ -224,17 +225,20 @@ class NodeRegistry:
     # ─────────────────────────── Identity ────────────────────────────
 
     def _build_self_record(self) -> NodeRecord:
-        from navig.config import get_config_manager
+        port = _GATEWAY_PORT  # default gateway port
+        formation = ""
+        try:
+            from navig.config import get_config_manager
+            config = get_config_manager()
+            raw = config.global_config
+            port = raw.get("gateway", {}).get("port", _GATEWAY_PORT)
+            formation = raw.get("formation", {}).get("active", "")
+        except Exception:
+            pass  # config unavailable on first run or corrupted config
 
-        config = get_config_manager()
-        raw = config.global_config
-
-        port = raw.get("gateway", {}).get("port", 8789)
         local_ip = self._local_ip()
         gateway_url = f"http://{local_ip}:{port}"
-
         caps = self._detect_capabilities()
-        formation = raw.get("formation", {}).get("active", "")
 
         try:
             from navig import __version__ as ver
@@ -283,10 +287,11 @@ class NodeRegistry:
         """Best-effort LAN IP (not loopback)."""
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
-            ip = s.getsockname()[0]
-            s.close()
-            return ip
+            try:
+                s.connect(("8.8.8.8", 80))
+                return s.getsockname()[0]
+            finally:
+                s.close()
         except Exception:
             return "127.0.0.1"
 

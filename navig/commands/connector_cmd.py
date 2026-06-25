@@ -389,89 +389,16 @@ def connector_health(
 
 # ── Connector auto-registration ──────────────────────────────────────────
 
-_CONNECTORS_LOADED = False
-
 
 def _ensure_connectors_loaded() -> None:
-    """Lazily register built-in connectors on first CLI access."""
-    global _CONNECTORS_LOADED
-    if _CONNECTORS_LOADED:
-        return
-    _CONNECTORS_LOADED = True
+    """Lazily register built-in connectors on first CLI access.
 
-    from navig.connectors.registry import get_connector_registry
+    Delegates to the canonical bootstrap so the MCP server and CLI share
+    the same registration logic from a single source of truth.
+    """
+    from navig.connectors.bootstrap import ensure_connectors_loaded
 
-    registry = get_connector_registry()
-
-    # Gmail
-    try:
-        from navig.connectors.gmail.connector import GmailConnector
-
-        registry.register(GmailConnector)
-    except Exception as exc:
-        import logging
-
-        logging.getLogger("navig.connectors").debug("Gmail load failed: %s", exc)
-
-    # Google Calendar
-    try:
-        from navig.connectors.google_calendar.connector import GoogleCalendarConnector
-
-        registry.register(GoogleCalendarConnector)
-    except Exception as exc:
-        import logging
-
-        logging.getLogger("navig.connectors").debug("Calendar load failed: %s", exc)
-
-    # Perplexity AI
-    try:
-        from navig.connectors.perplexity.connector import PerplexityConnector
-
-        registry.register(PerplexityConnector)
-    except Exception as exc:
-        import logging
-
-        logging.getLogger("navig.connectors").debug("Perplexity load failed: %s", exc)
-
-    # Google Maps (Geocoding + Places)
-    try:
-        from navig.connectors.google_maps.connector import GoogleMapsConnector
-
-        registry.register(GoogleMapsConnector)
-    except Exception as exc:
-        import logging
-
-        logging.getLogger("navig.connectors").debug("GoogleMaps load failed: %s", exc)
-
-    # YouTube Data API v3
-    try:
-        from navig.connectors.youtube.connector import YouTubeConnector
-
-        registry.register(YouTubeConnector)
-    except Exception as exc:
-        import logging
-
-        logging.getLogger("navig.connectors").debug("YouTube load failed: %s", exc)
-
-    # Supabase PostgREST
-    try:
-        from navig.connectors.supabase.connector import SupabaseConnector
-
-        registry.register(SupabaseConnector)
-    except Exception as exc:
-        import logging
-
-        logging.getLogger("navig.connectors").debug("Supabase load failed: %s", exc)
-
-    # GCP Cloud Translation (service account)
-    try:
-        from navig.connectors.gcp_translate.connector import GcpTranslateConnector
-
-        registry.register(GcpTranslateConnector)
-    except Exception as exc:
-        import logging
-
-        logging.getLogger("navig.connectors").debug("GcpTranslate load failed: %s", exc)
+    ensure_connectors_loaded()
 
 
 def _register_oauth_config(connector_id: str, auth) -> None:

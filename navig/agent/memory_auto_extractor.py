@@ -332,7 +332,7 @@ class MemoryAutoExtractor:
                 key = fact_key(fact.fact, fact.category)
                 # Build a KeyFact-compatible object if store expects one.
                 # We use duck-typing: if store has ``put(key, value, **kw)``
-                # use that; otherwise fall back to ``upsert()`` with a dict.
+                # use that; otherwise fall back to ``upsert()`` with a KeyFact.
                 if hasattr(self._store, "put"):
                     self._store.put(
                         key,
@@ -344,7 +344,21 @@ class MemoryAutoExtractor:
                         },
                     )
                 elif hasattr(self._store, "upsert"):
-                    self._store.upsert(fact.to_dict())
+                    # KeyFactStore.upsert expects a KeyFact, NOT a dict. Auto-extracted
+                    # facts are PROPOSALS: persist them pending (approved=None) so the
+                    # user curates them before retrieval can inject them.
+                    from navig.memory.key_facts import KeyFact
+
+                    self._store.upsert(
+                        KeyFact(
+                            content=fact.fact,
+                            category=fact.category,
+                            confidence=fact.confidence,
+                            source_platform="auto_extract",
+                            metadata={"auto_extracted": True},
+                            approved=None,
+                        )
+                    )
                 stored.append(fact)
             except Exception:
                 logger.debug("Failed to store fact: %s", fact.fact[:60], exc_info=True)

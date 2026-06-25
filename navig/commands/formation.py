@@ -266,3 +266,36 @@ def formation_agents(
 
     ch.console.print(table)
     ch.console.print()
+
+
+@formation_app.command("run")
+def formation_run(
+    request: str = typer.Argument(..., help="The request to run across the formation"),
+    max_workers: int = typer.Option(3, "--max-workers", "-w", help="Max specialists in parallel"),
+):
+    """Run a request across the active formation's specialists (real multi-agent).
+
+    Each specialist runs as a parallel ReAct agent; results are synthesized (and,
+    when the verifier is enabled, verified) into one answer.
+
+    Examples:
+        navig formation run "audit this repo for security and performance, then summarize"
+    """
+    import asyncio
+
+    from navig.formations.coordinator import run_active_formation
+
+    try:
+        ch.info("Running the active formation… (specialists work in parallel)")
+        result = asyncio.run(run_active_formation(request, max_workers=max_workers))
+        if result.get("workers", 0) == 0:
+            ch.warning(result.get("summary", "No active formation."))
+            ch.info("  Initialize with: navig formation init <formation-id>")
+            return
+        ch.console.print(f"\n[bold cyan]Formation:[/bold cyan] {result.get('formation', '?')}  "
+                         f"([green]{result['workers']}[/green] specialists, "
+                         f"[red]{result['failed']}[/red] failed)\n")
+        ch.console.print(result.get("summary", "(no summary)"))
+        ch.console.print()
+    except Exception as e:  # noqa: BLE001
+        ch.error(f"Error: {e}")

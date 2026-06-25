@@ -143,10 +143,15 @@ class TestGatewayConfig:
         assert cfg.enabled is False
 
     def test_default_port(self):
+        from navig._daemon_defaults import _DAEMON_PORT, _GATEWAY_PORT
         from navig.core.config_schema import GatewayConfig
 
         cfg = GatewayConfig()
         assert 1024 <= cfg.port <= 65535
+        # Canonical gateway default — and never the daemon-IPC port (8765),
+        # which would make the gateway squat the daemon.
+        assert cfg.port == _GATEWAY_PORT == 8789
+        assert cfg.port != _DAEMON_PORT
 
     def test_default_require_auth(self):
         from navig.core.config_schema import GatewayConfig

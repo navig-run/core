@@ -139,10 +139,11 @@ class TestGatewayCliDefaults:
         assert isinstance(host, str)
 
     def test_defaults_on_error(self) -> None:
+        from navig._daemon_defaults import _GATEWAY_PORT
         from navig.gateway_client import gateway_cli_defaults
         with patch("navig.config.get_config_manager", side_effect=RuntimeError):
             port, host = gateway_cli_defaults()
-        assert port == 8789
+        assert port == _GATEWAY_PORT == 8789
         assert host == "127.0.0.1"
 
     def test_reads_from_config(self) -> None:

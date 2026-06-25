@@ -116,7 +116,7 @@ net use Z: \\ubuntu-server\share /user:username
 ### Run Network Diagnostic & Fix:
 ```powershell
 # As Administrator
-cd K:\_PROJECTS\navig\navig-core\scripts
+cd C:\path\to\navig-core\scripts
 
 # Diagnostic only
 .\fix_windows_network_sharing.ps1 -DiagnosticOnly

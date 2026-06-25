@@ -253,43 +253,90 @@ detect_os() {
     esac
 }
 
-# ── Python detection ──────────────────────────────────────────
-MIN_PY_MAJOR=3
-MIN_PY_MINOR=10
+# ── Isolated runtime layout ───────────────────────────────────
+# NAVIG ships its own pinned CPython + venv so the user needs NOTHING
+# pre-installed. Nothing here touches the system Python.
+NAVIG_HOME="$HOME/.navig"
+RUNTIME_DIR="$NAVIG_HOME/runtime"            # uv + python/ + venv/
+RUNTIME_VENV="$RUNTIME_DIR/venv"
+RUNTIME_VENV_PY="$RUNTIME_VENV/bin/python"
+RUNTIME_PY_DIR="$RUNTIME_DIR/python"         # uv-managed CPython installs
+RUNTIME_CACHE="$RUNTIME_DIR/cache"           # uv cache (self-contained)
+UV_EXE="$RUNTIME_DIR/uv"
+SHIM_DIR="$HOME/.local/bin"
+SHIM_PATH="$SHIM_DIR/navig"
 
-_py_meets_min() {
-    local exe="$1"
-    local out; out=$("$exe" --version 2>&1) || return 1
-    local maj min
-    maj=$(echo "$out" | grep -oE '[0-9]+\.[0-9]+' | head -1 | cut -d. -f1)
-    min=$(echo "$out" | grep -oE '[0-9]+\.[0-9]+' | head -1 | cut -d. -f2)
-    [ -z "$maj" ] && return 1
-    { [ "$maj" -gt "$MIN_PY_MAJOR" ] || { [ "$maj" -eq "$MIN_PY_MAJOR" ] && [ "$min" -ge "$MIN_PY_MINOR" ]; }; }
+# Pinned Python series for the managed runtime.
+PYTHON_SERIES="3.12"
+
+# uv release pin. Leave UV_VERSION empty to track the latest GitHub release.
+UV_VERSION=""                                # e.g. "0.7.13" — empty = latest
+
+# ── Managed runtime (uv) ──────────────────────────────────────
+# Everything below installs an ISOLATED Python under ~/.navig/runtime.
+# No system Python is detected, required, or modified.
+
+_uv_asset() {
+    local os arch
+    os=$(uname -s); arch=$(uname -m)
+    case "$os" in
+        Darwin)
+            case "$arch" in
+                arm64|aarch64) echo "uv-aarch64-apple-darwin.tar.gz" ;;
+                *)             echo "uv-x86_64-apple-darwin.tar.gz" ;;
+            esac ;;
+        *)
+            case "$arch" in
+                aarch64|arm64) echo "uv-aarch64-unknown-linux-gnu.tar.gz" ;;
+                *)             echo "uv-x86_64-unknown-linux-gnu.tar.gz" ;;
+            esac ;;
+    esac
 }
 
-detect_python() {
-    unset PYTHON_EXE PYTHON_VERSION
-    for cand in python3 python python3.14 python3.13 python3.12 python3.11 python3.10; do
-        if command -v "$cand" > /dev/null 2>&1 && _py_meets_min "$cand"; then
-            PYTHON_EXE=$(command -v "$cand")
-            PYTHON_VERSION=$("$PYTHON_EXE" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-            return 0
-        fi
-    done
-    return 1
-}
-
-# ── pip detection ─────────────────────────────────────────────
-detect_pip() {
-    unset PIP_EXE
-    if [ -n "${PYTHON_EXE:-}" ] && "$PYTHON_EXE" -m pip --version > /dev/null 2>&1; then
-        PIP_EXE="$PYTHON_EXE -m pip"
-        return 0
+_uv_url() {
+    local asset; asset=$(_uv_asset)
+    if [ -z "${UV_VERSION:-}" ]; then
+        echo "https://github.com/astral-sh/uv/releases/latest/download/$asset"
+    else
+        echo "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$asset"
     fi
-    for cand in pip3 pip; do
-        if command -v "$cand" > /dev/null 2>&1; then PIP_EXE="$cand"; return 0; fi
-    done
-    return 1
+}
+
+install_navig_uv() {
+    # Ensure $UV_EXE exists (self-contained under the runtime dir).
+    [ -x "$UV_EXE" ] && { log_verbose "uv present: $UV_EXE"; return 0; }
+    mkdir -p "$RUNTIME_DIR"
+    local url tmp tmpd
+    url=$(_uv_url)
+    tmp=$(mktemp); tmpd=$(mktemp -d)
+    log_verbose "Downloading uv: $url"
+    if ! curl -fsSL "$url" -o "$tmp"; then
+        log_hint "uv download failed: $url"; rm -rf "$tmp" "$tmpd"; return 1
+    fi
+    tar -xzf "$tmp" -C "$tmpd" 2>/dev/null || { log_hint "uv archive extract failed"; rm -rf "$tmp" "$tmpd"; return 1; }
+    local found; found=$(find "$tmpd" -type f -name uv | head -1)
+    if [ -z "$found" ]; then log_hint "uv binary not found in archive"; rm -rf "$tmp" "$tmpd"; return 1; fi
+    cp "$found" "$UV_EXE" && chmod +x "$UV_EXE"
+    rm -rf "$tmp" "$tmpd"
+    [ -x "$UV_EXE" ]
+}
+
+run_uv() {
+    # Run uv with a self-contained environment (managed python + cache under
+    # the runtime dir).
+    UV_PYTHON_INSTALL_DIR="$RUNTIME_PY_DIR" UV_CACHE_DIR="$RUNTIME_CACHE" "$UV_EXE" "$@"
+}
+
+install_navig_runtime() {
+    # Build (or rebuild) the isolated runtime: uv -> pinned CPython -> venv.
+    install_navig_uv || return 1
+    log_verbose "uv python install $PYTHON_SERIES"
+    run_uv python install "$PYTHON_SERIES" > /dev/null 2>&1 || { log_hint "uv python install failed"; return 1; }
+    if [ ! -x "$RUNTIME_VENV_PY" ]; then
+        log_verbose "uv venv $RUNTIME_VENV"
+        run_uv venv "$RUNTIME_VENV" --python "$PYTHON_SERIES" > /dev/null 2>&1 || { log_hint "uv venv failed"; return 1; }
+    fi
+    return 0
 }
 
 # ── Homebrew ──────────────────────────────────────────────────
@@ -304,44 +351,8 @@ install_homebrew() {
     return 1
 }
 
-# ── Python install ────────────────────────────────────────────
-install_python() {
-    row_step "Python" "not found — attempting system install..."
-    case "${OS_PKG:-}" in
-        apt)
-            if command -v sudo > /dev/null 2>&1; then
-                sudo apt-get update -qq && sudo apt-get install -y python3 python3-pip python3-venv
-            else
-                apt-get update -qq && apt-get install -y python3 python3-pip python3-venv
-            fi
-            ;;
-        dnf)
-            if command -v sudo > /dev/null 2>&1; then sudo dnf install -y python3 python3-pip
-            else dnf install -y python3 python3-pip; fi
-            ;;
-        pacman)
-            if command -v sudo > /dev/null 2>&1; then sudo pacman -Sy --noconfirm python python-pip
-            else pacman -Sy --noconfirm python python-pip; fi
-            ;;
-        apk)
-            if command -v sudo > /dev/null 2>&1; then sudo apk add --no-cache python3 py3-pip
-            else apk add --no-cache python3 py3-pip; fi
-            ;;
-        brew)
-            if ! command -v brew > /dev/null 2>&1; then install_homebrew || return 1; fi
-            brew install python
-            ;;
-        *)
-            print_failure \
-                "Cannot install Python automatically" \
-                "Unsupported package manager on ${OS_TYPE:-unknown}." \
-                "Install Python $MIN_PY_MAJOR.$MIN_PY_MINOR+ manually." \
-                "https://www.python.org/downloads"
-            return 1
-            ;;
-    esac
-    detect_python && return 0 || return 1
-}
+# NOTE: system-Python install paths were removed — NAVIG now ships an isolated
+# uv-managed CPython (see install_navig_runtime). No system Python is touched.
 
 # ── PATH management ───────────────────────────────────────────
 fix_path() {
@@ -362,36 +373,52 @@ fix_path() {
     done
 }
 
-# ── pip install ───────────────────────────────────────────────
-install_navig_pip() {
+# ── Install navig into the managed runtime ────────────────────
+install_navig_uv_pip() {
     local spec="${1:-navig}"
     local tmp; tmp=$(mktemp)
-    # shellcheck disable=SC2086
-    if $PIP_EXE install --quiet --upgrade --disable-pip-version-check "$spec" 2>"$tmp"; then
+    if run_uv pip install --python "$RUNTIME_VENV_PY" --upgrade "$spec" 2>"$tmp"; then
         rm -f "$tmp"; return 0
     fi
     tail -8 "$tmp" | while IFS= read -r l; do log_hint "$l"; done
     rm -f "$tmp"; return 1
 }
 
+# ── Launcher shim ─────────────────────────────────────────────
+make_shim() {
+    # ~/.local/bin/navig -> the venv's navig. A single stable PATH entry that
+    # survives runtime rebuilds, so updates never churn PATH.
+    mkdir -p "$SHIM_DIR"
+    ln -sf "$RUNTIME_VENV/bin/navig" "$SHIM_PATH"
+    [ -e "$SHIM_PATH" ]
+}
+
+# ── Daemon supervision ────────────────────────────────────────
+register_navig_daemon() {
+    # Register the NAVIG daemon for auto-start via the runtime's own
+    # `navig service install` (systemd on Linux, launchd on macOS). The service
+    # manager launches the venv's own python, so it inherits the isolated
+    # runtime. Best-effort; set NAVIG_NO_DAEMON to skip (e.g. CI / headless).
+    [ -n "${NAVIG_NO_DAEMON:-}" ] && return 1
+    [ -x "$RUNTIME_VENV/bin/navig" ] || return 1
+    "$RUNTIME_VENV/bin/navig" service install > /dev/null 2>&1
+}
+
 # ── Verify ────────────────────────────────────────────────────
 verify_navig() {
-    # Reload PATH with common user-bin dirs
-    local user_bin="$HOME/.local/bin"
+    # Prefer the venv exe directly (deterministic), fall back to PATH.
+    local venv_navig="$RUNTIME_VENV/bin/navig"
     case ":$PATH:" in
-        *":$user_bin:"*) ;;
-        *) export PATH="$user_bin:$PATH" ;;
+        *":$SHIM_DIR:"*) ;;
+        *) export PATH="$SHIM_DIR:$PATH" ;;
     esac
+    if [ -x "$venv_navig" ]; then
+        local v; v=$("$venv_navig" --version 2>&1 | head -1) || true
+        printf "%s" "$v"; return 0
+    fi
     if command -v navig > /dev/null 2>&1; then
         local v; v=$(navig --version 2>&1 | head -1) || true
-        printf "%s" "$v"
-        return 0
-    fi
-    # Last-ditch: check user bin directly
-    if [ -x "$user_bin/navig" ]; then
-        local v; v=$("$user_bin/navig" --version 2>&1 | head -1) || true
-        printf "%s" "$v"
-        return 0
+        printf "%s" "$v"; return 0
     fi
     return 1
 }
@@ -443,26 +470,17 @@ uninstall_navig() {
     _stop_navig_background
     log_verbose "Stopped background processes / services"
 
-    # 2. Uninstall pip package
-    local _pip_removed=0
-    if [ -n "${PIP_EXE:-}" ]; then
-        if $PIP_EXE uninstall navig -y > /dev/null 2>&1; then
-            _pip_removed=1
+    # 2. Remove managed runtime + launcher shim (always, so reinstall is clean)
+    rm -f "$SHIM_PATH" 2>/dev/null || true
+    if [ -d "$RUNTIME_DIR" ]; then
+        if rm -rf "$RUNTIME_DIR" 2>/dev/null; then
+            row_ok  "runtime" "removed: $RUNTIME_DIR"
+        else
+            row_warn "runtime" "could not remove $RUNTIME_DIR"
+            _uninstall_ok=0
         fi
     else
-        for pip_cmd in pip3 pip; do
-            if command -v "$pip_cmd" > /dev/null 2>&1; then
-                if $pip_cmd uninstall navig -y > /dev/null 2>&1; then
-                    _pip_removed=1
-                fi
-                break
-            fi
-        done
-    fi
-    if [ "$_pip_removed" = "1" ]; then
-        row_ok  "pip"    "package removed"
-    else
-        row_warn "pip"   "not found or already removed"
+        row_warn "runtime" "not found — skipping"
     fi
 
     # 3. Remove config / data directory
@@ -588,8 +606,6 @@ main() {
 
     # ── Uninstall path ────────────────────────────────────────
     if [ "$_ACTION" = "uninstall" ]; then
-        detect_python >/dev/null 2>&1 || true
-        detect_pip >/dev/null 2>&1 || true
         _inst_ver=$(navig --version 2>&1 | grep -oE '[0-9]+[.][0-9.]+' | head -1 || true)
         uninstall_navig 0 "${_inst_ver:-}"
         return
@@ -602,56 +618,44 @@ main() {
     row_ok "OS"    "${OS_TYPE:-$(uname)} $(_sym bullet) $arch"
     row_ok "Shell" "${SHELL:-sh}"
 
-    # ── Requirements ──────────────────────────────────────────
-    print_section "Requirements"
-    row_step "Python" "detecting..."
-    if ! detect_python; then
-        install_python || {
+    # ── Runtime ───────────────────────────────────────────────
+    # NAVIG bundles its own pinned Python. Nothing is required up front and
+    # the system Python is never detected, used, or modified.
+    print_section "Runtime"
+    row_step "Python" "preparing isolated runtime..."
+    if [ "$_DRY_RUN" != "1" ]; then
+        install_navig_runtime || {
             print_failure \
-                "Python $MIN_PY_MAJOR.$MIN_PY_MINOR+ required" \
-                "No compatible Python found and automatic install failed." \
-                "Install Python $MIN_PY_MAJOR.$MIN_PY_MINOR+ for your platform." \
-                "https://www.python.org/downloads"
+                "Could not prepare the NAVIG runtime" \
+                "Failed to fetch uv or build the isolated Python $PYTHON_SERIES environment." \
+                "Check your network / proxy and re-run. Your system Python is never touched." \
+                "curl -fsSL https://navig.run/install.sh | sh"
             exit 1
         }
     fi
-    row_ok "Python" "${PYTHON_VERSION:-detected}"
-    log_verbose "$PYTHON_EXE"
-
-    if ! detect_pip; then
-        print_failure \
-            "pip not available" \
-            "Python found but pip is not available." \
-            "Ensure pip is installed: python3 -m ensurepip" \
-            "$PYTHON_EXE -m ensurepip --upgrade"
-        exit 1
-    fi
+    row_ok "Python" "$PYTHON_SERIES $(_sym bullet) isolated (~/.navig/runtime)"
 
     # ── Install ───────────────────────────────────────────────
     print_section "Install"
-    if [ "$_ACTION" = "reinstall" ]; then
-        row_step "navig" "removing old version..."
-        $PIP_EXE uninstall navig -y > /dev/null 2>&1 || true
-    fi
     local spec="navig[interactive]"
     [ -n "$_VERSION" ] && spec="navig[interactive]==$_VERSION"
-    row_step "navig" "pip install $spec ..."
+    row_step "navig" "installing $spec ..."
     if [ "$_DRY_RUN" != "1" ]; then
-        install_navig_pip "$spec" || {
+        install_navig_uv_pip "$spec" || {
             print_failure \
-                "pip install failed" \
-                "pip exited with a non-zero code while installing navig." \
+                "navig install failed" \
+                "uv exited with a non-zero code while installing navig into the runtime." \
                 "Run manually to see the full output." \
-                "$PYTHON_EXE -m pip install --upgrade navig[interactive]"
+                "$UV_EXE pip install --python \"$RUNTIME_VENV_PY\" --upgrade navig[interactive]"
             exit 1
         }
     fi
     row_ok "navig" "installed"
 
     # ── PATH ──────────────────────────────────────────────────
-    local user_bin="$HOME/.local/bin"
-    fix_path "$user_bin"
-    row_ok "PATH" "$(_sym bullet) $user_bin"
+    if [ "$_DRY_RUN" != "1" ]; then make_shim || row_warn "shim" "could not create $SHIM_PATH"; fi
+    fix_path "$SHIM_DIR"
+    row_ok "PATH" "$(_sym bullet) $SHIM_DIR"
     setup_config
 
     # ── Verify ────────────────────────────────────────────────
@@ -676,6 +680,13 @@ main() {
         printf "%s\n" "${clean_ver}" > "$HOME/.navig/install.marker"
         log_verbose "Wrote install marker: $HOME/.navig/install.marker"
         _write_terminal_json
+
+        # ── Daemon auto-start ────────────────────────────────────
+        if register_navig_daemon; then
+            row_ok   "service" "auto-start enabled"
+        else
+            row_warn "service" "skipped — run 'navig service install' later"
+        fi
         # ── Optional: fzf (best picker UI) ───────────────────────
         if ! command -v fzf > /dev/null 2>&1; then
             _fzf_installed=0

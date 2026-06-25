@@ -33,6 +33,11 @@ logger = logging.getLogger(__name__)
 # ── Caps ─────────────────────────────────────────────────────
 MAX_CONCURRENT_HOSTS = 5
 MAX_OUTPUT_CHARS = 30_000
+
+# Windows CreateProcess hard limit is 32 767 chars for the entire command line.
+# Reserve headroom for the navig prefix + shell wrapper overhead; anything
+# larger than this threshold is routed through a temp file instead.
+_WIN_CMDLINE_B64_LIMIT = 8_000
 try:
     COMMAND_TIMEOUT = int(os.environ.get("NAVIG_REMOTE_TIMEOUT", "120"))
     if COMMAND_TIMEOUT <= 0:
@@ -190,7 +195,44 @@ class RemoteAgentExecutor:
         if use_b64 is None:
             use_b64 = _needs_b64(command)
 
-        navig_cmd = _build_navig_command(command, host=host, use_b64=use_b64)
+        # ── Guard: avoid Windows CreateProcess command-line length limit ──────
+        # When the base64 payload would exceed _WIN_CMDLINE_B64_LIMIT chars,
+        # write the raw command to a temp file and use `navig run --file`
+        # instead of inlining the payload.  This silently replaces the --b64
+        # path on all platforms (harmless on Linux/macOS; critical on Windows).
+        import tempfile  # noqa: PLC0415
+        from pathlib import Path as _Path  # noqa: PLC0415
+
+        _temp_cmd_file: _Path | None = None
+        if use_b64:
+            encoded_len = len(base64.b64encode(command.encode("utf-8")))
+            if encoded_len > _WIN_CMDLINE_B64_LIMIT:
+                try:
+                    tmp = tempfile.NamedTemporaryFile(
+                        mode="w",
+                        suffix=".sh",
+                        delete=False,
+                        encoding="utf-8",
+                    )
+                    tmp.write(command)
+                    tmp.close()
+                    _temp_cmd_file = _Path(tmp.name)
+                    navig_cmd = _build_navig_file_command(str(_temp_cmd_file), host=host)
+                    logger.debug(
+                        "remote_agent: large command (%d b64 chars) → temp file %s",
+                        encoded_len,
+                        _temp_cmd_file,
+                    )
+                except OSError as exc:
+                    logger.warning(
+                        "remote_agent: could not write temp file, falling back to b64: %s", exc
+                    )
+                    navig_cmd = _build_navig_command(command, host=host, use_b64=True)
+            else:
+                navig_cmd = _build_navig_command(command, host=host, use_b64=True)
+        else:
+            navig_cmd = _build_navig_command(command, host=host, use_b64=False)
+
         effective_timeout = timeout or self.default_timeout
         host_label = host or "(active)"
 
@@ -238,6 +280,13 @@ class RemoteAgentExecutor:
                 elapsed_s=elapsed,
                 error=str(exc),
             )
+        finally:
+            # Clean up the temp file regardless of success / error / timeout
+            if _temp_cmd_file is not None:
+                try:
+                    _temp_cmd_file.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
     # ── Sequential task ──────────────────────────────────────
 
@@ -390,6 +439,10 @@ def _build_navig_command(
 
     When *use_b64* is True the command is base64-encoded locally and
     passed via ``--b64`` so the remote shell never interprets special chars.
+
+    For large payloads that would exceed Windows' command-line length limit
+    use :func:`_build_navig_file_command` instead (handled automatically by
+    :meth:`RemoteAgentExecutor.execute_command`).
     """
     parts = ["navig", "run"]
 
@@ -406,6 +459,22 @@ def _build_navig_command(
         # Quote the command for the local shell
         parts.append(f'"{command}"')
 
+    return " ".join(parts)
+
+
+def _build_navig_file_command(
+    file_path: str,
+    *,
+    host: str | None = None,
+) -> str:
+    """Build ``navig run --yes --file <path>`` for large commands that would
+    exceed the Windows CreateProcess command-line length limit.
+    """
+    parts = ["navig", "run"]
+    if host:
+        parts.extend(["--host", host])
+    parts.append("--yes")
+    parts.extend(["--file", file_path])
     return " ".join(parts)
 
 

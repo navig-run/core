@@ -25,6 +25,15 @@ logger = get_debug_logger()
 
 _DEFAULT_STORE_DIR = config_dir() / "runtime"
 
+# Terminal MissionStatus → ReceiptOutcome, for receipts the executor records
+# directly on the timeout / cancel paths (succeed/fail go via complete_mission).
+_STATUS_TO_OUTCOME = {
+    MissionStatus.SUCCEEDED: ReceiptOutcome.SUCCEEDED,
+    MissionStatus.FAILED: ReceiptOutcome.FAILED,
+    MissionStatus.CANCELLED: ReceiptOutcome.CANCELLED,
+    MissionStatus.TIMED_OUT: ReceiptOutcome.TIMED_OUT,
+}
+
 
 class RuntimeStore:
     """
@@ -154,6 +163,40 @@ class RuntimeStore:
             duration_secs=mission.duration_secs,
             error=mission.error,
         )
+        self._receipts[receipt.receipt_id] = receipt
+        return receipt
+
+    def record_receipt_from_mission(
+        self,
+        mission: Mission,
+        outcome: ReceiptOutcome | None = None,
+    ) -> ExecutionReceipt:
+        """Build + store an ExecutionReceipt for an already-terminal mission.
+
+        Unlike ``complete_mission`` (which drives the succeed/fail transition
+        itself), this does NOT mutate the mission — the caller has already moved
+        it to its terminal state via ``mission.timeout()`` / ``mission.cancel()``.
+        Used by the MissionExecutor for the TIMED_OUT / CANCELLED paths so every
+        terminal mission leaves an audit receipt.
+        """
+        if outcome is None:
+            outcome = _STATUS_TO_OUTCOME.get(mission.status, ReceiptOutcome.FAILED)
+        receipt = ExecutionReceipt.from_mission(
+            mission_id=mission.mission_id,
+            node_id=mission.node_id or "",
+            title=mission.title,
+            capability=mission.capability,
+            outcome=outcome,
+            completed_at=mission.completed_at or now_iso(),
+            started_at=mission.started_at,
+            duration_secs=mission.duration_secs,
+            error=mission.error,
+        )
+        self._receipts[receipt.receipt_id] = receipt
+        return receipt
+
+    def record_receipt(self, receipt: ExecutionReceipt) -> ExecutionReceipt:
+        """Store a pre-built ExecutionReceipt (append-only)."""
         self._receipts[receipt.receipt_id] = receipt
         return receipt
 

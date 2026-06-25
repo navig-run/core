@@ -83,6 +83,12 @@ class ConnectorManifest:
     oauth_scopes: list[str] = field(default_factory=list)
     oauth_provider: str = ""  # key into OAUTH_PROVIDERS registry
     requires_oauth: bool = True
+    # Auth UX hint for the deck connectors catalog:
+    #   "oauth"               → browser PKCE flow (default; existing connectors)
+    #   "manual_credentials"  → user pastes static creds into a Configure form
+    #                           (the connector self-authenticates, e.g. Azure AD
+    #                           App-Only client-credentials for Partner Center)
+    auth_mode: str = "oauth"
     # Capabilities this connector supports (search / fetch / act)
     can_search: bool = True
     can_fetch: bool = True

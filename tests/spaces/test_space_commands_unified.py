@@ -73,3 +73,50 @@ def test_space_current_prefers_env_var(tmp_path, monkeypatch):
     result = runner.invoke(space_app, ["current"])
     assert result.exit_code == 0
     assert "Active space: focus" in result.stdout
+
+
+def test_space_init_scaffolds_full_structure(tmp_path):
+    dest = tmp_path / "demo"
+    result = runner.invoke(space_app, ["init", "demo", "--path", str(dest)])
+    assert result.exit_code == 0
+    # canonical state dirs + plans + hygiene zones
+    assert (dest / ".navig" / "plans" / "CURRENT_PHASE.md").is_file()
+    assert (dest / ".navig" / "inbox").is_dir()
+    assert (dest / ".dev").is_dir() and (dest / ".local").is_dir() and (dest / "docs").is_dir()
+    assert (dest / ".navig" / "space.config.json").is_file()
+    # root links resolve into .navig (junction on Windows, symlink on POSIX)
+    assert (dest / "plans" / "VISION.md").exists()
+    assert (dest / "inbox" / "docs").exists()
+    # .local is gitignored
+    assert ".local/" in (dest / ".gitignore").read_text()
+
+
+def test_space_init_is_purely_additive(tmp_path):
+    dest = tmp_path / "proj"
+    # a user file that must survive untouched
+    (dest / ".navig" / "plans").mkdir(parents=True)
+    sentinel = dest / ".navig" / "plans" / "CURRENT_PHASE.md"
+    sentinel.write_text("USER CONTENT — KEEP")
+    # a FILE sitting where a folder belongs must not be clobbered
+    (dest / ".dev").write_text("i am a file")
+
+    result = runner.invoke(space_app, ["init", "proj", "--path", str(dest)])
+    assert result.exit_code == 0
+    assert sentinel.read_text() == "USER CONTENT — KEEP"   # never overwritten
+    assert (dest / ".dev").is_file()                        # conflict, not clobbered
+    assert (dest / ".dev").read_text() == "i am a file"
+    assert "conflict" in result.output.lower()
+
+    # idempotent: a second pass creates nothing new
+    from navig.commands.space import _scaffold_space_skeleton
+
+    summary = _scaffold_space_skeleton(dest, "proj")
+    assert summary["created"] == []
+
+
+def test_space_init_dry_run_writes_nothing(tmp_path):
+    dest = tmp_path / "ghost"
+    result = runner.invoke(space_app, ["init", "ghost", "--path", str(dest), "--dry-run"])
+    assert result.exit_code == 0
+    assert "Would create" in result.output
+    assert not dest.exists()  # nothing written

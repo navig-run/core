@@ -45,8 +45,12 @@ class TestNormalizeSpaceName:
         assert normalize_space_name("DevOps") == "devops"
         assert normalize_space_name("PROJECT") == "project"
 
-    def test_unknown_name_returns_default(self):
-        assert normalize_space_name("totally-unknown-xyz") == "default"
+    def test_unknown_name_preserved_as_slug(self):
+        # Free-form directory spaces keep their own slug — they no longer collapse
+        # to "default" (that silently broke directory spaces like `homelab`).
+        assert normalize_space_name("totally-unknown-xyz") == "totally-unknown-xyz"
+        assert normalize_space_name("homelab") == "homelab"
+        assert normalize_space_name("Weird Name!!") == "weird-name"
 
     def test_default_in_canonical_spaces(self):
         assert "default" in CANONICAL_SPACES

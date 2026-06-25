@@ -1,6 +1,7 @@
 """Tests for gateway client numeric coercion configuration fallback."""
 
 
+from navig._daemon_defaults import _GATEWAY_PORT
 from navig.gateway_client import gateway_cli_defaults
 
 
@@ -21,7 +22,7 @@ def test_gateway_cli_defaults_falls_back_on_malformed_port(monkeypatch):
 
     monkeypatch.setattr("navig.config.get_config_manager", lambda: FakeConfigManager())
     port, host = gateway_cli_defaults()
-    assert port == 8789  # Fallback to default
+    assert port == _GATEWAY_PORT == 8789  # Fallback to canonical gateway default
     assert host == "127.0.0.1"
 
 def test_gateway_cli_defaults_falls_back_on_none_port(monkeypatch):
@@ -31,5 +32,5 @@ def test_gateway_cli_defaults_falls_back_on_none_port(monkeypatch):
 
     monkeypatch.setattr("navig.config.get_config_manager", lambda: FakeConfigManager())
     port, host = gateway_cli_defaults()
-    assert port == 8789  # Fallback to default
+    assert port == _GATEWAY_PORT == 8789  # Fallback to canonical gateway default
     assert host == "127.0.0.1"

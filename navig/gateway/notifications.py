@@ -728,6 +728,10 @@ class NotificationManager:
         self.telegram: TelegramNotifier | None = None
         self._channels: dict[str, ChannelNotifier] = {}
 
+    def get_channel(self, name: str) -> "ChannelNotifier | None":
+        """Public accessor for a configured channel (used by the notify router)."""
+        return self._channels.get(name)
+
     def configure_telegram(self, telegram_channel, chat_id: int):
         """Configure Telegram notifications."""
         self.telegram = TelegramNotifier(telegram_channel, chat_id)

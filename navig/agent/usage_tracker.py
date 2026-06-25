@@ -46,7 +46,14 @@ PRICE_TABLE: dict[str, tuple[float, float, float, float]] = {
     "o3":                        (10.00,  40.00, 0.00, 0.00),
     "o3-mini":                   (1.10,   4.40,  0.00, 0.00),
     "o4-mini":                   (1.10,   4.40,  0.00, 0.00),
-    # Anthropic Claude
+    # Anthropic Claude — current (exact entries must precede the "claude-opus-4"
+    # prefix entry below, else _lookup_price's prefix match returns 4.5 pricing).
+    "claude-opus-4-8":           (5.00,   25.00, 0.50,  6.25),
+    "claude-opus-4-7":           (5.00,   25.00, 0.50,  6.25),
+    "claude-opus-4-6":           (5.00,   25.00, 0.50,  6.25),
+    "claude-sonnet-4-6":         (3.00,   15.00, 0.30,  3.75),
+    "claude-haiku-4-5":          (1.00,    5.00, 0.10,  1.25),
+    # Anthropic Claude — legacy
     "claude-opus-4-5":           (15.00,  75.00, 1.50, 18.75),
     "claude-opus-4":             (15.00,  75.00, 1.50, 18.75),
     "claude-sonnet-4-5":         (3.00,   15.00, 0.30,  3.75),
@@ -66,6 +73,17 @@ PRICE_TABLE: dict[str, tuple[float, float, float, float]] = {
     # Mistral
     "mistral-large-latest":      (3.00,   9.00,  0.00,  0.00),
     "mistral-small-latest":      (1.00,   3.00,  0.00,  0.00),
+    # xAI Grok (published per-M pricing). grok-3-mini is the fast-chat /
+    # heartbeat default, so it's worth tracking accurately instead of $0.00.
+    "grok-3-mini":               (0.30,   0.50,  0.00,  0.00),
+    "grok-3":                    (3.00,  15.00,  0.00,  0.00),
+    "grok-2":                    (2.00,  10.00,  0.00,  0.00),
+    "grok-beta":                 (5.00,  15.00,  0.00,  0.00),
+    # NVIDIA NIM (build.nvidia.com) — free tier; explicit $0 silences the
+    # "no pricing info" probe for the configured small/big/coder models.
+    "meta/llama-3.1-8b-instruct":   (0.00, 0.00, 0.00, 0.00),
+    "meta/llama-3.3-70b-instruct":  (0.00, 0.00, 0.00, 0.00),
+    "qwen/qwen3-coder-480b-a35b-instruct": (0.00, 0.00, 0.00, 0.00),
 }
 
 

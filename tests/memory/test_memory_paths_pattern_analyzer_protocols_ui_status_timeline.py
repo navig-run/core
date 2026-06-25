@@ -62,7 +62,10 @@ class TestMemoryDir:
         with patch.dict(os.environ, {"NAVIG_HOME": str(tmp_path)}):
             import navig.memory.paths as mp
             result = mp.memory_dir()
-        assert result.exists()
+        # memory_dir() returns the path but does NOT create it (docstring avoids
+        # import-time fs mutations); the caller creates it.
+        assert result == tmp_path / "memory"
+        result.mkdir(parents=True, exist_ok=True)
         assert result.is_dir()
 
     def test_is_memory_subdir(self, tmp_path: Path) -> None:

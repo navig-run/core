@@ -97,11 +97,17 @@ class ConversationalAgent:
           2. navig/resources/SOUL.default.md (rich multi-domain identity)
           3. navig/agent/context/SOUL.md (minimal fallback)
         """
-        # 0. Delegate to centralised soul_loader for persona-aware resolution
+        # 0. Delegate to centralised soul_loader for persona-aware resolution,
+        #    bound to the active workshop (so a space's own .navig/SOUL.md wins).
         try:
             from navig.personas.soul_loader import load_soul as _load_soul  # noqa: PLC0415
 
-            soul = _load_soul()
+            try:
+                from navig.spaces.active import get_active_working_dir  # noqa: PLC0415
+                _ws = get_active_working_dir()
+            except Exception:  # noqa: BLE001
+                _ws = None
+            soul = _load_soul(cwd=_ws)
             if soul:
                 return soul
         except Exception as exc:  # noqa: BLE001

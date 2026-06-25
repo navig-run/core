@@ -122,12 +122,16 @@ class BackgroundTaskManager:
         self._output_dir.mkdir(parents=True, exist_ok=True)
         task.output_file = str(self._output_dir / f"task_{task.task_id}.log")
 
-        # Open output file handle
+        # Open output file handle.
+        # buffering=1 = line-buffered (text mode): each newline flushes to disk
+        # immediately, so `get_output()` sees partial output while the process
+        # is still running rather than a stale empty file for the full duration.
         output_fh = open(  # noqa: SIM115
             task.output_file,
             "w",
             encoding="utf-8",
             errors="replace",
+            buffering=1,
         )
 
         # Determine shell
@@ -305,6 +309,10 @@ class BackgroundTaskManager:
 
     # ── internal ────────────────────────────────────────────
 
+    # Maximum wall-clock seconds a background task may run before the monitor
+    # logs a warning.  Does NOT kill the process — use kill() for that.
+    _STALL_WARN_SECONDS: float = 300.0  # 5 minutes
+
     async def _monitor(
         self,
         task: BackgroundTask,
@@ -313,7 +321,23 @@ class BackgroundTaskManager:
     ) -> None:
         """Wait for a subprocess to finish and record its exit status."""
         try:
-            exit_code = await proc.wait()
+            try:
+                exit_code = await asyncio.wait_for(
+                    proc.wait(), timeout=self._STALL_WARN_SECONDS
+                )
+            except asyncio.TimeoutError:
+                # Still running after stall threshold — log and keep waiting
+                # without a hard limit so long-running deploys are not killed.
+                logger.warning(
+                    "Background task #%d (%s) has been running for %.0fs with no "
+                    "completion — possible SSH channel stall. "
+                    "Use 'navig task kill %d' to abort if stuck.",
+                    task.task_id,
+                    task.label,
+                    self._STALL_WARN_SECONDS,
+                    task.task_id,
+                )
+                exit_code = await proc.wait()
             task.exit_code = exit_code
             task.completed_at = time.time()
             logger.debug(

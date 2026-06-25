@@ -311,7 +311,14 @@ def register(server: Any) -> None:
                             "type": "array",
                             "items": {
                                 "type": "array",
-                                "description": "[x, y, text] triple.",
+                                "description": "[x, y, text] triple — x and y are integer coordinates, text is the string to type.",
+                                "items": {
+                                    "oneOf": [
+                                        {"type": "integer"},
+                                        {"type": "number"},
+                                        {"type": "string"},
+                                    ]
+                                },
                             },
                             "description": "List of [x, y, text] — click each coordinate and type the text.",
                         }

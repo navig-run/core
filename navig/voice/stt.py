@@ -118,18 +118,34 @@ class STT:
 
     @staticmethod
     def _resolve_api_key(vault_label: str, env_var: str) -> str | None:
-        """Try Vault first, fall back to os.environ.
+        """Resolve an API key from the vault (by provider), then os.environ.
 
-        This aligns stt.py with the vault-first pattern used in streaming_stt.py.
-        A missing vault entry is not fatal — the env-var fallback preserves
-        backwards compatibility for deployments that haven't migrated to the vault.
+        Keys added with ``navig vault set <provider> <key>`` are stored under the
+        PROVIDER, not a literal ``provider/api-key`` label — so resolve through the
+        vault's canonical ``get_api_key(provider)`` (which handles api_key / token /
+        value), with a few explicit-label fallbacks for older entries, before the
+        env-var fallback. Accepts a ``provider/data_key`` style ``vault_label`` and
+        uses its leading segment as the provider.
         """
+        provider = vault_label.split("/", 1)[0]
         try:
             from navig.vault import get_vault
 
-            key = get_vault().get_secret(vault_label)
-            if key:
-                return key
+            v = get_vault()
+            try:
+                key = v.get_api_key(provider)
+                if key:
+                    return str(key)
+            except Exception:  # noqa: BLE001
+                pass
+            # Fallbacks for explicit secret labels (provider-only, underscore, hyphen).
+            for label in (provider, f"{provider}/api_key", vault_label):
+                try:
+                    s = v.get_secret(label)
+                    if s:
+                        return str(s)
+                except Exception:  # noqa: BLE001
+                    continue
         except Exception:  # noqa: BLE001
             pass  # best-effort; failure is non-critical
         return os.environ.get(env_var)
@@ -478,6 +494,21 @@ def _resolve_audio_file_params(
 
     mime = STT._get_content_type(path)
     return path.name, mime
+
+
+def whisper_local_available() -> bool:
+    """True if the offline ``openai-whisper`` package is importable.
+
+    Used by the voice handlers to detect the no-API-key local backend. (Was
+    imported by callers but never defined here — the import silently failed,
+    so local Whisper was never offered.)
+    """
+    try:
+        import whisper  # noqa: F401, PLC0415
+
+        return True
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def get_stt() -> STT:

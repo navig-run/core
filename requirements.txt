@@ -11,6 +11,8 @@ pyyaml>=6.0
 # HTTP Requests (for OpenRouter API and gateway client)
 requests>=2.31.0
 # Async HTTP Server (for gateway)
+# aiohttp 3.13+ has a circular-import deadlock specifically on CPython 3.14.
+# Python 3.13 and below can use any aiohttp version.
 aiohttp>=3.9.0
 # WebSocket (for MCP WebSocket transport)
 websockets>=15.0

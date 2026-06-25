@@ -253,6 +253,27 @@ class SoulLoader:
             sections.append(f"## How to Talk\n{_CHAT_RULES}")
         return "\n\n".join(sections)
 
+    def build_minimal_prompt(self, lang_instruction: str = "") -> str:
+        """Slim system prompt for short chat-feel messages.
+
+        The full ``build_system_prompt`` returns ~2,900 chars (~725 tokens
+        on Llama tokenisers). For a 5-word reply to "hey" the LLM doesn't
+        need the full identity + chat rules — it just needs to know it's
+        a friendly assistant. Cutting input tokens by ~10x shaves real
+        seconds off the round-trip on any provider.
+
+        Used when the conv-agent classifies a turn as ``_short_chat``.
+        """
+        lines: list[str] = []
+        if lang_instruction:
+            lines.append(lang_instruction)
+        lines.append(
+            "You are NAVIG, the operator's friendly conversational assistant. "
+            "Reply briefly and warmly. Match the user's language. "
+            "Plain text only; no markdown unless they ask."
+        )
+        return "\n\n".join(lines)
+
     def _load_sync(self) -> str:
         """Synchronous load shim; preserved for agent.py call sites."""
         # Delegates entirely to _sync_load() to avoid reading files twice

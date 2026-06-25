@@ -87,6 +87,11 @@ ENV_VAULT_LABELS: dict[str, list[str]] = {
     "LASTFM_API_KEY": ["lastfm/api_key", "lastfm/api-key", "lastfm_api_key"],
     "SERPAPI_KEY": ["serpapi/api_key", "serpapi/api-key", "serpapi_api_key"],
     "SERPAPI_API_KEY": ["serpapi/api_key", "serpapi/api-key", "serpapi_api_key"],
+    "TAVILY_API_KEY": ["tavily/api_key", "tavily/api-key", "tavily_api_key"],
+    "BRAVE_API_KEY": ["brave/api_key", "brave/api-key", "brave_api_key"],
+    "BRAVE_SEARCH_API_KEY": ["brave/api_key", "brave/api-key", "brave_api_key"],
+    "HUNTER_API_KEY": ["hunter/api_key", "hunter/api-key", "hunter_api_key"],
+    "APOLLO_API_KEY": ["apollo/api_key", "apollo/api-key", "apollo_api_key"],
     "GOOGLE_APPLICATION_CREDENTIALS": [
         "google/vision-service-account",
         "google/tts-service-account",

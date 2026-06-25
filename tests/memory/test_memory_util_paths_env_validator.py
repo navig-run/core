@@ -76,7 +76,11 @@ class TestMemoryDir:
     def test_creates_directory(self, tmp_path, monkeypatch):
         monkeypatch.setenv("NAVIG_HOME", str(tmp_path))
         result = memory_dir()
-        assert result.exists()
+        # memory_dir() returns the path but does NOT create it — callers (store
+        # constructors) mkdir lazily to avoid import-time fs mutations. Verify the
+        # path is correct and that creating it works.
+        assert result == tmp_path / "memory"
+        result.mkdir(parents=True, exist_ok=True)
         assert result.is_dir()
 
 

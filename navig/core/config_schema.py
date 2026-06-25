@@ -33,6 +33,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from navig._daemon_defaults import _GATEWAY_PORT
+
 try:
     from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
     from pydantic import ValidationError as PydanticValidationError
@@ -237,7 +239,9 @@ if PYDANTIC_AVAILABLE:
         """Gateway configuration."""
 
         enabled: bool = False
-        port: int = Field(default=8765, ge=1024, le=65535)
+        # Canonical gateway default (8789). Must not be _DAEMON_PORT (8765) —
+        # see navig._daemon_defaults for why the two never share a default.
+        port: int = Field(default=_GATEWAY_PORT, ge=1024, le=65535)
         host: str = "127.0.0.1"
         require_auth: bool = True
         allowed_origins: list[str] = Field(default_factory=list)

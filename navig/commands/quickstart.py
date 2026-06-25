@@ -40,6 +40,7 @@ def quickstart(options: dict[str, Any]) -> None:
     if hosts:
         if not quiet:
             ch.success("Quickstart: configuration looks ready")
+        _suggest_skills_beat(auto_yes=auto_yes, quiet=quiet)
         return
 
     # No hosts exist yet: suggest local discovery.
@@ -57,9 +58,52 @@ def quickstart(options: dict[str, Any]) -> None:
             set_active=True,
             progress=not quiet,
         )
+        _suggest_skills_beat(auto_yes=auto_yes, quiet=quiet)
         return
 
     ch.warning("Quickstart incomplete")
     ch.info("Next steps:")
     ch.dim("  navig host add <name>")
     ch.dim("  navig host discover-local")
+
+
+def _suggest_skills_beat(*, auto_yes: bool = False, quiet: bool = False) -> None:
+    """First-run beat: reflect the runtime and recommend skills for this project.
+
+    Best-effort and silent on failure — onboarding must never break here.
+    """
+    if quiet:
+        return
+    try:
+        from pathlib import Path
+
+        # Reflect the isolated runtime when present.
+        rt_venv = Path.home() / ".navig" / "runtime" / "venv"
+        if rt_venv.exists():
+            ch.dim("Runtime: isolated (~/.navig/runtime)")
+
+        from navig.commands.skills import compute_skill_suggestions
+
+        stack, space, picks = compute_skill_suggestions(".", limit=4)
+        if stack:
+            ch.info(f"Detected stack: {', '.join(stack)}" + (f"   ·   Space: {space}" if space else ""))
+        if not picks:
+            return
+
+        ch.info("Skills that fit this project:")
+        for sk in picks:
+            ch.dim(f"  • {sk.get('id')} — {sk.get('description', '')}")
+
+        if auto_yes or ch.confirm_action("Install these skills now?", default=False):
+            from navig.commands.install import install_asset
+
+            for sk in picks:
+                spec = f"github:navig-run/community/cli-skills/{sk.get('category')}/{sk.get('id')}"
+                try:
+                    install_asset(spec, force=False)
+                except Exception as exc:  # noqa: BLE001
+                    ch.warning(f"  failed: {sk.get('id')} ({exc})")
+        else:
+            ch.dim("  Install later with: navig skill suggest --install")
+    except Exception:  # noqa: BLE001
+        pass  # onboarding must never fail because of suggestions

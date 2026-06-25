@@ -5,6 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from navig._daemon_defaults import _DAEMON_PORT, _GATEWAY_PORT
+
 
 def _make_config_mock(raw: dict):
     mgr = MagicMock()
@@ -29,8 +31,14 @@ class TestGatewayCliDefaults:
         with _patch_config({}):
             port, host = gateway_cli_defaults()
 
-        assert port == 8789
+        # Canonical gateway default is 8789 (NOT the daemon-IPC port 8765).
+        assert port == _GATEWAY_PORT == 8789
         assert host == "127.0.0.1"
+
+    def test_default_port_never_collides_with_daemon_ipc(self):
+        # Regression guard: the gateway must never default to the IPC/MCP daemon
+        # port, or it squats the daemon and 8789-probing clients can't reach it.
+        assert _GATEWAY_PORT != _DAEMON_PORT
 
     def test_reads_port_and_host_from_config(self):
         from navig.gateway_client import gateway_cli_defaults
@@ -58,7 +66,7 @@ class TestGatewayCliDefaults:
         with _patch_config(raw):
             port, _ = gateway_cli_defaults()
 
-        assert port == 8789
+        assert port == _GATEWAY_PORT == 8789
 
     def test_import_exception_returns_defaults(self):
         from navig.gateway_client import gateway_cli_defaults
@@ -66,7 +74,7 @@ class TestGatewayCliDefaults:
         with patch("navig.config.get_config_manager", side_effect=RuntimeError("boom")):
             port, host = gateway_cli_defaults()
 
-        assert port == 8789
+        assert port == _GATEWAY_PORT == 8789
         assert host == "127.0.0.1"
 
 
