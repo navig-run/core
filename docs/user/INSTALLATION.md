@@ -287,7 +287,7 @@ After installation, you can:
 
 For more information, see:
 - `README.md` - App overview
-- `USAGE_GUIDE.md` - Detailed usage instructions
+- `HANDBOOK.md` - Detailed usage instructions
 - `CHANGELOG.md` - Recent changes and improvements
 
 ---

@@ -78,6 +78,9 @@ from navig.gateway.deck.routes.persona import (
     handle_deck_persona_get,
     handle_deck_persona_post,
 )
+from navig.gateway.deck.routes.ask import (
+    handle_deck_ask,
+)
 from navig.gateway.deck.routes.vision import (
     handle_deck_vision_get,
     handle_deck_vision_post,
@@ -87,10 +90,16 @@ from navig.gateway.deck.routes.cloud import (
     handle_deck_cloud_restart,
     handle_deck_cloud_status,
 )
+from navig.gateway.deck.routes.license import (
+    handle_deck_license_paste,
+    handle_deck_license_raw,
+    handle_deck_license_status,
+)
 from navig.gateway.deck.routes.runtime import (
     handle_runtime_nodes,
     handle_runtime_missions,
     handle_runtime_receipts,
+    handle_runtime_mission_create,
     handle_runtime_mission_advance,
 )
 from navig.gateway.deck.routes.apps import (
@@ -163,6 +172,45 @@ from navig.gateway.deck.routes.context import (
     handle_deck_context_files,
     handle_deck_spaces,
 )
+from navig.gateway.deck.routes.catalog import (
+    handle_deck_catalog,
+    handle_deck_catalog_install,
+    handle_deck_space_activate,
+    handle_deck_space_disable,
+    handle_deck_space_enable,
+    handle_deck_space_register,
+    handle_deck_spaces_scan,
+)
+from navig.gateway.deck.routes.requests import (
+    handle_deck_requests_list,
+    handle_deck_requests_next_action,
+    handle_deck_requests_respond,
+)
+from navig.gateway.deck.routes.inbox import (
+    handle_deck_extract_mode_get,
+    handle_deck_extract_mode_set,
+    handle_deck_inbox_capture,
+    handle_deck_inbox_list,
+    handle_deck_inbox_process_all,
+    handle_deck_inbox_promote,
+    handle_deck_inbox_reroute,
+    handle_deck_inbox_route,
+    handle_deck_inbox_skip,
+    handle_deck_inbox_upload,
+    handle_deck_plan_context,
+)
+from navig.gateway.deck.routes.cli import (
+    handle_deck_cli_commands,
+    handle_deck_cli_exec,
+)
+from navig.gateway.deck.routes.logs import (
+    handle_deck_logs_sources,
+    handle_deck_logs_tail,
+)
+from navig.gateway.deck.routes.briefing import (
+    handle_deck_briefing,
+    handle_deck_briefing_regenerate,
+)
 from navig.gateway.deck.routes.nettools import (
     handle_deck_net_server,
     handle_deck_net_dns,
@@ -185,12 +233,18 @@ from navig.gateway.deck.routes.schedule import (
     handle_deck_reminders_create,
     handle_deck_reminder_cancel,
     handle_deck_crons_list,
-    handle_deck_briefing,
+    # Aliased: this is the schedule-tab briefing (bound to /api/deck/schedule/briefing).
+    # Without the alias it shadowed routes.briefing.handle_deck_briefing and hijacked
+    # the canonical GET /api/deck/briefing.
+    handle_deck_briefing as handle_deck_schedule_briefing,
 )
 from navig.gateway.deck.routes.messages import (
     handle_deck_messages_threads_list,
     handle_deck_messages_thread_detail,
     handle_deck_messages_contacts,
+    handle_deck_messages_contact_add,
+    handle_deck_messages_contact_update,
+    handle_deck_messages_contact_delete,
     handle_deck_messages_send,
 )
 from navig.gateway.deck.routes.remote import (
@@ -200,6 +254,8 @@ from navig.gateway.deck.routes.remote import (
     handle_deck_remote_files,
     handle_deck_remote_cat,
     handle_deck_remote_run,
+    handle_deck_remote_deploy,
+    handle_deck_remote_deploy_status,
     handle_deck_remote_docker,
     handle_deck_remote_backup,
 )
@@ -210,38 +266,16 @@ from navig.gateway.deck.routes.connectors import (
     handle_deck_connectors_oauth_callback,
     handle_deck_connectors_disconnect,
     handle_deck_connectors_health,
+    handle_deck_connectors_search,
+    handle_deck_connectors_fetch,
+    handle_deck_connectors_act,
     handle_deck_mcp_list,
     handle_deck_mcp_add,
     handle_deck_mcp_remove,
 )
-from navig.gateway.deck.routes.bizops import (
-    handle_bizops_overview,
-    handle_bizops_accounts_list,
-    handle_bizops_accounts_create,
-    handle_bizops_accounts_update,
-    handle_bizops_accounts_reconcile,
-    handle_bizops_transactions_list,
-    handle_bizops_transactions_create,
-    handle_bizops_transactions_quick,
-    handle_bizops_transactions_import,
-    handle_bizops_transactions_delete,
-    handle_bizops_projects_list,
-    handle_bizops_projects_create,
-    handle_bizops_projects_update,
-    handle_bizops_projects_summary,
-    handle_bizops_categories_list,
-    handle_bizops_categories_create,
-    handle_bizops_invoices_list,
-    handle_bizops_invoices_create,
-    handle_bizops_invoices_mark_paid,
-    handle_bizops_invoices_remind,
-    handle_bizops_subs_list,
-    handle_bizops_subs_create,
-    handle_bizops_tax_get,
-    handle_bizops_tax_set_rate,
-    handle_bizops_decisions_list,
-    handle_bizops_decisions_ack,
-)
+# BizOps + financial-connector routes (the `business_ops` tier) are provided by the
+# private `navig-harbor` plugin via the `gateway:register_routes` hook — they are NOT
+# imported in public core. (Public core ships only the seam; see register_deck_routes.)
 
 logger = logging.getLogger(__name__)
 
@@ -265,32 +299,40 @@ def register_deck_routes(
     """
     deck_cfg = deck_cfg or {}
 
+    # Make any hook-firing inbox pipeline binary-aware (idempotent, best-effort).
+    try:
+        from navig.inbox.extract_hook import register_default_extract_hook
+
+        register_default_extract_hook()
+    except Exception:  # noqa: BLE001 — never block deck boot on this
+        pass
+
     # Auto-generate api_key if missing AND persist it to ~/.navig/config.yaml
     # immediately. Without persistence, every restart minted a fresh key,
     # invalidating every Telegram/Deck binding the user had set up. The cost
     # of a single file write at startup is trivial compared to that breakage.
     import secrets as _secrets
-    api_key = str(deck_cfg.get("api_key") or "").strip()
-    if not api_key:
-        api_key = "navig_" + _secrets.token_urlsafe(32)
-        # Mutate the live deck_cfg dict so the rest of the boot path
-        # (CloudManager, etc.) sees the same key. deck_cfg is a reference
-        # into config_manager.global_config -- mutating it propagates.
+
+    def _persist_api_key(key: str, *, reason: str) -> None:
+        """Mutate the live deck_cfg + persist the key so restarts reuse it.
+
+        deck_cfg is a reference into config_manager.global_config -- mutating it
+        propagates to the rest of the boot path (CloudManager, etc.).
+        """
         try:
-            deck_cfg["api_key"] = api_key
+            deck_cfg["api_key"] = key
         except Exception:  # noqa: BLE001
             pass
-        # Persist to disk so subsequent restarts reuse the same key.
         try:
             from navig.core import Config
             _cfg = Config()
-            _cfg.set("deck.api_key", api_key, scope="global")
+            _cfg.set("deck.api_key", key, scope="global")
             _cfg.save(scope="global")
             logger.info(
-                "Deck API key generated and persisted to ~/.navig/config.yaml:\n"
+                "Deck API key %s and persisted to ~/.navig/config.yaml:\n"
                 "    %s\n"
                 "  Subsequent restarts will reuse this key.",
-                api_key,
+                reason, key,
             )
         except Exception as _persist_exc:  # noqa: BLE001
             # If we can't persist (read-only FS in a container?), fall back to
@@ -298,8 +340,31 @@ def register_deck_routes(
             logger.warning(
                 "Could not persist deck.api_key (%s). Using ephemeral key:\n    %s\n"
                 "  To persist manually: navig config set deck.api_key %s",
-                _persist_exc, api_key, api_key,
+                _persist_exc, key, key,
             )
+
+    # The deck's Bearer api_key is the ONLY auth for a publicly-reachable deck
+    # (Lighthouse / Direct / tunnel). It must always be present AND strong, so:
+    #   • missing  → mint a 32-byte url-safe key and persist it.
+    #   • weak     → a too-short key (< 16 chars) is brute-forceable; upgrade it
+    #     to a strong one and WARN loudly (prints the new key to re-paste).
+    # 16 chars is the floor; minted keys are ~43 chars after the `navig_` prefix.
+    _MIN_API_KEY_LEN = 16
+    api_key = str(deck_cfg.get("api_key") or "").strip()
+    if not api_key:
+        api_key = "navig_" + _secrets.token_urlsafe(32)
+        _persist_api_key(api_key, reason="generated")
+    elif len(api_key) < _MIN_API_KEY_LEN:
+        weak = api_key
+        api_key = "navig_" + _secrets.token_urlsafe(32)
+        logger.warning(
+            "SECURITY: deck.api_key was too weak (%d chars < %d) — a public deck "
+            "with a guessable key is a real risk. Upgrading to a strong key.\n"
+            "  Old (now invalid): %s\n"
+            "  Re-paste the NEW key into any browser/Mini App deck you use.",
+            len(weak), _MIN_API_KEY_LEN, weak,
+        )
+        _persist_api_key(api_key, reason="upgraded (was too weak)")
 
     # Configure module-level auth
     configure_deck_auth(
@@ -372,12 +437,39 @@ def register_deck_routes(
         app.router.add_get("/api/deck/persona", handle_deck_persona_get)
         app.router.add_post("/api/deck/persona", handle_deck_persona_post)
 
+        # Ask NAVIG — one-shot conversational reply for the command palette's
+        # "Ask NAVIG" row (backs the navig:ask-ai front-end seam).
+        app.router.add_post("/api/deck/ask", handle_deck_ask)
+
         # Vision provider/model — replaces in-chat /provider_vision
         app.router.add_get("/api/deck/vision", handle_deck_vision_get)
         app.router.add_post("/api/deck/vision", handle_deck_vision_post)
 
+        # Memory curation — propose → approve/reject + portable export/import.
+        # Mounted under /api/deck for the SPA panel (deck auth) and mirrored at the
+        # gateway level (/api/memory + /memory/review page) in routes/core.py.
+        from navig.gateway.deck.routes.memory import (
+            handle_memory_approve,
+            handle_memory_export,
+            handle_memory_import,
+            handle_memory_pending,
+            handle_memory_reject,
+        )
+
+        app.router.add_get("/api/deck/memory/facts/pending", handle_memory_pending)
+        app.router.add_post("/api/deck/memory/facts/{fact_id}/approve", handle_memory_approve)
+        app.router.add_post("/api/deck/memory/facts/{fact_id}/reject", handle_memory_reject)
+        app.router.add_get("/api/deck/memory/facts/export", handle_memory_export)
+        app.router.add_post("/api/deck/memory/facts/import", handle_memory_import)
+
         # Cloud broker/tunnel — exposes CloudManager state to Account → Cloud
         app.router.add_get("/api/deck/cloud/status", handle_deck_cloud_status)
+
+        # License — Phase 3.2. Status + raw token + paste endpoint. The Deck
+        # uses these to decide between TRIAL MODE and the full UI.
+        app.router.add_get("/api/deck/license/status", handle_deck_license_status)
+        app.router.add_get("/api/deck/license/raw", handle_deck_license_raw)
+        app.router.add_post("/api/deck/license/paste", handle_deck_license_paste)
         app.router.add_post("/api/deck/cloud/enabled", handle_deck_cloud_enabled)
         app.router.add_post("/api/deck/cloud/restart", handle_deck_cloud_restart)
         app.router.add_post("/api/deck/social/matrix/bridges/deploy", handle_deck_social_matrix_bridges_deploy)
@@ -389,6 +481,7 @@ def register_deck_routes(
         # Runtime (Nodes / Missions / Receipts)
         app.router.add_get("/runtime/nodes", handle_runtime_nodes)
         app.router.add_get("/runtime/missions", handle_runtime_missions)
+        app.router.add_post("/runtime/missions", handle_runtime_mission_create)
         app.router.add_get("/runtime/receipts", handle_runtime_receipts)
         app.router.add_post("/runtime/missions/{mission_id}/advance", handle_runtime_mission_advance)
 
@@ -435,7 +528,14 @@ def register_deck_routes(
         app.router.add_post("/api/deck/apps/wallet/send", handle_deck_apps_wallet_send)
         app.router.add_get("/api/deck/apps/knowledge", handle_deck_apps_knowledge_get)
         app.router.add_post("/api/deck/apps/knowledge/add", handle_deck_apps_knowledge_add)
-        app.router.add_get("/api/deck/apps/devops", handle_deck_apps_devops)
+        # Deploy Ops module gate -- /apps/devops is the Deploy Ops module's
+        # public-facing endpoint. Apps/wallet, finance, etc. live in mixed
+        # modules and aren't gated at the registration level yet.
+        from navig.license import requires_capability as _rc_deploy
+        app.router.add_get(
+            "/api/deck/apps/devops",
+            _rc_deploy("deploy_ops")(handle_deck_apps_devops),
+        )
 
         # Vault routes
         app.router.add_get("/api/deck/vault", handle_deck_vault_list)
@@ -456,6 +556,9 @@ def register_deck_routes(
         app.router.add_post("/api/deck/connectors/{connector_id}/connect/callback", handle_deck_connectors_callback)
         app.router.add_delete("/api/deck/connectors/{connector_id}", handle_deck_connectors_disconnect)
         app.router.add_get("/api/deck/connectors/{connector_id}/health", handle_deck_connectors_health)
+        app.router.add_post("/api/deck/connectors/{connector_id}/search", handle_deck_connectors_search)
+        app.router.add_post("/api/deck/connectors/{connector_id}/fetch", handle_deck_connectors_fetch)
+        app.router.add_post("/api/deck/connectors/{connector_id}/act", handle_deck_connectors_act)
         app.router.add_get("/api/deck/mcp/servers", handle_deck_mcp_list)
         app.router.add_post("/api/deck/mcp/servers", handle_deck_mcp_add)
         app.router.add_delete("/api/deck/mcp/servers/{name}", handle_deck_mcp_remove)
@@ -475,10 +578,104 @@ def register_deck_routes(
         app.router.add_get("/api/deck/monitor/services", handle_deck_monitor_services)
         app.router.add_get("/api/deck/monitor/ports", handle_deck_monitor_ports)
 
-        # Context Engine — memory bank + indexed files + spaces
+        # Context Engine — memory bank + indexed files + spaces.
+        # NOTE: /api/deck/context returns the MEMORY-BANK OVERVIEW (stats / by-source /
+        # recent), consumed by the deck Context app. The full PlanContext snapshot
+        # (plans + wiki + docs + inbox, == PlanContext.gather()) is a DIFFERENT shape
+        # and lives at /api/deck/context/snapshot (handle_deck_plan_context, bound below).
+        # Context-snapshot consumers (forge/echo/spaces) must use /context/snapshot.
         app.router.add_get("/api/deck/context", handle_deck_context)
         app.router.add_get("/api/deck/context/files", handle_deck_context_files)
         app.router.add_get("/api/deck/spaces", handle_deck_spaces)
+
+        # Spaces control panel + catalog/marketplace (registry-backed). Static
+        # sub-paths (scan/register) registered before the {id} routes so they
+        # are never captured by the dynamic segment.
+        app.router.add_get("/api/deck/spaces/scan", handle_deck_spaces_scan)
+        app.router.add_post("/api/deck/spaces/register", handle_deck_space_register)
+        app.router.add_post("/api/deck/spaces/{id}/enable", handle_deck_space_enable)
+        app.router.add_post("/api/deck/spaces/{id}/disable", handle_deck_space_disable)
+        app.router.add_post("/api/deck/spaces/{id}/activate", handle_deck_space_activate)
+        app.router.add_get("/api/deck/catalog", handle_deck_catalog)
+        app.router.add_post("/api/deck/catalog/install", handle_deck_catalog_install)
+
+        # Requests — unified "navig asks me for action" stream (approvals +
+        # questions + operator proposals). The space picker reuses /spaces.
+        app.router.add_get("/api/deck/requests", handle_deck_requests_list)
+        app.router.add_post("/api/deck/requests/next-action", handle_deck_requests_next_action)
+        app.router.add_post("/api/deck/requests/{request_id}/respond", handle_deck_requests_respond)
+        # Plan-step: refine a chosen step into approach variants, then decompose
+        # + run it as a tracked board task plan.
+        from navig.gateway.deck.routes.plan_steps import (
+            handle_plan_step_refine,
+            handle_plan_step_execute,
+        )
+        app.router.add_post("/api/deck/requests/plan-step/refine", handle_plan_step_refine)
+        app.router.add_post("/api/deck/requests/plan-step/execute", handle_plan_step_execute)
+
+        # Inbox — document routing into navig spaces (live scan + history)
+        app.router.add_get("/api/deck/inbox", handle_deck_inbox_list)
+        app.router.add_post("/api/deck/inbox/upload", handle_deck_inbox_upload)
+        app.router.add_post("/api/deck/inbox/capture", handle_deck_inbox_capture)
+        app.router.add_get("/api/deck/inbox/extract-mode", handle_deck_extract_mode_get)
+        app.router.add_post("/api/deck/inbox/extract-mode", handle_deck_extract_mode_set)
+        app.router.add_get("/api/deck/context/snapshot", handle_deck_plan_context)
+        app.router.add_post("/api/deck/inbox/process-all", handle_deck_inbox_process_all)
+        app.router.add_post("/api/deck/inbox/{event_id}/route", handle_deck_inbox_route)
+        app.router.add_post("/api/deck/inbox/{event_id}/skip", handle_deck_inbox_skip)
+        app.router.add_post("/api/deck/inbox/{event_id}/reroute", handle_deck_inbox_reroute)
+        app.router.add_post("/api/deck/inbox/{event_id}/promote", handle_deck_inbox_promote)
+
+        # Notifications — cross-channel router: deck feed + per-type×channel matrix
+        from navig.gateway.deck.routes.notify import (
+            handle_notify_feed_list,
+            handle_notify_feed_read,
+            handle_notify_feed_read_all,
+            handle_notify_prefs_get,
+            handle_notify_prefs_post,
+            handle_notify_test,
+            handle_notify_briefing_now,
+            handle_notify_sms_webhook,
+            handle_notify_signals_get,
+            handle_notify_signals_post,
+            handle_notify_monitors_get,
+            handle_notify_monitors_post,
+        )
+        app.router.add_get("/api/deck/notify/feed", handle_notify_feed_list)
+        app.router.add_post("/api/deck/notify/feed/read-all", handle_notify_feed_read_all)
+        app.router.add_post("/api/deck/notify/feed/{id}/read", handle_notify_feed_read)
+        app.router.add_get("/api/deck/notify/prefs", handle_notify_prefs_get)
+        app.router.add_post("/api/deck/notify/prefs", handle_notify_prefs_post)
+        app.router.add_post("/api/deck/notify/test", handle_notify_test)
+        app.router.add_post("/api/deck/notify/briefing", handle_notify_briefing_now)
+        app.router.add_get("/api/deck/notify/sms/webhook", handle_notify_sms_webhook)
+        app.router.add_post("/api/deck/notify/sms/webhook", handle_notify_sms_webhook)
+        app.router.add_get("/api/deck/notify/signals", handle_notify_signals_get)
+        app.router.add_post("/api/deck/notify/signals", handle_notify_signals_post)
+        app.router.add_get("/api/deck/notify/monitors", handle_notify_monitors_get)
+        app.router.add_post("/api/deck/notify/monitors", handle_notify_monitors_post)
+
+        # Email-ops — filter rules + AI briefings (deliver via the notify router)
+        from navig.gateway.deck.routes.email import (
+            handle_email_config_get,
+            handle_email_config_save,
+            handle_email_brief_run,
+            handle_email_status,
+        )
+        app.router.add_get("/api/deck/email/config", handle_email_config_get)
+        app.router.add_post("/api/deck/email/config", handle_email_config_save)
+        app.router.add_post("/api/deck/email/brief/run", handle_email_brief_run)
+        app.router.add_get("/api/deck/email/status", handle_email_status)
+
+        # Console — navig CLI catalog + streaming exec, and live log tailing
+        app.router.add_get("/api/deck/cli/commands", handle_deck_cli_commands)
+        app.router.add_post("/api/deck/cli/exec", handle_deck_cli_exec)
+        app.router.add_get("/api/deck/logs/sources", handle_deck_logs_sources)
+        app.router.add_get("/api/deck/logs", handle_deck_logs_tail)
+
+        # Daily briefing — structured categorized report + regenerate
+        app.router.add_get("/api/deck/briefing", handle_deck_briefing)
+        app.router.add_post("/api/deck/briefing/regenerate", handle_deck_briefing_regenerate)
 
         # NetTools — diagnostics
         app.router.add_get("/api/deck/net/server", handle_deck_net_server)
@@ -502,13 +699,30 @@ def register_deck_routes(
         app.router.add_post("/api/deck/schedule/reminders", handle_deck_reminders_create)
         app.router.add_delete("/api/deck/schedule/reminders/{reminder_id}", handle_deck_reminder_cancel)
         app.router.add_get("/api/deck/schedule/crons", handle_deck_crons_list)
-        app.router.add_get("/api/deck/schedule/briefing", handle_deck_briefing)
+        app.router.add_get("/api/deck/schedule/briefing", handle_deck_schedule_briefing)
 
         # Messages — threads + contacts + send across adapters
         app.router.add_get("/api/deck/messages/threads", handle_deck_messages_threads_list)
         app.router.add_get("/api/deck/messages/threads/{thread_id}", handle_deck_messages_thread_detail)
         app.router.add_get("/api/deck/messages/contacts", handle_deck_messages_contacts)
+        app.router.add_post("/api/deck/messages/contacts", handle_deck_messages_contact_add)
+        app.router.add_patch("/api/deck/messages/contacts/{alias}", handle_deck_messages_contact_update)
+        app.router.add_delete("/api/deck/messages/contacts/{alias}", handle_deck_messages_contact_delete)
         app.router.add_post("/api/deck/messages/send", handle_deck_messages_send)
+
+        # Telegram network manager — rooms, catalog, media analysis, post/edit/delete
+        from navig.gateway.deck.routes import telegram_manager as _tg_manager
+        _tg_manager.register(app)
+
+        # Telegram Manager (MTProto user-client) — login, dialogs/topics, history
+        # backfill, search, organize (forward/move/rename/delete/links/dedupe),
+        # Business rights matrix. Wraps the navig.telegram Telethon engine.
+        from navig.gateway.deck.routes import telegram_mtproto as _tg_mtproto
+        _tg_mtproto.register(app)
+
+        # Studio — social composer & scheduler (networks, media, posts, publish, AI)
+        from navig.gateway.deck.routes import studio as _studio
+        _studio.register(app)
 
         # Remote — SSH-backed host operations
         app.router.add_get("/api/deck/remote/hosts", handle_deck_remote_hosts)
@@ -517,45 +731,44 @@ def register_deck_routes(
         app.router.add_get("/api/deck/remote/files", handle_deck_remote_files)
         app.router.add_get("/api/deck/remote/cat", handle_deck_remote_cat)
         app.router.add_post("/api/deck/remote/run", handle_deck_remote_run)
+        app.router.add_post("/api/deck/remote/deploy", handle_deck_remote_deploy)
+        app.router.add_get("/api/deck/remote/deploy/status", handle_deck_remote_deploy_status)
         app.router.add_post("/api/deck/remote/docker", handle_deck_remote_docker)
         app.router.add_get("/api/deck/remote/backup", handle_deck_remote_backup)
 
-        # BizOps — business operations cockpit
-        app.router.add_get("/api/deck/bizops", handle_bizops_overview)
-        app.router.add_get("/api/deck/bizops/accounts", handle_bizops_accounts_list)
-        app.router.add_post("/api/deck/bizops/accounts", handle_bizops_accounts_create)
-        app.router.add_patch("/api/deck/bizops/accounts/{id}", handle_bizops_accounts_update)
-        app.router.add_post("/api/deck/bizops/accounts/{id}/reconcile", handle_bizops_accounts_reconcile)
-        app.router.add_get("/api/deck/bizops/transactions", handle_bizops_transactions_list)
-        app.router.add_post("/api/deck/bizops/transactions", handle_bizops_transactions_create)
-        app.router.add_post("/api/deck/bizops/transactions/quick-add", handle_bizops_transactions_quick)
-        app.router.add_post("/api/deck/bizops/transactions/import-csv", handle_bizops_transactions_import)
-        app.router.add_delete("/api/deck/bizops/transactions/{id}", handle_bizops_transactions_delete)
-        app.router.add_get("/api/deck/bizops/projects", handle_bizops_projects_list)
-        app.router.add_post("/api/deck/bizops/projects", handle_bizops_projects_create)
-        app.router.add_patch("/api/deck/bizops/projects/{id}", handle_bizops_projects_update)
-        app.router.add_get("/api/deck/bizops/projects/{id}/summary", handle_bizops_projects_summary)
-        app.router.add_get("/api/deck/bizops/categories", handle_bizops_categories_list)
-        app.router.add_post("/api/deck/bizops/categories", handle_bizops_categories_create)
-        app.router.add_get("/api/deck/bizops/invoices", handle_bizops_invoices_list)
-        app.router.add_post("/api/deck/bizops/invoices", handle_bizops_invoices_create)
-        app.router.add_post("/api/deck/bizops/invoices/{id}/mark-paid", handle_bizops_invoices_mark_paid)
-        app.router.add_post("/api/deck/bizops/invoices/{id}/remind", handle_bizops_invoices_remind)
-        app.router.add_get("/api/deck/bizops/subscriptions", handle_bizops_subs_list)
-        app.router.add_post("/api/deck/bizops/subscriptions", handle_bizops_subs_create)
-        app.router.add_get("/api/deck/bizops/tax-reserves", handle_bizops_tax_get)
-        app.router.add_post("/api/deck/bizops/tax-reserves/rate", handle_bizops_tax_set_rate)
-        app.router.add_get("/api/deck/bizops/decisions", handle_bizops_decisions_list)
-        app.router.add_post("/api/deck/bizops/decisions/{id}/ack", handle_bizops_decisions_ack)
+        # BizOps + financial-connector routes (business_ops tier) live in the private
+        # navig-harbor plugin. Fire the gateway route hook so any installed plugin can
+        # register its deck routes here — public core has no hard dependency on them.
+        from navig.core.hooks import trigger_hook_sync
+        trigger_hook_sync(
+            "gateway",
+            "register_routes",
+            {"app": app, "deck_cfg": deck_cfg, "require_auth": require_auth},
+        )
 
         # Static file serving for Deck SPA
         static_dir = _find_deck_static_dir(deck_cfg.get("static_dir"))
         if static_dir:
+            # Next.js compiles its JS/CSS/fonts into /_next/static/* with
+            # *absolute* URLs (the build emits <script src="/_next/...">
+            # baked into the HTML), so they MUST be served from the root
+            # path, not under /deck/. Without this mount the browser gets
+            # a wall of 404s for _next/static/chunks/*.js and the Deck
+            # UI doesn't render. The static dir's _next/ folder exists
+            # because Next's build copies it into out/ during npm run build.
+            _next_dir = static_dir / "_next"
+            if _next_dir.is_dir():
+                app.router.add_static("/_next/", _next_dir, show_index=False)
             # Serve assets (JS, CSS, etc.) — only if the subdirectory actually exists.
+            # Mounted at the root path (where index.html references them) and kept
+            # at /deck/assets for backward compatibility with older links.
             _assets_dir = static_dir / "assets"
             if _assets_dir.is_dir():
+                app.router.add_static("/assets", _assets_dir, show_index=False)
                 app.router.add_static("/deck/assets", _assets_dir, show_index=False)
-            # Serve other static files
+            # Serve other top-level static files (favicon, manifest, icons, …).
+            # Registered at root — where the SPA references them — and mirrored
+            # under /deck/ for back-compat.
             for f in static_dir.iterdir():
                 # Plain filenames only — no path separators, no hidden files, not index.html.
                 # Reject symlinks entirely: we serve only real files within the static dir.
@@ -573,8 +786,9 @@ def register_deck_routes(
                     async def _serve_static_file(request, fp=f):
                         return web.FileResponse(fp)
 
+                    app.router.add_get(f"/{f.name}", _serve_static_file)
                     app.router.add_get(f"/deck/{f.name}", _serve_static_file)
-            # SPA catch-all — serve index.html for all /deck/* routes
+            # SPA index — served at root (primary) and /deck/* for back-compat.
             app.router.add_get("/deck/{path:.*}", handle_deck_index)
             app.router.add_get("/deck", handle_deck_index)
             app.router.add_get("/deck/", handle_deck_index)

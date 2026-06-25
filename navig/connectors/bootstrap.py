@@ -50,6 +50,9 @@ def ensure_connectors_loaded() -> None:
         # Infrastructure
         ("navig.connectors.supabase.connector", "SupabaseConnector", "Supabase"),
         ("navig.connectors.gcp_translate.connector", "GcpTranslateConnector", "GCP Translate"),
+        # Commerce/finance connectors (partner_center, paddle, stripe, bank) ship in the
+        # private `navig-harbor` plugin and self-register via ConnectorRegistry on enable —
+        # they are intentionally NOT listed here (public core stays free of business code).
     ]
 
     for module_path, class_name, label in _candidates:
@@ -61,6 +64,24 @@ def ensure_connectors_loaded() -> None:
             registry.register(cls)
         except Exception as exc:
             _log.debug("%s connector load failed: %s", label, exc)
+
+    # Connectors shipped by installed plugins (e.g. the private navig-harbor) via the
+    # ``navig.connectors`` entry-point group — registered the same way so they appear in
+    # CLI + gateway contexts without being referenced in public core.
+    try:
+        from importlib.metadata import entry_points
+
+        try:
+            _ceps = entry_points(group="navig.connectors")
+        except TypeError:  # Python <3.10
+            _ceps = entry_points().get("navig.connectors", [])  # type: ignore[attr-defined]
+        for _ep in _ceps:
+            try:
+                registry.register(_ep.load())
+            except Exception as exc:
+                _log.debug("entry-point connector %s load failed: %s", _ep.name, exc)
+    except Exception as exc:
+        _log.debug("entry-point connector discovery skipped: %s", exc)
 
     # Register OAuth provider configs so get_auth_url() works for each connector.
     # Each loader reads env vars (GITHUB_CLIENT_ID etc.) — silently skipped if absent.
@@ -78,6 +99,7 @@ def ensure_connectors_loaded() -> None:
             ("navig.connectors.slack.oauth_config", "get_slack_oauth_config", "slack"),
             ("navig.connectors.notion.oauth_config", "get_notion_oauth_config", "notion"),
             ("navig.connectors.google_drive.oauth_config", "get_google_drive_oauth_config", "google_drive"),
+            ("navig.connectors.gmail.oauth_config", "get_gmail_oauth_config", "gmail"),
             ("navig.connectors.linear.oauth_config", "get_linear_oauth_config", "linear"),
         ]
         for module_path, fn_name, connector_id in _oauth_loaders:

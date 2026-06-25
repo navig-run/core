@@ -18,6 +18,8 @@
 | Document | Description |
 |----------|-------------|
 | [features/TELEGRAM.md](features/TELEGRAM.md) | Telegram bot integration |
+| [TELEGRAM_MANAGER.md](TELEGRAM_MANAGER.md) | Full Telegram organizer — MTProto catalog + bot channel, business catcher, emoji-AI |
+| [TELEGRAM_CHEATSHEET.md](TELEGRAM_CHEATSHEET.md) | One-page Telegram · github · tiktok command reference |
 | [features/automation.md](features/automation.md) | Automation overview |
 | [features/workflows.md](features/workflows.md) | Flow and workflow system |
 | [features/wiki.md](features/wiki.md) | Project wiki module |

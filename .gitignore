@@ -369,3 +369,14 @@ $null
 pytest_tmp*/
 *.pytest_tmp/
 .local/
+
+# Local CF token sandbox (NEVER commit)
+cf.txt
+
+
+# Local-only Ed25519 private keys for license signing (NEVER commit)
+tools/license_keys/*.priv
+
+
+# Founder license key material — NEVER ship in public core
+tools/license_keys/

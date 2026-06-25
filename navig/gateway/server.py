@@ -23,7 +23,8 @@ from typing import Any
 try:
     # Guard against aiohttp 3.13+ which has a circular-import deadlock on Python 3.14.
     # Check the installed version via metadata (fast, no import) before importing.
-    from importlib.metadata import version as _pkg_version, PackageNotFoundError as _PNF
+    from importlib.metadata import PackageNotFoundError as _PNF
+    from importlib.metadata import version as _pkg_version
     try:
         _aiohttp_ver = tuple(int(x) for x in _pkg_version("aiohttp").split(".")[:2])
         # aiohttp ≥ 3.13 has a circular-import deadlock specifically on Python 3.14.
@@ -56,6 +57,7 @@ def _noop_deco(fn):  # pragma: no cover
 
 _web_middleware = web.middleware if AIOHTTP_AVAILABLE else _noop_deco
 
+from navig._daemon_defaults import _GATEWAY_PORT
 from navig.agent.proactive.engine import get_proactive_engine
 from navig.config import get_config_manager
 from navig.debug_logger import get_debug_logger
@@ -88,7 +90,12 @@ class GatewayConfig:
         gateway_cfg = raw_config.get("gateway", {})
 
         self.enabled = gateway_cfg.get("enabled", True)
-        self.port = gateway_cfg.get("port", 8789)
+        # Gateway HTTP port. Default is the canonical _GATEWAY_PORT (8789) — NOT
+        # _DAEMON_PORT (8765), which belongs to the IPC/MCP WebSocket daemon. A
+        # stale 8765 fallback here made the gateway squat the daemon's port and
+        # left every 8789-probing client (doctor, deck, flux, mesh) unable to
+        # reach it.
+        self.port = gateway_cfg.get("port", _GATEWAY_PORT)
         self.host = gateway_cfg.get("host", "127.0.0.1")
         self.auth_token = gateway_cfg.get("auth", {}).get("token")
 
@@ -165,6 +172,10 @@ class NavigGateway:
         self.heartbeat_runner = None
         self.cron_service = None
         self.cloud_manager: Any = None  # navig.cloud.CloudManager when cloud.enabled
+        # Last relay-gate decision (license-bound). None when not yet evaluated
+        # or when running in direct mode (cloud.public_url set), where the
+        # gate doesn't apply. Exposed via /api/deck/cloud/status.
+        self._relay_decision: Any = None
         self.channels: dict[str, Any] = {}
 
         # Queue for pending messages
@@ -175,11 +186,23 @@ class NavigGateway:
 
         # New autonomous modules (lazy initialized)
         self.approval_manager = None
+        self.request_registry = None
         self.browser_controller = None
         self.mcp_client_manager = None
         self.webhook_receiver = None
         self.task_queue = None
         self.task_worker = None
+        # Autonomous mission loop (executor + scheduler). The executor always
+        # exists (it backs the board + manual POST); the SYSTEM triggers
+        # (heartbeat / proactive) are gated by `missions.autonomous_enabled`.
+        self.mission_executor = None
+        self.mission_scheduler = None
+
+        # Per-subsystem health registry (populated at the end of start()).
+        # Makes "cloudflared died but gateway is up" observable via /health/services.
+        from navig.gateway.managed_service import ServiceRegistry
+
+        self.service_registry = ServiceRegistry()
 
         # Rate limiter auth state — populated by middleware factory in _start_http_server
         self._auth_attempts: dict[str, list] = {}
@@ -287,6 +310,69 @@ class NavigGateway:
 
         logger.info("Starting NAVIG Gateway...")
 
+        # Narrator: a styled, TTY-only "boot story" so the operator can read
+        # what's coming up at a glance. Silent when piped/cron/file — the
+        # per-line `logger.debug("[startup] …")` record below stays intact for
+        # grep. Never let a narration call break the boot path.
+        try:
+            from navig.core import narrator as _narr
+        except Exception:  # noqa: BLE001
+            _narr = None
+
+        def _boot_step(
+            label: str,
+            secs: float | None = None,
+            *,
+            note: str = "",
+            icon: str = "check",
+        ) -> None:
+            if _narr is None:
+                return
+            try:
+                _narr.step_row(
+                    label,
+                    f"{secs:.2f}s" if secs is not None else "",
+                    note=note,
+                    icon=icon,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+        if _narr is not None:
+            try:
+                _narr.blank()
+                _narr.phase(
+                    f"Booting NAVIG Gateway on {self.config.host}:{self.config.port}",
+                    icon="spark",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+        # Formatted boot (narrator on a TTY, i.e. NOT `--debug`): lift INFO/DEBUG
+        # log chatter off the CONSOLE so the styled steps stand alone instead of
+        # being buried under ~30 raw log lines — including the pre-boot preamble
+        # and the "Gateway ready" line (the banner already shows ready). The
+        # file handler keeps capturing everything at DEBUG, and real WARN/ERROR
+        # during boot still surface. Console verbosity is restored to INFO right
+        # after the banner so runtime logs return. In `--debug` mode the
+        # narrator is disabled (NAVIG_NO_NARRATOR=1) so this is a no-op and the
+        # raw logs flow verbatim, exactly like before.
+        import logging as _logging
+
+        _formatted_boot = _narr is not None and _narr.is_active()
+        _console_handlers = (
+            [
+                _h
+                for _h in _logging.getLogger("navig").handlers
+                if isinstance(_h, _logging.StreamHandler)
+                and not isinstance(_h, _logging.FileHandler)
+            ]
+            if _formatted_boot
+            else []
+        )
+        for _h in _console_handlers:
+            _h.setLevel(_logging.WARNING)
+
         # Initialize config watcher
         self.config_watcher = ConfigWatcher(self)
 
@@ -296,30 +382,57 @@ class NavigGateway:
             from navig.formations.registry import get_registry
 
             get_registry().initialize(self.storage_dir / "workspace")
-            logger.debug("[startup] Formation registry: %.2fs", _time_mod.monotonic() - _ts)
+            _dt = _time_mod.monotonic() - _ts
+            logger.debug("[startup] Formation registry: %.2fs", _dt)
+            _boot_step("formation registry", _dt, icon="gear")
         except Exception as e:
             logger.error("Failed to initialize formation registry: %s", e)
+            _boot_step("formation registry unavailable", icon="warn")
 
         # Start HTTP server
         _ts = _time_mod.monotonic()
         await self._start_http_server()
-        logger.debug("[startup] HTTP server: %.2fs", _time_mod.monotonic() - _ts)
+        _dt = _time_mod.monotonic() - _ts
+        logger.debug("[startup] HTTP server: %.2fs", _dt)
+        _boot_step(
+            "HTTP server",
+            _dt,
+            note=f"{self.config.host}:{self.config.port}",
+            icon="anchor",
+        )
 
         # Start config watcher
         await self.config_watcher.start()
+        _boot_step("config watcher", icon="gear")
 
         # Start heartbeat runner
         _ts = _time_mod.monotonic()
         await self._start_heartbeat()
-        logger.debug("[startup] Heartbeat: %.2fs", _time_mod.monotonic() - _ts)
+        _dt = _time_mod.monotonic() - _ts
+        logger.debug("[startup] Heartbeat: %.2fs", _dt)
+        _boot_step("heartbeat", _dt, icon="wave")
 
         # Start cron service
         _ts = _time_mod.monotonic()
         await self._start_cron()
-        logger.debug("[startup] Cron: %.2fs", _time_mod.monotonic() - _ts)
+        _dt = _time_mod.monotonic() - _ts
+        logger.debug("[startup] Cron: %.2fs", _dt)
+        _boot_step("scheduler / cron", _dt, icon="gear")
+
+        # Start Studio scheduled-post service (fires due social posts).
+        try:
+            from navig.social.scheduler_service import ScheduledPostService
+
+            self.scheduled_post_service = ScheduledPostService(self)
+            await self.scheduled_post_service.start()
+            _boot_step("scheduler / studio", icon="gear")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Studio scheduled-post service skipped: %s", exc)
+            self.scheduled_post_service = None
 
         # Start channel health monitor
         await self._start_health_monitor()
+        _boot_step("channel health monitor", icon="gear")
 
         # Start message queue processor
         self._queue_task = asyncio.create_task(self._process_message_queue())
@@ -330,26 +443,53 @@ class NavigGateway:
         # Initialize autonomous modules
         _ts = _time_mod.monotonic()
         await self._init_autonomous_modules()
-        logger.debug("[startup] Autonomous modules: %.2fs", _time_mod.monotonic() - _ts)
+        _dt = _time_mod.monotonic() - _ts
+        logger.debug("[startup] Autonomous modules: %.2fs", _dt)
+        _boot_step("autonomous modules", _dt, icon="brain")
+
+        # Start the mission scheduler only when the autonomous loop is enabled.
+        # (The executor itself is always live for the board + manual POSTs.)
+        if self.mission_scheduler and self._missions_autonomous_enabled():
+            try:
+                await self.mission_scheduler.start()
+                _boot_step("mission scheduler", icon="brain")
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Mission scheduler failed to start: %s", e)
 
         # Start channel adapters (Telegram polling, etc.)
         _ts = _time_mod.monotonic()
         await self._init_channels()
-        logger.debug("[startup] Channels: %.2fs", _time_mod.monotonic() - _ts)
+        _dt = _time_mod.monotonic() - _ts
+        logger.debug("[startup] Channels: %.2fs", _dt)
+        _boot_step("channels", _dt, icon="radio")
 
         # Wire unified comms dispatcher
         await self._init_comms()
+        _boot_step("comms dispatcher", icon="gear")
 
         # Register messaging adapters (unified multi-network layer)
         await self._init_messaging_adapters()
+        _boot_step("messaging adapters", icon="gear")
 
         # Start cloud broker/tunnel manager when cloud.enabled is true.
         # Off by default; opt-in via `navig cloud connect` or Deck UI toggle.
         _ts = _time_mod.monotonic()
         await self._start_cloud_manager()
-        logger.debug("[startup] Cloud manager: %.2fs", _time_mod.monotonic() - _ts)
+        _dt = _time_mod.monotonic() - _ts
+        logger.debug("[startup] Cloud manager: %.2fs", _dt)
+        _cloud_note = ""
+        try:
+            _u = self._cloud_url_for_banner()
+            if _u:
+                _cloud_note = _u.split("://", 1)[-1]
+        except Exception:  # noqa: BLE001
+            pass
+        _boot_step("cloud manager", _dt, note=_cloud_note, icon="globe")
 
         _total = _time_mod.monotonic() - _t0_mono
+        # In formatted mode the console is still quiet, so this INFO line is
+        # captured to the log file but kept off the styled boot output — the
+        # banner below shows "Ready in" instead. In --debug mode it prints.
         logger.info("Gateway ready in %.2fs", _total)
         # Wrap the entire banner block so a typo or missing attr can't swallow
         # the rest of the output -- the user must always see SOMETHING actionable.
@@ -364,6 +504,43 @@ class NavigGateway:
         except Exception as _banner_exc:  # noqa: BLE001
             logger.warning("startup banner failed: %r", _banner_exc)
             print(f"\n  NAVIG Gateway running on port {self.config.port}", flush=True)
+
+        # Boot story complete — return console verbosity to INFO so runtime
+        # logs (heartbeat, channel traffic, warnings) print normally again.
+        # No-op in --debug mode (the list is empty; logs already flowed raw).
+        for _h in _console_handlers:
+            _h.setLevel(_logging.INFO)
+
+        # Warm the conversational path in the background so the FIRST inbound
+        # message doesn't pay the ~3–5s cold start (tool imports, AI-client /
+        # hybrid-router init, SOUL load). Non-blocking and best-effort.
+        try:
+            self._warmup_task = asyncio.create_task(self.router.warmup())
+        except Exception as _warm_exc:  # noqa: BLE001
+            logger.debug("could not schedule conversational warmup: %r", _warm_exc)
+
+        # Daily Partner Center marketplace sync (best-effort; no-op until the
+        # user configures App-Only credentials in the Connectors catalog).
+        try:
+            self._pc_sync_task = asyncio.create_task(self._partner_center_sync_loop())
+        except Exception as _pc_exc:  # noqa: BLE001
+            logger.debug("could not schedule partner-center sync: %r", _pc_exc)
+
+        # Register started subsystems for per-subsystem health (/health/services).
+        # Best-effort and attribute-driven so a missing/disabled subsystem simply
+        # reports "down" rather than breaking the snapshot.
+        try:
+            for _svc_name, _svc in (
+                ("heartbeat", getattr(self, "heartbeat_runner", None)),
+                ("cron", getattr(self, "cron_service", None)),
+                ("health_monitor", getattr(self, "_health_monitor", None)),
+                ("cloud_manager", getattr(self, "cloud_manager", None)),
+                ("mission_scheduler", getattr(self, "mission_scheduler", None)),
+                ("task_worker", getattr(self, "task_worker", None)),
+            ):
+                self.service_registry.register(_svc_name, _svc)
+        except Exception as _reg_exc:  # noqa: BLE001
+            logger.debug("service registry population skipped: %r", _reg_exc)
 
         # Keep running
         try:
@@ -380,7 +557,15 @@ class NavigGateway:
             return
 
         logger.info("Stopping NAVIG Gateway...")
+        try:
+            from navig.core import narrator
+            narrator.blank()
+            narrator.phase("Shutting down NAVIG Gateway", icon="wave")
+            narrator.step("draining queues + cancelling tasks ...", icon="gear")
+        except Exception:  # noqa: BLE001
+            pass
         self.running = False
+        self._shutdown_t0 = __import__("time").monotonic()
 
         # Stop queue processor
         if self._queue_task:
@@ -397,6 +582,18 @@ class NavigGateway:
             await asyncio.gather(*list(self._background_tasks), return_exceptions=True)
             self._background_tasks.clear()
 
+        # Stop mission scheduler + drain executor tasks
+        if self.mission_scheduler:
+            try:
+                await self.mission_scheduler.stop()
+            except Exception:  # noqa: BLE001
+                pass
+        if self.mission_executor:
+            try:
+                await self.mission_executor.aclose()
+            except Exception:  # noqa: BLE001
+                pass
+
         # Stop heartbeat
         if self.heartbeat_runner:
             await self.heartbeat_runner.stop()
@@ -404,6 +601,13 @@ class NavigGateway:
         # Stop cron
         if self.cron_service:
             await self.cron_service.stop()
+
+        # Stop Studio scheduled-post service
+        if getattr(self, "scheduled_post_service", None):
+            try:
+                await self.scheduled_post_service.stop()
+            except Exception:  # noqa: BLE001
+                pass
 
         # Stop cloud manager (cloudflared subprocess + broker heartbeat)
         if self.cloud_manager is not None:
@@ -446,7 +650,14 @@ class NavigGateway:
         await self.sessions.save_all()
 
         logger.info("Gateway stopped")
-        print("\n Gateway stopped")
+        try:
+            import time as _time_stop
+            elapsed = _time_stop.monotonic() - getattr(self, "_shutdown_t0", _time_stop.monotonic())
+            from navig.core import narrator
+            narrator.verdict(f"Gateway stopped cleanly  ({elapsed:.2f}s)", icon="check")
+            narrator.blank()
+        except Exception:  # noqa: BLE001
+            print("\n Gateway stopped")
 
     def _load_config(self) -> None:
         """Reload gateway config from config manager (called by ConfigWatcher)."""
@@ -465,7 +676,12 @@ class NavigGateway:
 
         rate_mw, self._auth_attempts = make_rate_limit_middleware(window=60, max_failures=5)
         cors_mw = make_cors_middleware()
-        self._app = web.Application(middlewares=[rate_mw, cors_mw])
+        # 100 MB request cap (default is 1 MB) so file uploads — inbox drag-and-drop,
+        # voice audio — aren't rejected with 413 for ordinary documents/media.
+        self._app = web.Application(
+            middlewares=[rate_mw, cors_mw],
+            client_max_size=100 * 1024 * 1024,
+        )
         gateway_key = web.AppKey("gateway", object)
         self._app[gateway_key] = self
         self._app._state["gateway"] = self
@@ -488,6 +704,16 @@ class NavigGateway:
             from navig.gateway.deck import register_deck_routes
             from navig.messaging import is_provider_enabled
             from navig.messaging.secrets import resolve_telegram_bot_token
+
+            # Let installed plugins (e.g. the private navig-harbor) register their
+            # gateway route hooks BEFORE register_deck_routes fires
+            # `gateway:register_routes`. Best-effort: a plugin must never block boot.
+            try:
+                from navig.core.plugins import load_entry_point_plugins
+
+                load_entry_point_plugins()
+            except Exception:  # noqa: BLE001
+                pass
 
             raw_cfg = self.config_manager.global_config or {}
             tg_cfg = raw_cfg.get("telegram", {}) if isinstance(raw_cfg, dict) else {}
@@ -522,11 +748,115 @@ class NavigGateway:
         except Exception as e:
             logger.debug("Deck API not loaded: %s", e)
 
+        # SECURITY: the brain must bind loopback only. Its sole public ingress is
+        # the OUTBOUND Lighthouse uplink (or a cloudflared tunnel) — never a
+        # listening socket on a public interface. Binding 0.0.0.0 / a LAN/public
+        # IP exposes the Deck API (and its loopback auth-bypass) to the network.
+        # Warn loudly; don't block (mesh/advanced users may do this knowingly).
+        host = str(self.config.host or "").strip()
+        _loopback_hosts = {"127.0.0.1", "::1", "localhost", ""}
+        if host not in _loopback_hosts:
+            try:
+                from navig.core import narrator
+
+                narrator.blank()
+                narrator.phase(
+                    f"SECURITY: gateway is binding a non-loopback host ({host})",
+                    icon="warn",
+                )
+                narrator.step(
+                    "the brain should bind 127.0.0.1 only — reach it via Lighthouse "
+                    "(outbound, no open ports), not a public listener",
+                    icon="dot",
+                )
+                narrator.step(
+                    "fix: navig config set gateway.host 127.0.0.1  (then restart)",
+                    icon="dot",
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            logger.warning(
+                "SECURITY: gateway.host=%r is not loopback. The brain's only public "
+                "ingress should be the outbound Lighthouse uplink — a public listener "
+                "exposes the Deck API. Set gateway.host=127.0.0.1 unless you have a "
+                "trusted reverse proxy in front.",
+                host,
+            )
+
         # Start server
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
         site = web.TCPSite(self._runner, self.config.host, self.config.port)
         await site.start()
+
+    # ── Autonomous mission triggers ──────────────────────────────────
+
+    def _missions_autonomous_enabled(self) -> bool:
+        """Master kill-switch for SYSTEM-initiated missions (default False)."""
+        try:
+            return bool(
+                (self.config_manager.global_config or {})
+                .get("missions", {})
+                .get("autonomous_enabled", False)
+            )
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _wire_mission_triggers(self) -> None:
+        """Bridge heartbeat issues + proactive suggestions → Missions.
+
+        Each handler re-checks the master flag, so wiring is harmless when the
+        flag is off. Called from `_init_autonomous_modules`, which runs after the
+        heartbeat runner is constructed."""
+        try:
+            if self.heartbeat_runner is not None:
+                self.heartbeat_runner.on_issue(self._on_heartbeat_issues)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("heartbeat→mission bridge not wired: %s", e)
+        try:
+            from navig.core.hooks import register_hook
+
+            register_hook("proactive:engagement", self._on_proactive_suggestion)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("proactive→mission bridge not wired: %s", e)
+
+    async def _on_heartbeat_issues(self, issues) -> None:
+        """Heartbeat found problems → enqueue a remediate mission (flag-gated)."""
+        if not self._missions_autonomous_enabled() or not self.mission_executor or not issues:
+            return
+        try:
+            from navig.contracts.mission import Mission, MissionPriority
+
+            mission = Mission(
+                title="Remediate health issues",
+                capability="remediate",
+                payload={"issues": [str(i) for i in issues]},
+                priority=MissionPriority.HIGH.value,
+            )
+            await self.mission_executor.submit(mission)
+            logger.info("Heartbeat issues → remediate mission %s", mission.mission_id[:8])
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Failed to create remediate mission: %s", e)
+
+    async def _on_proactive_suggestion(self, event) -> None:
+        """Proactive engagement opportunity → enqueue a mission (flag-gated)."""
+        if not self._missions_autonomous_enabled() or not self.mission_executor:
+            return
+        try:
+            from navig.contracts.mission import Mission
+
+            ctx = getattr(event, "context", None) or {}
+            msgs = getattr(event, "messages", None) or []
+            suggestion = msgs[0] if msgs else getattr(event, "action", "")
+            mission = Mission(
+                title="Proactive engagement",
+                capability="proactive",
+                payload={"suggestion": suggestion, "context": ctx},
+            )
+            await self.mission_executor.submit(mission)
+            logger.info("Proactive suggestion → mission %s", mission.mission_id[:8])
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Failed to create proactive mission: %s", e)
 
     async def _start_heartbeat(self):
         """Start heartbeat runner if enabled."""
@@ -616,21 +946,112 @@ class NavigGateway:
             # -- silent skip so non-bot users aren't nagged.
             logger.debug("cloud manager skipped: no deck.api_key (deck not enabled?)")
             return
+        # VPS / direct mode: cloud.public_url (config) OR $NAVIG_PUBLIC_URL
+        # (env -- useful for systemd unit "Environment=" lines without
+        # touching config.yaml). When set, CloudManager skips cloudflared
+        # entirely and registers this URL with the broker. The user owns
+        # the reverse proxy on this hostname.
+        import os as _os
+        public_url = (
+            cloud_cfg.get("public_url", "")
+            or _os.environ.get("NAVIG_PUBLIC_URL", "")
+            or ""
+        ).strip()
+
+        # Lighthouse self-host: an outbound WebSocket uplink to the user's own
+        # Cloudflare edge. No tunnel, no broker, no inbound port — and crucially
+        # navig hosts nothing, so (like direct mode) it carries no per-user cost
+        # and bypasses the relay gate entirely.
+        lighthouse_url = (
+            cloud_cfg.get("lighthouse_url", "")
+            or _os.environ.get("NAVIG_LIGHTHOUSE_URL", "")
+            or ""
+        ).strip()
+        mode = (cloud_cfg.get("mode", "") or "").strip().lower()
+        use_lighthouse = bool(lighthouse_url) and mode in ("", "lighthouse")
+
+        # Hosted-relay gate: the cloudflared/broker path is the only
+        # surface that costs us money per active user. Perpetual-pack
+        # owners get the local app forever, but the hosted relay is a
+        # subscription feature. Direct mode (public_url) and Lighthouse
+        # (self-hosted edge) are always allowed -- the user hosts their own
+        # ingress, the broker doesn't carry their traffic, no per-user cost.
+        if not public_url and not use_lighthouse:
+            try:
+                from navig.license import current_status
+                from navig.license.relay_gate import evaluate_relay_access
+                decision = evaluate_relay_access(current_status())
+                if not decision.allowed:
+                    logger.info(
+                        "cloud manager skipped: relay gate denied (reason=%s)",
+                        decision.reason,
+                    )
+                    self._relay_decision = decision
+                    return
+                self._relay_decision = decision
+            except Exception as exc:  # noqa: BLE001
+                # Degrade open: license parsing edge case never blocks boot.
+                logger.warning("relay gate evaluation failed: %r; allowing", exc)
+                self._relay_decision = None
+        else:
+            self._relay_decision = None
+
         try:
             from navig.cloud import CloudManager  # local import keeps cold start cheap
-            self.cloud_manager = CloudManager(
-                api_key=api_key,
-                broker_url=cloud_cfg.get("broker_url", "https://deck.navig.run"),
-                gateway_port=self.config.port,
-                heartbeat_interval_s=float(cloud_cfg.get("heartbeat_interval_s", 60)),
-                tunnel_label=cloud_cfg.get("tunnel_label", "") or "",
-                cloudflared_path=cloud_cfg.get("cloudflared_path", "") or "",
-                cloudflared_extra_args=list(cloud_cfg.get("cloudflared_extra_args") or []),
-            )
+            if use_lighthouse:
+                telegram_channel = self.channels.get("telegram")
+                telegram_handler = getattr(telegram_channel, "handle_webhook_update", None)
+                self.cloud_manager = CloudManager(
+                    api_key=api_key,
+                    broker_url=cloud_cfg.get("broker_url", "https://api.navig.run"),
+                    gateway_port=self.config.port,
+                    tunnel_label=cloud_cfg.get("tunnel_label", "") or "",
+                    lighthouse_url=lighthouse_url,
+                    telegram_handler=telegram_handler,
+                    system_events=self.system_events,
+                    snapshot_provider=self._make_lighthouse_snapshot_provider(api_key),
+                )
+            else:
+                self.cloud_manager = CloudManager(
+                    api_key=api_key,
+                    broker_url=cloud_cfg.get("broker_url", "https://api.navig.run"),
+                    gateway_port=self.config.port,
+                    heartbeat_interval_s=float(cloud_cfg.get("heartbeat_interval_s", 60)),
+                    tunnel_label=cloud_cfg.get("tunnel_label", "") or "",
+                    cloudflared_path=cloud_cfg.get("cloudflared_path", "") or "",
+                    cloudflared_extra_args=list(cloud_cfg.get("cloudflared_extra_args") or []),
+                    public_url=public_url,
+                    broker_timeout_s=float(cloud_cfg.get("broker_timeout", 15)),
+                )
             await self.cloud_manager.start()
         except Exception as exc:  # noqa: BLE001
             logger.warning("Cloud manager failed to start: %s", exc)
             self.cloud_manager = None
+
+    def _make_lighthouse_snapshot_provider(self, api_key: str):
+        """An async provider that snapshots the deck status for the offline cache.
+
+        Loopback GET to ``/api/deck/status`` so Lighthouse can serve a cached
+        view + a "brain offline" banner while the uplink is down. Best-effort:
+        any failure returns ``None`` and the edge simply keeps its last snapshot.
+        """
+        port = self.config.port
+
+        async def _provider():
+            import aiohttp
+            url = f"http://127.0.0.1:{port}/api/deck/status"
+            headers = {"Authorization": f"Bearer {api_key}"}
+            timeout = aiohttp.ClientTimeout(total=10)
+            try:
+                async with aiohttp.ClientSession(timeout=timeout) as sess:
+                    async with sess.get(url, headers=headers) as resp:
+                        if resp.status != 200:
+                            return None
+                        return await resp.json(content_type=None)
+            except Exception:  # noqa: BLE001
+                return None
+
+        return _provider
 
     def _cloud_url_for_banner(self) -> str | None:
         cm = self.cloud_manager
@@ -645,7 +1066,7 @@ class NavigGateway:
         """Print the actionable two-line summary every user actually needs.
 
         Shown after the gateway is up. Covers the two access paths:
-        - Browser: deck.navig.run/connect?key=... magic link
+        - Browser: relay.navig.run/connect?key=... magic link
         - Telegram: open the bot, tap the Mini App button
 
         When cloud is OFF, prints the one-liner that tells the user how to
@@ -654,41 +1075,73 @@ class NavigGateway:
         raw = self.config_manager.global_config or {}
         cloud_cfg = raw.get("cloud", {}) if isinstance(raw, dict) else {}
         deck_cfg = raw.get("deck", {}) if isinstance(raw, dict) else {}
-        broker_url = cloud_cfg.get("broker_url", "https://deck.navig.run").rstrip("/")
+        # Broker (tunnel routing) and the hosted Relay frontend are separate hosts:
+        #   broker_url → api.navig.run    (POST /api/cloud/*)
+        #   relay_url  → relay.navig.run  (serves the /connect magic-link page;
+        #                                  legacy key cloud.deck_url still honored)
+        broker_url = cloud_cfg.get("broker_url", "https://api.navig.run").rstrip("/")
+        deck_url = (
+            cloud_cfg.get("relay_url")
+            or cloud_cfg.get("deck_url")
+            or "https://relay.navig.run"
+        ).rstrip("/")
         api_key = (deck_cfg.get("api_key") or "").strip()
-        cloud_on = bool(cloud_cfg.get("enabled", False))
+
+        # Source of truth: did the CloudManager actually start? Don't trust
+        # the config flag alone -- _start_cloud_manager defaults missing
+        # `cloud.enabled` to True (opt-out, not opt-in), so a user without a
+        # `cloud:` block in their config still has a live manager. Reading
+        # the flag with default=False (as we did) printed "OFF" while the
+        # manager was happily running -- exactly the bug the user hit.
+        cm = self.cloud_manager
+        manager_alive = cm is not None and getattr(cm, "status", "off") in (
+            "online", "starting"
+        )
+        cloud_on = manager_alive or bool(cloud_cfg.get("enabled", True))
 
         if not cloud_on:
             print("", flush=True)
             print("   Cloud routing: OFF  (enable with: navig cloud connect)", flush=True)
             return
 
-        # Cloud is on. Show the user the two entry points they'll actually use.
-        # No emoji / unicode arrows -- Windows consoles in legacy code pages
-        # raise UnicodeEncodeError on those, swallowing the rest of the boot
-        # output. ASCII keeps the banner visible everywhere.
-        def _emit(line: str) -> None:
-            try:
-                print(line, flush=True)
-            except UnicodeEncodeError:
-                try:
-                    print(line.encode("ascii", "replace").decode("ascii"), flush=True)
-                except Exception:  # noqa: BLE001
-                    pass
+        # Cloud is on. Render the boot story via the narrator (styled, with
+        # icons + color when stdout is a TTY; gracefully silent otherwise).
+        # The plain-print fallback handles legacy Windows consoles + non-TTY
+        # contexts (systemd journal, docker logs) -- the regular per-line
+        # logger already captures everything for grep.
+        from navig.core import narrator
 
-        _emit("")
+        mode = getattr(cm, "mode", "tunnel") if cm is not None else "tunnel"
+        narrator.blank()
+        if mode == "direct":
+            narrator.phase(
+                f"Cloud routing: direct mode -> {cloud_url}", icon="lock"
+            )
+            narrator.step(
+                "your reverse proxy terminates TLS; no cloudflared spawned",
+                icon="check",
+            )
+        elif cloud_url:
+            narrator.phase(
+                f"Cloud routing: cloudflared tunnel -> {cloud_url}", icon="globe"
+            )
+            narrator.step(
+                f"broker: {broker_url.split('://')[-1]}  ·  heartbeat every 60s", icon="radio"
+            )
+
         if cloud_url and api_key:
-            magic = f"{broker_url}/connect?key={api_key}"
-            _emit(f"   Browser:  open {magic}")
-            _emit(f"             (paste-and-go: stashes your key + resolves the daemon URL)")
+            magic = f"{deck_url}/connect?key={api_key}"
             bot_user = self._resolve_bot_username() or "your bot"
             tg_hint = f"@{bot_user}" if bot_user != "your bot" else bot_user
-            _emit(f"   Telegram: open {tg_hint} -> /start -> tap the Mini App button")
+            narrator.blank()
+            narrator.phase("Access points", icon="spark")
+            narrator.step(f"Browser:  {magic}", icon="globe")
+            narrator.step(f"Telegram: {tg_hint} -> /start -> Mini App", icon="anchor")
         elif not api_key:
-            _emit("   Cloud routing: enabled but deck.api_key is missing.")
-            _emit("   Run `navig cloud connect` to mint one and register.")
+            narrator.phase("Cloud enabled, but deck.api_key is missing", icon="warn")
+            narrator.step("run: navig cloud connect", icon="dot")
         else:
-            _emit("   Cloud routing: starting cloudflared... (URL appears within ~5s)")
+            narrator.step("starting cloudflared… (URL appears within ~5s)", icon="gear")
 
     def _resolve_bot_username(self) -> str | None:
         """Best-effort lookup of the configured Telegram bot's @username."""
@@ -735,6 +1188,31 @@ class NavigGateway:
             if old_interval != new_interval:
                 logger.info("Heartbeat interval changed: %s → %s", old_interval, new_interval)
                 await self.heartbeat_runner.update_config()
+
+    async def _partner_center_sync_loop(self) -> None:
+        """Pull Partner Center marketplace data once a day when configured.
+
+        Best-effort: does nothing until the user pastes App-Only credentials
+        (Connectors catalog → Microsoft Partner Center → Configure). Failures
+        are swallowed so a flaky Microsoft API never disturbs the gateway.
+        """
+        await asyncio.sleep(120)  # let boot settle before the first pull
+        while self.running:
+            try:
+                from navig_harbor.connectors.partner_center import credentials as _pc_creds
+
+                if _pc_creds.is_configured():
+                    from navig_harbor.connectors.partner_center.sync import sync_partner_center
+
+                    await sync_partner_center()
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("partner-center daily sync skipped: %s", exc)
+            try:
+                await asyncio.sleep(24 * 3600)
+            except asyncio.CancelledError:
+                break
 
     async def _process_message_queue(self):
         """Process queued messages."""
@@ -904,6 +1382,73 @@ class NavigGateway:
             logger.info("Approval manager initialized")
         except ImportError as e:
             logger.warning("Approval module not available: %s", e)
+
+        # Request registry — user-facing questions / route confirmations /
+        # operator proposals. Sibling to approval_manager; the deck merges both
+        # into a single /api/deck/requests stream.
+        try:
+            from navig.requests import RequestRegistry
+
+            self.request_registry = RequestRegistry()
+            await self.request_registry.start()
+
+            # Push an SSE frame whenever a new request appears so the deck pops a
+            # toast immediately (the 15s poll is the fallback). Best-effort.
+            async def _emit_requests_update(req) -> None:
+                try:
+                    payload = req.to_dict() if hasattr(req, "to_dict") else {}
+                    await self.system_events.emit("requests_update", payload)
+                except Exception:
+                    logger.debug("requests_update emit failed", exc_info=True)
+
+            self.request_registry.on_request(_emit_requests_update)
+            if self.approval_manager is not None:
+                self.approval_manager.on_request(_emit_requests_update)
+            logger.info("Request registry initialized")
+        except Exception as e:  # noqa: BLE001 — never block boot on this
+            logger.warning("Request registry not available: %s", e)
+            self.request_registry = None
+
+        # Notification router — give it the gateway handle so the `deck` channel
+        # can push an SSE `notification` frame (bell/Inbox/toast) on dispatch.
+        try:
+            from navig.notify.router import get_notification_router
+
+            get_notification_router().bind_gateway(self)
+            logger.info("Notification router bound to gateway")
+            # Background loop: sync the inbound-SMS webhook to the public URL +
+            # fire scheduled AI briefings.
+            from navig.notify.scheduler import start as _start_notify_scheduler
+
+            _start_notify_scheduler(self)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("Notification router/scheduler bind skipped: %s", e)
+
+        # Opt-in notification monitors/producers (webcam, resources, self-errors).
+        # All default OFF; the deck "Monitors" card toggles them live.
+        self._init_notify_monitors()
+
+        # Autonomous mission loop — the executor is the single bounded execution
+        # path for board card runs, manual POSTs, and (when enabled) system
+        # triggers. Constructed after approval_manager because the APPROVAL
+        # autonomy mode depends on it.
+        try:
+            from navig.missions import MissionExecutor, MissionScheduler
+
+            _mcfg = (self.config_manager.global_config or {}).get("missions", {}) or {}
+            self.mission_executor = MissionExecutor(self)
+            self.mission_scheduler = MissionScheduler(
+                self,
+                self.mission_executor,
+                interval_secs=int(_mcfg.get("scheduler_interval_secs", 300)),
+            )
+
+            # System triggers are wired here but every handler re-checks the
+            # master flag, so wiring them is harmless when the flag is off.
+            self._wire_mission_triggers()
+            logger.info("Mission executor initialized")
+        except Exception as e:  # noqa: BLE001 — never block startup on this
+            logger.warning("Mission executor not available: %s", e)
 
         try:
             # Initialize browser controller (disabled by default)
@@ -1178,7 +1723,11 @@ class NavigGateway:
                 if isinstance(v, str) and v.startswith("vault:"):
                     secret_key = v[len("vault:"):]
                     try:
-                        resolved = (vault.get_secret(secret_key) or "").strip()
+                        # get_secret returns a SecretStr (no .strip / masks on str());
+                        # reveal the real value before using it as adapter config.
+                        sec = vault.get_secret(secret_key)
+                        raw = sec.reveal() if hasattr(sec, "reveal") else str(sec or "")
+                        resolved = (raw or "").strip()
                         out[k] = resolved if resolved else v
                     except Exception:
                         out[k] = v
@@ -1866,6 +2415,69 @@ class NavigGateway:
             task.add_done_callback(self._background_tasks.discard)
         return task
 
+    # ── Notification monitors / producers ──────────────────────────────────────
+
+    #: Toggleable opt-in producers surfaced in the deck "Monitors" card.
+    MONITOR_KEYS = ("webcam", "resources", "self_errors", "connectivity")
+
+    def _init_notify_monitors(self) -> None:
+        """Start each enabled monitor at boot (per ``monitors.<name>.enabled``)."""
+        self._monitor_tasks = getattr(self, "_monitor_tasks", {})
+        cfg = (self.config_manager.global_config or {}).get("monitors", {}) or {}
+        for name in self.MONITOR_KEYS:
+            try:
+                if (cfg.get(name, {}) or {}).get("enabled", False):
+                    self._start_monitor(name)
+            except Exception as e:  # noqa: BLE001 — never block boot on a monitor
+                logger.debug("monitor %s start skipped: %s", name, e)
+
+    def _start_monitor(self, name: str) -> None:
+        self._monitor_tasks = getattr(self, "_monitor_tasks", {})
+        if name in self._monitor_tasks:
+            return
+        if name == "webcam":
+            from navig.notify.monitors.webcam import run_webcam_monitor
+
+            self._monitor_tasks[name] = self._spawn_background_task(run_webcam_monitor())
+        elif name == "resources":
+            from navig.notify.monitors.resources import run_resource_monitor
+
+            rcfg = ((self.config_manager.global_config or {}).get("monitors", {}) or {}).get(
+                "resources", {}
+            ) or {}
+            self._monitor_tasks[name] = self._spawn_background_task(run_resource_monitor(rcfg))
+        elif name == "self_errors":
+            from navig.notify.producers.self_errors import install_self_error_reporter
+
+            install_self_error_reporter()
+            self._monitor_tasks[name] = "installed"
+        elif name == "connectivity":
+            # Driven by the uplink listener + a live config check — nothing to spawn.
+            self._monitor_tasks[name] = "live"
+        else:
+            return
+        logger.info("monitor enabled: %s", name)
+
+    def _stop_monitor(self, name: str) -> None:
+        self._monitor_tasks = getattr(self, "_monitor_tasks", {})
+        handle = self._monitor_tasks.pop(name, None)
+        if name == "self_errors":
+            from navig.notify.producers.self_errors import uninstall_self_error_reporter
+
+            uninstall_self_error_reporter()
+        elif handle is not None and hasattr(handle, "cancel"):
+            handle.cancel()
+        logger.info("monitor disabled: %s", name)
+
+    def set_monitor_enabled(self, name: str, enabled: bool) -> None:
+        """Live toggle a monitor (the deck Monitors card calls this)."""
+        if name not in self.MONITOR_KEYS:
+            raise ValueError(f"unknown monitor: {name}")
+        if enabled:
+            self._start_monitor(name)
+        else:
+            self._stop_monitor(name)
+
 
 def run_gateway():
     """Entry point for running gateway as standalone process."""
@@ -1874,6 +2486,24 @@ def run_gateway():
     # Handle signals
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+
+    # Windows-specific: silence benign ProactorEventLoop cleanup spam.
+    # When a remote host (Telegram long-poll, LLM provider, cloudflared
+    # tunnel) closes a TCP connection while asyncio still has the socket
+    # half-open, _ProactorBasePipeTransport._call_connection_lost calls
+    # socket.shutdown() on a dead FD and raises ConnectionResetError
+    # [WinError 10054]. Python's default exception handler logs the full
+    # traceback even though the connection is going away anyway. We swallow
+    # exactly this case; every other unhandled exception still surfaces.
+    import sys as _sys
+    if _sys.platform == "win32":
+        def _silence_proactor_resets(loop_, context):
+            exc = context.get("exception")
+            if isinstance(exc, ConnectionResetError) and getattr(exc, "winerror", None) == 10054:
+                return
+            # Default behaviour for everything else.
+            loop_.default_exception_handler(context)
+        loop.set_exception_handler(_silence_proactor_resets)
 
     def signal_handler():
         loop.create_task(gateway.stop())
