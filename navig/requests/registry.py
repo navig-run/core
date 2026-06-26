@@ -41,12 +41,12 @@ Answer = dict[str, Any]
 def _auto_dispatch_enabled() -> bool:
     """Best-effort read of the ai.auto_dispatch runtime flag."""
     try:
-        from navig.config import get_config_manager
+        from navig.core import Config
 
-        cfg = get_config_manager()
-        ai_cfg = (cfg.get("ai") or {}) if cfg else {}
+        ai_cfg = Config().get("ai") or {}
         return bool(ai_cfg.get("auto_dispatch", False))
-    except Exception:
+    except Exception as exc:
+        logger.debug("auto_dispatch flag read failed: %r", exc)
         return False
 
 
