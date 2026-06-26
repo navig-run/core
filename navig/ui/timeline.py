@@ -40,7 +40,7 @@ def render_event_timeline(
                 print(f"  {title}", file=sys.stdout)
             for ev in events:
                 print(
-                    f"  {ev.timestamp}  {ev.icon_safe if SAFE_MODE else ev.icon}  {ev.label}  {ev.detail}",
+                    f"  {ev.timestamp}  {getattr(ev, 'icon_safe', ev.icon) if SAFE_MODE else ev.icon}  {ev.label}  {ev.detail}",
                     file=sys.stdout,
                 )
         except Exception:  # noqa: BLE001

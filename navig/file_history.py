@@ -195,19 +195,18 @@ class FileHistoryStore:
 
     def _is_enabled(self) -> bool:
         try:
-            from navig.config import get_config_manager
-            cfg = get_config_manager()
-            return bool(cfg.get("file_history.enabled", False))
-        except Exception:  # noqa: BLE001
+            from navig.core import Config
+            return bool(Config().get("file_history.enabled", False))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("file_history enabled-check failed: %r", exc)
             return False
 
     def _resolve_cache_root(self) -> Path:
         if self._cache_dir is not None:
             return self._cache_dir
         try:
-            from navig.config import get_config_manager
-            cfg = get_config_manager()
-            custom = cfg.get("file_history.cache_dir")
+            from navig.core import Config
+            custom = Config().get("file_history.cache_dir")
             if custom:
                 p = Path(str(custom)).expanduser()
                 p.mkdir(parents=True, exist_ok=True)
